@@ -1,0 +1,265 @@
+version: 1
+
+mesh:
+  id: payment-api-team
+  name: Payment API Engineering Team
+
+  goal: |
+    Build a production-ready payment API using Spring Boot.
+
+  workspace:
+    path: ./workspace
+
+  runtime:
+    default: opencode
+
+startup:
+  activate:
+    - pm
+    - architect
+
+agents:
+
+  architect:
+    role: architect
+    runtime: opencode
+    prompt: ../../roles/architect.md
+
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+
+    authority:
+      - architecture.approve
+
+    interests:
+      - architecture.*
+      - design.question
+      - dependency.changed
+      - goal.escalated
+
+    session:
+      persistent: true
+
+  tech-lead:
+    role: tech-lead
+    runtime: opencode
+    prompt: ../../roles/tech-lead.md
+
+    capabilities:
+      - repository.read
+      - architecture.read
+      - code.review
+      - review.design          # allows reviewing architecture documents
+      - task.assign
+      - git.merge
+
+    authority:
+      - implementation.approve
+
+    interests:
+      - patch.ready
+      - implementation.completed
+      - goal.progress
+
+  developer:
+    role: developer
+    runtime: opencode
+    prompt: ../../roles/developer.md
+
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+
+    interests:
+      - architecture.approved
+      - review.rejected
+
+    session:
+      persistent: true
+
+  qa:
+    role: qa
+    runtime: opencode
+    prompt: ../../roles/qa.md
+
+    capabilities:
+      - repository.read
+      - test.execute
+      - test.write
+
+    authority:
+      - quality.block
+
+    interests:
+      - patch.ready
+      - implementation.completed
+      - release.candidate
+
+  security:
+    role: security
+    runtime: opencode
+    prompt: ../../roles/security.md
+
+    capabilities:
+      - repository.read
+      - security.scan
+      - security.review
+
+    authority:
+      - security.block
+
+    interests:
+      - authentication.changed
+      - authorization.changed
+      - dependency.changed
+      - release.candidate
+
+  explorer:
+    role: explorer
+    runtime: opencode
+    prompt: ../../roles/explorer.md
+
+    mode: service
+
+    capabilities:
+      - repository.read
+
+    interests:
+      - research.requested
+
+  pm:
+    role: product-manager
+    runtime: opencode
+    prompt: ../../roles/pm.md
+
+    capabilities:
+      - repository.read
+
+    authority:
+      - requirements.accept
+
+    interests:
+      - requirement.blocked
+      - goal.progress
+      - goal.completed
+
+policies:
+
+  communication:
+
+    architect:
+      may_contact:
+        - developer
+        - tech-lead
+        - explorer
+        - pm
+
+    developer:
+      may_contact:
+        - architect
+        - tech-lead
+        - explorer
+        - qa
+        - security
+
+    qa:
+      may_contact:
+        - developer
+        - tech-lead
+        - architect
+        - security
+
+    tech-lead:
+      may_contact:
+        - architect
+        - developer
+        - qa
+        - security
+        - pm
+        - explorer
+
+    security:
+      may_contact:
+        - developer
+        - tech-lead
+        - qa
+        - architect
+
+    pm:
+      may_contact:
+        - architect
+        - tech-lead
+        - developer
+
+    explorer:
+      may_contact:
+        - architect
+        - tech-lead
+        - developer
+        - qa
+        - security
+        - pm
+
+  transitions:
+
+    implementation.completed:
+      requires:
+        - tech-lead.approve
+        - qa.pass
+
+    release.accepted:
+      requires:
+        - qa.pass
+        - security.pass
+
+    patch.merge:
+      requires:
+        - tech-lead.approve
+
+  escalation:
+
+    thread:
+      max_depth: 8
+
+    repeated_conflict:
+      threshold: 3
+
+    artifact_review_rounds:
+      max: 5
+
+budgets:
+
+  mission:
+    tokens: 2000000
+    wall_clock_minutes: 240
+    max_events: 10000
+
+  agent:
+    architect: 300000
+    developer: 700000
+    qa: 200000
+    security: 200000
+    explorer: 100000
+    tech-lead: 250000
+    pm: 150000
+
+  thread:
+    tokens: 50000
+
+scheduling:
+
+  mode: event-driven
+
+  activation:
+    strategy: interest
+
+  concurrency:
+    max_active_agents: 4
+
+server:
+  port: 7420
+  dashboard: true

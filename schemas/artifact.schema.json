@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-mesh.dev/schemas/artifact.schema.json",
+  "title": "Artifact",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "type",
+    "goalId",
+    "owner",
+    "version",
+    "status",
+    "contentRef",
+    "digest",
+    "metadata",
+    "createdAt",
+    "createdBy"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^art-"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "ArchitectureDocument",
+        "ADR",
+        "ApiSpec",
+        "DatabaseSchema",
+        "CodePatch",
+        "ReleasePlan",
+        "TestReport",
+        "SecurityReport",
+        "ResearchReport",
+        "Decision",
+        "Requirement",
+        "RequirementsDoc",
+        "TaskSpec",
+        "BenchmarkResult",
+        "DisagreementRecord"
+      ]
+    },
+    "goalId": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "READY_FOR_REVIEW",
+        "UNDER_REVIEW",
+        "REJECTED",
+        "APPROVED",
+        "VERIFIED",
+        "MERGEABLE",
+        "MERGED",
+        "PROPOSED",
+        "IMPLEMENTED",
+        "QA_VERIFIED",
+        "SECURITY_VERIFIED",
+        "ACCEPTED",
+        "FINAL",
+        "ARCHIVED"
+      ]
+    },
+    "contentRef": {
+      "type": "string"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:"
+    },
+    "parent": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source",
+        "trustLevel"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "human",
+            "system",
+            "mesh_decision",
+            "agent",
+            "repository",
+            "external",
+            "tool"
+          ]
+        },
+        "trustLevel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

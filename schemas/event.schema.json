@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-mesh.dev/schemas/event.schema.json",
+  "title": "MeshEvent",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "timestamp",
+    "payload"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^evt-"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "protocolVersion": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "goal.created",
+        "goal.status_changed",
+        "goal.paused",
+        "goal.resumed",
+        "goal.progress",
+        "goal.completed",
+        "goal.escalated",
+        "goal.failed",
+        "requirements.created",
+        "requirement.blocked",
+        "requirement.satisfied",
+        "agent.created",
+        "agent.started",
+        "agent.awakened",
+        "agent.state_changed",
+        "agent.suspended",
+        "agent.resumed",
+        "agent.completed",
+        "agent.failed",
+        "agent.restarted",
+        "agent.replaced",
+        "thread.created",
+        "message.sent",
+        "message.delivered",
+        "message.rejected",
+        "artifact.created",
+        "artifact.versioned",
+        "artifact.transition",
+        "task.created",
+        "task.claimed",
+        "task.completed",
+        "review.requested",
+        "review.approved",
+        "review.rejected",
+        "patch.created",
+        "patch.ready",
+        "patch.merged",
+        "architecture.approved",
+        "design.question",
+        "dependency.changed",
+        "authentication.changed",
+        "authorization.changed",
+        "release.candidate",
+        "release.transition",
+        "release.accepted",
+        "research.requested",
+        "research.completed",
+        "implementation.completed",
+        "decision.proposed",
+        "decision.ratified",
+        "escalation.requested",
+        "escalation.responded",
+        "human.input",
+        "lease.acquired",
+        "lease.released",
+        "memory.updated",
+        "budget.reserved",
+        "budget.consumed",
+        "budget.exceeded",
+        "budget.released"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "goalId": {
+      "type": "string"
+    },
+    "actorId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string"
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

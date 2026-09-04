@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+workspace/
+.mesh-state/
+*.log
+
+# runtime artifacts created by `mesh run` in example folders
+examples/*/workspace/
+examples/*/.mesh-state/

@@ -1,0 +1,201 @@
+version: 1
+
+# A six-seat engineering org whose mission is to build a line-following
+# robot simulator (2D track world, IR sensor array, motor physics, PID
+# controller tuning, headless golden-run tests, demo scenarios).
+#
+#   npm run mesh -- run examples/line-follower-sim/mesh.yaml        (needs opencode CLI)
+#   npm run mesh -- ui  examples/line-follower-sim/mesh.yaml        (console only)
+
+mesh:
+  id: line-follower-sim-team
+  name: Line-Follower Simulator Team
+
+  goal: |
+    Build "TrackBench", a cross-platform line-following robot simulator.
+    Core loop: render a 2D track world, simulate one or more robots whose IR
+    sensor-array readings feed a configurable PID controller that drives
+    differential motors, and step the physics deterministically each tick.
+    Deliver: a canvas-based track editor (bezier paths, line width, gaps),
+    tunable sensor noise + robot dynamics, preset demo tracks (hairpin,
+    chicane, gap-loss), live PID tuning, headless scenario runner and
+    replay/export (GIF or JSON trace) for regression comparisons.
+
+  acceptance_criteria:
+    - id: requirements-documented
+      description: "PM publishes a RequirementsDoc covering the sim core, editor, controller model and demo scenarios"
+      mandatory: true
+    - id: architecture-approved
+      description: "sim-core / UI / controller / IO layers designed and approved through the review trail"
+      mandatory: true
+    - id: implementation-merged
+      description: "simulator MVP merged: one track, one robot, PID follows the line end-to-end"
+      mandatory: true
+    - id: quality-verified
+      description: "physics + sensor + PID unit tests and a golden-run regression are green (TestReport evidence)"
+      mandatory: true
+    - id: demo-scenario-passed
+      description: "preset hairpin + gap-loss demo scenarios run headless and export a replay trace (artifact evidence)"
+      mandatory: true
+
+  workspace:
+    path: ./workspace
+
+  runtime:
+    default: opencode
+
+startup:
+  activate:
+    - pm
+    - architect
+
+agents:
+
+  pm:
+    role: product-manager
+    runtime: opencode
+    prompt: ../../roles/pm.md
+    capabilities:
+      - repository.read
+    authority:
+      - requirements.accept
+    interests:
+      - requirement.blocked
+      - goal.progress
+      - goal.completed
+      - release.candidate
+    session:
+      persistent: true
+
+  architect:
+    role: architect
+    runtime: opencode
+    prompt: ../../roles/architect.md
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+    authority:
+      - architecture.approve
+    interests:
+      - architecture.*
+      - design.question
+      - requirements.created
+      - research.completed
+      - implementation.completed
+      - goal.escalated
+    session:
+      persistent: true
+
+  tech-lead:
+    role: tech-lead
+    runtime: opencode
+    prompt: ../../roles/tech-lead.md
+    capabilities:
+      - repository.read
+      - architecture.read
+      - code.review
+      - review.design
+      - task.assign
+      - git.merge
+    authority:
+      - implementation.approve
+    interests:
+      - patch.ready
+      - implementation.completed
+      - goal.progress
+      - review.requested
+
+  developer:
+    role: developer
+    runtime: opencode
+    prompt: ../../roles/developer.md
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+    interests:
+      - architecture.approved
+      - review.rejected
+
+  qa:
+    role: qa
+    runtime: opencode
+    prompt: ../../roles/qa.md
+    capabilities:
+      - repository.read
+      - test.execute
+      - test.write
+    authority:
+      - quality.block
+    interests:
+      - patch.ready
+      - implementation.completed
+      - release.candidate
+
+  explorer:
+    role: explorer
+    runtime: opencode
+    prompt: ../../roles/explorer.md
+    mode: service                       # request-only, read-only, cached answers
+    capabilities:
+      - repository.read
+    interests:
+      - research.requested
+
+policies:
+
+  communication:
+    pm:        { may_contact: [architect, tech-lead, developer, qa] }
+    architect: { may_contact: [developer, tech-lead, explorer, pm] }
+    tech-lead: { may_contact: [architect, developer, qa, explorer, pm] }
+    developer: { may_contact: [architect, tech-lead, explorer, qa] }
+    qa:        { may_contact: [developer, tech-lead, architect] }
+    explorer:  { may_contact: [architect, tech-lead, developer, qa, pm] }
+
+  transitions:                          # runtime-enforced gates, not prompt hints
+    implementation.completed: { requires: [tech-lead.approve, qa.pass] }
+    release.accepted:         { requires: [qa.pass] }
+    patch.merge:              { requires: [tech-lead.approve] }
+
+  rules:
+    - id: keep-sim-deterministic      # no nondeterminism tools on the sim core
+      when: { actor_role: developer }
+      deny:
+        capabilities: [network.request]
+
+  escalation:
+    thread: { max_depth: 8 }
+    repeated_conflict: { threshold: 3 }
+    artifact_review_rounds: { max: 5 }
+
+budgets:
+
+  mission:
+    tokens: 1500000
+    wall_clock_minutes: 180
+    max_events: 8000
+
+  agent:
+    pm: 150000
+    architect: 250000
+    tech-lead: 250000
+    developer: 600000
+    qa: 200000
+    explorer: 120000
+
+  thread:
+    tokens: 60000
+
+scheduling:
+
+  mode: event-driven
+  activation:
+    strategy: interest
+  concurrency:
+    max_active_agents: 4
+
+server:
+  port: 7423
+  dashboard: true

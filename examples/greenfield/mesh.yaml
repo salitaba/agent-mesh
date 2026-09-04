@@ -1,0 +1,92 @@
+version: 1
+
+mesh:
+  id: greenfield-service
+  name: Greenfield Service Team
+
+  goal: |
+    Build a small notification service from the attached specification:
+    design, implement, test, and deliver a runnable artifact.
+
+  acceptance_criteria:
+    - { id: spec-understood, description: "A research/spec artifact exists" }
+    - { id: architecture-approved, description: "Architecture reviewed and approved" }
+    - { id: implementation-merged, description: "Implementation merged with green tests" }
+
+  workspace:
+    path: ./workspace
+
+  runtime:
+    default: opencode
+
+startup:
+  activate:
+    - architect
+
+agents:
+
+  architect:
+    role: architect
+    runtime: opencode
+    prompt: ../../roles/architect.md
+    capabilities: [repository.read, architecture.write, review.design]
+    authority: [architecture.approve]
+    interests: [architecture.*, design.question, goal.escalated]
+
+  developer:
+    role: developer
+    runtime: opencode
+    prompt: ../../roles/developer.md
+    capabilities: [repository.read, repository.write, test.execute, git.commit, code.review]
+    interests: [architecture.approved, review.rejected]
+
+  qa:
+    role: qa
+    runtime: opencode
+    prompt: ../../roles/qa.md
+    capabilities: [repository.read, test.execute, test.write]
+    authority: [quality.block]
+    interests: [patch.ready, implementation.completed]
+
+policies:
+
+  communication:
+    architect: { may_contact: [developer, qa] }
+    developer: { may_contact: [architect, qa] }
+    qa: { may_contact: [architect, developer] }
+
+  transitions:
+    patch.merge: { requires: [architect.approve] }
+
+  escalation:
+    thread: { max_depth: 5 }
+    repeated_conflict: { threshold: 3 }
+    artifact_review_rounds: { max: 4 }
+
+budgets:
+  mission: { tokens: 800000, wall_clock_minutes: 120, max_events: 5000 }
+  agent:
+    architect: 200000
+    developer: 400000
+    qa: 150000
+  thread: { tokens: 40000 }
+
+scheduling:
+  mode: event-driven
+  activation:
+    strategy: interest+triage
+  triage:
+    mode: heuristic
+    rules:
+      # Cheap suppression layer: never wake qa for pure documentation churn,
+      # but always wake on schema/auth changes. Triage itself must stay cheaper
+      # than the activation it filters (§25).
+      - agent: qa
+        event: dependency.changed
+        ignore_if_text_matches: ["README", "docs/"]
+        act_if_text_matches: ["pom.xml", "build.gradle", "schema"]
+  concurrency:
+    max_active_agents: 2
+  timeouts:
+    turn_timeout_ms: 300000
+    wait_wakeup_ms: 90000

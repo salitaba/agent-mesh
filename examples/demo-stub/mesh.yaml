@@ -1,0 +1,109 @@
+version: 1
+
+# Runnable demonstration mesh using deterministic stub agents.
+# `mesh run` auto-attaches a scripted demo team (bench.ts attachDemoTeam) so
+# the payment mission converges end-to-end with zero model calls — QA BLOCKs
+# once so you can watch conflict handling, then the release gates, evidence
+# based acceptance and goal completion. Design your own at /designer.html.
+
+mesh:
+  id: demo-stub
+  name: Demo Mesh (stub agents)
+  goal: |
+    Build and ship a small idempotent payment endpoint.
+  acceptance_criteria:
+    - { id: requirements-documented, description: "Requirements are written down", mandatory: true }
+    - { id: architecture-approved, description: "Architecture reviewed and approved", mandatory: true }
+    - { id: implementation-merged, description: "Code reviewed, tested, and merged", mandatory: true }
+    - { id: quality-verified, description: "QA passes", mandatory: true }
+    - { id: security-verified, description: "Security passes", mandatory: true }
+  workspace:
+    path: ./workspace
+  runtime:
+    default: stub
+
+startup:
+  activate:
+    - pm
+
+agents:
+  pm:
+    role: product-manager
+    runtime: stub
+    prompt: ../../roles/pm.md
+    capabilities: [repository.read]
+    authority: [requirements.accept]
+    interests: [requirement.blocked, goal.progress, goal.completed, release.candidate, release.accepted, implementation.completed]
+  architect:
+    role: architect
+    runtime: stub
+    prompt: ../../roles/architect.md
+    capabilities: [repository.read, architecture.write, review.design]
+    authority: [architecture.approve]
+    interests: [architecture.*, design.question, requirements.created, research.completed, implementation.completed]
+  tech-lead:
+    role: tech-lead
+    runtime: stub
+    prompt: ../../roles/tech-lead.md
+    capabilities: [repository.read, code.review, review.design, task.assign, git.merge]
+    authority: [implementation.approve]
+    interests: [patch.ready, implementation.completed, goal.progress, review.requested]
+  developer:
+    role: developer
+    runtime: stub
+    prompt: ../../roles/developer.md
+    capabilities: [repository.read, repository.write, test.execute, git.commit]
+    interests: [architecture.approved, review.rejected]
+  qa:
+    role: qa
+    runtime: stub
+    prompt: ../../roles/qa.md
+    capabilities: [repository.read, test.execute, test.write]
+    authority: [quality.block]
+    interests: [patch.ready, implementation.completed, release.candidate]
+  security:
+    role: security
+    runtime: stub
+    prompt: ../../roles/security.md
+    capabilities: [repository.read, security.scan, security.review]
+    authority: [security.block]
+    interests: [release.candidate, authentication.changed, dependency.changed]
+  explorer:
+    role: explorer
+    mode: service
+    runtime: stub
+    prompt: ../../roles/explorer.md
+    capabilities: [repository.read]
+    interests: [research.requested]
+
+policies:
+  communication:
+    pm:         { may_contact: [architect, tech-lead, developer, qa, security] }
+    architect:  { may_contact: [developer, tech-lead, explorer, pm] }
+    tech-lead:  { may_contact: [architect, developer, qa, security, pm, explorer] }
+    developer:  { may_contact: [architect, tech-lead, explorer, qa, security] }
+    qa:         { may_contact: [developer, tech-lead, architect, security, pm] }
+    security:   { may_contact: [developer, tech-lead, qa, architect, pm] }
+    explorer:   { may_contact: [architect, tech-lead, developer, qa, security, pm] }
+  transitions:
+    implementation.completed: { requires: [tech-lead.approve, qa.pass] }
+    release.accepted: { requires: [qa.pass, security.pass] }
+    patch.merge: { requires: [tech-lead.approve] }
+  escalation:
+    thread: { max_depth: 8 }
+    repeated_conflict: { threshold: 3 }
+    artifact_review_rounds: { max: 5 }
+
+budgets:
+  mission: { tokens: 2000000, wall_clock_minutes: 60, max_events: 10000 }
+  thread: { tokens: 100000 }
+
+scheduling:
+  mode: event-driven
+  activation: { strategy: interest }
+  concurrency: { max_active_agents: 4 }
+  timeouts: { turn_timeout_ms: 300000, wait_wakeup_ms: 3000 }
+
+server:
+  port: 7421
+  dashboard: true

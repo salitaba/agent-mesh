@@ -1,0 +1,126 @@
+version: 1
+
+mesh:
+  id: spring-boot-refactor
+  name: Spring Boot Coupled Refactor
+
+  goal: |
+    Refactor the tightly-coupled payment transaction core of the
+    existing Spring Boot monolith into an idempotency-safe pipeline
+    across roughly fifteen coupled classes, keeping the public API
+    stable and all integration tests green.
+
+  workspace:
+    path: ./workspace
+
+  runtime:
+    default: opencode
+
+startup:
+  activate:
+    - architect
+
+agents:
+
+  architect:
+    role: architect
+    runtime: opencode
+    prompt: ../../roles/architect.md
+    capabilities: [repository.read, architecture.write, review.design]
+    authority: [architecture.approve]
+    interests: [architecture.*, design.question, dependency.changed, goal.escalated]
+    session: { persistent: true }
+
+  tech-lead:
+    role: tech-lead
+    runtime: opencode
+    prompt: ../../roles/tech-lead.md
+    capabilities: [repository.read, architecture.read, code.review, review.design, task.assign, git.merge]
+    authority: [implementation.approve]
+    interests: [patch.ready, implementation.completed, goal.progress, architecture.approved]
+
+  developer:
+    role: developer
+    runtime: opencode
+    prompt: ../../roles/developer.md
+    capabilities: [repository.read, repository.write, test.execute, git.commit]
+    interests: [architecture.approved, review.rejected]
+    session: { persistent: true }
+    delegation:
+      allow: true
+      max_depth: 1          # depth-1 fractal: developer may spawn workers
+      max_workers: 2
+      worker_budget_tokens: 60000
+
+  qa:
+    role: qa
+    runtime: opencode
+    prompt: ../../roles/qa.md
+    capabilities: [repository.read, test.execute, test.write]
+    authority: [quality.block]
+    interests: [patch.ready, implementation.completed, release.candidate]
+
+  security:
+    role: security
+    runtime: opencode
+    prompt: ../../roles/security.md
+    capabilities: [repository.read, security.scan, security.review]
+    authority: [security.block]
+    interests: [authentication.changed, authorization.changed, dependency.changed, release.candidate]
+
+  explorer:
+    role: explorer
+    runtime: opencode
+    mode: service
+    prompt: ../../roles/explorer.md
+    capabilities: [repository.read]
+    interests: [research.requested]
+
+policies:
+
+  communication:
+    architect:  { may_contact: [developer, tech-lead, explorer] }
+    developer:  { may_contact: [architect, tech-lead, explorer, qa, security] }
+    qa:         { may_contact: [developer, tech-lead, architect, security] }
+    tech-lead:  { may_contact: [architect, developer, qa, security, explorer] }
+    security:   { may_contact: [developer, tech-lead, qa, architect] }
+    explorer:   { may_contact: [architect, developer, qa, security, tech-lead] }
+
+  rules:
+    - id: developer-cannot-merge
+      when:
+        actor: developer
+      deny:
+        capabilities: [git.merge]
+
+    - id: explorer-read-only
+      when:
+        actor_role: explorer
+      deny:
+        capabilities: [repository.write, git.commit]
+
+  transitions:
+    implementation.completed: { requires: [tech-lead.approve, qa.pass] }
+    release.accepted: { requires: [qa.pass, security.pass] }
+    patch.merge: { requires: [tech-lead.approve] }
+
+  escalation:
+    thread: { max_depth: 6 }
+    repeated_conflict: { threshold: 3 }
+    artifact_review_rounds: { max: 4 }
+
+budgets:
+  mission: { tokens: 1500000, wall_clock_minutes: 180, max_events: 8000 }
+  agent:
+    architect: 250000
+    developer: 600000
+    qa: 200000
+    security: 150000
+    explorer: 120000
+    tech-lead: 220000
+  thread: { tokens: 60000 }
+
+scheduling:
+  mode: event-driven
+  activation: { strategy: interest }
+  concurrency: { max_active_agents: 3 }

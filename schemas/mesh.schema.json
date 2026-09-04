@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-mesh.dev/schemas/mesh.schema.json",
+  "title": "MeshConfig",
+  "type": "object",
+  "required": [
+    "version",
+    "mesh",
+    "agents"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "mesh": {
+      "type": "object",
+      "required": [
+        "id",
+        "goal"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "description"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "mandatory": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "workspace": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "startup": {
+      "type": "object",
+      "properties": {
+        "activate": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agents": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "peer",
+              "service"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authority": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "interests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "persistent": {
+                "type": "boolean"
+              },
+              "max_context_tokens": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "delegation": {
+            "type": "object",
+            "properties": {
+              "allow": {
+                "type": "boolean"
+              },
+              "max_depth": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_workers": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "worker_budget_tokens": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "tokens": {
+                "type": "integer"
+              },
+              "wall_clock_minutes": {
+                "type": "number"
+              },
+              "max_events": {
+                "type": "integer"
+              },
+              "max_activations": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "policies": {
+      "type": "object",
+      "properties": {
+        "communication": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "may_contact": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "may_be_contacted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "transitions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "escalation": {
+          "type": "object",
+          "properties": {
+            "thread": {
+              "type": "object",
+              "properties": {
+                "max_depth": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            },
+            "repeated_conflict": {
+              "type": "object",
+              "properties": {
+                "threshold": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            },
+            "artifact_review_rounds": {
+              "type": "object",
+              "properties": {
+                "max": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "rules": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "mission": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer"
+            },
+            "wall_clock_minutes": {
+              "type": "number"
+            },
+            "max_events": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "thread": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "task": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "scheduling": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "event-driven"
+          ]
+        },
+        "activation": {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "interest",
+                "interest+triage"
+              ]
+            },
+            "max_activation_delay_ms": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "triage": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "off",
+                "heuristic"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "agent"
+                ],
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "event": {
+                    "type": "string"
+                  },
+                  "ignore_if_text_matches": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "act_if_text_matches": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "concurrency": {
+          "type": "object",
+          "properties": {
+            "max_active_agents": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_parallel_service_agents": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "timeouts": {
+          "type": "object",
+          "properties": {
+            "turn_timeout_ms": {
+              "type": "integer"
+            },
+            "wait_wakeup_ms": {
+              "type": "integer"
+            },
+            "lease_ttl_ms": {
+              "type": "integer"
+            },
+            "idle_quiet_period_ms": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "state_dir": {
+          "type": "string"
+        },
+        "dashboard": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

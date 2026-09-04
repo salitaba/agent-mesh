@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-mesh.dev/schemas/message.schema.json",
+  "title": "MeshMessage",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "timestamp",
+    "goalId",
+    "from",
+    "to",
+    "threadId",
+    "artifactRefs",
+    "payload",
+    "priority"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^msg-"
+    },
+    "protocolVersion": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "MISSION",
+        "INFORM",
+        "REQUEST",
+        "REQUEST_INFO",
+        "REQUEST_REVIEW",
+        "REQUEST_ARTIFACT",
+        "REQUEST_RESEARCH",
+        "REQUEST_EXECUTION",
+        "PROPOSE",
+        "CHALLENGE",
+        "APPROVE",
+        "REJECT",
+        "VETO",
+        "BLOCK",
+        "DELEGATE",
+        "HANDOFF",
+        "PATCH_READY",
+        "TEST_RESULT",
+        "SECURITY_FINDING",
+        "COMMIT",
+        "ROLLBACK",
+        "ESCALATE",
+        "WAIT",
+        "DONE"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "goalId": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "replyTo": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "artifactRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "uri"
+        ],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "pattern": "^artifact://"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "payload": {},
+    "priority": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "NORMAL",
+        "HIGH",
+        "URGENT"
+      ]
+    },
+    "ttl": {
+      "type": "string"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "budgetHint": {
+      "type": "object",
+      "properties": {
+        "maxTokens": {
+          "type": "integer"
+        },
+        "maxTurns": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source",
+        "trustLevel"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "human",
+            "system",
+            "mesh_decision",
+            "agent",
+            "repository",
+            "external",
+            "tool"
+          ]
+        },
+        "trustLevel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
