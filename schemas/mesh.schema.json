@@ -262,6 +262,32 @@
       },
       "additionalProperties": false
     },
+    "bus": {
+      "type": "object",
+      "properties": {
+        "commitments": {
+          "type": "object",
+          "properties": {
+            "semantic": {
+              "type": "string",
+              "enum": [
+                "compat",
+                "strict"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "transport": {
+          "type": "string",
+          "enum": [
+            "mixed",
+            "typed-only"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "budgets": {
       "type": "object",
       "properties": {
@@ -385,6 +411,10 @@
             "max_parallel_service_agents": {
               "type": "integer",
               "minimum": 1
+            },
+            "max_total_agents": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -402,6 +432,15 @@
               "type": "integer"
             },
             "idle_quiet_period_ms": {
+              "type": "integer"
+            },
+            "stall_idle_ms": {
+              "type": "integer"
+            },
+            "stall_cooldown_ms": {
+              "type": "integer"
+            },
+            "stall_noop_retry_ms": {
               "type": "integer"
             }
           },

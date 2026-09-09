@@ -38,6 +38,19 @@ export const messageSchema = {
       },
     },
     payload: {},
+    /**
+     * Runtime-owned delivery control. Agents cannot set this:
+     * `sanitizeAgentMessageInput` strips it from every send, and the closed
+     * property set means a forged field fails validation instead of being
+     * silently ignored.
+     */
+    control: {
+      description:
+        "Runtime-owned delivery control. Agents cannot set this: sanitizeAgentMessageInput strips it from every send, and the closed property set means a forged field fails validation instead of being ignored.",
+      type: "object",
+      properties: { cacheServed: { type: "boolean" } },
+      additionalProperties: false,
+    },
     priority: { type: "string", enum: ["LOW", "NORMAL", "HIGH", "URGENT"] },
     ttl: { type: "string" },
     requires: {
@@ -247,6 +260,20 @@ export const meshConfigSchema = {
       },
       additionalProperties: false,
     },
+    bus: {
+      type: "object",
+      properties: {
+        commitments: {
+          type: "object",
+          properties: {
+            semantic: { type: "string", enum: ["compat", "strict"] },
+          },
+          additionalProperties: false,
+        },
+        transport: { type: "string", enum: ["mixed", "typed-only"] },
+      },
+      additionalProperties: false,
+    },
     budgets: {
       type: "object",
       properties: {
@@ -311,6 +338,7 @@ export const meshConfigSchema = {
           properties: {
             max_active_agents: { type: "integer", minimum: 1 },
             max_parallel_service_agents: { type: "integer", minimum: 1 },
+            max_total_agents: { type: "integer", minimum: 1 },
           },
           additionalProperties: false,
         },
@@ -321,6 +349,10 @@ export const meshConfigSchema = {
             wait_wakeup_ms: { type: "integer" },
             lease_ttl_ms: { type: "integer" },
             idle_quiet_period_ms: { type: "integer" },
+            stall_idle_ms: { type: "integer" },
+            stall_cooldown_ms: { type: "integer" },
+            stall_noop_retry_ms: { type: "integer" },
+            turn_silence_ms: { type: "integer" },
           },
           additionalProperties: false,
         },

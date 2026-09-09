@@ -50,7 +50,7 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
    pause/resume the mission, respond-to-escalation resumes work with the
    raiser woken. Or use the CLI (`mesh approve --subject release`,
    `mesh respond <esc> "…"`, …).
-3. **Design** — `/designer.html`: build agents, capabilities, authority,
+3. **Design** — `#/designer` in the dashboard: build agents, capabilities, authority,
    interests, the communication matrix, transition gates and budgets with
    live server-side validation (same engine as `mesh validate`), YAML preview,
    save; then `mesh run <saved path>`. `mesh init` scaffolds a starter (falls
@@ -68,19 +68,19 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
 #   calls): requirements → research → design → review → delegate → implement →
 #   QA BLOCK → rework → merge → release gates → evidence-based completion.
 #   Watch it live at  http://127.0.0.1:7421/   (dashboard + controls),
-#   design at         http://127.0.0.1:7421/designer.html
+#   design at         http://127.0.0.1:7421/#/designer
 #   (--no-demo disables the scripted team; agents then simply idle)
 
-# UI-ONLY CONSOLE — dashboard + designer, nothing autonomous (no startup runs,
+# PARKED CONSOLE — dashboard + designer, nothing autonomous (no startup runs,
 # no cascades, no tokens), safe to poke at even for opencode configs on a
 # machine without the CLI installed:
-npm run mesh -- ui examples/payment-api/mesh.yaml --port 7430
-# equivalent: npm run mesh -- run <file> --ui-only
+npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
+# (alias: ui; equivalent: npm run mesh -- run <file> --parked)
 # parked semantics: startup/interest/timer cascades are all off — nothing runs
 # on its own. BUT operator buttons stay live: "wake" runs exactly one manual
-# turn (step through the mesh agent by agent), messages queue into mailboxes,
-# and the ▶ Start mission button flips the console live in place (scheduler on,
-# cascades resume) without restarting the process.
+# turn (step through the mesh agent by agent), "send + wake after send" delivers
+# mail and steps recipients in one action, and the ▶ Start mission button flips
+# the console live in place (scheduler on, cascades resume) without restarting.
 
 # design first, run later:
 npm run mesh -- init my-mesh                       # auto-detects opencode; falls
@@ -134,8 +134,28 @@ packages/
 apps/
   mesh-cli        mesh init|validate|run|ui|status|graph|events|replay|approve|… + TUI
   mesh-server     bootstrap + HTTP/SSE API + MCP bus + config-designer API + static UI
-  mesh-dashboard  live UI + mesh designer (all views are projections of the event log)
+  mesh-dashboard  live UI + mesh designer (Vite + React + TS SPA in `src/`,
+                  built to `dist/` and served by mesh-server on the same port)
 schemas/ roles/ examples/ tests/ docs/
+```
+
+UI development: `npm run dev` boots a parked demo console plus the dashboard
+with hot reload (API at :7421, UI at :5173) — parked never auto-completes,
+so the session stays up while you wake agents and drive flows by hand;
+`npm run dev:ui` starts only the UI against an already-running mesh.
+`npm run build:ui` rebuilds the dashboard bundle (`npm run build` already
+includes it).
+
+Hot reload against your own mesh + port (the console port serves the stale
+built bundle — open the Vite URL, not the mesh port):
+
+```bash
+# terminal 1 — your mesh (stays running; agents keep their state):
+npm run mesh -- console examples/line-follower-sim/mesh.yaml --port 7430
+
+# terminal 2 — hot-reloading UI proxied at your mesh:
+MESH_BUS_URL=http://127.0.0.1:7430 npm run dev:ui
+# open http://127.0.0.1:5173/ — edits under apps/mesh-dashboard/src/ reload live.
 ```
 
 See `docs/architecture.md`, `docs/protocol.md`, `docs/configuration.md`,

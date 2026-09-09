@@ -4,7 +4,7 @@ version: 1
 # `mesh run` auto-attaches a scripted demo team (bench.ts attachDemoTeam) so
 # the payment mission converges end-to-end with zero model calls — QA BLOCKs
 # once so you can watch conflict handling, then the release gates, evidence
-# based acceptance and goal completion. Design your own at /designer.html.
+# based acceptance and goal completion. Design your own at /#/designer.
 
 mesh:
   id: demo-stub
@@ -46,7 +46,14 @@ agents:
     runtime: stub
     prompt: ../../roles/tech-lead.md
     capabilities: [repository.read, code.review, review.design, task.assign, git.merge]
-    authority: [implementation.approve]
+    # architecture.approve is required, not optional: roles/tech-lead.md makes
+    # the tech-lead the design gate ("only architecture.approved unlocks
+    # implementation"), and `recordDecision` resolves subject=architecture via
+    # evaluateAuthority. Granting only the review.design CAPABILITY worked by
+    # accident — the capability fallback needs an artifactId, and a plain
+    # `approve architecture` carries none, so the approval was DENIED and the
+    # mission stalled at the design gate.
+    authority: [implementation.approve, architecture.approve]
     interests: [patch.ready, implementation.completed, goal.progress, review.requested]
   developer:
     role: developer

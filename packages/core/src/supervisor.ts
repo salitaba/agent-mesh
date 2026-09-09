@@ -3,6 +3,7 @@ import * as path from "path";
 import {
   PROTOCOL_VERSION,
   digestOf,
+  ARTIFACT_TYPES,
   INITIAL_ARTIFACT_STATUS,
   artifactMachineOf,
   validateMessage,
@@ -18,6 +19,7 @@ import {
   type CreateGoalInput,
   type DecisionRecord,
   type Escalation,
+  type EscalationKind,
   type EventType,
   type Goal,
   type GoalId,
@@ -39,8 +41,10 @@ import {
   type TrustSource,
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
-import { artifactKey, approvalKey, ensureBudget } from "./state";
-import type { Projections } from "./state";
+import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
+import { sanitizeAgentMessageInput } from "../../protocol/src/index";
+import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
+import type { DischargeReason, Projections } from "./state";
 import { applyEvent, checkApprovals, transitionLifecycle } from "./projections";
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
@@ -60,6 +64,13 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { buildAgentContext, renderContextInstructions } from "./context";
 import { DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri } from "../../protocol/src/uri";
+import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, type TurnRecord, type TurnPhaseName } from "./turn-tracker";
+import {
+  MISSION_HALTED_ALLOW_OPS,
+  MISSION_OVER_ALLOW_OPS,
+  haltedGoalStatus,
+  haltReasonText,
+} from "./mission-guards";
 
 export interface SupervisorDeps {
   config: ResolvedMeshConfig;
@@ -101,6 +112,20 @@ export const DEFAULT_CRITERIA: Array<Partial<AcceptanceCriterion> & { descriptio
 
 const TURN_RESERVE_TOKENS = 32000;
 
+// Bounds for the in-memory turn trace shown in the Steps drawer. 200 turns *
+// 20k chars ≈ 4MB worst case — acceptable for live inspection, and the ring
+// evicts oldest first. The drawer truncates display further client-side.
+/**
+ * Retries granted to a turn that timed out while the backend stayed reachable.
+ * Deliberately larger than the 3-restart crash budget: a slow model is not a
+ * broken one, and the previous shared budget suspended healthy agents.
+ */
+const MAX_TIMEOUT_RETRIES = 5;
+const MAX_TURN_TEXT_CHARS = 20000;
+const MAX_TURN_INSTRUCTIONS_CHARS = 8000;
+const MAX_TURN_TOOLCALLS = 30;
+
+
 interface TurnState {
   turnId: string;
   agentId: string;
@@ -110,28 +135,115 @@ interface TurnState {
   waitRequested: boolean;
   escalated: boolean;
   results: OpResult[];
+  /** Artifacts published by THIS turn, in order — lets a later op in the same
+   *  turn (e.g. request_review) refer to "the artifact I just published" when
+   *  the model's URI guess doesn't resolve. */
+  publishedIds?: string[];
 }
 
 export class Supervisor {
   private sessions = new Map<string, { session: import("../../protocol/src/index").AgentSession; runtime: AgentRuntime }>();
   private turnInFlight = new Set<string>();
+  /** Turn ids the silence detector already interrupted — one interrupt per turn. */
+  private interruptedTurnIds = new Set<string>();
   private restartAttempts = new Map<string, number>();
+  /**
+   * Consecutive turn failures caused by a dead backend, per agent. Unlike
+   * `restartAttempts` (which historically never reset), both counters reset
+   * on the next successful runtime response — a failure from last week must
+   * not force an immediate escalation today.
+   */
+  private unreachableStreak = new Map<string, number>();
+  /**
+   * Consecutive turns that hit *our* deadline while the backend stayed
+   * reachable. Kept apart from `restartAttempts` so a thinking model never
+   * consumes the crash budget, and reset on any successful runtime response.
+   */
+  private timeoutRetries = new Map<string, number>();
   private workerInfo = new Map<string, { parent: string; taskId: string; depth: number }>();
   private startedAt = Date.now();
   private detector: DeadlockDetector;
   private termination = new TerminationManager();
   private watchdogChain: Promise<void> = Promise.resolve();
+  /**
+   * In-flight escalation creations keyed by conflictKey. `escalate()` has to
+   * await artifact creation between "is there already one?" and "emit it",
+   * which is a window wide enough for a concurrent caller (an agent escalating
+   * while the watchdog derives its summary) to slip through and create a
+   * duplicate. Reserving the key here closes that window.
+   */
+  private escalationsInFlight = new Map<string, Promise<Escalation>>();
+  /**
+   * The watchdog scans whole-state collections (tasks, budgets, escalations)
+   * on EVERY event; turn bursts (deliveries, budget churn) fire dozens of
+   * events per second, so unthrottled it burns steady CPU on the event loop
+   * and delays HTTP. Throttled to 1 scan/sec with a guaranteed trailing run
+   * so no finding is ever lost — a sub-second delay is immaterial here.
+   */
+  private watchdogLastRun = 0;
+  private watchdogTrailing = false;
   private stopping = false;
   private idleCallbacks: Array<() => void> = [];
+  private recentTurns: TurnRecord[] = [];
+  private activeTurnByAgent = new Map<string, string>();
+  private readonly turns = new TurnTracker();
+  /**
+   * Stall safety net. The event-driven watchdog never fires when the mesh is
+   * fully quiet, so an ACTIVE mission with an empty scheduler and no
+   * in-flight turns would sit IDLE forever (e.g. every turn parsed zero ops).
+   * This unref'd interval re-wakes the mission driver instead. Cooldown +
+   * live-mode gate keep parked consoles and tests silent.
+   */
+  private stallTimer?: NodeJS.Timeout;
+  private liveMode = false;
+  private lastTurnAt = Date.now();
+  private lastStallNudgeAt = 0;
+  /**
+   * When a turn provably changed NOTHING (zero ops, all rejected, or only
+   * wait/done/remember), the stall watchdog may fire again once this instant
+   * passes instead of waiting the full idle + cooldown. A no-op turn restarts
+   * the stall clock for no reason, so without this a stalled mission crawls at
+   * minutes per attempt — the "lost 2 minutes" between turns. Armed in
+   * `runTurn`'s tail, consumed by `checkStall`.
+   */
+  private stallNoopRetryAt = 0;
+  /** One-shot timer that fires `checkStall` exactly at the no-op retry bound. */
+  private stallNoopTimer?: NodeJS.Timeout;
+  /**
+   * QUIESCENCE. Consecutive stall nudges that produced no work, mission-wide.
+   *
+   * The stall watchdog exists to un-stick a mission that still has work. It
+   * has no way to tell that apart from a mission that is simply FINISHED but
+   * cannot be closed (e.g. stale OPEN tasks block the completion verdict).
+   * In that state every nudge costs a full context window to be told "done" —
+   * one live run burned 325k tokens, 51% of the mission, on 41 turns that
+   * wrote nothing.
+   *
+   * So the watchdog rests once `wakeValue()` shows nobody has anything to do.
+   * Any real event (a message, an artifact, a decision) clears this: the mesh
+   * goes quiet, not deaf. This flag exists only to keep the audit log to one
+   * line per rest period; `wakeValue()` is the actual gate and is recomputed
+   * from state every tick, so a stale flag can never keep the mesh asleep.
+   */
+  private quiesced = false;
 
   constructor(public readonly deps: SupervisorDeps) {
     this.detector = new DeadlockDetector(deps.config);
     deps.scheduler.onIdle?.(() => this.onIdle());
-    deps.kernel.subscribe(() => {
-      this.watchdogChain = this.watchdogChain
-        .then(() => this.watchdog())
-        .catch((err) => this.auditLine(`watchdog error: ${(err as Error).message}`));
+    deps.kernel.subscribe((event) => {
+      // Real work re-arms the watchdog. Without this, quiescence would be a
+      // one-way door: a mesh that rested could never be re-woken by a human
+      // message or a late artifact, which is a deadlock wearing a cost saving
+      // as a disguise.
+      if (isProgressEvent(event.type)) this.quiesced = false;
+      this.scheduleWatchdog(!isBookkeepingEvent(event.type));
     });
+  }
+
+  /** Late-bind the scheduler to break the construction-order cycle (no Proxy). */
+  setScheduler(scheduler: SchedulerPort): void {
+    (this.deps as { scheduler: SchedulerPort }).scheduler = scheduler;
+    scheduler.onIdle?.(() => this.onIdle());
   }
 
   get state(): Projections {
@@ -140,6 +252,45 @@ export class Supervisor {
 
   get config(): ResolvedMeshConfig {
     return this.deps.config;
+  }
+
+  /**
+   * Mirror the instance's live/parked mode into the supervisor.
+   *
+   * `goLive()` (the dashboard's ▶ Start Mission) used to flip the INSTANCE's
+   * mode and start the scheduler but never told the supervisor — whose
+   * `liveMode` is what `checkStall` reads — so a console-booted mesh that was
+   * sent live had a permanently dead stall watchdog: agents finished their
+   * startup turns, went WAITING, and nothing ever woke them again. This is
+   * the "no active agents, all waiting" state.
+   */
+  setLiveMode(live: boolean): void {
+    this.liveMode = live;
+    // Restart the quiet window from NOW: going live should give the mission a
+    // fresh STALL_IDLE_MS before the first nudge, and un-park must forget any
+    // cooldown the previous live period earned.
+    this.lastTurnAt = Date.now();
+    if (this.stallNoopTimer) {
+      clearTimeout(this.stallNoopTimer);
+      this.stallNoopTimer = undefined;
+    }
+    this.stallNoopRetryAt = 0;
+    this.lastStallNudgeAt = 0;
+    this.quiesced = false;
+  }
+
+  /**
+   * The semantic lens every replay of THIS mesh must use. Reducer behaviour
+   * is config-parameterized now (commitment inference on/off), so a replay
+   * that drops the semantic re-derives a different history than the live
+   * mesh did — exactly the class of live-vs-replay divergence the commitment
+   * ledger was built to eliminate.
+   */
+  projectionConfig(): { transitionGates: Record<string, string[]>; commitmentSemantic: "compat" | "strict" } {
+    return {
+      transitionGates: this.config.transitionGates,
+      commitmentSemantic: this.config.bus.commitmentSemantic,
+    };
   }
 
   private auditLine(msg: string): void {
@@ -152,24 +303,78 @@ export class Supervisor {
     }
   }
 
+  // ------------------------------------------------- turn observability
+  // Single owner: TurnTracker (bounded ring). recentTurns mirrors it for
+  // any legacy direct reads within this class.
+  private pushTurn(rec: TurnRecord): void {
+    this.turns.push(rec);
+    this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
+  }
+
+  private finishTurn(turnId: string, agentId: string, patch: Partial<TurnRecord>): void {
+    this.turns.finish(turnId, agentId, patch, this.deps.kernel.clock.iso());
+    this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
+  }
+
+  /** Stamp a turn phase mark; observability only, never throws. */
+  private markTurn(turnId: string, phase: TurnPhaseName): void {
+    try {
+      this.turns.mark(turnId, phase);
+      this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
+    } catch {
+      /* a missing timing mark must never break a turn */
+    }
+  }
+
+  getRecentTurns(limit = 60): TurnRecord[] {
+    return this.turns.list(limit);
+  }
+
+  /** Scheduler probe: is a turn for this agent currently unfinished? */
+  isTurnInFlight(agentId: string): boolean {
+    return this.turnInFlight.has(agentId);
+  }
+
+  getTurn(turnId: string): TurnRecord | undefined {
+    return this.turns.get(turnId);
+  }
+
+  /** Correlation id for “every step in this turn” — attached to all emits while a turn runs. */
+  private turnCorrelation(agentId: string): string | undefined {
+    return this.activeTurnByAgent.get(agentId);
+  }
+
   // ---------------------------------------------------------------- boot (Â§63)
 
-  async boot(opts: { resume?: boolean; uiOnly?: boolean } = {}): Promise<Goal | null> {
+  async boot(opts: { resume?: boolean; uiOnly?: boolean; mode?: "parked" | "live" } = {}): Promise<Goal | null> {
     // 4. create workspace
     if (this.deps.workspace) {
       await this.deps.workspace.ensureRepo();
     }
-    // 6. create goal (only if not resuming an unfinished one)
+    // 6. create goal (only if not resuming an unfinished one). Backfill
+    // activeGoalId for pre-fix snapshots/logs that restored goals but lost
+    // the pointer (otherwise every restart mints a spurious new goal).
+    if (!this.state.activeGoalId && this.state.goals.size > 0) {
+      const latest = [...this.state.goals.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      if (latest) this.state.activeGoalId = latest.id;
+    }
     if (!opts.resume || !this.state.activeGoalId || !this.state.goals.get(this.state.activeGoalId)) {
-      await this.createGoal({
-        description: this.config.goalText,
-        acceptanceCriteria: this.config.goalCriteria ?? DEFAULT_CRITERIA,
-        budget: {
-          tokens: this.config.budgets.mission.tokens,
-          wallClockMinutes: this.config.budgets.mission.wallClockMinutes,
-          maxEvents: this.config.budgets.mission.maxEvents,
-        },
-      });
+      // One goal per mesh in v1: if any live (non-terminal) goal exists,
+      // resume it instead of minting a duplicate that orphans live work.
+      const live = [...this.state.goals.values()].find((g) => !["COMPLETED", "FAILED"].includes(g.status));
+      if (opts.resume && live) {
+        this.state.activeGoalId = live.id;
+      } else {
+        await this.createGoal({
+          description: this.config.goalText,
+          acceptanceCriteria: this.config.goalCriteria ?? DEFAULT_CRITERIA,
+          budget: {
+            tokens: this.config.budgets.mission.tokens,
+            wallClockMinutes: this.config.budgets.mission.wallClockMinutes,
+            maxEvents: this.config.budgets.mission.maxEvents,
+          },
+        });
+      }
     }
     // 7. register agents (+ human seat, Â§36)
     await this.registerHuman();
@@ -186,9 +391,34 @@ export class Supervisor {
     for (const id of this.config.agentOrder) {
       this.deps.budget.declare(agentKey(goalId, id), "tokens", this.config.agents[id].budget.tokens ?? null);
     }
-    // 12/13. start scheduler + activate initial agents (skipped in ui-only mode:
+    // 8b. close turns abandoned by a previous process lifetime: anything the
+    // log still shows as running can never finish (in-memory traces are gone
+    // with the old process), and would otherwise read as "running" forever in
+    // every step/agent view. Runs before the scheduler starts so the close
+    // events themselves trigger no activations.
+    await this.closeAbandonedTurns();
+    // 8c. retire asks orphaned by goal succession: this mesh has been
+    // restarted onto new goals several times, and the old goals' open asks
+    // stay in the ledger forever — they pollute every operator view, keep
+    // nudge/stall bookkeeping looking loaded, and (before the lifecycle
+    // scoping fix) pinned agents in WAITING. Event-sourced discharge, so
+    // replay reproduces the retirement exactly. Idempotent: only pendings
+    // whose goal differs from the active goal are touched.
+    if (goalId) {
+      for (const [pid, pr] of [...this.state.pendingRequests]) {
+        if (!pr.goalId || pr.goalId === goalId) continue;
+        await this.dischargeCommitment(pid, "superseded", "system", { action: "goal_superseded", from: pr.goalId, to: goalId });
+      }
+    }
+    // 12/13. start scheduler + activate initial agents (skipped in parked mode:
     // the scheduler stays stopped, so no agent is ever activated or spends tokens)
-    if (!opts.uiOnly) {
+    // `mode` is the explicit successor of the legacy `uiOnly` boolean.
+    const parked = opts.mode !== undefined ? opts.mode === "parked" : Boolean(opts.uiOnly);
+    this.liveMode = !parked;
+    this.lastTurnAt = Date.now();
+    this.stallNoopRetryAt = 0;
+    this.startStallWatch();
+    if (!parked) {
       this.deps.scheduler.start();
       const activate = opts.resume ? this.recoveryCandidates() : this.config.startupActivate;
       for (const id of activate) {
@@ -201,8 +431,49 @@ export class Supervisor {
     return this.state.goals.get(goalId) ?? null;
   }
 
-  private recoveryCandidates(): string[] {
-    const out: string[] = [];
+  /**
+   * Turns the log still shows as running when a (new) process boots. The old
+   * process is gone, so these can never finish — without an explicit close
+   * they read as "running" forever in every step/agent view (and leave agent
+   * lifecycles stuck in THINKING/WORKING). Idempotent: already-closed turns
+   * are skipped, so repeated boots emit nothing new.
+   */
+  private async closeAbandonedTurns(): Promise<void> {
+    let tail: MeshEvent[] = [];
+    try {
+      tail = await this.deps.store.read({ tail: 2000 });
+    } catch {
+      return;
+    }
+    const open = new Map<string, string>(); // turnId -> agentId
+    for (const e of tail) {
+      const p = (e.payload ?? {}) as Record<string, unknown>;
+      if (e.type === "agent.awakened" && typeof p.turnId === "string" && typeof p.agentId === "string") {
+        open.set(p.turnId, p.agentId);
+      } else if (e.type === "agent.state_changed" && typeof p.turnId === "string") {
+        if (["IDLE", "WAITING", "BLOCKED"].includes(String(p.to))) open.delete(p.turnId);
+      } else if (e.type === "agent.failed") {
+        if (typeof p.turnId === "string") open.delete(p.turnId);
+        else if (typeof p.agentId === "string") {
+          for (const [tid, aid] of [...open]) if (aid === p.agentId) open.delete(tid);
+        }
+      }
+    }
+    for (const [turnId, agentId] of open) {
+      if (!this.state.agents.has(agentId)) continue;
+      try {
+        await this.deps.kernel.emit(
+          "agent.state_changed",
+          { agentId, to: "IDLE", note: "turn abandoned by server restart", turnId },
+          { actorId: "system", correlationId: turnId },
+        );
+      } catch {
+        /* already idle (or otherwise uncloseable): nothing to record */
+      }
+    }
+  }
+
+  private recoveryCandidates(): string[] {    const out: string[] = [];
     for (const rec of this.state.agents.values()) {
       const a = rec.state;
       if (a.agentId === HUMAN_AGENT_ID) continue;
@@ -215,6 +486,7 @@ export class Supervisor {
 
   async shutdown(opts: { complete?: boolean } = {}): Promise<void> {
     this.stopping = true;
+    this.stopStallWatch();
     await this.deps.scheduler.stop();
     for (const [agentId, { session, runtime }] of [...this.sessions]) {
       try {
@@ -224,6 +496,54 @@ export class Supervisor {
       }
     }
     this.sessions.clear();
+  }
+
+  /**
+   * Tear the mission down to a blank supervisor WITHOUT killing the process.
+   *
+   * Unlike `shutdown()` this leaves `stopping` false, so the same instance can
+   * `boot()` again immediately — the mesh keeps serving HTTP throughout, which
+   * is the whole point: every route handler closed over this supervisor.
+   *
+   * Runtime sessions are stopped and forgotten on purpose. Reusing them would
+   * hand the fresh mission agents whose conversation still remembers the goal
+   * we just deleted, which is exactly the "reset that didn't reset" bug.
+   */
+  async resetMission(): Promise<void> {
+    this.stopStallWatch();
+    this.liveMode = false;
+    await this.deps.scheduler.stop();
+    for (const [agentId, { session, runtime }] of [...this.sessions]) {
+      try {
+        await runtime.stop(session);
+      } catch (err) {
+        this.auditLine(`stop failed for ${agentId} during reset: ${(err as Error).message}`);
+      }
+      await this.deps.sessionRegistry?.forget(agentId).catch(() => undefined);
+    }
+    this.sessions.clear();
+    this.turnInFlight.clear();
+    this.interruptedTurnIds.clear();
+    this.restartAttempts.clear();
+    this.unreachableStreak.clear();
+    this.timeoutRetries.clear();
+    this.workerInfo.clear();
+    this.escalationsInFlight.clear();
+    this.activeTurnByAgent.clear();
+    this.recentTurns = [];
+    this.idleCallbacks = [];
+    this.watchdogLastRun = 0;
+    this.watchdogTrailing = false;
+    this.startedAt = Date.now();
+    this.lastTurnAt = Date.now();
+    this.lastStallNudgeAt = 0;
+    this.stallNoopRetryAt = 0;
+    if (this.stallNoopTimer) {
+      clearTimeout(this.stallNoopTimer);
+      this.stallNoopTimer = undefined;
+    }
+    this.detector = new DeadlockDetector(this.deps.config);
+    this.termination = new TerminationManager();
   }
 
   // ------------------------------------------------------- MeshRuntime API (Â§48)
@@ -307,9 +627,15 @@ export class Supervisor {
     priority?: MeshMessage["priority"];
     taskId?: string;
     causationId?: string;
+    correlationId?: string;
     requires?: { id: string; text: string }[];
     budgetHint?: { maxTokens?: number; maxTurns?: number };
   }): Promise<SendResult> {
+    // Every send — agent turn, MCP tool, HTTP API — funnels through here, so
+    // this is the one place runtime-owned fields must be stripped off caller
+    // input. Structural: after this line no forged `control` (or a forged
+    // copy hidden in `payload`) exists to be read further down.
+    input = sanitizeAgentMessageInput(input);
     const goalId = this.state.activeGoalId;
     if (!goalId) return { accepted: false, reason: "no active goal" };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
@@ -414,13 +740,34 @@ export class Supervisor {
     }
     const validation = validateMessage(message);
     if (!validation.valid) {
-      return { accepted: false, reason: `message failed protocol validation: ${validation.errors.map((e) => e.path + " " + e.message).join("; ")}` };
+      // Visible, like policy denials: a silently dropped send looks exactly
+      // like a delivered one from the dashboard, which stalls missions.
+      const reason = `message failed protocol validation: ${validation.errors.map((e) => e.path + " " + e.message).join("; ")}`;
+      const rej = await this.deps.kernel.emit(
+        "message.rejected",
+        { from: input.from, to: recipients, type: input.type, reason, payload: input.payload },
+        // Correlate to the sender's turn, exactly like `message.sent` below.
+        // Without this the rejection was an orphan event: it belonged to no
+        // turn, so no trace, dashboard row, or per-turn summary could show
+        // that this turn's message never left the building.
+        { actorId: input.from, goalId, correlationId: this.turnCorrelation(input.from) },
+      );
+      return { accepted: false, reason, eventId: rej.id };
     }
-    if (cacheHit && message.payload && typeof message.payload === "object") {
-      message.payload = { ...(message.payload as object), cacheServed: true };
+    // Delivery control lives on the envelope, where only this line can write
+    // it — and it works regardless of payload shape (the old payload-spread
+    // version silently no-op'd on a string or array payload, so a cached
+    // research answer was still delivered and still woke the recipient).
+    if (cacheHit) {
+      message.control = { ...(message.control ?? {}), cacheServed: true };
     }
 
-    const evt = await this.deps.kernel.emit("message.sent", { message }, { actorId: input.from, goalId, causationId: input.causationId });
+    const correlationId = input.correlationId ?? this.turnCorrelation(input.from);
+    const evt = await this.deps.kernel.emit(
+      "message.sent",
+      { message },
+      { actorId: input.from, goalId, causationId: input.causationId, correlationId },
+    );
 
     if (cacheHit) {
       await this.deps.kernel.emit("research.completed", { cached: true, artifactRef: cacheHit, messageId: message.id }, { actorId: input.from, goalId, causationId: evt.id });
@@ -437,19 +784,20 @@ export class Supervisor {
     }
 
     // derived semantic events
-    await this.deriveSemantic(input.from, message, evt.id);
+    await this.deriveSemantic(input.from, message, evt.id, correlationId);
     return { accepted: true, messageId: message.id, eventId: evt.id, redirectedTo: policy.decision === "REDIRECT" ? recipients : undefined };
   }
 
-  private async deriveSemantic(from: string, m: MeshMessage, causationId: string): Promise<void> {
+  private async deriveSemantic(from: string, m: MeshMessage, causationId: string, correlationId?: string): Promise<void> {
     const goalId = m.goalId;
+    const corr = correlationId ?? this.turnCorrelation(from);
     const primary = m.artifactRefs[0]?.uri;
     if (m.type === "REQUEST_REVIEW") {
       const art = primary ? this.findArtifactByUri(primary) : undefined;
-      await this.deps.kernel.emit("review.requested", { artifactId: art?.id, artifactRef: primary, reviewers: m.to, messageId: m.id, subject: m.payload }, { actorId: from, goalId, causationId });
-      await this.auditTransition(art?.id, m.id, goalId);
+      await this.deps.kernel.emit("review.requested", { artifactId: art?.id, artifactRef: primary, reviewers: m.to, messageId: m.id, subject: m.payload }, { actorId: from, goalId, causationId, correlationId: corr });
+      await this.auditTransition(art?.id, m.id, goalId, corr);
       if (art && (art.type === "ArchitectureDocument" || art.type === "ApiSpec")) {
-        await this.deps.kernel.emit("design.question", { artifactId: art.id, question: (m.payload as any)?.question ?? null, messageId: m.id }, { actorId: from, goalId, causationId });
+        await this.deps.kernel.emit("design.question", { artifactId: art.id, question: (m.payload as any)?.question ?? null, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
       }
     }
     if (m.type === "TEST_RESULT" && (m.payload as any)?.result === "PASSED") {
@@ -469,16 +817,152 @@ export class Supervisor {
       });
     }
     if (m.type === "REQUEST_RESEARCH") {
-      await this.deps.kernel.emit("research.requested", { question: (m.payload as any)?.question ?? m.payload, messageId: m.id }, { actorId: from, goalId, causationId });
+      await this.deps.kernel.emit("research.requested", { question: (m.payload as any)?.question ?? m.payload, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
     }
     if (m.type === "PATCH_READY") {
       const art = primary ? this.findArtifactByUri(primary) : undefined;
-      await this.deps.kernel.emit("patch.ready", { artifactId: art?.id, artifactRef: primary, messageId: m.id }, { actorId: from, goalId, causationId });
-      await this.auditTransition(art?.id, m.id, goalId);
+      await this.deps.kernel.emit("patch.ready", { artifactId: art?.id, artifactRef: primary, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
+      await this.auditTransition(art?.id, m.id, goalId, corr);
     }
     if (m.type === "ESCALATE") {
       // already an explicit escalation op path; keep audit-only
     }
+  }
+
+  /**
+   * Close an outstanding ask through the event log.
+   *
+   * The ledger has exactly one exit and it is event-sourced, so replay
+   * reproduces it. Callers must never touch `state.pendingRequests` directly:
+   * that is what made live and replayed state diverge (an ask the live mesh
+   * had closed came back on rebuild, and the nudge/stalemate machinery then
+   * chased a question that was already answered).
+   */
+  async dischargeCommitment(
+    messageId: string,
+    reason: DischargeReason,
+    by: string,
+    detail: Record<string, unknown> = {},
+  ): Promise<boolean> {
+    const pending = this.state.pendingRequests.get(messageId);
+    if (!pending) return false;
+    // An ask to N agents is N obligations, so predict whether THIS discharge
+    // closes the ask or only settles one debtor's share of it. The reducer
+    // makes the same decision from the same inputs; computing it here keeps
+    // the event payload and the asker's notification honest about which
+    // happened.
+    const remainingAfter =
+      PER_DEBTOR_DISCHARGE_REASONS.has(reason) && stillOwes(pending, by)
+        ? outstandingDebtors(pending).filter((d) => d !== by)
+        : [];
+    const partial = remainingAfter.length > 0;
+    try {
+      await this.deps.kernel.emit(
+        "commitment.discharged",
+        {
+          messageId, reason, by, from: pending.from, to: pending.to, requestType: pending.type,
+          ...(partial ? { partial: true, remaining: remainingAfter } : {}),
+          ...detail,
+        },
+        { actorId: by, goalId: this.state.activeGoalId ?? undefined },
+      );
+    } catch (err) {
+      // The whole point of the event is replay equivalence. If it never
+      // reached the log, the ask stays open: the nudge machinery then treats
+      // it as an unanswered ask (which it is) instead of chasing silence.
+      this.auditLine(`discharge of ${messageId} rejected from the log: ${(err as Error).message}`);
+      return false;
+    }
+    // The ask is closed — but a WAITING asker is still parked on it. A
+    // WAITING agent only wakes on mail or timer: nothing was mailed here, and
+    // the timer only nudges agents that still OWE something. So wake the
+    // asker explicitly with what happened, or every non-reply discharge
+    // (supersede, decline, deadlock break, operator drop) strands it in
+    // WAITING forever — the "no active agents" stall. A `respond`/`reply`
+    // already notifies via its answer message; the extra wake is harmless
+    // (deduped by isBusy/queue) but keep it anyway: uniform beats clever.
+    if (partial) {
+      // One of several debtors answered. The ask is NOT closed, so telling the
+      // asker it was would send it off to plan a next step while it is still
+      // owed answers by everyone who has said nothing.
+      if (pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
+        await this.activateAgent(pending.from, {
+          kind: "recovery",
+          note: `${by} answered your request ${messageId} (${pending.type}); still awaiting ${remainingAfter.join(", ")}`,
+        }).catch(() => undefined);
+      }
+      return true;
+    }
+    if (pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
+      const why =
+        reason === "reply" ? "it was answered"
+        : reason === "superseded" ? "a newer artifact version replaced what was under review"
+        : reason === "deadlock_break" ? "it was voided to break a circular wait"
+        : reason === "evicted_cap" ? "the ask ledger hit capacity and dropped it UNANSWERED — re-ask if you still need it"
+        : reason === "operator" ? "an operator resolved it"
+        : reason === "task_completed" ? "its task completed"
+        : reason === "artifact_review" ? "a review verdict landed on its artifact"
+        : reason === "task" ? "its task was answered"
+        : reason === "in_thread" ? "an in-thread answer arrived"
+        : "it was closed";
+      await this.activateAgent(pending.from, {
+        kind: "recovery",
+        note: `your request ${messageId} (${pending.type}) closed: ${why} — check the outcome and drive the next step instead of waiting`,
+      }).catch(() => undefined);
+    }
+    return true;
+  }
+
+  /**
+   * Health of the commitment ledger.
+   *
+   * `inferredRatio` is the number that matters: it is the share of asks the
+   * runtime closed by GUESSING (thread/timing/artifact shape) rather than
+   * being told via `replyTo` or `discharge`. Every one of those guesses can
+   * be wrong in either direction — closing a live question, or leaving a dead
+   * one open — so a high ratio means the mesh is running on inference and the
+   * role prompts are not landing. Previously this was entirely invisible.
+   *
+   * `unanswered` is the harder failure: asks the ledger LOST rather than
+   * closed (capacity eviction, deadlock voiding). Any non-zero value means
+   * questions went unanswered without anyone deciding they should, and
+   * `capacityPressure` says whether the ledger is at the cap that causes it.
+   */
+  commitmentStats(): {
+    open: number;
+    discharged: number;
+    byReason: Record<string, number>;
+    inferred: number;
+    inferredRatio: number;
+    unanswered: number;
+    capacityPressure: number;
+    oldestOpenAgeMs: number | null;
+  } {
+    const byReason: Record<string, number> = {};
+    let inferred = 0;
+    let unanswered = 0;
+    for (const d of this.state.discharged) {
+      byReason[d.reason] = (byReason[d.reason] ?? 0) + 1;
+      if (INFERRED_DISCHARGE_REASONS.has(d.reason)) inferred++;
+      if (UNANSWERED_DISCHARGE_REASONS.has(d.reason)) unanswered++;
+    }
+    const total = this.state.discharged.length;
+    let oldest: number | null = null;
+    const now = this.deps.kernel.clock.now().getTime();
+    for (const pr of this.state.pendingRequests.values()) {
+      const age = now - Date.parse(pr.createdAt);
+      if (Number.isFinite(age) && (oldest === null || age > oldest)) oldest = age;
+    }
+    return {
+      open: this.state.pendingRequests.size,
+      discharged: total,
+      byReason,
+      inferred,
+      inferredRatio: total > 0 ? inferred / total : 0,
+      unanswered,
+      capacityPressure: this.state.pendingRequests.size / MAX_PENDING_REQUESTS,
+      oldestOpenAgeMs: oldest,
+    };
   }
 
   findArtifactByUri(uri: string): Artifact | undefined {
@@ -490,6 +974,29 @@ export class Supervisor {
       const parsed = /^artifact:\/\/([^/]+)\/([^/]+)/.exec(uri);
       if (parsed && a.type === parsed[1] && a.name === decodeURIComponent(parsed[2])) return a;
     }
+    // Last resort for model-invented URIs (wrong type segment, abbreviated
+    // name): every token of the referenced name must appear in the actual
+    // name. Exact matches above always win; newest version breaks ties.
+    const needleTokens = (() => {
+      try {
+        const parsed = /^artifact:\/\/([^/]+)\/([^/]+)/.exec(uri);
+        return decodeURIComponent(parsed?.[2] ?? uri)
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter((t) => t.length >= 2);
+      } catch {
+        return [];
+      }
+    })();
+    if (needleTokens.length > 0) {
+      const cands = [...this.state.artifacts.values()]
+        .filter((a) => {
+          const nameTokens = new Set(a.name.toLowerCase().split(/[^a-z0-9]+/));
+          return needleTokens.every((t) => nameTokens.has(t));
+        })
+        .sort((x, y) => y.version - x.version || y.createdAt.localeCompare(x.createdAt));
+      if (cands.length > 0) return cands[0];
+    }
     return undefined;
   }
 
@@ -499,12 +1006,12 @@ export class Supervisor {
    * replay is a no-op (same-status guard) but whose presence makes the
    * transition observable to consumers that read the event stream.
    */
-  private async auditTransition(artifactId: string | undefined, causationId: string, goalId: string): Promise<void> {
+  private async auditTransition(artifactId: string | undefined, causationId: string, goalId: string, correlationId?: string): Promise<void> {
     if (!artifactId) return;
     const a = this.state.artifacts.get(artifactId);
     if (!a) return;
     await this.deps.kernel
-      .emit("artifact.transition", { artifactId, to: a.status, derived: true, gateSatisfied: true }, { actorId: "system", goalId, causationId })
+      .emit("artifact.transition", { artifactId, to: a.status, derived: true, gateSatisfied: true }, { actorId: "system", goalId, causationId, correlationId: correlationId ?? this.turnCorrelation(a.owner) })
       .catch(() => undefined);
   }
 
@@ -512,7 +1019,9 @@ export class Supervisor {
     const goal = this.state.goals.get(this.state.activeGoalId ?? "");
     if (!goal) return { queued: false, blocked: "no goal yet — boot/create a goal first" };
     if (goal.status === "PAUSED") return { queued: false, blocked: "mission is paused — resume it first" };
-    if (goal.status === "COMPLETED" || goal.status === "FAILED") return { queued: false, blocked: `mission is ${goal.status}` };
+    // Operator follow-up (feedback / wake) may still reach a completed mission.
+    const followUp = reason.kind === "message" || reason.kind === "manual" || reason.kind === "recovery";
+    if (goal.status === "FAILED" || (goal.status === "COMPLETED" && !followUp)) return { queued: false, blocked: `mission is ${goal.status}` };
     if (goal.status === "ESCALATED") return { queued: false, blocked: "mission is escalated — respond to the open escalation first" };
     const rec = this.state.agents.get(agentId);
     if (!rec) return { queued: false, blocked: `unknown agent '${agentId}'` };
@@ -553,10 +1062,17 @@ export class Supervisor {
     parentArtifactId?: string;
     asVersionOf?: string;
     provenanceSource?: TrustSource;
+    correlationId?: string;
   }): Promise<{ artifact: Artifact; uri: string } | { error: string }> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { error: "no active goal" };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
+    // Reject model-invented artifact types at the gate: without this a
+    // publish like type "ArchitectureDoc" (not in ARTIFACT_TYPES) lands in
+    // the store as a first-class record nobody can review or transition.
+    if (!(ARTIFACT_TYPES as readonly string[]).includes(input.type)) {
+      return { error: `unknown artifact type '${input.type}' (expected one of: ${ARTIFACT_TYPES.join(", ")})` };
+    }
     const machine = artifactMachineOf(input.type);
     const initial = INITIAL_ARTIFACT_STATUS[machine];
 
@@ -589,7 +1105,7 @@ export class Supervisor {
     } else {
       const existing = this.state.artifactByName.get(artifactKey(input.type, input.name));
       if (existing && existing.version > 0 && this.state.activeGoalId === existing.goalId) {
-        return { error: `artifact ${input.type}:${input.name} already exists at v${existing.version}; publish a new version via asVersionOf` };
+        return { error: `artifact ${input.type}:${input.name} already exists as ${existing.id} at v${existing.version} (owner: ${existing.owner}); publish a new version by retrying with asVersionOf: '${existing.id}'` };
       }
       artifact = {
         id: newArtifactId(),
@@ -613,19 +1129,37 @@ export class Supervisor {
     const contentRef = await this.deps.content.writeVersion(artifact.id, artifact.version, input.content);
     artifact = { ...artifact, contentRef, digest: digestOf(input.content) };
     const uri = artifactUri(artifact.type, artifact.name, artifact.version);
+    const correlationId = input.correlationId ?? this.turnCorrelation(input.actorId);
     const evt = await this.deps.kernel.emit(
       isVersion ? "artifact.versioned" : "artifact.created",
       { artifact },
-      { actorId: input.actorId, goalId },
+      { actorId: input.actorId, goalId, correlationId },
     );
-    await this.deriveArtifactSemantic(artifact, input.content, evt.id);
+    await this.deriveArtifactSemantic(artifact, input.content, evt.id, correlationId);
+    if (isVersion) {
+      // A new version supersedes review asks for older versions of the same
+      // artifact: reviewers answer against the newest version, and the stale
+      // pending entries for v1 would otherwise nudge forever and escalate a
+      // false stalemate after the merge already resolved the substance.
+      const prefix = `artifact://${artifact.type}/${encodeURIComponent(artifact.name)}/`;
+      for (const [pid, pr] of [...this.state.pendingRequests]) {
+        if (!pr.type.startsWith("REQUEST")) continue;
+        const uris = pr.artifactUris ?? [];
+        // Emit, don't mutate: a direct delete here never reached the log, so
+        // replay rebuilt an ask the live mesh had already superseded.
+        if (uris.some((u) => u.startsWith(prefix))) {
+          await this.dischargeCommitment(pid, "superseded", input.actorId, { artifactId: artifact.id });
+        }
+      }
+    }
     return { artifact, uri };
   }
 
-  private async deriveArtifactSemantic(a: Artifact, content: string, causationId: string): Promise<void> {
+  private async deriveArtifactSemantic(a: Artifact, content: string, causationId: string, correlationId?: string): Promise<void> {
     const goalId = a.goalId;
+    const corr = correlationId ?? this.turnCorrelation(a.createdBy);
     if (a.type === "CodePatch" && a.version === 1) {
-      await this.deps.kernel.emit("patch.created", { artifactId: a.id, name: a.name }, { actorId: a.createdBy, goalId, causationId });
+      await this.deps.kernel.emit("patch.created", { artifactId: a.id, name: a.name }, { actorId: a.createdBy, goalId, causationId, correlationId: corr });
     }
     if (a.type === "RequirementsDoc" || a.type === "Requirement") {
       try {
@@ -646,7 +1180,7 @@ export class Supervisor {
                 })),
               artifactId: a.id,
             },
-            { actorId: a.createdBy, goalId, causationId },
+            { actorId: a.createdBy, goalId, causationId, correlationId: corr },
           );
         }
       } catch {
@@ -654,11 +1188,11 @@ export class Supervisor {
       }
     }
     if (a.type === "ReleasePlan" && a.version === 1) {
-      await this.deps.kernel.emit("release.candidate", { artifactId: a.id, name: a.name }, { actorId: a.createdBy, goalId, causationId });
+      await this.deps.kernel.emit("release.candidate", { artifactId: a.id, name: a.name }, { actorId: a.createdBy, goalId, causationId, correlationId: corr });
     }
     if (a.type === "ResearchReport") {
       const inReplyTo = (a.metadata as any)?.inReplyTo as string | undefined;
-      await this.deps.kernel.emit("research.completed", { artifactId: a.id, name: a.name, inReplyTo }, { actorId: a.createdBy, goalId, causationId });
+      await this.deps.kernel.emit("research.completed", { artifactId: a.id, name: a.name, inReplyTo }, { actorId: a.createdBy, goalId, causationId, correlationId: corr });
       await this.markCriterionEvidence("req-analysis", {
         kind: "research-report",
         artifactRef: { uri: artifactUri(a.type, a.name, a.version) },
@@ -853,11 +1387,12 @@ export class Supervisor {
       const evt = await this.deps.kernel.emit("architecture.approved", { ...payload, subject: "architecture" }, { actorId, goalId });
       await this.auditTransition(artifactId, evt.id, goalId);
       await this.markCriterionEvidence("architecture-approved", { kind: "approval", by: actorId, recordedAt: this.deps.kernel.clock.iso() });
+      await this.settleReviewAsks(actorId, artifact, evt.id);
       return { ok: true, eventId: evt.id };
     }
     if (kind === "block") {
       const requesters = [...this.state.pendingRequests.values()]
-        .filter((pr) => pr.to.includes(actorId) && pr.type.startsWith("REQUEST"))
+        .filter((pr) => stillOwes(pr, actorId) && pr.type.startsWith("REQUEST"))
         .map((pr) => pr.from);
       const targets = artifact ? [artifact.owner] : [HUMAN_AGENT_ID, ...new Set(requesters)];
       const m = await this.sendMessage({
@@ -876,6 +1411,7 @@ export class Supervisor {
     }
     const evt = await this.deps.kernel.emit(type, payload, { actorId, goalId });
     await this.auditTransition(artifactId, evt.id, goalId);
+    await this.settleReviewAsks(actorId, artifact, evt.id);
     if (kind === "pass" && (domain === "quality" || domain === "release")) {
       await this.markCriterionEvidence(domain === "quality" ? "quality-verified" : "security-verified", {
         kind: `${domain}-pass`,
@@ -915,6 +1451,19 @@ export class Supervisor {
       }
     }
     return subject;
+  }
+
+  private async settleReviewAsks(actorId: string, artifact: Artifact | undefined, eventId: string): Promise<void> {
+    if (!artifact) return;
+    // A verdict on an artifact settles the asks that pointed at that artifact
+    // — per debtor, so a second reviewer's silent turn still pins itself.
+    const uri = artifactUri(artifact.type, artifact.name, artifact.version);
+    for (const pr of [...this.state.pendingRequests.values()]) {
+      if (!stillOwes(pr, actorId)) continue;
+      if (!pr.type.startsWith("REQUEST")) continue;
+      if (!pr.artifactUris?.includes(uri)) continue;
+      await this.dischargeCommitment(pr.messageId, "artifact_review", actorId, { artifactId: artifact.id, viaEvent: eventId });
+    }
   }
 
   private async denied(actorId: string, subjectId: string | undefined, action: string, decision: PolicyDecisionResult): Promise<void> {
@@ -994,11 +1543,59 @@ export class Supervisor {
     artifactId?: string;
     threadId?: string;
     participants?: string[];
+    kind?: EscalationKind;
+    supports?: string[];
+    advisory?: boolean;
   }): Promise<Escalation> {
     const goalId = this.state.activeGoalId ?? "";
-    const conflictKey = input.conflictKey ?? `esc:${shortHash(input.reason + JSON.stringify(input.detail ?? ""))}`;
+    // Identity must NOT depend on volatile detail. A derived card's detail
+    // lists the primaries it summarizes, so hashing detail made its
+    // conflictKey mutate every time that set changed — the dedupe below then
+    // missed and the watchdog minted a fresh duplicate card on every tick.
+    // Derived cards are keyed by (goal, reason) alone: there is exactly one
+    // live `stalemate` summary per goal, by construction.
+    const kind: EscalationKind = input.kind ?? classifyEscalation(input.reason, input.raisedBy);
+    const conflictKey =
+      input.conflictKey ??
+      (kind === "derived"
+        ? `derived:${input.reason}:${goalId}`
+        : `esc:${shortHash(input.reason + JSON.stringify(input.detail ?? ""))}`);
     const existing = [...this.state.escalations.values()].find((e) => e.status === "OPEN" && e.conflictKey === conflictKey);
     if (existing) return existing;
+    // Dedupe is check-then-act across the `await` below, so two callers could
+    // both pass the check and both emit — exactly what happens when an agent
+    // escalates while the watchdog is deriving its summary, or when two
+    // watchdog ticks overlap. Reserve the key synchronously (no await between
+    // the check and the reservation) so the loser waits for and returns the
+    // winner's card instead of minting a duplicate.
+    const inflight = this.escalationsInFlight.get(conflictKey);
+    if (inflight) return await inflight;
+    let settle: (e: Escalation) => void = () => undefined;
+    let fail: (err: unknown) => void = () => undefined;
+    this.escalationsInFlight.set(
+      conflictKey,
+      new Promise<Escalation>((res, rej) => {
+        settle = res;
+        fail = rej;
+      }),
+    );
+    try {
+      const esc = await this.createEscalation(input, { goalId, conflictKey, kind });
+      settle(esc);
+      return esc;
+    } catch (err) {
+      fail(err);
+      throw err;
+    } finally {
+      this.escalationsInFlight.delete(conflictKey);
+    }
+  }
+
+  private async createEscalation(
+    input: { reason: string; raisedBy: string; detail?: unknown; artifactId?: string; threadId?: string; participants?: string[]; supports?: string[]; advisory?: boolean },
+    ctx: { goalId: string; conflictKey: string; kind: EscalationKind },
+  ): Promise<Escalation> {
+    const { goalId, conflictKey, kind } = ctx;
     let disagreementRef: ArtifactRef | undefined;
     const positions = this.buildDisagreementContent(input);
     const created = await this.createArtifact({
@@ -1021,6 +1618,9 @@ export class Supervisor {
       conflictKey,
       disagreementArtifactRef: disagreementRef,
       status: "OPEN",
+      kind,
+      supports: input.supports ? [...input.supports] : undefined,
+      advisory: input.advisory,
       createdAt: this.deps.kernel.clock.iso(),
     };
     await this.deps.kernel.emit("escalation.requested", { escalation: esc }, { actorId: input.raisedBy, goalId });
@@ -1081,6 +1681,16 @@ export class Supervisor {
   async respondEscalation(escalationId: string, response: string, by = HUMAN_AGENT_ID): Promise<{ ok: boolean; reason?: string }> {
     const esc = this.state.escalations.get(escalationId);
     if (!esc) return { ok: false, reason: "unknown escalation" };
+    // A card the runtime already retired is not an error for the operator:
+    // they answered a real question, the mesh simply resolved it first (the
+    // agent replied while the dashboard was open). Failing here would surface
+    // a scary red "respond failed" for a mission that is in fact unblocked, so
+    // treat it as a satisfied no-op and still make sure nothing stays parked.
+    if (esc.status === "AUTO_RESOLVED") {
+      await this.reconcileDerivedEscalations();
+      if (this.state.activeGoalId) await this.resumeIfNothingPending(this.state.activeGoalId);
+      return { ok: true, reason: "already resolved by the mesh — nothing left to decide" };
+    }
     if (esc.status !== "OPEN") return { ok: false, reason: `escalation is ${esc.status}` };
     await this.deps.kernel.emit("escalation.responded", { escalationId, response, respondedBy: by }, { actorId: by });
     await this.deps.kernel.emit("human.input", { action: "escalation_response", escalationId, response }, { actorId: HUMAN_AGENT_ID });
@@ -1098,10 +1708,101 @@ export class Supervisor {
         priority: "URGENT",
       });
     }
+    // Stuck-request escalations are raised by the watchdog, not by the stuck
+    // agent — so the generic raiser-wake above notifies nobody. Wake the stuck
+    // agent explicitly and let the scheduler nudge it again; otherwise the
+    // mission resumes but the original request stalls forever behind
+    // `stuckEscalated` suppression.
+    const stuck = stuckRequestOf(esc);
+    if (stuck) {
+      this.deps.scheduler.resetStallTracking?.(stuck.messageId, stuck.agentId);
+      if (this.state.agents.has(stuck.agentId)) {
+        await this.activateAgent(stuck.agentId, { kind: "recovery", note: `escalation responded: ${response.slice(0, 120)}` });
+      }
+    } else if (isDerivedEscalation(esc)) {
+      // A derived card carries no decision of its own: answering the summary
+      // means answering everything it summarizes. Push the operator's response
+      // down to each still-open primary (which clears their stall tracking via
+      // this same method) rather than just flipping the goal ACTIVE — else the
+      // next watchdog tick re-derives the summary and re-parks within ~1s.
+      for (const id of supportsOf(esc)) {
+        const u = this.state.escalations.get(id);
+        if (!u || u.status !== "OPEN") continue;
+        await this.respondEscalation(id, response, by);
+      }
+    }
+    // One central sweep replaces the old hand-rolled sibling loop: any derived
+    // summary left without an open support is now retired here, whatever path
+    // closed the primary.
+    await this.reconcileDerivedEscalations();
     for (const c of this.recoveryCandidates()) {
-      if (c !== esc.raisedBy) await this.activateAgent(c, { kind: "recovery", note: "escalation responded" });
+      if (c !== esc.raisedBy && (!stuck || c !== stuck.agentId)) await this.activateAgent(c, { kind: "recovery", note: "escalation responded" });
     }
     return { ok: true };
+  }
+
+  /**
+   * Raise a budget limit at runtime (operator action from a budget
+   * escalation). Accepts an absolute `limit` or an `add` increment on top of
+   * the current limit. The change is event-sourced (`budget.limit_raised`),
+   * so replay preserves it. Does not resume the mission — pair with
+   * `respondEscalation` (the dashboard's "add & resume" does both).
+   */
+  async raiseBudget(
+    key: string,
+    opts: { limit?: number; add?: number; by?: string; reason?: string } = {},
+  ): Promise<{ ok: boolean; reason?: string; key?: string; previous?: number | null; limit?: number; unblocked?: boolean }> {
+    const ledger = this.state.budgets.get(key);
+    if (!ledger) return { ok: false, reason: `unknown budget '${key}'` };
+    const by = opts.by ?? HUMAN_AGENT_ID;
+    let next: number | undefined = opts.limit;
+    if (next === undefined && opts.add !== undefined) {
+      if (ledger.limit === null) return { ok: false, reason: `budget '${key}' is unlimited — nothing to raise` };
+      next = ledger.limit + opts.add;
+    }
+    if (next === undefined || !Number.isFinite(next)) return { ok: false, reason: "provide a new absolute `limit` or an `add` increment" };
+    if (ledger.limit !== null && next <= ledger.limit) {
+      return { ok: false, reason: `new limit (${next}) must be above the current limit (${ledger.limit})` };
+    }
+    const goalId = this.state.activeGoalId ?? undefined;
+    const res = await this.deps.budget.raiseLimit(key, next, { actorId: by, goalId, reason: opts.reason ?? "operator raise from escalation" });
+    return { ok: true, key, previous: res.previous, limit: res.limit, unblocked: res.unblocked };
+  }
+
+  /**
+   * Raise mission-level caps (maxEvents / wallClockMinutes) at runtime.
+   * Stored on the goal via `goal.budget_changed`, so replay preserves the
+   * override without touching mesh.yaml. Does not resume — pair with
+   * `respondEscalation` (the dashboard's one button does both).
+   */
+  async adjustGoalBudget(
+    patch: { maxEvents?: number; wallClockMinutes?: number },
+    opts: { by?: string; reason?: string; goalId?: GoalId } = {},
+  ): Promise<{ ok: boolean; reason?: string; budget?: Goal["budget"] }> {
+    const gid = opts.goalId ?? this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    const clean: Partial<Goal["budget"]> = {};
+    if (patch.maxEvents !== undefined) {
+      if (!Number.isFinite(patch.maxEvents) || patch.maxEvents <= goal.budget.maxEvents) {
+        return { ok: false, reason: `maxEvents must exceed the current cap (${goal.budget.maxEvents})` };
+      }
+      clean.maxEvents = Math.floor(patch.maxEvents);
+    }
+    if (patch.wallClockMinutes !== undefined) {
+      if (!Number.isFinite(patch.wallClockMinutes) || patch.wallClockMinutes <= goal.budget.wallClockMinutes) {
+        return { ok: false, reason: `wallClockMinutes must exceed the current cap (${goal.budget.wallClockMinutes})` };
+      }
+      clean.wallClockMinutes = Math.floor(patch.wallClockMinutes);
+    }
+    if (Object.keys(clean).length === 0) return { ok: false, reason: "provide maxEvents and/or wallClockMinutes to raise" };
+    await this.deps.kernel.emit(
+      "goal.budget_changed",
+      { goalId: gid, budget: clean, reason: opts.reason ?? "operator raise from escalation" },
+      { actorId: opts.by ?? HUMAN_AGENT_ID, goalId: gid },
+    );
+    return { ok: true, budget: this.state.goals.get(gid)?.budget };
   }
 
   async pauseGoal(goalId?: GoalId): Promise<void> {
@@ -1126,7 +1827,7 @@ export class Supervisor {
     void fresh;
     const { createInitialState } = await import("./state");
     const state = createInitialState();
-    for (const e of limited) applyEvent(state, e, { transitionGates: this.config.transitionGates });
+    for (const e of limited) applyEvent(state, e, this.projectionConfig());
     const goal = state.goals.get(goalId);
     return {
       goalId,
@@ -1155,18 +1856,69 @@ export class Supervisor {
   // ------------------------------------------------------------- turn execution
 
   async runTurn(agentId: string, reason: ActivationReason): Promise<void> {
-    if (this.turnInFlight.has(agentId)) return;
+    if (this.turnInFlight.has(agentId)) {
+      if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: turnInFlight`);
+      return;
+    }
     const rec = this.state.agents.get(agentId);
-    if (!rec) return;
+    if (!rec) {
+      if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: unknown`);
+      return;
+    }
     if (agentId === HUMAN_AGENT_ID) return;
-    if (rec.state.lifecycle === "SUSPENDED" || rec.state.lifecycle === "COMPLETED") return;
+    if (rec.state.lifecycle === "SUSPENDED" || rec.state.lifecycle === "COMPLETED") {
+      if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: lifecycle ${rec.state.lifecycle}`);
+      return;
+    }
     const goalId = this.state.activeGoalId;
-    if (!goalId) return;
+    if (!goalId) {
+      if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: no goal`);
+      return;
+    }
     const goal = this.state.goals.get(goalId);
-    if (!goal || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "COMPLETED" || goal.status === "FAILED") return;
+    // Post-completion follow-up (human feedback via direct mail, an operator
+    // wake, or a recovery answer) may still run one turn on a COMPLETED goal
+    // so the recipient can respond. Everything else stays gated.
+    const followUpTurn = reason.kind === "message" || reason.kind === "manual" || reason.kind === "recovery";
+    if (!goal || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "FAILED" || (goal.status === "COMPLETED" && !followUpTurn)) {
+      if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: goal ${goal?.status}`);
+      return;
+    }
 
     this.turnInFlight.add(agentId);
     const turnId = `turn-${shortHash(agentId + Date.now() + Math.random())}`;
+    const turnStartedAt = this.deps.kernel.clock.iso();
+    this.activeTurnByAgent.set(agentId, turnId);
+    // `timeoutRetries` is the scheduler's re-activation counter for this agent;
+    // surfacing it as `attempt` is what makes "this is the 3rd try" visible in
+    // the dashboard instead of looking like three unrelated slow turns.
+    const attempt = (this.timeoutRetries.get(agentId) ?? 0) + 1;
+    this.pushTurn({
+      turnId,
+      agentId,
+      reason,
+      startedAt: turnStartedAt,
+      status: "running",
+      attempt,
+      phases: { startedAt: Date.parse(turnStartedAt) || Date.now() },
+    });
+    /**
+     * Holds still outstanding when the turn ends. `consume` settles a hold on
+     * the success path and clears these; anything left here was never settled
+     * (the turn threw: model timeout, dead backend, kernel rejection) and is
+     * released in `finally`. Without that, every failed turn permanently
+     * subtracted TURN_RESERVE_TOKENS of headroom from the agent and thread
+     * ledgers — a mesh with a flaky backend slowly starved itself into
+     * DEFERRED activations with no error anywhere.
+     */
+    const openReservations: Array<{ key: string; reservationId: string }> = [];
+    // Hoisted so the `finally` can arm the stall fast-retry: a turn that
+    // changed nothing must not cost the mission the full idle + cooldown.
+    // Deliberately broader than `unproductive` (the breaker flag): wait/done
+    // are legitimate successful endings, so they must never feed the circuit
+    // breaker — but in a quiet mission with unmet criteria they also produced
+    // no work, so the next driver should be tried soon.
+    let turnChangedNothing = false;
     try {
       // budget reservation
       const reserve = await this.deps.budget.reserve(
@@ -1178,49 +1930,167 @@ export class Supervisor {
       );
       if (reserve.blocked) {
         await this.deps.kernel.emit("agent.state_changed", { agentId, to: "BLOCKED", note: `budget: ${reserve.reason}` }, { actorId: agentId });
-        await this.escalate({ reason: "budget_exhausted", raisedBy: agentId, detail: { key: agentKey(goalId, agentId), reason: reserve.reason } });
+        // Stable key: repeats dedupe against the still-open escalation instead
+        // of flooding the log (each escalation also mints an artifact).
+        await this.escalate({ reason: "budget_exhausted", raisedBy: agentId, conflictKey: `budget:${agentKey(goalId, agentId)}`, detail: { key: agentKey(goalId, agentId), reason: reserve.reason } });
+        this.finishTurn(turnId, agentId, { status: "blocked", error: reserve.reason });
+        this.deps.scheduler.noteTurnOutcome?.(agentId, "blocked");
         return;
       }
+      if (reserve.reservationId) openReservations.push({ key: agentKey(goalId, agentId), reservationId: reserve.reservationId });
+      /**
+       * Reservation id for the THREAD ledger, carried to the consume below.
+       *
+       * It used to be discarded: the turn reserved TURN_RESERVE_TOKENS
+       * against the thread and then consumed with `reservationId: undefined`,
+       * so the reducer never gave the reservation back. Every turn in a
+       * thread leaked 32k of `reserved` permanently, and `reserve()` refuses
+       * on `consumed + reserved + amount > limit` — so a thread died after a
+       * handful of turns no matter how few tokens were actually spent. The
+       * symptom was invisible: activations got DEFERRED by policy, the agents
+       * simply stopped being scheduled, and the mission looked idle with no
+       * error and no card. (`termination.ts` still carries a special case
+       * written to cope with exactly this.)
+       */
+      let threadReservationId: string | undefined;
       if (reason.threadId) {
         const tk = threadKey(goalId, reason.threadId);
         const tReserve = await this.deps.budget.reserve(tk, "tokens", TURN_RESERVE_TOKENS, this.config.budgets.threadTokens, { actorId: agentId });
         if (tReserve.blocked) {
-          await this.deps.budget.release(agentKey(goalId, agentId), reserve.reservationId);
-          await this.escalate({ reason: "thread_budget_exhausted", raisedBy: agentId, detail: { threadId: reason.threadId } });
-          return;
+          await this.escalate({ reason: "thread_budget_exhausted", raisedBy: agentId, conflictKey: `budget:${tk}`, detail: { threadId: reason.threadId } });
+          this.finishTurn(turnId, agentId, { status: "blocked", error: `thread budget exhausted: ${reason.threadId}` });
+          this.deps.scheduler.noteTurnOutcome?.(agentId, "blocked");
+          return; // `finally` releases the agent hold taken above.
         }
+        threadReservationId = tReserve.reservationId;
+        if (threadReservationId) openReservations.push({ key: tk, reservationId: threadReservationId });
       }
 
       if (rec.state.lifecycle === "STARTING") {
         await this.deps.kernel.emit("agent.started", { agentId, sessionId: null, runtime: rec.definition.runtime }, { actorId: agentId });
       }
-      const activationEvt = await this.deps.kernel.emit("agent.awakened", { agentId, reason }, { actorId: agentId });
-      await this.deps.kernel.emit("agent.state_changed", { agentId, to: "OBSERVING" }, { actorId: agentId, causationId: activationEvt.id });
+      const activationEvt = await this.deps.kernel.emit(
+        "agent.awakened",
+        { agentId, reason, turnId },
+        { actorId: agentId, correlationId: turnId },
+      );
+      await this.deps.kernel.emit(
+        "agent.state_changed",
+        { agentId, to: "OBSERVING", turnId },
+        { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+      );
 
       const session = await this.ensureSession(agentId);
       // build context from undelivered mail first, then drain via delivery events
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
       const bundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint);
-      const unread = [...(this.state.unread.get(agentId) ?? [])];
+      // Delivery is bookkeeping: the agent only ever reads the first
+      // MAX_UNREAD (12) in context. Cap per-turn fan-out so a deep backlog
+      // (hundreds/thousands queued) can't turn one turn into thousands of
+      // emits — each emit wakes the watchdog, scheduler matching, the sqlite
+      // index and SSE broadcast. The remainder stays queued and drains over
+      // following turns (notifyTurnFinished re-queues while unread > 0).
+      const unread = [...(this.state.unread.get(agentId) ?? [])].slice(0, MAX_DELIVERED_PER_TURN);
       for (const mid of unread) {
-        await this.deps.kernel.emit("message.delivered", { agentId, messageId: mid }, { actorId: agentId, causationId: activationEvt.id });
+        await this.deps.kernel.emit(
+          "message.delivered",
+          { agentId, messageId: mid, turnId },
+          { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+        );
       }
       const instructions = renderContextInstructions(bundle) + `\n\n## Why you were woken\n${describeReason(reason)}\n\nEmit your reply as mesh operations.`;
+      // Make "what it's working on" visible while still THINKING: the runtime
+      // call below blocks until the full output arrives, so without this the
+      // Steps drawer would show a running turn with no content until it ends.
+      this.pushTurn({
+        turnId,
+        agentId,
+        reason,
+        startedAt: turnStartedAt,
+        status: "running",
+        instructions: instructions.slice(0, MAX_TURN_INSTRUCTIONS_CHARS),
+      });
+      this.markTurn(turnId, "contextAt");
 
-      await this.deps.kernel.emit("agent.state_changed", { agentId, to: "THINKING" }, { actorId: agentId, causationId: activationEvt.id });
-      const input: AgentInput = { agentId, goalId, activation: reason, context: bundle, instructions };
+      await this.deps.kernel.emit(
+        "agent.state_changed",
+        { agentId, to: "THINKING", turnId },
+        { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+      );
+      const input: AgentInput = {
+        agentId,
+        goalId,
+        activation: reason,
+        context: bundle,
+        instructions,
+        onToken: (delta: string) => {
+          // Live tokens are observability only: buffer them for polling
+          // clients and forward out-of-band to SSE. Never throws, never
+          // touches the event log (no budget/seq impact at token frequency).
+          try {
+            this.turns.appendText(turnId, delta);
+          } catch {
+            /* buffer must never break the turn */
+          }
+          try {
+            this.deps.hooks?.onTurnToken?.(turnId, agentId, delta);
+          } catch {
+            /* observer must never break the turn */
+          }
+        },
+      };
 
       const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [] };
       this.deps.hooks?.onAgentTurnStart?.(agentId, turnId);
+      this.markTurn(turnId, "llmCallAt");
       const output = await this.callRuntimeWithTimeout(agentId, session, input, turnId);
+      this.markTurn(turnId, "llmDoneAt");
+      // The backend answered, so this was not a transport failure: a dead
+      // backend from last week must not count toward the next stall.
+      this.unreachableStreak.delete(agentId);
+      // Same reasoning for slow turns: one completed turn clears the streak, so
+      // an agent that is merely occasionally slow never accumulates its way to
+      // a terminal failure.
+      this.timeoutRetries.delete(agentId);
       this.auditTurn(turnId, agentId, input, output);
       if (output.error) throw new RuntimeFailure(output.error);
 
-      for (const op of output.operations) {
+      // Typed-only transport: prose-parsed ops never execute. The agent gets
+      // one visible refusal (in its turn summary AND its L2 memory) instead
+      // of a silent zero-op turn, so it can correct on the next wake rather
+      // than burning strikes on something it cannot see. Typed tools execute
+      // through the same `executeOp` path, so MCP turns are untouched.
+      let typedOnlyRefusal: string | undefined;
+      if (this.config.bus.transport === "typed-only" && !output.typedOps && output.operations.length > 0) {
+        typedOnlyRefusal =
+          `⚠ transport is typed-only: ${output.operations.length} parsed op(s) were refused — issue ops through mesh_* tools, not prose.`;
+        this.auditLine(`turn ${turnId} for ${agentId} refused: ${output.operations.length} parsed ops under typed-only transport`);
+      }
+      for (const op of typedOnlyRefusal ? [] : output.operations) {
+        // The mission can flip mid-turn (pause / escalation / completion
+        // while the runtime was thinking). Stop before the next op instead of
+        // executing the rest into one rejection after another — which burns
+        // budget and leaves half-applied turns (e.g. artifact published but
+        // its announcement rejected). Model tokens already spent are still
+        // accounted below; the reservation is released there as usual.
+        const midTurnHalt = haltedGoalStatus(this.state);
+        const followUpTurn = reason.kind === "message" || reason.kind === "manual" || reason.kind === "recovery";
+        if (midTurnHalt && !(midTurnHalt === "COMPLETED" && followUpTurn)) {
+          this.auditLine(`turn ${turnId} for ${agentId} stopped early: ${haltReasonText(midTurnHalt)}`);
+          break;
+        }
+        this.markTurn(turnId, "opsStartAt");
+        const opStart = Date.now();
         const result = await this.executeOp(agentId, op, turn);
+        try {
+          this.turns.noteOp(turnId, { op: String(op.op), ms: Date.now() - opStart, ok: result.ok, reason: result.reason });
+        } catch {
+          /* timing is observability: never let it affect the op */
+        }
         if (process.env.MESH_OP_DEBUG) console.error(`[op] ${agentId} ${op.op} -> ${result.ok}${result.reason ? " " + result.reason : ""}${result.messageId ? " msg:" + result.messageId : ""}${result.artifactId ? " art:" + result.artifactId : ""}`);
         turn.results.push(result);
       }
+      this.markTurn(turnId, "opsDoneAt");
 
       const tokens = output.tokensUsed?.total ?? 0;
       await this.deps.budget.consume(agentKey(goalId, agentId), "tokens", tokens, reserve.reservationId, {
@@ -1229,38 +2099,188 @@ export class Supervisor {
         temperature: output.temperature,
         input: output.tokensUsed?.input,
         output: output.tokensUsed?.output,
+        // Recorded but NOT billed: the replayed transcript on a persistent
+        // session. Kept on the event so cost reports can still show it.
+        cacheRead: output.tokensUsed?.cacheRead,
         toolCalls: output.toolCalls?.length ?? 0,
         turnId,
-      }, { actorId: agentId });
-      await this.deps.budget.consume(missionKey(goalId), "tokens", tokens, undefined, { agentId, turnId }, { actorId: agentId });
+      }, { actorId: agentId, correlationId: turnId });
+      await this.deps.budget.consume(missionKey(goalId), "tokens", tokens, undefined, { agentId, turnId }, { actorId: agentId, correlationId: turnId });
       if (reason.threadId) {
-        await this.deps.budget.consume(threadKey(goalId, reason.threadId), "tokens", tokens, undefined, { agentId, turnId }, { actorId: agentId });
+        // Pass the reservation id so the reducer releases the hold it created
+        // at the top of the turn; without it the reserve leaks forever.
+        await this.deps.budget.consume(threadKey(goalId, reason.threadId), "tokens", tokens, threadReservationId, { agentId, turnId }, { actorId: agentId, correlationId: turnId });
       }
+      // Both holds are now settled by `consume`; nothing left for `finally`.
+      openReservations.length = 0;
 
       // derive end state: escalate -> BLOCKED, outstanding request or wait -> WAITING, otherwise IDLE
-      const stillPending = [...this.state.pendingRequests.values()].some((pr) => pr.from === agentId);
+      // Scoped to the ACTIVE goal: asks left over from a previous mission
+      // (this mesh was restarted onto new goals several times) must not pin
+      // an agent in WAITING forever — the agent that emitted `done` with no
+      // active-goal debt is IDLE, full stop. The stale asks stay in the
+      // ledger for the record; they just no longer own the lifecycle.
+      const activeGoalForPending = goalId;
+      const stillPending = [...this.state.pendingRequests.values()].some(
+        (pr) => pr.from === agentId && (!pr.goalId || pr.goalId === activeGoalForPending),
+      );
+      // Final-answer contract: an agent that OWES an answer (inbound ask,
+      // e.g. a REQUEST_REVIEW to it) and produced none this turn must end
+      // WAITING, not IDLE. `stillOwes` reads the post-turn ledger, so any
+      // answering path (decision op, replyTo reply, thread/artifact
+      // discharge) flips it false and the agent falls back to IDLE — but a
+      // silent-read reviewer stays pinned, and the scheduler nudge/escalation
+      // chain keeps pointing at the debtor instead of the ask dying quietly.
+      // Live evidence: tech-lead read Architecture v1 and ended IDLE with
+      // zero decision ops while the review ask was still open — `architecture-
+      // approved` never fired and developer/qa stayed cold.
+      const stillOwedInbound =
+        agentId !== HUMAN_AGENT_ID &&
+        [...this.state.pendingRequests.values()].some(
+          (pr) => (!pr.goalId || pr.goalId === activeGoalForPending) && stillOwes(pr, agentId),
+        );
       let target: LifecycleState = "IDLE";
       if (turn.escalated) target = "BLOCKED";
-      else if (turn.waitRequested || stillPending) target = "WAITING";
-      await this.deps.kernel.emit("agent.state_changed", { agentId, from: "THINKING", to: target, turnId }, { actorId: agentId });
-      if (output.summary) {
-        await this.rememberMemory(agentId, `turn:${turnId}`, output.summary);
+      else if (turn.waitRequested || stillPending || stillOwedInbound) target = "WAITING";
+      await this.deps.kernel.emit(
+        "agent.state_changed",
+        { agentId, from: "THINKING", to: target, turnId },
+        { actorId: agentId, correlationId: turnId },
+      );
+      // A turn that changed nothing must say so out loud: previously zero-op
+      // and all-rejected turns finished "ok" with no signal, so the mission
+      // stalled silently while every agent looked done. The warning rides the
+      // summary into the dashboard AND the agent's own memory, so the next
+      // turn sees what failed instead of confabulating success.
+      const rejected = turn.results.filter((r) => !r.ok);
+      const modelSummary = output.summary?.slice(0, 500);
+      let endSummary = modelSummary;
+      /**
+       * Did this turn move the mesh at all? A turn that parsed no ops, or
+       * whose every op was rejected, spent real tokens and changed nothing.
+       * Repeating it changes nothing again — that is the pure waste loop.
+       */
+      let unproductive = false;
+      if (typedOnlyRefusal) {
+        endSummary = typedOnlyRefusal + (modelSummary ? ` (model said: ${modelSummary})` : "");
+        unproductive = true;
+      } else if (output.operations.length === 0) {
+        endSummary = `⚠ no mesh ops parsed from output — nothing was sent, published, or requested${modelSummary ? ` (model said: ${modelSummary})` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId} parsed 0 ops`);
+        unproductive = true;
+      } else if (rejected.length === turn.results.length && turn.results.length > 0) {
+        unproductive = true;
+        const why = rejected
+          .map((r) => `${r.op}: ${r.reason ?? "rejected"}`)
+          .join("; ")
+          .slice(0, 300);
+        endSummary = `⚠ all ${rejected.length} ops rejected (${why})${modelSummary ? ` — model said: ${modelSummary}` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId}: all ${rejected.length} ops rejected: ${why}`);
+      } else if (
+        // wait/done/remember are not work. A driver woken with nothing to act
+        // on answers with one of these, the mesh ends empty, and the stall
+        // watchdog then waits the full idle + cooldown for nothing. This arms
+        // the fast retry (NOT the breaker) so the NEXT driver gets tried soon.
+        turn.results.length > 0 &&
+        turn.results.every((r) => r.op === "wait" || r.op === "done" || r.op === "remember") &&
+        this.state.goals.get(goalId)?.status === "ACTIVE"
+      ) {
+        turnChangedNothing = true;
+        endSummary = `⚠ turn only ${[...new Set(turn.results.map((r) => r.op))].join("/")} — no work was produced while the mission has unmet criteria; the watchdog will rotate to another driver`;
+        this.auditLine(`turn ${turnId} for ${agentId} produced no work (${turn.results.map((r) => r.op).join(",")})`);
+      } else if (rejected.length > 0) {
+        // PARTIAL failure. Previously only an ALL-rejected turn told the agent
+        // anything, so a turn that published an artifact AND had its
+        // announcement rejected reported plain success. The agent then re-sent
+        // the same invalid message next turn, forever: one live run repeated an
+        // invalid message type 18 times because nothing ever contradicted it.
+        // The warning has to ride the summary into memory even when part of
+        // the turn worked, or the mesh cannot learn from a rejection.
+        const why = rejected
+          .map((r) => `${r.op}: ${r.reason ?? "rejected"}`)
+          .join("; ")
+          .slice(0, 300);
+        endSummary = `⚠ ${rejected.length} of ${turn.results.length} ops were REJECTED and had no effect — fix these before repeating them (${why})${modelSummary ? ` — model said: ${modelSummary}` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId}: ${rejected.length}/${turn.results.length} ops rejected: ${why}`);
       }
-      this.deps.hooks?.onAgentTurnEnd?.(agentId, turnId, true);
+      turnChangedNothing = turnChangedNothing || unproductive;
+      this.finishTurn(turnId, agentId, {
+        status: target === "IDLE" ? "ok" : target === "WAITING" ? "waiting" : "blocked",
+        tokens,
+        tokensInput: output.tokensUsed?.input,
+        tokensOutput: output.tokensUsed?.output,
+        model: output.model,
+        // Executed ops only (not merely planned): if the mission flipped
+        // mid-turn and the loop stopped early, the trace must not claim the
+        // skipped ops ran.
+        ops: turn.results.map((r) => r.op),
+        toolCalls: output.toolCalls?.length ?? 0,
+        toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TURN_TOOLCALLS),
+        summary: endSummary,
+        text: (output.text ?? "").slice(0, MAX_TURN_TEXT_CHARS),
+      });
+      if (endSummary) {
+        await this.rememberMemory(agentId, `turn:${turnId}`, endSummary);
+      }
+      // Fully successful turn: past failures no longer predict the next one.
+      this.restartAttempts.delete(agentId);
+      // An unproductive turn must reach the circuit breaker. Reporting "ok"
+      // for a turn that parsed zero ops (or had all of them rejected) meant
+      // STRIKE_LIMIT could never be reached by the single most common failure
+      // mode: a model that answers in prose instead of the ops contract, or
+      // one that keeps retrying an op the policy will always deny. Each such
+      // turn costs full tokens and changes nothing, and the agent was
+      // immediately re-activated to do it again. Three in a row now park it
+      // for the cooldown instead of burning the mission budget in a loop.
+      this.deps.scheduler.noteTurnOutcome?.(agentId, unproductive ? "blocked" : "ok");
+      this.deps.hooks?.onAgentTurnEnd?.(agentId, turnId, !unproductive);
     } catch (err) {
       this.deps.hooks?.onAgentTurnEnd?.(agentId, turnId, false);
+      // Which leg was open when it died. The phase marks already record how
+      // far the turn got, so the crash can be attributed without guessing.
+      const ph = this.turns.get(turnId)?.phases;
+      const failedIn: "prep" | "llmCallAt" | "opsStartAt" | "opsDoneAt" =
+        ph?.opsDoneAt ? "opsDoneAt" : ph?.opsStartAt ? "opsStartAt" : ph?.llmCallAt ? "llmCallAt" : "prep";
       if (err instanceof KernelRejectedError) {
         this.auditLine(`kernel rejection during turn ${turnId} for ${agentId}: ${err.message}`);
         await this.deps.kernel
-          .emit("agent.state_changed", { agentId, to: "IDLE", note: `kernel rejected: ${err.message}` }, { actorId: agentId })
+          .emit("agent.state_changed", { agentId, to: "IDLE", note: `kernel rejected: ${err.message}`, turnId }, { actorId: agentId, correlationId: turnId })
           .catch(() => undefined);
+        this.finishTurn(turnId, agentId, { status: "ok", error: (err as Error).message, errorDetail: describeError(err, failedIn) });
+        this.deps.scheduler.noteTurnOutcome?.(agentId, "ok");
       } else {
-        await this.handleAgentFailure(agentId, (err as Error).message, reason);
+        this.finishTurn(turnId, agentId, {
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+          errorDetail: describeError(err, failedIn),
+        });
+        await this.handleAgentFailure(agentId, err, reason);
       }
     } finally {
+      // Give back any hold the turn never settled (it threw before consume).
+      for (const { key, reservationId } of openReservations) {
+        await this.deps.budget.release(key, reservationId, { actorId: agentId, goalId }).catch(() => undefined);
+      }
       this.turnInFlight.delete(agentId);
+      this.activeTurnByAgent.delete(agentId);
+      this.lastTurnAt = Date.now();
       this.deps.scheduler.notifyTurnFinished(agentId);
       void this.afterActivity();
+      // A turn that changed nothing must not restart the stall clock for the
+      // full idle + cooldown: the mission is quiet, nothing is queued, and the
+      // next driver should be tried in seconds, not minutes. The breaker still
+      // parks a chronic no-op agent after 3 strikes, and `checkStall` still
+      // skips when anything is pending/running — so this cannot hot-loop.
+      if (turnChangedNothing && this.liveMode) {
+        this.stallNoopRetryAt = Date.now() + this.config.scheduling.stallNoopRetryMs;
+        if (this.stallNoopTimer) clearTimeout(this.stallNoopTimer);
+        const t = setTimeout(() => {
+          this.stallNoopTimer = undefined;
+          void this.checkStall().catch((err) => this.auditLine(`stall watch error: ${(err as Error).message}`));
+        }, this.config.scheduling.stallNoopRetryMs);
+        (t as unknown as { unref?: () => void }).unref?.();
+        this.stallNoopTimer = t;
+      }
     }
   }
 
@@ -1297,31 +2317,159 @@ export class Supervisor {
         tokens: output.tokensUsed,
       }),
     );
+    // Realtime mirror: keep the in-memory turn trace fresh even before the turn ends.
+    this.pushTurn({
+      turnId,
+      agentId,
+      reason: input.activation,
+      startedAt: this.getTurn(turnId)?.startedAt ?? new Date().toISOString(),
+      status: "running",
+      model: output.model,
+      ops: output.operations.map((o) => o.op),
+      toolCalls: output.toolCalls?.length ?? 0,
+      toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TURN_TOOLCALLS),
+      tokens: output.tokensUsed?.total ?? 0,
+      tokensInput: output.tokensUsed?.input,
+      tokensOutput: output.tokensUsed?.output,
+      summary: output.summary?.slice(0, 500),
+      text: (output.text ?? "").slice(0, MAX_TURN_TEXT_CHARS),
+      instructions: input.instructions?.slice(0, MAX_TURN_INSTRUCTIONS_CHARS),
+    });
   }
 
-  private async handleAgentFailure(agentId: string, error: string, reason: ActivationReason): Promise<void> {
+  private async handleAgentFailure(agentId: string, error: unknown, reason: ActivationReason): Promise<void> {
+    // Classify first: a dead backend needs a respawn + a labeled record, not
+    // the generic crash path. Adapters throw BackendUnreachableError; the
+    // pattern fallback covers runtimes that surface raw transport errors.
+    const backend = error instanceof BackendUnreachableError ? error.backend : undefined;
+    // A slow backend is not a dead one. These are two different faults with two
+    // different budgets: a crashed process must stop after 3 respawns, but a
+    // model that thinks for a long time should be allowed to keep thinking.
+    // Conflating them is what suspended healthy agents — a 300s fetch cap fired
+    // mid-thought, looked like a transport error, and burned the restart budget
+    // three times over.
+    const slow = isTimeoutError(error);
+    const unreachable = !slow && isConnectionError(error);
+    const short = error instanceof Error ? error.message : String(error ?? "unknown failure");
+    const labeled = backend ?? (unreachable ? `backend unreachable for ${agentId}: ${short}` : short);
     await this.deps.kernel
-      .emit("agent.failed", { agentId, error, sessionId: null, restartable: this.config.agents[agentId]?.sessionPolicy.persistent ?? false }, { actorId: agentId })
+      .emit("agent.failed", { agentId, error: labeled, sessionId: null, restartable: this.config.agents[agentId]?.sessionPolicy.persistent ?? false }, { actorId: agentId })
       .catch(() => undefined);
     this.sessions.delete(agentId);
+    const persistent = this.config.agents[agentId]?.sessionPolicy.persistent ?? false;
+    if (slow) {
+      // Keep the crash counter untouched, and reset any unreachable streak: the
+      // backend demonstrably accepted our connection.
+      this.unreachableStreak.delete(agentId);
+      const slowAttempts = (this.timeoutRetries.get(agentId) ?? 0) + 1;
+      this.timeoutRetries.set(agentId, slowAttempts);
+      if (persistent && slowAttempts <= MAX_TIMEOUT_RETRIES) {
+        await this.deps.kernel.emit("agent.restarted", { agentId, attempt: slowAttempts }, { actorId: HUMAN_AGENT_ID });
+        if (this.state.agents.get(agentId)) {
+          await this.deps.kernel.emit("agent.state_changed", { agentId, to: "IDLE" }, { actorId: HUMAN_AGENT_ID });
+        }
+        // Back off so a genuinely wedged backend is not hammered, but do not
+        // give up: the work is still valid, the model was simply not done.
+        const delay = Math.min(30000, 1000 * 2 ** (slowAttempts - 1));
+        setTimeout(() => {
+          void this.activateAgent(agentId, { kind: "recovery", note: `retry after slow turn: ${short}`, eventId: reason.eventId }).catch(() => undefined);
+        }, delay);
+        return;
+      }
+    }
     const attempts = (this.restartAttempts.get(agentId) ?? 0) + 1;
     this.restartAttempts.set(agentId, attempts);
-    if (attempts <= 3 && this.config.agents[agentId]?.sessionPolicy.persistent) {
+    if (unreachable) {
+      this.unreachableStreak.set(agentId, (this.unreachableStreak.get(agentId) ?? 0) + 1);
+    }
+    const willRestart = attempts <= 3 && persistent;
+    if (willRestart) {
       await this.deps.kernel.emit("agent.restarted", { agentId, attempt: attempts }, { actorId: HUMAN_AGENT_ID });
       const rec = this.state.agents.get(agentId);
       if (rec) {
         // FAILED -> STARTING handled by reducer via agent.restarted; then idle
         await this.deps.kernel.emit("agent.state_changed", { agentId, to: "IDLE" }, { actorId: HUMAN_AGENT_ID });
       }
+      // A restart is scheduled — this failure is recoverable, so it must NOT
+      // escalate: the old code escalated `runtime_failure` on the FIRST
+      // failure even with a restart 20ms away, and the resulting open card
+      // fed the stalemate verdict, flipped the goal ESCALATED, and froze
+      // every agent (including the restart itself). One flaky turn killed
+      // the whole mission behind an operator card nobody needed to answer.
       setTimeout(() => {
-        void this.activateAgent(agentId, { kind: "recovery", note: `restart after failure: ${error}`, eventId: reason.eventId }).catch(() => undefined);
+        void this.activateAgent(agentId, { kind: "recovery", note: `restart after failure: ${labeled}`, eventId: reason.eventId }).catch(() => undefined);
       }, 20);
     } else {
       const activeTask = this.state.agents.get(agentId)?.state.activeTaskId;
       if (activeTask) {
         await this.deps.kernel.emit("task.claimed", { taskId: activeTask, agentId: null }, { actorId: HUMAN_AGENT_ID });
       }
-      await this.escalate({ reason: "runtime_failure", raisedBy: "recovery-manager", detail: { agentId, error, attempts } });
+      // Terminal failure: this agent will never answer what it owes. Every
+      // ask addressed to it is now a question to a corpse — leave them open
+      // and each asker waits, nudges 3x, and escalates a stalemate that
+      // freezes the goal. Close them HERE with notice, so askers re-plan
+      // immediately (re-ask someone else, discharge their own wait) instead
+      // of stalling the whole mission behind a dead debtor.
+      for (const [pid, pr] of [...this.state.pendingRequests]) {
+        if (!stillOwes(pr, agentId)) continue;
+        const askerStillThere = pr.from !== HUMAN_AGENT_ID && this.state.agents.has(pr.from);
+        await this.dischargeCommitment(pid, "operator", "recovery-manager", {
+          action: "debtor_failed",
+          debtor: agentId,
+          error: short,
+        });
+        if (askerStillThere) {
+          await this.sendMessage({
+            from: HUMAN_AGENT_ID,
+            to: [pr.from],
+            type: "INFORM",
+            threadId: this.state.threads.has(pr.threadId) ? pr.threadId : undefined,
+            newThread: this.state.threads.has(pr.threadId) ? undefined : { subject: `request ${pid} cannot be answered` },
+            payload: {
+              declined: true,
+              request: pid,
+              reason: `${agentId} failed terminally (${short}) and will not answer — re-plan: ask someone else, do the work yourself, or discharge your own wait`,
+            },
+            priority: "HIGH",
+          }).catch(() => undefined);
+        }
+      }
+      // Park the corpse: FAILED -> SUSPENDED is a legal transition and means
+      // "never schedule me again". Without this the agent sits in FAILED with
+      // the termination manager's runtime_failure verdict one watchdog tick
+      // away — even though every ask it owed was just discharged with notice
+      // and the mission can proceed without it. lastError is retained for
+      // the audit trail; the escalation card below records the full detail.
+      await this.deps.kernel
+        .emit("agent.state_changed", { agentId, to: "SUSPENDED", note: `terminal failure: ${short}` }, { actorId: HUMAN_AGENT_ID })
+        .catch(() => undefined);
+      // Terminal failure (no restart scheduled): count toward the scheduler
+      // circuit breaker. Restart-scheduled failures are excluded — that loop
+      // is attempt-counted (max 3) and timer-paced, so it cannot wedge.
+      this.deps.scheduler.noteTurnOutcome?.(agentId, "failed");
+      if (unreachable) {
+        const streak = this.unreachableStreak.get(agentId) ?? attempts;
+        await this.escalate({
+          reason: "backend_unreachable",
+          raisedBy: "recovery-manager",
+          conflictKey: `backend:${agentId}`,
+          // Advisory: the debtor's asks were already discharged with notice
+          // above, so the mission can proceed without this agent. The card
+          // informs the operator; it must not freeze the goal behind a
+          // problem nobody needs to answer urgently.
+          advisory: true,
+          detail: {
+            agentId,
+            backend: backend ?? "unknown — check the agent's runtime (opencode server port, http baseUrl)",
+            error: short,
+            consecutiveFailures: streak,
+            attempts,
+            hint: "verify the backend process is alive (ps), check for OOM (dmesg), or restart it; then wake the agent for a fresh turn",
+          },
+        });
+      } else {
+        await this.escalate({ reason: "runtime_failure", raisedBy: "recovery-manager", conflictKey: `runtime:${agentId}`, advisory: true, detail: { agentId, error: short, attempts } });
+      }
     }
   }
 
@@ -1384,6 +2532,25 @@ export class Supervisor {
   async executeOp(actorId: string, op: MeshOp, turn: TurnState): Promise<OpResult> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, op: op.op, reason: "no active goal" };
+    // Freeze mutating agent ops while the mission is halted. Without this,
+    // the `goal-state` message gate only half-freezes: sends are rejected
+    // while publishes/transitions/task completions still land — plus the MCP
+    // bus reaches here directly, bypassing `runTurn`'s entry guard entirely.
+    // Turn-enders, reads, and raising the alarm stay allowed; the human seat
+    // bypasses everything.
+    if (actorId !== HUMAN_AGENT_ID) {
+      const halted = haltedGoalStatus(this.state);
+      if (halted) {
+        // A follow-up turn on a COMPLETED goal replies via `send`; every
+        // other op and every halted state stays read-only.
+        const followUpTurn = turn.reason.kind === "message" || turn.reason.kind === "manual" || turn.reason.kind === "recovery";
+        if (!(halted === "COMPLETED" && followUpTurn && op.op === "send")) {
+          const terminal = halted === "COMPLETED" || halted === "FAILED";
+          const allowed = terminal ? MISSION_OVER_ALLOW_OPS : MISSION_HALTED_ALLOW_OPS;
+          if (!allowed.has(op.op)) return { ok: false, op: op.op, reason: haltReasonText(halted) };
+        }
+      }
+    }
     try {
       switch (op.op) {
         case "send": {
@@ -1451,6 +2618,36 @@ export class Supervisor {
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
         }
+        case "discharge": {
+          const pending = this.state.pendingRequests.get(op.messageId);
+          if (!pending) return { ok: false, op: op.op, reason: `no outstanding request '${op.messageId}' (already answered, or never existed)` };
+          if (!stillOwes(pending, actorId) && actorId !== HUMAN_AGENT_ID) {
+            // Only a debtor who STILL owes may close its own debt; otherwise
+            // any agent could silence a question asked of someone else, and an
+            // agent that already answered could close the debts of the
+            // reviewers who have not.
+            return {
+              ok: false,
+              op: op.op,
+              reason: `only ${outstandingDebtors(pending).join(", ")} may discharge this request`,
+            };
+          }
+          // Tell the asker before closing: a silently-closed ask leaves it
+          // waiting on an answer that will now never come.
+          const notice = await this.sendMessage({
+            from: actorId,
+            to: [pending.from],
+            type: "INFORM",
+            threadId: this.state.threads.has(pending.threadId) ? pending.threadId : undefined,
+            newThread: this.state.threads.has(pending.threadId) ? undefined : { subject: `cannot answer ${op.messageId}` },
+            replyTo: this.state.messages.has(op.messageId) ? op.messageId : undefined,
+            payload: { declined: true, request: op.messageId, reason: op.reason },
+            priority: "HIGH",
+          });
+          await this.dischargeCommitment(op.messageId, "reply", actorId, { declined: true, reason: op.reason });
+          turn.sentOps++;
+          return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
+        }
         case "publish_artifact": {
           const res = await this.createArtifact({
             actorId,
@@ -1464,6 +2661,7 @@ export class Supervisor {
           });
           if ("error" in res) return { ok: false, op: op.op, reason: res.error };
           turn.publishedOps++;
+          (turn.publishedIds ?? (turn.publishedIds = [])).push(res.artifact.id);
           return { ok: true, op: op.op, artifactId: res.artifact.id, artifactUri: res.uri, artifact: res.artifact };
         }
         case "read_artifact": {
@@ -1479,8 +2677,14 @@ export class Supervisor {
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "request_review": {
-          const a = this.state.artifacts.get(op.artifactId);
-          if (!a) return { ok: false, op: op.op, reason: "unknown artifact" };
+          let targetId = this.resolveArtifactRef(op.artifactId, op.artifactUri);
+          if (!targetId && turn.publishedIds && turn.publishedIds.length > 0) {
+            // Same-turn publish → review: the model's URI guess didn't resolve,
+            // but it just published something — reviewing that is the intent.
+            targetId = turn.publishedIds[turn.publishedIds.length - 1];
+          }
+          const a = targetId ? this.state.artifacts.get(targetId) : undefined;
+          if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"}` };
           const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
           const cap = this.capabilityForReview(a);
           if (cap) {
@@ -1749,6 +2953,7 @@ export class Supervisor {
       newThread: { subject: `worker result ${info.taskId}` },
       artifactRefs: ref ? [ref] : [],
       payload: result,
+      taskId: info.taskId,
     });
     await this.deps.kernel.emit("agent.completed", { agentId: workerId }, { actorId: HUMAN_AGENT_ID });
     const sess = this.sessions.get(workerId);
@@ -1946,6 +3151,13 @@ export class Supervisor {
       const found = this.findArtifactByUri(uri);
       if (found) return found.id;
     }
+    // LLMs address artifacts by display name (or a bare-name slug), not just
+    // id / artifact:// URI. Resolve those too so name-based ops don't fail
+    // with "unknown artifact <name>" while the artifact clearly exists.
+    if (explicit) {
+      const found = this.findArtifactByUri(explicit);
+      if (found) return found.id;
+    }
     return explicit;
   }
 
@@ -1970,10 +3182,53 @@ export class Supervisor {
   // ------------------------------------------------------ post-activity checks
 
   private async afterActivity(): Promise<void> {
-    this.watchdogChain = this.watchdogChain.then(() => this.watchdog()).catch((err) => {
-      this.auditLine(`watchdog error: ${err.stack ?? err.message}`);
-    });
+    this.scheduleWatchdog(true);
     await this.watchdogChain;
+  }
+
+  /**
+   * Run a watchdog scan now and await it. The periodic path is time-throttled
+   * (burst collapsing), which makes it useless to assert against; tests and
+   * operator tooling need a deterministic "reconcile and settle" trigger.
+   */
+  async forceWatchdog(): Promise<void> {
+    this.watchdogLastRun = 0;
+    this.scheduleWatchdog(true);
+    await this.watchdogChain;
+  }
+
+  /**
+   * High-volume bookkeeping that never directly flips a termination verdict —
+   * verdicts read budgets/escalations/tasks/criteria, which these events only
+   * approach asymptotically. Collapsing them is where the throttle wins;
+   * everything semantic (evidence, failures, overruns, task/goal changes)
+   * still scans immediately.
+   */
+  private scheduleWatchdog(immediate: boolean): void {
+    // Burst collapsing OUTSIDE the chain: N events/sec become one scan now +
+    // one trailing scan ~1s later. (Sleeping inside the chain would serialize
+    // the delays and stall shutdown/teardown behind seconds of naps.)
+    const elapsed = Date.now() - this.watchdogLastRun;
+    if (immediate || elapsed >= 1000) {
+      this.watchdogLastRun = Date.now();
+      this.watchdogChain = this.watchdogChain
+        .then(() => this.watchdog())
+        .catch((err) => {
+          this.auditLine(`watchdog error: ${err.stack ?? err.message}`);
+        });
+    } else if (!this.watchdogTrailing) {
+      this.watchdogTrailing = true;
+      const t = setTimeout(() => {
+        this.watchdogTrailing = false;
+        this.watchdogLastRun = Date.now();
+        this.watchdogChain = this.watchdogChain
+          .then(() => this.watchdog())
+          .catch((err) => {
+            this.auditLine(`watchdog error: ${err.stack ?? err.message}`);
+          });
+      }, 1000 - elapsed);
+      (t as unknown as { unref?: () => void }).unref?.();
+    }
   }
 
   private async watchdog(): Promise<void> {
@@ -1981,8 +3236,16 @@ export class Supervisor {
     const findings = this.detector.scan(this.state);
     for (const f of findings) {
       this.detector.markReported(f);
+      // A circular wait is the one deadlock the runtime can resolve by
+      // itself, so try that before spending the operator's attention.
+      if (f.kind === "wait_cycle" && (await this.breakWaitCycle(f))) continue;
       await this.onDeadlock(f);
     }
+    // Retire stale derived cards BEFORE evaluating termination: a summary
+    // whose supports have all closed is a description of a world that no
+    // longer exists, and leaving it open would (a) re-trigger the stalemate
+    // verdict below and (b) strand the mission behind an unanswerable card.
+    await this.reconcileDerivedEscalations();
     const verdict = this.termination.evaluate({
       state: this.state,
       config: this.config,
@@ -1996,10 +3259,122 @@ export class Supervisor {
       await this.deps.kernel.emit("goal.completed", { goalId, reason: verdict.reason, evidence: verdict.evidenceSummary }, { actorId: HUMAN_AGENT_ID });
       await this.completeMission();
     } else if (verdict.kind === "escalate" && goal.status !== "ESCALATED") {
-      await this.escalate({ reason: verdict.reason, raisedBy: "termination-manager", detail: verdict.detail });
+      await this.escalate({
+        reason: verdict.reason,
+        raisedBy: "termination-manager",
+        detail: verdict.detail,
+        supports: verdict.supports,
+      });
       await this.deps.kernel.emit("goal.escalated", { goalId, reason: verdict.reason, detail: verdict.detail }, { actorId: HUMAN_AGENT_ID });
     } else if (verdict.kind === "fail" && goal.status !== "FAILED") {
       await this.deps.kernel.emit("goal.failed", { goalId, reason: verdict.reason }, { actorId: HUMAN_AGENT_ID });
+    }
+  }
+
+  /**
+   * Enforce the derived-escalation invariant:
+   *
+   *   a derived card is OPEN  <=>  at least one supporting primary is OPEN
+   *
+   * This runs on every watchdog tick, which is the whole point. Previously
+   * reconciliation only happened inside `respondEscalation`, so it covered
+   * exactly one of the many ways a stuck request can resolve — the operator
+   * answering the underlying card. Every other path (a natural reply landing
+   * via `replyTo`, a new artifact version retiring the review, the task being
+   * completed, the request being dropped) silently cleared the primary and
+   * left the summary OPEN forever, parking the mission on a card whose
+   * underlying question had already been answered.
+   *
+   * Retiring emits `escalation.auto_resolved`, not `escalation.responded`:
+   * the runtime is stating a fact, not forging an operator decision.
+   */
+  private async reconcileDerivedEscalations(): Promise<void> {
+    let retired = 0;
+    // Phase 1 — stale primaries. A `stuck:*` card asks "nobody answered this
+    // request". `pendingRequests` is cleared by EIGHT different paths (an
+    // explicit replyTo, a same-thread answer, a task completion, a matching
+    // artifact ref, a new artifact version, TEST_RESULT, operator answer,
+    // operator drop) and NONE of them closed the escalation. So a request that
+    // resolved on its own left a card demanding an operator answer to a
+    // question the mesh had already answered — the mission's most common way
+    // to deadlock itself. The pending entry is the question; if it is gone,
+    // the card has no question left to ask.
+    for (const esc of [...this.state.escalations.values()]) {
+      if (esc.status !== "OPEN" || isDerivedEscalation(esc)) continue;
+      const stuck = stuckRequestOf(esc);
+      if (!stuck || this.state.pendingRequests.has(stuck.messageId)) continue;
+      // "Gone" is not "answered". Ledger-capacity eviction and deadlock-break
+      // voiding both remove the pending entry WITHOUT anyone answering it, so
+      // retiring the card on absence alone would write a false statement into
+      // the audit log — the one thing this runtime sells. Those cards stay
+      // OPEN for the operator; only genuine resolutions retire.
+      const how = [...this.state.discharged].reverse().find((d) => d.messageId === stuck.messageId);
+      if (how && UNANSWERED_DISCHARGE_REASONS.has(how.reason)) continue;
+      this.deps.scheduler.resetStallTracking?.(stuck.messageId, stuck.agentId);
+      await this.deps.kernel.emit(
+        "escalation.auto_resolved",
+        {
+          escalationId: esc.id,
+          reason: how
+            ? `auto-resolved: the request was discharged (${how.reason})`
+            : "auto-resolved: the request was answered or withdrawn",
+          requestMessageId: stuck.messageId,
+          dischargeReason: how?.reason,
+        },
+        { actorId: "termination-manager", goalId: esc.goalId },
+      );
+      retired++;
+    }
+    // Phase 2 — derived summaries left without an open support.
+    for (const esc of [...this.state.escalations.values()]) {
+      if (esc.status !== "OPEN" || !isDerivedEscalation(esc)) continue;
+      const supports = supportsOf(esc);
+      const live = supports.filter((id) => this.state.escalations.get(id)?.status === "OPEN");
+      if (live.length > 0) continue;
+      await this.deps.kernel.emit(
+        "escalation.auto_resolved",
+        {
+          escalationId: esc.id,
+          reason:
+            supports.length === 0
+              ? "auto-resolved: summary had no supporting escalations"
+              : `auto-resolved: all ${supports.length} underlying escalation(s) resolved`,
+          supports,
+        },
+        { actorId: "termination-manager", goalId: esc.goalId },
+      );
+      retired++;
+    }
+    // Only un-park as a CONSEQUENCE of having retired something. A mission can
+    // legitimately sit ESCALATED with no escalation record at all (an operator
+    // freeze, a `goal.escalated` emitted directly), and auto-resuming that
+    // would silently undo a deliberate halt. Resuming only when this sweep
+    // actually closed a card keeps the rule narrow: we undo exactly the parks
+    // that our own now-answered cards caused.
+    if (retired > 0 && this.state.activeGoalId) await this.resumeIfNothingPending(this.state.activeGoalId);
+  }
+
+  /**
+   * Flip an ESCALATED goal back to ACTIVE once no OPEN escalation remains.
+   * Safe to call repeatedly; a no-op when the operator still owes a decision.
+   */
+  /**
+   * Flip an ESCALATED goal back to ACTIVE once no ACTIONABLE escalation
+   * remains. Advisory cards don't block: they need no urgent answer.
+   * Safe to call repeatedly; a no-op when the operator still owes a decision.
+   */
+  private async resumeIfNothingPending(goalId: string): Promise<void> {
+    const goal = this.state.goals.get(goalId);
+    if (!goal || goal.status !== "ESCALATED") return;
+    const stillOpen = [...this.state.escalations.values()].some((e) => e.status === "OPEN" && e.goalId === goalId && !e.advisory);
+    if (stillOpen) return;
+    await this.deps.kernel.emit(
+      "goal.status_changed",
+      { goalId, status: "ACTIVE", reason: "all escalations resolved" },
+      { actorId: "termination-manager" },
+    );
+    for (const c of this.recoveryCandidates()) {
+      await this.activateAgent(c, { kind: "recovery", note: "escalations cleared" }).catch(() => undefined);
     }
   }
 
@@ -2011,8 +3386,83 @@ export class Supervisor {
       threadId: finding.threadId,
       artifactId: finding.artifactId,
       participants: finding.participants,
-      detail: { description: finding.description },
+      // Participants and the open asks ride on the card: a circular-wait
+      // escalation is only actionable if the operator can see WHO is stuck on
+      // WHAT without going spelunking in the event log.
+      detail: {
+        description: finding.description,
+        participants: finding.participants,
+        ...(finding.kind === "wait_cycle" ? { blockedRequests: this.openRequestsAmong(finding.participants) } : {}),
+      },
     });
+  }
+
+  /**
+   * Resolve a circular wait without the operator.
+   *
+   * Escalating a deadlock freezes the WHOLE mission (the goal flips
+   * ESCALATED, and `evaluateActivation` then denies every agent), so two
+   * agents stuck on each other stop five uninvolved ones and wait on a human.
+   * But a cycle is exactly the case the runtime can settle on its own: the
+   * asks are mutually blocking, so *any* one of them being withdrawn frees
+   * the whole ring.
+   *
+   * Policy: void the NEWEST ask in the cycle. It is the one that closed the
+   * ring, its asker has done the least work waiting on it, and dropping it
+   * preserves the older (usually more load-bearing) request. The asker is
+   * woken with an explicit note so it re-plans instead of silently re-asking
+   * the same question — a silent drop would just rebuild the cycle.
+   *
+   * Everything is recorded (`deadlock.auto_resolved` + a woken agent), so an
+   * operator reviewing the log sees exactly what the runtime decided and why.
+   * Returns false when nothing could be voided, in which case the caller
+   * falls through to the normal escalation path.
+   */
+  private async breakWaitCycle(finding: DeadlockFinding): Promise<boolean> {
+    const members = new Set(finding.participants);
+    const inCycle = [...this.state.pendingRequests.values()]
+      .filter((pr) => members.has(pr.from) && outstandingDebtors(pr).some((t) => members.has(t)))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const victim = inCycle[0];
+    if (!victim) return false;
+    await this.dischargeCommitment(victim.messageId, "deadlock_break", "deadlock-detector", {
+      conflictKey: finding.conflictKey,
+      participants: finding.participants,
+    });
+    await this.deps.kernel
+      .emit(
+        "deadlock.auto_resolved",
+        {
+          kind: finding.kind,
+          conflictKey: finding.conflictKey,
+          participants: finding.participants,
+          voidedRequestId: victim.messageId,
+          voidedBy: victim.from,
+          voidedTo: victim.to,
+          reason: finding.description,
+          note: "newest request in the cycle was voided so the ring could progress",
+        },
+        { actorId: "deadlock-detector", goalId: this.state.activeGoalId ?? undefined },
+      )
+      .catch(() => undefined);
+    this.deps.scheduler.resetStallTracking?.(victim.messageId, victim.from);
+    if (this.state.agents.has(victim.from)) {
+      await this.activateAgent(victim.from, {
+        kind: "recovery",
+        note: `circular wait detected (${finding.participants.join(" -> ")}); your request ${victim.messageId} was voided so the deadlock could break — proceed on your own best judgement or ask someone outside the cycle`,
+      }).catch(() => undefined);
+    }
+    this.auditLine(`wait cycle ${finding.conflictKey} broken by voiding ${victim.messageId} from ${victim.from}`);
+    return true;
+  }
+
+  /** The open asks that form a wait cycle, for the escalation card. */
+  private openRequestsAmong(participants: string[]): Array<{ messageId: string; from: string; to: string[]; type: string; since: string }> {
+    const members = new Set(participants);
+    return [...this.state.pendingRequests.values()]
+      .filter((pr) => members.has(pr.from) && outstandingDebtors(pr).some((t) => members.has(t)))
+      .slice(0, 20)
+      .map((pr) => ({ messageId: pr.messageId, from: pr.from, to: outstandingDebtors(pr), type: pr.type, since: pr.createdAt }));
   }
 
   private async completeMission(): Promise<void> {
@@ -2033,8 +3483,243 @@ export class Supervisor {
     for (const cb of this.idleCallbacks) cb();
   }
 
+  private startStallWatch(): void {
+    this.stopStallWatch();
+    const t = setInterval(() => {
+      void this.checkStall().catch((err) => this.auditLine(`stall watch error: ${(err as Error).message}`));
+    }, Math.min(30_000, Math.max(100, Math.floor(this.config.scheduling.stallIdleMs / 3))));
+    (t as unknown as { unref?: () => void }).unref?.();
+    this.stallTimer = t;
+  }
+
+  private stopStallWatch(): void {
+    if (this.stallTimer) {
+      clearInterval(this.stallTimer);
+      this.stallTimer = undefined;
+    }
+    if (this.stallNoopTimer) {
+      clearTimeout(this.stallNoopTimer);
+      this.stallNoopTimer = undefined;
+    }
+    this.stallNoopRetryAt = 0;
+  }
+
+  /**
+   * Nudge a quiet-but-unfinished mission: ACTIVE goal, empty scheduler, no
+   * turn running, and nothing finished for STALL_IDLE_MS.
+   *
+   * Driver choice matters. This used to wake `startupActivate[0]` and nothing
+   * else, so a mesh whose single startup agent was parked by the circuit
+   * breaker (or whose turns kept parsing zero ops) had NO path back: the one
+   * agent it ever nudged was the one that could not run, and the mission sat
+   * idle forever. Now it prefers an agent that actually has work — unread
+   * mail or an active task — then falls back to startup order, and skips
+   * parked agents entirely.
+   */
+  private async checkStall(): Promise<void> {
+    if (this.stopping || !this.liveMode) return;
+    const goalId = this.state.activeGoalId;
+    const goal = goalId ? this.state.goals.get(goalId) : undefined;
+    if (!goal || goal.status !== "ACTIVE") return;
+    if (this.deps.scheduler.pending() !== 0 || this.deps.scheduler.running() !== 0) return;
+    const now = Date.now();
+    if (this.turnInFlight.size !== 0) {
+      // A streamed-then-silent turn is the watchdog's blind spot: the old bail
+      // here left a post-stream freeze holding the message pending until the
+      // turn timeout. Streaming turns get interrupted below; the mission-quiet
+      // gates that follow only make sense when nothing is in flight.
+      this.interruptSilentTurns(now);
+      return;
+    }
+    // A no-op turn arms a fast retry: the idle and cooldown gates both apply
+    // to work-producing turns (their async ripple may still be landing), but
+    // a turn that changed nothing deserves the next driver in seconds. Guarded
+    // on `> 0` so a consumed/disarmed retry cannot re-fire on the next tick.
+    const noopFastRetry = this.stallNoopRetryAt > 0 && now >= this.stallNoopRetryAt;
+    if (!noopFastRetry) {
+      if (now - this.lastTurnAt < this.config.scheduling.stallIdleMs) return;
+      if (now - this.lastStallNudgeAt < this.config.scheduling.stallCooldownMs) return;
+    }
+    // QUIESCENCE GATE. Waking an agent costs a full context window, so the
+    // decision to wake one must be made from mesh state — for free — BEFORE
+    // the model is called. A mission whose every criterion is evidenced, whose
+    // mailboxes are empty and whose escalations are closed has, by definition,
+    // nothing for a driver to do: nudging it buys a `done` op at 5-88k tokens.
+    const actionable = this.wakeValue();
+    if (!actionable.worth) {
+      // Say it once, then stay silent: an audit line per tick is its own spam.
+      if (!this.quiesced) {
+        this.quiesced = true;
+        this.auditLine(`stall watch: mission quiet and nothing actionable (${actionable.why}) — resting the watchdog until real work arrives`);
+      }
+      return;
+    }
+    // NOTE: no nudge cap on this path. Here the mission demonstrably still has
+    // work (unmet criteria, mail, escalations, claimed tasks), and a watchdog
+    // that gave up on a genuinely stuck mission would be a deadlock, not a
+    // saving. Chronic no-op agents are already handled where they should be:
+    // the circuit breaker parks them and `stallDriver` skips parked agents.
+    const driver = this.stallDriver();
+    if (!driver) return;
+    const res = await this.activateAgent(driver, { kind: "timer", note: this.stallWakeNote() });
+    if (!res.queued) {
+      // A refused fast retry must not pin the mission to the cooldown either:
+      // let the next tick try another driver. The activation itself (breaker,
+      // policy) is the real limiter.
+      if (noopFastRetry) this.stallNoopRetryAt = Date.now() + this.config.scheduling.stallNoopRetryMs;
+      // Activation refused (policy DENY/DEFER, busy, parked): nothing was
+      // scheduled, so burning the 5-minute cooldown here would leave the
+      // mission idle until it lapses. Retry next tick instead — and say so,
+      // so the audit trail shows a mesh that cannot schedule rather than one
+      // that is merely quiet.
+      this.auditLine(`stall watch: mission quiet but driver ${driver} refused (${res.blocked ?? "unknown"}) — retrying next tick, cooldown not consumed`);
+      return;
+    }
+    this.lastStallNudgeAt = now;
+    if (this.stallNoopTimer) {
+      clearTimeout(this.stallNoopTimer);
+      this.stallNoopTimer = undefined;
+    }
+    this.stallNoopRetryAt = 0;
+    this.auditLine(`stall watch: mission quiet for ${Math.round((now - this.lastTurnAt) / 1000)}s, nudging ${driver}`);
+  }
+
+  /**
+   * Interrupt a turn that streamed tokens and then went silent. Only turns
+   * past the first token qualify: pre-token thinking and long internal tool
+   * runs never reach onToken, so they must be left alone. The interrupt makes
+   * the pending send() reject (isTimeoutError → slow), and runTurn's own
+   * catch already does the finish/retry bookkeeping; the forced settle below
+   * is only for runtimes whose interrupt is a no-op (stub), whose send()
+   * would otherwise hang forever. Guarded per turn so neither path double-
+   * fires.
+   */
+  private interruptSilentTurns(now: number): void {
+    const silenceMs = this.config.scheduling.turnSilenceMs;
+    for (const agentId of this.turnInFlight) {
+      const turnId = this.activeTurnByAgent.get(agentId);
+      const session = this.sessions.get(agentId);
+      const phases = turnId ? this.turns.get(turnId)?.phases : undefined;
+      const lastTokenAt = phases?.firstTokenAt === undefined ? undefined : (phases.lastTokenAt ?? phases.firstTokenAt);
+      if (!turnId || !session || lastTokenAt === undefined) continue;
+      if (now - lastTokenAt <= silenceMs) continue;
+      if (this.interruptedTurnIds.has(turnId)) continue;
+      this.interruptedTurnIds.add(turnId);
+      this.auditLine(`stall silence: turn ${turnId} for ${agentId} silent for ${now - lastTokenAt}ms — interrupting`);
+      void session.runtime.interrupt(session.session).catch(() => undefined);
+      // Real runtimes settle the send() via the abort; a no-op interrupt
+      // (stub) leaves it pending forever, so force-settle after a short grace.
+      const t = setTimeout(() => {
+        if (!this.turnInFlight.has(agentId) || this.activeTurnByAgent.get(agentId) !== turnId) return;
+        const abort = new DOMException(`turn silence exceeded ${silenceMs}ms`, "AbortError");
+        this.finishTurn(turnId, agentId, { status: "failed", error: abort.message, errorDetail: describeError(abort, "llmCallAt") });
+        const reason: ActivationReason = this.turns.get(turnId)?.reason ?? { kind: "timer" };
+        void this.handleAgentFailure(agentId, abort, reason);
+      }, 2000);
+      (t as unknown as { unref?: () => void }).unref?.();
+    }
+  }
+
+  /**
+   * Is waking ANYONE worth a context window right now? Answered from state,
+   * never from a model.
+   *
+   * This is the difference between a mesh that rests and one that idles
+   * expensively. The old watchdog only asked "is it quiet?", which is true
+   * both of a mission that is stuck (wake someone!) and of one that is done
+   * (leave it alone). Distinguishing them is cheap — unmet criteria, unread
+   * mail, live tasks and open escalations are all in projections already.
+   */
+  private wakeValue(): { worth: boolean; why: string } {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    if (!goal) return { worth: false, why: "no active goal" };
+    const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
+    const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
+    if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet` };
+    // Every criterion is evidenced. Only a concrete loose end justifies a turn.
+    const mail = [...this.state.agents.keys()].some((id) => (this.state.unread.get(id)?.length ?? 0) > 0);
+    if (mail) return { worth: true, why: "undelivered mail" };
+    const openEscalations = [...this.state.escalations.values()].filter((e) => e.status === "OPEN");
+    if (openEscalations.length > 0) return { worth: true, why: `${openEscalations.length} open escalations` };
+    // A CLAIMED task has an owner who may still be working. An unowned OPEN
+    // task with every criterion evidenced is bookkeeping residue, not work:
+    // nobody claimed it and no criterion needs it. Treating it as work is
+    // exactly what wedged the mission open.
+    const liveTasks = [...this.state.tasks.values()].filter(
+      (t) => t.status === "CLAIMED" && !t.id.startsWith("watch:"),
+    );
+    if (liveTasks.length > 0) return { worth: true, why: `${liveTasks.length} claimed tasks in flight` };
+    return { worth: false, why: "all mandatory criteria evidenced, no mail, no open escalations, no claimed tasks" };
+  }
+
+  /**
+   * The wake note must never contradict itself. It used to always end with
+   * "drive the next step toward an unmet criterion" — including when the
+   * summary it embedded said "all mandatory criteria evidenced". An agent
+   * handed that prompt has one honest answer: `done`. It gave that answer 21
+   * times, at full context price, because the instruction described a world
+   * that did not exist.
+   */
+  private stallWakeNote(): string {
+    const summary = this.unmetCriteriaSummary();
+    const base = `stall watchdog: mission active but quiet — ${summary}`;
+    if (!this.hasUnmetMandatory()) {
+      return `${base}. Do NOT re-approve or re-confirm finished work. Either close out a concrete loose end (unanswered mail, an open escalation, a claimed task), or reply with a single \`done\` op and stop — the mission will close itself.`;
+    }
+    return `${base}; drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+  }
+
+  /** True when at least one mandatory criterion still lacks evidence. */
+  private hasUnmetMandatory(): boolean {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    if (!goal) return false;
+    return goal.acceptanceCriteria.some((c) => c.mandatory && c.status !== "EVIDENCED" && c.status !== "WAIVED");
+  }
+
+  /** Who to wake for a stalled mission: someone with real work, else rotate across the stuck. */
+  private stallDriver(): string | undefined {
+    const eligible = (id: string): boolean => {
+      const rec = this.state.agents.get(id);
+      if (!rec || id === HUMAN_AGENT_ID) return false;
+      if (["SUSPENDED", "COMPLETED", "FAILED"].includes(rec.state.lifecycle)) return false;
+      // A parked agent is exactly the one that cannot make progress; nudging
+      // it is how the mission stayed stuck.
+      return !this.deps.scheduler.isParkedForBackoff?.(id);
+    };
+    // Oldest-activity-first so repeated stall nudges ROTATE across stuck
+    // agents instead of hammering startupActivate[0] forever: that agent
+    // wakes, finds nothing, goes IDLE, and gets picked again — while the
+    // other WAITING agents stay parked on the bench.
+    const byOldest = (a: string, b: string): number =>
+      (this.state.agents.get(a)?.state.lastActivityAt ?? "").localeCompare(this.state.agents.get(b)?.state.lastActivityAt ?? "");
+    const all = [...this.state.agents.keys()].filter(eligible);
+    for (const id of all) {
+      const rec = this.state.agents.get(id)!;
+      if ((this.state.unread.get(id)?.length ?? 0) > 0 || rec.state.activeTaskId) return id;
+    }
+    const stuck = all.filter((id) => ["WAITING", "BLOCKED"].includes(this.state.agents.get(id)!.state.lifecycle)).sort(byOldest);
+    if (stuck.length > 0) return stuck[0];
+    const startup = this.config.startupActivate.filter(eligible).sort(byOldest);
+    if (startup.length > 0) return startup[0];
+    // Last resort: any live agent at all. Better a possibly-wrong nudge than
+    // an ACTIVE mission that never moves again.
+    return all.sort(byOldest)[0];
+  }
+
   onIdleOnce(cb: () => void): void {
     this.idleCallbacks.push(cb);
+  }
+
+  /** "3 of 5 mandatory criteria unmet" for wake notes — "" when nothing is trackable. */
+  private unmetCriteriaSummary(): string {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    if (!goal) return "no acceptance criteria recorded";
+    const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
+    if (mandatory.length === 0) return "no mandatory acceptance criteria";
+    const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
+    if (unmet.length === 0) return "all mandatory criteria evidenced";
+    const names = unmet.slice(0, 3).map((c) => c.id).join(", ");
+    return `${unmet.length} of ${mandatory.length} mandatory criteria unmet (${names}${unmet.length > 3 ? ", …" : ""})`;
   }
 
   isIdle(): boolean {
@@ -2043,16 +3728,117 @@ export class Supervisor {
 
   // ------------------------------------------------------------- human ops
 
-  async humanSend(to: string[], type: MessageType, payload: unknown, threadId?: string): Promise<SendResult> {
+  async humanSend(
+    to: string[],
+    type: MessageType,
+    payload: unknown,
+    threadId?: string,
+    opts: { replyTo?: string; artifactRefs?: ArtifactRef[]; taskId?: string } = {},
+  ): Promise<SendResult> {
     return this.sendMessage({
       from: HUMAN_AGENT_ID,
       to,
       type,
       threadId,
       newThread: threadId ? undefined : { subject: `human ${type}` },
+      replyTo: opts.replyTo,
+      artifactRefs: opts.artifactRefs,
+      taskId: opts.taskId,
       payload,
       priority: "URGENT",
     });
+  }
+
+  /**
+   * Answer a stuck request on behalf of the operator. Sends a human INFORM
+   * with `replyTo` set to the original request so the pending-request
+   * projection clears it deterministically (same-thread heuristics alone
+   * cannot be relied on: the dashboard compose box has no thread context).
+   * Then resets stall tracking and wakes the stuck agent + asker.
+   */
+  async answerStuckRequest(
+    escalationId: string,
+    text: string,
+    by = HUMAN_AGENT_ID,
+  ): Promise<{ ok: boolean; reason?: string; messageId?: string }> {
+    const esc = this.state.escalations.get(escalationId);
+    if (!esc) return { ok: false, reason: "unknown escalation" };
+    const stuck = stuckRequestOf(esc);
+    if (!stuck) return { ok: false, reason: "escalation is not a stuck-request (no requestMessageId)" };
+    const pending = this.state.pendingRequests.get(stuck.messageId);
+    const request = this.state.messages.get(stuck.messageId);
+    if (!pending && !request) return { ok: false, reason: "original request no longer exists" };
+    const threadId = pending?.threadId ?? request?.threadId;
+    const asker = pending?.from ?? request?.from ?? "";
+    const targets = [asker, stuck.agentId].filter((t) => t && t !== by && this.state.agents.has(t));
+    if (targets.length === 0) return { ok: false, reason: "no live recipients for the answer" };
+    // Pre-clear: the replyTo projection clears this same entry on emit, but
+    // doing it up-front makes the operator action idempotent even if the
+    // send below is policy-redirected or the thread was closed. Event-sourced
+    // so a replay reproduces the operator's intervention.
+    await this.dischargeCommitment(stuck.messageId, "operator", by, { escalationId, action: "answered" });
+    const sent = await this.sendMessage({
+      from: by,
+      to: [...new Set(targets)],
+      type: "INFORM",
+      threadId,
+      newThread: threadId ? undefined : { subject: `operator answer for ${stuck.messageId}` },
+      replyTo: this.state.messages.has(stuck.messageId) ? stuck.messageId : undefined,
+      artifactRefs: request?.artifactRefs ?? [],
+      taskId: pending?.taskId ?? request?.taskId,
+      payload: { answer: text, escalationId, stuckRequestId: stuck.messageId },
+      priority: "URGENT",
+    });
+    if (!sent.accepted) return { ok: false, reason: sent.reason };
+    await this.deps.kernel.emit(
+      "human.input",
+      { action: "stuck_request_answered", escalationId, requestMessageId: stuck.messageId, messageId: sent.messageId },
+      { actorId: by },
+    );
+    this.deps.scheduler.resetStallTracking?.(stuck.messageId, stuck.agentId);
+    for (const id of [...new Set([stuck.agentId, asker])]) {
+      if (this.state.agents.has(id)) {
+        await this.activateAgent(id, { kind: "recovery", note: `operator answered stuck request: ${text.slice(0, 120)}` }).catch(() => undefined);
+      }
+    }
+    // The question is answered, so no card should still be asking it. Callers
+    // that also want the operator's rationale recorded call respondEscalation
+    // right after; this sweep just guarantees the mesh cannot stay parked when
+    // they do not.
+    await this.reconcileDerivedEscalations();
+    return { ok: true, messageId: sent.messageId };
+  }
+
+  /**
+   * Drop a stuck request on behalf of the operator. Deletes the pending
+   * entry directly (no answer message is fabricated), records the operator
+   * rationale in the log, resets stall tracking, and wakes the asker so it
+   * stops WAITING on a dead ask.
+   */
+  async dropStuckRequest(
+    escalationId: string,
+    reason: string,
+    by = HUMAN_AGENT_ID,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const esc = this.state.escalations.get(escalationId);
+    if (!esc) return { ok: false, reason: "unknown escalation" };
+    const stuck = stuckRequestOf(esc);
+    if (!stuck) return { ok: false, reason: "escalation is not a stuck-request (no requestMessageId)" };
+    const pending = this.state.pendingRequests.get(stuck.messageId);
+    const request = this.state.messages.get(stuck.messageId);
+    const asker = pending?.from ?? request?.from;
+    await this.dischargeCommitment(stuck.messageId, "operator", by, { escalationId, action: "dropped", reason });
+    await this.deps.kernel.emit(
+      "human.input",
+      { action: "stuck_request_dropped", escalationId, requestMessageId: stuck.messageId, reason },
+      { actorId: by },
+    );
+    this.deps.scheduler.resetStallTracking?.(stuck.messageId, stuck.agentId);
+    if (asker && this.state.agents.has(asker)) {
+      await this.activateAgent(asker, { kind: "recovery", note: `operator dropped stuck request: ${reason.slice(0, 120)}` }).catch(() => undefined);
+    }
+    await this.reconcileDerivedEscalations();
+    return { ok: true };
   }
 
   async status(): Promise<{
@@ -2092,10 +3878,100 @@ export class RuntimeFailure extends Error {
   }
 }
 
+/**
+ * High-volume turn bookkeeping: deliveries, budget ledger moves, and routine
+ * lifecycle steps. None of these directly flips a termination/deadlock
+ * verdict (those read criteria, failures, overruns, tasks, goals), so the
+ * watchdog may evaluate them on the throttled path. Everything else —
+ * evidence, failures, overruns, task/goal/escalation changes — scans
+ * immediately, preserving the old per-event timing guarantees.
+ */
+/**
+ * Did the mesh actually MOVE? These are the events that mean a human or an
+ * agent introduced something new — as opposed to the mesh narrating its own
+ * idling. Only these reset quiescence, so a rested mesh wakes for real work
+ * and stays quiet for its own heartbeat.
+ */
+function isProgressEvent(type: EventType): boolean {
+  switch (type) {
+    case "message.sent":
+    case "artifact.created":
+    case "artifact.versioned":
+    case "task.created":
+    case "task.claimed":
+    case "task.completed":
+    case "decision.proposed":
+    case "escalation.requested":
+    case "goal.created":
+    case "goal.resumed":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isBookkeepingEvent(type: EventType): boolean {
+  switch (type) {
+    case "message.delivered":
+    case "budget.reserved":
+    case "budget.released":
+    case "budget.consumed":
+    case "agent.state_changed":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Extract the stuck request from a `stale­mate:unanswered_request` escalation.
+ * Prefers the structured detail, falls back to parsing
+ * `conflictKey: stuck:<messageId>:<agentId>`.
+ */
+/**
+ * The single place that decides whether an escalation is a real human
+ * question (`primary`) or a watchdog-computed summary over other escalations
+ * (`derived`). Keeping this in one function is what stops the two kinds from
+ * drifting apart again: everything downstream (dedupe identity, reconcile,
+ * dashboard rendering) asks this, rather than re-testing
+ * `reason === "stalemate" && raisedBy === "termination-manager"` by hand.
+ */
+export function classifyEscalation(reason: string, raisedBy: string): EscalationKind {
+  return reason === "stalemate" && raisedBy === "termination-manager" ? "derived" : "primary";
+}
+
+/** True for an escalation record, tolerating logs written before `kind`. */
+export function isDerivedEscalation(esc: Escalation): boolean {
+  return (esc.kind ?? classifyEscalation(esc.reason, esc.raisedBy)) === "derived";
+}
+
+/**
+ * Primary ids a derived card summarizes. Reads the explicit `supports` field
+ * and falls back to the legacy `detail.openDeadlockEscalations` shape so
+ * cards already on disk keep reconciling after an upgrade.
+ */
+export function supportsOf(esc: Escalation): string[] {
+  if (Array.isArray(esc.supports)) return esc.supports.filter((id): id is string => typeof id === "string");
+  const legacy = ((esc.detail ?? {}) as { openDeadlockEscalations?: Array<{ id?: string }> }).openDeadlockEscalations;
+  return Array.isArray(legacy) ? legacy.map((o) => o?.id).filter((id): id is string => typeof id === "string") : [];
+}
+
+function stuckRequestOf(esc: Escalation): { messageId: string; agentId: string } | null {
+  const d = (esc.detail ?? {}) as Record<string, unknown>;
+  if (typeof d.requestMessageId === "string" && typeof d.agentId === "string") {
+    return { messageId: d.requestMessageId, agentId: d.agentId };
+  }
+  const m = /^stuck:(.+):([^:]+)$/.exec(String(esc.conflictKey ?? ""));
+  if (m) return { messageId: m[1], agentId: m[2] };
+  return null;
+}
+
 function describeReason(reason: ActivationReason): string {
   switch (reason.kind) {
     case "startup":
-      return "Startup activation: begin your mission role.";
+      // The note is the kickoff brief (goLive embeds the criteria gap here);
+      // dropping it hid the "why" from the very first turn.
+      return `Startup activation: begin your mission role.${reason.note ? ` ${reason.note}` : ""}`;
     case "message":
       return `New mail arrived${reason.threadId ? ` in thread ${reason.threadId}` : ""}.`;
     case "interest_event":

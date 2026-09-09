@@ -160,10 +160,69 @@ export interface MeshMessage {
   budgetHint?: BudgetHint;
   provenance?: ContentProvenance;
   taskId?: TaskId;
+  /**
+   * Runtime-owned delivery control. NEVER settable by an agent.
+   *
+   * `payload` is verbatim agent input, so any routing decision keyed on a
+   * payload field is a decision an agent can make for the kernel. This one
+   * was: `cacheServed` lived in `payload`, and both the delivery reducer and
+   * the scheduler skipped a message carrying it — so a sender could add
+   * `payload: { cacheServed: true }` to a REQUEST and get an ask that opens a
+   * pending request (parking the recipient's debt and the sender in WAITING)
+   * while never landing in any mailbox and never waking anyone. A silent,
+   * permanent stall from one key in free-form JSON.
+   *
+   * `control` is stripped from agent input on every send and re-applied only
+   * by the supervisor, which makes forgery structurally impossible rather
+   * than merely disallowed.
+   */
+  control?: MessageControl;
+}
+
+/**
+ * Kernel-owned envelope fields: the runtime writes these, the schema closes
+ * them, and `sanitizeAgentMessageInput` strips them from anything an agent
+ * supplies.
+ */
+export interface MessageControl {
+  /**
+   * The research cache already answered this; the message is a log record,
+   * not mail. Suppresses mailbox delivery and interest activation.
+   */
+  cacheServed?: boolean;
+}
+
+/** Payload keys the runtime once trusted, now reserved and stripped on input. */
+export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed"];
+
+/**
+ * Remove runtime-owned fields from agent-supplied message input.
+ *
+ * Applied to BOTH `control` and `payload`: the first stops an agent setting
+ * the real field, the second stops a legacy reader (or a future one that
+ * reaches into `payload`) from finding a forged copy there.
+ */
+export function sanitizeAgentMessageInput<T extends { payload?: unknown; control?: MessageControl }>(input: T): T {
+  const cleaned = { ...input } as T & { payload?: unknown; control?: MessageControl };
+  delete cleaned.control;
+  const payload = cleaned.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const copy = { ...(payload as Record<string, unknown>) };
+    let stripped = false;
+    for (const key of RESERVED_PAYLOAD_KEYS) {
+      if (key in copy) {
+        delete copy[key];
+        stripped = true;
+      }
+    }
+    if (stripped) cleaned.payload = copy;
+  }
+  return cleaned;
 }
 
 export type EventType =
   | "goal.created"
+  | "goal.budget_changed"
   | "goal.status_changed"
   | "goal.paused"
   | "goal.resumed"
@@ -215,6 +274,13 @@ export type EventType =
   | "decision.ratified"
   | "escalation.requested"
   | "escalation.responded"
+  | "escalation.auto_resolved"
+  | "deadlock.auto_resolved"
+  /**
+   * An outstanding ask stopped being outstanding. The ONLY event-sourced way
+   * a commitment leaves the ledger, so replay reproduces it exactly.
+   */
+  | "commitment.discharged"
   | "human.input"
   | "lease.acquired"
   | "lease.released"
@@ -222,7 +288,8 @@ export type EventType =
   | "budget.reserved"
   | "budget.consumed"
   | "budget.exceeded"
-  | "budget.released";
+  | "budget.released"
+  | "budget.limit_raised";
 
 export interface MeshEvent<T = unknown> {
   id: EventId;
@@ -340,6 +407,15 @@ export interface AgentRuntimeState {
   activations: number;
   lastActivityAt: string;
   lastError?: string;
+  /**
+   * Whether a FAILED agent is expected to restart (persistent session with
+   * attempts remaining). The termination manager must not treat a
+   * restartable FAILED agent as a mission-ending runtime failure: the
+   * supervisor owns the retry, and a watchdog tick landing between
+   * `agent.failed` and the restart would otherwise freeze the whole goal
+   * over a recoverable blip.
+   */
+  restartable?: boolean;
 }
 
 export type TaskStatus =
@@ -424,6 +500,26 @@ export interface DecisionRecord {
 
 export type EscalationStatus = "OPEN" | "RESPONDED" | "AUTO_RESOLVED";
 
+/**
+ * Escalations come in two kinds, and the distinction is load-bearing:
+ *
+ * - `primary`   — a real question only a human can answer (budget exhausted,
+ *                 runtime failure, an unanswered request, a deadlock finding).
+ *                 It owns its own lifecycle: it stays OPEN until somebody
+ *                 decides it.
+ * - `derived`   — a *summary* the watchdog computes over the currently-open
+ *                 primaries (today: `stalemate`). It carries no decision of
+ *                 its own; it is true exactly as long as its supports are
+ *                 open. The runtime maintains the invariant
+ *                 "a derived card is OPEN iff >=1 supporting primary is OPEN"
+ *                 by auto-resolving it, so a derived card can never outlive
+ *                 the facts it describes and strand the mission.
+ *
+ * `supports` lists the primary escalation ids a derived card summarizes. It is
+ * empty/absent on primaries.
+ */
+export type EscalationKind = "primary" | "derived";
+
 export interface Escalation {
   id: EscalationId;
   goalId: GoalId;
@@ -433,6 +529,18 @@ export interface Escalation {
   conflictKey?: string;
   disagreementArtifactRef?: ArtifactRef;
   status: EscalationStatus;
+  /** Defaults to "primary" when absent (older logs predate the field). */
+  kind?: EscalationKind;
+  /** Primary escalation ids this derived card summarizes. */
+  supports?: EscalationId[];
+  /**
+   * Advisory cards inform the operator but must NOT freeze the goal: the mesh
+   * already routed around the problem (e.g. a dead debtor's asks were
+   * discharged with notice). Without this every personnel loss becomes a
+   * mission-wide freeze behind a card nobody needs to answer urgently.
+   * Absent (older logs) means freezing, preserving old behavior on replay.
+   */
+  advisory?: boolean;
   response?: string;
   createdAt: string;
   respondedAt?: string;
@@ -511,6 +619,23 @@ export interface MeshOpRespond {
   artifactRefs?: ArtifactRef[];
 }
 
+/**
+ * Close an ask addressed to you WITHOUT answering it.
+ *
+ * The gap this fills: an agent that cannot or will not answer had no way to
+ * say so. It could only stay silent, and silence is indistinguishable from
+ * "still working" — so the ask sat until the nudge limit and then escalated
+ * to a human as a false stalemate. Now "I am not going to answer this, and
+ * here is why" is a first-class, cheap, logged move.
+ */
+export interface MeshOpDischarge {
+  op: "discharge";
+  /** The request message being closed. */
+  messageId: MessageId;
+  /** Why it will not be answered — recorded and shown to the asker. */
+  reason: string;
+}
+
 export interface MeshOpPublishArtifact {
   op: "publish_artifact";
   name: string;
@@ -538,6 +663,7 @@ export interface MeshOpTransitionArtifact {
 export interface MeshOpRequestReview {
   op: "request_review";
   artifactId: ArtifactId;
+  artifactUri?: string;
   reviewers: AgentId[];
 }
 
@@ -691,6 +817,7 @@ export type MeshOp =
   | MeshOpBroadcast
   | MeshOpRequestResearch
   | MeshOpRespond
+  | MeshOpDischarge
   | MeshOpPublishArtifact
   | MeshOpReadArtifact
   | MeshOpTransitionArtifact
@@ -732,15 +859,43 @@ export interface AgentInput {
   activation: ActivationReason;
   context: AgentContextBundle;
   instructions: string;
+  /**
+   * Best-effort live token callback. Runtimes backed by a streaming backend
+   * (opencode SSE) invoke it with text deltas as the model responds; others
+   * ignore it. Never fails the turn — streaming is observability only, the
+   * authoritative output is still AgentOutput.text. Deltas are forwarded
+   * out-of-band (never kernel events) so the event log stays compact.
+   */
+  onToken?: (delta: string) => void;
 }
 
 export interface AgentOutput {
   text: string;
   operations: MeshOp[];
+  /**
+   * True when `operations` came from typed tool calls (MCP `mesh_*`, or the
+   * equivalent structured adapter payload) rather than from parsing the
+   * model's prose.
+   *
+   * Under `bus.transport: typed-only` the supervisor ignores parsed ops when
+   * this is false, so a model that answers in prose gets one visible retry
+   * with the error in context instead of a silent zero-op turn that the
+   * circuit breaker must Park later.
+   */
+  typedOps?: boolean;
   tokensUsed: {
     input: number;
     output: number;
+    /**
+     * Billable work for THIS turn (input + output + reasoning + cache writes).
+     * Deliberately excludes `cacheRead`: with persistent sessions the backend
+     * replays the whole transcript every turn and reports it as a cache read,
+     * so including it charges the entire history again on each turn and grows
+     * without bound.
+     */
     total: number;
+    /** Replayed/cached prompt prefix. Observability only — never billed. */
+    cacheRead?: number;
   };
   model?: string;
   modelVersion?: string;
@@ -802,6 +957,39 @@ export interface AgentContextBundle {
   agentMemory: AgentMemoryNote[];
   openThreads: Thread[];
   budgetSnapshot: { agentTokensUsed: number; agentTokenBudget: number; missionTokensUsed: number; missionTokenBudget: number };
+  /**
+   * What this agent is still owed, and what it still owes.
+   *
+   * Without it a timer-woken agent cannot tell whether anything moved since
+   * its last turn, so it re-derives the same conclusion and re-sends the same
+   * message — which the fingerprint check then counts as a conflict and
+   * escalates. The agent was punished for a repetition the context made
+   * unavoidable.
+   */
+  outstanding: {
+    /** Asks this agent made that nobody has answered yet. */
+    awaitingResponse: Array<{ messageId: string; to: string[]; type: string; since: string }>;
+    /** Asks addressed to this agent that it has not discharged. */
+    owedByYou: Array<{ messageId: string; from: string; type: string; since: string }>;
+  };
+  /**
+   * THIS goal's acceptance criteria, verbatim from the goal record.
+   *
+   * Without it an agent whose L2 memory says "mission complete" (a memory
+   * written under a PREVIOUS goal) concludes there is nothing to do and waits
+   * — while the active goal's criteria sit unmet. The criteria are the
+   * authoritative to-do list; memories are gossip.
+   */
+  goalCriteria: Array<{ id: string; description: string; status: string; mandatory: boolean }>;
+  /**
+   * Whether this agent may spawn sub-workers (`spawn_worker` / `submit_result`).
+   *
+   * Delegation is off by default (v1 flat mesh: `max_depth: 0`), and every
+   * attempt is denied. Documenting the ops unconditionally would invite turns
+   * that can only fail, so the contract shows them exactly when they are
+   * usable.
+   */
+  delegationEnabled?: boolean;
 }
 
 export interface CreateGoalInput {

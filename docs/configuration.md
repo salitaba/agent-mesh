@@ -83,6 +83,8 @@ scheduling:
       - { agent: qa, event: dependency.changed,
           ignore_if_text_matches: [README], act_if_text_matches: [pom.xml] }
   concurrency: { max_active_agents: 4, max_parallel_service_agents: 2 }
+  # max_total_agents caps peers + services combined (default: 4 + 2 = 6).
+  # e.g. concurrency: { max_active_agents: 4, max_total_agents: 3 }
   timeouts: { turn_timeout_ms: 600000, wait_wakeup_ms: 60000, lease_ttl_ms: 1800000 }
 server: { host: 127.0.0.1, port: 7420, state_dir: ./workspace/.mesh-state, dashboard: true }
 ```
@@ -91,3 +93,27 @@ Budgets are hierarchical: `mission → agent/task/thread/tool`. Overrun emits
 `budget.exceeded` and the termination manager escalates (it does **not** silently
 halt). `mesh run` writes `events.jsonl`, snapshots, turn audit, and a projection
 rejection log under `server.state_dir`.
+
+## bus: commitments & transport
+
+```yaml
+bus:
+  commitments: { semantic: strict }   # or omit for "compat"
+  transport: typed-only                # or omit for "mixed"
+```
+
+- `commitments.semantic: compat` (default): an ask leaves the ledger on exact
+  signals (`replyTo`, `discharge`, operator answer/drop, review verdict,
+  supersede, deadlock break, task completion) **or** inference (a response in
+  the ask's thread addressed to the asker, artifact-pointer matches).
+- `commitments.semantic: strict`: inference is off. A response without
+  `replyTo` delivers content and wakes the asker but discharges **nothing**;
+  only the exact signals close the ask. Exception: the worker-result contract
+  (`REQUEST_EXECUTION` taskId == `HANDOFF` taskId) works in both modes.
+  Strict trades more nudges/re-asks for zero falsely-closed asks. Note strict
+  also tightens the worker contract: cross-taskId answers no longer discharge
+  (previously any `REQUEST*` matched any taskId-carrying response).
+- `transport: typed-only`: turns whose ops came from prose parsing are refused
+  (visible warning in the turn summary, counts toward the circuit breaker);
+  only MCP `mesh_*` tool calls execute. Use when models are strong enough to
+  reliably call tools and you want the text-parsing lottery off entirely.

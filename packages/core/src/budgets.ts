@@ -64,7 +64,7 @@ export class BudgetManager {
     amount: number,
     reservationId?: string,
     detail: Record<string, unknown> = {},
-    opts: { actorId?: string; goalId?: string; causationId?: string } = {},
+    opts: { actorId?: string; goalId?: string; causationId?: string; correlationId?: string } = {},
   ): Promise<void> {
     const ledger = ensureBudget(this.kernel.state, key, kind, null);
     const wasExceeded = ledger.exceeded;
@@ -93,6 +93,29 @@ export class BudgetManager {
     if (this.exceededEmitted.has(key)) return;
     this.exceededEmitted.add(key);
     await this.kernel.emit("budget.exceeded", { key, limit, consumed }, opts);
+  }
+
+  /**
+   * Raise a budget limit at runtime (operator action from an escalation).
+   * Emits `budget.limit_raised` so the change survives replay. Clears the
+   * exceeded latch when the new limit covers current spend, and re-arms
+   * `budget.exceeded` so a future overrun emits again.
+   */
+  async raiseLimit(
+    key: BudgetKey,
+    limit: number,
+    opts: { actorId?: string; goalId?: string; causationId?: string; reason?: string } = {},
+  ): Promise<{ previous: number | null; limit: number; unblocked: boolean }> {
+    const ledger = ensureBudget(this.kernel.state, key, "tokens", null);
+    const previous = ledger.limit;
+    this.exceededEmitted.delete(key);
+    await this.kernel.emit(
+      "budget.limit_raised",
+      { key, limitKind: ledger.limitKind, limit, previous, reason: opts.reason ?? "operator raise" },
+      { actorId: opts.actorId, goalId: opts.goalId, causationId: opts.causationId },
+    );
+    const unblocked = ledger.limit === null || ledger.consumed <= ledger.limit;
+    return { previous, limit, unblocked };
   }
 
   snapshot(): BudgetProjectionEntry[] {

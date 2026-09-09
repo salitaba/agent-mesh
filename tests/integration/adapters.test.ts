@@ -6,7 +6,8 @@ import * as os from "os";
 import * as path from "path";
 import { OpenCodeRuntimeAdapter, parseMeshOps, extractText } from "../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../packages/runtime-http/src/index";
-import type { AgentDefinition, RuntimeContext } from "../../packages/protocol/src/index";
+import { BackendUnreachableError } from "../../packages/protocol/src/index";
+import type { AgentDefinition, AgentInput, RuntimeContext } from "../../packages/protocol/src/index";
 
 const devDef: AgentDefinition = {
   id: "developer",
@@ -125,7 +126,7 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
       agentId: "developer",
       goalId: "goal-1",
       activation: { kind: "manual" },
-      context: { rolePrompt: "x", mission: "m", relevantPolicies: [], agentState: { agentId: "developer", lifecycle: "THINKING", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 } },
+      context: { rolePrompt: "x", mission: "m", relevantPolicies: [], agentState: { agentId: "developer", lifecycle: "THINKING", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 }, outstanding: { awaitingResponse: [], owedByYou: [] }, goalCriteria: [] },
       instructions: "please implement",
     });
     assert.equal(output.operations.length, 2);
@@ -152,7 +153,11 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
 
 test("opencode adapter: missing CLI rejects with a clear error instead of crashing the process", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-missing-"));
-  const adapter = new OpenCodeRuntimeAdapter({ executable: "definitely-not-installed-opencode-xyz", spawnProcesses: true, startupTimeoutMs: 6000 });
+  // Refusing fetch makes the readiness probe hermetic: on a crowded box a
+  // random nextPort() can collide with an unrelated listener and the probe
+  // would succeed spuriously (flaky resolve instead of the expected reject).
+  const refuse = () => Promise.reject(Object.assign(new Error("fetch failed"), { cause: new Error("connect ECONNREFUSED") }));
+  const adapter = new OpenCodeRuntimeAdapter({ executable: "definitely-not-installed-opencode-xyz", spawnProcesses: true, startupTimeoutMs: 6000, fetchImpl: refuse as typeof fetch });
   try {
     await assert.rejects(() => adapter.start(devDef, runtimeCtx(dir)), /not found on PATH|failed to launch|exited early/i);
   } finally {
@@ -166,6 +171,54 @@ test("opencode adapter: unreachable process surfaces UNREACHABLE instead of hang
   const session = { sessionId: "x", agentId: "developer", runtime: "opencode", createdAt: "", handle: { baseUrl: "http://127.0.0.1:1" } };
   const status = await adapter.getStatus(session);
   assert.equal(status, "UNREACHABLE");
+});
+
+const minimalInput = (agentId: string): AgentInput => ({
+  agentId,
+  goalId: "goal-1",
+  activation: { kind: "manual" },
+  context: { rolePrompt: "", mission: "", relevantPolicies: [], agentState: { agentId, lifecycle: "THINKING", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 }, outstanding: { awaitingResponse: [], owedByYou: [] }, goalCriteria: [] },
+  instructions: "go",
+});
+
+test("opencode adapter: dead backend throws a labeled BackendUnreachableError", async () => {
+  const adapter = new OpenCodeRuntimeAdapter({ baseUrl: "http://127.0.0.1:1", spawnProcesses: false });
+  const session = { sessionId: "x", agentId: "developer", runtime: "opencode", createdAt: "", handle: { baseUrl: "http://127.0.0.1:1" } };
+  await assert.rejects(() => adapter.send(session, minimalInput("developer")), (err: unknown) => {
+    assert.ok(err instanceof BackendUnreachableError, `expected BackendUnreachableError, got ${err}`);
+    assert.equal((err as BackendUnreachableError).backend, "http://127.0.0.1:1");
+    assert.match((err as Error).message, /backend unreachable at http:\/\/127\.0\.0\.1:1/);
+    return true;
+  });
+});
+
+test("opencode adapter: our own request timeout stays unlabeled (slow, not dead)", async () => {
+  const sockets = new Set<import("net").Socket>();
+  const hanging = http.createServer(() => { /* never responds */ });
+  hanging.on("connection", (s) => sockets.add(s));
+  await new Promise<void>((r) => hanging.listen(0, "127.0.0.1", r));
+  const port = (hanging.address() as { port: number }).port;
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: `http://127.0.0.1:${port}`, spawnProcesses: false, requestTimeoutMs: 150 });
+    const session = { sessionId: "x", agentId: "developer", runtime: "opencode", createdAt: "", handle: { baseUrl: `http://127.0.0.1:${port}` } };
+    await assert.rejects(() => adapter.send(session, minimalInput("developer")), (err: unknown) => {
+      assert.ok(!(err instanceof BackendUnreachableError), "aborts must not be classified as dead backends");
+      return true;
+    });
+  } finally {
+    for (const s of sockets) s.destroy();
+    await new Promise<void>((r) => hanging.close(() => r()));
+  }
+});
+
+test("http adapter: dead backend throws a labeled BackendUnreachableError", async () => {
+  const adapter = new HttpRuntimeAdapter({ baseUrl: "http://127.0.0.1:1" });
+  const session = { sessionId: "http-x", agentId: "developer", runtime: "http", createdAt: "", handle: null };
+  await assert.rejects(() => adapter.send(session, minimalInput("developer")), (err: unknown) => {
+    assert.ok(err instanceof BackendUnreachableError);
+    assert.equal((err as BackendUnreachableError).backend, "http://127.0.0.1:1");
+    return true;
+  });
 });
 
 test("opencode: mesh-json op extraction handles arrays, objects, and plain prose", () => {
@@ -200,7 +253,7 @@ test("http runtime adapter: full session lifecycle against a mock endpoint", asy
   const adapter = new HttpRuntimeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
   const session = await adapter.start(devDef, runtimeCtx("/tmp"));
   assert.equal(session.sessionId, "http-1");
-  const out = await adapter.send(session, { agentId: "developer", goalId: "g", activation: { kind: "manual" }, context: { rolePrompt: "", mission: "", relevantPolicies: [], agentState: { agentId: "d", lifecycle: "IDLE", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 } }, instructions: "" });
+  const out = await adapter.send(session, { agentId: "developer", goalId: "g", activation: { kind: "manual" }, context: { rolePrompt: "", mission: "", relevantPolicies: [], agentState: { agentId: "d", lifecycle: "IDLE", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 }, outstanding: { awaitingResponse: [], owedByYou: [] }, goalCriteria: [] }, instructions: "" });
   assert.equal(out.operations[0].op, "done");
   assert.equal(out.tokensUsed.total, 15);
   assert.equal(await adapter.getStatus(session), "IDLE");

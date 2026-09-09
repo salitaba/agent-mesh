@@ -105,6 +105,16 @@
       }
     },
     "payload": {},
+    "control": {
+      "description": "Runtime-owned delivery control. Agents cannot set this: sanitizeAgentMessageInput strips it from every send, and the closed property set means a forged field fails validation instead of being ignored.",
+      "type": "object",
+      "properties": {
+        "cacheServed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "priority": {
       "type": "string",
       "enum": [

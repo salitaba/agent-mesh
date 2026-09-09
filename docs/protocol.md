@@ -19,12 +19,35 @@ runtime- and vendor-independent.
   "causationId": "evt-…",     // optional; links to the event that caused it
   "artifactRefs": [ { "uri": "artifact://CodePatch/pay/2" } ],
   "payload": { "question": "Is this idempotency design acceptable?" },
+  "control": { "cacheServed": false },  // RUNTIME-OWNED — see below
   "priority": "NORMAL",
   "requires": [],             // optional structured requirements
   "budgetHint": { "maxTokens": 50000 },
   "provenance": { "source": "agent", "trustLevel": 50 }
 }
 ```
+
+### `payload` is prose; `control` is authority
+
+`payload` is verbatim agent output. The kernel therefore **must not route on
+it**: any control decision keyed on a payload field is a decision the governed
+agent gets to make for the runtime. `control` is the closed, runtime-owned
+counterpart — stripped from every inbound send by
+`sanitizeAgentMessageInput`, and closed in the schema so a forged field fails
+validation rather than being silently ignored.
+
+This is not hypothetical. `cacheServed` used to live in `payload`, and both the
+delivery reducer and the scheduler skipped a message carrying it — so a sender
+could attach `payload: { cacheServed: true }` to its own REQUEST and get an ask
+that opens a pending request (parking itself in `WAITING`, recording a debt)
+while landing in **no mailbox** and waking **nobody**. A guaranteed permanent
+stall from one key in free-form JSON.
+
+The same principle governs loop detection: message identity is computed from
+the typed envelope (participants, act, artifact refs, task/thread) plus only
+those payload fields the runtime itself branches on. Hashing the prose made
+`fingerprint_loop` defeatable by rewording — which is the one thing a language
+model does reliably and unprompted.
 
 ### Message types (kept deliberately small)
 
@@ -37,6 +60,33 @@ Requests (`REQUEST*`, `ESCALATE`, `CHALLENGE`) open a *pending request*; a
 reply carrying `replyTo` closes it. This is what lets an agent go to `WAITING`
 and be woken on the response, instead of blocking on a call — messages are
 **not RPC**.
+
+### One ask to N agents is N obligations
+
+A pending request tracks its `outstanding` debtors individually. A reply
+settles **only the replying agent's** obligation; the ask stays open, owed by
+whoever is still silent, and closes when the last debtor answers. Partial
+settlements are recorded as `partial` discharges naming who remains.
+
+Without this a plural debtor is a diffuse debtor: ask dev + qa + security to
+review, and dev's "looks fine" closed the ask for all three — recorded under
+discharge reason `reply`, the runtime's most confident, explicitly
+non-inferred outcome, while two review obligations vanished with no nudge and
+no stalemate. With `broadcast` (which addresses every agent) one reply could
+discharge an obligation owed by the whole team.
+
+One deliberate asymmetry: a discharger who was **never** a debtor — the human
+operator answering for an unresponsive agent, or the runtime superseding a
+review — is resolving the *ask* rather than paying one debt, and settles it for
+everyone at once.
+
+### Asks leave the ledger exactly one way
+
+Every exit is a recorded discharge with a reason, so "how did this ask
+disappear?" always has an answer. Two reasons mean **gone, not answered**
+(`evicted_cap`, `deadlock_break`); consumers must consult the reason before
+concluding an ask resolved, and escalation cards pointing at such an ask stay
+open rather than auto-closing with a false claim.
 
 ## Event envelope (`schemas/event.schema.json`)
 

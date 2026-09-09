@@ -6,6 +6,21 @@
     "lib": ["ES2022"],
     "rootDir": ".",
     "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@mesh/protocol": ["packages/protocol/src/index.ts"],
+      "@mesh/config": ["packages/config/src/index.ts"],
+      "@mesh/event-store": ["packages/event-store/src/index.ts"],
+      "@mesh/core": ["packages/core/src/index.ts"],
+      "@mesh/policy-engine": ["packages/policy-engine/src/index.ts"],
+      "@mesh/scheduler": ["packages/scheduler/src/index.ts"],
+      "@mesh/agent-runtime": ["packages/agent-runtime/src/index.ts"],
+      "@mesh/artifact-store": ["packages/artifact-store/src/index.ts"],
+      "@mesh/runtime-opencode": ["packages/runtime-opencode/src/index.ts"],
+      "@mesh/runtime-http": ["packages/runtime-http/src/index.ts"],
+      "@mesh/observability": ["packages/observability/src/index.ts"],
+      "@mesh/persistence": ["packages/persistence/src/index.ts"]
+    },
     "strict": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": false,
@@ -18,5 +33,5 @@
     "types": ["node"]
   },
   "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "dist", "workspace", "**/workspace/**"]
+  "exclude": ["node_modules", "dist", "workspace", "**/workspace/**", "apps/mesh-dashboard/src/**/*", "apps/mesh-dashboard/vite.config.mts"]
 }

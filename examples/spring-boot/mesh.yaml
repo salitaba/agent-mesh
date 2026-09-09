@@ -36,7 +36,10 @@ agents:
     runtime: opencode
     prompt: ../../roles/tech-lead.md
     capabilities: [repository.read, architecture.read, code.review, review.design, task.assign, git.merge]
-    authority: [implementation.approve]
+    # roles/tech-lead.md makes this seat the design gate, and a plain
+    # `approve architecture` (no artifactId) is checked against AUTHORITY, not
+    # capabilities — without this the documented gate always denied.
+    authority: [implementation.approve, architecture.approve]
     interests: [patch.ready, implementation.completed, goal.progress, architecture.approved]
 
   developer:

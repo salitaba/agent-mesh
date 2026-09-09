@@ -57,6 +57,10 @@ agents:
 
     authority:
       - implementation.approve
+      # roles/tech-lead.md makes this seat the design gate, and a plain
+      # `approve architecture` (no artifactId) is checked against AUTHORITY,
+      # not capabilities — without this the documented gate always denied.
+      - architecture.approve
 
     interests:
       - patch.ready

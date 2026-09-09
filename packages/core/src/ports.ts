@@ -63,16 +63,32 @@ export interface SchedulerActivationRequest {
   explicit?: boolean;
 }
 
+export type TurnOutcome = "ok" | "blocked" | "failed";
+
 export interface SchedulerPort {
   handleEvent(event: MeshEvent): Promise<void>;
   requestActivation(req: SchedulerActivationRequest): Promise<boolean>;
   notifyTurnFinished(agentId: string): void;
   notifyMailDelivered(agentId: string): void;
+  /**
+   * How the runner's turn ended. The scheduler uses consecutive non-ok
+   * outcomes as its circuit breaker (park poison work instead of spinning
+   * instant fail-turns). Optional for mocks.
+   */
+  noteTurnOutcome?(agentId: string, outcome: TurnOutcome): void;
+  /**
+   * Is this agent currently parked by the circuit breaker? The stall watchdog
+   * asks so it never picks a parked agent as the mission driver — that agent
+   * is by definition the one that cannot make progress. Optional for mocks.
+   */
+  isParkedForBackoff?(agentId: string): boolean;
   pending(): number;
   running(): number;
   start(): void;
   stop(): Promise<void>;
   onIdle(callback: () => void): void;
+  /** Clear nudge/escalation suppression for a request (human resolved the stall). Optional for mocks. */
+  resetStallTracking?(messageId: string, agentId?: string): void;
 }
 
 export interface RuntimeResolver {
@@ -95,4 +111,18 @@ export interface SupervisorHooks {
   onEvent?: (event: MeshEvent) => void;
   onAgentTurnStart?: (agentId: string, turnId: string) => void;
   onAgentTurnEnd?: (agentId: string, turnId: string, ok: boolean) => void;
+  /**
+   * Live token delta for a running turn. Out-of-band observability (never a
+   * kernel event): the host forwards it to SSE subscribers. May fire at high
+   * frequency — receivers must handle batching/caps themselves.
+   */
+  onTurnToken?: (turnId: string, agentId: string, delta: string) => void;
+}
+
+export type { EventBus } from "./event-bus";
+
+/** Minimal snapshot persistence contract (implemented by persistence pkg). */
+export interface SnapshotProvider {
+  write(envelope: { meshId: string; throughSeq: number; data: Record<string, unknown[]> }): Promise<void>;
+  read(): { meshId: string; throughSeq: number; data: Record<string, unknown[]> } | null;
 }

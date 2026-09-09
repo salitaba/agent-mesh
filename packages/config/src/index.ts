@@ -4,6 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   validateMeshConfig,
   EVENT_TYPES,
+  AUTHORITY_TOKENS,
   type AgentDefinition,
   type CommunicationPolicy,
   type DelegationPolicy,
@@ -39,6 +40,32 @@ export interface RawMeshFile {
     thread?: { tokens?: number };
     task?: { tokens?: number };
   };
+  bus?: {
+    commitments?: {
+      /**
+       * How an outstanding ask may leave the ledger.
+       *
+       * - "compat" (default): exact signals (`replyTo`, `discharge`,
+       *   operator, verdicts, supersede) plus inference when a response
+       *   merely looks like an answer (same thread, taskId, artifact refs).
+       * - "strict": only exact signals. Inference is disabled entirely —
+       *   a response without `replyTo` delivers content but discharges
+       *   nothing. Use for missions where a falsely-closed ask costs more
+       *   than a re-ask.
+       */
+      semantic?: "compat" | "strict";
+    };
+    /**
+     * How agent turns may issue ops.
+     *
+     * - "mixed" (default): typed MCP tools when mounted, text `mesh-json`
+     *   parsing as fallback for adapters without MCP.
+     * - "typed-only": text parsing is off. Only ops issued through MCP
+     *   tools (or the equivalent structured adapter payload) execute. A
+     *   prose-only turn reports `unproductive` to the circuit breaker.
+     */
+    transport?: "mixed" | "typed-only";
+  };
   scheduling?: {
     mode?: "event-driven";
     activation?: { strategy?: "interest" | "interest+triage"; max_activation_delay_ms?: number };
@@ -51,12 +78,31 @@ export interface RawMeshFile {
         act_if_text_matches?: string[];
       }>;
     };
-    concurrency?: { max_active_agents?: number; max_parallel_service_agents?: number };
+    concurrency?: { max_active_agents?: number; max_parallel_service_agents?: number; max_total_agents?: number };
     timeouts?: {
       turn_timeout_ms?: number;
       wait_wakeup_ms?: number;
       lease_ttl_ms?: number;
       idle_quiet_period_ms?: number;
+      /** Mission-quiet threshold before the stall watchdog nudges a driver. */
+      stall_idle_ms?: number;
+      /** Minimum gap between two stall-watchdog nudges. */
+      stall_cooldown_ms?: number;
+      /**
+       * Retry bound after a turn that changed NOTHING (zero ops parsed, every
+       * op rejected, or only wait/done/remember). Such a turn restarts the
+       * stall clock for nothing, so a stalled mission otherwise waits the full
+       * stall_idle + stall_cooldown between attempts. When the last turn was
+       * provably unproductive the watchdog may fire again after this short
+       * bound instead, rotating to the next eligible driver.
+       */
+      stall_noop_retry_ms?: number;
+      /**
+       * Post-stream freeze threshold: a turn that streamed tokens then went
+       * silent this long is interrupted as wedged (defaults to half the turn
+       * timeout, never below a minute).
+       */
+      turn_silence_ms?: number;
     };
   };
   server?: { host?: string; port?: number; state_dir?: string; dashboard?: boolean };
@@ -110,6 +156,12 @@ export interface ResolvedMeshConfig {
   stateDir: string;
   defaultRuntime: string;
   startupActivate: string[];
+  /**
+   * Non-fatal configuration problems (currently: transition gates naming an
+   * actor no agent can play). Surfaced by `mesh validate` so a mesh that will
+   * silently deadlock at a gate says so before it is run.
+   */
+  warnings: string[];
   agents: Record<string, AgentDefinition>;
   agentOrder: string[];
   communication: Record<string, CommunicationPolicy>;
@@ -127,6 +179,12 @@ export interface ResolvedMeshConfig {
     threadTokens: number;
     taskTokens: number;
   };
+  bus: {
+    /** How an outstanding ask may leave the ledger. See RawMeshFile.bus. */
+    commitmentSemantic: "compat" | "strict";
+    /** How agent turns may issue ops. See RawMeshFile.bus. */
+    transport: "mixed" | "typed-only";
+  };
   scheduling: {
     mode: "event-driven";
     strategy: "interest" | "interest+triage";
@@ -140,10 +198,20 @@ export interface ResolvedMeshConfig {
     }>;
     maxActiveAgents: number;
     maxParallelServiceAgents: number;
+    /** Whole-team ceiling on simultaneous running turns (peers + services combined). */
+    maxTotalAgents: number;
     turnTimeoutMs: number;
     waitWakeupMs: number;
     leaseTtlMs: number;
     idleQuietPeriodMs: number;
+    /** Mission-quiet threshold before the stall watchdog nudges a driver. */
+    stallIdleMs: number;
+    /** Minimum gap between two stall-watchdog nudges. */
+    stallCooldownMs: number;
+    /** Retry bound after a turn that changed nothing (see raw `stall_noop_retry_ms`). */
+    stallNoopRetryMs: number;
+    /** Streamed-then-silent threshold before the watchdog interrupts a turn. */
+    turnSilenceMs: number;
   };
   server: { host: string; port: number; dashboard: boolean };
 }
@@ -207,6 +275,7 @@ export function analyzeMeshConfig(input: unknown, baseDir: string = process.cwd(
 
 function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   const errors: string[] = [];
+  const configWarnings: string[] = [];
 
   const agentIds = Object.keys(raw.agents);
   if (agentIds.length === 0) errors.push("at least one agent must be defined");
@@ -288,6 +357,13 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
 
   const interestErrors = validateInterestExpressions(Object.values(agents));
   errors.push(...interestErrors);
+  errors.push(...validateAuthorityTokens(Object.values(agents)));
+  // Gate-actor problems are reported, not fatal: a gate may legitimately name
+  // a role that a larger mesh adds later, and some fixtures assert on a
+  // deliberately unsatisfiable gate. Surfacing beats silently deadlocking.
+  for (const w of validateTransitionGateActors(Object.values(agents), raw.policies?.transitions ?? {})) {
+    configWarnings.push(w);
+  }
 
   if (errors.length > 0) throw new ConfigError(dedupe(errors));
 
@@ -307,6 +383,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     stateDir,
     defaultRuntime,
     startupActivate,
+    warnings: configWarnings,
     agents,
     agentOrder: agentIds,
     communication,
@@ -317,6 +394,10 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       artifactReviewRoundsMax: raw.policies?.escalation?.artifact_review_rounds?.max ?? 5,
     },
     policyRules: raw.policies?.rules ?? [],
+    bus: {
+      commitmentSemantic: raw.bus?.commitments?.semantic ?? "compat",
+      transport: raw.bus?.transport ?? "mixed",
+    },
     budgets: {
       mission: {
         tokens: raw.budgets?.mission?.tokens ?? 2000000,
@@ -341,10 +422,18 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       })),
       maxActiveAgents: raw.scheduling?.concurrency?.max_active_agents ?? 4,
       maxParallelServiceAgents: raw.scheduling?.concurrency?.max_parallel_service_agents ?? 2,
+      // Default preserves the old behavior exactly: peers + services at once.
+      maxTotalAgents: raw.scheduling?.concurrency?.max_total_agents ??
+        ((raw.scheduling?.concurrency?.max_active_agents ?? 4) + (raw.scheduling?.concurrency?.max_parallel_service_agents ?? 2)),
       turnTimeoutMs: raw.scheduling?.timeouts?.turn_timeout_ms ?? 600000,
       waitWakeupMs: raw.scheduling?.timeouts?.wait_wakeup_ms ?? 60000,
       leaseTtlMs: raw.scheduling?.timeouts?.lease_ttl_ms ?? 1800000,
       idleQuietPeriodMs: raw.scheduling?.timeouts?.idle_quiet_period_ms ?? 30000,
+      stallIdleMs: raw.scheduling?.timeouts?.stall_idle_ms ?? 180000,
+      stallCooldownMs: raw.scheduling?.timeouts?.stall_cooldown_ms ?? 300000,
+      stallNoopRetryMs: raw.scheduling?.timeouts?.stall_noop_retry_ms ?? 45000,
+      turnSilenceMs: raw.scheduling?.timeouts?.turn_silence_ms ??
+        Math.max(60000, Math.floor((raw.scheduling?.timeouts?.turn_timeout_ms ?? 600000) / 2)),
     },
     server: {
       host: raw.server?.host ?? "127.0.0.1",
@@ -397,6 +486,64 @@ export function validateInterestExpressions(agents: AgentDefinition[]): string[]
       const isCanonical = EVENT_TYPES.includes(pattern as EventType);
       if (!isWildcard && !isCanonical) {
         errors.push(`agent '${agent.id}' interest '${pattern}' is not a canonical event type (see schemas/event.schema.json)`);
+      }
+    }
+  }
+  return errors;
+}
+
+/**
+ * Authority tokens must be ones the runtime can actually satisfy.
+ *
+ * A typo (`architecture.aprove`) or an invented domain (`design.approve`)
+ * used to load, validate and boot cleanly — then DENY on every check, because
+ * `evaluateAuthority` looks for an exact string. The agent silently never had
+ * the power its config claimed to grant, and the only visible symptom was a
+ * mission that would not converge. Fail at load instead.
+ */
+export function validateAuthorityTokens(agents: AgentDefinition[]): string[] {
+  const errors: string[] = [];
+  const known = new Set(AUTHORITY_TOKENS);
+  for (const agent of agents) {
+    for (const token of agent.authority) {
+      if (!known.has(token)) {
+        errors.push(
+          `agent '${agent.id}' declares unknown authority '${token}' — the runtime can never satisfy it (known: ${AUTHORITY_TOKENS.join(", ")})`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+/**
+ * A transition gate names the approvals a state change requires, as
+ * `<actorRole|actorId>.<kind>` (e.g. `tech-lead.approve`, `qa.pass`). If no
+ * configured agent can ever produce one of those approvals, the gate is
+ * unsatisfiable and every artifact that needs it deadlocks — the mission
+ * stalls with no error anywhere. Catch it at load.
+ */
+export function validateTransitionGateActors(
+  agents: AgentDefinition[],
+  transitions: Record<string, { requires?: string[] }>,
+): string[] {
+  const errors: string[] = [];
+  const actors = new Set<string>();
+  for (const a of agents) {
+    actors.add(a.id);
+    actors.add(a.role);
+  }
+  for (const [gate, spec] of Object.entries(transitions)) {
+    for (const requirement of spec.requires ?? []) {
+      const actor = requirement.slice(0, requirement.lastIndexOf("."));
+      if (!actor) {
+        errors.push(`transition gate '${gate}' requirement '${requirement}' must be '<agent-or-role>.<kind>'`);
+        continue;
+      }
+      if (!actors.has(actor)) {
+        errors.push(
+          `transition gate '${gate}' requires '${requirement}', but no agent or role '${actor}' exists — the gate can never be satisfied`,
+        );
       }
     }
   }

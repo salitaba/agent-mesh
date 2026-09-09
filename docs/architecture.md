@@ -53,6 +53,14 @@ append-only log → projections → replay → audit → cost → metrics
    cannot force an artifact into an illegal state. The projection reducer throws
    and the kernel refuses to append it. This is the strongest layer.
 
+### Corollary: the kernel never decides on prose
+
+Layers 2–4 are only as strong as the fields they read. `MeshMessage.payload` is
+verbatim agent output, so **no routing, delivery, activation or loop decision
+may be keyed on it** — otherwise the governed agent writes the rule that
+governs it. Runtime-owned control lives in `MeshMessage.control`, which is
+stripped from agent input and closed in the schema. See `docs/protocol.md`.
+
 ## Event sourcing
 
 Every mutation emits a canonical event (catalog in
@@ -67,7 +75,9 @@ transitions need evidence · one writer per artifact · process death ≠ identi
 loss · replay is equivalent · activation is event-driven · transcripts are not
 auto-shared · human escalation is a protocol event · completion needs evidence ·
 budgets are runtime-enforced · security is capability-based · OpenCode is an
-adapter · protocol is vendor-independent.
+adapter · protocol is vendor-independent · the kernel decides on typed fields,
+never on prose · an ask to N agents is N obligations · an ask leaves the ledger
+only through a recorded discharge · "gone" is never reported as "answered".
 
 ## Single writer & git worktrees
 

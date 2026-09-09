@@ -99,12 +99,17 @@ changing the protocol.
 
 ## CLI / server / dashboard
 
-- `mesh run mesh.yaml` boots the supervisor, starts the HTTP/SSE server and (on a
-  TTY) the TUI. `mesh ui mesh.yaml` (or `run --ui-only`) serves the same
+- `mesh run mesh.yaml` boots the supervisor live (scheduler on, startup agents
+  fire), starts the HTTP/SSE server and (on a
+  TTY) the TUI. `mesh serve`/`up` is live + dashboard without the TUI.
+  `mesh console mesh.yaml` (alias `ui`; or `run --parked`) serves the same
   dashboard/API with the scheduler **parked**: no startup, interest or timer
   cascades run on their own. Operator actions still work — a manual *wake* runs
-  exactly one turn (step the mesh agent by agent), messages queue into mailboxes,
-  and `POST /mission/start` (the ▶ button) flips the console live in place.
+  exactly one turn (step the mesh agent by agent), `POST /messages` with
+  `wake:true` (the dashboard's "wake after send" checkbox, on by default while
+  parked) sends mail and steps recipients in one action, and
+  `POST /mission/start` (the ▶ button, idempotent) flips the console live in
+  place. `POST /mission/park` parks it again.
   `mesh status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
   talk to `/api`.
 - `mesh init` detects whether the `opencode` CLI is on PATH and templates

@@ -122,9 +122,9 @@ test("http api: Â§60 endpoints serve projections built from events", async () 
   }
 });
 
-test("http api: dashboard is served with its static assets (app.js/styles.css)", async () => {
+test("http api: dashboard SPA shell + bundle served (vite build)", async () => {
   const m = await makeMesh({ agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } });
-  const dashDir = require("path").resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "public");
+  const dashDir = require("path").resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "dist");
   const server = createHttpServer(m, { dashboardDir: dashDir });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
@@ -135,19 +135,31 @@ test("http api: dashboard is served with its static assets (app.js/styles.css)",
     assert.equal(idx.headers.get("content-type"), "text/html; charset=utf-8");
     const html = await idx.text();
     assert.ok(html.includes("Agent Mesh"));
-    assert.ok(html.includes('data-view="designer"') && html.includes("btn-pause"), "console shell with designer tab + controls rendered");
+    assert.ok(html.includes('id="root"'), "SPA mount point rendered");
 
-    const appjs = await fetch(`${base}/app.js`);
-    assert.equal(appjs.status, 200);
-    assert.match(appjs.headers.get("content-type") ?? "", /javascript/);
-    const js = await appjs.text();
-    assert.ok(js.includes("post("), "controls wired to REST API");
-    assert.ok(js.includes("respond-form") && js.includes("config/save") && js.includes("EventSource"), "escalation replies, designer save, live SSE all wired");
-
-    const css = await fetch(`${base}/styles.css`);
-    assert.equal(css.status, 200);
-    assert.match(css.headers.get("content-type") ?? "", /text\/css/);
-    assert.ok((await css.text()).includes(".row-actions"));
+    // Bundle + stylesheet referenced by the shell must serve and stay wired
+    // to the API (escalation replies, designer save, live SSE, all views).
+    const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((x) => x[1]);
+    const hrefs = [...html.matchAll(/<link[^>]+href="([^"]+\.css)"/g)].map((x) => x[1]);
+    assert.ok(srcs.length >= 1, "shell references a JS bundle");
+    let js = "";
+    for (const src of srcs) {
+      const r = await fetch(`${base}${src}`);
+      assert.equal(r.status, 200);
+      assert.match(r.headers.get("content-type") ?? "", /javascript/);
+      js += await r.text();
+    }
+    assert.ok(js.includes("respond-form") && js.includes("/config/save") && js.includes("EventSource"), "escalation replies, designer save, live SSE all wired");
+    assert.ok(js.includes("data-view") && js.includes("Needs you"), "all views present in bundle");
+    assert.ok(hrefs.length >= 1, "shell references a stylesheet");
+    let css = "";
+    for (const href of hrefs) {
+      const r = await fetch(`${base}${href}`);
+      assert.equal(r.status, 200);
+      assert.match(r.headers.get("content-type") ?? "", /text\/css/);
+      css += await r.text();
+    }
+    assert.ok(css.includes(".row-actions"));
 
     const notFound = await fetch(`${base}/missing.does-not-exist`);
     assert.equal(notFound.status, 404);
@@ -164,7 +176,7 @@ test("http api: config designer — validate/parse/save + designer page served",
   const path = require("path");
   const os = require("os");
   const fs = require("fs");
-  const dashDir = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "public");
+  const dashDir = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "dist");
   const server = createHttpServer(m, { dashboardDir: dashDir });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
@@ -174,9 +186,9 @@ test("http api: config designer — validate/parse/save + designer page served",
     return { status: res.status, json: (await res.json()) as any };
   };
   try {
-    const designer = await fetch(`${base}/designer.html`);
-    assert.equal(designer.status, 200);
-    assert.ok((await designer.text()).includes("#/designer"), "legacy link redirects into the SPA designer");
+    // The designer is a hash route inside the SPA shell now (no legacy page).
+    const gone = await fetch(`${base}/designer.html`);
+    assert.equal(gone.status, 404);
 
     const current = (await (await fetch(`${base}/config`)).json()) as any;
     assert.equal(current.raw.mesh.id, m.config.meshId);

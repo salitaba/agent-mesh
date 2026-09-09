@@ -26,12 +26,19 @@ export interface TestMeshOptions {
   maxEvents?: number;
   wallClockMinutes?: number;
   maxActiveAgents?: number;
+  maxTotalAgents?: number;
   criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
   goal?: string;
   uiOnly?: boolean;
+  mode?: "parked" | "live";
   triage?: { mode: "off" | "heuristic"; rules?: Array<{ agent: string; event?: string; ignore_if_text_matches?: string[]; act_if_text_matches?: string[] }> };
   threadTokens?: number;
   waitWakeupMs?: number;
+  turnTimeoutMs?: number;
+  stallIdleMs?: number;
+  stallCooldownMs?: number;
+  stallNoopRetryMs?: number;
+  bus?: { commitments?: { semantic?: "compat" | "strict" }; transport?: "mixed" | "typed-only" };
 }
 
 export function testConfigYaml(opts: TestMeshOptions): string {
@@ -91,12 +98,13 @@ budgets:
   mission: { tokens: ${opts.missionTokens ?? 10000000}, wall_clock_minutes: ${opts.wallClockMinutes ?? 60}, max_events: ${opts.maxEvents ?? 100000} }
   thread: { tokens: ${opts.threadTokens ?? 1000000} }
 
+${opts.bus ? `bus:\n${opts.bus.commitments?.semantic ? `  commitments: { semantic: ${opts.bus.commitments.semantic} }\n` : ""}${opts.bus.transport ? `  transport: ${opts.bus.transport}\n` : ""}` : ""}
 scheduling:
   mode: event-driven
   activation: { strategy: interest }
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}
-  concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4} }
-  timeouts: { turn_timeout_ms: 15000, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: 300 }
+  concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4}${opts.maxTotalAgents !== undefined ? `, max_total_agents: ${opts.maxTotalAgents}` : ""} }
+  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: 300, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
 `;
 }
 
@@ -104,7 +112,8 @@ export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-test-"));
   const configPath = path.join(dir, "mesh.yaml");
   fs.writeFileSync(configPath, testConfigYaml(opts), "utf8");
-  const instance = await bootstrapMesh({ configPath, inMemory: true, uiOnly: opts.uiOnly });
+  const mode = opts.mode ?? (opts.uiOnly ? "parked" : "live");
+  const instance = await bootstrapMesh({ configPath, inMemory: true, mode, uiOnly: mode === "parked" });
   (globalThis as unknown as Record<string, unknown>).__meshDebug = () => {
     const st = instance.kernel.state;
     const agents = [...st.agents.values()].map((r) => `${r.definition.id}:${r.state.lifecycle}(act ${r.state.activations}, unread ${st.unread.get(r.definition.id)?.length ?? 0})`).join("  ");
@@ -115,13 +124,12 @@ export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { 
     const esc = [...st.escalations.values()].map((e) => `${e.id}:${e.reason}`).join("  ");
     return `goal ${goal?.status} [${crit}] | ${agents} | artifacts: ${arts} | pending: ${pend} | escalations: ${esc}`;
   };
-  return {
-    ...instance,
+  return Object.assign(instance, {
     async cleanup() {
       await instance.close();
       fs.rmSync(dir, { recursive: true, force: true });
     },
-  };
+  });
 }
 
 export function stub(m: MeshInstance) {

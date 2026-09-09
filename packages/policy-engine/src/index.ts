@@ -218,11 +218,37 @@ export class PolicyEngine implements PolicyEvaluator {
     if (budget?.exceeded) {
       return { decision: "DEFER", reason: `agent budget exhausted (${budget.consumed}/${budget.limit ?? "?"})`, ruleId: "budget" };
     }
+    // A turn bound to a blown thread budget fails instantly at reservation
+    // time; parking the activation beats spinning fail-turns (which starve
+    // the event loop). Thread-agnostic reasons (recovery/manual/timer) still
+    // run once and fail visibly instead of looping.
+    const threadId = (event.payload as { threadId?: unknown } | null)?.threadId;
+    if (typeof threadId === "string" && threadId) {
+      const threadBudget = ctx.projections.budgets.get(`thread:${ctx.projections.activeGoalId}/${threadId}`);
+      if (threadBudget?.exceeded) {
+        return { decision: "DEFER", reason: `thread budget exhausted (${threadBudget.consumed}/${threadBudget.limit ?? "?"})`, ruleId: "thread-budget" };
+      }
+    }
     if (def.budget.maxActivations !== undefined && def.budget.maxActivations <= (ctx.projections.agents.get(agentId)?.state.activations ?? 0)) {
       return { decision: "DEFER", reason: `max_activations ${def.budget.maxActivations} reached`, ruleId: "max-activations" };
     }
     const goal = ctx.goal;
     if (goal && goal.status === "PAUSED") return { decision: "DEFER", reason: "goal paused", ruleId: "goal-paused" };
+    // A halted mission runs no turns (runTurn refuses them all). Parking the
+    // activation here — instead of letting it reach the scheduler queue — is
+    // what breaks the wedge: queued-then-silently-dropped turns finish
+    // instantly and requeue forever in a timer-free microtask loop that
+    // starves HTTP while emitting nothing (invisible in the log).
+    // Post-completion feedback: a human message must still wake its recipient
+    // so it can be answered. This is the one thing that runs on a completed
+    // goal; every other activation stays denied.
+    if (goal && goal.status === "COMPLETED" && event.type === "message.sent") {
+      return ALLOW;
+    }
+    if (goal && (goal.status === "ESCALATED" || goal.status === "COMPLETED" || goal.status === "FAILED")) {
+      const why = goal.status === "ESCALATED" ? "mission is escalated — respond to the open escalation first" : `mission is ${goal.status.toLowerCase()}`;
+      return { decision: "DENY", reason: why, ruleId: "goal-halted" };
+    }
     return ALLOW;
   }
 
@@ -256,10 +282,36 @@ export class PolicyEngine implements PolicyEvaluator {
   }
 }
 
+/**
+ * "Replies inside an existing thread are always allowed" — but only between
+ * agents that thread actually put in contact.
+ *
+ * `thread.participants` is an ever-growing roster: the reducer appends every
+ * sender AND every recipient of every message (projections-messaging.ts). One
+ * broadcast therefore enrolls the whole mesh into a single thread, after
+ * which this check returned true for ANY pair of agents in it — silently
+ * voiding the communication matrix that the mesh config, the role prompts and
+ * the escalation rules all assume is being enforced.
+ *
+ * A real reply relationship needs a conversational link: the target must have
+ * spoken in the thread, or have been addressed in it. Merely being swept into
+ * the roster by someone else's broadcast is not consent to be contacted.
+ */
 function isReplyViaParticipants(ctx: PolicyContext, message: Pick<MeshMessage, "threadId">, from: string, target: string): boolean {
   const thread = ctx.projections.threads.get(message.threadId);
   if (!thread) return false;
-  return thread.participants.includes(from) && thread.participants.includes(target);
+  if (!thread.participants.includes(from) || !thread.participants.includes(target)) return false;
+  // The thread opener is always reachable by anyone it invited.
+  if (thread.initiator === target || thread.initiator === from) return true;
+  for (const mid of thread.messageIds) {
+    const m = ctx.projections.messages.get(mid);
+    if (!m) continue;
+    // target spoke to us, or we were both on the same message.
+    if (m.from === target && (m.to.includes(from) || from === thread.initiator)) return true;
+    if (m.from === from && m.to.includes(target)) return true;
+    if (m.to.includes(target) && m.to.includes(from)) return true;
+  }
+  return false;
 }
 
 function communicationAllows(ctx: PolicyContext, from: string, target: string): boolean {

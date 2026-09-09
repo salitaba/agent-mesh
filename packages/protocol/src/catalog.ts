@@ -10,6 +10,7 @@ import type {
 
 export const EVENT_TYPES: EventType[] = [
   "goal.created",
+  "goal.budget_changed",
   "goal.status_changed",
   "goal.paused",
   "goal.resumed",
@@ -61,6 +62,13 @@ export const EVENT_TYPES: EventType[] = [
   "decision.ratified",
   "escalation.requested",
   "escalation.responded",
+  "escalation.auto_resolved",
+  // A deadlock the runtime settled by itself (currently: a circular wait
+  // broken by voiding one ask) instead of freezing the mission on a card.
+  "deadlock.auto_resolved",
+  // An outstanding ask stopped being outstanding (answered, superseded,
+  // withdrawn, or voided). The only event-sourced exit from the ledger.
+  "commitment.discharged",
   "human.input",
   "lease.acquired",
   "lease.released",
@@ -69,6 +77,7 @@ export const EVENT_TYPES: EventType[] = [
   "budget.consumed",
   "budget.exceeded",
   "budget.released",
+  "budget.limit_raised",
 ];
 
 export const MESSAGE_TYPES: MessageType[] = [
@@ -261,6 +270,37 @@ export const INITIAL_ARTIFACT_STATUS: Record<ArtifactStateMachineKind, ArtifactS
   release: "PROPOSED",
   document: "DRAFT",
 };
+
+/**
+ * Domains an authority token can name. These are exactly the subjects
+ * `Supervisor.domainOfSubject` resolves and `PolicyEngine.evaluateAuthority`
+ * checks against.
+ */
+export const AUTHORITY_DOMAINS = [
+  "architecture",
+  "implementation",
+  "quality",
+  "security",
+  "requirements",
+  "release",
+] as const;
+
+/** Verbs an authority token can carry. */
+export const AUTHORITY_VERBS = ["approve", "reject", "accept", "block", "veto", "pass", "*"] as const;
+
+/**
+ * Every authority token the runtime can satisfy, plus the `*` superuser held
+ * by the human seat.
+ *
+ * Without this list an authority typo (`architecture.aprove`) parsed fine,
+ * validated fine, and then silently DENIED forever at runtime — the agent
+ * simply never had the power its config claimed to grant, and the only
+ * symptom was a mission that would not converge.
+ */
+export const AUTHORITY_TOKENS: string[] = [
+  "*",
+  ...AUTHORITY_DOMAINS.flatMap((d) => AUTHORITY_VERBS.map((v) => `${d}.${v}`)),
+];
 
 export const TRUST_SOURCES = [
   "human",

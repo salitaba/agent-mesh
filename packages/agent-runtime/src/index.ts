@@ -15,6 +15,8 @@ export type StubScript = (input: AgentInput, turnIndex: number, session: AgentSe
 export interface StubTurn {
   text?: string;
   operations?: MeshOp[];
+  /** Simulate a typed (MCP) turn vs a prose-parsed one. */
+  typedOps?: boolean;
   tokensUsed?: { input: number; output: number; total: number };
   summary?: string;
   model?: string;
@@ -85,6 +87,7 @@ export class StubRuntime implements AgentRuntime {
     return {
       text: turn.text ?? "",
       operations: turn.operations ?? [{ op: "done" }],
+      typedOps: turn.typedOps,
       tokensUsed: turn.tokensUsed ?? { input: def, output: def / 2, total: def * 1.5 },
       model: turn.model ?? "stub-model",
       modelVersion: turn.modelVersion ?? "1",

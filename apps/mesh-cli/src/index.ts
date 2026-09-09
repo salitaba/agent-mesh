@@ -79,22 +79,155 @@ async function tryServer<T>(fn: () => Promise<T>, fallback: () => Promise<T>): P
   }
 }
 
-const HELP = `agent-mesh â€” runtime for persistent AI organizations
+function inspectAgo(iso: unknown): string {
+  const s = (Date.now() - Date.parse(String(iso ?? ""))) / 1000;
+  if (!Number.isFinite(s)) return "—";
+  if (s < 60) return `${Math.max(0, Math.round(s))}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  return `${Math.round(s / 3600)}h ago`;
+}
+
+function inspectNum(n: unknown): string {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return String(n ?? 0);
+  return v.toLocaleString("en-US");
+}
+
+function inspectSnippet(payload: unknown, max = 90): string {
+  if (payload === null || payload === undefined) return "";
+  if (typeof payload === "string") return payload.slice(0, max);
+  if (typeof payload === "object") {
+    const p = payload as Record<string, unknown>;
+    for (const k of ["question", "summary", "note", "reason", "text", "response"]) {
+      if (typeof p[k] === "string" && (p[k] as string).length > 0) return (p[k] as string).slice(0, max);
+    }
+    try {
+      return JSON.stringify(payload).slice(0, max);
+    } catch {
+      return "";
+    }
+  }
+  return String(payload).slice(0, max);
+}
+
+function inspectBar(pct: number | null | undefined, width = 20): string {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return "";
+  const filled = Math.round(Math.min(1, Math.max(0, pct)) * width);
+  return "█".repeat(filled).padEnd(width, "░");
+}
+
+function printAgentDetail(body: any, limit: number): void {
+  const d = body?.definition ?? {};
+  const s = body?.state ?? {};
+  const id = String(d.id ?? s.agentId ?? "?");
+  const role = String(d.role ?? "—");
+  const lifecycle = String(s.lifecycle ?? "—");
+  console.log(`${id} (${role}) — ${lifecycle} · active ${inspectAgo(s.lastActivityAt)} · ${s.activations ?? 0} runs · ${inspectNum(s.tokensConsumed)} tokens`);
+  if (s.lastError) console.log(`crashed: ${String(s.lastError).slice(0, 200)}`);
+  if (body.currentTurnId) console.log(`current step: ${body.currentTurnId}`);
+  const ab = body?.budgets?.agent;
+  if (ab) {
+    const pct = typeof ab.pct === "number" ? ` (${Math.round(ab.pct * 100)}%) ${inspectBar(ab.pct)}` : "";
+    console.log(`budget: ${inspectNum(ab.consumed)} / ${ab.limit ?? "?"}${ab.exceeded ? " EXCEEDED" : ""}${pct}`);
+  } else if (body?.budgets?.agentConfiguredTokens) {
+    console.log(`budget: ${inspectNum(s.tokensConsumed)} / ${inspectNum(body.budgets.agentConfiguredTokens)} (configured)`);
+  }
+  const mb = body?.budgets?.mission;
+  if (mb) console.log(`mission: ${inspectNum(mb.consumed)} / ${mb.limit ?? "?"}${mb.exceeded ? " EXCEEDED" : ""}`);
+  const comm = body?.communication;
+  if (comm && (comm.mayContact?.length || comm.mayBeContactedBy?.length)) {
+    console.log(`contacts: → ${(comm.mayContact ?? []).join(", ") || "(nobody new)"} · ← ${(comm.mayBeContactedBy ?? []).join(", ") || "(restricted)"}`);
+  }
+  if (body?.activeTask) {
+    const t = body.activeTask;
+    console.log(`\nactive task: ${t.id} — ${String(t.title ?? "").slice(0, 80)} [${t.status}]`);
+  }
+  const unread = Array.isArray(body?.unreadMessages) ? body.unreadMessages : [];
+  console.log(`\ninbox (${unread.length} unread):`);
+  if (!unread.length) console.log("  (empty)");
+  for (const m of unread.slice(0, limit)) {
+    const refs = (m.artifactRefs ?? []).map((r: any) => r.uri).join(", ");
+    console.log(`  [${String(m.timestamp ?? "").slice(11, 19)}] ${m.from} → ${(m.to ?? []).join(",")} ${m.type} (thread ${m.threadId})`);
+    const snip = inspectSnippet(m.payload);
+    if (snip) console.log(`    ${snip}`);
+    if (refs) console.log(`    files: ${refs}`);
+  }
+  const steps = Array.isArray(body?.recentSteps) ? body.recentSteps : [];
+  console.log(`\nrecent steps (${steps.length}):`);
+  if (!steps.length) console.log("  (no steps yet)");
+  for (const st of steps.slice(0, limit)) {
+    const ops = st.ops ? `${st.ops.messages} msg · ${st.ops.artifacts} files · ${st.ops.tasks} tasks` : "";
+    const dur = st.durationMs != null ? ` · ${(st.durationMs / 1000).toFixed(1)}s` : "";
+    console.log(`  ${String(st.turnId).slice(0, 13)} ${st.status} · ${st.reasonKind}${st.reasonNote ? ` (${String(st.reasonNote).slice(0, 50)})` : ""} · ${inspectNum(st.tokens)} tokens${dur} · ${ops}${st.error ? ` · err: ${String(st.error).slice(0, 80)}` : ""}`);
+  }
+  const recent = Array.isArray(body?.recentMessages) ? body.recentMessages : [];
+  console.log(`\nrecent messages (${recent.length}):`);
+  if (!recent.length) console.log("  (none)");
+  for (const m of recent.slice(0, limit)) {
+    console.log(`  [${String(m.timestamp ?? "").slice(11, 19)}] ${m.from} → ${(m.to ?? []).join(",")} ${m.type}: ${inspectSnippet(m.payload, 70)}`);
+  }
+  const tasks = Array.isArray(body?.tasksInvolved) ? body.tasksInvolved : [];
+  if (tasks.length) {
+    console.log(`\ntasks (${tasks.length}):`);
+    for (const t of tasks.slice(0, limit)) console.log(`  ${t.id} [${t.status}] ${String(t.title ?? "").slice(0, 70)}`);
+  }
+  const arts = Array.isArray(body?.artifacts) ? body.artifacts : [];
+  if (arts.length) {
+    console.log(`\nartifacts (${arts.length}):`);
+    for (const a of arts.slice(0, limit)) console.log(`  ${a.name} v${a.version} [${a.status}] ${a.type} by ${a.createdBy}`);
+  }
+  const threads = Array.isArray(body?.threads) ? body.threads : [];
+  if (threads.length) {
+    console.log(`\nthreads (${threads.length}):`);
+    for (const t of threads.slice(0, limit)) console.log(`  ${t.id} “${String(t.subject ?? "").slice(0, 60)}” [${t.status}] ${t.messageCount} msgs · ${(t.participants ?? []).join(",")}`);
+  }
+  const mem = Array.isArray(body?.memory) ? body.memory : [];
+  console.log(`\nmemory (${mem.length}):`);
+  if (!mem.length) console.log("  (no notes)");
+  for (const n of mem.slice(0, limit)) console.log(`  - ${n.key}: ${String(n.value ?? "").slice(0, 100)}`);
+  const evs = Array.isArray(body?.recentEvents) ? body.recentEvents : [];
+  if (evs.length) {
+    console.log(`\nrecent events (${evs.length}):`);
+    for (const e of evs.slice(0, limit)) console.log(`  #${e.seq} ${e.type} ${e.actor ?? ""} ${String(e.summary ?? "").slice(0, 80)}`);
+  }
+  const appr = Array.isArray(body?.approvals) ? body.approvals : [];
+  if (appr.length) {
+    console.log(`\napprovals (${appr.length}):`);
+    for (const a of appr.slice(0, 5)) console.log(`  ${a.kind} ${a.subject}${a.artifactId ? ` ${String(a.artifactId).slice(0, 12)}` : ""} at ${String(a.recordedAt ?? "").slice(11, 19)}`);
+  }
+  const esc = Array.isArray(body?.escalations) ? body.escalations : [];
+  if (esc.length) {
+    console.log(`\nescalations (${esc.length}):`);
+    for (const e of esc.slice(0, 5)) console.log(`  ${e.id} [${e.reason}] ${e.status}`);
+  }
+  const leases = Array.isArray(body?.leases) ? body.leases : [];
+  if (leases.length) {
+    console.log(`\nleases (${leases.length}):`);
+    for (const l of leases.slice(0, 5)) console.log(`  ${l.artifactId} → ${l.worktreePath}${l.active ? "" : " (released)"}`);
+  }
+  const sess = body?.session;
+  if (sess) console.log(`\nsession: ${sess.sessionId} (${sess.runtime})`);
+  console.log(`\n--json for full payload`);
+}
+
+const HELP = `agent-mesh — runtime for persistent AI organizations
 
 usage:
   mesh init [dir]                          scaffold mesh.yaml + roles
   mesh validate <mesh.yaml>                schema + cross-field validation
   mesh emit-schemas [dir]                  write canonical JSON schemas
-  mesh run <mesh.yaml> [--port n] [--no-tui] [--git]   start the supervisor
-  mesh ui <mesh.yaml> [--port n]        parked console: dashboard+designer,
-                                         nothing runs on its own; wake buttons
-                                         step single turns, ▶ starts the mission
-                                         (also: mesh run --ui-only)
+  mesh run <mesh.yaml> [--port n] [--no-tui] [--git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
+  mesh serve <mesh.yaml> [--port n] [--git]                      live + dashboard (alias: up; same as run --no-tui)
+  mesh console <mesh.yaml> [--port n] [--git]                    parked stepper console (alias: ui)
+    parked: dashboard+designer, nothing runs on its own.
+    send with "wake after send" (or wake buttons) steps single turns;
+    ▶ start mission (POST /mission/start) flips parked -> live.
+    flags: --live forces live, --parked / --ui-only forces parked.
   mesh status [--bus url]                  mission/agent/budget overview
   mesh graph [--bus url]                   live collaboration graph
   mesh events [--type t] [--limit n]       event timeline
   mesh agents [--bus url]                  agent table
-  mesh inspect <agentId>                   full agent state + memory + mail
+  mesh inspect <agentId> [--json] [--limit n]  full agent detail: inbox, steps, tasks, artifacts, budgets
   mesh replay <goalId> [--upToSeq n]       deterministic state replay
   mesh pause | resume [goalId]             goal control
   mesh wake <agentId>                      manual activation
@@ -106,6 +239,127 @@ usage:
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
   bench [--mesh config.yaml] [--single config.yaml] [--out report.json]
 `;
+
+export type LaunchMode = "live" | "parked";
+
+/**
+ * Single place that maps (command + flags) -> server mode.
+ * Commands carry the default; explicit flags win and warn on conflict.
+ * `--ui-only` is kept as a deprecated alias of `--parked`.
+ */
+export function resolveLaunchMode(command: string, flags: Record<string, string | boolean>): { mode: LaunchMode; warnings: string[] } {
+  const defaultMode: LaunchMode = command === "ui" || command === "console" ? "parked" : "live";
+  const wantsParked = Boolean(flags["parked"] ?? flags["ui-only"]);
+  const wantsLive = Boolean(flags["live"]);
+  const warnings: string[] = [];
+  if (flags["ui-only"]) warnings.push("flag --ui-only is deprecated, use --parked (or `mesh console`)");
+  if (wantsParked && wantsLive) {
+    warnings.push("--parked and --live conflict; --live wins");
+    return { mode: "live", warnings };
+  }
+  if (wantsParked) {
+    if (defaultMode === "live") warnings.push(`${command} defaults to live; --parked forces the stepper console`);
+    return { mode: "parked", warnings };
+  }
+  if (wantsLive) {
+    if (defaultMode === "parked") warnings.push(`${command} defaults to parked; --live forces autonomous run`);
+    return { mode: "live", warnings };
+  }
+  return { mode: defaultMode, warnings };
+}
+
+async function launchMesh(opts: {
+  configPath: string;
+  mode: LaunchMode;
+  port?: number;
+  fresh?: boolean;
+  allowResume?: boolean;
+  useGit?: boolean;
+  withTui?: boolean;
+  noDemo?: boolean;
+}): Promise<number> {
+  const file = opts.configPath;
+  const preflight = resolveConfig(file);
+  const needsOpenCode =
+    preflight.defaultRuntime === "opencode" || Object.values(preflight.agents).some((a) => a.runtime === "opencode");
+  if (needsOpenCode && !hasOpenCodeCli()) {
+    if (opts.mode === "live") {
+      console.error(
+        "error: this mesh uses runtime 'opencode' but the 'opencode' CLI was not found on PATH.\n" +
+          "  - install OpenCode:  npm i -g opencode-ai   (https://opencode.ai)\n" +
+          "  - or run a model-free version:  npm run mesh -- init <dir>  (falls back to runtime: stub)\n" +
+          "  - or edit " + file + " and set mesh.runtime.default: stub\n" +
+          "  - or open the panel without running agents:  npm run mesh -- console " + file,
+      );
+      return 2;
+    }
+    console.warn("warn: 'opencode' CLI not found — console will load, but wake/start will fail until it is installed (or switch runtime to stub).");
+  }
+  const useDemo = !opts.noDemo && preflight.meshId === "demo-stub";
+  // A scripted demo always starts clean (its team is re-attached each
+  // boot); a real mesh resumes from its event log unless --fresh.
+  const fresh = Boolean(opts.fresh) || useDemo;
+  if (fresh && !opts.allowResume) {
+    fs.rmSync(preflight.stateDir, { recursive: true, force: true });
+  }
+  const handle = await startServer({
+    configPath: file,
+    port: opts.port,
+    useGit: Boolean(opts.useGit),
+    mode: opts.mode,
+    // backward compat for any external startServer caller reading uiOnly
+    uiOnly: opts.mode === "parked",
+  });
+  if (useDemo && !opts.allowResume) {
+    try {
+      const { attachDemoTeam } = await import("./bench");
+      attachDemoTeam(handle.instance);
+      console.log(
+        opts.mode === "parked"
+          ? "demo team installed (parked): wake single agents for manual steps, or press ▶ start mission to run the whole flow."
+          : "demo team attached: scripted roles will now run the payment flow (QA blocks once — watch conflict handling).",
+      );
+    } catch (err) {
+      console.error(`demo attach failed: ${(err as Error).message}`);
+    }
+  }
+  const parked = opts.mode === "parked";
+  console.log(
+    parked
+      ? `mesh panel (parked) online at ${handle.url}  — dashboard /designer available; agents are NOT activated`
+      : `mesh '${path.basename(file, path.extname(file))}' supervisor online at ${handle.url} (live)`,
+  );
+  if (opts.withTui) {
+    await runTui(handle.url, async () => handle.close());
+  } else {
+    console.log(parked ? `  dashboard: ${handle.url}/    designer: ${handle.url}/#/designer    (Ctrl-C to stop)` : "running headless; Ctrl-C to stop");
+    await new Promise<void>((resolve) => {
+      const stop = () => {
+        resolve();
+      };
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+      if (!parked) {
+        // Live goals terminate; parked consoles never auto-complete (scheduler
+        // is stopped), so only SIGINT/SIGTERM ends them.
+        const goalWatch = setInterval(async () => {
+          try {
+            const { body } = await httpJson("GET", `${handle.url}/status`);
+            if (body?.goal && ["COMPLETED", "FAILED", "ESCALATED"].includes(body.goal.status)) {
+              clearInterval(goalWatch);
+              console.log(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
+              stop();
+            }
+          } catch {
+            /* server may be closing */
+          }
+        }, 2000);
+      }
+    });
+    await handle.close();
+  }
+  return 0;
+}
 
 export async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
@@ -140,84 +394,43 @@ export async function main(argv: string[]): Promise<number> {
         const resolved = resolveConfig(file);
         void raw;
         console.log(`OK: ${resolved.agentOrder.length} agents, mesh '${resolved.meshId}', runtime default '${resolved.defaultRuntime}'`);
+        console.log(`   commitments: ${resolved.bus.commitmentSemantic} · transport: ${resolved.bus.transport}`);
         console.log(`   interests wired for: ${resolved.agentOrder.filter((a) => resolved.agents[a].interests.length > 0).join(", ")}`);
         console.log(`   transition gates: ${Object.keys(resolved.transitionGates).join(", ") || "(none)"}`);
+        // Non-fatal but mission-ending if ignored: an unsatisfiable gate
+        // deadlocks every artifact that needs it, with no runtime error.
+        for (const w of resolved.warnings) console.log(`   warning: ${w}`);
         return 0;
       }
       case "run":
+      case "serve":
+      case "up":
+      case "console":
       case "ui": {
-        const uiOnly = args.command === "ui" || Boolean(args.flags["ui-only"]);
         const file = args.positional[0];
         if (!file) throw new Error(`usage: mesh ${args.command} <mesh.yaml>`);
-        const preflight = resolveConfig(file);
-        const needsOpenCode =
-          preflight.defaultRuntime === "opencode" || Object.values(preflight.agents).some((a) => a.runtime === "opencode");
-        if (needsOpenCode && !uiOnly && !hasOpenCodeCli()) {
-          console.error(
-            "error: this mesh uses runtime 'opencode' but the 'opencode' CLI was not found on PATH.\n" +
-              "  - install OpenCode:  npm i -g opencode-ai   (https://opencode.ai)\n" +
-              "  - or run a model-free version:  npm run mesh -- init <dir>  (falls back to runtime: stub)\n" +
-              "  - or edit " + file + " and set mesh.runtime.default: stub\n" +
-              "  - or open the panel without running agents:  npm run mesh -- ui " + file,
-          );
-          return 2;
+        const { mode, warnings } = resolveLaunchMode(args.command, args.flags);
+        for (const w of warnings) console.warn(`warn: ${w}`);
+        const noTui = Boolean(args.flags["no-tui"]);
+        const wantTui = Boolean(args.flags["tui"]);
+        // run: TUI when TTY unless disabled. serve/up/ui/console: dashboard-first.
+        const withTui =
+          args.command === "run"
+            ? process.stdout.isTTY && !noTui
+            : wantTui && process.stdout.isTTY && !noTui;
+        if (wantTui && args.command !== "run" && !withTui) {
+          console.warn("warn: --tui needs a TTY; falling back to headless dashboard mode");
         }
-        const useDemo = !args.flags["no-demo"] && preflight.meshId === "demo-stub";
-        // A scripted demo always starts clean (its team is re-attached each
-        // boot); a real mesh resumes from its event log unless --fresh.
-        const fresh = Boolean(args.flags.fresh) || useDemo;
-        if (fresh && !args.flags.resume) {
-          fs.rmSync(preflight.stateDir, { recursive: true, force: true });
-        }
-        const handle = await startServer({
+        return launchMesh({
           configPath: file,
+          mode,
           port: args.flags.port ? Number(args.flags.port) : undefined,
-          useGit: Boolean(args.flags.git) && !uiOnly,
-          uiOnly,
+          fresh: Boolean(args.flags.fresh),
+          allowResume: Boolean(args.flags.resume),
+          useGit: Boolean(args.flags.git),
+          withTui,
+          noDemo: Boolean(args.flags["no-demo"]),
         });
-        if (useDemo) {
-          try {
-            const { attachDemoTeam } = await import("./bench");
-            attachDemoTeam(handle.instance);
-            console.log(uiOnly
-              ? "demo team installed (parked): wake single agents for manual steps, or press ▶ start mission to run the whole flow."
-              : "demo team attached: scripted roles will now run the payment flow (QA blocks once — watch conflict handling).");
-          } catch (err) {
-            console.error(`demo attach failed: ${(err as Error).message}`);
-          }
-        }
-        console.log(
-          uiOnly
-            ? `mesh panel (UI-only) online at ${handle.url}  — dashboard /designer available; agents are NOT activated`
-            : `mesh '${path.basename(file, path.extname(file))}' supervisor online at ${handle.url}`,
-        );
-        const useTui = process.stdout.isTTY && !args.flags["no-tui"] && !uiOnly;
-        if (useTui) {
-          await runTui(handle.url, async () => handle.close());
-        } else {
-          console.log(uiOnly ? `  dashboard: ${handle.url}/    designer: ${handle.url}/designer.html    (Ctrl-C to stop)` : "running headless; Ctrl-C to stop");
-          await new Promise<void>((resolve) => {
-            const stop = () => {
-              resolve();
-            };
-            process.once("SIGINT", stop);
-            process.once("SIGTERM", stop);
-            const goalWatch = setInterval(async () => {
-              try {
-                const { body } = await httpJson("GET", `${handle.url}/status`);
-                if (body?.goal && ["COMPLETED", "FAILED", "ESCALATED"].includes(body.goal.status)) {
-                  clearInterval(goalWatch);
-                  console.log(`\ngoal ${body.goal.status.toLowerCase()} â€” shutting down`);
-                  stop();
-                }
-              } catch {
-                /* server may be closing */
-              }
-            }, 2000);
-          });
-          await handle.close();
-        }
-        return 0;
       }
       case "mcp": {
         const { runStdioMcpBridge } = await import("./mcp-stdio");
@@ -264,13 +477,18 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "inspect": {
         const id = args.positional[0];
-        if (!id) throw new Error("usage: mesh inspect <agentId>");
-        const { body } = await httpJson("GET", `${bus}/agents/${encodeURIComponent(id)}`);
+        if (!id) throw new Error("usage: mesh inspect <agentId> [--json] [--limit n]");
+        const limit = args.flags.limit ? Number(args.flags.limit) : 10;
+        const { body } = await httpJson("GET", `${bus}/agents/${encodeURIComponent(id)}?limit=${limit}`);
         if (body.error) {
           console.error(body.error);
           return 1;
         }
-        console.log(JSON.stringify(body, null, 2));
+        if (args.flags.json) {
+          console.log(JSON.stringify(body, null, 2));
+          return 0;
+        }
+        printAgentDetail(body, limit);
         return 0;
       }
       case "events": {
@@ -396,7 +614,7 @@ async function offlineStatus(args: Args): Promise<unknown> {
   const file = args.positional[0] ?? process.env.MESH_CONFIG ?? "mesh.yaml";
   const dir = stateDirFor(fs.existsSync(file) ? file : "mesh.yaml");
   const store = new JsonlEventStore(path.join(dir, "logs", "events.jsonl"));
-  const events = await store.read();
+  const events = await store.read().finally(() => store.close());
   const goal = [...events].reverse().find((e) => e.type === "goal.created");
   const agentStates = new Map<string, string>();
   const tokens = new Map<string, number>();
@@ -420,7 +638,7 @@ async function offlineEvents(args: Args, limit: number, type?: string): Promise<
   const file = args.positional[0] ?? process.env.MESH_CONFIG ?? "mesh.yaml";
   const dir = stateDirFor(fs.existsSync(file) ? file : "mesh.yaml");
   const store = new JsonlEventStore(path.join(dir, "logs", "events.jsonl"));
-  const events = await store.read({ types: type ? ([type] as never) : undefined, limit: limit * 4 });
+  const events = await store.read({ types: type ? ([type] as never) : undefined, tail: limit * 4 }).finally(() => store.close());
   const { eventTimeline } = await import("../../../packages/observability/src/index");
   return eventTimeline(events, limit);
 }

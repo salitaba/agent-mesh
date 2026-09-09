@@ -106,12 +106,14 @@ export class SnapshotStore {
 export interface SqliteIndexLike {
   available: boolean;
   ingest(events: MeshEvent[]): void;
+  /** Force buffered events to disk. Cheap no-op when there is nothing pending. */
+  flush(): void;
   query(opts: { goalId?: string; type?: string; actorId?: string; limit?: number }): MeshEvent[];
   close(): void;
 }
 
 export function openSqliteIndex(dbFile: string): SqliteIndexLike {
-  const unavailable: SqliteIndexLike = { available: false, ingest: () => undefined, query: () => [], close: () => undefined };
+  const unavailable: SqliteIndexLike = { available: false, ingest: () => undefined, flush: () => undefined, query: () => [], close: () => undefined };
   let mod: { DatabaseSync: new (file: string) => any } | null = null;
   try {
     mod = require("node:sqlite");
@@ -143,17 +145,70 @@ export function openSqliteIndex(dbFile: string): SqliteIndexLike {
   const insert = db.prepare(
     "INSERT OR IGNORE INTO events (seq, id, type, goal_id, actor_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
-  return {
-    available: true,
-    ingest(events: MeshEvent[]): void {
-      for (const e of events) {
+  // Batched writes: one autocommit transaction per insert costs ~5ms (each
+  // statement fsyncs). Buffering into a single transaction per batch makes
+  // thousands of events cost milliseconds total. The index is best-effort
+  // and rebuildable from the JSONL log, so a <1s flush delay is acceptable.
+  let pending: MeshEvent[] = [];
+  let timer: NodeJS.Timeout | undefined;
+  const FLUSH_EVERY = 500;
+  const FLUSH_AFTER_MS = 1000;
+  const flush = (): void => {
+    timer = undefined;
+    if (pending.length === 0) return;
+    const batch = pending;
+    pending = [];
+    try {
+      db.exec("BEGIN IMMEDIATE");
+    } catch {
+      // Could not start the transaction (locked DB, etc.): requeue so the
+      // batch is retried on the next flush instead of silently dropped.
+      pending = batch.concat(pending);
+      return;
+    }
+    try {
+      for (const e of batch) {
         try {
           insert.run(e.seq ?? 0, e.id, e.type, e.goalId ?? null, e.actorId ?? null, e.timestamp, JSON.stringify(e.payload ?? {}));
         } catch {
-          /* index failures never affect the canonical JSONL log */
+          /* one poison row must not abort the batch */
         }
       }
-    },
+      db.exec("COMMIT");
+    } catch {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        /* best-effort */
+      }
+      pending = batch.concat(pending);
+    }
+  };
+  const schedule = (): void => {
+    if (timer !== undefined || pending.length === 0) return;
+    timer = setTimeout(flush, FLUSH_AFTER_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+  };
+  const ingestLoop = (events: MeshEvent[]): void => {
+    // Plain loop, no argument spread: ingesting a whole boot log in one call
+    // would throw RangeError on large arrays. Flush in chunks so a huge
+    // backlog never sits entirely in memory either.
+    for (const e of events) {
+      pending.push(e);
+      if (pending.length >= FLUSH_EVERY) {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+        flush();
+      }
+    }
+    schedule();
+  };
+  return {
+    available: true,
+    ingest: ingestLoop,
+    flush,
     query(opts): MeshEvent[] {
       const where: string[] = [];
       const args: unknown[] = [];
@@ -187,6 +242,11 @@ export function openSqliteIndex(dbFile: string): SqliteIndexLike {
     },
     close(): void {
       try {
+        flush();
+      } catch {
+        /* ignore */
+      }
+      try {
         db.close();
       } catch {
         /* ignore */
@@ -202,6 +262,49 @@ export function ensureStateLayout(stateDir: string): { events: string; artifacts
   };
   for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
   return dirs;
+}
+
+export interface StateArchiveResult {
+  /** Absolute path of the archived copy, or null when there was nothing to archive. */
+  archivedTo: string | null;
+  /** Layout of the freshly recreated (empty) state dir. */
+  layout: { events: string; artifacts: string; logs: string };
+}
+
+/**
+ * Archive-then-wipe of a mesh state directory.
+ *
+ * Renames `<stateDir>` to `<stateDir>.bak-<timestamp>` (same pattern the
+ * workspace already uses by hand) and recreates an empty layout in its place.
+ * Rename is atomic on the same filesystem, so there is never a window where
+ * the mesh sees a half-deleted state dir — and the previous mission stays
+ * fully recoverable on disk.
+ *
+ * Callers MUST close any open handles into `stateDir` (JSONL store, sqlite
+ * index) before calling and reopen after: on Windows an open handle blocks the
+ * rename, and on POSIX the handle would keep writing into the archived inode.
+ */
+export function archiveStateDir(stateDir: string, opts: { keepArtifacts?: boolean } = {}): StateArchiveResult {
+  const resolved = path.resolve(stateDir);
+  let archivedTo: string | null = null;
+  if (fs.existsSync(resolved)) {
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
+    let target = `${resolved}.bak-${stamp}`;
+    // Two resets inside the same second must not clobber the first archive.
+    let n = 1;
+    while (fs.existsSync(target)) target = `${resolved}.bak-${stamp}-${n++}`;
+    fs.renameSync(resolved, target);
+    archivedTo = target;
+  }
+  const layout = ensureStateLayout(resolved);
+  // Opt-in carry-over: produced documents survive the reset even though the
+  // event log that referenced them does not. Copy (not move) so the archive
+  // stays a complete snapshot of the previous mission.
+  if (opts.keepArtifacts && archivedTo) {
+    const from = path.join(archivedTo, "artifacts");
+    if (fs.existsSync(from)) fs.cpSync(from, layout.artifacts, { recursive: true });
+  }
+  return { archivedTo, layout };
 }
 
 export class EventTailer {

@@ -25,6 +25,7 @@
       "type": "string",
       "enum": [
         "goal.created",
+        "goal.budget_changed",
         "goal.status_changed",
         "goal.paused",
         "goal.resumed",
@@ -76,6 +77,9 @@
         "decision.ratified",
         "escalation.requested",
         "escalation.responded",
+        "escalation.auto_resolved",
+        "deadlock.auto_resolved",
+        "commitment.discharged",
         "human.input",
         "lease.acquired",
         "lease.released",
@@ -83,7 +87,8 @@
         "budget.reserved",
         "budget.consumed",
         "budget.exceeded",
-        "budget.released"
+        "budget.released",
+        "budget.limit_raised"
       ]
     },
     "timestamp": {

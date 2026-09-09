@@ -180,3 +180,55 @@ test("policy: human is a mesh participant, not an oracle bypass of evidence", as
   }
   await m.cleanup();
 });
+
+test("communication: a broadcast roster does not become a backdoor around may_contact", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "lead", role: "tech-lead", capabilities: ["task.assign"], interests: [] },
+      { id: "architect", role: "architect", capabilities: ["review.design"], interests: [] },
+      { id: "qa", role: "qa", capabilities: ["test.execute"], interests: [] },
+    ],
+    // The mission forbids architect <-> qa; both talk through the lead.
+    mayContact: { lead: ["architect", "qa"], architect: ["lead"], qa: ["lead"] },
+    mode: "parked",
+  });
+  const state = m.kernel.state;
+
+  const direct = await m.supervisor.sendMessage({
+    from: "architect", to: ["qa"], type: "REQUEST",
+    newThread: { subject: "direct" }, payload: {},
+  });
+  assert.equal(direct.accepted, false, "baseline: the matrix forbids architect -> qa");
+
+  // The lead broadcasts once; the reducer sweeps everyone into the roster.
+  const bc = await m.supervisor.sendMessage({
+    from: "lead", to: ["architect", "qa"], type: "INFORM",
+    newThread: { subject: "status" }, payload: { note: "kickoff" },
+  });
+  const threadId = state.messages.get(bc.messageId!)!.threadId;
+  assert.ok(state.threads.get(threadId)!.participants.includes("architect"));
+  assert.ok(state.threads.get(threadId)!.participants.includes("qa"));
+
+  // Both were addressed on the SAME message, so they are genuinely in contact
+  // and may reply to each other in that thread.
+  const shared = await m.supervisor.sendMessage({
+    from: "architect", to: ["qa"], type: "INFORM", threadId, payload: { note: "same-message contact" },
+  });
+  assert.equal(shared.accepted, true, "co-addressees of one message are in contact");
+
+  // But a thread that merely lists someone must not grant contact. lead talks
+  // to each privately in one thread; architect and qa never share a message.
+  const priv = await m.supervisor.sendMessage({
+    from: "lead", to: ["architect"], type: "INFORM",
+    newThread: { subject: "private" }, payload: {},
+  });
+  const privThread = state.messages.get(priv.messageId!)!.threadId;
+  await m.supervisor.sendMessage({ from: "lead", to: ["qa"], type: "INFORM", threadId: privThread, payload: {} });
+  const roster = state.threads.get(privThread)!.participants;
+  assert.ok(roster.includes("architect") && roster.includes("qa"), "both are on the roster");
+  const backdoor = await m.supervisor.sendMessage({
+    from: "architect", to: ["qa"], type: "REQUEST", threadId: privThread, payload: { q: "backdoor?" },
+  });
+  assert.equal(backdoor.accepted, false, "roster membership alone must not void the communication matrix");
+  await m.cleanup();
+});

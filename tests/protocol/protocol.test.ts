@@ -15,6 +15,7 @@ import {
   newEventId,
   FixedClock,
   PROTOCOL_VERSION,
+  aliasTextOp,
   type MeshMessage,
 } from "../../packages/protocol/src/index";
 import { loadMeshFile, resolveConfig, validateInterestExpressions, interestMatches } from "../../packages/config/src/index";
@@ -45,6 +46,15 @@ test("protocol: message with non-canonical type is rejected", () => {
   const r = validateMessage(validMessage({ type: "CHAT_FREELY" as MeshMessage["type"] }));
   assert.equal(r.valid, false);
   assert.ok(r.errors.some((e) => e.path === "/type"));
+});
+
+test("protocol: invented REPLY type aliases to INFORM (resolves, not re-asks)", () => {
+  // Regression: reply used to alias to REQUEST, minting a NEW pending ask on
+  // a NEW thread — an answered question became two open ones and escalated.
+  const aliased = aliasTextOp({ op: "send", type: "REPLY", to: ["pm"], threadId: "t-1", payload: { answer: "done" } });
+  assert.equal(aliased?.type, "INFORM");
+  const lower = aliasTextOp({ op: "send", type: "reply", to: ["pm"], threadId: "t-1", payload: {} });
+  assert.equal(lower?.type, "INFORM");
 });
 
 test("protocol: message without thread/goal ids is rejected", () => {
@@ -185,9 +195,111 @@ test("clock: FixedClock is deterministic", () => {
 });
 
 test("schemas directory files match the compiled protocol schemas", () => {
+  // The protocol is published twice: `schemas/*.json` is the documented,
+  // vendor-independent contract, and `packages/protocol/src/schemas.ts` is
+  // what actually validates at runtime. They must be the same document.
+  //
+  // This used to compare exactly one enum on exactly one of the four schemas,
+  // so every other field could drift silently — and did: a message field
+  // added to the on-disk contract was rejected by the runtime validator,
+  // because the runtime never saw it. A partial guard on a duplicated
+  // source of truth is a guard that reports success while the two copies
+  // disagree.
   const fs = require("fs");
-  if (!fs.existsSync("schemas/event.schema.json")) return;
   const { SCHEMAS } = require("../../packages/protocol/src/index");
-  const onDisk = JSON.parse(fs.readFileSync("schemas/event.schema.json", "utf8"));
-  assert.deepEqual(onDisk.properties.type.enum, SCHEMAS.event.properties.type.enum);
+  const names = Object.keys(SCHEMAS as Record<string, unknown>);
+  assert.deepEqual(names.sort(), ["artifact", "event", "mesh", "message"], "every published schema is covered");
+  for (const [name, compiled] of Object.entries(SCHEMAS as Record<string, unknown>)) {
+    const file = `schemas/${name}.schema.json`;
+    assert.ok(fs.existsSync(file), `${file} must exist: it is the documented contract for the ${name} schema`);
+    const onDisk = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.deepEqual(
+      onDisk,
+      JSON.parse(JSON.stringify(compiled)),
+      `${file} has drifted from the compiled schema — the documented contract and the enforced one must be identical`,
+    );
+  }
+});
+
+test("config: an authority the runtime can never satisfy is rejected at load", () => {
+  // `architecture.aprove` used to load, validate and boot cleanly, then DENY
+  // on every check — the agent silently never held the power its config
+  // granted, and the mission just failed to converge with no error anywhere.
+  const yaml = `version: 1
+mesh: { id: x, goal: g }
+startup: { activate: [architect] }
+agents:
+  architect:
+    role: architect
+    authority: [architecture.aprove]
+policies:
+  communication:
+    architect: { may_contact: [] }
+`;
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cfg-auth-"));
+  const file = path.join(dir, "mesh.yaml");
+  fs.writeFileSync(file, yaml);
+  assert.throws(() => resolveConfig(file), /unknown authority 'architecture\.aprove'/);
+});
+
+test("config: a transition gate no agent can satisfy is reported as a warning", () => {
+  // A gate naming an absent actor is unsatisfiable: every artifact needing it
+  // deadlocks forever, and nothing reported why. Warned rather than fatal —
+  // a larger mesh may add the role later, and gates are legitimately used to
+  // express "not yet satisfiable" states.
+  const yaml = `version: 1
+mesh: { id: x, goal: g }
+startup: { activate: [dev] }
+agents:
+  dev:
+    role: developer
+policies:
+  communication:
+    dev: { may_contact: [] }
+  transitions:
+    patch.merge: { requires: [tech-lead.approve] }
+`;
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cfg-gate-"));
+  const file = path.join(dir, "mesh.yaml");
+  fs.writeFileSync(file, yaml);
+  const cfg = resolveConfig(file);
+  assert.ok(
+    cfg.warnings.some((w: string) => /no agent or role 'tech-lead' exists/.test(w)),
+    `unsatisfiable gate must be surfaced, got ${JSON.stringify(cfg.warnings)}`,
+  );
+});
+
+test("config: valid authority tokens and satisfiable gates load cleanly", () => {
+  const yaml = `version: 1
+mesh: { id: x, goal: g }
+startup: { activate: [lead] }
+agents:
+  lead:
+    role: tech-lead
+    authority: [implementation.approve, architecture.*]
+    capabilities: [git.merge]
+  qa:
+    role: qa
+    authority: [quality.block]
+policies:
+  communication:
+    lead: { may_contact: [qa] }
+    qa: { may_contact: [lead] }
+  transitions:
+    patch.merge: { requires: [tech-lead.approve, qa.pass] }
+`;
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cfg-ok-"));
+  const file = path.join(dir, "mesh.yaml");
+  fs.writeFileSync(file, yaml);
+  const cfg = resolveConfig(file);
+  assert.deepEqual(cfg.transitionGates["patch.merge"], ["tech-lead.approve", "qa.pass"]);
 });
