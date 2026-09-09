@@ -41,6 +41,27 @@ export interface TestMeshOptions {
   bus?: { commitments?: { semantic?: "compat" | "strict" }; transport?: "mixed" | "typed-only" };
 }
 
+/**
+ * Artifact body long enough to evidence a MANDATORY acceptance criterion.
+ *
+ * Mandatory criteria require a real deliverable (see MIN_EVIDENCE_CONTENT_CHARS
+ * in the supervisor), so fixtures that used to publish `"x"` or `"diff"` are now
+ * correctly rejected. Tests that only need *an* artifact should keep their short
+ * content; use this only where the artifact is cited as evidence.
+ */
+export function evidenceContent(subject: string): string {
+  return [
+    `# ${subject}`,
+    "",
+    `Scope: ${subject} covering the agreed interfaces, constraints and failure modes.`,
+    "Decisions: recorded with rationale so a reviewer can check them without asking the author.",
+    "Verification: exercised end to end; results and residual risks are listed below.",
+    "Residual risk: none blocking; follow-ups tracked as separate tasks in the mesh.",
+    "Notes: this fixture body exists to clear the mandatory-evidence floor deliberately,",
+    "because a one-word artifact is exactly the stub the evidence gate is meant to reject.",
+  ].join("\n");
+}
+
 export function testConfigYaml(opts: TestMeshOptions): string {
   const agents = opts.agents
     .map((a) => {

@@ -292,8 +292,16 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push("");
   }
   lines.push("## How to act");
+  // "Keep responses short" used to live here and was actively harmful: it is an
+  // instruction to produce less, applied to the one thing the mission is judged
+  // on. Brevity belongs in COORDINATION (messages, status), never in the
+  // deliverable. Missions were completing with five ticked criteria backed by
+  // one-paragraph artifacts. The distinction below is the fix.
   lines.push(
-    "Reply with structured mesh operations only. Never communicate outside the mesh. Keep responses short; reference artifacts instead of pasting content. When you need something from another agent, send a typed request and finish your turn (the runtime will wake you on the response).",
+    "Reply with structured mesh operations only. Never communicate outside the mesh. When you need something from another agent, send a typed request and finish your turn (the runtime will wake you on the response).",
+  );
+  lines.push(
+    "Be terse in COORDINATION (messages, comments, status) — reference artifacts by id rather than pasting their contents into mail. Be COMPLETE in DELIVERABLES: artifact content is the mission output and is judged on it. Publish the full work — full documents, full code, full analysis with reasoning and specifics. A stub, an outline, or a summary-of-what-you-would-write is not a deliverable and does not evidence a criterion.",
   );
   lines.push("");
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
@@ -322,7 +330,12 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // required artifactId and being rejected every time.
   lines.push("## Closing out work (how evidence actually gets recorded)");
   lines.push(
-    'Satisfy an acceptance criterion with: {"op":"approve","subject":"criterion:<criterionId>","artifactId":"<evidence artifact id>","comment":"why this proves it"}. The artifactId (or at minimum a comment) is MANDATORY — acceptance with neither is rejected as "criterion acceptance requires evidence" and the criterion stays UNSATISFIED. Use the exact criterion id from the acceptance-criteria list above.',
+    'Satisfy an acceptance criterion with: {"op":"approve","subject":"criterion:<criterionId>","artifactId":"<evidence artifact id>","comment":"why this proves it"}. Use the exact criterion id from the acceptance-criteria list above.',
+  );
+  // The artifactId requirement is enforced in recordDecision; stating it here
+  // is what keeps agents from burning turns on rejected comment-only accepts.
+  lines.push(
+    'For a MANDATORY criterion the artifactId is REQUIRED and must point at a real published deliverable of THIS goal — a comment alone is rejected, and so is a stub or placeholder artifact. Publish the actual work first, then accept against it. Optional criteria may be accepted with a comment.',
   );
   lines.push(
     'Approve or reject a reviewed artifact with: {"op":"approve","subject":"<what>","artifactId":"<id>"} — also "reject", "veto", "block", same shape. This needs the matching authority or review capability, and you cannot approve your own artifact when a peer reviewer exists.',

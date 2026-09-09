@@ -228,6 +228,7 @@ export type EventType =
   | "goal.resumed"
   | "goal.progress"
   | "goal.completed"
+  | "goal.reopened"
   | "goal.escalated"
   | "goal.failed"
   | "requirements.created"
@@ -330,6 +331,13 @@ export interface AcceptanceCriterion {
   mandatory: boolean;
   status: CriterionStatus;
   evidence: EvidenceRef[];
+  /**
+   * Artifact URIs the operator already rejected, snapshotted from `evidence`
+   * every time the mission is reopened. Re-citing one of these cannot satisfy
+   * the criterion again — otherwise a reopen is answered by handing back the
+   * identical artifact and the mission re-completes within a tick.
+   */
+  rejectedEvidence?: string[];
 }
 
 export interface GoalBudget {
@@ -347,6 +355,12 @@ export interface Goal {
   rootThreadId: ThreadId;
   createdAt: string;
   completedAt?: string;
+  /**
+   * When the operator last reopened this mission. Evidence recorded before it
+   * belongs to the round that was rejected and no longer counts toward
+   * completion.
+   */
+  reopenedAt?: string;
 }
 
 export type Authority = string;

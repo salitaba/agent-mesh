@@ -1,6 +1,6 @@
 ﻿import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, goalOf } from "../helpers";
+import { makeMesh, stub, waitFor, goalOf, evidenceContent } from "../helpers";
 import { FixedClock, type MeshOp } from "../../packages/protocol/src/index";
 import { Kernel } from "../../packages/core/src/kernel";
 import { MemoryEventStore } from "../../packages/event-store/src/index";
@@ -110,7 +110,7 @@ test("lifecycle: mission completion marks idle agents completed", async () => {
   });
   const st = m.kernel.state;
   st.activeGoalId && m.kernel.state.goals.get(st.activeGoalId);
-  await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "ADR", content: "x" });
+  await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "ADR", content: evidenceContent("completion evidence") });
   const art = [...st.artifacts.values()][0];
   await m.supervisor.recordDecision("pm", "accept", "criterion:done-one", art.id, "accepting");
   await waitFor("goal completed", () => goalOf(m)?.status === "COMPLETED", 6000);

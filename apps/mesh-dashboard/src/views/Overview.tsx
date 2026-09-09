@@ -4,7 +4,7 @@ import { fmt, pillCls, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUN
 import { useMesh } from "../store";
 import { Button, Card, Chip, EventRow, Pill, StepMini } from "../components";
 import { ArtifactDrawer, EventDrawerBySeq, StepDrawer, CloseX } from "../drawers";
-import { useGoLive, useResetMission } from "../actions";
+import { useGoLive, useReopenMission, useResetMission } from "../actions";
 
 export function MeshMark(): React.JSX.Element {
   return (
@@ -99,6 +99,7 @@ export default function Overview(): React.JSX.Element {
   const [arts, setArts] = useState<any[]>([]);
   const { busy: bootBusy, goLive: doBoot } = useGoLive();
   const { busy: resetBusy, resetMission } = useResetMission();
+  const { busy: reopenBusy, reopenMission } = useReopenMission();
 
   useEffect(() => {
     let dead = false;
@@ -135,6 +136,10 @@ export default function Overview(): React.JSX.Element {
   const needYou = escOpen.length > 0;
   const halted = needYou || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "FAILED";
   const parked = Boolean(st.uiOnly) || st.mode === "parked";
+  // A finished mission rejects every mutating op, so "send the PM a message"
+  // silently does nothing until the goal is reopened — offer the reopen right
+  // where the operator sees the verdict.
+  const missionOver = goal.status === "COMPLETED" || goal.status === "FAILED";
   const hasHistory = (steps?.length ?? 0) > 0 || (metrics?.metrics?.messages ?? 0) > 0 || (st.eventCount ?? 0) > 15;
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
@@ -152,7 +157,7 @@ export default function Overview(): React.JSX.Element {
 
   return (
     <div className={halted ? "is-halted" : ""}>
-      <div className="view-title"><h2>Overview</h2><span className={`pill ${pillCls(goal.status)}`}>{(plainGoal(goal.status))}</span><span className="page-actions"><Button variant="small" onClick={() => setView("steps")}>See what agents did</Button><Button variant="small" danger disabled={resetBusy} title="Wipe all mission data and restart the goal from zero" onClick={resetMission}>{resetBusy ? "resetting…" : "Reset to zero"}</Button></span></div>
+      <div className="view-title"><h2>Overview</h2><span className={`pill ${pillCls(goal.status)}`}>{(plainGoal(goal.status))}</span><span className="page-actions"><Button variant="small" onClick={() => setView("steps")}>See what agents did</Button>{missionOver ? <Button variant="small" disabled={reopenBusy} title="Reject the result and put the agents back to work — nothing is deleted" onClick={reopenMission}>{reopenBusy ? "reopening…" : "Not good enough — reopen"}</Button> : null}<Button variant="small" danger disabled={resetBusy} title="Wipe all mission data and restart the goal from zero" onClick={resetMission}>{resetBusy ? "resetting…" : "Reset to zero"}</Button></span></div>
       <div className="view-sub">Is the mission healthy? Start here. Details live in Steps and Events.</div>
       {st.uiOnly ? (
         <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>

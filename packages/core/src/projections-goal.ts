@@ -51,6 +51,56 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       }
       break;
     }
+    // Operator rejected the delivered result: the mission goes back to work.
+    // Flipping status alone is not enough — the termination manager re-fires
+    // `complete` on the very next watchdog tick while every mandatory
+    // criterion is still EVIDENCED, so a reopen that does not invalidate
+    // evidence closes again within a second. `criteria` (optional) narrows
+    // which ones are reopened; omitted means every mandatory one.
+    case "goal.reopened": {
+      const goal = state.goals.get(p.goalId ?? event.goalId ?? state.activeGoalId ?? "");
+      // ESCALATED belongs here too: `resumeGoal` only lifts PAUSED and
+      // `respondEscalation` needs a card to answer, so an escalated mission
+      // whose cards are stale (or whose escalation the operator wants to
+      // overrule outright) had no way back to ACTIVE at all.
+      if (goal && (goal.status === "COMPLETED" || goal.status === "FAILED" || goal.status === "ESCALATED")) {
+        // Only a mission that reached a VERDICT has evidence worth
+        // invalidating. An ESCALATED mission was halted mid-flight by an open
+        // card, never judged, so blanket-resetting its mandatory criteria
+        // would throw away accepted work the operator never rejected. There,
+        // reopening invalidates only what `criteria` names explicitly.
+        const hadVerdict = goal.status === "COMPLETED" || goal.status === "FAILED";
+        goal.status = "ACTIVE";
+        goal.completedAt = undefined;
+        goal.reopenedAt = event.timestamp;
+        const named = Array.isArray(p.criteria) && p.criteria.length > 0 ? new Set<string>(p.criteria as string[]) : null;
+        for (const c of goal.acceptanceCriteria) {
+          if (named ? !named.has(c.id) : !hadVerdict || !c.mandatory) continue;
+          // Evidence is kept as an audit trail of the rejected attempt; only
+          // the verdict is withdrawn, so the next round can cite or supersede
+          // what was already produced.
+          c.status = "UNSATISFIED";
+          // ...but it must not be handed back UNCHANGED. Status-only reset let
+          // the next round re-accept the very artifact the operator rejected:
+          // one live mission ran 6 completes / 5 reopens re-citing
+          // `TrackBench-Requirements-v2/1` and `TrackBench-MVP-CodePatch/1`
+          // every time, closing within minutes and shipping nothing new.
+          // Snapshot what was rejected so `markCriterionEvidence` can refuse it.
+          const rejected = new Set(c.rejectedEvidence ?? []);
+          for (const e of c.evidence) {
+            if (e.artifactRef?.uri) rejected.add(e.artifactRef.uri);
+          }
+          if (rejected.size > 0) c.rejectedEvidence = [...rejected];
+        }
+        if (Array.isArray(p.addCriteria)) {
+          for (const c of p.addCriteria as AcceptanceCriterion[]) {
+            if (!goal.acceptanceCriteria.find((x) => x.id === c.id)) goal.acceptanceCriteria.push(c);
+          }
+        }
+        state.goalHistory.push({ status: "ACTIVE", at: event.timestamp, reason: p.reason ?? "reopened by operator" });
+      }
+      break;
+    }
     case "goal.progress": {
       const gid = event.goalId ?? state.activeGoalId;
       if (gid) {

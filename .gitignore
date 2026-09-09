@@ -8,3 +8,7 @@ workspace/
 # runtime artifacts created by `mesh run` in example folders
 examples/*/workspace/
 examples/*/.mesh-state/
+
+# local scratch: design critiques and per-session working notes
+.impeccable/
+.session-notes-*.md

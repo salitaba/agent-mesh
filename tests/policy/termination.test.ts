@@ -1,6 +1,6 @@
 ﻿import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, goalOf, eventTypes } from "../helpers";
+import { makeMesh, stub, waitFor, goalOf, eventTypes, evidenceContent } from "../helpers";
 import { TerminationManager, DeadlockDetector } from "../../packages/core/src/termination";
 import type { MeshOp } from "../../packages/protocol/src/index";
 import type { MeshInstance } from "../../apps/mesh-server/src/index";
@@ -24,7 +24,7 @@ test("termination: successful completion needs every mandatory criterion evidenc
       { id: "c2", description: "two", mandatory: true },
     ],
   });
-  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: "x" });
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
   await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
   await new Promise((r) => setTimeout(r, 200));

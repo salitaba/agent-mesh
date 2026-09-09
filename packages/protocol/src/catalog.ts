@@ -16,6 +16,7 @@ export const EVENT_TYPES: EventType[] = [
   "goal.resumed",
   "goal.progress",
   "goal.completed",
+  "goal.reopened",
   "goal.escalated",
   "goal.failed",
   "requirements.created",

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, eventTypes } from "../helpers";
+import { makeMesh, stub, waitFor, eventTypes, evidenceContent } from "../helpers";
 import type { MeshOp, MeshMessage } from "../../packages/protocol/src/index";
 
 /**
@@ -293,7 +293,7 @@ test("stall: a productive turn still honours the cooldown (no fast retry)", asyn
   let n = 0;
   s.setScript("pm", async () => ({
     operations: [
-      { op: "publish_artifact", name: `reqs-${n++}`, type: "RequirementsDoc", content: "c" } as MeshOp,
+      { op: "publish_artifact", name: `reqs-${n++}`, type: "RequirementsDoc", content: evidenceContent("requirements") } as MeshOp,
       { op: "done" } as MeshOp,
     ],
   }));
@@ -335,9 +335,10 @@ test("stall: a mission with nothing actionable rests instead of paying to be tol
     done = true;
     return {
       operations: [
-        { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: "c" } as MeshOp,
+        { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: evidenceContent("requirements") } as MeshOp,
         { op: "create_task", title: "follow-up nobody will claim", description: "residue" } as MeshOp,
-        { op: "approve", subject: "criterion:ship", comment: "reqs published" } as MeshOp,
+        // Mandatory criteria need a real artifact as evidence, not a comment.
+        { op: "approve", subject: "criterion:ship", artifactUri: "artifact://RequirementsDoc/reqs/1", comment: "reqs published" } as MeshOp,
       ] as MeshOp[],
     };
   });

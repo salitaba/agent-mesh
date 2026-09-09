@@ -89,6 +89,13 @@ export interface SchedulerPort {
   onIdle(callback: () => void): void;
   /** Clear nudge/escalation suppression for a request (human resolved the stall). Optional for mocks. */
   resetStallTracking?(messageId: string, agentId?: string): void;
+  /**
+   * Drop every per-mission counter (strikes/backoff parking, nudge and denial
+   * counts, stall suppression, queue). Reopening a finished mission must call
+   * this or the new round inherits the exhaustion of the round that just
+   * ended. Caller stops the scheduler first. Optional for mocks.
+   */
+  resetMissionState?(): void;
 }
 
 export interface RuntimeResolver {

@@ -39,22 +39,26 @@ export function VitalsStrip({ v, model, attempt }: { v: Vitals; model?: string; 
       <div className="vitals-head">
         <span className={`live-dot${v.health === "streaming" ? " on" : stalled ? " off" : ""}`} />
         <b>{v.label}</b>
+        <span className="vitals-detail">{v.detail}</span>
         {attempt && attempt > 1 ? <span className="v-retry" title="the scheduler re-woke this agent after an earlier attempt timed out">attempt {attempt}</span> : null}
         {model ? <span className="mono muted v-model">{model}</span> : null}
       </div>
       <div className="vitals-nums">
+        {/* Silence leads: it is the one number that says "wedged". The rest are
+            context for it, so they read at a lower weight. */}
+        <Vital
+          label="silent for"
+          value={v.silentMs !== undefined ? dur(v.silentMs) : "—"}
+          lead
+          warn={v.silentMs !== undefined && v.silentMs > 8000}
+          bad={stalled}
+          hint="time since the last token — the single best signal that a turn is wedged"
+        />
         <Vital
           label="first token"
           value={v.ttftMs !== undefined ? dur(v.ttftMs) : "—"}
           warn={v.ttftMs !== undefined && v.ttftMs > 12000}
           hint="how long the model took to say anything after the prompt was sent"
-        />
-        <Vital
-          label="silent for"
-          value={v.silentMs !== undefined ? dur(v.silentMs) : "—"}
-          warn={v.silentMs !== undefined && v.silentMs > 8000}
-          bad={stalled}
-          hint="time since the last token — the single best signal that a turn is wedged"
         />
         <Vital
           label="speed"
@@ -63,14 +67,13 @@ export function VitalsStrip({ v, model, attempt }: { v: Vitals; model?: string; 
         />
         <Vital label="written" value={v.chars ? fmt(v.chars) : "—"} hint="characters produced so far" />
       </div>
-      <div className="vitals-detail muted">{v.detail}</div>
     </div>
   );
 }
 
-function Vital({ label, value, hint, warn, bad }: { label: string; value: string; hint: string; warn?: boolean; bad?: boolean }): React.JSX.Element {
+function Vital({ label, value, hint, warn, bad, lead }: { label: string; value: string; hint: string; warn?: boolean; bad?: boolean; lead?: boolean }): React.JSX.Element {
   return (
-    <div className={`vital${bad ? " bad" : warn ? " warn" : ""}`} title={hint}>
+    <div className={`vital${lead ? " lead" : ""}${bad ? " bad" : warn ? " warn" : ""}`} title={hint}>
       <b>{value}</b>
       <span>{label}</span>
     </div>

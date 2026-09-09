@@ -50,6 +50,43 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
   return { busy, resetMission };
 }
 
+/**
+ * "I don't accept this result." Unlike reset, nothing is destroyed: the goal
+ * verdict is withdrawn, the mandatory criteria go back to UNSATISFIED and the
+ * agents that completed with the mission are revived. The prompt doubles as
+ * the rejection note the agents read on their next turn, so the operator does
+ * not have to reopen and THEN send a message explaining why.
+ */
+export function useReopenMission(): { busy: boolean; reopenMission: () => Promise<void> } {
+  const { toast, refreshStatus } = useMesh();
+  const [busy, setBusy] = useState(false);
+  const reopenMission = async () => {
+    const reason = window.prompt(
+      "Reopen the mission and put the agents back to work.\n\n" +
+        "Nothing is deleted — every artifact and step is kept, but the mandatory acceptance criteria go back to UNSATISFIED so the run does not instantly close again.\n\n" +
+        "What was wrong with the result?",
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      toast("reopen cancelled", "a reason is required — the agents read it as their new brief", "warn");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { status: code, json } = await post("/mission/reopen", { reason: reason.trim() });
+      toast(
+        code === 200 ? "mission reopened" : "could not reopen",
+        json?.note ?? json?.reason ?? json?.error ?? "",
+        code === 200 ? "ok" : "bad",
+      );
+    } finally {
+      setBusy(false);
+    }
+    await refreshStatus();
+  };
+  return { busy, reopenMission };
+}
+
 export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
   const { toast, refreshStatus } = useMesh();
   const [busy, setBusy] = useState(false);

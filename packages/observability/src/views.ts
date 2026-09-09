@@ -93,6 +93,8 @@ export function summarize(e: MeshEvent): string {
       return `paused: ${String(p.reason ?? "").slice(0, 80)}`;
     case "goal.resumed":
       return `resumed: ${String(p.reason ?? "").slice(0, 80)}`;
+    case "goal.reopened":
+      return `reopened: ${String(p.reason ?? "").slice(0, 80)}`;
     case "goal.progress":
       return `${p.completed}/${p.total} criteria (${Math.round((p.ratio ?? 0) * 100)}%)`;
     case "goal.budget_changed": {

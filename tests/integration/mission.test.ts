@@ -1,6 +1,6 @@
 ﻿import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, goalOf } from "../helpers";
+import { makeMesh, stub, waitFor, goalOf, evidenceContent } from "../helpers";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
 const MISSION_AGENTS = [
@@ -74,7 +74,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
       return {
         text: "kickoff",
         operations: [
-          { op: "publish_artifact", name: "requirements", type: "RequirementsDoc", content: JSON.stringify({ requirements: [{ id: "req-payments-idempotency", text: "idempotent payments", mandatory: true }] }) },
+          { op: "publish_artifact", name: "requirements", type: "RequirementsDoc", content: JSON.stringify({ requirements: [{ id: "req-payments-idempotency", text: "idempotent payments", mandatory: true }], body: evidenceContent("payment requirements") }) },
           { op: "send", type: "MISSION", to: ["architect"], newThread: { subject: "kickoff" }, payload: { note: "design the payment API" } },
           { op: "done" },
         ],
@@ -134,7 +134,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
         return {
           text: "design",
           operations: [
-            { op: "publish_artifact", name: "payment-architecture", type: "ArchitectureDocument", content: "# design\nidempotency via DB" },
+            { op: "publish_artifact", name: "payment-architecture", type: "ArchitectureDocument", content: "# design\nidempotency via DB\n" + evidenceContent("payment architecture") },
             { op: "send", type: "REQUEST_REVIEW", to: ["tech-lead"], newThread: { subject: "review arch" }, artifactRefs: [{ uri: "artifact://ArchitectureDocument/payment-architecture/1" }], payload: { question: "is the idempotency design acceptable?" } },
             { op: "wait" },
           ],
@@ -217,7 +217,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
         text: "write patch",
         operations: [
           { op: "claim_task", taskId: String((task.payload as { taskId?: string }).taskId ?? "") },
-          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ idempotency v${sim.patchVersion}` },
+          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ idempotency v${sim.patchVersion}\n${evidenceContent("payment core patch")}` },
           { op: "send", type: "PATCH_READY", to: ["qa"], newThread: { subject: `patch v${sim.patchVersion}` }, artifactRefs: [{ uri: patchUri(sim) }], payload: { summary: "tests pass locally" } },
           { op: "wait" },
         ],
@@ -229,7 +229,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
       return {
         text: "rework",
         operations: [
-          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ rework v${sim.patchVersion}` },
+          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ rework v${sim.patchVersion}\n${evidenceContent("payment core rework")}` },
           { op: "send", type: "PATCH_READY", to: ["qa"], newThread: { subject: `patch v${sim.patchVersion}` }, artifactRefs: [{ uri: patchUri(sim) }], payload: { summary: "addressed block" } },
           { op: "wait" },
         ],
@@ -259,7 +259,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
       return {
         text: "pass",
         operations: [
-          { op: "publish_artifact", name: `tests-${patch?.name ?? "x"}`, type: "TestReport", content: "green" },
+          { op: "publish_artifact", name: `tests-${patch?.name ?? "x"}`, type: "TestReport", content: evidenceContent("payment test report") },
           { op: "send", type: "TEST_RESULT", to: ["developer", "tech-lead"], newThread: { subject: "pass" }, payload: { result: "PASSED" } },
           { op: "send", type: "REQUEST_REVIEW", to: ["tech-lead"], newThread: { subject: "merge review" }, artifactRefs: patch ? [{ uri: `artifact://${patch.type}/${patch.name}/${patch.version}` }] : [], payload: { question: "approve merge" } },
           { op: "wait" },
@@ -295,7 +295,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
       operations: [
         ...(secAsk ? ([{ op: "respond", messageId: secAsk.id, type: "SECURITY_FINDING", payload: { result: "PASSED", subject: "security" } } as MeshOp]) : []),
         ...(firstScan ? ([
-          { op: "publish_artifact", name: "security-scan", type: "SecurityReport", content: "no critical findings", metadata: { criticalFindings: 0 } },
+          { op: "publish_artifact", name: "security-scan", type: "SecurityReport", content: evidenceContent("security scan: no critical findings"), metadata: { criticalFindings: 0 } },
           { op: "send", type: "SECURITY_FINDING", to: ["pm"], newThread: { subject: "scan clean" }, payload: { result: "PASSED", subject: "security" } },
         ] as MeshOp[]) : []),
         { op: "done" },

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub } from "../helpers";
+import { makeMesh, stub, evidenceContent } from "../helpers";
 import { seededArtifactState, tryTransition, createRandomTrail } from "./_property-trail";
 import { MACHINE_TRANSITIONS, artifactMachineOf } from "../../packages/protocol/src/catalog";
 import { mulberry32 } from "./_rng";
@@ -166,7 +166,7 @@ test("invariant: completed goals require evidence for every mandatory criterion"
       { id: "m2", description: "two", mandatory: true },
     ],
   });
-  const c = await m.supervisor.createArtifact({ actorId: "pm", name: "ev", type: "TestReport", content: "x" });
+  const c = await m.supervisor.createArtifact({ actorId: "pm", name: "ev", type: "TestReport", content: evidenceContent("evidence report") });
   if (!("artifact" in c)) throw new Error("create failed");
   await m.supervisor.recordDecision("pm", "accept", "criterion:m1", c.artifact.id, "e1");
   await new Promise((r) => setTimeout(r, 300));

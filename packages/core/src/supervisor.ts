@@ -125,6 +125,21 @@ const MAX_TURN_TEXT_CHARS = 20000;
 const MAX_TURN_INSTRUCTIONS_CHARS = 8000;
 const MAX_TURN_TOOLCALLS = 30;
 
+/**
+ * Floor for artifact content cited as evidence for a MANDATORY criterion.
+ *
+ * Deliberately low: this is a stub detector, not a quality bar. It exists
+ * because agents were publishing placeholders ("TODO: write the design doc",
+ * "See discussion above") and immediately accepting a mandatory criterion
+ * against them. Anything that genuinely documents requirements, an
+ * architecture, or a test result clears 400 chars without trying; nothing that
+ * is a promise-to-write does.
+ */
+const MIN_EVIDENCE_CONTENT_CHARS = 400;
+
+/** Placeholder markers that disqualify content from evidencing a criterion. */
+const EVIDENCE_STUB_MARKERS = /^\s*(tbd|todo|n\/a|none|pending|placeholder|coming soon|see above|as discussed)\b/i;
+
 
 interface TurnState {
   turnId: string;
@@ -421,14 +436,48 @@ export class Supervisor {
     if (!parked) {
       this.deps.scheduler.start();
       const activate = opts.resume ? this.recoveryCandidates() : this.config.startupActivate;
-      for (const id of activate) {
+      // Nobody decomposed the goal. Every agent received the same raw goal text
+      // as its mission and independently guessed which slice was its own, so
+      // the mesh ran N divergent partial plans that never reconciled — the
+      // single biggest quality gap against one agent holding one coherent plan.
+      // The first startup agent is now the planner: it must publish the split
+      // before doing role work, and the rest are told to align to that plan
+      // rather than invent a parallel one.
+      for (const [i, id] of activate.entries()) {
         await this.activateAgent(id, {
           kind: opts.resume ? "recovery" : "startup",
-          note: opts.resume ? "mission resumed from event log" : "startup activation",
+          note: opts.resume
+            ? "mission resumed from event log"
+            : i === 0
+              ? this.plannerBrief()
+              : "startup activation. A lead agent is decomposing the goal into tasks right now — do NOT invent your own parallel plan. Check the mission acceptance criteria and open tasks, claim what your role owns, and ask the lead if your slice is unclear.",
         });
       }
     }
     return this.state.goals.get(goalId) ?? null;
+  }
+
+  /**
+   * Kickoff brief for the FIRST startup agent: decompose before working.
+   *
+   * The mesh has no planner module and every agent gets the identical raw goal
+   * text as its mission, so without this the goal was effectively broadcast and
+   * each role invented its own interpretation. One explicit decomposition turn
+   * costs a single activation and gives every later agent a shared plan to
+   * claim from, which is exactly what a single agent gets for free.
+   */
+  private plannerBrief(): string {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    const mandatory = (goal?.acceptanceCriteria ?? []).filter((c) => c.mandatory);
+    const criteriaLine = mandatory.length > 0 ? ` Cover every mandatory criterion: ${mandatory.map((c) => c.id).join(", ")}.` : "";
+    return (
+      "You are the mission lead for this kickoff. BEFORE any role work, decompose the goal:" +
+      " restate what 'done' concretely means for THIS goal (not a generic checklist), then emit one create_task per" +
+      " distinct piece of work with a specific title, a description detailed enough to act on without asking you," +
+      ` and assignedTo set to the role that owns it.${criteriaLine}` +
+      " Every other agent will claim work from these tasks instead of guessing, so vague tasks become vague deliverables." +
+      " Do not delegate the thinking: name the actual scope, constraints and interfaces you expect."
+    );
   }
 
   /**
@@ -1015,7 +1064,14 @@ export class Supervisor {
       .catch(() => undefined);
   }
 
-  async activateAgent(agentId: string, reason: ActivationReason): Promise<{ queued: boolean; blocked?: string }> {
+  /**
+   * `opts.explicit` marks the activation as operator-initiated, which is what
+   * lets it through the scheduler's two "quiet refusal" gates: a stopped
+   * scheduler and circuit-breaker backoff parking. Default is derived from the
+   * reason kind (`manual`), so only callers that ARE the operator acting
+   * through another kind — `reopenGoal`, notably — need to pass it.
+   */
+  async activateAgent(agentId: string, reason: ActivationReason, opts: { explicit?: boolean } = {}): Promise<{ queued: boolean; blocked?: string }> {
     const goal = this.state.goals.get(this.state.activeGoalId ?? "");
     if (!goal) return { queued: false, blocked: "no goal yet — boot/create a goal first" };
     if (goal.status === "PAUSED") return { queued: false, blocked: "mission is paused — resume it first" };
@@ -1032,7 +1088,7 @@ export class Supervisor {
       agentId,
       reason,
       priority: reason.kind === "startup" ? 5 : reason.kind === "recovery" ? 7 : reason.kind === "manual" ? 6 : 3,
-      explicit: reason.kind === "manual",
+      explicit: opts.explicit ?? reason.kind === "manual",
     };
     const queued = await this.deps.scheduler.requestActivation(req);
     return { queued, blocked: queued ? undefined : "already active, or deferred by budget/policy" };
@@ -1287,6 +1343,17 @@ export class Supervisor {
     const c = goal.acceptanceCriteria.find((x) => x.id === criterionId);
     if (!c) return;
     if (c.status === "EVIDENCED" || c.status === "WAIVED") return;
+    // A reopened criterion cannot be satisfied by the artifact the operator
+    // just rejected. Without this the reopen loop is closed: reset status ->
+    // agent re-cites the same URI -> EVIDENCED -> watchdog completes again.
+    // The agent must supersede it (new version, new artifact) to get past.
+    const uri = evidence.artifactRef?.uri;
+    if (uri && c.rejectedEvidence?.includes(uri)) {
+      this.auditLine(
+        `criterion ${criterionId}: refusing rejected evidence ${uri} — the operator reopened the mission on this artifact; supersede it`,
+      );
+      return;
+    }
     await this.deps.kernel.emit("requirement.satisfied", { criterionId, evidence }, { actorId: HUMAN_AGENT_ID, goalId });
     const updated = goal.acceptanceCriteria.filter((x) => x.mandatory && (x.status === "EVIDENCED" || x.status === "WAIVED")).length;
     const total = goal.acceptanceCriteria.filter((x) => x.mandatory).length;
@@ -1310,6 +1377,36 @@ export class Supervisor {
     });
   }
 
+  /**
+   * Stub check for artifact content cited against a mandatory criterion.
+   *
+   * Reads the stored content rather than trusting the publish call: the digest
+   * alone cannot distinguish a real design doc from "TODO". Read failure is
+   * treated as NOT substantive — unreadable evidence is not evidence.
+   */
+  private async evidenceIsSubstantive(artifact: Artifact): Promise<{ ok: boolean; reason?: string }> {
+    let content: string;
+    try {
+      content = await this.deps.content.read(artifact.contentRef);
+    } catch {
+      return { ok: false, reason: `evidence artifact ${artifact.id} content is unreadable, so it cannot prove a mandatory criterion` };
+    }
+    const trimmed = content.trim();
+    if (trimmed.length < MIN_EVIDENCE_CONTENT_CHARS) {
+      return {
+        ok: false,
+        reason: `evidence artifact '${artifact.name}' holds only ${trimmed.length} chars — too thin to evidence a mandatory criterion (need at least ${MIN_EVIDENCE_CONTENT_CHARS}). Publish the actual deliverable, then accept against it.`,
+      };
+    }
+    if (EVIDENCE_STUB_MARKERS.test(trimmed)) {
+      return {
+        ok: false,
+        reason: `evidence artifact '${artifact.name}' starts as a placeholder, not a deliverable. Publish the real content, then accept against it.`,
+      };
+    }
+    return { ok: true };
+  }
+
   async recordDecision(actorId: string, kind: ApprovalKind, subject: string, artifactId?: string, comment?: string): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, reason: "no active goal" };
@@ -1322,6 +1419,35 @@ export class Supervisor {
         const reason = "criterion acceptance requires evidence (artifactId and/or comment describing the evidence)";
         await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "evidence-required" });
         return { ok: false, reason };
+      }
+      // A MANDATORY criterion is what the mission is judged on, so a sentence
+      // is not evidence for it. Accepting `comment` alone here let a run tick
+      // all five mandatory criteria with prose and terminate as "complete"
+      // while producing nothing: the termination gate only counts EVIDENCED,
+      // and nothing downstream ever re-checked that the evidence was real.
+      // Optional criteria keep the comment-only path.
+      const criterion = this.state.goals.get(goalId)?.acceptanceCriteria.find((c) => c.id === criterionId);
+      if (criterion?.mandatory) {
+        if (!artifactId) {
+          const reason = `criterion '${criterionId}' is mandatory: acceptance requires artifactId pointing at the published deliverable that proves it (a comment alone is not evidence)`;
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-artifact-required" });
+          return { ok: false, reason };
+        }
+        if (!artifact) {
+          const reason = `unknown artifact ${artifactId} cited as evidence for mandatory criterion '${criterionId}'`;
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-artifact-required" });
+          return { ok: false, reason };
+        }
+        if (artifact.goalId !== goalId) {
+          const reason = `artifact ${artifactId} belongs to a previous goal and cannot evidence mandatory criterion '${criterionId}'`;
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-stale-artifact" });
+          return { ok: false, reason };
+        }
+        const substantive = await this.evidenceIsSubstantive(artifact);
+        if (!substantive.ok) {
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason: substantive.reason!, ruleId: "mandatory-evidence-too-thin" });
+          return { ok: false, reason: substantive.reason };
+        }
       }
       const acceptCheck = this.deps.policy.evaluateAuthority(actorId, "requirements", "accept", ctx);
       const overrideCheck = this.deps.policy.evaluateAuthority(actorId, "requirements", "approve", ctx);
@@ -1818,6 +1944,155 @@ export class Supervisor {
     for (const c of this.recoveryCandidates()) {
       await this.activateAgent(c, { kind: "recovery", note: "goal resumed" });
     }
+  }
+
+  /**
+   * Put a finished mission back to work because the operator rejected the
+   * result. `resumeGoal` cannot do this: it only lifts PAUSED, and completion
+   * is a deeper stop than a pause — `completeMission()` marked idle agents
+   * COMPLETED and called `shutdown()`, which set `stopping` and killed the
+   * scheduler, the stall watch and every runtime session.
+   *
+   * So reopening has to undo all four layers, in order:
+   *   1. the goal verdict (and the evidence that would immediately re-fire it)
+   *   2. the agent lifecycles frozen at COMPLETED
+   *   3. the supervisor's own `stopping` latch + stall watch
+   *   4. the scheduler
+   * Skipping any one of them produces the failure this method exists to fix:
+   * mail is delivered, the agent wakes, and every op it emits is rejected
+   * with "mission is COMPLETED".
+   */
+  async reopenGoal(opts: {
+    reason?: string;
+    criteria?: string[];
+    addCriteria?: AcceptanceCriterion[];
+    by?: string;
+    activate?: string[];
+  } = {}): Promise<{
+    ok: boolean;
+    reason?: string;
+    revived?: string[];
+    /** completed agents whose revival the reducer refused — still unreachable */
+    notRevived?: string[];
+    activated?: string[];
+    /** targets the scheduler would not queue, with why */
+    refused?: Array<{ agentId: string; reason: string }>;
+    unsatisfied?: string[];
+    /** set when the reopen answered the open escalations that were halting the mission */
+    escalationsCleared?: boolean;
+    /** the reopen succeeded but nothing will run until someone is woken */
+    warning?: string;
+  }> {
+    const gid = this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    if (goal.status !== "COMPLETED" && goal.status !== "FAILED" && goal.status !== "ESCALATED") {
+      return { ok: false, reason: `mission is ${goal.status} — reopen only applies to a COMPLETED, FAILED or ESCALATED mission` };
+    }
+    const by = opts.by ?? HUMAN_AGENT_ID;
+    const reason = opts.reason ?? "operator rejected the delivered result";
+    const wasEscalated = goal.status === "ESCALATED";
+
+    // 0. An ESCALATED mission is halted by its OPEN cards, not by a verdict on
+    //    the goal. Flipping the status without answering them re-escalates on
+    //    the very next watchdog tick (`stalemate` re-derives from the same
+    //    open cards), so reopening IS the operator's answer and is recorded as
+    //    one — `escalation.responded`, not `auto_resolved`: a human decided.
+    //    A card that stands on its own (budget exhausted) will legitimately
+    //    re-fire; that is the operator's cue to raise the limit, not a bug.
+    if (wasEscalated) {
+      for (const esc of [...this.state.escalations.values()]) {
+        if (esc.status !== "OPEN" || esc.goalId !== gid) continue;
+        await this.deps.kernel
+          .emit("escalation.responded", { escalationId: esc.id, response: `mission reopened by operator: ${reason}`, respondedBy: by }, { actorId: by, goalId: gid })
+          .catch(() => undefined);
+        const stuck = stuckRequestOf(esc);
+        if (stuck) this.deps.scheduler.resetStallTracking?.(stuck.messageId, stuck.agentId);
+      }
+    }
+
+    // 1. Withdraw the verdict. The projection also flips the targeted criteria
+    //    back to UNSATISFIED, which is what stops the watchdog from emitting
+    //    `goal.completed` again on its next tick.
+    await this.deps.kernel.emit(
+      "goal.reopened",
+      { goalId: gid, reason, criteria: opts.criteria, addCriteria: opts.addCriteria },
+      { actorId: by, goalId: gid },
+    );
+
+    // 2. Revive the agents that completed WITH the mission. COMPLETED -> IDLE
+    //    is the only legal edge out of COMPLETED, and `agent.resumed` is the
+    //    event that takes it, so no new lifecycle event type is needed.
+    //    An agent is reported as revived only if it ACTUALLY left COMPLETED.
+    //    The emit is still tolerant (one illegal transition must not abort the
+    //    reopen), but a swallowed failure used to be reported as a success —
+    //    the operator saw `revived: qa` and then watched every message to `qa`
+    //    bounce off the `agent completed with the mission` gate.
+    const revived: string[] = [];
+    const notRevived: string[] = [];
+    for (const rec of [...this.state.agents.values()]) {
+      const a = rec.state;
+      if (a.agentId === HUMAN_AGENT_ID || a.lifecycle !== "COMPLETED") continue;
+      await this.deps.kernel.emit("agent.resumed", { agentId: a.agentId }, { actorId: by }).catch((err) => {
+        this.auditLine(`reopen: reviving ${a.agentId} failed: ${(err as Error).message}`);
+      });
+      // Read the projection back, do not trust the emit: the reducer is what
+      // decides the lifecycle, and it may legally have refused.
+      if (this.state.agents.get(a.agentId)?.state.lifecycle === "COMPLETED") notRevived.push(a.agentId);
+      else revived.push(a.agentId);
+    }
+
+    // 3. Undo the shutdown latch and restart the stall watch, otherwise the
+    //    watchdog returns at its first line and nothing ever nudges a mesh
+    //    that goes quiet again.
+    this.stopping = false;
+    this.setLiveMode(true);
+    this.startStallWatch();
+
+    // 4. Drop the per-mission counters BEFORE restarting. The round that just
+    //    ended leaves strikes, backoff parking, nudge and denial counts and
+    //    stall suppression behind; inherited, they make the new round refuse
+    //    exactly the agents that struggled in the old one — a reopen that
+    //    silently re-parks the agent the operator is trying to talk to.
+    //    Must precede `start()`: the pump can pick work up as soon as the
+    //    timer runs, and clearing the queue underneath a live pump would drop
+    //    activations we are about to make.
+    this.deps.scheduler.resetMissionState?.();
+
+    // 5. Restart the scheduler. `start()` is idempotent, so a mission that was
+    //    reopened while still live is unharmed.
+    this.deps.scheduler.start();
+
+    // 6. Activate EXPLICITLY. `kind: "recovery"` alone maps to
+    //    `explicit: false`, which the scheduler refuses for a backoff-parked
+    //    agent — so a reopen could activate nobody and still return ok:true.
+    //    A reopen is an operator action by definition, so it carries operator
+    //    authority; `resetMissionState()` above already cleared the parking,
+    //    and this keeps the guarantee if any of it is re-established between.
+    const targets = opts.activate?.length ? opts.activate : this.recoveryCandidates();
+    const activated: string[] = [];
+    const refused: Array<{ agentId: string; reason: string }> = [];
+    for (const id of targets) {
+      const r = await this.activateAgent(id, { kind: "recovery", note: `mission reopened: ${reason}` }, { explicit: true });
+      if (r.queued) activated.push(id);
+      else refused.push({ agentId: id, reason: r.blocked ?? "refused" });
+    }
+    // A reopen that woke nobody is a failed reopen wearing a success mask: the
+    // mission is ACTIVE, the operator's feedback is in a mailbox, and not one
+    // turn will ever run to read it. Say so instead of returning a bare ok.
+    const woke = activated.length > 0;
+    const unsatisfied = goal.acceptanceCriteria.filter((c) => c.status === "UNSATISFIED").map((c) => c.id);
+    return {
+      ok: true,
+      revived,
+      ...(notRevived.length ? { notRevived } : {}),
+      activated,
+      ...(refused.length ? { refused } : {}),
+      unsatisfied,
+      ...(woke ? {} : { warning: targets.length === 0 ? "reopened, but no agent had pending work to resume — send a message (or pass `activate`) to start the next round" : "reopened, but every activation was refused — no turn will run until an agent is woken by hand" }),
+      ...(wasEscalated ? { escalationsCleared: true } : {}),
+    };
   }
 
   async replay(goalId: GoalId, upToSeq?: number): Promise<ReplayState> {
@@ -3465,7 +3740,31 @@ export class Supervisor {
       .map((pr) => ({ messageId: pr.messageId, from: pr.from, to: outstandingDebtors(pr), type: pr.type, since: pr.createdAt }));
   }
 
+  /**
+   * Let turns that are already running finish before the mission is torn down.
+   *
+   * `shutdown()` stops every runtime session, so a turn caught mid-flight dies
+   * against a dead backend and lands in the log as `agent.failed` with a bare
+   * URL for an error — noise that looks like a broken mesh in the steps view
+   * when it is really just the completion sweep racing its own agents. Bounded
+   * so a wedged turn can never block completion forever.
+   */
+  private async drainInFlightTurns(timeoutMs = 30_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.turnInFlight.size > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (this.turnInFlight.size > 0) {
+      this.auditLine(`completion drain timed out with ${this.turnInFlight.size} turn(s) still in flight: ${[...this.turnInFlight].join(", ")}`);
+    }
+  }
+
   private async completeMission(): Promise<void> {
+    // Drain BEFORE the sweep, not just before shutdown: an agent that is
+    // mid-turn is neither IDLE nor WAITING, so sweeping first would skip it and
+    // leave the mission with a mix of COMPLETED and IDLE agents depending on
+    // who happened to be running. Draining first makes the sweep deterministic.
+    await this.drainInFlightTurns();
     for (const rec of [...this.state.agents.values()]) {
       const a = rec.state;
       if (a.agentId === HUMAN_AGENT_ID) continue;
@@ -3904,6 +4203,7 @@ function isProgressEvent(type: EventType): boolean {
     case "escalation.requested":
     case "goal.created":
     case "goal.resumed":
+    case "goal.reopened":
       return true;
     default:
       return false;

@@ -115,13 +115,20 @@ export class Scheduler implements SchedulerPort {
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => this.tickWaiting(), this.config.scheduling.waitWakeupMs);
     this.timer.unref?.();
+    // Kick the pump: work admitted while stopped (an owed recovery respawn)
+    // must not sit queued until the next activation or a 60s timer tick.
+    void this.pump();
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    this.queue = [];
+    // An owed respawn survives the stop: a completion shutdown only ever comes
+    // back through a reopen, and the restart it owes must still be owed then.
+    // Everything else in the queue is stale by construction — the mission that
+    // scheduled it is over.
+    this.queue = this.queue.filter((q) => q.reason.kind === "recovery");
     const deadline = Date.now() + 5000;
     while (this.runningMap.size > 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 25));
@@ -134,7 +141,10 @@ export class Scheduler implements SchedulerPort {
    * Caller is expected to have stopped the scheduler first.
    */
   resetMissionState(): void {
-    this.queue = [];
+    // An owed respawn survives the wipe like it survives a stop: a reopen
+    // wipes the old round's counters, but the earlier failure's restart is
+    // still owed — that is the point of the reopen that follows.
+    this.queue = this.queue.filter((q) => q.reason.kind === "recovery");
     this.runningMap = new Map();
     this.wakeAfterTurn = new Map();
     this.nudgeCounts = new Map();
@@ -147,6 +157,13 @@ export class Scheduler implements SchedulerPort {
   }
 
   async handleEvent(event: MeshEvent): Promise<void> {
+    // A stopped scheduler ignores the event stream, including human mail. That
+    // is deliberate and tested (parked-interaction): parked means the operator
+    // steps agents by hand, so mail queues and `POST /messages {wake:true}` is
+    // the one-action send-and-step. `stopped` cannot tell operator-parked from
+    // completion-stopped, so waking here would break the parked contract; the
+    // post-completion case is handled by making `mode` derive from
+    // `isRunning()` (so the UI knows it is parked and defaults wake on).
     if (this.stopped) return;
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     // Direct mail is never silenced by goal state: a human can send feedback
@@ -279,7 +296,13 @@ export class Scheduler implements SchedulerPort {
   }
 
   async requestActivation(req: SchedulerActivationRequest): Promise<boolean> {
-    if (this.stopped && !req.explicit) return false;
+    // A recovery activation is an owed subcontractor respawn (the supervisor's
+    // restart budget), not an event wakeup, so it survives a stopped scheduler:
+    // a subprocess that died as the mission completed still owes its restart
+    // and must be served by the next `start()` (a reopen). It is deliberately
+    // NOT explicit, so it still refuses to pump while stopped — parked stays
+    // hand-stepped, and circuit-breaker parking keeps shielding poison work.
+    if (this.stopped && !req.explicit && req.reason.kind !== "recovery") return false;
     const rec = this.state.agents.get(req.agentId);
     if (!rec) return false;
     if (rec.state.agentId === "human") return false;
@@ -392,6 +415,18 @@ export class Scheduler implements SchedulerPort {
       reason: { kind: "message", note: "mail delivered" },
       priority: 4,
     });
+  }
+
+  /**
+   * Is the scheduler actually able to dequeue work? The server's `mode` is a
+   * separate field that can drift out of sync with this one — `completeMission`
+   * stops the scheduler without touching `mode`, which used to leave a mesh
+   * reporting "live" while nothing could run, and made `goLive()` a no-op on
+   * exactly the mesh that needed restarting. Anything deciding "can this mesh
+   * do work" must ask here, not the mode flag.
+   */
+  isRunning(): boolean {
+    return !this.stopped;
   }
 
   pending(): number {

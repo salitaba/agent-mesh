@@ -118,20 +118,28 @@ export const STEP_PLAIN: Record<string, string> = {
  * change anything, or did it burn tokens for nothing.
  * ---------------------------------------------------------------------- */
 
-export type Outcome = "live" | "shipped" | "quiet" | "blocked" | "crashed";
+export type Outcome = "live" | "shipped" | "quiet" | "rejected" | "blocked" | "crashed";
 
 export interface OutcomeInput {
   status: string;
   ops?: { messages: number; artifacts: number; tasks: number; decisions: number };
+  /** Per-op kernel verdicts. `ok: false` is a refusal, with `reason` saying why. */
+  opTimings?: { op: string; ok: boolean; reason?: string }[];
 }
 
 export const OUTCOME_META: Record<Outcome, { label: string; hint: string; cls: string }> = {
   live: { label: "working now", hint: "agent is mid-turn right now", cls: "o-live" },
   shipped: { label: "produced", hint: "turn ended and left messages or files behind", cls: "o-ship" },
   quiet: { label: "no output", hint: "turn ended without writing anything — tokens spent, nothing changed", cls: "o-quiet" },
+  rejected: { label: "refused", hint: "the agent tried to act and the kernel rejected every op — nothing landed", cls: "o-rej" },
   blocked: { label: "blocked", hint: "turn ended waiting on something it cannot do alone", cls: "o-block" },
   crashed: { label: "crashed", hint: "the runtime failed mid-turn", cls: "o-crash" },
 };
+
+/** Ops the kernel refused, in the order they were attempted. */
+export function refusedOps(s: OutcomeInput): { op: string; reason?: string }[] {
+  return (s.opTimings ?? []).filter((t) => t.ok === false);
+}
 
 export function outcomeOf(s: OutcomeInput): Outcome {
   if (s.status === "running") return "live";
@@ -139,19 +147,38 @@ export function outcomeOf(s: OutcomeInput): Outcome {
   if (s.status === "blocked") return "blocked";
   const o = s.ops;
   const produced = o ? o.messages + o.artifacts + o.tasks + o.decisions : 0;
-  return produced > 0 ? "shipped" : "quiet";
+  if (produced > 0) return "shipped";
+  // A turn that wrote nothing because the kernel refused every op is not the
+  // same failure as a turn that had nothing to say: "no output" reads as an
+  // idle wake-up, hiding a policy refusal the operator has to act on.
+  return refusedOps(s).length ? "rejected" : "quiet";
 }
 
 /** "3 messages · 1 file" — what the turn actually left behind. */
 export function opsSummary(s: OutcomeInput): string {
   const o = s.ops;
-  if (!o) return "nothing recorded";
+  const refused = refusedOps(s);
+  // A refusal count belongs here even on a turn that also produced something:
+  // "1 message" alone hides that the same turn tried three more things and was
+  // told no.
+  const no = refused.length ? `${refused.length} refused` : "";
+  if (!o) return no || "nothing recorded";
   const bits: string[] = [];
   if (o.messages) bits.push(`${o.messages} message${o.messages > 1 ? "s" : ""}`);
   if (o.artifacts) bits.push(`${o.artifacts} file${o.artifacts > 1 ? "s" : ""}`);
   if (o.tasks) bits.push(`${o.tasks} task${o.tasks > 1 ? "s" : ""}`);
   if (o.decisions) bits.push(`${o.decisions} decision${o.decisions > 1 ? "s" : ""}`);
+  if (no) bits.push(no);
   return bits.length ? bits.join(" · ") : "wrote nothing";
+}
+
+/** "mission is COMPLETED (discharge, done)" — why the kernel said no. */
+export function refusalSummary(s: OutcomeInput): string {
+  const refused = refusedOps(s);
+  if (!refused.length) return "";
+  const reason = refused.find((r) => r.reason)?.reason;
+  const ops = [...new Set(refused.map((r) => r.op))].join(", ");
+  return reason ? `${reason} (${ops})` : `${ops} refused`;
 }
 
 export const dur = (ms?: number): string => {

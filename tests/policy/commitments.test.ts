@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, eventTypes } from "../helpers";
+import { makeMesh, stub, waitFor, eventTypes, evidenceContent } from "../helpers";
 import { createInitialState } from "../../packages/core/src/state";
 import { applyEvent } from "../../packages/core/src/projections";
 import type { MeshOp } from "../../packages/protocol/src/index";
@@ -310,7 +310,7 @@ test("commitments/strict: full strict mission converges end-to-end", async () =>
     if (turn === 0) {
       return {
         operations: [
-          { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: JSON.stringify([{ id: "r1", text: "ship it", mandatory: true }]) },
+          { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: JSON.stringify({ requirements: [{ id: "r1", text: "ship it", mandatory: true }], body: evidenceContent("requirements") }) },
           { op: "send", type: "REQUEST", to: ["dev"], newThread: { subject: "confirm" }, payload: { q: "ack?" } },
           { op: "wait" },
         ] as MeshOp[],

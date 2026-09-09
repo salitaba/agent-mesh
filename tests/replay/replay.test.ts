@@ -1,6 +1,6 @@
 ﻿import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub, waitFor, goalOf } from "../helpers";
+import { makeMesh, stub, waitFor, goalOf, evidenceContent } from "../helpers";
 import { Kernel } from "../../packages/core/src/kernel";
 import { MemoryEventStore } from "../../packages/event-store/src/index";
 import { FixedClock, type MeshOp } from "../../packages/protocol/src/index";
@@ -96,7 +96,7 @@ test("replay: completed goal is fully reconstructible from evidence", async () =
     agents: [{ id: "pm", role: "pm", authority: ["requirements.accept"], interests: [] }],
     criteria: [{ id: "final", description: "evidenced only", mandatory: true }],
   });
-  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "TestReport", content: "green" });
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "TestReport", content: evidenceContent("test report") });
   if (!("artifact" in created)) throw new Error("artifact failed");
   await m.supervisor.recordDecision("pm", "accept", "criterion:final", created.artifact.id, "report proves it");
   await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 6000);

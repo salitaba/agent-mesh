@@ -326,7 +326,20 @@ export class TerminationManager {
     }
 
     const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
-    if (mandatory.length > 0 && mandatory.every((c) => c.status === "EVIDENCED" || c.status === "WAIVED")) {
+    // Evidence must belong to the CURRENT round. A reopen resets criteria to
+    // UNSATISFIED but keeps the evidence trail, so an agent re-approving on the
+    // strength of the rejected round (ref-less `approval` / `*-pass` evidence
+    // carries no artifact URI, so the identity gate in `markCriterionEvidence`
+    // cannot see it) would re-complete the mission unchanged. One live mission
+    // ran 6 completes / 5 reopens this way, re-approving the same architecture
+    // six times and delivering nothing new.
+    const satisfied = (c: (typeof mandatory)[number]): boolean => {
+      if (c.status === "WAIVED") return true;
+      if (c.status !== "EVIDENCED") return false;
+      if (!goal.reopenedAt) return true;
+      return c.evidence.some((e) => e.recordedAt > goal.reopenedAt!);
+    };
+    if (mandatory.length > 0 && mandatory.every(satisfied)) {
       const openEscalations = [...state.escalations.values()].filter((e) => e.status === "OPEN");
       // Only work SOMEONE OWNS can hold a finished mission open.
       //

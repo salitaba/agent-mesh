@@ -103,7 +103,7 @@ export function Button({ variant, danger, extra, type, ...rest }: BtnProps): Rea
 
 /** .card (styles.css:155) with its `.card h3` header (156). `variant` is a
  *  free-form append for the card-scoped rules that already exist — kpi (157),
- *  graph-wrap (213), esc-raw (275), lanes-card (327) and the ms-* cards in
+ *  graph-wrap (213), esc-raw (275), pulse (330) and the ms-* cards in
  *  designer.css. Grep before inventing one. */
 export function Card({ title, actions, variant, style, children }: {
   title?: ReactNode; actions?: ReactNode; variant?: string;
@@ -154,6 +154,67 @@ export function Chip({ hot, mono, onClick, title, style, children }: {
   const cls = `chip${hot ? " hot" : ""}${mono ? " mono" : ""}`;
   if (onClick) return <button type="button" className={cls} title={title} style={style} onClick={onClick}>{children}</button>;
   return <span className={cls} title={title} style={style}>{children}</span>;
+}
+
+/** .tabs / .tab-btn / .tab-n (styles.css:579-586). One tab vocabulary for every
+ *  drawer: roving tabindex + arrow keys, so the strip behaves like a real
+ *  tablist instead of a row of buttons that happen to carry role="tab". */
+export interface TabDef {
+  id: string;
+  label: string;
+  hint?: string;
+  badge?: ReactNode;
+  badgeHot?: boolean;
+}
+
+export function Tabs({ tabs, value, onChange, idPrefix, label }: {
+  tabs: TabDef[]; value: string; onChange: (id: string) => void; idPrefix: string; label?: string;
+}): React.JSX.Element {
+  const move = (delta: number) => {
+    const i = tabs.findIndex((t) => t.id === value);
+    const next = tabs[(i + delta + tabs.length) % tabs.length];
+    if (next) {
+      onChange(next.id);
+      document.getElementById(`${idPrefix}-tab-${next.id}`)?.focus();
+    }
+  };
+  const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>): void => {
+    if (e.key === "ArrowRight") { e.preventDefault(); move(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
+    else if (e.key === "Home") { e.preventDefault(); onChange(tabs[0].id); }
+    else if (e.key === "End") { e.preventDefault(); onChange(tabs[tabs.length - 1].id); }
+  };
+  return (
+    <div className="tabs" role="tablist" aria-label={label}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          id={`${idPrefix}-tab-${t.id}`}
+          type="button"
+          role="tab"
+          aria-selected={t.id === value}
+          aria-controls={`${idPrefix}-panel-${t.id}`}
+          tabIndex={t.id === value ? 0 : -1}
+          className={`tab-btn${t.id === value ? " on" : ""}`}
+          title={t.hint}
+          onClick={() => onChange(t.id)}
+          onKeyDown={onKey}
+        >
+          {t.label}
+          {t.badge != null ? <em className={`tab-n${t.badgeHot ? " hot" : ""}`}>{t.badge}</em> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The panel a Tabs strip controls. Focusable so keyboard users can page it. */
+export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: string; children: ReactNode }): React.JSX.Element {
+  return (
+    <div id={`${idPrefix}-panel-${id}`} role="tabpanel" aria-labelledby={`${idPrefix}-tab-${id}`} tabIndex={0} className="tabpanel">
+      {children}
+    </div>
+  );
 }
 
 export function agentColor(role: string): string {

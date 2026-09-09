@@ -66,8 +66,16 @@ export interface MeshInstance {
   stubRuntimes: Map<string, StubRuntime>;
   startedAt: number;
   /** Legacy mirror of `mode === "parked"`. Prefer `mode`. */
-  uiOnly: boolean;
-  mode: ServerMode;
+  readonly uiOnly: boolean;
+  /**
+   * DERIVED from `scheduler.isRunning()`, never assigned. It used to be a
+   * standalone field, and `completeMission()` -> `shutdown()` stops the
+   * scheduler without touching it: the mesh then reported `live` while nothing
+   * could run, which made `goLive()` a no-op ("already live") on exactly the
+   * mesh that needed restarting, and left the dashboard's parked-mode
+   * affordances hidden. Deriving it makes that class of drift impossible.
+   */
+  readonly mode: ServerMode;
   /** Parked -> live. Idempotent: second call reports alreadyLive instead of re-booting. */
   goLive(note?: string): Promise<{ alreadyLive: boolean; activated: string[] }>;
   /** Live -> parked. Stops the scheduler and drains the queue. */
@@ -239,14 +247,21 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     scheduler,
     stubRuntimes,
     startedAt: Date.now(),
-    uiOnly: mode === "parked",
-    mode,
+    // Both derived: see the MeshInstance declaration. `scheduler.isRunning()`
+    // is the single source of truth for "can this mesh do work".
+    get mode(): ServerMode {
+      return scheduler.isRunning() ? "live" : "parked";
+    },
+    get uiOnly(): boolean {
+      return !scheduler.isRunning();
+    },
     async goLive(note = "mission started from console") {
       const self = this as MeshInstance;
-      if (self.mode === "live") return { alreadyLive: true, activated: [] };
+      // Asks the scheduler, not a mode flag: a completed mission left the
+      // scheduler stopped, and the old `self.mode === "live"` check made this
+      // an "already live" no-op on precisely the mesh that could not run.
+      if (self.scheduler.isRunning()) return { alreadyLive: true, activated: [] };
       self.scheduler.start();
-      self.mode = "live";
-      self.uiOnly = false;
       // The supervisor owns the stall watchdog; it must hear about going live
       // or the watchdog stays dead (its liveMode is a separate field) and a
       // live mission with everyone WAITING never gets nudged again.
@@ -267,11 +282,9 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       return { alreadyLive: false, activated };
     },
     async park() {
-      const self = this as MeshInstance;
       await scheduler.stop();
       supervisor.setLiveMode(false);
-      self.mode = "parked";
-      self.uiOnly = true;
+      // `mode`/`uiOnly` follow `scheduler.isRunning()`; stopping IS parking.
     },
     async reset(resetOpts = {}) {
       const self = this as MeshInstance;
@@ -307,8 +320,8 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       //    goal rather than resurrecting the one we just deleted.
       await supervisor.boot({ resume: false, mode: "parked" });
       scheduler.rebuildInterestRegistry();
-      self.mode = "parked";
-      self.uiOnly = true;
+      // Step 1 parked the scheduler and `boot({mode:"parked"})` left it that
+      // way, so the derived `mode`/`uiOnly` already read "parked".
       self.startedAt = Date.now();
       return { ok: true, archivedTo, goalId: kernel.state.activeGoalId ?? null, mode: self.mode };
     },
@@ -928,6 +941,37 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "mission" && parts[1] === "park" && req.method === "POST") {
         await instance.park();
         return json(200, { ok: true, mode: instance.mode, note: "scheduler parked; wake buttons still step single turns" });
+      }
+      // Non-destructive counterpart to reset: the mission is finished but the
+      // operator rejected the result. Withdraws the completion verdict, puts
+      // the mandatory criteria back to UNSATISFIED (otherwise the watchdog
+      // re-completes within a second), revives agents frozen at COMPLETED and
+      // restarts the scheduler. Every event and artifact is kept, so the next
+      // round can cite the rejected attempt.
+      if (parts[0] === "mission" && parts[1] === "reopen" && req.method === "POST") {
+        const b = await body();
+        const r = await supervisor.reopenGoal({
+          reason: typeof b?.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined,
+          criteria: Array.isArray(b?.criteria) ? b.criteria.filter((c: unknown) => typeof c === "string") : undefined,
+          activate: Array.isArray(b?.activate) ? b.activate.filter((c: unknown) => typeof c === "string") : undefined,
+        });
+        if (!r.ok) return json(400, r);
+        // A reopened mission that stays parked would repeat the original
+        // complaint: mail lands, nothing runs.
+        if (instance.mode === "parked") await instance.goLive("mission reopened from console");
+        return json(200, {
+          ...r,
+          mode: instance.mode,
+          note: [
+            `mission reopened; ${r.unsatisfied?.length ?? 0} criteria back to UNSATISFIED`,
+            `revived: ${r.revived?.join(", ") || "(none)"}`,
+            `running: ${r.activated?.join(", ") || "(none)"}`,
+            ...(r.notRevived?.length ? [`STILL COMPLETED (unreachable): ${r.notRevived.join(", ")}`] : []),
+            ...(r.refused?.length ? [`refused: ${r.refused.map((x) => `${x.agentId} (${x.reason})`).join(", ")}`] : []),
+            ...(r.escalationsCleared ? ["open escalations answered by the reopen"] : []),
+            ...(r.warning ? [r.warning] : []),
+          ].join("; "),
+        });
       }
       // Destructive: wipes the mission back to tick zero. The previous state
       // dir is archived (renamed, not deleted), so this stays recoverable —

@@ -61,11 +61,32 @@ function staticCriteria(spec: CategorySpec): Array<{ id: string; description: st
   return list;
 }
 
+/**
+ * Body text for demo artifacts that get cited as evidence for a mandatory
+ * criterion. The mesh rejects stub content there (MIN_EVIDENCE_CONTENT_CHARS),
+ * and the simulator's one-line artifacts are exactly that shape, so without
+ * this the scripted demo mission can no longer converge.
+ */
+function demoBody(subject: string): string {
+  return [
+    "",
+    `## ${subject}`,
+    "Scope, interfaces and constraints are stated here in full so a reviewer can act on",
+    "this document without asking the author for context or intent.",
+    "Decisions carry their rationale; alternatives considered are named and rejected explicitly.",
+    "Verification: exercised end to end, with results and residual risks recorded below.",
+    "Residual risk: none blocking; any follow-up is tracked as its own task in the mesh.",
+    "(Simulated deliverable body for the scripted demo run.)",
+  ].join("\n");
+}
+
 function requirementsDocContent(spec: CategorySpec): string {
   const requirements: Array<{ id: string; text: string; mandatory: boolean }> = [];
   if (spec.withResearch) requirements.push({ id: "req-analysis", text: "Repository boundary analysis delivered as research report", mandatory: true });
   if (spec.withCode) requirements.push({ id: "req-payments-idempotency", text: "Payment requests are idempotent (implemented, tested, merged)", mandatory: true });
-  return JSON.stringify({ requirements });
+  // The body must stay parseable JSON (the supervisor parses RequirementsDoc
+  // content to derive requirements), so the evidence body goes INSIDE the doc.
+  return JSON.stringify({ requirements, body: demoBody("payment requirements") });
 }
 
 function meshYaml(spec: CategorySpec): string {
@@ -335,7 +356,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         return {
           text: "release proposed",
           operations: [
-            { op: "publish_artifact", name: "release-plan", type: "ReleasePlan", content: "# Release\nPayment API 1.0.0 candidate" },
+            { op: "publish_artifact", name: "release-plan", type: "ReleasePlan", content: "# Release\nPayment API 1.0.0 candidate" + demoBody("release plan") },
             { op: "done" },
           ],
         };
@@ -348,12 +369,12 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         const version = board.filter((b) => b.type === "ArchitectureDocument").length + 1;
         const publishOp: MeshOp =
           version === 1
-            ? { op: "publish_artifact", name: "payment-architecture", type: "ArchitectureDocument", content: "# Architecture\nSpring Boot, DB-backed idempotency, modular boundaries." }
+            ? { op: "publish_artifact", name: "payment-architecture", type: "ArchitectureDocument", content: "# Architecture\nSpring Boot, DB-backed idempotency, modular boundaries." + demoBody("payment architecture") }
             : {
                 op: "publish_artifact",
                 name: "payment-architecture",
                 type: "ArchitectureDocument",
-                content: `# Architecture v${version}\nRevised.`,
+                content: `# Architecture v${version}\nRevised.${demoBody("payment architecture revision")}`,
                 asVersionOf: find(board, "ArchitectureDocument", "payment-architecture")?.id,
               };
         return {
@@ -392,7 +413,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
             op: "publish_artifact",
             name: "payment-boundaries",
             type: "ResearchReport",
-            content: `# Research\n${question}\nFindings: existing boundaries are payment, ledger, notification.`,
+            content: `# Research\n${question}\nFindings: existing boundaries are payment, ledger, notification.${demoBody("boundary research")}`,
             metadata: { inReplyTo: req.id, questionHash: question.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim() },
           },
           { op: "done" },
@@ -465,7 +486,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           op: "publish_artifact",
           name: `patch-tx-pipeline-${sim.patches}`,
           type: "CodePatch",
-          content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ idempotency-safe pipeline (revision ${sim.patches}) handles ${spec.coupledWrites} coupled classes`,
+          content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ idempotency-safe pipeline (revision ${sim.patches}) handles ${spec.coupledWrites} coupled classes${demoBody("transaction pipeline patch")}`,
         });
         ops.push({ op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "tests green locally" } });
         ops.push({ op: "wait" });
@@ -479,7 +500,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           return {
             text: "rework",
             operations: [
-              { op: "publish_artifact", name: `patch-tx-pipeline-${sim.patches}`, type: "CodePatch", content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})` },
+              { op: "publish_artifact", name: `patch-tx-pipeline-${sim.patches}`, type: "CodePatch", content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})${demoBody("transaction pipeline patch")}` },
               { op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "rework addressing the block" } },
               { op: "wait" },
             ],
@@ -513,7 +534,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         return {
           text: "tests pass",
           operations: [
-            { op: "publish_artifact", name: `test-report-r${sim.qaRounds}`, type: "TestReport", content: "all tests passing", metadata: { result: "PASSED" } },
+            { op: "publish_artifact", name: `test-report-r${sim.qaRounds}`, type: "TestReport", content: "all tests passing" + demoBody("test report"), metadata: { result: "PASSED" } },
             { op: "send", type: "TEST_RESULT", to: ["developer", "tech-lead"], newThread: { subject: "test pass" }, artifactRefs: patch ? [{ uri: uri(patch) }] : [], payload: { result: "PASSED" } },
             { op: "send", type: "REQUEST_REVIEW", to: ["tech-lead"], newThread: { subject: "code review requested" }, artifactRefs: patch ? [{ uri: uri(patch) }] : [], payload: { question: "approve merge" } },
             { op: "wait" },
@@ -526,7 +547,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         return {
           text: "release regression pass",
           operations: [
-            { op: "publish_artifact", name: "release-test-report", type: "TestReport", content: "release regression green", metadata: { result: "PASSED" } },
+            { op: "publish_artifact", name: "release-test-report", type: "TestReport", content: "release regression green" + demoBody("release regression report"), metadata: { result: "PASSED" } },
             { op: "send", type: "TEST_RESULT", to: ["pm", "tech-lead"], newThread: { subject: "release QA pass" }, payload: { result: "PASSED", subject: "release" } },
             { op: "done" },
           ],
@@ -546,7 +567,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
       return {
         text: "security pass",
         operations: [
-          { op: "publish_artifact", name: `security-scan-${sim.secScans}`, type: "SecurityReport", content: "no critical findings", metadata: { result: "PASSED", criticalFindings: 0 } },
+          { op: "publish_artifact", name: `security-scan-${sim.secScans}`, type: "SecurityReport", content: "no critical findings" + demoBody("security scan"), metadata: { result: "PASSED", criticalFindings: 0 } },
           { op: "send", type: "SECURITY_FINDING", to: ["pm", "tech-lead"], newThread: { subject: "security pass" }, payload: { result: "PASSED", subject: "security" } },
           { op: "done" },
         ],
@@ -581,15 +602,15 @@ function buildSingleScripts(spec: CategorySpec, sim: Sim): Map<string, StubScrip
   const { board, flags } = sim;
   const steps: Array<() => MeshOp[]> = [];
   if (spec.withResearch) {
-    steps.push(() => [{ op: "publish_artifact", name: "boundaries", type: "ResearchReport", content: "boundary analysis (solo)", metadata: {} }]);
+    steps.push(() => [{ op: "publish_artifact", name: "boundaries", type: "ResearchReport", content: "boundary analysis (solo)" + demoBody("boundary analysis"), metadata: {} }]);
   }
   steps.push(() => [{ op: "publish_artifact", name: "solo-requirements", type: "RequirementsDoc", content: requirementsDocContent(spec) }]);
   steps.push(() => [
-    { op: "publish_artifact", name: "solo-architecture", type: "ArchitectureDocument", content: "# Architecture (solo)" },
+    { op: "publish_artifact", name: "solo-architecture", type: "ArchitectureDocument", content: "# Architecture (solo)" + demoBody("solo architecture") },
     { op: "approve", subject: "architecture", comment: "solo design decision" },
   ]);
   if (spec.withCode) {
-    steps.push(() => [{ op: "publish_artifact", name: "solo-patch", type: "CodePatch", content: `diff --git a/Core.java b/Core.java\n+ solo implementation ${spec.coupledWrites} classes` }]);
+    steps.push(() => [{ op: "publish_artifact", name: "solo-patch", type: "CodePatch", content: `diff --git a/Core.java b/Core.java\n+ solo implementation ${spec.coupledWrites} classes${demoBody("solo implementation")}` }]);
     steps.push(() => {
       const patch = find(board, "CodePatch", "solo-patch");
       return patch
@@ -604,14 +625,14 @@ function buildSingleScripts(spec: CategorySpec, sim: Sim): Map<string, StubScrip
         : [];
     });
   }
-  steps.push(() => [{ op: "publish_artifact", name: "solo-tests", type: "TestReport", content: "green", metadata: { result: "PASSED" } }]);
+  steps.push(() => [{ op: "publish_artifact", name: "solo-tests", type: "TestReport", content: "green" + demoBody("solo test report"), metadata: { result: "PASSED" } }]);
   if (spec.withSecurity) {
-    steps.push(() => [{ op: "publish_artifact", name: "solo-scan", type: "SecurityReport", content: "clean", metadata: { result: "PASSED", criticalFindings: 0 } }]);
+    steps.push(() => [{ op: "publish_artifact", name: "solo-scan", type: "SecurityReport", content: "clean" + demoBody("solo security scan"), metadata: { result: "PASSED", criticalFindings: 0 } }]);
   }
   if (spec.withCode || spec.withSecurity) {
     steps.push(() => {
       const rel = [
-        { op: "publish_artifact", name: "solo-release", type: "ReleasePlan", content: "release 1.0.0" } as MeshOp,
+        { op: "publish_artifact", name: "solo-release", type: "ReleasePlan", content: "release 1.0.0" + demoBody("solo release plan") } as MeshOp,
       ];
       return rel;
     });
