@@ -32,8 +32,23 @@ const REPO = path.resolve(__dirname, "..", "..", "..");
 const SOURCE_YAML = path.join(REPO, "examples", "line-follower-sim", "mesh.yaml");
 const SOURCE_EVENTS = path.join(REPO, "examples", "line-follower-sim", "workspace", ".mesh-state", "logs", "events.jsonl");
 
+/** The event log lives under the example's gitignored `workspace` dir: it is
+ *  a byproduct of running the example locally, not a committed fixture. A fresh
+ *  clone has none, and a machine whose state dir was rotated has only the short
+ *  tail of the newest run. Requiring mere existence was not enough — replaying a
+ *  200-event stub log exercises none of the recovery path this test guards, so
+ *  the depth check belongs in the skip predicate alongside it. */
+const MIN_REAL_LOG_EVENTS = 1000;
+
+function countEvents(file: string): number {
+  let n = 0;
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) if (line.trim()) n++;
+  return n;
+}
+
 function hasFixture(): boolean {
-  return fs.existsSync(SOURCE_YAML) && fs.existsSync(SOURCE_EVENTS);
+  if (!fs.existsSync(SOURCE_YAML) || !fs.existsSync(SOURCE_EVENTS)) return false;
+  return countEvents(SOURCE_EVENTS) > MIN_REAL_LOG_EVENTS;
 }
 
 /**
@@ -45,7 +60,7 @@ function hasFixture(): boolean {
  */
 test("resume storm: continue + set&resume on a real mission log stays responsive", async () => {
   if (!hasFixture()) {
-    console.log("skip: line-follower fixture not present");
+    console.log("skip: no real line-follower mission log present (run the example to record one)");
     return;
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-resume-"));
@@ -81,7 +96,7 @@ test("resume storm: continue + set&resume on a real mission log stays responsive
         (rec.definition as { runtime: string }).runtime = "stub";
       }
       const before = m.kernel.state.eventCount;
-      assert.ok(before > 1000, `expected the real log, got ${before} events`);
+      assert.ok(before > MIN_REAL_LOG_EVENTS, `expected the real log, got ${before} events`);
       let openEsc = [...m.kernel.state.escalations.values()].find((e) => e.status === "OPEN");
       if (!openEsc) {
         openEsc = await m.supervisor.escalate({ reason: "test-budget", raisedBy: "qa", detail: { note: "synthetic" } });

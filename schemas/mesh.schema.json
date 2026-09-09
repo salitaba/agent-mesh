@@ -442,6 +442,9 @@
             },
             "stall_noop_retry_ms": {
               "type": "integer"
+            },
+            "turn_silence_ms": {
+              "type": "integer"
             }
           },
           "additionalProperties": false
