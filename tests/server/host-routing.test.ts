@@ -51,6 +51,18 @@ const server = http.createServer((req, res) => {
     setTimeout(() => { res.write("second\\n"); res.end(); }, 400);
     return;
   }
+  if (url.pathname === "/events/stream") {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+    const since = Number(url.searchParams.get("sinceSeq") || 0);
+    let seq = since;
+    const tick = setInterval(() => {
+      seq += 1;
+      const ev = { id: "e" + seq, seq, type: "demo.tick", at: new Date().toISOString(), actor: "stub", payload: { seq } };
+      res.write("id: " + seq + "\\nevent: demo.tick\\ndata: " + JSON.stringify(ev) + "\\n\\n");
+    }, 40);
+    req.on("close", () => clearInterval(tick));
+    return;
+  }
   if (url.pathname === "/teapot") {
     res.writeHead(418, { "content-type": "application/json", "x-child-header": "kept" });
     res.end(JSON.stringify({ brewing: false }));
@@ -362,6 +374,76 @@ test("the host enforces its own operator token before proxying anywhere", { time
   } finally {
     if (before === undefined) delete process.env.MESH_API_TOKEN;
     else process.env.MESH_API_TOKEN = before;
+    await host.close();
+  }
+});
+
+test("/api/events/stream multiplexes open children and tags every frame", { timeout: 40_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "mux-a", "mux-a");
+  const b = makeProject(base, "mux-b", "mux-b");
+  const host = await startHost(base);
+  try {
+    for (const ref of [a, b]) {
+      await req(`${host.url}/api/projects`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ root: ref.root }),
+      });
+      await req(`${host.url}/api/projects/${ref.id}/open`, { method: "POST" });
+    }
+
+    const controller = new AbortController();
+    const res = await fetch(`${host.url}/api/events/stream?projects=mux-a,mux-b`, { signal: controller.signal });
+    assert.equal(res.status, 200);
+    assert.ok((res.headers.get("content-type") ?? "").includes("text/event-stream"));
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const seen = new Map<string, number[]>();
+    // Read until both children have shown up, so the assertion is about
+    // multiplexing rather than about which child happened to tick first.
+    const deadline = Date.now() + 15_000;
+    const enough = (): boolean => (seen.get("mux-a")?.length ?? 0) >= 2 && (seen.get("mux-b")?.length ?? 0) >= 2;
+    while (Date.now() < deadline && !enough()) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      // Accumulated, not split per chunk: a read boundary has nothing to do
+      // with a frame boundary, and a torn frame here would look like data loss.
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const line = block.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        let frame: any;
+        try {
+          frame = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        if (!frame?.projectId || typeof frame.seq !== "number") continue;
+        const list = seen.get(frame.projectId) ?? [];
+        list.push(frame.seq);
+        seen.set(frame.projectId, list);
+        assert.equal(frame.event.type, "demo.tick");
+      }
+    }
+    controller.abort();
+
+    assert.ok((seen.get("mux-a")?.length ?? 0) >= 2, "frames from the first child arrived");
+    assert.ok((seen.get("mux-b")?.length ?? 0) >= 2, "one browser stream carries both children");
+    // Per-project sequences, not a synthetic global one.
+    assert.deepEqual(seen.get("mux-a")!.slice(0, 2), [1, 2]);
+    assert.deepEqual(seen.get("mux-b")!.slice(0, 2), [1, 2]);
+    assert.deepEqual(host.server.multiplex.followed().sort(), ["mux-a", "mux-b"]);
+
+    // A cursor is forwarded to the child so a reconnect resumes rather than
+    // replaying — and closing a project drops the host's subscription.
+    await req(`${host.url}/api/projects/mux-b/close`, { method: "POST" });
+    assert.deepEqual(host.server.multiplex.followed(), ["mux-a"]);
+  } finally {
     await host.close();
   }
 });

@@ -32,6 +32,15 @@ import {
   type ProjectSupervisor,
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
+import {
+  MultiplexHub,
+  SseDecoder,
+  parseCursors,
+  parseProjectList,
+  type UpstreamHandle,
+  type UpstreamSink,
+} from "../../../packages/observability/src/index";
+import type { MeshEvent } from "../../../packages/protocol/src/index";
 import { requireAuth } from "./auth";
 
 /**
@@ -107,7 +116,7 @@ export interface HostOptions {
 }
 
 export interface HostHandle {
-  server: http.Server;
+  server: HostServer;
   port: number;
   url: string;
   registry: FileProjectRegistry;
@@ -181,6 +190,9 @@ export class SupervisedProjects implements ProjectSupervisor {
   }
 }
 
+/** The host server, plus the multiplexer that must be drained with it. */
+export type HostServer = http.Server & { multiplex: MultiplexHub };
+
 export function createHostServer(deps: {
   registry: FileProjectRegistry;
   tree: SupervisionTree;
@@ -188,9 +200,87 @@ export function createHostServer(deps: {
   projects: SupervisedProjects;
   dashboardDir?: string;
   startedAt?: number;
-}): http.Server {
+  /** Cap on the frames one browser may fall behind by. Tests shrink it. */
+  multiplexQueue?: number;
+}): HostServer {
   const { registry, tree, supervisor, projects } = deps;
   const startedAt = deps.startedAt ?? Date.now();
+
+  /**
+   * The host's own subscription to one child's `/events/stream`.
+   *
+   * It is a plain SSE client over loopback authenticated with the child's
+   * token — the same credential the proxy injects, and equally never seen by a
+   * browser. `sinceSeq` is forwarded so a resubscription after a child restart
+   * resumes from the log rather than replaying it.
+   */
+  const openUpstream = (projectId: string, sinceSeq: number, sink: UpstreamSink): UpstreamHandle => {
+    const child = supervisor.running(projectId);
+    if (!child) throw new Error(`project '${projectId}' is not open`);
+
+    let done = false;
+    const finish = (err?: Error): void => {
+      if (done) return;
+      done = true;
+      sink.closed(err);
+    };
+
+    const decoder = new SseDecoder((frame) => {
+      if (!frame.data) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(frame.data);
+      } catch {
+        // A frame the host cannot parse is a frame it cannot tag. Dropping one
+        // is better than tearing down a live subscription over it.
+        return;
+      }
+      // Kernel events carry a seq and are resumable; everything else is an
+      // out-of-band live frame (`turn.token`) that must never enter the ring.
+      const event = parsed as MeshEvent;
+      if (frame.event && typeof event?.type === "string" && event.type === frame.event && typeof event.seq === "number") {
+        sink.event(event);
+        return;
+      }
+      if (frame.event) sink.stream(frame.event, parsed);
+    });
+
+    const request = http.request({
+      host: "127.0.0.1",
+      port: child.port,
+      method: "GET",
+      path: `/events/stream${sinceSeq > 0 ? `?sinceSeq=${sinceSeq}` : ""}`,
+      headers: { authorization: `Bearer ${child.token}`, accept: "text/event-stream", host: `127.0.0.1:${child.port}` },
+    });
+    request.setNoDelay?.(true);
+    request.on("response", (res) => {
+      if ((res.statusCode ?? 0) !== 200) {
+        res.resume();
+        finish(new Error(`child '${projectId}' refused the event stream: HTTP ${res.statusCode}`));
+        return;
+      }
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => decoder.push(chunk));
+      res.on("end", () => finish());
+      res.on("error", (err: Error) => finish(err));
+    });
+    request.on("error", (err: Error) => finish(err));
+    request.end();
+
+    return {
+      close: () => {
+        // Marked done first: destroying the request fires `error`, and a hub
+        // that heard "upstream closed" from its own teardown would tell every
+        // client to resync against a project it just stopped following.
+        done = true;
+        if (!request.destroyed) request.destroy();
+      },
+    };
+  };
+
+  const multiplexOptions: ConstructorParameters<typeof MultiplexHub>[0] = { openUpstream };
+  if (deps.multiplexQueue) multiplexOptions.maxQueue = deps.multiplexQueue;
+  const multiplex = new MultiplexHub(multiplexOptions);
 
   /**
    * The status the UI should believe.
@@ -273,6 +363,14 @@ export function createHostServer(deps: {
         });
       }
 
+      // ------------------------------------------------ multiplexed events
+      // Matched before `/api/p/` and before the legacy fallthrough — "events"
+      // is in CHILD_ROUTE_PREFIXES, and this is the one events route the host
+      // answers itself instead of forwarding.
+      if (parts[0] === "api" && parts[1] === "events" && parts[2] === "stream" && parts.length === 3 && req.method === "GET") {
+        return streamMultiplexed(req, res, u);
+      }
+
       // ------------------------------------------------------- project proxy
       // `/api/p/:projectId/<rest>` — everything after the id is the child's own
       // path, preserved verbatim including the query string.
@@ -308,16 +406,22 @@ export function createHostServer(deps: {
             return json(200, summarize(handle.ref));
           }
           if (parts[3] === "close" && parts.length === 4 && req.method === "POST") {
+            // Drop the host's subscription first: closing the child would
+            // otherwise surface as an upstream error and tell every browser to
+            // resync against a project that is meant to be gone.
+            await multiplex.unfollow(id);
             await registry.close(id);
             return json(200, summarize(ref));
           }
           if (parts[3] === "restart" && parts.length === 4 && req.method === "POST") {
+            await multiplex.unfollow(id);
             await registry.close(id);
             projects.armManualRestart(id);
             const handle = await registry.open(id);
             return json(200, summarize(handle.ref));
           }
           if (parts.length === 3 && req.method === "DELETE") {
+            await multiplex.unfollow(id);
             await registry.remove(id);
             // Drop it from supervision too, or a removed project keeps its
             // crash history and its breaker state for a later re-add.
@@ -366,6 +470,56 @@ export function createHostServer(deps: {
       }
       return json(500, { error: (err as Error).message });
     }
+  }
+
+  /**
+   * One browser stream carrying every requested project.
+   *
+   * The requested set is intersected with what is actually open: a tab that
+   * asks for a project the host cannot follow gets told so per project and
+   * keeps the rest of its stream, because dropping the connection is exactly
+   * what the reconnect-with-cursors design exists to avoid.
+   */
+  async function streamMultiplexed(req: http.IncomingMessage, res: http.ServerResponse, u: URL): Promise<void> {
+    const requested = parseProjectList(u.searchParams.get("projects"));
+    const cursors = parseCursors(u.searchParams.get("since"));
+    // No `?projects=` means "everything open right now" — the common case for
+    // a dashboard that just reconnected and has not decided on tabs yet.
+    const wanted = requested.length > 0 ? requested : supervisor.runningIds();
+
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "access-control-allow-origin": "*",
+      "x-accel-buffering": "no",
+    });
+    res.flushHeaders?.();
+    res.socket?.setNoDelay(true);
+    res.write(`retry: 3000\n`);
+    res.write(`: connected ${new Date().toISOString()}\n\n`);
+
+    const unavailable: { projectId: string; status: string }[] = [];
+    for (const projectId of wanted) {
+      if (!supervisor.running(projectId)) {
+        const known = registry.list().some((r) => r.id === projectId);
+        unavailable.push({ projectId, status: known ? statusOf(projectId) : UNKNOWN_PROJECT_STATUS });
+        continue;
+      }
+      try {
+        await multiplex.follow(projectId, cursors.get(projectId) ?? 0);
+      } catch (err) {
+        unavailable.push({ projectId, status: (err as Error).message });
+      }
+    }
+    if (unavailable.length > 0) {
+      res.write(`event: projects.unavailable\ndata: ${JSON.stringify({ projects: unavailable })}\n\n`);
+    }
+
+    const remove = multiplex.add(res, { projects: wanted, since: cursors });
+    // `close` fires for both a navigated-away tab and a host shutdown that
+    // force-closed the socket, so this is the single drain path.
+    res.on("close", () => remove());
   }
 
   /**
@@ -448,7 +602,9 @@ export function createHostServer(deps: {
     req.pipe(upstream);
   }
 
-  return server;
+  const hosted = server as HostServer;
+  hosted.multiplex = multiplex;
+  return hosted;
 }
 
 /** Static dashboard assets. Returns false when nothing matched. */
@@ -554,6 +710,10 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
     // teardown that races the first over the same children.
     if (closing) return closing;
     closing = (async () => {
+      // Before the socket teardown: the hub owns loopback subscriptions to the
+      // children, and one left open would keep `server.close()` waiting on a
+      // request this process itself is making.
+      await server.multiplex.close();
       await new Promise<void>((resolve) => {
         server.closeIdleConnections?.();
         server.close(() => resolve());
