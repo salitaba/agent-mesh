@@ -98,6 +98,7 @@ test("replay: completed goal is fully reconstructible from evidence", async () =
   });
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "TestReport", content: evidenceContent("test report") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:final", created.artifact.id, "report proves it");
   await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 6000);
   const goalId = m.kernel.state.activeGoalId!;

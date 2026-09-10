@@ -168,6 +168,7 @@ test("invariant: completed goals require evidence for every mandatory criterion"
   });
   const c = await m.supervisor.createArtifact({ actorId: "pm", name: "ev", type: "TestReport", content: evidenceContent("evidence report") });
   if (!("artifact" in c)) throw new Error("create failed");
+  await m.supervisor.transitionArtifact("pm", c.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:m1", c.artifact.id, "e1");
   await new Promise((r) => setTimeout(r, 300));
   const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId!);

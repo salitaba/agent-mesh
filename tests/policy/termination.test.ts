@@ -26,6 +26,7 @@ test("termination: successful completion needs every mandatory criterion evidenc
   });
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
   await new Promise((r) => setTimeout(r, 200));
   assert.notEqual(goalOf(m)?.status, "COMPLETED", "must not complete with only one criterion");
@@ -52,6 +53,7 @@ test("termination: the completion sweep retires a parked (WAITING) agent, not ju
 
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
   await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
   await waitFor("qa retired", () => m.kernel.state.agents.get("qa")?.state.lifecycle === "COMPLETED", 5000);
@@ -375,6 +377,7 @@ test("reopen: progress is recomputed from criteria, not frozen at the last goal.
   const goalId = m.kernel.state.activeGoalId!;
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
   await m.supervisor.recordDecision("pm", "accept", "criterion:c2", created.artifact.id);
   await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
@@ -412,6 +415,7 @@ test("reopen: the operator's reason becomes a mandatory criterion and an ask on 
   });
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
   await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
 
@@ -502,6 +506,7 @@ async function acceptCriterionFromTurn(
   });
   const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
   if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
   stub(m).setScript("pm", [
     {
       toolCalls,

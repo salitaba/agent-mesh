@@ -311,6 +311,7 @@ test("commitments/strict: full strict mission converges end-to-end", async () =>
       return {
         operations: [
           { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: JSON.stringify({ requirements: [{ id: "r1", text: "ship it", mandatory: true }], body: evidenceContent("requirements") }) },
+          { op: "transition_artifact", artifactId: "artifact://RequirementsDoc/reqs/1", to: "READY_FOR_REVIEW" },
           { op: "send", type: "REQUEST", to: ["dev"], newThread: { subject: "confirm" }, payload: { q: "ack?" } },
           { op: "wait" },
         ] as MeshOp[],

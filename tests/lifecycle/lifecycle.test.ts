@@ -112,6 +112,7 @@ test("lifecycle: mission completion marks idle agents completed", async () => {
   st.activeGoalId && m.kernel.state.goals.get(st.activeGoalId);
   await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "ADR", content: evidenceContent("completion evidence") });
   const art = [...st.artifacts.values()][0];
+  await m.supervisor.transitionArtifact("pm", art.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:done-one", art.id, "accepting");
   await waitFor("goal completed", () => goalOf(m)?.status === "COMPLETED", 6000);
   await m.cleanup();

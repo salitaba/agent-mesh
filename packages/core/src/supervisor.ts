@@ -1410,6 +1410,11 @@ export class Supervisor {
     if (a.type === "ResearchReport") {
       const inReplyTo = (a.metadata as any)?.inReplyTo as string | undefined;
       await this.deps.kernel.emit("research.completed", { artifactId: a.id, name: a.name, inReplyTo }, { actorId: a.createdBy, goalId, causationId, correlationId: corr });
+      // Delivering the report IS submitting it. Without this the artifact is
+      // still DRAFT at the instant the criterion is evidenced, so the mandatory
+      // gate in `markCriterionEvidence` would refuse the runtime's own path and
+      // `req-analysis` could never be satisfied by anyone.
+      await this.transitionArtifact(a.createdBy, a.id, { to: "READY_FOR_REVIEW", comment: "research delivered" });
       await this.markCriterionEvidence("req-analysis", {
         kind: "research-report",
         artifactRef: { uri: artifactUri(a.type, a.name, a.version) },
@@ -1545,6 +1550,27 @@ export class Supervisor {
     // projection and no termination check counts as done. A live mission put
     // 138 turns through here with zero tool calls and closed as complete.
     const { verified, toolCalls } = this.claimIsVerified(evidence.by);
+    // THE WORKFLOW GATE. Content alone is not enough for a MANDATORY criterion:
+    // a real mission closed as complete with 7 of its 9 artifacts still
+    // non-terminal, because `requirements-documented` went EVIDENCED citing a
+    // RequirementsDoc that was never submitted to anyone. DRAFT means the owner
+    // never even offered it for review; REJECTED means it was refused. Neither
+    // is proof of anything, however well written. From READY_FOR_REVIEW onward
+    // the artifact is at least on the record as work put forward, which is what
+    // the review and transition gates then judge.
+    //
+    // Only an EVIDENCED claim needs a submitted artifact. An unverified claim
+    // becomes ASSERTED either way, and ASSERTED never counts toward completion —
+    // refusing it would just hide a claim the agent still needs to see.
+    if (verified && c.mandatory && uri) {
+      const cited = artifactForRef(this.state, undefined, uri);
+      if (cited && (cited.status === "DRAFT" || cited.status === "REJECTED")) {
+        this.auditLine(
+          `criterion ${criterionId}: refusing ${cited.status} evidence '${cited.name}' — a mandatory criterion needs an artifact that was at least submitted for review`,
+        );
+        return "SKIPPED";
+      }
+    }
     if (!verified && c.status === "ASSERTED") {
       // Already on the record and nothing changed: re-asserting the same
       // unverified claim every turn must not spam the log.
@@ -1654,6 +1680,19 @@ export class Supervisor {
         if (!substantive.ok) {
           await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason: substantive.reason!, ruleId: "mandatory-evidence-too-thin" });
           return { ok: false, reason: substantive.reason };
+        }
+        // Substantive but never submitted. `markCriterionEvidence` refuses this
+        // too, but silently — the accepting agent must be told what to do next
+        // or it reports the mission done on a document nobody has seen. An
+        // unverified claim is exempt: it lands ASSERTED, which cannot complete
+        // anything, so denying it would only hide the claim.
+        const { verified: claimVerified } = this.claimIsVerified(actorId);
+        if (claimVerified && (artifact.status === "DRAFT" || artifact.status === "REJECTED")) {
+          const reason =
+            `artifact '${artifact.name}' is ${artifact.status} and cannot evidence mandatory criterion '${criterionId}' — ` +
+            `request review on it (or transition it to READY_FOR_REVIEW) and let it clear its gates, then accept against it`;
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-not-submitted" });
+          return { ok: false, reason };
         }
       }
       const acceptCheck = this.deps.policy.evaluateAuthority(actorId, "requirements", "accept", ctx);

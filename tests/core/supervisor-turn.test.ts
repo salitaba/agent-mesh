@@ -434,6 +434,33 @@ test("a one-line artifact is too thin to evidence a mandatory criterion", async 
   }
 });
 
+test("a DRAFT artifact cannot evidence a mandatory criterion until it is submitted", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", interests: [] },
+      { id: "po", role: "product-owner", authority: ["requirements.accept"], interests: [] },
+    ],
+    criteria: [{ id: "ship", description: "the deliverable exists", mandatory: true }],
+    mode: "parked",
+  });
+  try {
+    const artId = await publish(m, "dev", "design", "TestReport", evidenceContent("Mission report"));
+    const denied = await m.supervisor.recordDecision("po", "accept", "criterion:ship", artId, "reviewed");
+    assert.equal(denied.ok, false, "a DRAFT deliverable proves nothing, however well written");
+    assert.match(denied.reason ?? "", /is DRAFT and cannot evidence mandatory criterion/);
+    const rejection = (await m.store.read({ types: ["message.rejected"] })).at(-1)!;
+    assert.equal((rejection.payload as { ruleId: string }).ruleId, "mandatory-evidence-not-submitted");
+
+    await m.supervisor.transitionArtifact("dev", artId, { to: "READY_FOR_REVIEW" });
+    const accepted = await m.supervisor.recordDecision("po", "accept", "criterion:ship", artId, "reviewed");
+    assert.equal(accepted.ok, true, accepted.reason);
+    const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId!)!;
+    assert.equal(goal.acceptanceCriteria.find((c) => c.id === "ship")?.status, "EVIDENCED");
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("a substantive artifact clears the gate but lands as ASSERTED when nothing was verified", async () => {
   const m = await makeMesh({
     agents: [
@@ -445,6 +472,10 @@ test("a substantive artifact clears the gate but lands as ASSERTED when nothing 
   });
   try {
     const artId = await publish(m, "dev", "design", "ArchitectureDocument", evidenceContent("Mission design"));
+    await m.supervisor.transitionArtifact("dev", artId, { to: "READY_FOR_REVIEW" });
+    // A document is approved from UNDER_REVIEW; no REQUEST_REVIEW was sent, so
+    // take the hop the review-request projection would otherwise take.
+    await m.supervisor.transitionArtifact("dev", artId, { to: "UNDER_REVIEW" });
     const res = await m.supervisor.recordDecision("po", "accept", "criterion:ship", artId, "reviewed");
     assert.equal(res.ok, true, res.reason);
     // No turn is in flight, so the claim is verified by construction.

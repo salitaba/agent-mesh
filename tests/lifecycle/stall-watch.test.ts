@@ -336,6 +336,7 @@ test("stall: a mission with nothing actionable rests instead of paying to be tol
     return {
       operations: [
         { op: "publish_artifact", name: "reqs", type: "RequirementsDoc", content: evidenceContent("requirements") } as MeshOp,
+        { op: "transition_artifact", artifactId: "artifact://RequirementsDoc/reqs/1", to: "READY_FOR_REVIEW" } as MeshOp,
         { op: "create_task", title: "follow-up nobody will claim", description: "residue" } as MeshOp,
         // Mandatory criteria need a real artifact as evidence, not a comment.
         { op: "approve", subject: "criterion:ship", artifactUri: "artifact://RequirementsDoc/reqs/1", comment: "reqs published" } as MeshOp,

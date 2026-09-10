@@ -308,6 +308,11 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         flags.kickoff = true;
         const ops: MeshOp[] = [
           { op: "publish_artifact", name: "payment-requirements", type: "RequirementsDoc", content: requirementsDocContent(spec) },
+          // Submit, don't just publish. A DRAFT deliverable proves nothing and
+          // mandatory-criterion acceptance now refuses it (rule
+          // mandatory-evidence-not-submitted), so the milestone is only real
+          // once the doc is on the table for review.
+          { op: "transition_artifact", artifactId: "artifact://RequirementsDoc/payment-requirements/1", to: "READY_FOR_REVIEW" },
           { op: "send", type: "MISSION", to: ["architect"], newThread: { subject: "mission kickoff" }, payload: { note: "Design the architecture for the mission goal." } },
           { op: "done", summary: "requirements published" },
         ];
@@ -535,6 +540,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           text: "tests pass",
           operations: [
             { op: "publish_artifact", name: `test-report-r${sim.qaRounds}`, type: "TestReport", content: "all tests passing" + demoBody("test report"), metadata: { result: "PASSED" } },
+            { op: "transition_artifact", artifactId: `artifact://TestReport/test-report-r${sim.qaRounds}/1`, to: "READY_FOR_REVIEW" },
             { op: "send", type: "TEST_RESULT", to: ["developer", "tech-lead"], newThread: { subject: "test pass" }, artifactRefs: patch ? [{ uri: uri(patch) }] : [], payload: { result: "PASSED" } },
             { op: "send", type: "REQUEST_REVIEW", to: ["tech-lead"], newThread: { subject: "code review requested" }, artifactRefs: patch ? [{ uri: uri(patch) }] : [], payload: { question: "approve merge" } },
             { op: "wait" },
@@ -548,6 +554,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           text: "release regression pass",
           operations: [
             { op: "publish_artifact", name: "release-test-report", type: "TestReport", content: "release regression green" + demoBody("release regression report"), metadata: { result: "PASSED" } },
+            { op: "transition_artifact", artifactId: "artifact://TestReport/release-test-report/1", to: "READY_FOR_REVIEW" },
             { op: "send", type: "TEST_RESULT", to: ["pm", "tech-lead"], newThread: { subject: "release QA pass" }, payload: { result: "PASSED", subject: "release" } },
             { op: "done" },
           ],
@@ -568,6 +575,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         text: "security pass",
         operations: [
           { op: "publish_artifact", name: `security-scan-${sim.secScans}`, type: "SecurityReport", content: "no critical findings" + demoBody("security scan"), metadata: { result: "PASSED", criticalFindings: 0 } },
+          { op: "transition_artifact", artifactId: `artifact://SecurityReport/security-scan-${sim.secScans}/1`, to: "READY_FOR_REVIEW" },
           { op: "send", type: "SECURITY_FINDING", to: ["pm", "tech-lead"], newThread: { subject: "security pass" }, payload: { result: "PASSED", subject: "security" } },
           { op: "done" },
         ],
