@@ -14,7 +14,7 @@ import { PolicyEngine } from "../../../packages/policy-engine/src/index";
 import { Scheduler, type TriageModel } from "../../../packages/scheduler/src/index";
 import { StubRuntime, StaticRuntimeResolver } from "../../../packages/agent-runtime/src/index";
 import { FileSystemArtifactStore, GitWorkspace, InMemoryArtifactStore } from "../../../packages/artifact-store/src/index";
-import { FileSessionRegistry, ensureStateLayout, openSqliteIndex, SnapshotStore, archiveStateDir } from "../../../packages/persistence/src/index";
+import { FileSessionRegistry, ensureStateLayout, openSqliteIndex, SnapshotStore, archiveDir, archiveStateDir, acquireStateLock, type StateLockHandle } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
 import { systemClock } from "../../../packages/protocol/src/index";
 import {
@@ -31,7 +31,7 @@ import {
   SseHub,
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
-import { OpenCodeRuntimeAdapter } from "../../../packages/runtime-opencode/src/index";
+import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
@@ -60,11 +60,23 @@ export interface BootstrapOptions {
 
 export interface MeshInstance {
   config: ResolvedMeshConfig;
+  /**
+   * Absolute path of the product checkout the dashboard, presets and runner
+   * operate on. In git mode this is the `workspace/main` repo agents merge
+   * into; without git it falls back to `workspace/main` if it exists (brownfield
+   * migration), else the configured workspace root.
+   */
+  readonly productPath: string;
   supervisor: Supervisor;
   kernel: Kernel;
   store: EventStore;
   scheduler: Scheduler;
   stubRuntimes: Map<string, StubRuntime>;
+  /**
+   * The registered OpenCode adapter, exposed so the HTTP layer can serve the
+   * designer's model catalogue from the same installation that will run turns.
+   */
+  opencodeRuntime: OpenCodeRuntimeAdapter;
   startedAt: number;
   /** Legacy mirror of `mode === "parked"`. Prefer `mode`. */
   readonly uiOnly: boolean;
@@ -83,7 +95,8 @@ export interface MeshInstance {
   park(): Promise<void>;
   /**
    * Wipe the mission back to tick zero and re-boot it from the config, in
-   * place. Archives the state dir first; always lands parked.
+   * place. Archives the state dir outside the agent workspace and deletes the
+   * old run's git worktrees; always lands parked.
    */
   reset(opts?: { keepArtifacts?: boolean }): Promise<ResetReport>;
   close(): Promise<void>;
@@ -93,6 +106,10 @@ export interface ResetReport {
   ok: boolean;
   /** Absolute path of the archived previous state dir, null when there was none. */
   archivedTo: string | null;
+  /** Absolute path of the archived product checkout (`workspace/main`), null when git mode is off or there was none. */
+  productArchivedTo: string | null;
+  /** Worktree directory names that were deleted (empty when git mode is off). */
+  worktreesRemoved: string[];
   /** Goal id minted for the fresh mission. */
   goalId: string | null;
   mode: ServerMode;
@@ -103,6 +120,13 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   const layout = options.inMemory
     ? { events: config.stateDir, artifacts: config.stateDir, logs: config.stateDir }
     : ensureStateLayout(config.stateDir);
+  // Single-writer guarantee. Only file mode takes it: an in-memory store owns
+  // no files, so two in-memory meshes over one config are harmless (and every
+  // test bed relies on that). Acquired before anything opens a handle into the
+  // directory, and released in `close()`.
+  const stateLock: StateLockHandle | undefined = options.inMemory
+    ? undefined
+    : acquireStateLock(config.stateDir, { projectId: config.meshId });
   const store: EventStore = options.inMemory
     ? new MemoryEventStore()
     : new JsonlEventStore(path.join(layout.logs, "events.jsonl"));
@@ -146,6 +170,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     ? new InMemoryArtifactStore()
     : new FileSystemArtifactStore(path.join(layout.artifacts));
   const workspace = options.useGit ? new GitWorkspace(config.workspacePath) : undefined;
+  if (workspace && !options.inMemory) await workspace.ensureRepo();
   const sessionRegistry = options.inMemory ? undefined : new FileSessionRegistry(config.stateDir);
 
   const resolver = new StaticRuntimeResolver();
@@ -157,16 +182,18 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     resolver.register(name, stub);
     stubRuntimes.set(name, stub);
   }
-  resolver.register(
-    "opencode",
-    new OpenCodeRuntimeAdapter({
-      executable: options.opencodeOptions?.executable,
-      baseUrl: options.opencodeOptions?.baseUrl,
-      spawnProcesses: options.opencodeOptions?.spawnProcesses,
-      model: options.opencodeOptions?.model,
-      mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
-    }),
-  );
+  // Held by name as well as registered: the designer's model picker asks this
+  // adapter what models the installation can actually reach.
+  const opencodeAdapter = new OpenCodeRuntimeAdapter({
+    executable: options.opencodeOptions?.executable,
+    baseUrl: options.opencodeOptions?.baseUrl,
+    spawnProcesses: options.opencodeOptions?.spawnProcesses,
+    // Explicit bootstrap override wins; otherwise the mesh-wide default from
+    // mesh.runtime.model. Agents with their own `model` still override both.
+    model: options.opencodeOptions?.model ?? parseModelRef(config.defaultModel),
+    mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
+  });
+  resolver.register("opencode", opencodeAdapter);
   if (options.httpRuntimeUrl) {
     resolver.register("http", new HttpRuntimeAdapter({ baseUrl: options.httpRuntimeUrl }));
   }
@@ -244,13 +271,20 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   const mode: ServerMode = options.mode ?? (options.uiOnly ? "parked" : "live");
   await supervisor.boot({ resume, mode });
 
+  const mainProductPath = path.join(config.workspacePath, "main");
   const instance: MeshInstance = {
     config,
+    productPath: workspace
+      ? workspace.mainPath
+      : fs.existsSync(mainProductPath)
+        ? mainProductPath
+        : config.workspacePath,
     supervisor,
     kernel,
     store,
     scheduler,
     stubRuntimes,
+    opencodeRuntime: opencodeAdapter,
     startedAt: Date.now(),
     // Both derived: see the MeshInstance declaration. `scheduler.isRunning()`
     // is the single source of truth for "can this mesh do work".
@@ -298,7 +332,23 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       await self.park();
       await supervisor.resetMission();
       scheduler.resetMissionState();
-      // 2. Release the sqlite index handle before the directory moves; an open
+      // 2. Worktrees are disposable mission scratch space: delete them (and
+      //    their mesh/* branches) so the next run cannot read the previous
+      //    run's files. Sessions are already stopped, so no process is using
+      //    them.
+      const worktreesRemoved = workspace ? await workspace.removeAllWorktrees() : [];
+      // 3. The product checkout is mission scratch too: archive `workspace/main`
+      //    outside the workspace, then re-init an empty repo so the Product
+      //    page (and the next run) sees no files from the previous mission.
+      let productArchivedTo: string | null = null;
+      if (workspace && !options.inMemory) {
+        productArchivedTo = archiveDir(workspace.mainPath, {
+          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
+        });
+        workspace.removeMain();
+        await workspace.ensureRepo();
+      }
+      // 4. Release the sqlite index handle before the directory moves; an open
       //    handle would keep writing into the archived copy.
       try {
         indexRef?.flush();
@@ -307,28 +357,37 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         /* best-effort index */
       }
       indexRef = undefined;
-      // 3. Archive-then-recreate the state dir (atomic rename, recoverable).
+      // 5. Archive-then-recreate the state dir (atomic rename, recoverable).
+      //    The archive lives outside `workspace/` so new agents cannot read
+      //    it from their working tree.
       let archivedTo: string | null = null;
       if (!options.inMemory) {
-        archivedTo = archiveStateDir(config.stateDir, { keepArtifacts: resetOpts.keepArtifacts }).archivedTo;
+        archivedTo = archiveStateDir(config.stateDir, {
+          keepArtifacts: resetOpts.keepArtifacts,
+          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
+        }).archivedTo;
+        // The rename moved the lock file into the archive with everything
+        // else, leaving the recreated directory unclaimed. Rewrite it, or a
+        // second process could open the state dir this one is still using.
+        stateLock?.refresh();
       }
-      // 4. Empty the log + projections + snapshot in place, preserving object
+      // 6. Empty the log + projections + snapshot in place, preserving object
       //    identity so every route handler's closure stays valid.
       await kernel.resetToEmpty();
-      // 5. Reopen the index against the fresh (empty) directory.
+      // 7. Reopen the index against the fresh (empty) directory.
       if (!options.inMemory) {
         const index = openSqliteIndex(path.join(layout.events, "events-index.sqlite"));
         indexRef = index;
         kernel.subscribe((e) => index.ingest([e]));
       }
-      // 6. Boot a brand-new mission from the config. resume:false forces a new
+      // 8. Boot a brand-new mission from the config. resume:false forces a new
       //    goal rather than resurrecting the one we just deleted.
       await supervisor.boot({ resume: false, mode: "parked" });
       scheduler.rebuildInterestRegistry();
       // Step 1 parked the scheduler and `boot({mode:"parked"})` left it that
       // way, so the derived `mode`/`uiOnly` already read "parked".
       self.startedAt = Date.now();
-      return { ok: true, archivedTo, goalId: kernel.state.activeGoalId ?? null, mode: self.mode };
+      return { ok: true, archivedTo, productArchivedTo, worktreesRemoved, goalId: kernel.state.activeGoalId ?? null, mode: self.mode };
     },
     async close() {
       try {
@@ -341,11 +400,25 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       } catch {
         /* best-effort index */
       }
+      // Shut the runtime down BEFORE snapshotting: shutdown emits its own
+      // events (turns aborted, agents stopped), and a snapshot taken first
+      // would exclude them and be replayed over on the next boot anyway.
       await supervisor.shutdown();
+      try {
+        await kernel.forceSnapshot();
+      } catch {
+        /* snapshots are an optimisation; the log remains authoritative */
+      }
       try {
         await store.close?.();
       } catch {
         /* stores are best-effort on teardown */
+      }
+      // Last: the directory stays claimed until every handle into it is shut.
+      try {
+        stateLock?.release();
+      } catch {
+        /* teardown is best-effort */
       }
     },
   };
@@ -380,6 +453,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   };
   const mcp = createMcpToolset(supervisor);
   const startedAt = instance.startedAt;
+
+  /**
+   * Memoised model catalogue for GET /models. Resolving it can shell out to the
+   * `opencode` CLI (~1s), and the designer refetches whenever the crew panel
+   * mounts; the set of installed providers changes on the order of never.
+   */
+  let modelCatalogue: { at: number; value: Awaited<ReturnType<typeof instance.opencodeRuntime.listModels>> } | undefined;
+  const MODEL_CATALOGUE_TTL_MS = 5 * 60 * 1000;
 
   // Event-loop lag radar: a 1s interval measures how late it actually fires.
   // Exposed on /health so "server doesn't respond" can be split into
@@ -1022,11 +1103,13 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           return json(400, { ok: false, error: "reset requires confirm:true — this wipes the whole mission" });
         }
         const report = await instance.reset({ keepArtifacts: b.keepArtifacts === true });
+        const cleaned = report.worktreesRemoved.length ? `${report.worktreesRemoved.length} worktree(s) removed; ` : "";
+        const product = report.productArchivedTo ? "product checkout archived; " : "";
         return json(200, {
           ...report,
           note: report.archivedTo
-            ? `mission reset to zero; previous state archived at ${report.archivedTo}. Mesh is parked — press continue to start the new run.`
-            : "mission reset to zero; mesh is parked — press continue to start the new run.",
+            ? `mission reset to zero; ${cleaned}${product}previous state archived outside the workspace at ${report.archivedTo}. Mesh is parked — press continue to start the new run.`
+            : `mission reset to zero; ${cleaned}${product}mesh is parked — press continue to start the new run.`,
         });
       }
       // Operator raise of mission caps (event count / wall clock). Stored on
@@ -1109,10 +1192,32 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
       }
 
+      // ----------------------------------------------------------- models
+      // Model catalogue for the designer's per-role picker. Proxied from the
+      // OpenCode installation rather than hardcoded, so the list matches the
+      // providers this machine is actually credentialed for.
+      //
+      // Cached: resolving it may shell out to the `opencode` CLI, and the
+      // designer refetches on every panel mount. `?refresh=1` forces a reload
+      // after the operator adds a provider.
+      if (parts[0] === "models" && req.method === "GET" && parts.length === 1) {
+        const fresh = u.searchParams.get("refresh") === "1";
+        const now = Date.now();
+        if (fresh || !modelCatalogue || now - modelCatalogue.at > MODEL_CATALOGUE_TTL_MS) {
+          const listed = await instance.opencodeRuntime.listModels();
+          modelCatalogue = { at: now, value: listed };
+        }
+        const { models, default: fallback, error } = modelCatalogue.value;
+        // 503, not 200-with-empty-list: an empty catalogue and a failed lookup
+        // are different states, and the client renders a retry for the latter.
+        if (error) return json(503, { models: [], error });
+        return json(200, { models, default: fallback });
+      }
+
       // --------------------------------------------------------- presets
       // The playground app fetches "../../presets/<name>.json" from
       // /playground/, which resolves to /presets/... — serve them read-only.
-      const wsRoot = instance.config.workspacePath;
+      const wsRoot = instance.productPath;
       if (parts[0] === "presets" && req.method === "GET") {
         const ab = resolveInside(path.join(wsRoot, "presets"), parts.slice(1).join("/"));
         if (!ab) return json(400, { error: "path escapes presets" });

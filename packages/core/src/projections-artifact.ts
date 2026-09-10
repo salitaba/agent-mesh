@@ -1,4 +1,11 @@
-import type { Artifact, ArtifactStatus, MeshEvent } from "../../protocol/src/index";
+import {
+  MACHINE_TRANSITIONS,
+  artifactMachineOf,
+  type Artifact,
+  type ArtifactStatus,
+  type ArtifactType,
+  type MeshEvent,
+} from "../../protocol/src/index";
 import type { Projections } from "./state";
 import { MAX_ARTIFACT_HISTORY, artifactKey, dischargeCommitment } from "./state";
 import {
@@ -51,6 +58,21 @@ function doTransition(
       }
     }
   }
+}
+
+// An approval must not be inert: a document approved while it sits in
+// READY_FOR_REVIEW (no tracked review round) used to record the verdict and
+// stay open forever. Take the machine's terminal review edge instead. The
+// UNDER_REVIEW path keeps its original whitelist so logs written under the old
+// rules still replay (a later re-review may legally reopen those).
+const APPROVABLE_TYPES = new Set<ArtifactType>(["ArchitectureDocument", "CodePatch", "ApiSpec"]);
+
+function approvalPath(type: ArtifactType, status: ArtifactStatus): ArtifactStatus[] {
+  if (status === "UNDER_REVIEW") return APPROVABLE_TYPES.has(type) ? ["APPROVED"] : [];
+  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)]["READY_FOR_REVIEW"] ?? [];
+  if (allowed.includes("APPROVED")) return ["APPROVED"];
+  if (allowed.includes("FINAL")) return ["FINAL"];
+  return [];
 }
 
 export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Record<string, any>, config?: { transitionGates?: Record<string, string[]> }): boolean {
@@ -119,8 +141,10 @@ export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Reco
       recordApproval(state, p, event, p.kind === "pass" ? "pass" : "approve");
       if (p.artifactId && event.actorId) clearPendingForArtifactReview(state, p.artifactId, event.actorId);
       const a = p.artifactId ? state.artifacts.get(p.artifactId) : undefined;
-      if (a && (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW") && (a.type === "ArchitectureDocument" || a.type === "CodePatch" || a.type === "ApiSpec")) {
-        doTransition(state, event, a.id, "APPROVED", true, config);
+      if (a && (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW")) {
+        for (const to of approvalPath(a.type, a.status)) {
+          doTransition(state, event, a.id, to, true, config);
+        }
       }
       break;
     }

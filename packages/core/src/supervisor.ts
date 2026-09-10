@@ -1713,6 +1713,7 @@ export class Supervisor {
         },
         { actorId, goalId },
       );
+      await this.auditTransition(artifactId, evt.id, goalId);
       const landed = await this.markCriterionEvidence(criterionId, {
         kind: "criteria-acceptance",
         artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
@@ -1793,7 +1794,8 @@ export class Supervisor {
         priority: "HIGH",
       });
       if (!m.accepted) {
-        await this.deps.kernel.emit("review.rejected", { subject, artifactId, actorId, actorRole: this.state.agents.get(actorId)?.definition.role ?? actorId, comment, blockedInstead: true }, { actorId, goalId });
+        const evt = await this.deps.kernel.emit("review.rejected", { subject, artifactId, actorId, actorRole: this.state.agents.get(actorId)?.definition.role ?? actorId, comment, blockedInstead: true }, { actorId, goalId });
+        await this.auditTransition(artifactId, evt.id, goalId);
       }
       return { ok: m.accepted, reason: m.reason, eventId: m.eventId };
     }

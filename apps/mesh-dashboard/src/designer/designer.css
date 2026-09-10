@@ -4,7 +4,13 @@
  * Sections: page frame → health strip → advice → rail → canvas → inspector
  * → output grid → sticky save bar → dialogs. */
 
-.ms { display: flex; flex-direction: column; gap: 14px; padding-bottom: 84px; }
+/* A sticky `bottom: 0` resolves against the SCROLLPORT PADDING BOX, so #view's
+ * 18px bottom padding would leave a permanent gap under the save bar and no
+ * negative margin on the bar itself can close it — the padding has to go, and
+ * this view supplies its own edge instead. min-height keeps the bar pinned to
+ * the bottom on short content too (see .wb-bar's auto top margin). */
+#view:has(> .ms) { padding-bottom: 0; display: flex; flex-direction: column; }
+.ms { display: flex; flex-direction: column; gap: 14px; flex: 1 0 auto; }
 .ms-head .view-title { margin-bottom: 6px; }
 .ms-head .view-title h2 { font: var(--tx-title); }
 .ms-head .view-sub { margin-bottom: 2px; }
@@ -247,20 +253,52 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 /* ---------- YAML ---------- */
 .yaml-pane { font: 11.5px/1.6 var(--mono); background: var(--bg); color: var(--text-dim); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; overflow: auto; max-height: 70vh; white-space: pre; }
 
-/* ---------- sticky save bar ---------- */
+/* ---------- sticky save bar ----------
+ * Three zones, read left → right: what gets written (target), what state the
+ * draft is in (mid), what you can do about it (actions, primary last/right).
+ * Everything here stays on ONE line: the bar is sticky, so a wrapping path or
+ * hint eats canvas height on every scroll. */
 .wb-bar {
-  position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: 4px -18px -18px; padding: 10px 18px;
+  position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 16px;
+  /* auto-top pins it to the viewport bottom when the page is short; the negative
+   * side margins bleed it over #view's horizontal padding, edge to edge. */
+  margin: auto -18px 0; padding: 9px 18px;
   background: color-mix(in srgb, var(--bg-2) 92%, transparent); backdrop-filter: blur(8px);
   border-top: 1px solid var(--line-strong);
 }
-.wb-bar-target { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 280px; }
-.wb-bar-path { flex: 1; min-width: 140px; overflow: hidden; text-overflow: ellipsis; }
-input.wb-bar-path { max-width: 340px; }
-.wb-bar-mid { display: flex; align-items: center; gap: 12px; }
-.wb-bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-.wb-bar-hint { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
-.wb-bar-sep { align-self: stretch; width: 1px; background: var(--line-strong); margin: 0 2px; }
+.wb-bar-target { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 300px; }
+.wb-bar-label { flex: none; color: var(--muted); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; }
+.wb-bar-path {
+  flex: 1 1 auto; min-width: 0; font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* dir=rtl keeps the ellipsis on the LEFT: the filename matters, the home dir does not */
+span.wb-bar-path { text-align: left; unicode-bidi: plaintext; }
+input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
+
+/* segmented running|copy — one control, not two loose radios */
+.wb-seg { flex: none; display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); padding: 2px; }
+.wb-seg-opt { position: relative; display: inline-flex; }
+.wb-seg-opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.wb-seg-opt span {
+  padding: 3px 10px; border-radius: 4px; font: 12px var(--sans); color: var(--text-dim);
+  white-space: nowrap; transition: background .12s, color .12s;
+}
+.wb-seg-opt input:hover:not(:disabled) + span { color: var(--text); }
+.wb-seg-opt input:checked + span { background: var(--bg-2); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .25); }
+.wb-seg-opt input:disabled { cursor: not-allowed; }
+.wb-seg-opt input:disabled + span { opacity: .45; }
+.wb-seg-opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.wb-bar-mid { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wb-bar-mid .ms-src { min-width: 0; }
+.wb-bar-mid .ms-src > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* primary + its caveat stack, so the hint cannot push the button off the edge */
+.wb-bar-save { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.wb-bar-hint { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.wb-bar-hint b { font-weight: 500; color: var(--text-dim); }
+.wb-bar-sep { align-self: center; width: 1px; height: 20px; background: var(--line); }
 
 /* ---------- template menu ---------- */
 .ms-tpl { position: relative; }
@@ -308,6 +346,11 @@ input.wb-bar-path { max-width: 340px; }
     background: var(--panel); color: var(--text-dim); font: 15px/1 var(--sans); cursor: pointer;
   }
   .ms-insp-close:hover { color: var(--text); border-color: var(--line-strong); }
+  /* two rows: target + state on top, actions below, primary still bottom-right */
+  .wb-bar { flex-wrap: wrap; gap: 8px 12px; }
+  .wb-bar-target { flex: 1 1 100%; }
+  .wb-bar-mid { flex: 1 1 auto; }
+  .wb-bar-actions { flex: none; }
 }
 
 /* ---------- small screens ---------- */
@@ -319,4 +362,11 @@ input.wb-bar-path { max-width: 340px; }
   .ms-insp-wrap { width: min(380px, 100%); }
   .ms-tool-hint { display: none; }
   .ms-canvas-count { display: none; }
+  .wb-bar { padding: 9px 12px; margin: auto -12px 0; }   /* #view drops to 12px padding here */
+  .wb-bar-label { display: none; }
+  .wb-bar-mid { flex: 1 1 100%; order: 3; }
+  .wb-bar-actions { flex: 1 1 100%; order: 4; margin-left: 0; flex-wrap: wrap; }
+  .wb-bar-save { flex: 1 1 auto; align-items: stretch; }
+  .wb-bar-save .primary { width: 100%; }
+  .wb-bar-hint { text-align: center; }
 }

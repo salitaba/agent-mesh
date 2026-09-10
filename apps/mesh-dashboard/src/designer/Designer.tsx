@@ -65,6 +65,12 @@ function normalizeSavePath(p: string): string {
   return (abs ? "/" : "") + out.join("/");
 }
 
+/** Last path segment — the save hint names the file it will actually write. */
+function baseName(p: string): string {
+  const parts = normalizeSavePath(p).split("/");
+  return parts[parts.length - 1] || p;
+}
+
 /**
  * True when saving to `target` would land on the running file. Mirrors the server:
  * relative paths resolve against the running file's directory (config.dir is
@@ -99,6 +105,7 @@ export default function Designer(): React.JSX.Element {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [tplOpen, setTplOpen] = useState(false);
+  const tplRef = useRef<HTMLDivElement | null>(null);
   const [undo, setUndo] = useState<{ label: string; model: any; cur: string | null } | null>(null);
   const [confirmReplace, setConfirmReplace] = useState<null | { kind: "load" | "template" | "import"; json?: any; model?: any }>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -300,6 +307,17 @@ export default function Designer(): React.JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [inspOpen, compact, tplOpen]);
+
+  // A floating menu that only closes on Esc traps the pointer: any click outside
+  // the template popover dismisses it too.
+  useEffect(() => {
+    if (!tplOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!tplRef.current?.contains(e.target as Node)) setTplOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [tplOpen]);
 
   const m = draft.model;
   const curJson = m ? JSON.stringify(m) : "";
@@ -792,21 +810,29 @@ export default function Designer(): React.JSX.Element {
       {/* sticky action bar: the one place that saves */}
       <div className="wb-bar" role="toolbar" aria-label="designer actions">
         <div className="wb-bar-target">
-          <label className="chk"><input type="radio" name="d-save-target" checked={saveMode === "running"} disabled={!draft.runningPath} onChange={() => syncSaveMode("running", copyPath)} /> running</label>
-          <label className="chk"><input type="radio" name="d-save-target" checked={saveMode === "copy" || !draft.runningPath} onChange={() => syncSaveMode("copy", copyPath)} /> copy</label>
+          <span className="wb-bar-label" id="d-save-to">save to</span>
+          <div className="wb-seg" role="radiogroup" aria-labelledby="d-save-to">
+            <label className="wb-seg-opt" title={draft.runningPath ? `overwrite the running file: ${draft.runningPath}` : "no running file is loaded"}>
+              <input type="radio" name="d-save-target" checked={saveMode === "running" && !!draft.runningPath} disabled={!draft.runningPath} onChange={() => syncSaveMode("running", copyPath)} />
+              <span>running</span>
+            </label>
+            <label className="wb-seg-opt" title="write a new file; the running mesh is untouched">
+              <input type="radio" name="d-save-target" checked={saveMode === "copy" || !draft.runningPath} onChange={() => syncSaveMode("copy", copyPath)} />
+              <span>copy</span>
+            </label>
+          </div>
           {(saveMode === "copy" || !draft.runningPath) ? (
             <Input extra="wb-bar-path" value={copyPath} aria-label="copy save path" placeholder="examples/my-mesh/mesh.yaml" onChange={(e) => syncSaveMode("copy", e.target.value)} />
-          ) : <span className="mono muted wb-bar-path tx-value">{draft.runningPath}</span>}
+          ) : <span className="mono muted wb-bar-path" title={draft.runningPath} dir="rtl">{draft.runningPath}</span>}
         </div>
         <div className="wb-bar-mid">
           <SourceStateLine state={src} reviewOpen={reviewOpen} onToggleReview={() => setReviewOpen(!reviewOpen)} />
         </div>
         <div className="wb-bar-actions">
-          <Button variant="primary" aria-describedby="d-save-caveat" disabled={!targetPath || checking} onClick={() => void openReview()}>{saveLabel}</Button>
-          <span className="wb-bar-hint" id="d-save-caveat">writes mesh.yaml · restart to apply</span>
+          <Button variant="small" danger onClick={() => requestReplace("template", TEMPLATES[1].make())}>reset…</Button>
           <span className="wb-bar-sep" aria-hidden="true" />
-          <div className="ms-tpl">
-            <Button variant="small" aria-expanded={tplOpen} onClick={() => setTplOpen(!tplOpen)}>template ▾</Button>
+          <div className="ms-tpl" ref={tplRef}>
+            <Button variant="small" aria-expanded={tplOpen} aria-haspopup="menu" onClick={() => setTplOpen(!tplOpen)}>template ▾</Button>
             {tplOpen ? (
               <div className="ms-tpl-menu" role="menu">
                 {TEMPLATES.map((t) => (
@@ -820,7 +846,12 @@ export default function Designer(): React.JSX.Element {
           <Button variant="small" disabled={!draft.runningPath} onClick={() => void loadRunningClick()}>reload running</Button>
           <Button variant="small" onClick={() => setImportOpen(!importOpen)}>import</Button>
           <span className="wb-bar-sep" aria-hidden="true" />
-          <Button variant="small" danger onClick={() => requestReplace("template", TEMPLATES[1].make())}>reset…</Button>
+          <div className="wb-bar-save">
+            <Button variant="primary" aria-describedby="d-save-caveat" disabled={!targetPath || checking} onClick={() => void openReview()}>{saveLabel}</Button>
+            <span className="wb-bar-hint" id="d-save-caveat">
+              {targetPath ? <>writes <b className="mono">{baseName(targetPath)}</b> · restart to apply</> : "pick a save target"}
+            </span>
+          </div>
         </div>
       </div>
     </div>

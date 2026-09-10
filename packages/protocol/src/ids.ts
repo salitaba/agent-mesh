@@ -59,6 +59,39 @@ export function newAgentSessionId(): string {
   return randomUUID();
 }
 
+/**
+ * Project identity slug. Must match `project.id` in mesh.schema.json:
+ * `^[a-z0-9][a-z0-9-]{1,62}$` — 2..63 chars, lowercase alphanumerics and
+ * hyphens, not hyphen-initial. Git-committable and stable across folder moves,
+ * so it is the registry's key rather than a path.
+ */
+export const PROJECT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
+export function isProjectId(value: unknown): value is string {
+  return typeof value === "string" && PROJECT_ID_PATTERN.test(value);
+}
+
+/**
+ * Derive a valid project id from arbitrary text (in practice a directory
+ * name). Total: every input yields a usable id, because the fallback path
+ * exists precisely for `mesh.yaml` files that predate `project.id` and must
+ * still boot.
+ */
+export function toProjectId(input: string): string {
+  const slug = input
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63)
+    // Slicing can re-expose a trailing hyphen.
+    .replace(/-+$/g, "");
+  // "", "." and "_" all slug to empty; a single char fails the 2-char minimum.
+  // Hash rather than a constant so two unnameable folders do not collide.
+  if (slug.length < 2) return `project-${shortHash(input).slice(0, 8)}`;
+  return slug;
+}
+
 export function shortHash(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }

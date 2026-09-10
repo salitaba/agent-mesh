@@ -186,6 +186,18 @@ export const meshConfigSchema = {
   required: ["version", "mesh", "agents"],
   properties: {
     version: { type: "integer", const: 1 },
+    // Optional by design: identity for the multi-project host. A mesh.yaml
+    // without it stays valid and the loader derives a slug from the folder
+    // name, so no existing config breaks.
+    project: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{1,62}$" },
+        name: { type: "string" },
+      },
+      additionalProperties: false,
+    },
     mesh: {
       type: "object",
       required: ["id", "goal"],
@@ -213,7 +225,7 @@ export const meshConfigSchema = {
         },
         runtime: {
           type: "object",
-          properties: { default: { type: "string" } },
+          properties: { default: { type: "string" }, model: { type: "string" } },
           additionalProperties: false,
         },
       },

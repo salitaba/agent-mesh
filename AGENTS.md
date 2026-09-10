@@ -54,6 +54,7 @@ packages/
   runtime-opencode/  OpenCode server adapter
   runtime-http/      generic HTTP agent adapter
   observability/     graph, views, metrics, SSE hub
+  projects/          multi-project registry (~/.agent-mesh/projects.json)
 tests/               mirrors packages/ layout
 roles/               role prompt files
 schemas/             canonical JSON schemas (event, message, artifact, mesh)

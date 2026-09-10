@@ -16,7 +16,7 @@ mesh:
     - { id: architecture-approved, description: "…", mandatory: true }   # and PM
     - { id: implementation-merged, description: "…", mandatory: true }   # can add more
   workspace: { path: ./workspace }
-  runtime:   { default: opencode }
+  runtime:   { default: opencode }  # + optional model: provider/model for the whole mesh
 startup:
   activate: [pm, architect]         # not every agent — config-selected
 ```
@@ -28,7 +28,7 @@ agents:
   developer:
     role: developer
     runtime: opencode                # opencode | http | stub | custom
-    model: provider/model            # optional
+    model: provider/model            # optional; blank = mesh.runtime.model, then backend default
     mode: peer                       # peer | service
     prompt: ./roles/developer.md
     capabilities: [repository.read, repository.write, git.commit, test.execute]

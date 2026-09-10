@@ -91,6 +91,23 @@ export class MemoryEventStore implements EventStore {
   }
 }
 
+function isParsable(line: string): boolean {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What `load()` had to discard to make the log replayable. */
+export interface LogIntegrity {
+  /** Bytes dropped from an interrupted trailing append; 0 when the log was clean. */
+  truncatedTailBytes: number;
+  /** Unparseable lines skipped inside the log body (real corruption). */
+  corruptLines: number;
+}
+
 export class JsonlEventStore implements EventStore {
   private filePath: string;
   private cache: MeshEvent[] = [];
@@ -111,6 +128,8 @@ export class JsonlEventStore implements EventStore {
   private handlePromise: Promise<fs.promises.FileHandle> | null = null;
   private writeError: unknown = null;
   private sinceSync = 0;
+  private truncatedTail = 0;
+  private corruptLines = 0;
   private static readonly SYNC_EVERY = 50;
 
   constructor(filePath: string) {
@@ -124,12 +143,39 @@ export class JsonlEventStore implements EventStore {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       fs.writeFileSync(this.filePath, "", "utf8");
     }
-    const lines = fs.readFileSync(this.filePath, "utf8").split(/\r?\n/).filter((l) => l.trim().length > 0);
+    const raw = fs.readFileSync(this.filePath, "utf8");
+    const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    // Crash-safe append: an append interrupted by SIGKILL or a full disk
+    // leaves a trailing line with no newline terminator and, usually, invalid
+    // JSON. Left in place it is not merely skipped — the NEXT append (mode
+    // "a") concatenates onto it, welding two events into one unparseable line
+    // and losing the good one too. So detect it and truncate before any
+    // handle is opened. Only the LAST line qualifies: a torn line anywhere
+    // else is real corruption, not an interrupted write, and truncating there
+    // would silently discard every event after it.
+    const lastLine = lines.length > 0 ? lines[lines.length - 1] : undefined;
+    const unterminated = raw.length > 0 && !raw.endsWith("\n");
+    if (lastLine !== undefined && unterminated && !isParsable(lastLine)) {
+      lines.pop();
+      const keep = lines.length > 0 ? lines.join("\n") + "\n" : "";
+      try {
+        fs.writeFileSync(this.filePath, keep, "utf8");
+        this.truncatedTail = lastLine.length;
+      } catch {
+        // Read-only or otherwise unwritable log: the in-memory drop above
+        // still keeps replay correct for this process.
+        this.truncatedTail = lastLine.length;
+      }
+    }
     for (const line of lines) {
       let evt: MeshEvent;
       try {
         evt = JSON.parse(line) as MeshEvent;
       } catch {
+        // Mid-log garbage. Skipped so one bad line cannot make the whole
+        // mission unbootable, but counted: silent data loss is worse than a
+        // visible one, and `corruptLines` is what a health check reads.
+        this.corruptLines++;
         continue;
       }
       if (this.byId.has(evt.id)) continue;
@@ -257,6 +303,8 @@ export class JsonlEventStore implements EventStore {
     this.byCorrelation = new Map();
     this.seq = 0;
     this.sinceSync = 0;
+    this.truncatedTail = 0;
+    this.corruptLines = 0;
     this.writeChain = Promise.resolve();
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     fs.writeFileSync(this.filePath, "", "utf8");
@@ -267,6 +315,16 @@ export class JsonlEventStore implements EventStore {
 
   path(): string {
     return this.filePath;
+  }
+
+  /**
+   * What replay had to repair. Non-zero values mean events were lost — from a
+   * hard kill (`truncatedTailBytes`) or genuine corruption (`corruptLines`).
+   * Reads the log if it has not been loaded yet, so callers can ask at boot.
+   */
+  integrity(): LogIntegrity {
+    this.load();
+    return { truncatedTailBytes: this.truncatedTail, corruptLines: this.corruptLines };
   }
 }
 

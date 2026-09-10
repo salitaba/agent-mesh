@@ -50,3 +50,62 @@ test("git workspace: second worktree edit does not leak into the first", { skip:
   assert.ok(!fs.existsSync(path.join(b, "A.txt")), "worktrees are isolated until merge");
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("git workspace: removeAllWorktrees drops worktrees and mesh branches", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-reset-"));
+  const ws = new GitWorkspace(dir);
+  await ws.ensureRepo();
+  await ws.ensureWorktree("a");
+  await ws.ensureWorktree("b");
+
+  const removed = await ws.removeAllWorktrees();
+
+  assert.deepEqual([...removed].sort(), ["a", "b"]);
+  assert.ok(!fs.existsSync(ws.worktreePath("a")), "worktree a must be gone");
+  assert.ok(!fs.existsSync(ws.worktreePath("b")), "worktree b must be gone");
+  const branches = require("child_process")
+    .execFileSync("git", ["branch", "--list", "mesh/*"], { cwd: ws.mainPath })
+    .toString()
+    .trim();
+  assert.equal(branches, "", "old mission branches must be gone");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
+  const sh = (args: string[], cwd = dir): string =>
+    require("child_process").execFileSync("git", args, { cwd }).toString().trim();
+  // Brownfield layout: the product repo sits at the workspace root, so
+  // `main/` is nested inside it. Adoption here made main an empty phantom
+  // while merges landed at the root — the reset bug.
+  sh(["init", "-b", "main"]);
+  sh(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "seed"]);
+
+  const ws = new GitWorkspace(dir);
+  await ws.ensureRepo();
+
+  const toplevel = sh(["rev-parse", "--show-toplevel"], ws.mainPath);
+  assert.equal(fs.realpathSync(toplevel), fs.realpathSync(ws.mainPath), "main must be its own repo");
+  assert.ok(fs.existsSync(path.join(ws.mainPath, "README.md")), "main got a fresh initial commit");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("git workspace: removeMain wipes the checkout and ensureRepo re-initializes", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-main-reset-"));
+  const ws = new GitWorkspace(dir);
+  await ws.ensureRepo();
+  fs.writeFileSync(path.join(ws.mainPath, "PRODUCT.txt"), "shipped by the old mission", "utf8");
+
+  ws.removeMain();
+  assert.ok(!fs.existsSync(ws.mainPath), "main checkout must be gone immediately");
+
+  await ws.ensureRepo();
+  assert.ok(fs.existsSync(path.join(ws.mainPath, "README.md")), "fresh repo has the initial commit");
+  assert.ok(!fs.existsSync(path.join(ws.mainPath, "PRODUCT.txt")), "old product files must not survive");
+  const status = require("child_process")
+    .execFileSync("git", ["status", "--porcelain"], { cwd: ws.mainPath })
+    .toString()
+    .trim();
+  assert.equal(status, "", "fresh checkout is clean");
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -5,6 +5,9 @@ import {
   validateMeshConfig,
   EVENT_TYPES,
   AUTHORITY_TOKENS,
+  PROJECT_ID_PATTERN,
+  isProjectId,
+  toProjectId,
   type AgentDefinition,
   type CommunicationPolicy,
   type DelegationPolicy,
@@ -14,13 +17,22 @@ import {
 
 export interface RawMeshFile {
   version: number;
+  /**
+   * Project identity for the multi-project host. Optional: omitted, the loader
+   * derives an id from the folder name and warns. `mesh.id` names the mesh
+   * (the mission); `project.id` names the workspace it lives in.
+   */
+  project?: {
+    id: string;
+    name?: string;
+  };
   mesh: {
     id: string;
     name?: string;
     goal: string;
     acceptance_criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
     workspace?: { path?: string };
-    runtime?: { default?: string };
+    runtime?: { default?: string; model?: string };
   };
   startup?: { activate?: string[] };
   agents: Record<string, RawAgent>;
@@ -177,6 +189,15 @@ export interface ResolvedMeshConfig {
   filePath: string;
   dir: string;
   raw: RawMeshFile;
+  /**
+   * Stable workspace identity, used by the project registry and the state
+   * lock. Declared as `project.id`, or derived from the config directory name
+   * when absent (with a warning). Never empty.
+   */
+  projectId: string;
+  projectName: string;
+  /** True when `projectId` was derived rather than declared — the registry treats these as unpinned. */
+  projectIdDerived: boolean;
   meshId: string;
   meshName: string;
   goalText: string;
@@ -184,6 +205,8 @@ export interface ResolvedMeshConfig {
   workspacePath: string;
   stateDir: string;
   defaultRuntime: string;
+  /** Mesh-wide model applied to agents that leave `model` blank. */
+  defaultModel?: string;
   startupActivate: string[];
   /**
    * Non-fatal configuration problems (currently: transition gates naming an
@@ -314,7 +337,23 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   const agentIds = Object.keys(raw.agents);
   if (agentIds.length === 0) errors.push("at least one agent must be defined");
 
+  // Migration path: a mesh.yaml written before `project.id` existed must still
+  // boot. Derive from the folder name and warn — never a hard break. The
+  // derived id is not stable across a rename, which is exactly what the
+  // warning says.
+  const projectIdDerived = !raw.project?.id;
+  const projectId = raw.project?.id ?? toProjectId(path.basename(dir));
+  if (projectIdDerived) {
+    configWarnings.push(
+      `mesh.yaml declares no project.id — using '${projectId}' derived from the folder name. ` +
+        `Add 'project: { id: ${projectId} }' to pin it; a derived id changes if the folder is renamed.`,
+    );
+  } else if (!isProjectId(projectId)) {
+    errors.push(`project.id '${projectId}' must match ${PROJECT_ID_PATTERN.source}`);
+  }
+
   const defaultRuntime = raw.mesh.runtime?.default ?? "opencode";
+  const defaultModel = raw.mesh.runtime?.model?.trim() || undefined;
   const workspacePath = path.resolve(dir, raw.mesh.workspace?.path ?? "./workspace");
   const stateDir = path.resolve(dir, raw.server?.state_dir ?? path.join(raw.mesh.workspace?.path ?? "./workspace", ".mesh-state"));
 
@@ -405,6 +444,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     filePath: path.join(dir, "mesh.yaml"),
     dir,
     raw,
+    projectId,
+    projectName: raw.project?.name ?? raw.mesh.name ?? projectId,
+    projectIdDerived,
     meshId: raw.mesh.id,
     meshName: raw.mesh.name ?? raw.mesh.id,
     goalText: raw.mesh.goal.trim(),
@@ -416,6 +458,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     workspacePath,
     stateDir,
     defaultRuntime,
+    defaultModel,
     startupActivate,
     warnings: configWarnings,
     agents,
@@ -622,13 +665,28 @@ export function defaultEventEnvelopeBase(goalId: string): Pick<MeshEvent, "goalI
   return { goalId, protocolVersion: "1.0" };
 }
 
-export function writeDefaultMeshYaml(targetDir: string, meshId: string, defaultRuntime: string = "opencode"): string {
+export function writeDefaultMeshYaml(
+  targetDir: string,
+  meshId: string,
+  defaultRuntime: string = "opencode",
+  opts: { projectId?: string } = {},
+): string {
   const target = path.join(targetDir, "mesh.yaml");
   if (fs.existsSync(target)) {
     throw new ConfigError([`${target} already exists`]);
   }
   fs.mkdirSync(targetDir, { recursive: true });
+  // Slugged, not the raw name: `meshId` comes from a directory name, which may
+  // hold spaces, capitals or dots that the schema pattern rejects.
+  const projectId = opts.projectId ?? toProjectId(meshId);
+  if (!isProjectId(projectId)) {
+    throw new ConfigError([`project id '${projectId}' must match ${PROJECT_ID_PATTERN.source}`]);
+  }
   const template = `version: 1
+
+project:
+  id: ${projectId}
+  name: ${meshId}
 
 mesh:
   id: ${meshId}

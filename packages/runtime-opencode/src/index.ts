@@ -22,6 +22,21 @@ export interface OpenCodeModelRef {
   modelID: string;
 }
 
+/**
+ * Split a config-shaped `"provider/model-id"` string into the adapter's
+ * structured ref. Splits on the FIRST slash only: model ids themselves contain
+ * slashes (`openrouter/anthropic/claude-sonnet-4`), so the remainder is kept
+ * whole. Blank/absent/slashless input yields undefined so the caller falls back
+ * to the mesh-wide default — the designer's "blank = mesh default" contract.
+ */
+export function parseModelRef(spec: string | undefined): OpenCodeModelRef | undefined {
+  const trimmed = spec?.trim();
+  if (!trimmed) return undefined;
+  const slash = trimmed.indexOf("/");
+  if (slash <= 0 || slash === trimmed.length - 1) return undefined;
+  return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) };
+}
+
 export interface OpenCodeAdapterOptions {
   executable?: string;
   portBase?: number;
@@ -245,6 +260,15 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     }
   }
 
+  /**
+   * Resolve the model for one agent: the per-role `model` from mesh.yaml when
+   * set and well-formed, else the mesh-wide adapter default. A single adapter
+   * instance serves every agent, so this must never mutate `this.options`.
+   */
+  private modelFor(agent: AgentDefinition): OpenCodeModelRef | undefined {
+    return parseModelRef(agent.model) ?? this.options.model;
+  }
+
   private async request<T>(baseUrl: string, method: string, urlPath: string, body?: unknown, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
     const budgetMs = timeoutMs ?? this.requestTimeoutMs;
@@ -336,8 +360,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       permission: this.permissionsFor(agent, context),
       ...this.options.extraConfig,
     };
-    if (this.options.model) {
-      config.model = `${this.options.model.providerID}/${this.options.model.modelID}`;
+    const model = this.modelFor(agent);
+    if (model) {
+      config.model = `${model.providerID}/${model.modelID}`;
     }
     fs.writeFileSync(path.join(dir, "opencode.json"), JSON.stringify(config, null, 2), "utf8");
     fs.writeFileSync(path.join(dir, "MESH_CONTEXT.md"), `Goal: ${context.goalId}\nMesh: ${context.meshId}\nWorkspace: ${context.workspacePath}\n`, "utf8");
@@ -461,6 +486,100 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     } finally {
       clearTimeout(t);
     }
+  }
+
+  /**
+   * The models this installation can actually reach, for the designer's picker.
+   *
+   * Two supply paths because the adapter has two deployment shapes. When it is
+   * pointed at a running `opencode serve` (`baseUrl`), ask that server — it is
+   * authoritative for the creds that will run the turn. When the adapter spawns
+   * per-agent servers on demand there is no long-lived URL to ask, so shell out
+   * to `opencode models`, which reads the same config.
+   *
+   * Never throws: the caller renders a fetch-failure state, and an empty list is
+   * indistinguishable from "no providers configured", so failures are reported
+   * as an explicit `error` instead of a silent `[]`.
+   */
+  async listModels(): Promise<{ models: string[]; default?: string; error?: string }> {
+    if (this.options.baseUrl) {
+      try {
+        const res = await this.request<OpenCodeProviderList>(this.options.baseUrl, "GET", "/provider", undefined, this.controlTimeoutMs);
+        const providers = res.all ?? res.providers ?? [];
+        // `connected` names the providers with usable credentials. Absent (older
+        // servers) means "no filter available", not "none connected".
+        const connected = res.connected?.length ? new Set(res.connected) : undefined;
+        const models: string[] = [];
+        for (const p of providers) {
+          if (connected && !connected.has(p.id)) continue;
+          for (const modelID of Object.keys(p.models ?? {})) models.push(`${p.id}/${modelID}`);
+        }
+        const defaults = res.default ?? {};
+        const firstDefault = Object.entries(defaults)[0];
+        return {
+          models: models.sort(),
+          default: firstDefault ? `${firstDefault[0]}/${firstDefault[1]}` : undefined,
+        };
+      } catch (err) {
+        return { models: [], error: (err as Error).message };
+      }
+    }
+    return await this.listModelsViaCli();
+  }
+
+  /** `opencode models` — one `provider/model-id` per line on stdout. */
+  private listModelsViaCli(): Promise<{ models: string[]; default?: string; error?: string }> {
+    return new Promise((resolve) => {
+      let proc: ChildProcess;
+      try {
+        proc = spawn(this.executable, ["models"], {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          shell: process.platform === "win32",
+        } as never);
+      } catch (err) {
+        resolve({ models: [], error: `failed to launch '${this.executable} models': ${(err as Error).message}` });
+        return;
+      }
+      let out = "";
+      let errText = "";
+      let settled = false;
+      const finish = (result: { models: string[]; default?: string; error?: string }): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        proc.kill();
+        finish({ models: [], error: `'${this.executable} models' timed out after ${this.controlTimeoutMs}ms` });
+      }, this.controlTimeoutMs);
+      proc.stdout?.on("data", (c: Buffer) => {
+        out += c.toString("utf8");
+      });
+      proc.stderr?.on("data", (c: Buffer) => {
+        errText += c.toString("utf8");
+      });
+      proc.on("error", (err: Error) => {
+        finish({
+          models: [],
+          error: /ENOENT/i.test(err.message)
+            ? `OpenCode CLI not found on PATH ('${this.executable}'), so the model list is unavailable.`
+            : err.message,
+        });
+      });
+      proc.on("close", (code: number | null) => {
+        if (code !== 0) {
+          finish({ models: [], error: `'${this.executable} models' exited ${code}: ${errText.trim().slice(0, 300)}` });
+          return;
+        }
+        const models = out
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l.includes("/"));
+        finish({ models, default: this.options.model ? `${this.options.model.providerID}/${this.options.model.modelID}` : undefined });
+      });
+    });
   }
 
   private async killProcess(agentId: string, handle: ProcessHandle): Promise<void> {
@@ -598,7 +717,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       agentId: agent.id,
       runtime: this.name,
       createdAt: new Date().toISOString(),
-      handle: { baseUrl: handle.baseUrl },
+      // The resolved model rides along in the handle because `send` only ever
+      // receives an AgentSession — it has no AgentDefinition to re-resolve from.
+      handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent) },
     };
   }
 
@@ -614,7 +735,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
           agentId: agent.id,
           runtime: this.name,
           createdAt: new Date().toISOString(),
-          handle: { baseUrl: handle.baseUrl },
+          handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent) },
         };
       }
       return null;
@@ -624,13 +745,18 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   }
 
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
-    const baseUrl = (session.handle as { baseUrl: string }).baseUrl;
+    const handle = session.handle as { baseUrl: string; model?: OpenCodeModelRef };
+    const baseUrl = handle.baseUrl;
+    // A handle rehydrated from a persisted session predates per-agent models,
+    // so fall back to the mesh-wide default rather than dropping the override
+    // silently to "whatever the backend picks".
+    const model = handle.model ?? this.options.model;
     this.statuses.set(session.agentId, "RUNNING");
     const body: Record<string, unknown> = {
       parts: [{ type: "text", text: input.instructions }],
       system: input.context.rolePrompt,
     };
-    if (this.options.model) body.model = this.options.model;
+    if (model) body.model = model;
     // Live token tap: opencode's POST /message blocks until the turn ends,
     // but GET /event streams `message.part.delta` frames while it runs.
     // Best-effort observability only — any failure here degrades to the old
@@ -676,7 +802,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       text,
       operations,
       tokensUsed: { input: tokens.input ?? 0, output: tokens.output ?? 0, total, cacheRead },
-      model: info.modelID ?? this.options.model?.modelID,
+      model: info.modelID ?? model?.modelID,
       modelVersion: info.modelID,
       toolCalls: (response.parts ?? [])
         .filter((p) => p.type === "tool")
@@ -804,6 +930,20 @@ interface OpenCodeTokenUsage {
   output?: number;
   reasoning?: number;
   cache?: { read?: number; write?: number };
+}
+
+/**
+ * Shape of `GET /provider`. `all` is the current field name; `providers` is the
+ * equivalent from `GET /config/providers` — both accepted so the picker keeps
+ * working across backend versions.
+ */
+interface OpenCodeProviderList {
+  all?: Array<{ id: string; name?: string; models?: Record<string, unknown> }>;
+  providers?: Array<{ id: string; name?: string; models?: Record<string, unknown> }>;
+  /** Provider ids with usable credentials. */
+  connected?: string[];
+  /** providerID -> default modelID. */
+  default?: Record<string, string>;
 }
 
 interface OpenCodeMessageResponse {

@@ -2,15 +2,20 @@
  * strategy, done-when checklist, concurrency, triage, timeouts, server. */
 
 import { Num, Field } from "../ui";
-import { Button, Input, Select, TextArea } from "../../components";
+import { Button, ErrorState, Input, Select, TextArea } from "../../components";
 import { setPath } from "../model";
+import { useModelCatalogue } from "../modelCatalogue";
 import type { DCtx } from "../types";
 
 export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, touch, ids } = ctx;
+  const { state: catalogue, reload: reloadModels } = useModelCatalogue();
   const crit = (m.mesh.acceptance_criteria ||= []);
   const triage = m.scheduling.triage || { mode: "off" };
   const rules: any[] = (triage.rules ||= []);
+  const knownModels = new Set<string>(catalogue.phase === "ready" ? catalogue.catalogue.models : []);
+  const savedModel = typeof m.mesh.runtime?.model === "string" ? m.mesh.runtime.model.trim() : "";
+  const modelOptions = savedModel && !knownModels.has(savedModel) ? [savedModel, ...knownModels] : [...knownModels];
   return (
     <div className="ms-panel">
       <div className="grid2">
@@ -21,11 +26,37 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         <TextArea rows={3} value={m.mesh.goal || ""} onChange={(e) => { setPath(m, "mesh.goal", e.target.value); touch(); }} />
       </Field>
       <Field label="workspace path" span><Input value={m.mesh.workspace?.path || "./workspace"} onChange={(e) => { setPath(m, "mesh.workspace.path", e.target.value); touch(); }} /></Field>
-      <div className="grid2">
+      <div className="grid3">
         <Field label="default runtime">
           <Select value={m.mesh.runtime?.default || "stub"} onChange={(e) => { setPath(m, "mesh.runtime.default", e.target.value); touch(); }}>
             <option>opencode</option><option>stub</option><option>http</option>
           </Select>
+        </Field>
+        <Field label="default model" hint="used by agents with no model of their own">
+          {catalogue.phase === "error" ? (
+            <ErrorState what="the model list" detail={catalogue.detail} onRetry={reloadModels} />
+          ) : (
+            <Select
+              value={savedModel}
+              disabled={catalogue.phase === "loading"}
+              aria-label="mesh default model"
+              onChange={(e) => {
+                const v = e.target.value;
+                m.mesh.runtime ||= {};
+                if (v) m.mesh.runtime.model = v;
+                else delete m.mesh.runtime.model;
+                touch();
+              }}
+            >
+              <option value="">{catalogue.phase === "loading" ? "loading models…" : `backend default${catalogue.catalogue.default ? ` (${catalogue.catalogue.default})` : ""}`}</option>
+              {/* A model already saved in mesh.yaml but absent from this
+                * installation's catalogue still belongs in the list — dropping
+                * it would silently rewrite the config on the next save. */}
+              {modelOptions.map((id) => (
+                <option key={id} value={id}>{id}{knownModels.has(id) ? "" : " — not installed here"}</option>
+              ))}
+            </Select>
+          )}
         </Field>
         <Field label="how agents wake up">
           <Select value={m.scheduling?.activation?.strategy || "interest"} onChange={(e) => { setPath(m, "scheduling.activation.strategy", e.target.value); touch(); }}>

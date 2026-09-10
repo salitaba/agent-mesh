@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh, stub } from "../helpers";
+import { makeMesh, stub, waitFor } from "../helpers";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
 test("scheduler: only interest-matched agents wake (no broadcast-all)", async () => {
@@ -285,5 +285,40 @@ test("scheduler: interest wakeups still fire for events that carry work", async 
   await m.kernel.emit("patch.ready", { artifactId: "art-1" }, { actorId: "dev" });
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(m.kernel.state.agents.get("qa")?.state.activations, 1, "work-carrying events must still wake subscribers");
+  await m.cleanup();
+});
+
+test("scheduler: a finished mission drops stale agent-mail requeues, human mail still wakes", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "pm1", role: "pm", interests: [] },
+      { id: "pm2", role: "pm", interests: [] },
+      { id: "qa", role: "qa", interests: [] },
+    ],
+    mayContact: { pm1: [], pm2: [], qa: ["pm1"] },
+  });
+  const s = stub(m);
+  const turns: Record<string, number> = { pm1: 0, pm2: 0 };
+  for (const id of ["pm1", "pm2"]) {
+    s.setScript(id, async () => {
+      turns[id]++;
+      return { operations: [{ op: "done" } as MeshOp] };
+    });
+  }
+  // Park the scheduler so mail lands in the inbox without waking anyone —
+  // the state a finishing turn finds as "mail queued while running".
+  await m.scheduler.stop();
+  await m.supervisor.sendMessage({ from: "qa", to: ["pm1"], type: "INFORM", payload: { n: 1 }, newThread: { subject: "stale" } });
+  await m.supervisor.humanSend(["pm2"], "INFORM", { note: "please answer" });
+  const goalId = m.kernel.state.activeGoalId!;
+  await m.kernel.emit("goal.completed", { goalId, reason: "test done" }, { actorId: "human" });
+  m.scheduler.start();
+  // As if both agents' in-flight turns just ended with unread mail.
+  m.scheduler.notifyTurnFinished("pm1");
+  m.scheduler.notifyTurnFinished("pm2");
+  await waitFor("human follow-up turn to run", () => turns.pm2 === 1, 5000);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(turns.pm1, 0, "stale agent mail must not wake anyone on a finished mission");
+  assert.equal(turns.pm2, 1, "human feedback must still reach its recipient");
   await m.cleanup();
 });

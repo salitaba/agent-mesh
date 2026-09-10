@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 workspace/
 .mesh-state/
+.mesh-backups/
 *.log
 
 # runtime artifacts created by `mesh run` in example folders
@@ -12,3 +13,7 @@ examples/*/.mesh-state/
 # local scratch: design critiques and per-session working notes
 .impeccable/
 .session-notes-*.md
+
+# python bytecode from skill scripts
+__pycache__/
+*.pyc

@@ -159,13 +159,35 @@ export class Kernel {
     if (!this.snapshots) return;
     const every = this.snapshots.every ?? 200;
     if (this.emitCount % every !== 0) return;
+    await this.writeSnapshot();
+  }
+
+  /**
+   * Snapshot now, regardless of the every-N cadence. Called on shutdown so a
+   * restart replays only what happened after the last event rather than up to
+   * N events — which matters once closing a mesh is routine (a project tab)
+   * instead of rare.
+   *
+   * Serialized against emits: a snapshot taken mid-`applyAndAppend` would
+   * record projections that include an event the log has not accepted yet.
+   * Best-effort like `maybeSnapshot` — teardown must never fail on it.
+   */
+  async forceSnapshot(): Promise<boolean> {
+    if (!this.snapshots) return false;
+    return this.serialized(() => this.writeSnapshot());
+  }
+
+  private async writeSnapshot(): Promise<boolean> {
+    if (!this.snapshots) return false;
     try {
       const { exportState } = await import("./state");
       const data = exportState(this.state) as unknown as Record<string, unknown[]>;
       const throughSeq = this.state.lastEventSeq;
       await this.snapshots.provider.write({ meshId: this.snapshots.meshId, throughSeq, data });
+      return true;
     } catch (err) {
       this.audit(`snapshot failed: ${(err as Error).message}`);
+      return false;
     }
   }
 

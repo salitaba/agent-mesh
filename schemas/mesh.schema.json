@@ -13,6 +13,22 @@
       "type": "integer",
       "const": 1
     },
+    "project": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "mesh": {
       "type": "object",
       "required": [
@@ -64,6 +80,9 @@
           "type": "object",
           "properties": {
             "default": {
+              "type": "string"
+            },
+            "model": {
               "type": "string"
             }
           },

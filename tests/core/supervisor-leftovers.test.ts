@@ -346,8 +346,116 @@ test("approving an api spec records design evidence without a separate approval 
   }
 });
 
-// --- buildDisagreementContent: what an escalation captures --------------
+test("an approval closes document artifacts on the machine's edge, not a type whitelist", async () => {
+  const m = await makeMesh({
+    agents: [
+      {
+        id: "pm",
+        role: "product-manager",
+        capabilities: ["repository.write"],
+        authority: ["requirements.approve"],
+        interests: [],
+      },
+    ],
+    criteria: [{ id: "ship", description: "the requirements doc exists", mandatory: true }],
+    mode: "parked",
+  });
+  try {
+    const artifactId = await publish(m, "pm", "requirements", "RequirementsDoc", evidenceContent("requirements"));
+    const ready = await m.supervisor.transitionArtifact("pm", artifactId, { to: "READY_FOR_REVIEW" });
+    assert.equal(ready.ok, true, ready.reason);
+    const verdict = await m.supervisor.recordDecision("pm", "approve", "requirements", artifactId, "approved");
+    assert.equal(verdict.ok, true, verdict.reason);
+    assert.equal(
+      m.kernel.state.artifacts.get(artifactId)!.status,
+      "FINAL",
+      "a document approved from READY_FOR_REVIEW lands FINAL instead of staying open",
+    );
+  } finally {
+    await m.cleanup();
+  }
+});
 
+test("a criterion acceptance makes the inferred document transition visible in the log", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", interests: [] },
+      { id: "po", role: "product-owner", authority: ["requirements.accept"], interests: [] },
+    ],
+    criteria: [{ id: "ship", description: "the deliverable exists", mandatory: true }],
+    mode: "parked",
+  });
+  try {
+    const artifactId = await publish(m, "dev", "report", "TestReport", evidenceContent("mission report"));
+    const ready = await m.supervisor.transitionArtifact("dev", artifactId, { to: "READY_FOR_REVIEW" });
+    assert.equal(ready.ok, true, ready.reason);
+    const accepted = await m.supervisor.recordDecision("po", "accept", "criterion:ship", artifactId, "reviewed");
+    assert.equal(accepted.ok, true, accepted.reason);
+    assert.equal(m.kernel.state.artifacts.get(artifactId)!.status, "FINAL");
+
+    // The projection inferred the FINAL promotion; the log must say so too, or
+    // every reader that rebuilds status from events (digest-run.py,
+    // compare-runs.py, SSE consumers) sees a document stuck in review.
+    const final = (await m.store.read({ types: ["artifact.transition"] })).find(
+      (e) => (e.payload as { artifactId?: string; to?: string }).artifactId === artifactId
+        && (e.payload as { to?: string }).to === "FINAL",
+    );
+    assert.ok(final, "accepting a criterion must leave a derived artifact.transition to FINAL in the log");
+    assert.equal((final!.payload as { derived?: boolean }).derived, true);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("a refused BLOCK still leaves the inferred rejection visible in the log", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", interests: [] },
+      { id: "qa", role: "qa", authority: ["quality.block"], interests: [] },
+    ],
+    // qa may not contact the developer, so the BLOCK message is refused and
+    // `recordDecision` falls back to the `review.rejected` verdict.
+    mayContact: { dev: ["qa"], qa: [] },
+    mode: "parked",
+  });
+  try {
+    const artifactId = await publish(m, "dev", "patch", "CodePatch", evidenceContent("patch"));
+    const asked = await m.supervisor.sendMessage({
+      from: "dev",
+      to: ["qa"],
+      type: "REQUEST_REVIEW",
+      newThread: { subject: "review patch" },
+      artifactRefs: [{ uri: "artifact://CodePatch/patch/1" }],
+      payload: { question: "review this" },
+    });
+    assert.equal(asked.accepted, true, asked.reason);
+    assert.equal(m.kernel.state.artifacts.get(artifactId)!.status, "UNDER_REVIEW");
+
+    const blocked = await m.supervisor.recordDecision("qa", "block", "quality", artifactId, "failing replay test");
+    assert.equal(blocked.ok, false, "a refused block reports the refusal");
+    assert.equal(m.kernel.state.artifacts.get(artifactId)!.status, "REJECTED");
+
+    const events = await m.store.read({ types: ["review.rejected", "artifact.transition"] });
+    const rejection = events.find(
+      (e) => e.type === "review.rejected" && (e.payload as { artifactId?: string }).artifactId === artifactId,
+    );
+    assert.ok(rejection, "the refused block must still be recorded as a verdict");
+    // The projection inferred UNDER_REVIEW -> REJECTED; the log must say so
+    // too, or event-stream readers never see the artifact leave review.
+    const audited = events.find(
+      (e) =>
+        e.type === "artifact.transition"
+        && (e.payload as { artifactId?: string }).artifactId === artifactId
+        && (e.payload as { to?: string }).to === "REJECTED"
+        && (e.payload as { derived?: boolean }).derived === true,
+    );
+    assert.ok(audited, "the inferred rejection must leave a derived artifact.transition in the log");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+// --- buildDisagreementContent: what an escalation captures --------------
 test("an escalation captures the stances that led to it as a disagreement record", async () => {
   const m = await makeMesh({
     agents: [

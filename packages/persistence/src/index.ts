@@ -3,6 +3,8 @@ import * as path from "path";
 import type { MeshEvent } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
 
+export * from "./state-lock";
+
 export interface SessionRecord {
   agentId: string;
   sessionId: string;
@@ -272,30 +274,54 @@ export interface StateArchiveResult {
 }
 
 /**
+ * Move `dir` to a timestamped archive path: `<archiveRoot>/<name>.bak-<stamp>`
+ * when `archiveRoot` is given, otherwise beside the directory. The rename is
+ * atomic on the same filesystem; across devices (EXDEV) it falls back to a
+ * copy + delete. Returns the archive path, or null when `dir` does not exist.
+ */
+export function archiveDir(dir: string, opts: { archiveRoot?: string } = {}): string | null {
+  const resolved = path.resolve(dir);
+  if (!fs.existsSync(resolved)) return null;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
+  const root = opts.archiveRoot ? path.resolve(opts.archiveRoot) : path.dirname(resolved);
+  const base = path.basename(resolved);
+  fs.mkdirSync(root, { recursive: true });
+  let target = path.join(root, `${base}.bak-${stamp}`);
+  // Two resets inside the same second must not clobber the first archive.
+  let n = 1;
+  while (fs.existsSync(target)) target = path.join(root, `${base}.bak-${stamp}-${n++}`);
+  try {
+    fs.renameSync(resolved, target);
+  } catch (err) {
+    // Different filesystem (e.g. a state_dir on another mount): rename
+    // cannot cross devices, so fall back to a copy + delete.
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+    fs.cpSync(resolved, target, { recursive: true });
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+  return target;
+}
+
+/**
  * Archive-then-wipe of a mesh state directory.
  *
- * Renames `<stateDir>` to `<stateDir>.bak-<timestamp>` (same pattern the
- * workspace already uses by hand) and recreates an empty layout in its place.
+ * Renames `<stateDir>` to `<archiveRoot>/<name>.bak-<timestamp>` and recreates
+ * an empty layout in its place. When `archiveRoot` is given (mission reset
+ * passes `<config dir>/.mesh-backups/<meshId>`) the archive lives OUTSIDE the
+ * agent workspace, so the next run's agents cannot read the previous mission
+ * from their working tree. Without `archiveRoot` the archive lands next to the
+ * state dir (`<stateDir>.bak-<timestamp>`).
  * Rename is atomic on the same filesystem, so there is never a window where
  * the mesh sees a half-deleted state dir — and the previous mission stays
  * fully recoverable on disk.
  *
  * Callers MUST close any open handles into `stateDir` (JSONL store, sqlite
- * index) before calling and reopen after: on Windows an open handle blocks the
- * rename, and on POSIX the handle would keep writing into the archived inode.
+ * index) before calling and reopen after: on Windows an open handle blocks
+ * the rename, and on POSIX the handle would keep writing into the archived inode.
  */
-export function archiveStateDir(stateDir: string, opts: { keepArtifacts?: boolean } = {}): StateArchiveResult {
+export function archiveStateDir(stateDir: string, opts: { keepArtifacts?: boolean; archiveRoot?: string } = {}): StateArchiveResult {
   const resolved = path.resolve(stateDir);
-  let archivedTo: string | null = null;
-  if (fs.existsSync(resolved)) {
-    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
-    let target = `${resolved}.bak-${stamp}`;
-    // Two resets inside the same second must not clobber the first archive.
-    let n = 1;
-    while (fs.existsSync(target)) target = `${resolved}.bak-${stamp}-${n++}`;
-    fs.renameSync(resolved, target);
-    archivedTo = target;
-  }
+  const archivedTo = archiveDir(resolved, opts);
   const layout = ensureStateLayout(resolved);
   // Opt-in carry-over: produced documents survive the reset even though the
   // event log that referenced them does not. Copy (not move) so the archive

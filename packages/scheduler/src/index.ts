@@ -381,9 +381,26 @@ export class Scheduler implements SchedulerPort {
     }
   }
 
+  /** COMPLETED/FAILED: the mission is over and no self-scheduled turn may start. */
+  private missionOver(): boolean {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    return goal?.status === "COMPLETED" || goal?.status === "FAILED";
+  }
+
+  /**
+   * Only operator mail may still drag a recipient back once the mission is
+   * over. The requeues below synthesize a `message.sent` activation event, so
+   * the policy's human-mail exception for COMPLETED cannot tell them apart
+   * from a real operator message — the sender is only known here.
+   */
+  private hasHumanMail(messageIds: readonly string[]): boolean {
+    return messageIds.some((id) => this.state.messages.get(id)?.from === "human");
+  }
+
   notifyTurnFinished(agentId: string): void {
     this.runningMap.delete(agentId);
     this.lastNudge.set(agentId, Date.now());
+    const over = this.missionOver();
     const deferred = this.wakeAfterTurn.get(agentId);
     if (deferred) {
       this.wakeAfterTurn.delete(agentId);
@@ -391,20 +408,34 @@ export class Scheduler implements SchedulerPort {
       // Direct queue pushes here bypassed the budget DEFER, so an exhausted
       // agent instantly failed again and again — a timer-free microtask loop
       // that starved HTTP (full "server not responding" wedge).
-      void this.requestActivation({
-        agentId,
-        reason: deferred.reason,
-        priority: deferred.priority,
-        explicit: deferred.explicit,
-      });
+      // Post-completion, a requeued agent message would start a turn whose
+      // every op is rejected with "mission is COMPLETED"; operator mail is
+      // the one follow-up that must still run.
+      const staleMail =
+        deferred.reason.kind === "message" &&
+        !this.hasHumanMail(deferred.reason.messageId ? [deferred.reason.messageId] : []);
+      if (!(over && staleMail)) {
+        void this.requestActivation({
+          agentId,
+          reason: deferred.reason,
+          priority: deferred.priority,
+          explicit: deferred.explicit,
+        });
+      }
     } else if (!this.stopped && (this.state.unread.get(agentId)?.length ?? 0) > 0) {
-      const oldest = this.state.unread.get(agentId)![0];
-      const msg = this.state.messages.get(oldest);
-      void this.requestActivation({
-        agentId,
-        reason: { kind: "message", messageId: oldest, threadId: msg?.threadId, note: "mail queued while running" },
-        priority: 5,
-      });
+      const unread = this.state.unread.get(agentId)!;
+      // The "mail queued while running" retry is a scheduler self-nudge, not
+      // operator intent: on a finished mission it only starts dead turns for
+      // stale agent mail. Human mail passes so feedback still gets answered.
+      if (!(over && !this.hasHumanMail(unread))) {
+        const oldest = unread[0];
+        const msg = this.state.messages.get(oldest);
+        void this.requestActivation({
+          agentId,
+          reason: { kind: "message", messageId: oldest, threadId: msg?.threadId, note: "mail queued while running" },
+          priority: 5,
+        });
+      }
     }
     void this.pump();
   }

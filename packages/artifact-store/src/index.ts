@@ -83,9 +83,23 @@ export class GitWorkspace implements WorkspacePort {
     if (this.initialized) return;
     fs.mkdirSync(this.mainDir, { recursive: true });
     fs.mkdirSync(this.worktreesDir, { recursive: true });
+    // `rev-parse --git-dir` succeeding is not proof that `mainDir` is its own
+    // repo: when the product checkout sits at the workspace root, `mainDir` is
+    // nested inside that repo and git adopts the ancestor. Worktrees and
+    // merges then happen in the root repo while `mainDir` stays an empty
+    // phantom — the Product page keeps showing root files that reset never
+    // touches. Only an exact toplevel match counts as "this directory is the
+    // repository"; anything else (no repo, or an ancestor repo) gets a fresh
+    // repo scoped to `mainDir`.
+    let toplevel: string | null = null;
     try {
-      await this.git(["rev-parse", "--git-dir"]);
+      toplevel = await this.git(["rev-parse", "--show-toplevel"]);
     } catch {
+      toplevel = null;
+    }
+    const ownsRepo =
+      toplevel !== null && fs.realpathSync(toplevel) === fs.realpathSync(this.mainDir);
+    if (!ownsRepo) {
       await this.git(["init", "-b", this.baseBranch], this.mainDir);
       await this.git(["config", "user.email", "mesh@localhost"], this.mainDir);
       await this.git(["config", "user.name", "Mesh Supervisor"], this.mainDir);
@@ -153,6 +167,44 @@ export class GitWorkspace implements WorkspacePort {
     const target = this.worktreePath(agentId);
     if (!fs.existsSync(target)) return;
     await this.git(["worktree", "remove", "--force", target]).catch(() => undefined);
+  }
+
+  /**
+   * Remove every agent worktree and its throwaway `mesh/*` branch. Mission
+   * reset needs this: archiving the event log is not enough if the next run's
+   * agents can still read the previous run's uncommitted files from a stale
+   * worktree or its branch. Returns the removed worktree directory names.
+   */
+  async removeAllWorktrees(): Promise<string[]> {
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(this.worktreesDir);
+    } catch {
+      return [];
+    }
+    const removed: string[] = [];
+    for (const entry of entries) {
+      const target = path.join(this.worktreesDir, entry);
+      await this.git(["worktree", "remove", "--force", target]).catch(() => undefined);
+      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      removed.push(entry);
+    }
+    await this.git(["worktree", "prune"]).catch(() => undefined);
+    const branches = await this.git(["branch", "--list", "mesh/*", "--format=%(refname:short)"]).catch(() => "");
+    for (const branch of branches.split("\n").map((b) => b.trim()).filter(Boolean)) {
+      await this.git(["branch", "-D", branch]).catch(() => undefined);
+    }
+    return removed;
+  }
+
+  /**
+   * Wipe the product checkout after the caller has archived `mainPath`
+   * elsewhere. The next `ensureRepo` re-initializes an empty repository, so a
+   * reset mission cannot read the previous mission's merged product.
+   */
+  removeMain(): void {
+    this.initialized = false;
+    fs.rmSync(this.mainDir, { recursive: true, force: true });
   }
 
   async fileStates(agentId: string): Promise<string> {
