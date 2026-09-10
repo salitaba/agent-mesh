@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
 import { VIEWS, hashFor, parseHash, type HashRoute, type View } from "./route";
 import { useProjectsOptional, type ProjectSink } from "./projects";
+import { retainCap, trimRetained } from "./tabmodel";
 
 export interface TimelineEvent {
   seq: number;
@@ -159,8 +160,15 @@ let toastId = 1;
  * each project its own state. `MeshState` deliberately has no project dimension:
  * a map inside the store would put every projection behind a lookup and make
  * every consumer responsible for asking about the right project.
+ *
+ * `background` is the tab that is open but not on screen. It keeps ingesting —
+ * that is what makes switching back instant — but renders nothing, polls
+ * nothing, and retains a fraction of the events. Ten idle tabs each holding a
+ * full foreground buffer and each polling `/status` every 4s is an unbounded
+ * leak plus 10 requests a second; the events a background tab drops are
+ * exactly the ones `/events` refills when it comes back into focus.
  */
-export function MeshProvider({ children, projectId = null }: { children: ReactNode; projectId?: string | null }): React.JSX.Element {
+export function MeshProvider({ children, projectId = null, background = false }: { children: ReactNode; projectId?: string | null; background?: boolean }): React.JSX.Element {
   const [view, setViewState] = useState<View>(viewFromHash);
   const [detail, setDetail] = useState<HashRoute["detail"] | null>(() => currentRoute().detail ?? null);
   const [status, setStatus] = useState<any>(null);
@@ -200,6 +208,11 @@ export function MeshProvider({ children, projectId = null }: { children: ReactNo
   clientRef.current = client;
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
+  const backgroundRef = useRef(background);
+  backgroundRef.current = background;
+  /** Set while backgrounded and cleared on focus: what tells the refill it has
+   *  a gap to close rather than a full buffer it can trust. */
+  const droppedRef = useRef(false);
 
   // The live connection belongs to ProjectsProvider — one socket for every
   // project, not one per store. Its state is surfaced here unchanged so the
@@ -312,12 +325,21 @@ export function MeshProvider({ children, projectId = null }: { children: ReactNo
     }
     if (e.id) eventById.current.set(e.id, e);
     setEvents((prev) => {
+      const cap = retainCap(backgroundRef.current);
       const next = [...prev, e];
-      if (next.length > 800) {
-        for (const d of next.splice(0, next.length - 800)) if (d.id) eventById.current.delete(d.id);
+      if (next.length > cap) {
+        // What falls off the front is gone from this store until a refill.
+        // Recording that is what stops a backgrounded tab from coming back with
+        // a plausible-looking timeline that quietly starts mid-mission.
+        if (backgroundRef.current) droppedRef.current = true;
+        for (const d of next.splice(0, next.length - cap)) if (d.id) eventById.current.delete(d.id);
       }
       return next;
     });
+    // A background tab must not shout: its toasts belong to a mission the
+    // operator is not looking at, and the project's own tab already carries
+    // its status.
+    if (backgroundRef.current) return;
     if (e.type === "goal.completed") toast("goal completed", "all mandatory criteria evidenced", "ok");
     if (e.type === "goal.escalated") toast("mission escalated", String(e.payload?.reason || ""), "bad");
     if (e.type === "goal.failed") toast("mission failed", String(e.payload?.reason || ""), "bad");
@@ -356,6 +378,10 @@ export function MeshProvider({ children, projectId = null }: { children: ReactNo
   }, [ingestEvent]);
 
   const livePatch = useCallback(() => {
+    // Nothing is on screen to patch. The events still land in the buffer; it
+    // is the derived fetches (status, steps) that would be N requests a second
+    // across N idle tabs for a view nobody is looking at.
+    if (backgroundRef.current) return;
     void refreshStatus();
     if (viewRef.current === "steps") void refreshSteps(false);
     if (viewRef.current === "overview" && Date.now() - stepsAt.current > 5000) {
@@ -396,6 +422,30 @@ export function MeshProvider({ children, projectId = null }: { children: ReactNo
     return subscribe(projectId, sink);
   }, [subscribe, projectId, ingestEvent, ingestToken, livePatch, refreshStatus, refreshSteps]);
 
+  // Coming back into focus: the buffer was capped while backgrounded, so
+  // whatever fell off has to come from `/events` rather than be assumed
+  // present. Refetching unconditionally would re-download 400 events every
+  // time the operator flicked between two idle tabs.
+  useEffect(() => {
+    if (background || !projectId) return;
+    void refreshStatus();
+    if (!droppedRef.current) return;
+    droppedRef.current = false;
+    let dead = false;
+    clientRef.current
+      .api("GET", `/events?limit=${retainCap(false)}`, undefined, { timeoutMs: 30000 })
+      .then(({ json }) => {
+        if (dead || !Array.isArray(json)) return;
+        // seqSeen dedupes against what survived the cap, so the refill merges
+        // rather than duplicating the tail.
+        for (const raw of json) ingestEvent(raw);
+      })
+      .catch(() => undefined);
+    return () => {
+      dead = true;
+    };
+  }, [background, projectId, ingestEvent, refreshStatus]);
+
   useEffect(() => {
     const saved = localStorage.getItem("mesh-theme");
     if (saved) document.documentElement.dataset.theme = saved;
@@ -417,6 +467,7 @@ export function MeshProvider({ children, projectId = null }: { children: ReactNo
       }
     })();
     const iv = setInterval(() => {
+      if (backgroundRef.current) return;
       void refreshStatus().catch(() => undefined);
     }, 4000);
     return () => {

@@ -24,6 +24,7 @@ import { URL } from "url";
 import {
   ChildProcessSupervisor,
   FileProjectRegistry,
+  MESH_CONFIG_FILENAME,
   ProjectError,
   SupervisionTree,
   type ProjectHandle,
@@ -380,6 +381,15 @@ export function createHostServer(deps: {
         return proxyToProject(req, res, projectId, target, u);
       }
 
+      // --------------------------------------------------------- folder picker
+      // The browser cannot hand a real path to the server — a file input gives
+      // a sandboxed name, not `/home/me/work/api`. The registry needs a path
+      // the *host* can stat, so the host lists directories and the dashboard
+      // walks them.
+      if (parts[0] === "api" && parts[1] === "browse" && parts.length === 2 && req.method === "GET") {
+        return json(200, browseDir(u.searchParams.get("path")));
+      }
+
       // ------------------------------------------------------ registry routes
       if (parts[0] === "api" && parts[1] === "projects") {
         if (parts.length === 2 && req.method === "GET") {
@@ -605,6 +615,49 @@ export function createHostServer(deps: {
   const hosted = server as HostServer;
   hosted.multiplex = multiplex;
   return hosted;
+}
+
+/** One directory listing for the add-project picker. */
+export interface BrowseResult {
+  path: string;
+  /** Null at the filesystem root, so the UI knows to hide "up". */
+  parent: string | null;
+  entries: Array<{ name: string; path: string; hasMesh: boolean }>;
+  error?: string;
+}
+
+/**
+ * Directories only, plus whether each already holds a `mesh.yaml`.
+ *
+ * Deliberately not a general file browser: it lists names and a boolean, never
+ * file contents, so it cannot be turned into an arbitrary-read primitive. It is
+ * behind the host's operator auth like every other `/api` route — and the host
+ * process can already read anything the operator can, so exposing *where*
+ * projects might live adds no capability it did not have.
+ */
+export function browseDir(input: string | null): BrowseResult {
+  const home = process.env.HOME || process.env.USERPROFILE || "/";
+  const target = path.resolve(input && input.trim() ? input.trim() : home);
+  const parentOf = (p: string): string | null => {
+    const up = path.dirname(p);
+    return up === p ? null : up;
+  };
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(target, { withFileTypes: true });
+  } catch (err) {
+    // An unreadable folder is a normal thing to click on. Answering 200 with
+    // the reason keeps the picker on screen instead of blanking it.
+    return { path: target, parent: parentOf(target), entries: [], error: (err as Error).message };
+  }
+  const dirs = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .map((e) => {
+      const full = path.join(target, e.name);
+      return { name: e.name, path: full, hasMesh: fs.existsSync(path.join(full, MESH_CONFIG_FILENAME)) };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { path: target, parent: parentOf(target), entries: dirs };
 }
 
 /** Static dashboard assets. Returns false when nothing matched. */

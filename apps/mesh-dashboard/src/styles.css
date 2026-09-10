@@ -1178,3 +1178,82 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .ptree-row .hit-text { font: 400 10.5px var(--mono); opacity: .75; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
 .ch-m, .ch-mm { color: var(--warn); } .ch-a, .ch-, .ch-\?\? { color: var(--ok); } .ch-d { color: var(--bad); }
+
+/* ---------- project tabs ---------- */
+/* Host-level chrome: one row above everything, spanning both grid columns, so
+   the strip survives every project switch and never looks like part of the
+   mission it happens to be showing. The row only exists when a registry does
+   (`#app.with-tabs`), so single-mesh `mesh serve` keeps its 2-row layout. */
+#app.with-tabs {
+  grid-template-rows: 38px 56px 1fr;
+  grid-template-areas: "tabs tabs" "side top" "side main";
+}
+#ptabs-bar { grid-area: tabs; display: flex; align-items: stretch; min-width: 0;
+  background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.ptabs { display: flex; align-items: stretch; gap: 2px; padding: 0 8px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.ptabs-empty { align-self: center; font-size: 12px; padding-left: 6px; white-space: nowrap; }
+.ptab { display: flex; align-items: center; min-width: 0; max-width: 260px; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  border: 1px solid transparent; border-bottom: 0; position: relative; }
+.ptab.on { background: var(--bg); border-color: var(--line); }
+/* The active tab reads as the page it opens: the seam under it is erased. */
+.ptab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--bg); }
+.ptab.drop { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ptab-main { display: flex; align-items: center; gap: 7px; min-width: 0; background: none; border: 0;
+  color: var(--text-dim); font: inherit; font-size: 12.5px; padding: 0 4px 0 10px; cursor: pointer; height: 100%; }
+.ptab.on .ptab-main { color: var(--text); }
+.ptab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptab-meta { display: flex; align-items: baseline; gap: 6px; flex: none; }
+.ptab-state { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ptab-rss { font: 10px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ptab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
+/* One tone vocabulary, matching the topbar's live dot: green runs, amber
+   waits, red needs you. */
+.ptab-dot.running { background: var(--ok); }
+.ptab-dot.parked, .ptab-dot.booting { background: var(--warn); }
+.ptab-dot.booting { animation: blink 1.1s infinite; }
+.ptab-dot.crashed, .ptab-dot.error { background: var(--bad); }
+.ptab-dot.locked { background: var(--warn); }
+.ptab-dot.closed, .ptab-dot.unknown { background: var(--muted); }
+.ptab.tone-crashed .ptab-state, .ptab.tone-error .ptab-state { color: var(--bad); }
+.ptab.tone-locked .ptab-state { color: var(--warn); }
+.ptab-x { background: none; border: 0; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer;
+  padding: 2px 7px; border-radius: var(--r-sm); }
+.ptab-x:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.ptab-add { background: none; border: 0; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer;
+  padding: 0 10px; align-self: center; border-radius: var(--r-sm); }
+.ptab-add:hover { color: var(--accent); background: var(--panel); }
+/* Fixed, not absolute: #app is a static grid container, so an absolute banner
+   would anchor to the viewport anyway — say so rather than rely on it. */
+.proj-crash { position: fixed; top: 38px; left: 0; right: 0; z-index: 40; margin: 0; border-radius: 0;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.proj-crash-detail { font: 11px var(--mono); color: var(--text-dim); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* folder picker */
+.proj-picker { position: fixed; z-index: 61; top: 12vh; left: 50%; transform: translateX(-50%);
+  width: min(560px, 92vw); background: var(--bg-2); border: 1px solid var(--line-strong);
+  border-radius: var(--r); box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 70vh; }
+.proj-picker-head { padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 3px; }
+.proj-picker-head .muted { font-size: 12px; }
+.proj-picker-path { display: flex; gap: 6px; padding: 0 16px 10px; }
+.proj-picker-path input { flex: 1; min-width: 0; }
+.proj-picker-list { list-style: none; margin: 0; padding: 0 8px; overflow: auto; flex: 1; border-top: 1px solid var(--line); }
+.proj-picker-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none;
+  border: 0; color: var(--text-dim); font: inherit; font-size: 13px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.proj-picker-row:hover { background: var(--panel); color: var(--text); }
+.proj-picker-row.has-mesh { color: var(--text); }
+.proj-picker-row em { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ok); font-style: normal; margin-left: auto; }
+.proj-picker-ico { width: 14px; flex: none; opacity: .8; }
+.proj-picker-empty { padding: 8px; font-size: 12px; }
+.proj-picker-err { padding: 6px 16px; color: var(--bad); font-size: 12px; }
+.proj-picker-foot { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.proj-picker-foot .mono { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-picker-acts { display: flex; gap: 8px; margin-left: auto; flex: none; }
+
+@media (max-width: 800px) {
+  /* The strip stays, the metadata goes: a name and a status dot is what a
+     narrow screen can carry without pushing the topbar to a third row. */
+  #app.with-tabs { grid-template-columns: 0 1fr; }
+  .ptab-meta { display: none; }
+  .ptab { max-width: 160px; }
+}

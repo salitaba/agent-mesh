@@ -7,6 +7,8 @@ import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawer
 import { Button } from "./components";
 import { confirmResume } from "./actions";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
+import { ProjectTabs } from "./tabs";
+import { useProjectsOptional } from "./projects";
 
 // Single source of truth for nav order, sidebar kbd hints, and the 1-9 key
 // map — the badge and the keydown handler can never drift apart again.
@@ -167,6 +169,9 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
   const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client } = mesh;
+  // Optional on purpose: single-process `mesh serve` / `mesh console` has one
+  // mesh and no registry, and must not gain an empty tab strip.
+  const hasProjects = useProjectsOptional() !== null;
   const goal = status?.goal || {};
   const crit = goal.acceptanceCriteria || [];
   const done = crit.filter((c: any) => c.status !== "UNSATISFIED").length;
@@ -431,7 +436,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
   const closeMenu = () => setMenuOpen(false);
   return (
-    <div id="app" className={focusOn ? "focus-mode" : ""}>
+    <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
+      {/* Host-level, so it sits above the per-project chrome and survives every
+          project switch. Rendered only under a ProjectsProvider: `mesh serve`
+          runs one mesh with no registry and has no tabs to show. */}
+      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} /> : null}
       <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
         <div className="brand">
           <svg viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="5" fill="var(--accent)" /><circle cx="27" cy="9" r="3" fill="var(--ok)" /><circle cx="5" cy="9" r="3" fill="var(--warn)" /><circle cx="8" cy="26" r="3" fill="var(--bad)" /><path d="M16 16 27 9M16 16 5 9M16 16 8 26" stroke="var(--line-strong)" strokeWidth="1.4" /></svg>

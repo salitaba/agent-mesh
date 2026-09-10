@@ -2,7 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { MeshProvider, useMesh } from "./store";
-import { ProjectsProvider } from "./projects";
+import { ProjectsProvider, useProjects } from "./projects";
 import { Shell } from "./shell";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
@@ -43,17 +43,44 @@ function ViewSwitch(): React.JSX.Element {
   }
 }
 
+/**
+ * One `MeshProvider` per *open* project, not per visible one.
+ *
+ * A background provider renders no children — it exists to keep ingesting its
+ * project's frames so switching back is instant rather than a cold reload. It
+ * costs a capped event buffer and no polling (see `background` in store.tsx).
+ * Closed projects get no provider at all: there is nothing to stream.
+ */
+function Projects({ activeId }: { activeId: string | null }): React.JSX.Element {
+  const { projects } = useProjects();
+  const live = projects.filter((p) => p.status === "open" || p.status === "booting").map((p) => p.id);
+  // The active project always gets a store, even before the registry agrees it
+  // is open — otherwise the console is blank for the whole boot.
+  const mounted = activeId && !live.includes(activeId) ? [activeId, ...live] : live;
+  return (
+    <>
+      {mounted.map((id) => (
+        // `key` is load-bearing: a project must never inherit another
+        // mission's events, steps and drawers under a different name.
+        <MeshProvider key={id} projectId={id} background={id !== activeId}>
+          {id === activeId ? <Shell viewNode={<ViewSwitch />} /> : null}
+        </MeshProvider>
+      ))}
+      {/* No project at all: the shell still has to render, because the
+          Designer is how an operator creates the first mesh. */}
+      {!activeId ? (
+        <MeshProvider key="none" projectId={null}>
+          <Shell viewNode={<ViewSwitch />} />
+        </MeshProvider>
+      ) : null}
+    </>
+  );
+}
+
 function App(): React.JSX.Element {
   return (
     <ProjectsProvider>
-      {(activeId) => (
-        // `key` is load-bearing: switching projects must give the new one a
-        // fresh store rather than leave the previous mission's events, steps
-        // and drawers on screen under a different project's name.
-        <MeshProvider key={activeId ?? "none"} projectId={activeId}>
-          <Shell viewNode={<ViewSwitch />} />
-        </MeshProvider>
-      )}
+      {(activeId) => <Projects activeId={activeId} />}
     </ProjectsProvider>
   );
 }
