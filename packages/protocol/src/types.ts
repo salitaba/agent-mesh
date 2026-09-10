@@ -315,7 +315,20 @@ export type GoalStatus =
   | "FAILED"
   | "ESCALATED";
 
-export type CriterionStatus = "UNSATISFIED" | "EVIDENCED" | "WAIVED";
+/**
+ * ASSERTED sits between UNSATISFIED and EVIDENCED: an agent CLAIMED the
+ * criterion is met, but the turn that made the claim invoked zero tools, so
+ * nothing was read, run, or checked — the claim is the agent's own word.
+ *
+ * This exists because a live mission ran 138 turns with `toolCalls: 0` on
+ * every single one and still closed: agents published TestReports asserting
+ * determinism evidence and merged patches without ever invoking a tool, and
+ * `requirement.satisfied` fired on peer approval with no verification gate.
+ * Only EVIDENCED (or WAIVED) counts toward progress and termination, so an
+ * asserted mission stays open and visibly unproven instead of shipping a
+ * shell that every projection reported as done.
+ */
+export type CriterionStatus = "UNSATISFIED" | "ASSERTED" | "EVIDENCED" | "WAIVED";
 
 export interface EvidenceRef {
   kind: string;
@@ -323,6 +336,15 @@ export interface EvidenceRef {
   artifactRef?: ArtifactRef;
   by?: AgentId;
   recordedAt: string;
+  /**
+   * Did the turn that produced this evidence actually do anything checkable?
+   * false === the claiming agent invoked no tools that turn (see
+   * CriterionStatus.ASSERTED). Absent on evidence recorded out of band by the
+   * operator, which is verified by definition.
+   */
+  verified?: boolean;
+  /** Tool invocations in the claiming turn — the number `verified` is derived from. */
+  toolCalls?: number;
 }
 
 export interface AcceptanceCriterion {

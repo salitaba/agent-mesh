@@ -62,9 +62,10 @@ import type {
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { buildAgentContext, renderContextInstructions } from "./context";
+import type { ContextLimits } from "./context";
 import { DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri } from "../../protocol/src/uri";
-import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, type TurnRecord, type TurnPhaseName } from "./turn-tracker";
+import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
 import {
   MISSION_HALTED_ALLOW_OPS,
   MISSION_OVER_ALLOW_OPS,
@@ -85,6 +86,8 @@ export interface SupervisorDeps {
   sessionRegistry?: SessionRegistryPort;
   hooks?: SupervisorHooks;
   auditFile?: string;
+  /** JSONL sidecar for the in-memory turn ring, restored on boot. */
+  turnsFile?: string;
 }
 
 export interface OpResult {
@@ -110,7 +113,37 @@ export const DEFAULT_CRITERIA: Array<Partial<AcceptanceCriterion> & { descriptio
   { id: "security-verified", description: "Security verification passed with scan evidence", mandatory: true },
 ];
 
+/**
+ * Cold-start size AND ceiling for the per-turn pre-flight hold. It is not an
+ * estimate of anything — no agent's turn is known to cost 32k — it is the
+ * pessimistic bound used before that agent has spent a single token. Once real
+ * turns have been observed, `sizedTurnReserve` shrinks the hold towards what
+ * that agent actually spends, so a nearly-empty ledger can still admit a cheap
+ * turn instead of refusing every turn as if it were the worst case.
+ *
+ * `budgets.thread.reserve_tokens` overrides the ceiling for thread ledgers.
+ */
 const TURN_RESERVE_TOKENS = 32000;
+
+/**
+ * Never reserve less than this, however cheap the agent's history looks: a
+ * hold smaller than one plausible turn is a hold that cannot bind, and an
+ * agent whose first turns were trivial can still emit a large one next.
+ */
+const MIN_TURN_RESERVE_TOKENS = 4000;
+
+/**
+ * Weight of the newest observation in the per-agent rolling estimate. 0.3
+ * tracks a genuine shift in behaviour within a few turns while ignoring a
+ * single freak turn.
+ */
+const TURN_COST_EWMA_ALPHA = 0.3;
+
+/**
+ * Safety factor on the estimate: turns vary, so hold noticeably more than the
+ * running average or the hold under-covers roughly half the time.
+ */
+const TURN_COST_SAFETY_FACTOR = 1.5;
 
 // Bounds for the in-memory turn trace shown in the Steps drawer. 200 turns *
 // 20k chars ≈ 4MB worst case — acceptable for live inspection, and the ring
@@ -139,6 +172,20 @@ const MIN_EVIDENCE_CONTENT_CHARS = 400;
 
 /** Placeholder markers that disqualify content from evidencing a criterion. */
 const EVIDENCE_STUB_MARKERS = /^\s*(tbd|todo|n\/a|none|pending|placeholder|coming soon|see above|as discussed)\b/i;
+
+/**
+ * Tool invocations that could have CHECKED something, as opposed to merely
+ * talking to the mesh.
+ *
+ * `mesh_*` are the bus tools — send, publish, approve, merge. Issuing them is
+ * how a typed turn acts at all, so counting them as verification would make
+ * the gate self-satisfying: "I approved it, therefore it is verified." Only
+ * tools that touch the world outside the mesh (a shell, a file read, a test
+ * runner) can distinguish a claim from a check.
+ */
+function verificationToolCount(toolCalls: Array<{ name: string }> | undefined): number {
+  return (toolCalls ?? []).filter((t) => !String(t.name ?? "").startsWith("mesh_")).length;
+}
 
 
 interface TurnState {
@@ -201,7 +248,28 @@ export class Supervisor {
   private idleCallbacks: Array<() => void> = [];
   private recentTurns: TurnRecord[] = [];
   private activeTurnByAgent = new Map<string, string>();
-  private readonly turns = new TurnTracker();
+  /**
+   * Non-`mesh_*` tool invocations made by the turn currently in flight, keyed
+   * by agent id. Written as soon as the runtime answers (before the op loop
+   * runs, which is where evidence claims are made) and cleared when the turn
+   * settles.
+   *
+   * This is what lets `markCriterionEvidence` tell a CHECK from a CLAIM: an
+   * agent asserting "quality verified" from a turn that ran no tool did not
+   * verify anything. Absent entry === no turn context (operator / system
+   * path), which is treated as verified.
+   */
+  private turnVerificationTools = new Map<string, number>();
+  /**
+   * Rolling estimate of what ONE turn by this agent costs, in tokens, used to
+   * size the pre-flight hold instead of charging every agent the same 32k.
+   *
+   * Deliberately in memory only: it is a heuristic that re-learns within a few
+   * turns after a restart, and persisting it would mean a stale estimate from
+   * an old model/prompt outliving the thing it measured.
+   */
+  private turnCostEstimate = new Map<string, number>();
+  private readonly turns: TurnTracker;
   /**
    * Stall safety net. The event-driven watchdog never fires when the mesh is
    * fully quiet, so an ACTIVE mission with an empty scheduler and no
@@ -243,6 +311,10 @@ export class Supervisor {
   private quiesced = false;
 
   constructor(public readonly deps: SupervisorDeps) {
+    // Restore the persisted turn ring before anything can push a turn; the
+    // in-memory tracker is the only home of per-turn rich data (phases,
+    // opTimings, text), and without this a restart loses every trace of it.
+    this.turns = new TurnTracker(this.deps.turnsFile ? this.turnsPersistAdapter() : undefined);
     this.detector = new DeadlockDetector(deps.config);
     deps.scheduler.onIdle?.(() => this.onIdle());
     deps.kernel.subscribe((event) => {
@@ -318,6 +390,46 @@ export class Supervisor {
     }
   }
 
+  /**
+   * Atomic (tmp+rename) JSONL sidecar for the turn ring: a crash can never
+   * leave a half-written file, and a corrupt line on load is skipped, not
+   * fatal. Persistence is best-effort — observability must never break a turn.
+   */
+  private turnsPersistAdapter(): TurnTrackerPersist {
+    const file = this.deps.turnsFile!;
+    return {
+      load: (): TurnRecord[] => {
+        try {
+          if (!fs.existsSync(file)) return [];
+          const out: TurnRecord[] = [];
+          for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+            const t = line.trim();
+            if (!t) continue;
+            try {
+              out.push(JSON.parse(t) as TurnRecord);
+            } catch {
+              continue;
+            }
+          }
+          return out;
+        } catch {
+          return [];
+        }
+      },
+      save: (records: TurnRecord[]): void => {
+        try {
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          const tmp = `${file}.tmp`;
+          const body = records.map((r) => JSON.stringify(r)).join("\n");
+          fs.writeFileSync(tmp, body ? body + "\n" : "", "utf8");
+          fs.renameSync(tmp, file);
+        } catch {
+          /* persistence must never break the runtime */
+        }
+      },
+    };
+  }
+
   // ------------------------------------------------- turn observability
   // Single owner: TurnTracker (bounded ring). recentTurns mirrors it for
   // any legacy direct reads within this class.
@@ -328,6 +440,9 @@ export class Supervisor {
 
   private finishTurn(turnId: string, agentId: string, patch: Partial<TurnRecord>): void {
     this.turns.finish(turnId, agentId, patch, this.deps.kernel.clock.iso());
+    // Durable at turn end, not just on the debounce: the final payload
+    // (text, summary, errorDetail) must survive a hard kill afterwards.
+    this.turns.flush();
     this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
   }
 
@@ -535,6 +650,7 @@ export class Supervisor {
 
   async shutdown(opts: { complete?: boolean } = {}): Promise<void> {
     this.stopping = true;
+    this.turns.flush();
     this.stopStallWatch();
     await this.deps.scheduler.stop();
     for (const [agentId, { session, runtime }] of [...this.sessions]) {
@@ -580,6 +696,7 @@ export class Supervisor {
     this.escalationsInFlight.clear();
     this.activeTurnByAgent.clear();
     this.recentTurns = [];
+    this.turns.clear();
     this.idleCallbacks = [];
     this.watchdogLastRun = 0;
     this.watchdogTrailing = false;
@@ -1335,14 +1452,39 @@ export class Supervisor {
     }
   }
 
-  async markCriterionEvidence(criterionId: string, evidence: Goal["acceptanceCriteria"][number]["evidence"][number]): Promise<void> {
+  /**
+   * Was the claim behind this evidence CHECKED, or merely stated?
+   *
+   * The claimer is the agent whose turn is in flight. A turn that invoked no
+   * non-`mesh_*` tool read nothing, ran nothing and proved nothing, so its
+   * evidence is the agent's own word. No turn in flight === an operator or
+   * runtime-derived path (merge mirroring, human accept), which is verified by
+   * construction and must not be downgraded.
+   */
+  private claimIsVerified(claimedBy: string | undefined): { verified: boolean; toolCalls?: number } {
+    if (!claimedBy || claimedBy === HUMAN_AGENT_ID) return { verified: true };
+    const tools = this.turnVerificationTools.get(claimedBy);
+    if (tools === undefined) return { verified: true };
+    return { verified: tools > 0, toolCalls: tools };
+  }
+
+  /**
+   * Record evidence against an acceptance criterion.
+   *
+   * Returns what the criterion became, so the caller can tell the agent when
+   * its claim landed as ASSERTED rather than EVIDENCED.
+   */
+  async markCriterionEvidence(
+    criterionId: string,
+    evidence: Goal["acceptanceCriteria"][number]["evidence"][number],
+  ): Promise<"EVIDENCED" | "ASSERTED" | "SKIPPED"> {
     const goalId = this.state.activeGoalId;
-    if (!goalId) return;
+    if (!goalId) return "SKIPPED";
     const goal = this.state.goals.get(goalId);
-    if (!goal) return;
+    if (!goal) return "SKIPPED";
     const c = goal.acceptanceCriteria.find((x) => x.id === criterionId);
-    if (!c) return;
-    if (c.status === "EVIDENCED" || c.status === "WAIVED") return;
+    if (!c) return "SKIPPED";
+    if (c.status === "EVIDENCED" || c.status === "WAIVED") return "SKIPPED";
     // A reopened criterion cannot be satisfied by the artifact the operator
     // just rejected. Without this the reopen loop is closed: reset status ->
     // agent re-cites the same URI -> EVIDENCED -> watchdog completes again.
@@ -1352,12 +1494,33 @@ export class Supervisor {
       this.auditLine(
         `criterion ${criterionId}: refusing rejected evidence ${uri} — the operator reopened the mission on this artifact; supersede it`,
       );
-      return;
+      return "SKIPPED";
     }
-    await this.deps.kernel.emit("requirement.satisfied", { criterionId, evidence }, { actorId: HUMAN_AGENT_ID, goalId });
+    // THE VERIFICATION GATE. An unverified claim may still be recorded — the
+    // work described may well be real — but it lands as ASSERTED, which no
+    // projection and no termination check counts as done. A live mission put
+    // 138 turns through here with zero tool calls and closed as complete.
+    const { verified, toolCalls } = this.claimIsVerified(evidence.by);
+    if (!verified && c.status === "ASSERTED") {
+      // Already on the record and nothing changed: re-asserting the same
+      // unverified claim every turn must not spam the log.
+      this.auditLine(`criterion ${criterionId}: repeat unverified claim by ${evidence.by} ignored (still ASSERTED)`);
+      return "ASSERTED";
+    }
+    if (!verified) {
+      this.auditLine(
+        `criterion ${criterionId}: ASSERTED not EVIDENCED — ${evidence.by} claimed it from a turn that invoked 0 verification tools`,
+      );
+    }
+    await this.deps.kernel.emit(
+      "requirement.satisfied",
+      { criterionId, evidence: { ...evidence, verified, ...(toolCalls !== undefined ? { toolCalls } : {}) }, verified },
+      { actorId: HUMAN_AGENT_ID, goalId },
+    );
     const updated = goal.acceptanceCriteria.filter((x) => x.mandatory && (x.status === "EVIDENCED" || x.status === "WAIVED")).length;
     const total = goal.acceptanceCriteria.filter((x) => x.mandatory).length;
     await this.deps.kernel.emit("goal.progress", { completed: updated, total, ratio: total ? updated / total : 0 }, { goalId });
+    return verified ? "EVIDENCED" : "ASSERTED";
   }
 
   async requestApproval(artifactId: string, roleOrAgent: string): Promise<SendResult> {
@@ -1467,13 +1630,24 @@ export class Supervisor {
         },
         { actorId, goalId },
       );
-      await this.markCriterionEvidence(criterionId, {
+      const landed = await this.markCriterionEvidence(criterionId, {
         kind: "criteria-acceptance",
         artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
         eventId: evt.id,
         by: actorId,
         recordedAt: this.deps.kernel.clock.iso(),
       });
+      // The acceptance was recorded either way, so this is not a failure — but
+      // the agent MUST learn that the criterion is not closed, or it will
+      // report the mission done and go idle on an unproven claim.
+      if (landed === "ASSERTED") {
+        return {
+          ok: true,
+          eventId: evt.id,
+          reason:
+            `recorded as ASSERTED, not EVIDENCED: this turn invoked no verification tool, so nothing was checked — '${criterionId}' still does not count toward completion. Run the check (read the artifact, execute the tests, inspect the workspace) in the turn that accepts it.`,
+        };
+      }
       return { ok: true, eventId: evt.id };
     }
     let authorityCheck = this.deps.policy.evaluateAuthority(actorId, domain, kind, ctx);
@@ -1931,6 +2105,125 @@ export class Supervisor {
     return { ok: true, budget: this.state.goals.get(gid)?.budget };
   }
 
+  /**
+   * Raise an exhausted agent/thread budget WITHOUT asking a human, up to a
+   * ceiling expressed as a multiple of the budget's original limit.
+   *
+   * The escalation channel is the mission's scarcest resource: it stops the
+   * mesh and waits for a person. Spending it on "the thread hit 60k, may I
+   * have more" made it worthless — one live run raised 9 escalations, all 9
+   * about budgets, every one answered with the same sentence. Meanwhile each
+   * exhausted thread killed a live conversation mid-flight and forced the
+   * agents into a fresh thread with no context, which is the single biggest
+   * destroyer of continuity in the log.
+   *
+   * The ceiling is what keeps this honest: a runaway agent still stops, it
+   * just stops at `maxMultiple x original` instead of at 1x — and THAT
+   * escalation carries real information ("this mission wants 8x its budget"),
+   * which is a judgement a human should actually make.
+   *
+   * `originalLimit` is the configured limit, not the current one: the ceiling
+   * must be anchored to the declared intent, or repeated raises would raise
+   * the ceiling with them and the cap would never bind.
+   *
+   * @returns true when the limit was raised (caller should retry the reserve).
+   */
+  private async tryAutoRaise(key: string, originalLimit: number | null, actorId?: string): Promise<boolean> {
+    const cfg = this.config.budgets.autoRaise;
+    if (!cfg.enabled) return false;
+    if (originalLimit === null || !Number.isFinite(originalLimit) || originalLimit <= 0) return false;
+    const ledger = this.state.budgets.get(key);
+    if (!ledger || ledger.limit === null) return false;
+    const ceiling = Math.floor(originalLimit * cfg.maxMultiple);
+    if (ledger.limit >= ceiling) {
+      this.auditLine(`budget ${key} at auto-raise ceiling (${ledger.limit}/${ceiling}, consumed ${ledger.consumed}) — escalating to the operator`);
+      return false;
+    }
+    // Always clear the current turn's demand, otherwise a turn whose reserve
+    // exceeds one raise blocks anyway and the raise is pure waste.
+    const next = Math.min(ceiling, Math.max(Math.floor(ledger.limit * cfg.factor), ledger.consumed + ledger.reserved + TURN_RESERVE_TOKENS));
+    if (next <= ledger.limit) return false;
+    await this.deps.budget.raiseLimit(key, next, {
+      actorId: actorId ?? HUMAN_AGENT_ID,
+      goalId: this.state.activeGoalId ?? undefined,
+      reason: `auto-raise: ${ledger.consumed}/${ledger.limit} exhausted; ceiling ${ceiling} (${cfg.maxMultiple}x ${originalLimit})`,
+    });
+    this.auditLine(`budget ${key} auto-raised ${ledger.limit} -> ${next} (ceiling ${ceiling})`);
+    return true;
+  }
+
+  /**
+   * How many tokens to hold for ONE upcoming turn by `agentId`.
+   *
+   * The flat 32k it replaces was not a bad estimate, it was no estimate: a
+   * doc-writing agent that spends 3k a turn was charged the same hold as an
+   * architect that spends 120k, so small ledgers refused cheap turns while
+   * large turns were nowhere near covered. Sizing from observed cost makes the
+   * hold mean something in both directions.
+   *
+   * Bounded on both ends on purpose. The floor stops a run of trivial turns
+   * from shrinking the hold to nothing (the next turn may not be trivial); the
+   * ceiling keeps the 32k worst-case contract that `tryAutoRaise` and the
+   * termination tests are written against.
+   */
+  private sizedTurnReserve(agentId: string, ceiling = TURN_RESERVE_TOKENS): number {
+    const cap = Math.max(1, Math.floor(ceiling));
+    const observed = this.turnCostEstimate.get(agentId);
+    // No history: charge the pessimistic bound, exactly as before.
+    if (observed === undefined || !Number.isFinite(observed) || observed <= 0) {
+      return cap;
+    }
+    const want = Math.ceil(observed * TURN_COST_SAFETY_FACTOR);
+    return Math.min(cap, Math.max(Math.min(MIN_TURN_RESERVE_TOKENS, cap), want));
+  }
+
+  /**
+   * Fold one settled turn's real cost into the agent's rolling estimate.
+   *
+   * Zero-token turns are ignored rather than averaged in: a turn that produced
+   * no usage figure (stub runtime, failed call, backend that omits usage) is
+   * missing data, and treating it as "this agent costs 0" would drive the next
+   * reservation straight to the floor.
+   */
+  private noteTurnCost(agentId: string, tokens: number): void {
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    const prev = this.turnCostEstimate.get(agentId);
+    const next = prev === undefined ? tokens : prev + TURN_COST_EWMA_ALPHA * (tokens - prev);
+    this.turnCostEstimate.set(agentId, next);
+  }
+
+  /**
+   * Sweep every exhausted agent/thread ledger through `tryAutoRaise`.
+   *
+   * The turn path only raises the ledger of the turn that is trying to run,
+   * which is not enough: an exhausted ledger latches `exceeded`, and the
+   * termination manager reads that latch on a timer. So a thread that overran
+   * while its agents happened to go idle would escalate the whole mission
+   * before any turn ever asked for a reservation again.
+   *
+   * Mission-level budgets are deliberately NOT auto-raised: the mission cap is
+   * the operator's statement of how much this whole thing is worth, and that
+   * is exactly the judgement worth interrupting a human for.
+   */
+  private async autoRaiseExhaustedLedgers(): Promise<void> {
+    if (!this.config.budgets.autoRaise.enabled) return;
+    const goalId = this.state.activeGoalId;
+    if (!goalId) return;
+    for (const ledger of [...this.state.budgets.values()]) {
+      if (!ledger.exceeded) continue;
+      let original: number | null = null;
+      if (ledger.key.startsWith(`agent:${goalId}/`)) {
+        const agentId = ledger.key.slice(`agent:${goalId}/`.length);
+        original = this.state.agents.get(agentId)?.definition.budget.tokens
+          ?? this.config.budgets.perAgent[agentId]
+          ?? this.config.budgets.agentDefaults.tokens;
+      } else if (ledger.key.startsWith(`thread:${goalId}/`)) {
+        original = this.config.budgets.threadTokens;
+      } else continue;
+      await this.tryAutoRaise(ledger.key, original);
+    }
+  }
+
   async pauseGoal(goalId?: GoalId): Promise<void> {
     const gid = goalId ?? this.state.activeGoalId;
     if (!gid) return;
@@ -1982,6 +2275,10 @@ export class Supervisor {
     escalationsCleared?: boolean;
     /** the reopen succeeded but nothing will run until someone is woken */
     warning?: string;
+    /** agent the operator's feedback was handed to as an outstanding ask */
+    feedbackTo?: string;
+    /** criteria minted from the reopen reason (ids the mission now blocks on) */
+    addedCriteria?: string[];
   }> {
     const gid = this.state.activeGoalId;
     if (!gid) return { ok: false, reason: "no active goal" };
@@ -1993,6 +2290,37 @@ export class Supervisor {
     const by = opts.by ?? HUMAN_AGENT_ID;
     const reason = opts.reason ?? "operator rejected the delivered result";
     const wasEscalated = goal.status === "ESCALATED";
+
+    // The operator's REASON is the whole content of a reopen, and it used to
+    // go nowhere: it was free text on the event payload, while the criteria
+    // list — the only to-do list agents actually read — was reset to the SAME
+    // 16 items they already held evidence for. Agents were told "drive an
+    // unmet criterion forward" about criteria they had just satisfied, with
+    // the actual instruction ("I want best app not mvp") invisible. One live
+    // mission produced 4 turns in 14 minutes after such a reopen.
+    //
+    // So the reason becomes a real mandatory criterion. Deterministic id, so
+    // reopening twice for the same reason reuses the criterion instead of
+    // growing the list (the projection skips ids it already has).
+    //
+    // Only when a VERDICT was rejected. An ESCALATED mission was halted
+    // mid-flight by an open card and never judged, so reopening it is
+    // "carry on", not "this was not good enough" — minting a mandatory
+    // criterion there would invent a requirement the operator never stated
+    // and block a mission whose work nobody rejected. Same rule the criteria
+    // reset already follows.
+    const hadVerdict = goal.status === "COMPLETED" || goal.status === "FAILED";
+    const mintedId = `operator-feedback-${shortHash(reason)}`;
+    const minted: AcceptanceCriterion[] = [...(opts.addCriteria ?? [])];
+    if (hadVerdict && !goal.acceptanceCriteria.some((c) => c.id === mintedId) && !minted.some((c) => c.id === mintedId)) {
+      minted.push({
+        id: mintedId,
+        description: `Operator reopened the mission: "${reason}". This is a mandatory acceptance criterion — the mission cannot complete again until work that specifically addresses it is published and accepted. Re-citing an artifact from the rejected round does not satisfy it.`,
+        mandatory: true,
+        status: "UNSATISFIED",
+        evidence: [],
+      });
+    }
 
     // 0. An ESCALATED mission is halted by its OPEN cards, not by a verdict on
     //    the goal. Flipping the status without answering them re-escalates on
@@ -2017,7 +2345,7 @@ export class Supervisor {
     //    `goal.completed` again on its next tick.
     await this.deps.kernel.emit(
       "goal.reopened",
-      { goalId: gid, reason, criteria: opts.criteria, addCriteria: opts.addCriteria },
+      { goalId: gid, reason, criteria: opts.criteria, addCriteria: minted },
       { actorId: by, goalId: gid },
     );
 
@@ -2064,13 +2392,56 @@ export class Supervisor {
     //    reopened while still live is unharmed.
     this.deps.scheduler.start();
 
+    // 5b. Hand the feedback to whoever owns requirements, as an ASK.
+    //     A criterion alone says WHAT is now required but names nobody; the
+    //     mission still has no defined next step, which is exactly the stall
+    //     this fixes. A REQUEST creates an outstanding commitment on a named
+    //     agent, so the scheduler has a reason to run it and the ledger has a
+    //     debt that will not quietly disappear.
+    //
+    //     Requirements owner first (product-manager), else the configured
+    //     startup driver, else anyone alive — a reopen must never end with the
+    //     operator's instruction addressed to nobody.
+    const requirementsOwner =
+      [...this.state.agents.values()].find((r) => r.definition.role === "product-manager")?.definition.id ??
+      this.config.startupActivate.find((id) => this.state.agents.has(id)) ??
+      [...this.state.agents.values()].find((r) => r.definition.id !== HUMAN_AGENT_ID)?.definition.id;
+    let feedbackTo: string | undefined;
+    if (requirementsOwner) {
+      const sent = await this.sendMessage({
+        from: HUMAN_AGENT_ID,
+        to: [requirementsOwner],
+        type: "REQUEST",
+        newThread: { subject: `mission reopened: ${reason.slice(0, 80)}` },
+        priority: "HIGH",
+        payload: {
+          question:
+            `The operator rejected the delivered result and reopened the mission. Their words: "${reason}".\n\n` +
+            `Do NOT re-cite the artifacts from the rejected round — they are recorded as rejected evidence and will be refused.\n` +
+            `Turn this feedback into concrete, testable requirements: publish an updated RequirementsDoc whose criteria say what "${reason}" means in terms a developer can build and a reviewer can verify, then delegate the work. ` +
+            `A new mandatory acceptance criterion '${mintedId}' now tracks this and blocks completion until it is satisfied by NEW work.`,
+          criterionId: mintedId,
+          reopenReason: reason,
+        },
+      });
+      if (sent.accepted) feedbackTo = requirementsOwner;
+      else this.auditLine(`reopen: could not hand feedback to ${requirementsOwner}: ${sent.reason}`);
+    }
+
     // 6. Activate EXPLICITLY. `kind: "recovery"` alone maps to
     //    `explicit: false`, which the scheduler refuses for a backoff-parked
     //    agent — so a reopen could activate nobody and still return ok:true.
     //    A reopen is an operator action by definition, so it carries operator
     //    authority; `resetMissionState()` above already cleared the parking,
     //    and this keeps the guarantee if any of it is re-established between.
-    const targets = opts.activate?.length ? opts.activate : this.recoveryCandidates();
+    // Default targets also include the feedback recipient: an ask nobody is
+    // scheduled to read is the stall this fix exists to remove. An EXPLICIT
+    // `activate` list is left alone — that is the operator naming who should
+    // run, and quietly adding to it would override them; if it wakes nobody,
+    // the warning below says so.
+    const targets = opts.activate?.length
+      ? opts.activate
+      : [...new Set([...this.recoveryCandidates(), ...(feedbackTo ? [feedbackTo] : [])])];
     const activated: string[] = [];
     const refused: Array<{ agentId: string; reason: string }> = [];
     for (const id of targets) {
@@ -2090,6 +2461,8 @@ export class Supervisor {
       activated,
       ...(refused.length ? { refused } : {}),
       unsatisfied,
+      ...(feedbackTo ? { feedbackTo } : {}),
+      ...(minted.length ? { addedCriteria: minted.map((c) => c.id) } : {}),
       ...(woke ? {} : { warning: targets.length === 0 ? "reopened, but no agent had pending work to resume — send a message (or pass `activate`) to start the next round" : "reopened, but every activation was refused — no turn will run until an agent is woken by hand" }),
       ...(wasEscalated ? { escalationsCleared: true } : {}),
     };
@@ -2196,13 +2569,23 @@ export class Supervisor {
     let turnChangedNothing = false;
     try {
       // budget reservation
+      const agentReserveAmount = this.sizedTurnReserve(agentId);
       const reserve = await this.deps.budget.reserve(
         agentKey(goalId, agentId),
         "tokens",
-        TURN_RESERVE_TOKENS,
+        agentReserveAmount,
         this.state.agents.get(agentId)?.definition.budget.tokens ?? null,
         { actorId: agentId },
       );
+      if (reserve.blocked && (await this.tryAutoRaise(agentKey(goalId, agentId), this.state.agents.get(agentId)?.definition.budget.tokens ?? null, agentId))) {
+        // Retry once against the raised ceiling. One retry only: if the raise
+        // did not create headroom, the ceiling is the real answer and the
+        // block below escalates as before.
+        Object.assign(
+          reserve,
+          await this.deps.budget.reserve(agentKey(goalId, agentId), "tokens", agentReserveAmount, this.state.budgets.get(agentKey(goalId, agentId))?.limit ?? null, { actorId: agentId }),
+        );
+      }
       if (reserve.blocked) {
         await this.deps.kernel.emit("agent.state_changed", { agentId, to: "BLOCKED", note: `budget: ${reserve.reason}` }, { actorId: agentId });
         // Stable key: repeats dedupe against the still-open escalation instead
@@ -2228,10 +2611,23 @@ export class Supervisor {
        * written to cope with exactly this.)
        */
       let threadReservationId: string | undefined;
+      /**
+       * Context trimming for this turn. `undefined` === full context, which is
+       * the only value on the normal path, so an unpressured turn builds a
+       * byte-identical bundle to before.
+       */
+      let contextLimits: ContextLimits | undefined;
       if (reason.threadId) {
         const tk = threadKey(goalId, reason.threadId);
-        const tReserve = await this.deps.budget.reserve(tk, "tokens", TURN_RESERVE_TOKENS, this.config.budgets.threadTokens, { actorId: agentId });
+        const threadReserveAmount = this.sizedTurnReserve(agentId, this.config.budgets.threadReserveTokens);
+        let tReserve = await this.deps.budget.reserve(tk, "tokens", threadReserveAmount, this.config.budgets.threadTokens, { actorId: agentId });
+        if (tReserve.blocked && (await this.tryAutoRaise(tk, this.config.budgets.threadTokens, agentId))) {
+          tReserve = await this.deps.budget.reserve(tk, "tokens", threadReserveAmount, this.state.budgets.get(tk)?.limit ?? null, { actorId: agentId });
+        }
         if (tReserve.blocked) {
+          // Zero headroom. This is the ONLY thread-budget outcome that refuses
+          // the turn: there is nothing left to spend, so no amount of trimming
+          // makes the turn affordable.
           await this.escalate({ reason: "thread_budget_exhausted", raisedBy: agentId, conflictKey: `budget:${tk}`, detail: { threadId: reason.threadId } });
           this.finishTurn(turnId, agentId, { status: "blocked", error: `thread budget exhausted: ${reason.threadId}` });
           this.deps.scheduler.noteTurnOutcome?.(agentId, "blocked");
@@ -2239,6 +2635,32 @@ export class Supervisor {
         }
         threadReservationId = tReserve.reservationId;
         if (threadReservationId) openReservations.push({ key: tk, reservationId: threadReservationId });
+
+        /**
+         * Between "plenty of budget" and "none" there used to be nothing, and
+         * the gap is where the damage happened: a thread with 5k left admitted
+         * a turn that spent 123k, because a partially-granted hold does not
+         * constrain what the runtime goes on to do. Rather than block a turn
+         * that still has real headroom, make the turn SMALLER — less mail,
+         * fewer decisions, fewer artifact refs — so its cost lands nearer the
+         * headroom that is actually left.
+         */
+        const tLedger = this.state.budgets.get(tk);
+        const shortfall = tReserve.granted < tReserve.requested;
+        const usedRatio =
+          tLedger && tLedger.limit !== null && tLedger.limit > 0 ? tLedger.consumed / tLedger.limit : 0;
+        const overSoftCap = usedRatio >= this.config.budgets.threadSoftCap;
+        if (shortfall || overSoftCap) {
+          // Two levels, not a smooth curve: a shortfall means the hold could
+          // not even be taken in full and is the harsher signal; merely
+          // crossing the soft cap is an early warning and only halves things.
+          contextLimits = shortfall
+            ? { maxUnread: 3, maxDecisions: 3, maxArtifactRefs: 5, maxActivity: 4, maxOutstanding: 3 }
+            : { maxUnread: 6, maxDecisions: 5, maxArtifactRefs: 10, maxActivity: 7, maxOutstanding: 5 };
+          this.auditLine(
+            `thread ${tk} under budget pressure (consumed ${tLedger?.consumed ?? 0}/${tLedger?.limit ?? "∞"}, held ${tReserve.granted}/${tReserve.requested}) — degrading ${agentId}'s context instead of blocking`,
+          );
+        }
       }
 
       if (rec.state.lifecycle === "STARTING") {
@@ -2258,7 +2680,7 @@ export class Supervisor {
       const session = await this.ensureSession(agentId);
       // build context from undelivered mail first, then drain via delivery events
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
-      const bundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint);
+      const bundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
       // Delivery is bookkeeping: the agent only ever reads the first
       // MAX_UNREAD (12) in context. Cap per-turn fan-out so a deep backlog
       // (hundreds/thousands queued) can't turn one turn into thousands of
@@ -2329,6 +2751,10 @@ export class Supervisor {
       this.timeoutRetries.delete(agentId);
       this.auditTurn(turnId, agentId, input, output);
       if (output.error) throw new RuntimeFailure(output.error);
+      // Record BEFORE the op loop: the ops below are where an agent accepts a
+      // criterion, and `markCriterionEvidence` has to know whether this turn
+      // actually checked anything or is just asserting it did.
+      this.turnVerificationTools.set(agentId, verificationToolCount(output.toolCalls));
 
       // Typed-only transport: prose-parsed ops never execute. The agent gets
       // one visible refusal (in its turn summary AND its L2 memory) instead
@@ -2368,6 +2794,9 @@ export class Supervisor {
       this.markTurn(turnId, "opsDoneAt");
 
       const tokens = output.tokensUsed?.total ?? 0;
+      // Feed the real cost back into the sizing heuristic BEFORE the next turn
+      // asks for a hold; this is the only place a turn's true cost is known.
+      this.noteTurnCost(agentId, tokens);
       await this.deps.budget.consume(agentKey(goalId, agentId), "tokens", tokens, reserve.reservationId, {
         model: output.model,
         modelVersion: output.modelVersion,
@@ -2478,6 +2907,21 @@ export class Supervisor {
         endSummary = `⚠ ${rejected.length} of ${turn.results.length} ops were REJECTED and had no effect — fix these before repeating them (${why})${modelSummary ? ` — model said: ${modelSummary}` : ""}`;
         this.auditLine(`turn ${turnId} for ${agentId}: ${rejected.length}/${turn.results.length} ops rejected: ${why}`);
       }
+      // An op can SUCCEED and still not do what the agent thinks it did — the
+      // verification gate is the case that matters: `approve criterion:x`
+      // returns ok, but the criterion landed ASSERTED and the mission is no
+      // closer to done. Without this warning the agent reads a clean turn,
+      // concludes the criterion is closed, and never revisits it. Appended
+      // rather than branched, so it survives alongside a rejection warning.
+      const caveats = turn.results
+        .filter((r) => r.ok && r.reason)
+        .map((r) => `${r.op}: ${r.reason}`)
+        .join("; ")
+        .slice(0, 400);
+      if (caveats) {
+        endSummary = `${endSummary ? `${endSummary} — ` : ""}⚠ ${caveats}`;
+        this.auditLine(`turn ${turnId} for ${agentId}: accepted with caveats: ${caveats}`);
+      }
       turnChangedNothing = turnChangedNothing || unproductive;
       this.finishTurn(turnId, agentId, {
         status: target === "IDLE" ? "ok" : target === "WAITING" ? "waiting" : "blocked",
@@ -2538,6 +2982,7 @@ export class Supervisor {
       }
       this.turnInFlight.delete(agentId);
       this.activeTurnByAgent.delete(agentId);
+      this.turnVerificationTools.delete(agentId);
       this.lastTurnAt = Date.now();
       this.deps.scheduler.notifyTurnFinished(agentId);
       void this.afterActivity();
@@ -3521,6 +3966,13 @@ export class Supervisor {
     // longer exists, and leaving it open would (a) re-trigger the stalemate
     // verdict below and (b) strand the mission behind an unanswerable card.
     await this.reconcileDerivedEscalations();
+    // Clear whatever the runtime is allowed to clear before asking a human.
+    // `agent_budget_exhausted` / `thread_budgets_exhausted` verdicts read the
+    // LATCHED `exceeded` flag, so a ledger that overran once escalates the
+    // whole mission on the next tick even though the turn path would have
+    // auto-raised it. Raising here (under the same ceiling) means the operator
+    // only ever sees the budget card that the ceiling itself produced.
+    await this.autoRaiseExhaustedLedgers();
     const verdict = this.termination.evaluate({
       state: this.state,
       config: this.config,

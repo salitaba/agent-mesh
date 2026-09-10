@@ -124,11 +124,17 @@ test("a reopened mission does not re-complete on evidence from the rejected roun
     );
 
     // Evidence produced AFTER the reopen is what unblocks completion.
-    criterion(m).evidence.push({
-      kind: "approval",
-      by: "qa",
-      recordedAt: new Date(Date.parse(goal.reopenedAt!) + 60_000).toISOString(),
-    });
+    const fresh = new Date(Date.parse(goal.reopenedAt!) + 60_000).toISOString();
+    criterion(m).evidence.push({ kind: "approval", by: "qa", recordedAt: fresh });
+    // The reopen also minted a mandatory criterion carrying the operator's
+    // reason ("not good enough"), and it blocks completion by design — the
+    // whole point is that a reopen cannot be answered without addressing what
+    // the operator actually said. Satisfy it the same way.
+    for (const c of goal.acceptanceCriteria) {
+      if (!c.id.startsWith("operator-feedback-")) continue;
+      c.status = "EVIDENCED";
+      c.evidence.push({ kind: "approval", by: "qa", recordedAt: fresh });
+    }
     assert.equal(term.evaluate(inputs).kind, "complete", "a fresh round's evidence completes the mission normally");
   } finally {
     await m.cleanup();

@@ -254,6 +254,9 @@ test("blocked turns finish their step instead of lingering as running", async ()
     mayContact: { a1: [] },
     mode: "parked",
     threadTokens: 1000,
+    // This test needs the reservation to actually BLOCK. Auto-raise exists to
+    // stop exactly that from halting a mission, so it must be off here.
+    autoRaise: { enabled: false },
   });
   try {
     // Spend exactly to the thread limit: no exceeded flag (strict >), so the

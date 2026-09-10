@@ -1,13 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useMesh } from "../store";
-import { Button, Card, Chip, Pill } from "../components";
+import { Button, Card, Chip, Input, Pill } from "../components";
+import { FileView, type DiffPayload, type FileKind } from "../fileview";
 
 interface TreeEntry {
   name: string;
   path: string;
   type: "dir" | "file";
   size: number;
+}
+
+interface OpenFile {
+  path: string;
+  content?: string;
+  kind: FileKind;
+  dataUrl?: string;
+  size?: number;
+}
+
+interface SearchHit {
+  path: string;
+  line: number;
+  text: string;
+  kind: "name" | "content";
 }
 
 const RUN_LABELS: Record<string, string> = {
@@ -25,7 +41,12 @@ export default function Product(): React.JSX.Element {
   const [info, setInfo] = useState<any>(null);
   const [dir, setDir] = useState("");
   const [tree, setTree] = useState<TreeEntry[]>([]);
-  const [file, setFile] = useState<{ path: string; content: string } | null>(null);
+  const [file, setFile] = useState<OpenFile | null>(null);
+  const [fileDiff, setFileDiff] = useState<DiffPayload | null>(null);
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [changes, setChanges] = useState<Array<{ path: string; status: string }>>([]);
   const [run, setRun] = useState<any>(null);
   const [runTicker, setRunTicker] = useState(0);
   const [pg, setPg] = useState(false);
@@ -34,6 +55,9 @@ export default function Product(): React.JSX.Element {
 
   useEffect(() => {
     api("GET", "/workspace/info").then(({ json }) => setInfo(json)).catch(() => undefined);
+    api("GET", "/workspace/changes").then(({ json }) => {
+      if (Array.isArray(json)) setChanges(json);
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -68,12 +92,35 @@ export default function Product(): React.JSX.Element {
 
   const openFile = async (p: string): Promise<void> => {
     const { json } = await api("GET", `/workspace/file?path=${encodeURIComponent(p)}`);
-    if (json && typeof json.content === "string") {
-      setFile({ path: json.path, content: json.content });
-      setPgErr(false);
-    } else if (json?.error) {
-      toast("cannot open", String(json.error), "warn");
+    if (!json || json.error) {
+      if (json?.error) toast("cannot open", String(json.error), "warn");
+      return;
     }
+    setFile({
+      path: json.path,
+      content: typeof json.content === "string" ? json.content : undefined,
+      kind: (json.kind as FileKind) ?? "text",
+      dataUrl: json.dataUrl,
+      size: json.size,
+    });
+    setPgErr(false);
+    // Uncommitted delta for this exact file, so a reviewer can see what an
+    // agent changed without leaving the console for a terminal.
+    setFileDiff(null);
+    const { json: d } = await api("GET", `/workspace/diff?path=${encodeURIComponent(p)}`);
+    if (d && !d.error && !d.identical) setFileDiff(d as DiffPayload);
+  };
+
+  const runSearch = async (term: string): Promise<void> => {
+    const t = term.trim();
+    if (t.length < 2) {
+      setHits(null);
+      return;
+    }
+    setSearching(true);
+    const { json } = await api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000 });
+    setSearching(false);
+    setHits(json && Array.isArray(json.results) ? (json.results as SearchHit[]) : []);
   };
 
   const start = async (script: string): Promise<void> => {
@@ -132,17 +179,78 @@ export default function Product(): React.JSX.Element {
           <pre className="run-log" ref={logRef}>{(run.log || "") || "no output yet…"}</pre>
         </Card>
       ) : null}
+      {changes.length ? (
+        <Card style={{ marginBottom: 12 }} title={`Uncommitted changes (${changes.length})`}>
+          <div className="chips">
+            {changes.slice(0, 40).map((c) => (
+              <Chip key={c.path} mono title={`${c.status} — click to see the diff`} onClick={() => openFile(c.path)}>
+                <span className={`ch-${c.status.toLowerCase()}`}>{c.status}</span> {c.path.split("/").slice(-2).join("/")}
+              </Chip>
+            ))}
+            {changes.length > 40 ? <span className="muted">+{changes.length - 40} more</span> : null}
+          </div>
+        </Card>
+      ) : null}
       <div className="grid two" style={{ marginBottom: 12 }}>
         <Card style={{ minHeight: 320 }} title="Files" actions={dir ? <Button variant="small" onClick={up}>up</Button> : null}>
-          <div className="crumb">{crumb.length ? <Chip mono onClick={() => setDir("")}>root</Chip> : <Chip mono>root</Chip>}{crumb.map((c, i) => <Chip key={i} mono onClick={() => setDir(crumb.slice(0, i + 1).join("/"))}>{c}</Chip>)}</div>
-          <div className="ptree">{tree.map((e) => (
-            <button key={e.path} className="ptree-row" onClick={() => (e.type === "dir" ? setDir(e.path) : openFile(e.path))}>
-              <span className="icon">{e.type === "dir" ? "▸" : "·"}</span><b>{e.name}</b>{e.type === "file" ? <span className="muted mono">{fmtSize(e.size)}</span> : null}
-            </button>
-          )) || <div className="muted" style={{ padding: 12 }}>empty directory</div>}</div>
+          <form
+            className="fv-search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runSearch(q);
+            }}
+          >
+            <Input
+              search
+              mono
+              placeholder="search the whole workspace…"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                if (!e.target.value.trim()) setHits(null);
+              }}
+            />
+            <Button variant="small" type="submit">{searching ? "…" : "find"}</Button>
+            {hits ? <Button variant="small" onClick={() => { setHits(null); setQ(""); }}>clear</Button> : null}
+          </form>
+          {hits ? (
+            <div className="ptree">
+              <div className="muted" style={{ padding: "6px 4px", fontSize: 11 }}>{hits.length} match{hits.length === 1 ? "" : "es"}{hits.length >= 200 ? " (capped)" : ""}</div>
+              {hits.map((h, i) => (
+                <button key={`${h.path}:${h.line}:${i}`} className="ptree-row" onClick={() => openFile(h.path)}>
+                  <span className="icon">{h.kind === "name" ? "≡" : "·"}</span>
+                  <b>{h.path}</b>
+                  {h.line ? <span className="muted mono">:{h.line}</span> : null}
+                  {h.kind === "content" ? <span className="muted hit-text">{h.text.trim().slice(0, 60)}</span> : null}
+                </button>
+              ))}
+              {hits.length === 0 ? <div className="muted" style={{ padding: 12 }}>Nothing matched.</div> : null}
+            </div>
+          ) : (
+            <>
+              <div className="crumb">{crumb.length ? <Chip mono onClick={() => setDir("")}>root</Chip> : <Chip mono>root</Chip>}{crumb.map((c, i) => <Chip key={i} mono onClick={() => setDir(crumb.slice(0, i + 1).join("/"))}>{c}</Chip>)}</div>
+              <div className="ptree">{tree.length ? tree.map((e) => (
+                <button key={e.path} className="ptree-row" onClick={() => (e.type === "dir" ? setDir(e.path) : openFile(e.path))}>
+                  <span className="icon">{e.type === "dir" ? "▸" : "·"}</span><b>{e.name}</b>{e.type === "file" ? <span className="muted mono">{fmtSize(e.size)}</span> : null}
+                </button>
+              )) : <div className="muted" style={{ padding: 12 }}>empty directory</div>}</div>
+            </>
+          )}
         </Card>
-        <Card style={{ minHeight: 320 }} title={file ? <span className="mono" style={{ fontSize: 11, textTransform: "none", letterSpacing: 0, color: "var(--text)" }}>{file.path}</span> : "File preview"}>
-          {file ? <pre className="run-log" style={{ maxHeight: 420 }}>{file.content}</pre> : <div className="muted" style={{ padding: 12 }}>Click a file on the left to read it.</div>}
+        <Card style={{ minHeight: 320 }} title="File preview">
+          {file ? (
+            <FileView
+              path={file.path}
+              content={file.content}
+              kind={file.kind}
+              dataUrl={file.dataUrl}
+              size={file.size}
+              diff={fileDiff}
+              maxHeight={420}
+            />
+          ) : (
+            <div className="muted" style={{ padding: 12 }}>Click a file on the left to read it — code, docs and images all render here.</div>
+          )}
         </Card>
       </div>
       {pg ? (

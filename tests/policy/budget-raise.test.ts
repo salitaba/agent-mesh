@@ -8,6 +8,10 @@ test("budget: operator can raise an exhausted agent budget (event-sourced, unblo
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [], tokens: 1000 }],
     mayContact: { dev: [] },
+    // These tests are about the OPERATOR raise path, so the runtime must not
+    // raise the ledger by itself first: auto-raise would clear `exceeded`
+    // before the assertions ever see it.
+    autoRaise: { enabled: false },
   });
   const goalId = m.kernel.state.activeGoalId!;
   const key = agentKey(goalId, "dev");
@@ -47,6 +51,10 @@ test("budget: raise below spend stays exceeded (honest unblocked=false)", async 
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [], tokens: 1000 }],
     mayContact: { dev: [] },
+    // These tests are about the OPERATOR raise path, so the runtime must not
+    // raise the ledger by itself first: auto-raise would clear `exceeded`
+    // before the assertions ever see it.
+    autoRaise: { enabled: false },
   });
   const key = agentKey(m.kernel.state.activeGoalId!, "dev");
   await m.supervisor.deps.budget.consume(key, "tokens", 99999999, undefined, {}, { actorId: "dev" });

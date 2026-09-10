@@ -289,12 +289,25 @@ export const meshConfigSchema = {
         agent: { type: "object", additionalProperties: { type: "integer" } },
         thread: {
           type: "object",
-          properties: { tokens: { type: "integer" } },
+          properties: {
+            tokens: { type: "integer" },
+            reserve_tokens: { type: "integer", minimum: 1 },
+            soft_cap: { type: "number", minimum: 0, maximum: 1 },
+          },
           additionalProperties: false,
         },
         task: {
           type: "object",
           properties: { tokens: { type: "integer" } },
+          additionalProperties: false,
+        },
+        auto_raise: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            factor: { type: "number", minimum: 1.1 },
+            max_multiple: { type: "number", minimum: 1 },
+          },
           additionalProperties: false,
         },
       },

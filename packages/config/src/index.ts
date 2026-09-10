@@ -37,8 +37,37 @@ export interface RawMeshFile {
   budgets?: {
     mission?: { tokens?: number; wall_clock_minutes?: number; max_events?: number };
     agent?: Record<string, number>;
-    thread?: { tokens?: number };
+    thread?: {
+      tokens?: number;
+      /**
+       * Ceiling (and cold-start value) for the per-turn pre-flight hold taken
+       * against a thread ledger. The runtime sizes the actual hold from what
+       * that agent's turns have really cost; this only bounds it.
+       */
+      reserve_tokens?: number;
+      /**
+       * 0..1 ratio of the thread limit past which a turn is DEGRADED (smaller
+       * context) rather than blocked. Blocking is reserved for zero headroom.
+       */
+      soft_cap?: number;
+    };
     task?: { tokens?: number };
+    /**
+     * Raising an exhausted agent/thread budget is a MECHANICAL decision, and
+     * routing it through a human made the escalation channel useless: in one
+     * live run 9 of 9 escalations were budget-begging, each answered with the
+     * identical "raised budget to XX — continue". Under the ceiling the
+     * runtime raises by itself; the human is only asked at the ceiling, where
+     * the answer is genuinely a judgement call ("is this mission worth more").
+     */
+    auto_raise?: {
+      /** false disables auto-raise entirely (every exhaustion escalates). */
+      enabled?: boolean;
+      /** each raise multiplies the CURRENT limit by this. */
+      factor?: number;
+      /** hard stop as a multiple of the ORIGINAL limit; at it, escalate. */
+      max_multiple?: number;
+    };
   };
   bus?: {
     commitments?: {
@@ -177,7 +206,12 @@ export interface ResolvedMeshConfig {
     agentDefaults: { tokens: number };
     perAgent: Record<string, number>;
     threadTokens: number;
+    /** Ceiling for the sized per-turn thread reservation. */
+    threadReserveTokens: number;
+    /** 0..1 ratio of the thread limit past which turns degrade instead of block. */
+    threadSoftCap: number;
     taskTokens: number;
+    autoRaise: { enabled: boolean; factor: number; maxMultiple: number };
   };
   bus: {
     /** How an outstanding ask may leave the ledger. See RawMeshFile.bus. */
@@ -407,7 +441,14 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       agentDefaults: { tokens: 200000 },
       perAgent: perAgentBudget,
       threadTokens: raw.budgets?.thread?.tokens ?? 50000,
+      threadReserveTokens: Math.max(1, raw.budgets?.thread?.reserve_tokens ?? 32000),
+      threadSoftCap: Math.min(1, Math.max(0, raw.budgets?.thread?.soft_cap ?? 0.75)),
       taskTokens: raw.budgets?.task?.tokens ?? 100000,
+      autoRaise: {
+        enabled: raw.budgets?.auto_raise?.enabled ?? true,
+        factor: Math.max(1.1, raw.budgets?.auto_raise?.factor ?? 2),
+        maxMultiple: Math.max(1, raw.budgets?.auto_raise?.max_multiple ?? 8),
+      },
     },
     scheduling: {
       mode: "event-driven",

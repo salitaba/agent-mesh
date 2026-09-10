@@ -168,7 +168,15 @@ test("reopen: ESCALATED keeps satisfied criteria; COMPLETED invalidates them", a
     for (const c of goalOf(done)!.acceptanceCriteria) c.status = "EVIDENCED";
     await completeIt(done);
     const r = await done.supervisor.reopenGoal({ reason: "result rejected" });
-    assert.deepEqual(r.unsatisfied, ["ship"], "a rejected verdict invalidates the mandatory criteria it rested on");
+    // Two things are unsatisfied after a rejected verdict: the criteria the
+    // verdict rested on, and the new one minted from the operator's reason.
+    assert.deepEqual(
+      r.unsatisfied?.filter((id) => !id.startsWith("operator-feedback-")),
+      ["ship"],
+      "a rejected verdict invalidates the mandatory criteria it rested on",
+    );
+    assert.deepEqual(r.addedCriteria?.length, 1, "the operator's reason is minted as a criterion of its own");
+    assert.ok(r.unsatisfied?.includes(r.addedCriteria![0]), "and it starts unsatisfied, so it blocks completion");
   } finally {
     await done.cleanup();
   }
@@ -258,6 +266,9 @@ test("reopen: warns when no agent could be activated", async () => {
   const m = await completedMesh();
   try {
     await completeIt(m);
+    // An explicit `activate` list is the operator naming who runs, so the
+    // reopen honours it verbatim — it does not quietly add the agent that
+    // received the feedback ask.
     const r = await m.supervisor.reopenGoal({ reason: "rejected", activate: ["ghost"] });
     assert.equal(r.ok, true);
     assert.deepEqual(r.activated, [], "an unknown agent activates nothing");

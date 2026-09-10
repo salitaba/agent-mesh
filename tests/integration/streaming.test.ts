@@ -5,7 +5,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { OpenCodeRuntimeAdapter, extractSessionDelta } from "../../packages/runtime-opencode/src/index";
-import { TurnTracker } from "../../packages/core/src/turn-tracker";
+import { TurnTracker, type TurnRecord } from "../../packages/core/src/turn-tracker";
 import { makeMesh } from "../helpers";
 import { createHttpServer, closeHttpServer } from "../../apps/mesh-server/src/index";
 import type { AgentDefinition, AgentInput, RuntimeContext } from "../../packages/protocol/src/index";
@@ -199,6 +199,47 @@ test("TurnTracker.appendText buffers live deltas with a cap, ignoring finished t
   tracker.push({ turnId: "t2", agentId: "a", reason: { kind: "manual" }, startedAt: new Date().toISOString(), status: "running" });
   tracker.appendText("t2", "z".repeat(30000));
   assert.ok((tracker.get("t2")?.text?.length ?? 0) <= 20000);
+});
+
+test("TurnTracker persists rich per-step data (phases/opTimings/text) across instances", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-turns-"));
+  const file = path.join(dir, "turns.jsonl");
+  const adapter = () => ({
+    load: (): TurnRecord[] => {
+      const out: TurnRecord[] = [];
+      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        const t = line.trim();
+        if (!t) continue;
+        try {
+          out.push(JSON.parse(t) as TurnRecord);
+        } catch { /* skip corrupt line */ }
+      }
+      return out;
+    },
+    save: (records: TurnRecord[]): void => fs.writeFileSync(file, records.map((r) => JSON.stringify(r)).join("\n"), "utf8"),
+  });
+  try {
+    const first = new TurnTracker(adapter());
+    first.push({ turnId: "t1", agentId: "a", reason: { kind: "manual" }, startedAt: "2026-09-09T10:00:00.000Z", status: "running" });
+    first.mark("t1", "llmCallAt", 1000);
+    first.mark("t1", "llmDoneAt", 4000);
+    first.appendText("t1", "streamed output");
+    first.noteOp("t1", { op: "message_send", ms: 12, ok: true });
+    first.finish("t1", "a", { status: "ok", text: "final text", summary: "all good", model: "gpt-x" }, "2026-09-09T10:00:05.000Z");
+    first.flush();
+
+    const second = new TurnTracker(adapter());
+    const restored = second.get("t1");
+    assert.ok(restored, "persisted turn restores");
+    assert.equal(restored?.text, "final text");
+    assert.equal(restored?.summary, "all good");
+    assert.equal(restored?.model, "gpt-x");
+    assert.equal(restored?.phases?.llmCallAt, 1000);
+    assert.equal(restored?.phases?.llmDoneAt, 4000);
+    assert.deepEqual(restored?.opTimings, [{ op: "message_send", ms: 12, ok: true }]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("turn.token frames reach SSE subscribers out-of-band and never touch the log", async () => {

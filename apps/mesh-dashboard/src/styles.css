@@ -33,8 +33,8 @@
      the most common outcome) or --line-strong (a border token that vanished
      against the track). Only stream/ops stay semantic, because those are the
      legs where time actually bought something. */
-  --phase-prep: #4d5872;
-  --phase-wait: #6b7896;
+  --phase-prep: #64708c;
+  --phase-wait: #8792ad;
   --scrim: rgba(4,6,10,.55);
   --paper: #ffffff;
   /* Elevation inside the drawer. --panel is a card on the *page*; the drawer's
@@ -65,8 +65,8 @@
   --role-explorer: #1f7a72;
   /* Light theme: the neutrals must darken, not lighten, to stay visible on a
      near-white track while still reading as "unremarkable". */
-  --phase-prep: #9aa5bd;
-  --phase-wait: #7a869f;
+  --phase-prep: #75819b;
+  --phase-wait: #5d6880;
   /* Light theme cannot raise by lightening — #fff is the ceiling. Raised goes
      very slightly warm-grey, sunken a touch deeper, so the three drawer layers
      stay distinguishable without borders doing all the work. */
@@ -289,7 +289,7 @@ input.search { min-width: 220px; }
 .crit { display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px dashed var(--line); }
 .crit:last-child { border-bottom: 0; }
 .crit .icon { width: 20px; text-align: center; }
-.crit.EVIDENCED .icon { color: var(--ok); } .crit.UNSATISFIED .icon { color: var(--muted); } .crit.WAIVED .icon { color: var(--warn); }
+.crit.EVIDENCED .icon { color: var(--ok); } .crit.UNSATISFIED .icon { color: var(--muted); } .crit.WAIVED .icon { color: var(--warn); } .crit.ASSERTED .icon { color: var(--warn); }
 .crit .desc { flex: 1; min-width: 0; }
 .crit .desc small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crit .evcount { font: 11px var(--mono); color: var(--muted); }
@@ -661,14 +661,14 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .lg-stream { background: var(--accent); }
 .lg-ops    { background: var(--ok); }
 .prail-keys { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 7px; }
-.prail-key { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+.prail-key { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
 .prail-key i { width: 8px; height: 8px; border-radius: 3px; background: currentColor; }
 .prail-key.lg-prep i { background: var(--phase-prep); }
 .prail-key.lg-wait i { background: var(--phase-wait); }
 .prail-key.lg-stream i { background: var(--accent); }
 .prail-key.lg-ops i { background: var(--ok); }
 .prail-key b { color: var(--text); font: 600 11px var(--mono); }
-.prail-verdict { font-size: 11.5px; margin-top: 6px; }
+.prail-verdict { font-size: 11.5px; margin-top: 6px; color: var(--text-dim); }
 @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
 
 .bchip { font: 600 10.5px var(--sans); padding: 1px 7px; border-radius: 20px; white-space: nowrap;
@@ -821,3 +821,63 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .crumb { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .crumb .chip { cursor: default; }
 .playframe { width: 100%; height: 640px; border: 1px solid var(--line); border-radius: var(--r); background: var(--paper); }
+
+/* ---------------------------------------------------------------------- *
+ * FileView — the one file renderer (artifacts + workspace).
+ * Line numbers, diffs, markdown and images share this block so a file looks
+ * the same wherever the console shows it.
+ * ---------------------------------------------------------------------- */
+.fv { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
+.fv-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px;
+  background: var(--panel-2, var(--panel)); border-bottom: 1px solid var(--line); }
+.fv-path { font-size: 11.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.fv-meta { font-size: 10.5px; white-space: nowrap; }
+.fv-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fv-body { overflow: auto; }
+.fv-code { font: 400 12px/1.55 var(--mono); padding: 6px 0; }
+.fv-line { display: flex; align-items: flex-start; gap: 0; padding: 0 8px; }
+.fv-num { flex: 0 0 auto; min-width: 38px; padding-right: 10px; text-align: right; color: var(--muted);
+  opacity: .65; user-select: none; font: 400 11px/1.55 var(--mono); }
+.fv-text { white-space: pre; flex: 1; min-width: 0; }
+.fv-code.wrap .fv-text { white-space: pre-wrap; word-break: break-word; }
+.fv-code .fv-line:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.fv-image { padding: 14px; display: flex; justify-content: center; background:
+  repeating-conic-gradient(color-mix(in srgb, var(--line) 40%, transparent) 0% 25%, transparent 0% 50%) 50% / 18px 18px; }
+.fv-image img { max-width: 100%; max-height: 420px; border-radius: var(--r-sm); }
+
+/* diff */
+.fv-diff { font: 400 12px/1.55 var(--mono); padding: 4px 0; }
+.fv-hunk + .fv-hunk { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.fv-hunk-head { color: var(--info); font-size: 11px; padding: 2px 10px; opacity: .8; }
+.fv-diff .fv-sign { flex: 0 0 auto; width: 14px; text-align: center; user-select: none; color: var(--muted); }
+.fv-diff .fv-line.add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.fv-diff .fv-line.del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.fv-diff .fv-line.add .fv-sign { color: var(--ok); }
+.fv-diff .fv-line.del .fv-sign { color: var(--bad); }
+.fv-note { padding: 8px 10px; font-size: 11px; }
+
+/* markdown */
+.fv-md { padding: 12px 16px; font: 400 13.5px/1.65 var(--sans); color: var(--text); }
+.fv-md h1, .fv-md h2, .fv-md h3, .fv-md h4, .fv-md h5, .fv-md h6 { margin: 16px 0 6px; line-height: 1.3; }
+.fv-md h1 { font-size: 20px; } .fv-md h2 { font-size: 17px; } .fv-md h3 { font-size: 15px; }
+.fv-md h4, .fv-md h5, .fv-md h6 { font-size: 13.5px; color: var(--text-dim); }
+.fv-md p { margin: 6px 0; }
+.fv-md ul { margin: 6px 0 6px 18px; padding: 0; }
+.fv-md li { margin: 2px 0; }
+.fv-md a { color: var(--accent); }
+.fv-md code { font: 400 12px var(--mono); background: color-mix(in srgb, var(--line) 55%, transparent);
+  padding: 1px 4px; border-radius: 4px; }
+.fv-md blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--line-strong); color: var(--text-dim); }
+.fv-md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.fv-md .md-code { font: 400 12px/1.55 var(--mono); background: var(--sunken); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 10px 12px; overflow: auto; white-space: pre; margin: 8px 0; }
+
+/* version picker, filters, workspace search */
+.fv-versions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+.fv-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fv-filters input { min-width: 240px; }
+.fv-search { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.fv-search input { flex: 1; min-width: 0; }
+.ptree-row .hit-text { font: 400 10.5px var(--mono); opacity: .75; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
+.ch-m, .ch-mm { color: var(--warn); } .ch-a, .ch-, .ch-\?\? { color: var(--ok); } .ch-d { color: var(--bad); }

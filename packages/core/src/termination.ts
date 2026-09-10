@@ -335,6 +335,10 @@ export class TerminationManager {
     // six times and delivering nothing new.
     const satisfied = (c: (typeof mandatory)[number]): boolean => {
       if (c.status === "WAIVED") return true;
+      // ASSERTED falls through here deliberately: an agent claiming a
+      // criterion from a turn that invoked no verification tool has not
+      // proven it, and an unproven mission must stay open. See
+      // CriterionStatus in the protocol types.
       if (c.status !== "EVIDENCED") return false;
       if (!goal.reopenedAt) return true;
       return c.evidence.some((e) => e.recordedAt > goal.reopenedAt!);
@@ -353,9 +357,26 @@ export class TerminationManager {
       // wrote nothing. An unclaimed task with every criterion evidenced is
       // residue, not work; a CLAIMED task has an owner who may still be
       // mid-flight and is still worth waiting for.
-      const ownedTasks = [...state.tasks.values()].filter(
-        (t) => t.status === "CLAIMED" && !t.id.startsWith("watch:"),
-      );
+      //
+      // But ONLY while the owner is really on it. The same residue reappears
+      // one level down: `activeTaskId` tracks just the LAST task an agent
+      // claimed, and `task.completed` clears it only when the ids match. An
+      // agent that claims X, then claims Y, then completes Y leaves X CLAIMED
+      // forever with nobody holding it. One live run had 16/16 criteria
+      // evidenced, zero open escalations, and still could not reach COMPLETED
+      // because of exactly one such abandoned ticket — so the stall watchdog
+      // nudged an already-finished mission for 90 minutes (27 turns that wrote
+      // nothing, ~5k tokens each).
+      //
+      // The runtime's own pointer is the truth: a claim is live iff the
+      // claiming agent still exists and its `activeTaskId` is this task.
+      // A claim whose owner is gone, or who has moved on to another task, is
+      // residue — the same as an unclaimed OPEN ticket.
+      const ownedTasks = [...state.tasks.values()].filter((t) => {
+        if (t.status !== "CLAIMED" || t.id.startsWith("watch:")) return false;
+        const owner = t.claimedBy ? state.agents.get(t.claimedBy) : undefined;
+        return owner?.state.activeTaskId === t.id;
+      });
       if (openEscalations.length === 0 && ownedTasks.length === 0) {
         return {
           kind: "complete",

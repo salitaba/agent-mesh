@@ -76,6 +76,46 @@ test("termination: wall-clock overflow escalates", () => {
   assert.equal(tm.kind, "escalate");
 });
 
+test("termination: an abandoned CLAIMED task is residue, a live one still holds the mission open", () => {
+  // Every mandatory criterion evidenced, no open escalations: only work
+  // somebody is really doing may block completion.
+  const evidencedGoal = {
+    id: "g",
+    status: "ACTIVE",
+    acceptanceCriteria: [{ id: "c1", mandatory: true, status: "EVIDENCED", evidence: [{ kind: "approval", recordedAt: "2026-01-01T00:00:00.000Z" }] }],
+  };
+  const baseState = (tasks: unknown[], activeTaskId: string | undefined) =>
+    ({
+      activeGoalId: "g",
+      goals: new Map([["g", evidencedGoal]]),
+      budgets: new Map(),
+      threads: new Map(),
+      agents: new Map([["developer", { state: { agentId: "developer", lifecycle: "IDLE", activeTaskId } }]]),
+      eventsSinceActivation: new Map(),
+      escalations: new Map(),
+      tasks: new Map((tasks as Array<{ id: string }>).map((t) => [t.id, t])),
+      pendingRequests: new Map(),
+      eventCount: 1,
+    }) as never;
+  const config = { budgets: { mission: { tokens: 100000, wallClockMinutes: 600, maxEvents: 100000 } } } as never;
+  const task = { id: "task-1", status: "CLAIMED", claimedBy: "developer" };
+
+  // Owner is on it: still real work.
+  assert.equal(new TerminationManager().evaluate({ state: baseState([task], "task-1"), config, wallClockMs: 1000 }).kind, "continue");
+
+  // Owner moved on to another ticket (activeTaskId only tracks the LAST
+  // claim, so task-1 is stranded with nobody holding it). One live mission
+  // sat at 16/16 criteria for 90 minutes on exactly this, with the stall
+  // watchdog nudging agents that had nothing to do.
+  assert.equal(new TerminationManager().evaluate({ state: baseState([task], "task-2"), config, wallClockMs: 1000 }).kind, "complete");
+
+  // Owner is gone entirely: also residue.
+  assert.equal(
+    new TerminationManager().evaluate({ state: baseState([{ ...task, claimedBy: "ghost" }], "task-1"), config, wallClockMs: 1000 }).kind,
+    "complete",
+  );
+});
+
 test("termination: all five mechanisms are represented in the manager", () => {
   const m = new TerminationManager();
   assert.equal(typeof m.evaluate, "function");
@@ -297,5 +337,241 @@ test("deadlock: a waiting chain that terminates is not a false positive", async 
   // pm -> architect -> dev, and dev owes nobody: dev can still act, so the
   // chain resolves itself. Flagging this would park a healthy mission.
   assert.equal(detector.scan(state).filter((f) => f.kind === "wait_cycle").length, 0, "an acyclic wait chain is not a deadlock");
+  await m.cleanup();
+});
+
+test("reopen: progress is recomputed from criteria, not frozen at the last goal.progress event", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "pm", role: "product-manager", authority: ["requirements.accept"], interests: [] }],
+    criteria: [
+      { id: "c1", description: "one", mandatory: true },
+      { id: "c2", description: "two", mandatory: true },
+    ],
+    mode: "parked",
+  });
+  const goalId = m.kernel.state.activeGoalId!;
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
+  await m.supervisor.recordDecision("pm", "accept", "criterion:c2", created.artifact.id);
+  await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
+  assert.deepEqual(
+    { c: m.kernel.state.progress.get(goalId)?.completed, r: m.kernel.state.progress.get(goalId)?.ratio },
+    { c: 2, r: 1 },
+    "a finished mission reports 2/2",
+  );
+
+  await m.supervisor.reopenGoal({ reason: "I want the best app, not an MVP" });
+
+  const goal = goalOf(m)!;
+  const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
+  const evidenced = mandatory.filter((c) => c.status === "EVIDENCED" || c.status === "WAIVED");
+  const prog = m.kernel.state.progress.get(goalId)!;
+  // The bug: reopen emits no goal.progress, so the projection kept saying
+  // 2/2 ratio 1 while every mandatory criterion had just been reset. The
+  // dashboard showed a 100% mission that had actually restarted at zero.
+  assert.equal(evidenced.length, 0, "reopen resets every mandatory criterion");
+  assert.equal(prog.completed, 0, "progress must follow the criteria down, not stay at the old count");
+  assert.equal(prog.ratio, 0, "ratio must not report a reopened mission as finished");
+  assert.equal(prog.total, mandatory.length, "total counts the minted criterion too");
+  await m.cleanup();
+});
+
+test("reopen: the operator's reason becomes a mandatory criterion and an ask on the requirements owner", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "pm", role: "product-manager", authority: ["requirements.accept"], interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { pm: ["dev"], dev: ["pm"] },
+    criteria: [{ id: "c1", description: "one", mandatory: true }],
+    mode: "parked",
+  });
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
+  await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
+
+  const reason = "I want the best app, not an MVP";
+  const res = await m.supervisor.reopenGoal({ reason });
+
+  // 1. The intent is a criterion, so it blocks completion and shows up in
+  //    every agent's context. Free text on an event payload did neither.
+  const minted = goalOf(m)!.acceptanceCriteria.filter((c) => c.description.includes(reason));
+  assert.equal(minted.length, 1, "the reopen reason must become exactly one criterion");
+  assert.equal(minted[0].mandatory, true, "operator feedback is mandatory, not advisory");
+  assert.equal(minted[0].status, "UNSATISFIED");
+  assert.deepEqual(res.addedCriteria, [minted[0].id]);
+
+  // 2. And it is addressed to someone: a criterion names WHAT, an ask names WHO.
+  assert.equal(res.feedbackTo, "pm", "the requirements owner gets the feedback");
+  const mail = [...(m.kernel.state.unread.get("pm") ?? [])].map((id) => m.kernel.state.messages.get(id));
+  assert.ok(
+    mail.some((msg) => msg?.from === "human" && JSON.stringify(msg.payload).includes(reason)),
+    "pm must receive the operator's words verbatim",
+  );
+
+  // 3. Reopening twice for the same reason must not grow the criteria list.
+  await m.supervisor.reopenGoal({ reason });
+  assert.equal(
+    goalOf(m)!.acceptanceCriteria.filter((c) => c.description.includes(reason)).length,
+    1,
+    "the same feedback must reuse its criterion, not stack duplicates",
+  );
+  await m.cleanup();
+});
+
+test("budgets: an exhausted thread budget auto-raises under the ceiling instead of escalating", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "a1", role: "a1", capabilities: [], interests: [] }],
+    mayContact: { a1: [] },
+    mode: "parked",
+    // Must exceed TURN_RESERVE_TOKENS (32k) once raised, or the raise is real
+    // but still cannot admit the turn — which is honest behaviour, just not
+    // what this test is about.
+    threadTokens: 50000,
+    autoRaise: { enabled: true, factor: 2, maxMultiple: 4 },
+  });
+  const goalId = m.kernel.state.activeGoalId!;
+  const key = `thread:${goalId}/t1`;
+  await m.supervisor.deps.budget.consume(key, "tokens", 50000);
+
+  const r = await m.supervisor.activateAgent("a1", { kind: "manual", threadId: "t1" });
+  assert.equal(r.queued, true);
+  await waitFor("turn settled", () => m.supervisor.getRecentTurns(5).some((t) => t.agentId === "a1" && t.status !== "running"), 5000);
+
+  const ledger = m.kernel.state.budgets.get(key)!;
+  // Ceiling is 4 x 1000. The raise must clear the turn's reservation in one
+  // step, not hand back a limit the very next reserve blocks on again.
+  assert.ok(ledger.limit! > 50000, `thread limit must be raised, still ${ledger.limit}`);
+  assert.ok(ledger.limit! <= 200000, `auto-raise must respect the ceiling, got ${ledger.limit}`);
+  const types = eventTypes(await m.store.read());
+  assert.ok(types.includes("budget.limit_raised"), "the raise must be in the log, so replay reproduces it");
+  assert.equal(
+    [...m.kernel.state.escalations.values()].some((e) => e.reason === "thread_budget_exhausted"),
+    false,
+    "a raise under the ceiling must not spend the operator's attention",
+  );
+  await m.cleanup();
+});
+
+/**
+ * The verification gate.
+ *
+ * A live mission ran 138 turns with `toolCalls: 0` on EVERY one, published
+ * TestReports claiming determinism evidence, merged patches, ticked all 16
+ * mandatory criteria and closed as complete — without a single tool
+ * invocation. Nothing had been read, run or checked; the "evidence" was the
+ * agents' own word. A claim made from a turn that verified nothing is now
+ * recorded as ASSERTED, which nothing counts as done.
+ */
+async function acceptCriterionFromTurn(
+  // Explicit on purpose: `undefined` would take the stub's default of one
+  // synthetic work call (see StubTurn.toolCalls), which is the opposite of
+  // what these tests exercise.
+  toolCalls: Array<{ name: string; args: unknown; resultDigest: string }>,
+): Promise<{ mesh: MeshInstance & { cleanup(): Promise<void> }; status: string }> {
+  const m = await makeMesh({
+    agents: [{ id: "pm", role: "product-manager", authority: ["requirements.accept"], interests: [] }],
+    mayContact: { pm: [] },
+    criteria: [{ id: "c1", description: "one", mandatory: true }],
+    mode: "parked",
+  });
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  stub(m).setScript("pm", [
+    {
+      toolCalls,
+      operations: [{ op: "approve", subject: "criterion:c1", artifactId: created.artifact.id, comment: "done" } as MeshOp],
+    },
+  ]);
+  await m.supervisor.activateAgent("pm", { kind: "manual" });
+  await waitFor("turn settled", () => m.supervisor.getRecentTurns(5).some((t) => t.agentId === "pm" && t.status !== "running"), 5000);
+  return { mesh: m, status: goalOf(m)!.acceptanceCriteria.find((c) => c.id === "c1")!.status };
+}
+
+test("verification: a criterion accepted by a turn that invoked no tool is ASSERTED, not EVIDENCED", async () => {
+  const { mesh: m, status } = await acceptCriterionFromTurn([]);
+  assert.equal(status, "ASSERTED", "zero tool calls means the agent checked nothing — that is a claim, not evidence");
+
+  // And the mission stays open on it: this is the whole point. The gate that
+  // only counted EVIDENCED is what let the shell mission close.
+  await new Promise((r) => setTimeout(r, 300));
+  assert.notEqual(goalOf(m)!.status, "COMPLETED", "an unverified claim must not complete the mission");
+  const goalId = m.kernel.state.activeGoalId!;
+  assert.equal(m.kernel.state.progress.get(goalId)!.completed, 0, "ASSERTED does not count toward progress");
+
+  // The agent has to SEE it, or it reports success and goes idle forever.
+  const turn = m.supervisor.getRecentTurns(5).find((t) => t.agentId === "pm")!;
+  assert.match(String(turn.summary ?? ""), /ASSERTED/, "the downgrade must ride the turn summary into the agent's memory");
+  await m.cleanup();
+});
+
+test("verification: a criterion accepted by a turn that ran a real tool is EVIDENCED and completes", async () => {
+  const { mesh: m, status } = await acceptCriterionFromTurn([{ name: "bash", args: { cmd: "npm test" }, resultDigest: "d1" }]);
+  assert.equal(status, "EVIDENCED", "a turn that actually ran something produces evidence");
+  await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
+  await m.cleanup();
+});
+
+test("verification: mesh_* bus calls are not verification — they are how a turn talks, not how it checks", async () => {
+  // Otherwise the gate is self-satisfying: "I called mesh_approve, therefore
+  // I verified it". Only tools that touch the world outside the mesh can
+  // tell a check from a claim.
+  const { mesh: m, status } = await acceptCriterionFromTurn([
+    { name: "mesh_approve", args: {}, resultDigest: "d1" },
+    { name: "mesh_artifact_read", args: {}, resultDigest: "d2" },
+  ]);
+  assert.equal(status, "ASSERTED", "issuing bus ops is not verifying anything");
+  await m.cleanup();
+});
+
+test("verification: an ASSERTED mandatory criterion does not satisfy termination", () => {
+  const goal = (status: string) => ({
+    id: "g",
+    status: "ACTIVE",
+    acceptanceCriteria: [{ id: "c1", mandatory: true, status, evidence: [{ kind: "criteria-acceptance", recordedAt: "2026-01-01T00:00:00.000Z" }] }],
+  });
+  const state = (status: string) =>
+    ({
+      activeGoalId: "g",
+      goals: new Map([["g", goal(status)]]),
+      budgets: new Map(),
+      threads: new Map(),
+      agents: new Map(),
+      eventsSinceActivation: new Map(),
+      escalations: new Map(),
+      tasks: new Map(),
+      pendingRequests: new Map(),
+      eventCount: 1,
+    }) as never;
+  const config = { budgets: { mission: { tokens: 100000, wallClockMinutes: 600, maxEvents: 100000 } } } as never;
+  assert.equal(new TerminationManager().evaluate({ state: state("ASSERTED"), config, wallClockMs: 1000 }).kind, "continue");
+  assert.equal(new TerminationManager().evaluate({ state: state("EVIDENCED"), config, wallClockMs: 1000 }).kind, "complete");
+});
+
+test("budgets: auto-raise stops at the ceiling and escalates there", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "a1", role: "a1", capabilities: [], interests: [] }],
+    mayContact: { a1: [] },
+    mode: "parked",
+    threadTokens: 1000,
+    // Ceiling == original limit: there is no headroom to grant, so the very
+    // first exhaustion is already at the wall.
+    autoRaise: { enabled: true, factor: 2, maxMultiple: 1 },
+  });
+  const goalId = m.kernel.state.activeGoalId!;
+  const key = `thread:${goalId}/t1`;
+  await m.supervisor.deps.budget.consume(key, "tokens", 1000);
+
+  const r = await m.supervisor.activateAgent("a1", { kind: "manual", threadId: "t1" });
+  assert.equal(r.queued, true);
+  await waitFor("blocked turn", () => m.supervisor.getRecentTurns(5).some((t) => t.agentId === "a1" && t.status === "blocked"), 5000);
+
+  assert.equal(m.kernel.state.budgets.get(key)!.limit, 1000, "at the ceiling the limit must not move");
+  assert.ok(
+    [...m.kernel.state.escalations.values()].some((e) => e.reason === "thread_budget_exhausted"),
+    "at the ceiling the human IS the right answer",
+  );
   await m.cleanup();
 });

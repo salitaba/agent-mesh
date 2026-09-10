@@ -23,8 +23,36 @@ const MAX_ARTIFACT_REFS = 20;
 const MAX_ACTIVITY = 15;
 const MAX_OUTSTANDING = 10;
 
-export function buildAgentContext(deps: ContextBuilderDeps, agentId: string, taskHint?: Task): AgentContextBundle {
+/**
+ * Per-turn overrides for the context window sizes. Every field is optional and
+ * falls back to the module default, so a caller that passes nothing (or passes
+ * `{}`) gets a byte-identical bundle to the pre-degradation behaviour.
+ *
+ * Used by the supervisor's soft-cap path: when a thread ledger is close to its
+ * limit the turn is made CHEAPER rather than refused.
+ */
+export interface ContextLimits {
+  maxUnread?: number;
+  maxDecisions?: number;
+  maxArtifactRefs?: number;
+  maxActivity?: number;
+  maxOutstanding?: number;
+}
+
+export function buildAgentContext(
+  deps: ContextBuilderDeps,
+  agentId: string,
+  taskHint?: Task,
+  limits?: ContextLimits,
+): AgentContextBundle {
   const { config, kernel } = deps;
+  const cap = (value: number | undefined, fallback: number): number =>
+    value === undefined ? fallback : Math.max(1, Math.min(fallback, Math.floor(value)));
+  const maxUnread = cap(limits?.maxUnread, MAX_UNREAD);
+  const maxDecisions = cap(limits?.maxDecisions, MAX_DECISIONS);
+  const maxArtifactRefs = cap(limits?.maxArtifactRefs, MAX_ARTIFACT_REFS);
+  const maxActivity = cap(limits?.maxActivity, MAX_ACTIVITY);
+  const maxOutstanding = cap(limits?.maxOutstanding, MAX_OUTSTANDING);
   const state = kernel.state;
   const record = state.agents.get(agentId);
   if (!record) throw new Error(`unknown agent ${agentId}`);
@@ -32,16 +60,16 @@ export function buildAgentContext(deps: ContextBuilderDeps, agentId: string, tas
   const goal = state.goals.get(goalId);
 
   const unreadIds = state.unread.get(agentId) ?? [];
-  const unread: MeshMessage[] = unreadIds.slice(0, MAX_UNREAD).map((id) => state.messages.get(id)!).filter(Boolean);
+  const unread: MeshMessage[] = unreadIds.slice(0, maxUnread).map((id) => state.messages.get(id)!).filter(Boolean);
 
   const decisions = [...state.decisions.values()]
     .filter((d) => d.goalId === goalId && d.status === "RATIFIED")
     .sort((a, b) => b.ratifiedAt!.localeCompare(a.ratifiedAt ?? a.createdAt))
-    .slice(0, MAX_DECISIONS);
+    .slice(0, maxDecisions);
 
   const relevantArtifacts = [...state.artifacts.values()]
     .filter((a) => a.goalId === goalId && isRelevantArtifact(a, agentId, unread))
-    .slice(0, MAX_ARTIFACT_REFS)
+    .slice(0, maxArtifactRefs)
     .map((a) => ({
       ref: refToString({ uri: `artifact://${a.type}/${a.name}/${a.version}` }),
       type: a.type,
@@ -65,7 +93,7 @@ export function buildAgentContext(deps: ContextBuilderDeps, agentId: string, tas
       if (window.length > WINDOW) window.splice(0, window.length - WINDOW);
     }
     window.sort((a, b) => b.m.timestamp.localeCompare(a.m.timestamp) || b.i - a.i);
-    for (const { m } of window.slice(0, MAX_ACTIVITY)) {
+    for (const { m } of window.slice(0, maxActivity)) {
       recentOwnActivity.push(`[${m.timestamp}] ${m.from} → ${m.to.join(",")} ${m.type} ${summarizePayload(m)}`);
     }
   }
@@ -96,7 +124,7 @@ export function buildAgentContext(deps: ContextBuilderDeps, agentId: string, tas
     }
   }
   const byAge = <T extends { since: string }>(list: T[]): T[] =>
-    list.sort((a, b) => a.since.localeCompare(b.since)).slice(0, MAX_OUTSTANDING);
+    list.sort((a, b) => a.since.localeCompare(b.since)).slice(0, maxOutstanding);
 
   const relevantPolicies = describePoliciesFor(config, agentId);
 

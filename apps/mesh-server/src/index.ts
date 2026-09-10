@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { URL } from "url";
-import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus } from "../../../packages/protocol/src/index";
+import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact } from "../../../packages/protocol/src/index";
 import { resolveConfig, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
@@ -35,6 +35,7 @@ import { OpenCodeRuntimeAdapter } from "../../../packages/runtime-opencode/src/i
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
+import { diffText } from "./diff";
 
 export type ServerMode = "parked" | "live";
 
@@ -212,6 +213,10 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     sessionRegistry,
     scheduler: noopScheduler,
     auditFile: options.inMemory ? undefined : path.join(layout.logs, "turn-audit.jsonl"),
+    // JSONL sidecar for the in-memory turn ring: restores rich per-step data
+    // (phases/op/timings/text/summary) after a restart — the event log only
+    // reconstructs step shape, never this data.
+    turnsFile: options.inMemory ? undefined : path.join(layout.logs, "turns.jsonl"),
   });
   const scheduler = new Scheduler(config, kernel.state, policy, supervisor, options.triageModel);
   supervisor.setScheduler(scheduler);
@@ -596,10 +601,43 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           return json(200, kernel.state.artifactHistory.get(id) ?? [a]);
         }
         if (parts[2] === "content" && req.method === "GET") {
-          const text = await readContent(instance, a.contentRef);
-          res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+          // ?version=N reads an older blob. Versions are immutable, so any
+          // version in the history is still on disk under its own contentRef;
+          // without this the console could only ever show the latest one.
+          const want = u.searchParams.get("version");
+          const target = want ? artifactVersion(instance, id, Number(want)) : a;
+          if (!target) return json(404, { error: `no version ${want} of this artifact` });
+          const text = await readContent(instance, target.contentRef).catch(() => "");
+          res.writeHead(200, {
+            "content-type": "text/plain; charset=utf-8",
+            "x-artifact-version": String(target.version),
+            "x-artifact-digest": String(target.digest ?? ""),
+          });
           res.end(text);
           return;
+        }
+        // Diff two versions of the same artifact. Defaults to "previous
+        // version -> this one", which is the question the console actually
+        // asks when a reviewer opens a file that just changed.
+        if (parts[2] === "diff" && req.method === "GET") {
+          const history = artifactVersions(instance, id);
+          const toN = Number(u.searchParams.get("to") ?? a.version);
+          const fromParam = u.searchParams.get("from");
+          const prev = history.filter((v) => v.version < toN).map((v) => v.version).pop();
+          const fromN = fromParam ? Number(fromParam) : prev ?? toN;
+          const from = artifactVersion(instance, id, fromN);
+          const to = artifactVersion(instance, id, toN);
+          if (!to) return json(404, { error: `no version ${toN} of this artifact` });
+          const beforeText = from && fromN !== toN ? await readContent(instance, from.contentRef).catch(() => "") : "";
+          const afterText = await readContent(instance, to.contentRef).catch(() => "");
+          const d = diffText(beforeText, afterText);
+          return json(200, {
+            artifactId: id,
+            from: from && fromN !== toN ? from.version : null,
+            to: to.version,
+            versions: history.map((v) => v.version),
+            ...d,
+          });
         }
         return json(200, a);
       }
@@ -1106,13 +1144,59 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           if (!ab) return json(400, { error: "path escapes workspace" });
           const st = await fs.promises.stat(ab).catch(() => null);
           if (!st || !st.isFile()) return json(404, { error: "no such file" });
-          if (st.size > 400_000) return json(413, { error: "file too large to preview" });
-          try {
-            const content = await fs.promises.readFile(ab, "utf8");
-            return json(200, { path: rel.replace(/\\/g, "/"), content });
-          } catch {
-            return json(415, { error: "binary or unreadable" });
+          if (st.size > 2_000_000) return json(413, { error: "file too large to preview" });
+          const clean = rel.replace(/\\/g, "/");
+          const buf = await fs.promises.readFile(ab).catch(() => null);
+          if (!buf) return json(415, { error: "unreadable" });
+          const kind = classifyFile(clean, buf);
+          // Binary is no longer a dead end: images come back as data URLs so
+          // the console can actually render a diagram or screenshot an agent
+          // produced, and other binaries report their size instead of a 415.
+          if (kind === "image") {
+            return json(200, {
+              path: clean,
+              kind,
+              mime: mimeOf(clean),
+              size: st.size,
+              dataUrl: `data:${mimeOf(clean)};base64,${buf.toString("base64")}`,
+              modifiedAt: st.mtimeMs,
+            });
           }
+          if (kind === "binary") {
+            return json(200, { path: clean, kind, mime: mimeOf(clean), size: st.size, modifiedAt: st.mtimeMs });
+          }
+          return json(200, {
+            path: clean,
+            kind,
+            mime: mimeOf(clean),
+            size: st.size,
+            modifiedAt: st.mtimeMs,
+            content: buf.toString("utf8"),
+          });
+        }
+        // Recursive name + content search. The tree view only walks one
+        // directory at a time, which makes "where is the file that mentions
+        // X" impossible from the console.
+        if (parts[1] === "search" && parts.length === 2) {
+          const q = String(u.searchParams.get("q") ?? "").trim();
+          if (q.length < 2) return json(200, { query: q, results: [], truncated: false });
+          const scope = String(u.searchParams.get("path") ?? "");
+          if (!resolveInside(wsRoot, scope)) return json(400, { error: "path escapes workspace" });
+          return json(200, await searchWorkspace(wsRoot, scope, q));
+        }
+        // Uncommitted changes for one file (or the whole workspace), so the
+        // console can show what agents touched but have not merged yet.
+        if (parts[1] === "diff" && parts.length === 2) {
+          const rel = String(u.searchParams.get("path") ?? "");
+          if (rel && !resolveInside(wsRoot, rel)) return json(400, { error: "path escapes workspace" });
+          const head = gitShow(wsRoot, rel);
+          const ab = rel ? resolveInside(wsRoot, rel) : null;
+          const workingText = ab ? await fs.promises.readFile(ab, "utf8").catch(() => "") : "";
+          const d = diffText(head, workingText);
+          return json(200, { path: rel.replace(/\\/g, "/"), from: "HEAD", to: "working tree", ...d });
+        }
+        if (parts[1] === "changes" && parts.length === 2) {
+          return json(200, gitChanges(wsRoot));
         }
         if (parts[1] === "run" && parts.length === 3) {
           return json(200, runStatus(parts[2]));
@@ -1275,6 +1359,21 @@ async function readContent(instance: MeshInstance, contentRef: string): Promise<
   return instance.supervisor.deps.content.read(contentRef);
 }
 
+/** Full version chain of an artifact, oldest first. Falls back to the single
+ * current record when no history was recorded (in-memory runs, imports). */
+function artifactVersions(instance: MeshInstance, id: string): Artifact[] {
+  const current = instance.kernel.state.artifacts.get(id);
+  const history = instance.kernel.state.artifactHistory.get(id) as Artifact[] | undefined;
+  const all = history && history.length ? [...history] : current ? [current] : [];
+  if (current && !all.some((v) => v.version === current.version)) all.push(current);
+  return all.sort((x, y) => x.version - y.version);
+}
+
+function artifactVersion(instance: MeshInstance, id: string, version: number): Artifact | undefined {
+  if (!Number.isFinite(version)) return undefined;
+  return artifactVersions(instance, id).find((v) => v.version === version);
+}
+
 /* ---------------------------------------------------------------------- *
  * Workspace window + whitelisted runner (see /workspace routes).
  * ---------------------------------------------------------------------- */
@@ -1378,6 +1477,140 @@ async function listTree(root: string, relDir: string): Promise<Array<{ name: str
     });
   }
   return out;
+}
+
+const IMAGE_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+};
+
+const TEXT_MIME: Record<string, string> = {
+  ".md": "text/markdown",
+  ".markdown": "text/markdown",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".ts": "text/typescript",
+  ".tsx": "text/typescript",
+  ".js": "text/javascript",
+  ".jsx": "text/javascript",
+  ".css": "text/css",
+  ".html": "text/html",
+  ".sh": "text/x-sh",
+  ".sql": "text/x-sql",
+};
+
+function mimeOf(rel: string): string {
+  const ext = path.extname(rel).toLowerCase();
+  return IMAGE_EXT[ext] ?? TEXT_MIME[ext] ?? "text/plain";
+}
+
+/** text | markdown | image | binary. Sniffs bytes rather than trusting the
+ * extension, so an extensionless script still previews as text. */
+function classifyFile(rel: string, buf: Buffer): "text" | "markdown" | "image" | "binary" {
+  const ext = path.extname(rel).toLowerCase();
+  if (ext === ".svg") return "image";
+  if (IMAGE_EXT[ext]) return "image";
+  const probe = buf.subarray(0, 4096);
+  if (probe.includes(0)) return "binary";
+  if (ext === ".md" || ext === ".markdown") return "markdown";
+  return "text";
+}
+
+const SEARCH_MAX_RESULTS = 200;
+const SEARCH_MAX_BYTES = 512_000;
+
+interface SearchHit {
+  path: string;
+  line: number;
+  text: string;
+  kind: "name" | "content";
+}
+
+/** Recursive filename + content search under the workspace. Deliberately
+ * plain-substring (case-insensitive): a regex from the browser is an easy way
+ * to hang the server on catastrophic backtracking. */
+async function searchWorkspace(
+  root: string,
+  scope: string,
+  query: string,
+): Promise<{ query: string; results: SearchHit[]; truncated: boolean }> {
+  const needle = query.toLowerCase();
+  const results: SearchHit[] = [];
+  let truncated = false;
+  const walkDir = async (rel: string, depth: number): Promise<void> => {
+    if (truncated || depth > 12) return;
+    let entries;
+    try {
+      entries = await fs.promises.readdir(path.join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (truncated) return;
+      if (TREE_SKIP.has(e.name) || e.name.endsWith(".tsbuildinfo")) continue;
+      const child = (rel ? `${rel}/${e.name}` : e.name).replace(/\\/g, "/");
+      if (e.isDirectory()) {
+        await walkDir(child, depth + 1);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      if (child.toLowerCase().includes(needle)) {
+        results.push({ path: child, line: 0, text: child, kind: "name" });
+        if (results.length >= SEARCH_MAX_RESULTS) {
+          truncated = true;
+          return;
+        }
+      }
+      const st = await fs.promises.stat(path.join(root, child)).catch(() => null);
+      if (!st || st.size > SEARCH_MAX_BYTES) continue;
+      const buf = await fs.promises.readFile(path.join(root, child)).catch(() => null);
+      if (!buf || classifyFile(child, buf) === "image" || classifyFile(child, buf) === "binary") continue;
+      const lines = buf.toString("utf8").split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].toLowerCase().includes(needle)) continue;
+        results.push({ path: child, line: i + 1, text: lines[i].slice(0, 300), kind: "content" });
+        if (results.length >= SEARCH_MAX_RESULTS) {
+          truncated = true;
+          return;
+        }
+        break; // one hit per file keeps the result list scannable
+      }
+    }
+  };
+  await walkDir(scope.replace(/\\/g, "/"), 0);
+  return { query, results, truncated };
+}
+
+/** Contents of a path at HEAD (empty string when the file is new). */
+function gitShow(root: string, rel: string): string {
+  if (!rel) return "";
+  try {
+    const r = spawnSync("git", ["show", `HEAD:${rel}`], { cwd: root, encoding: "utf8", timeout: 5000 });
+    return r.status === 0 ? r.stdout : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Working-tree changes as {path, status} — what agents touched since HEAD. */
+function gitChanges(root: string): Array<{ path: string; status: string }> {
+  try {
+    const r = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) return [];
+    return r.stdout
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .map((l) => ({ status: l.slice(0, 2).trim() || "?", path: l.slice(3).trim() }));
+  } catch {
+    return [];
+  }
 }
 
 function gitFacts(root: string): Record<string, string> {

@@ -22,6 +22,19 @@ export interface StubTurn {
   model?: string;
   modelVersion?: string;
   temperature?: number;
+  /**
+   * Tool invocations to report for this turn.
+   *
+   * Omitted means "this agent did real work off-mesh", which is what a
+   * scripted fixture almost always models — so the stub reports one synthetic
+   * non-`mesh_*` call (see DEFAULT_STUB_TOOL_CALLS). That matters because the
+   * verification gate downgrades a criterion claimed by a turn with no
+   * verification tool to ASSERTED; without the default, every convergence
+   * fixture would silently stop converging for a reason it is not testing.
+   *
+   * Pass `[]` explicitly to model a turn that checked NOTHING — that is what
+   * the gate's own tests do.
+   */
   toolCalls?: Array<{ name: string; args: unknown; resultDigest: string }>;
   fail?: string;
   crash?: boolean;
@@ -32,6 +45,15 @@ export interface StubOptions {
   scripts: Map<string, StubScript | StubTurn[]>;
   defaultTokens?: number;
 }
+
+/**
+ * What a scripted turn reports when it says nothing about tools: one real
+ * (non-`mesh_*`) invocation, i.e. "this agent went and did something". See
+ * StubTurn.toolCalls.
+ */
+export const DEFAULT_STUB_TOOL_CALLS: Array<{ name: string; args: unknown; resultDigest: string }> = [
+  { name: "stub_work", args: {}, resultDigest: "stub" },
+];
 
 export class StubRuntime implements AgentRuntime {
   readonly name = "stub";
@@ -92,7 +114,7 @@ export class StubRuntime implements AgentRuntime {
       model: turn.model ?? "stub-model",
       modelVersion: turn.modelVersion ?? "1",
       temperature: turn.temperature ?? 0,
-      toolCalls: turn.toolCalls,
+      toolCalls: turn.toolCalls ?? DEFAULT_STUB_TOOL_CALLS,
       summary: turn.summary,
       turnId: `stub-turn-${agentId}-${idx}`,
       error: turn.fail,

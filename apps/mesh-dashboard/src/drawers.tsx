@@ -4,6 +4,7 @@ import { ago, dur, fmt, hhmmss, outcomeOf, pillCls, plainArtifact, plainEvent, p
 import { evClass, evSummary } from "./events";
 import { useMesh, type TimelineEvent, type TurnStep } from "./store";
 import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, Input, Pill, Select, TabPanel, Tabs, TextArea, type TabDef } from "./components";
+import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, parsePartialOps, vitalsOf, type TurnPhases } from "./vitals";
 import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks, useTick } from "./observability";
 
@@ -918,21 +919,23 @@ function StepOpener({ turnId }: { turnId: string }): React.JSX.Element {
 
 export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   const [data, setData] = useState<any>(null);
+  // Which version the reader is looking at. null = the current one; picking an
+  // older version refetches that blob instead of showing the latest, which is
+  // the whole point of an append-only artifact history.
+  const [pick, setPick] = useState<number | null>(null);
+  const [body, setBody] = useState<{ version: number; content: string } | null>(null);
+  const [diff, setDiff] = useState<DiffPayload | null>(null);
+
   useEffect(() => {
     let dead = false;
     (async () => {
-      const { json } = await api("GET", "/artifacts");
-      const arts = Array.isArray(json) ? json : [];
-      const a = arts.find((x: any) => x.id === id);
-      if (!a || dead) {
+      const { json: a } = await api("GET", `/artifacts/${encodeURIComponent(id)}`);
+      if (!a || a.error) {
         if (!dead) setData({ missing: true });
         return;
       }
-      const [{ json: versions }, content] = await Promise.all([
-        api("GET", `/artifacts/${encodeURIComponent(id)}/versions`),
-        getText(`/artifacts/${encodeURIComponent(id)}/content`),
-      ]);
-      if (!dead) setData({ a, versions: versions || [], content });
+      const { json: versions } = await api("GET", `/artifacts/${encodeURIComponent(id)}/versions`);
+      if (!dead) setData({ a, versions: Array.isArray(versions) ? versions : [] });
     })().catch(() => {
       if (!dead) setData({ missing: true });
     });
@@ -940,16 +943,67 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
       dead = true;
     };
   }, [id]);
+
+  const current = data?.a?.version as number | undefined;
+  const shown = pick ?? current ?? null;
+
+  useEffect(() => {
+    if (shown == null) return;
+    let dead = false;
+    const q = `?version=${shown}`;
+    void (async () => {
+      const [content, { json: d }] = await Promise.all([
+        getText(`/artifacts/${encodeURIComponent(id)}/content${q}`),
+        api("GET", `/artifacts/${encodeURIComponent(id)}/diff?to=${shown}`),
+      ]);
+      if (dead) return;
+      setBody({ version: shown, content });
+      setDiff(d && !d.error ? (d as DiffPayload) : null);
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [id, shown]);
+
   if (!data) return <div className="muted">loading…</div>;
   if (data.missing) return <div className="muted">not found</div>;
   const { a } = data;
+  const versions: any[] = data.versions.length ? data.versions : [a];
   const done = ["MERGED", "ACCEPTED", "APPROVED", "FINAL", "VERIFIED", "MERGEABLE", "QA_VERIFIED", "SECURITY_VERIFIED"].includes(a.status);
+  const viewed = versions.find((v) => v.version === shown) ?? a;
+  const isMarkdown = /\.(md|markdown)$/i.test(String(a.name)) || a.type === "document";
+  const wsPath = String(a.metadata?.path ?? a.metadata?.file ?? "");
+
   return (
     <>
       <h2>{(a.name)} <Pill tone={done ? "completed" : a.status === "REJECTED" ? "failed" : "idle"}>{(plainArtifact(a.status))}</Pill><CloseX /></h2>
       <p className="muted" style={{ margin: "4px 0" }}>v{a.version} · {(a.type)} · by {(a.owner)} · {(ago(a.createdAt))}</p>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>history: {(data.versions || []).map((v: any) => `v${v.version} (${plainArtifact(v.status)})`).join(" → ")}</div>
-      <h4>Contents</h4><pre>{(data.content.slice(0, 8000))}{data.content.length > 8000 ? "… truncated" : ""}</pre>
+      <div className="fv-versions">
+        <span className="muted" style={{ fontSize: 11 }}>versions</span>
+        {versions.map((v: any) => (
+          <Chip key={v.version} hot={v.version === shown} onClick={() => setPick(v.version)} title={`${plainArtifact(v.status)} · ${ago(v.createdAt)}`}>
+            v{v.version}
+          </Chip>
+        ))}
+        {shown !== current ? <Chip onClick={() => setPick(null)}>latest</Chip> : null}
+      </div>
+      <p className="muted" style={{ fontSize: 11, margin: "6px 0 10px" }}>
+        showing v{shown} · {plainArtifact(viewed.status)} · {ago(viewed.createdAt)}
+        {viewed.digest ? <> · <span className="mono">{String(viewed.digest).slice(0, 12)}</span></> : null}
+        {wsPath ? <> · repo path <span className="mono">{wsPath}</span></> : null}
+      </p>
+      {body ? (
+        <FileView
+          path={`${a.name} (v${body.version})`}
+          content={body.content}
+          kind={isMarkdown ? "markdown" : "text"}
+          size={body.content.length}
+          diff={diff}
+          maxHeight={520}
+        />
+      ) : (
+        <div className="muted">loading contents…</div>
+      )}
     </>
   );
 }

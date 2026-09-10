@@ -83,9 +83,6 @@ agents:
       - git.merge
     authority:
       - implementation.approve
-      # roles/tech-lead.md makes this seat the design gate, and a plain
-      # `approve architecture` (no artifactId) is checked against AUTHORITY,
-      # not capabilities — without this the documented gate always denied.
       - architecture.approve
     interests:
       - patch.ready
@@ -194,7 +191,7 @@ policies:
 budgets:
   mission:
     tokens: 1500000
-    wall_clock_minutes: 180
+    wall_clock_minutes: 360
     max_events: 32000
   agent:
     pm: 150000

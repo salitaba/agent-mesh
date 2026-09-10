@@ -190,7 +190,10 @@ export default function Overview(): React.JSX.Element {
         <Card title="Goal">
           <p style={{ margin: "0 0 10px", maxWidth: "70ch" }}>{((goal.description || "").replace(/\n+/g, " "))}</p>
           <div>{crit.map((c: any) => (
-            <div key={c.id} className={`crit ${c.status}`}><span className="icon">{c.status === "EVIDENCED" ? "✔" : c.status === "WAIVED" ? "◌" : "○"}</span><div className="desc"><b>{(c.id)}</b> <span className="muted">· {c.status === "EVIDENCED" ? "done" : c.status === "WAIVED" ? "skipped" : "to do"}</span>{c.mandatory ? null : <Chip>optional</Chip>}<small>{(c.description)}</small></div></div>
+            // ASSERTED must read differently from both "done" and "to do": an
+            // agent claimed it without checking anything, and the operator is
+            // the one who needs to know that a claim is standing unproven.
+            <div key={c.id} className={`crit ${c.status}`}><span className="icon">{c.status === "EVIDENCED" ? "✔" : c.status === "WAIVED" ? "◌" : c.status === "ASSERTED" ? "!" : "○"}</span><div className="desc"><b>{(c.id)}</b> <span className="muted">· {c.status === "EVIDENCED" ? "done" : c.status === "WAIVED" ? "skipped" : c.status === "ASSERTED" ? "claimed, not verified" : "to do"}</span>{c.mandatory ? null : <Chip>optional</Chip>}<small>{(c.description)}</small></div></div>
           )) || <div className="muted">no checks declared</div>}</div>
         </Card>
         <Card title="Just happened" actions={<Button variant="small" onClick={() => setView("events")}>All events</Button>}>

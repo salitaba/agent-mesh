@@ -3,6 +3,31 @@ import type { Projections } from "./state";
 import type { AcceptanceCriterion, Goal } from "../../protocol/src/index";
 import { ProjectionError } from "./projections-helpers";
 
+/**
+ * Progress is a FUNCTION of the acceptance criteria, not an independent
+ * counter. It used to be written only by the `goal.progress` event, which is
+ * emitted from exactly one place (`markCriterionEvidence`) — so any other path
+ * that moves criteria (reopen, `requirement.blocked`, `requirements.created`)
+ * left the number frozen at whatever the last satisfaction wrote. A live
+ * mission reopened with all 16 mandatory criteria flipped back to UNSATISFIED
+ * still reported `{completed:16,total:16,ratio:1}` on /status and 100% on the
+ * dashboard, which is how a mission that had just reset to zero looked "done"
+ * to the operator.
+ *
+ * Recomputing from the criteria makes the two views incapable of disagreeing.
+ */
+export function recomputeGoalProgress(state: Projections, goal: Goal, at: string): void {
+  const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
+  const completed = mandatory.filter((c) => c.status === "EVIDENCED" || c.status === "WAIVED").length;
+  const total = mandatory.length;
+  state.progress.set(goal.id, {
+    completed,
+    total,
+    ratio: total ? completed / total : 0,
+    updatedAt: at,
+  });
+}
+
 export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<string, any>): boolean {
   switch (event.type) {
     case "goal.created": {
@@ -14,6 +39,7 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       // activeGoalId) created a spurious new goal and orphaned live work.
       state.activeGoalId = goal.id;
       state.goalHistory.push({ status: goal.status, at: event.timestamp, reason: "created" });
+      recomputeGoalProgress(state, goal, event.timestamp);
       break;
     }
     case "goal.status_changed": {
@@ -98,12 +124,23 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
           }
         }
         state.goalHistory.push({ status: "ACTIVE", at: event.timestamp, reason: p.reason ?? "reopened by operator" });
+        // The whole point of a reopen is that progress went DOWN. Without
+        // this the projection kept reporting the completed count from before
+        // the reset — 16/16, ratio 1, on a mission that had just restarted.
+        recomputeGoalProgress(state, goal, event.timestamp);
       }
       break;
     }
     case "goal.progress": {
       const gid = event.goalId ?? state.activeGoalId;
-      if (gid) {
+      if (!gid) break;
+      // The goal record is authoritative when we have it: the payload is a
+      // snapshot taken by the emitter and can only ever agree or be stale.
+      // The payload path stays for events replayed from a log written before
+      // the goal existed in this projection.
+      const goal = state.goals.get(gid);
+      if (goal) recomputeGoalProgress(state, goal, event.timestamp);
+      else {
         state.progress.set(gid, {
           completed: p.completed ?? 0,
           total: p.total ?? 0,
@@ -137,6 +174,7 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
             goal.acceptanceCriteria.push(c);
           }
         }
+        recomputeGoalProgress(state, goal, event.timestamp);
       }
       break;
     }
@@ -145,6 +183,7 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       if (goal && p.criterionId) {
         const c = goal.acceptanceCriteria.find((x) => x.id === p.criterionId);
         if (c) c.status = "UNSATISFIED";
+        recomputeGoalProgress(state, goal, event.timestamp);
       }
       break;
     }
@@ -153,9 +192,20 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       if (goal && p.criterionId) {
         const c = goal.acceptanceCriteria.find((x) => x.id === p.criterionId);
         if (c) {
-          c.status = "EVIDENCED";
+          // An UNVERIFIED claim (the claiming turn invoked no verification
+          // tool) is recorded but does NOT satisfy the criterion — see
+          // CriterionStatus.ASSERTED. `verified !== false` keeps every event
+          // written before this field existed satisfying, so replay of an old
+          // log is unchanged.
+          const verified = p.verified !== false && p.evidence?.verified !== false;
+          // Never downgrade: a criterion already proven stays proven even if
+          // some later turn asserts it again without checking.
+          if (verified || c.status === "UNSATISFIED" || c.status === "ASSERTED") {
+            c.status = verified ? "EVIDENCED" : "ASSERTED";
+          }
           if (p.evidence) c.evidence.push(p.evidence);
         }
+        recomputeGoalProgress(state, goal, event.timestamp);
       }
       break;
     }

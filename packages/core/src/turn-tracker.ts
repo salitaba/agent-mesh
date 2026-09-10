@@ -149,9 +149,27 @@ export interface TurnRecord {
 }
 
 export const RECENT_TURNS_MAX = 200;
+/** Debounce between durable ring snapshots: mutations arrive on the token path. */
+export const TURN_PERSIST_DEBOUNCE_MS = 1200;
 export const MAX_DELIVERED_PER_TURN = 100;
 /** Live token buffer cap per turn: polling fallback stays cheap. */
 export const MAX_LIVE_TEXT_CHARS = 20000;
+
+/**
+ * Durable sidecar for the in-memory ring (a JSONL file in practice).
+ *
+ * The ring is the ONLY home of per-turn rich data (`phases`, `opTimings`,
+ * `text`, `errorDetail`, …) — the event log reconstructs turn shape but never
+ * these fields, so a restart wiped every trace of what a turn actually did.
+ * Persistence restores the ring at construction; the tracker re-snapshots
+ * debounced after every mutation and on explicit `flush()`.
+ */
+export interface TurnTrackerPersist {
+  /** Prior records to restore at construction. Must not throw. */
+  load(): TurnRecord[];
+  /** Full-ring snapshot, called debounced after mutations and on flush(). */
+  save(records: TurnRecord[]): void;
+}
 
 /**
  * TurnTracker owns the bounded in-memory ring of recent turns.
@@ -160,6 +178,24 @@ export const MAX_LIVE_TEXT_CHARS = 20000;
  */
 export class TurnTracker {
   private recent: TurnRecord[] = [];
+  private persistTimer?: NodeJS.Timeout;
+
+  constructor(private readonly persist?: TurnTrackerPersist) {
+    if (!persist) return;
+    // Restore newest-first: `push` caps the ring, so the most recent
+    // `RECENT_TURNS_MAX` records survive and stale ones fall off.
+    for (const rec of this.loadPrior()) this.push(rec);
+  }
+
+  private loadPrior(): TurnRecord[] {
+    try {
+      return (this.persist?.load() ?? [])
+        .filter((r) => r && typeof r.turnId === "string" && typeof r.agentId === "string")
+        .sort((a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0));
+    } catch {
+      return [];
+    }
+  }
 
   push(rec: TurnRecord): void {
     const i = this.recent.findIndex((t) => t.turnId === rec.turnId);
@@ -173,6 +209,7 @@ export class TurnTracker {
       this.recent.unshift(rec);
       if (this.recent.length > RECENT_TURNS_MAX) this.recent.length = RECENT_TURNS_MAX;
     }
+    this.schedulePersist();
   }
 
   /** Record one executed op's latency on a running turn. Bounded. */
@@ -182,6 +219,7 @@ export class TurnTracker {
     if (!cur.opTimings) cur.opTimings = [];
     if (cur.opTimings.length >= MAX_OP_TIMINGS) return;
     cur.opTimings.push(t);
+    this.schedulePersist();
   }
 
   /**
@@ -196,6 +234,7 @@ export class TurnTracker {
     if (phase === "firstTokenAt" && cur.phases.firstTokenAt !== undefined) return;
     if (phase === "opsStartAt" && cur.phases.opsStartAt !== undefined) return;
     cur.phases[phase] = at;
+    this.schedulePersist();
   }
 
   finish(turnId: string, agentId: string, patch: Partial<TurnRecord>, nowIso: string): void {
@@ -241,6 +280,7 @@ export class TurnTracker {
     if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
     if (cur.phases.firstTokenAt === undefined) cur.phases.firstTokenAt = at;
     cur.phases.lastTokenAt = at;
+    this.schedulePersist();
   }
 
   list(limit = 60): TurnRecord[] {
@@ -248,5 +288,34 @@ export class TurnTracker {
   }
   get(turnId: string): TurnRecord | undefined {
     return this.recent.find((t) => t.turnId === turnId);
+  }
+
+  /** Debounced persistence: mutations arrive on the token path (per delta). */
+  private schedulePersist(): void {
+    if (!this.persist || this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      this.flush();
+    }, TURN_PERSIST_DEBOUNCE_MS);
+  }
+
+  /** Force an immediate durable snapshot (turn end / shutdown). Best-effort. */
+  flush(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = undefined;
+    }
+    if (!this.persist) return;
+    try {
+      this.persist.save(this.recent.slice());
+    } catch {
+      /* persistence must never break a turn */
+    }
+  }
+
+  /** Wipe the ring (fresh mission); the next debounced snapshot lands empty. */
+  clear(): void {
+    this.recent.length = 0;
+    this.schedulePersist();
   }
 }

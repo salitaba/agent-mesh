@@ -33,6 +33,8 @@ export interface TestMeshOptions {
   mode?: "parked" | "live";
   triage?: { mode: "off" | "heuristic"; rules?: Array<{ agent: string; event?: string; ignore_if_text_matches?: string[]; act_if_text_matches?: string[] }> };
   threadTokens?: number;
+  /** budget auto-raise (default on in prod); tests that need a HARD budget wall turn it off */
+  autoRaise?: { enabled?: boolean; factor?: number; maxMultiple?: number };
   waitWakeupMs?: number;
   turnTimeoutMs?: number;
   stallIdleMs?: number;
@@ -118,6 +120,7 @@ ${opts.rules?.length ? `  rules: ${JSON.stringify(opts.rules)}` : ""}
 budgets:
   mission: { tokens: ${opts.missionTokens ?? 10000000}, wall_clock_minutes: ${opts.wallClockMinutes ?? 60}, max_events: ${opts.maxEvents ?? 100000} }
   thread: { tokens: ${opts.threadTokens ?? 1000000} }
+${opts.autoRaise ? `  auto_raise: { enabled: ${opts.autoRaise.enabled ?? true}${opts.autoRaise.factor !== undefined ? `, factor: ${opts.autoRaise.factor}` : ""}${opts.autoRaise.maxMultiple !== undefined ? `, max_multiple: ${opts.autoRaise.maxMultiple}` : ""} }` : ""}
 
 ${opts.bus ? `bus:\n${opts.bus.commitments?.semantic ? `  commitments: { semantic: ${opts.bus.commitments.semantic} }\n` : ""}${opts.bus.transport ? `  transport: ${opts.bus.transport}\n` : ""}` : ""}
 scheduling:

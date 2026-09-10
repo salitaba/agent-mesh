@@ -32,21 +32,29 @@ export class BudgetManager {
     amount: number,
     limit: number | null,
     opts: { actorId?: string; goalId?: string; causationId?: string } = {},
-  ): Promise<{ reservationId: string; blocked: boolean; reason?: string }> {
+  ): Promise<{ reservationId: string; blocked: boolean; reason?: string; requested: number; granted: number }> {
     const state = this.kernel.state;
     const ledger = ensureBudget(state, key, kind, limit);
+    const requested = amount;
     const projected = ledger.consumed + ledger.reserved + amount;
     if (ledger.limit !== null && projected > ledger.limit) {
       if (ledger.consumed <= ledger.limit) {
         const headroom = Math.max(0, ledger.limit - ledger.consumed - ledger.reserved);
         if (headroom <= 0) {
           await this.exceeded(key, ledger.limit, ledger.consumed, opts);
-          return { reservationId: "", blocked: true, reason: `budget ${key} exhausted (${ledger.consumed}/${ledger.limit})` };
+          return { reservationId: "", blocked: true, reason: `budget ${key} exhausted (${ledger.consumed}/${ledger.limit})`, requested, granted: 0 };
         }
+        // Partial headroom: hold what is left rather than refusing outright.
+        //
+        // On its own this is a LIE — the caller was told "not blocked" and then
+        // spent whatever it liked, so a 32k ask against 5k of headroom became a
+        // 5k decoration and the cap never bound. `granted < requested` is the
+        // signal that made it honest: the caller can see it did not get what it
+        // asked for and shrink the turn to fit.
         amount = Math.min(amount, headroom);
       } else {
         await this.exceeded(key, ledger.limit, ledger.consumed, opts);
-        return { reservationId: "", blocked: true, reason: `budget ${key} exhausted (${ledger.consumed}/${ledger.limit})` };
+        return { reservationId: "", blocked: true, reason: `budget ${key} exhausted (${ledger.consumed}/${ledger.limit})`, requested, granted: 0 };
       }
     }
     const reservationId = monotonicId("res");
@@ -55,7 +63,7 @@ export class BudgetManager {
       { key, limitKind: kind, limit, amount, reservationId },
       { actorId: opts.actorId, goalId: opts.goalId, causationId: opts.causationId },
     );
-    return { reservationId, blocked: false };
+    return { reservationId, blocked: false, requested, granted: amount };
   }
 
   async consume(
