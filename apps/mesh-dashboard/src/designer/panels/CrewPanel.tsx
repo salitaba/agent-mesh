@@ -2,11 +2,83 @@
  * wake events, wiring, budgets, session/delegation. Mutates `ctx.m` in
  * place and calls `ctx.touch()` after each change. */
 
-import { useState } from "react";
-import { CAPS, fmtNum } from "../model";
+import { useCallback, useEffect, useState } from "react";
+import { CAPS, fmtNum, groupCaps } from "../model";
 import { ChipPick, CommaAdder, CustomChips, Field, Num, hueVar } from "../ui";
-import { Button, Input, Pill, Select, TextArea } from "../../components";
+import { Button, ErrorState, Input, Pill, Select, TextArea } from "../../components";
+import { api } from "../../api";
 import type { DCtx } from "../types";
+
+interface ModelCatalogue {
+  models: string[];
+  /** The mesh-wide fallback used when an agent leaves `model` blank. */
+  default?: string;
+}
+
+type CatalogueState =
+  | { phase: "loading" }
+  | { phase: "ready"; catalogue: ModelCatalogue }
+  | { phase: "error"; detail: string };
+
+/**
+ * The models this installation can actually reach, from GET /models.
+ *
+ * Deliberately NOT collapsed into `models: string[]` with `[]` on failure: an
+ * empty dropdown reads as "no models exist" when the truth is "the console
+ * never heard back", and the picker would silently discard a model already
+ * written in mesh.yaml.
+ */
+function useModelCatalogue(): { state: CatalogueState; reload: () => void } {
+  const [state, setState] = useState<CatalogueState>({ phase: "loading" });
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setState({ phase: "loading" });
+    // `refresh=1` on an explicit retry bypasses the server's catalogue cache —
+    // the usual reason to retry is "I just configured a provider".
+    api("GET", nonce > 0 ? "/models?refresh=1" : "/models")
+      .then(({ status, json, timeout }) => {
+        if (!live) return;
+        if (timeout) return setState({ phase: "error", detail: "the request timed out" });
+        if (status !== 200 || !json || !Array.isArray(json.models)) {
+          return setState({ phase: "error", detail: json?.error || `the server answered ${status}` });
+        }
+        setState({ phase: "ready", catalogue: { models: json.models, default: json.default } });
+      })
+      .catch((err: unknown) => {
+        if (live) setState({ phase: "error", detail: (err as Error)?.message ?? String(err) });
+      });
+    return () => {
+      live = false;
+    };
+  }, [nonce]);
+  return { state, reload: useCallback(() => setNonce((n) => n + 1), []) };
+}
+
+/* Disclosure state lives at module scope so it survives tab switches, which
+ * unmount the panel. Defaults: everything but Permissions/Advanced is open. */
+const GROUP_OPEN: Record<string, boolean> = {
+  general: true,
+  behavior: true,
+  permissions: false,
+  communication: true,
+  budget: true,
+  advanced: false,
+};
+
+function Group({ id, summary, children }: { id: string; summary: React.ReactNode; children: React.ReactNode }): React.JSX.Element {
+  const [open, setOpen] = useState(GROUP_OPEN[id] ?? true);
+  return (
+    <details className="ms-group" open={open} onToggle={(e) => {
+      const next = e.currentTarget.open;
+      GROUP_OPEN[id] = next;
+      setOpen(next);
+    }}>
+      <summary>{summary}</summary>
+      <div className="ms-group-body">{children}</div>
+    </details>
+  );
+}
 
 export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, cur, ids, vocab, ints, touch, startupSet } = ctx;
@@ -16,6 +88,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [newCap, setNewCap] = useState("");
+  const { state: models, reload: reloadModels } = useModelCatalogue();
   if (!cur || !m.agents[cur]) {
     return (
       <div className="ms-nosel">
@@ -36,9 +109,22 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
     else a.budget[k] = v;
     touch();
   };
+  const toggleCap = (c: string) => {
+    const l = new Set(a.capabilities || []);
+    if (l.has(c)) l.delete(c); else l.add(c);
+    a.capabilities = [...l];
+    touch();
+  };
   const contacts = new Set<string>(((m.policies.communication[cur] || {}).may_contact || []) as string[]);
   const incoming = ((m.policies.communication[cur] || {}).may_be_contacted_by || []) as string[];
   const customCaps = (a.capabilities || []).filter((c: string) => !CAPS.includes(c));
+  const capBuckets = groupCaps([...CAPS, ...customCaps]);
+  const knownModels = new Set<string>(models.phase === "ready" ? models.catalogue.models : []);
+  const saved = typeof a.model === "string" ? a.model.trim() : "";
+  const modelOptions = saved && !knownModels.has(saved) ? [saved, ...knownModels] : [...knownModels];
+  const modelHint = models.phase === "ready" && saved && !knownModels.has(saved)
+    ? "this model is not installed here — turns will fail until it is"
+    : "blank = mesh default";
   const renameClean = renameValue.trim();
   const renameOk = !!renameClean && renameClean !== cur && !m.agents[renameClean];
 
@@ -58,7 +144,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       {renameOpen ? (
         <div className="rename-box">
           <Input value={renameValue} aria-label="new agent id" placeholder="new id…" onChange={(e) => setRenameValue(e.target.value)} autoFocus />
-          <div className="muted" style={{ fontSize: 12 }}>Rewires contacts, startup, budgets and triage rules to the new id.</div>
+          <div className="muted tx-meta">Rewires contacts, startup, budgets and triage rules to the new id.</div>
           <div className="row">
             <Button variant="small" disabled={!renameOk} onClick={() => { if (ctx.renameAgent(cur, renameClean)) setRenameOpen(false); }}>rename to “{renameClean || "…"}”</Button>
             <Button variant="ghost" onClick={() => setRenameOpen(false)}>cancel</Button>
@@ -66,101 +152,123 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         </div>
       ) : null}
 
-      <label className="chk ms-boot"><input type="checkbox" checked={startupSet.has(cur)} onChange={() => ctx.toggleStartup(cur)} /> boots at startup</label>
+      <Group id="general" summary="General">
+        <div className="grid2">
+          <Field label="role"><Input id="d-role" value={a.role || ""} onChange={(e) => set("role", e.target.value.trim())} /></Field>
+          <Field label="model" hint={modelHint}>
+            {models.phase === "error" ? (
+              <ErrorState what="the model list" detail={models.detail} onRetry={reloadModels} />
+            ) : (
+              <Select value={a.model || ""} disabled={models.phase === "loading"} aria-label="model" onChange={(e) => set("model", e.target.value)}>
+                <option value="">{models.phase === "loading" ? "loading models…" : `mesh default${models.catalogue.default ? ` (${models.catalogue.default})` : ""}`}</option>
+                {/* A model already saved in mesh.yaml but absent from this
+                  * installation's catalogue still belongs in the list — dropping it
+                  * would silently rewrite the config on the next save. */}
+                {modelOptions.map((id) => (
+                  <option key={id} value={id}>{id}{knownModels.has(id) ? "" : " — not installed here"}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="runtime" hint="blank = mesh default"><Input value={a.runtime || ""} placeholder={m.mesh.runtime?.default || "opencode"} onChange={(e) => set("runtime", e.target.value.trim())} /></Field>
+          <Field label="mode">
+            <Select value={a.mode === "service" ? "service" : "peer"} onChange={(e) => set("mode", e.target.value === "service" ? "service" : "")}>
+              <option value="peer">peer — wakes on events</option>
+              <option value="service">service — always on</option>
+            </Select>
+          </Field>
+        </div>
+      </Group>
 
-      <div className="grid2">
-        <Field label="role"><Input id="d-role" value={a.role || ""} onChange={(e) => set("role", e.target.value.trim())} /></Field>
-        <Field label="model" hint="blank = mesh default"><Input value={a.model || ""} placeholder="provider/model-id" onChange={(e) => set("model", e.target.value.trim())} /></Field>
-        <Field label="runtime" hint="blank = mesh default"><Input value={a.runtime || ""} placeholder={m.mesh.runtime?.default || "opencode"} onChange={(e) => set("runtime", e.target.value.trim())} /></Field>
-        <Field label="mode">
-          <Select value={a.mode === "service" ? "service" : "peer"} onChange={(e) => set("mode", e.target.value === "service" ? "service" : "")}>
-            <option value="peer">peer — wakes on events</option>
-            <option value="service">service — always on</option>
-          </Select>
-        </Field>
-        <Field label="prompt file" span hint="blank = built-in role prompts"><Input value={a.prompt || ""} placeholder="../../roles/architect.md" onChange={(e) => set("prompt", e.target.value.trim())} /></Field>
-      </div>
+      <Group id="behavior" summary="Behavior">
+        <Field label="prompt file" hint="blank = built-in role prompts"><Input value={a.prompt || ""} placeholder="../../roles/architect.md" onChange={(e) => set("prompt", e.target.value.trim())} /></Field>
+        <label className="chk ms-boot"><input type="checkbox" checked={startupSet.has(cur)} onChange={() => ctx.toggleStartup(cur)} /> boots at startup</label>
+        <div className="field">
+          <label>wakes up for ({(a.interests || []).length})</label>
+          <Input placeholder="filter the list…" style={{ marginBottom: 4 }} aria-label="Filter wake-up events" value={intFilter} onChange={(e) => setIntFilter(e.target.value)} />
+          <div style={{ maxHeight: 140, overflow: "auto" }}>
+            <ChipPick options={ints.filter((c: string) => c.toLowerCase().includes(intFilter.toLowerCase()))} values={a.interests || []} onToggle={(c) => {
+              const l = new Set(a.interests || []);
+              if (l.has(c)) l.delete(c); else l.add(c);
+              a.interests = [...l];
+              touch();
+            }} />
+          </div>
+          <Button variant="linklike" onClick={() => setBulkInts(!bulkInts)}>{bulkInts ? "hide bulk edit" : "bulk edit as text…"}</Button>
+          {bulkInts ? (
+            <TextArea rows={2} aria-label="interests bulk edit" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}`} onBlur={(e) => { a.interests = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
+          ) : null}
+        </div>
+      </Group>
 
-      <div className="field">
-        <label>can do ({(a.capabilities || []).length})</label>
-        <ChipPick options={CAPS} values={a.capabilities || []} onToggle={(c) => {
-          const l = new Set(a.capabilities || []);
-          if (l.has(c)) l.delete(c); else l.add(c);
-          a.capabilities = [...l];
-          touch();
-        }} />
-        <CustomChips values={customCaps} onRemove={(c) => { a.capabilities = (a.capabilities || []).filter((x: string) => x !== c); touch(); }} />
+      <Group id="permissions" summary={`Permissions · ${(a.capabilities || []).length} enabled`}>
+        {capBuckets.map(({ group, caps }) => {
+          const known = caps.filter((c) => CAPS.includes(c));
+          const custom = caps.filter((c) => !CAPS.includes(c));
+          return (
+            <div className="field" key={group}>
+              <label>{group}</label>
+              {known.length ? <ChipPick options={known} values={a.capabilities || []} onToggle={toggleCap} /> : null}
+              {custom.length ? <CustomChips values={custom} onRemove={(c) => { a.capabilities = (a.capabilities || []).filter((x: string) => x !== c); touch(); }} /> : null}
+            </div>
+          );
+        })}
         <CommaAdder placeholder="custom capability, e.g. k8s.deploy…" onAdd={(v) => { a.capabilities = [...new Set([...(a.capabilities || []), v])]; touch(); }} />
         <Button variant="linklike" onClick={() => setBulkCaps(!bulkCaps)}>{bulkCaps ? "hide bulk edit" : "bulk edit as text…"}</Button>
         {bulkCaps ? (
           <TextArea rows={2} aria-label="capabilities bulk edit" defaultValue={(a.capabilities || []).join(", ")} key={`caps-${cur}`} onBlur={(e) => { a.capabilities = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
         ) : null}
-      </div>
-
-      <Field label="can decide alone" hint="e.g. architecture.approve unlocks a gate">
-        <Input defaultValue={(a.authority || []).join(", ")} key={`auth-${cur}`} placeholder="architecture.approve, quality.block…"
-          onBlur={(e) => { a.authority = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
-      </Field>
-
-      <div className="field">
-        <label>wakes up for ({(a.interests || []).length})</label>
-        <Input placeholder="filter the list…" style={{ marginBottom: 4 }} aria-label="Filter wake-up events" value={intFilter} onChange={(e) => setIntFilter(e.target.value)} />
-        <div style={{ maxHeight: 140, overflow: "auto" }}>
-          <ChipPick options={ints.filter((c: string) => c.toLowerCase().includes(intFilter.toLowerCase()))} values={a.interests || []} onToggle={(c) => {
-            const l = new Set(a.interests || []);
-            if (l.has(c)) l.delete(c); else l.add(c);
-            a.interests = [...l];
-            touch();
-          }} />
-        </div>
-        <Button variant="linklike" onClick={() => setBulkInts(!bulkInts)}>{bulkInts ? "hide bulk edit" : "bulk edit as text…"}</Button>
-        {bulkInts ? (
-          <TextArea rows={2} aria-label="interests bulk edit" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}`} onBlur={(e) => { a.interests = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
-        ) : null}
-      </div>
-
-      <div className="field">
-        <label>may message — who this agent can start threads with</label>
-        {ids.filter((t) => t !== cur).length ? (
-          <ChipPick options={ids.filter((t) => t !== cur)} values={[...contacts]} onToggle={(t) => ctx.toggleWire(cur, t)} />
-        ) : <span className="muted" style={{ fontSize: 12 }}>no other agents yet.</span>}
-      </div>
-      <Field label="may be contacted by" hint="blank = anyone wired to it">
-        <Input defaultValue={incoming.join(", ")} key={`inb-${cur}`} placeholder="blank, or comma-separated agent ids"
-          onBlur={(e) => {
-            m.policies.communication[cur] ||= {};
-            const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean);
-            if (l.length) m.policies.communication[cur].may_be_contacted_by = l;
-            else delete m.policies.communication[cur].may_be_contacted_by;
-            touch();
-          }} />
-      </Field>
-
-      <div className="grid2">
-        <Field label="token budget">
-          <Input type="number" step={10000} value={a.budget?.tokens ?? 200000} onChange={(e) => setBudget("tokens", Number(e.target.value) || 0)} />
+        <Field label="can decide alone" hint="e.g. architecture.approve unlocks a gate">
+          <Input defaultValue={(a.authority || []).join(", ")} key={`auth-${cur}`} placeholder="architecture.approve, quality.block…"
+            onBlur={(e) => { a.authority = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
         </Field>
-        <Num label="team budget override (budgets.agent)" value={m.budgets?.agent?.[cur]} onSet={(v) => {
-          m.budgets.agent ||= {};
-          if (v === null) delete m.budgets.agent[cur];
-          else m.budgets.agent[cur] = v;
-          touch();
-        }} step={10000} hint="wins over the token budget left" />
-        <Num label="agent time limit (min)" value={a.budget?.wall_clock_minutes} onSet={(v) => setBudget("wall_clock_minutes", v)} hint="default: mission cap" />
-        <Num label="agent max events" value={a.budget?.max_events} onSet={(v) => setBudget("max_events", v)} hint="no limit" />
-        <Num label="agent max activations" value={a.budget?.max_activations} onSet={(v) => setBudget("max_activations", v)} hint="no limit" />
-      </div>
-      {m.budgets?.agent?.[cur] !== undefined && a.budget?.tokens !== undefined && m.budgets.agent[cur] !== a.budget.tokens ? (
-        <div className="verdict warn" style={{ fontSize: 12 }}>both budgets are set — the override ({fmtNum(m.budgets.agent[cur])}) is what the runtime uses.</div>
-      ) : null}
+      </Group>
 
-      <details className="ms-adv">
-        <summary>advanced — session &amp; delegation</summary>
-        <div className="row" style={{ marginTop: 8, flexWrap: "wrap" }}>
+      <Group id="communication" summary="Communication">
+        <div className="field">
+          <label>may message — who this agent can start threads with</label>
+          {ids.filter((t) => t !== cur).length ? (
+            <ChipPick options={ids.filter((t) => t !== cur)} values={[...contacts]} onToggle={(t) => ctx.toggleWire(cur, t)} />
+          ) : <span className="muted tx-meta">no other agents yet.</span>}
+        </div>
+        <Field label="may be contacted by" hint="blank = anyone wired to it">
+          <Input defaultValue={incoming.join(", ")} key={`inb-${cur}`} placeholder="blank, or comma-separated agent ids"
+            onBlur={(e) => {
+              m.policies.communication[cur] ||= {};
+              const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean);
+              if (l.length) m.policies.communication[cur].may_be_contacted_by = l;
+              else delete m.policies.communication[cur].may_be_contacted_by;
+              touch();
+            }} />
+        </Field>
+      </Group>
+
+      <Group id="budget" summary="Budget">
+        <div className="grid2">
+          <Field label="token budget">
+            <Input type="number" step={10000} value={a.budget?.tokens ?? 200000} onChange={(e) => setBudget("tokens", Number(e.target.value) || 0)} />
+          </Field>
+          <Num label="team budget override (budgets.agent)" value={m.budgets?.agent?.[cur]} onSet={(v) => {
+            m.budgets.agent ||= {};
+            if (v === null) delete m.budgets.agent[cur];
+            else m.budgets.agent[cur] = v;
+            touch();
+          }} step={10000} hint="wins over the token budget left" />
+          <Num label="agent time limit (min)" value={a.budget?.wall_clock_minutes} onSet={(v) => setBudget("wall_clock_minutes", v)} hint="default: mission cap" />
+          <Num label="agent max events" value={a.budget?.max_events} onSet={(v) => setBudget("max_events", v)} hint="no limit" />
+          <Num label="agent max activations" value={a.budget?.max_activations} onSet={(v) => setBudget("max_activations", v)} hint="no limit" />
+        </div>
+        {m.budgets?.agent?.[cur] !== undefined && a.budget?.tokens !== undefined && m.budgets.agent[cur] !== a.budget.tokens ? (
+          <div className="verdict warn tx-value">both budgets are set — the override ({fmtNum(m.budgets.agent[cur])}) is what the runtime uses.</div>
+        ) : null}
+      </Group>
+
+      <Group id="advanced" summary="Advanced">
+        <div className="row" style={{ flexWrap: "wrap" }}>
           <label className="chk"><input type="checkbox" checked={a.session?.persistent !== false} onChange={(e) => { a.session = { ...(a.session || {}), persistent: e.target.checked }; touch(); }} /> remembers between turns</label>
           <label className="chk"><input type="checkbox" checked={!!a.delegation?.allow} onChange={(e) => { a.delegation = { ...(a.delegation || {}), allow: e.target.checked }; touch(); }} /> may spawn helpers</label>
         </div>
-        <div className="grid2" style={{ marginTop: 8 }}>
+        <div className="grid2">
           <Num label="session max context tokens" value={a.session?.max_context_tokens} onSet={(v) => {
             a.session ||= {};
             if (v === null) delete a.session.max_context_tokens; else a.session.max_context_tokens = Math.round(v);
@@ -174,7 +282,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             touch();
           }} step={10000} hint="same as parent" />
         </div>
-      </details>
+      </Group>
     </div>
   );
 }

@@ -25,8 +25,8 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
   const resetMission = async () => {
     const name = status?.meshId || status?.mesh?.id || "mesh";
     const typed = window.prompt(
-      `This wipes the whole mission: every event, agent session, budget and step goes away and the goal restarts from zero.\n\n` +
-        `The old state is archived on disk (.mesh-state.bak-<timestamp>) but the console cannot restore it.\n\n` +
+      `This wipes the whole mission: every event, agent session, budget and step goes away, every git worktree from the old run is deleted, and the goal restarts from zero.\n\n` +
+        `The old state is archived outside the agent workspace (.mesh-backups/<mesh-id>/) — the console cannot restore it, but it stays on disk for manual recovery.\n\n` +
         `Type the mesh id "${name}" to confirm:`,
     );
     if (typed === null) return;

@@ -42,7 +42,7 @@ export default function Events(): React.JSX.Element {
             <button key={g.id} className={`fchip ${(evFilter || "") === g.id ? "on" : ""}`} onClick={() => setEvFilter(evFilter === g.id ? "" : g.id)}>{g.label}</button>
           ))}
         </div>
-        <div className="ev-list">{rows.map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDrawer(<EventDrawerBySeq seq={s} />)} />) || <div className="muted" style={{ padding: 20 }}>No matching events.<br /><span className="muted">Try a different word, or clear the filter.</span></div>}</div>
+        <div className="ev-list">{rows.length ? rows.map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDrawer(<EventDrawerBySeq seq={s} />)} />) : <div className="muted" style={{ padding: 20 }}>No matching events.<br /><span className="muted">Try a different word, or clear the filter.</span></div>}</div>
       </Card>
     </>
   );

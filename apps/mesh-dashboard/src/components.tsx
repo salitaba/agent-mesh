@@ -217,6 +217,21 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
   );
 }
 
+/** The one failed-to-load state. Views used to swallow fetch errors and then
+ *  render their empty state, which reads as "the mesh has nothing" when the
+ *  truth is "the console never heard back" — an operator cannot tell a quiet
+ *  mesh from a dead one. `.empty` (styles.css:221) is the shared shell. */
+export function ErrorState({ what, detail, onRetry }: { what: string; detail?: string; onRetry?: () => void }): React.JSX.Element {
+  return (
+    <div className="empty" role="alert">
+      <div className="big">⚠</div>
+      <div>could not load {what}</div>
+      <div className="muted">{detail ?? "the mesh server did not answer — it may be restarting."}</div>
+      {onRetry ? <Button variant="small" onClick={onRetry}>try again</Button> : null}
+    </div>
+  );
+}
+
 export function agentColor(role: string): string {
   return (
     {

@@ -6,7 +6,22 @@
 
 .ms { display: flex; flex-direction: column; gap: 14px; padding-bottom: 84px; }
 .ms-head .view-title { margin-bottom: 6px; }
+.ms-head .view-title h2 { font: var(--tx-title); }
 .ms-head .view-sub { margin-bottom: 2px; }
+/* WS7 type tiers for one-off sites that used to carry inline font sizes. */
+.tx-value { font: var(--tx-value); }
+.tx-value.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tx-meta { font: var(--tx-meta); }
+.ms-workspace { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; font-size: 13px; }
+.ms-workspace b { font-size: 15px; }
+.ms-workspace .ms-goal { color: var(--text-dim); max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-state { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
+.ms-state b { font: 700 14px var(--mono); color: var(--text); }
+.ms-state .ms-verdict { font-weight: 600; }
+.ms-state .ms-verdict.ok { color: var(--ok); }
+.ms-state .ms-verdict.bad { color: var(--bad); }
+.ms-state .ms-verdict.warn { color: var(--warn); }
+.ms-src { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 
 /* ---------- health strip (crew / boots / goal / gates / advice) ---------- */
 .ms-checks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -41,15 +56,32 @@
 .ms-advice .adv.warn .linklike { color: var(--warn); }
 .ms-advice .adv.info .linklike:hover, .ms-advice .adv.warn .linklike:hover { text-decoration: underline; }
 
-/* ---------- workbench 3-column layout ---------- */
+/* ---------- workbench 3-column layout ----------
+ * WS8: one DOM instance per region; the breakpoint only changes presentation. */
 .ms-body { display: grid; grid-template-columns: 218px minmax(0, 1fr) minmax(340px, 380px); gap: 12px; align-items: stretch; }
-@media (max-width: 1240px) { .ms-body { grid-template-columns: 1fr; } }
+.ms-rail-toggle { display: none; }
+.ms-rail-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.ms-insp-toggle { display: none; }
+/* Transparent in the wide grid; ≤1240 it becomes the local drawer, so
+ * Inspector.tsx itself needs no drawer variant. */
+.ms-insp-wrap { display: contents; }
+.ms-insp-close { display: none; }
+
+/* ---------- graph focus mode (WS9) ----------
+ * The shell owns the boolean (see shell.tsx useFocusMode); this only paints it.
+ * Regions are hidden on the SAME mounted DOM — display:none, never unmount —
+ * so rename input, model catalogue and selection survive enter/exit. The
+ * verdict chip lives in .ms-head and stays visible. */
+.ms.focus .ms-body { grid-template-columns: minmax(0, 1fr); }
+.ms.focus .ms-rail,
+.ms.focus .ms-insp-wrap,
+.ms.focus .ms-out,
+.ms.focus .ms-insp-toggle { display: none; }
 
 /* ---------- crew rail ---------- */
 .ms-rail { display: flex; flex-direction: column; gap: 8px; padding: 12px; min-width: 0; }
 .ms-rail-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px; }
-.ms-rail-head b { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.ms-rail-head .muted { font: 12px var(--mono); }
+.ms-rail-head b { font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .ms-crew-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; max-height: min(56vh, 460px); }
 .crew {
   display: flex; gap: 9px; align-items: center; width: 100%; text-align: left;
@@ -89,7 +121,7 @@
 /* ---------- topology canvas ---------- */
 .ms-canvas { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; min-width: 0; }
 .ms-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-button.small.wire-on { border-color: var(--accent); color: var(--accent-2); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+button.small.wire-on, button.small.focus-on { border-color: var(--accent); color: var(--accent-2); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ms-tool-hint { font-size: 11.5px; margin-left: auto; text-align: right; color: var(--muted); }
 .ms-canvas-count { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
 .ms-svg {
@@ -101,9 +133,10 @@ button.small.wire-on { border-color: var(--accent); color: var(--accent-2); back
   touch-action: none; user-select: none;
 }
 .ms-svg.wiring { cursor: crosshair; }
+.ms-svg:focus { outline: none; }
 
 /* nodes */
-.tnode { cursor: grab; }
+.tnode { cursor: grab; transition: opacity .12s; }
 .tnode:active { cursor: grabbing; }
 .tnode:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 10px; }
 .tnode circle.body {
@@ -120,6 +153,7 @@ button.small.wire-on { border-color: var(--accent); color: var(--accent-2); back
 }
 .tnode.err circle.body { stroke: var(--bad); stroke-width: 2.2; }
 .tnode.from circle.body { stroke: var(--accent-2); stroke-dasharray: 4 4; animation: blink 1.1s infinite; }
+.tnode.dim { opacity: .28; }
 .tnode circle.ring { fill: none; stroke: var(--info); stroke-dasharray: 4 5; stroke-width: 1.4; }
 .tnode text.av { fill: hsl(var(--h, 222) 85% 68%); font: 700 17px var(--mono); text-anchor: middle; pointer-events: none; }
 [data-theme="light"] .tnode text.av { fill: hsl(var(--h, 222) 85% 32%); }
@@ -131,14 +165,18 @@ button.small.wire-on { border-color: var(--accent); color: var(--accent-2); back
 .tnode text.errmark { fill: var(--text-on-hot); font: 700 10px var(--sans); text-anchor: middle; }
 
 /* edges */
-.tedge .tedge-line { fill: none; stroke: var(--line-strong); stroke-width: 1.6; opacity: .85; transition: stroke .12s, opacity .12s; }
+.tedge .tedge-line { fill: none; stroke: var(--line-strong); stroke-width: 1.6; opacity: .85; pointer-events: none; transition: stroke .12s, opacity .12s, stroke-width .12s; }
 .tedge .tedge-line.paired { stroke: var(--accent-2); opacity: .55; }
 .tedge .tedge-hit { fill: none; stroke: transparent; stroke-width: 18; cursor: pointer; }
-.tedge:hover .tedge-line { stroke: var(--bad); opacity: 1; stroke-width: 2; }
-.tedge .edel { opacity: 0; cursor: pointer; transition: opacity .1s; }
-.tedge:hover .edel { opacity: 1; }
-.tedge .edel circle { fill: var(--bad); }
-.tedge .edel text { fill: var(--text-on-hot); font: 700 12px var(--sans); text-anchor: middle; pointer-events: none; }
+.tedge .tedge-hit:focus-visible { outline: none; }
+.tedge:hover .tedge-line, .tedge:focus-within .tedge-line { opacity: 1; stroke-width: 2; }
+.tedge.dim .tedge-line { opacity: .16; }
+.tedge.sel .tedge-line { stroke: var(--bad); opacity: 1; stroke-width: 2.4; }
+.tedge .ecut { cursor: pointer; }
+.tedge .ecut:focus-visible { outline: none; }
+.tedge .ecut rect { fill: var(--bad); stroke: var(--bg); stroke-width: 1.5; }
+.tedge .ecut:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
+.tedge .ecut text { fill: var(--text-on-hot); font: 600 10.5px var(--sans); text-anchor: middle; pointer-events: none; }
 path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 6; pointer-events: none; }
 .ms-empty { padding: 4px 0 10px; display: flex; flex-direction: column; gap: 10px; }
 
@@ -160,21 +198,26 @@ path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dashar
 .ms-nosel { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 8px 2px; }
 .ms-span { grid-column: 1 / -1; }
 .ms-hint { font-size: 10.5px; color: var(--muted); }
-.ms-h { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ms-h { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .ms-h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .ms-adv { border-top: 1px dashed var(--line); padding-top: 8px; }
 .ms-adv summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .ms-adv summary:hover { color: var(--text); }
+.ms-group { border-top: 1px dashed var(--line); padding-top: 8px; }
+.ms-group > summary { cursor: pointer; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ms-group > summary:hover { color: var(--text); }
+.ms-group[open] > summary { color: var(--text-dim); }
+.ms-group-body { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
 .ms-boot { margin: 2px 0; }
-.ms-trule { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-2); padding: 8px 10px; margin: 6px 0; }
-.gate-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-2); padding: 10px 12px; margin: 4px 0; }
+.ms-trule { display: flex; flex-direction: column; gap: 6px; border: 0; border-radius: var(--r-sm); background: var(--sunken); padding: 8px 10px; margin: 6px 0; }
+.gate-card { display: flex; flex-direction: column; gap: 6px; border: 0; border-radius: var(--r-sm); background: var(--sunken); padding: 10px 12px; margin: 4px 0; }
 .gate-grants { font: 11.5px var(--mono); color: var(--text-dim); display: flex; flex-direction: column; gap: 3px; }
 .gate-grants .chip { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
 .gate-who { margin: 0; font-size: 11.5px; }
 .gate-grants .nobody { color: var(--bad); font-style: normal; }
 button.err-inline { margin: 0; color: var(--bad); }
 .chip-toggle.custom { border-style: dashed; }
-.rename-box { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-2); }
+.rename-box { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: var(--sunken); }
 
 /* ---------- output grid (check + yaml) ---------- */
 .ms-out { display: flex; flex-direction: column; gap: 12px; }
@@ -184,15 +227,15 @@ button.err-inline { margin: 0; color: var(--bad); }
 .live-note { font-size: 12px; }
 .ms-yaml-card .yaml-pane { max-height: min(46vh, 420px); }
 .wb-sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.wb-sec-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.wb-sec-head h3 { margin: 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .sec-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; background: var(--bad); color: var(--text-on-hot); font: 700 11px var(--sans); padding: 0 5px; }
 button.linklike { background: none; border: 0; padding: 0; margin-top: 4px; font-size: 12px; color: var(--accent-2); cursor: pointer; text-align: left; }
 button.linklike:hover { text-decoration: underline; }
 
 /* ---------- review / saved / import ---------- */
-.save-review { margin-top: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg-2); display: flex; flex-direction: column; gap: 6px; }
+.save-review { margin-top: 0; padding: 12px 14px; border-radius: var(--r); background: var(--panel-2); display: flex; flex-direction: column; gap: 6px; }
 ul.diff-list { margin: 4px 0; padding-left: 18px; font-size: 12.5px; color: var(--text-dim); max-height: 180px; overflow: auto; }
-.save-done { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: var(--r); background: color-mix(in srgb, var(--ok) 7%, var(--panel)); font-size: 13px; }
+.save-done { padding: 12px 14px; border-radius: var(--r); background: color-mix(in srgb, var(--ok) 7%, var(--panel)); font: var(--tx-value); }
 button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 .replace-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -216,6 +259,8 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 input.wb-bar-path { max-width: 340px; }
 .wb-bar-mid { display: flex; align-items: center; gap: 12px; }
 .wb-bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.wb-bar-hint { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
+.wb-bar-sep { align-self: stretch; width: 1px; background: var(--line-strong); margin: 0 2px; }
 
 /* ---------- template menu ---------- */
 .ms-tpl { position: relative; }
@@ -229,10 +274,49 @@ input.wb-bar-path { max-width: 340px; }
 .ms-tpl-menu button:hover { background: var(--panel); }
 .ms-tpl-menu b { font-family: var(--mono); }
 
+/* ---------- responsive workbench (WS8) ----------
+ * ≥1241: three columns. ≤1240: crew = left disclosure, inspector = local right
+ * drawer (no scrim, no focus trap, no global slot). ≤800: rail stacks above the
+ * canvas and the drawer caps at the viewport width. The ≤1240 grid is declared
+ * here (not in a separate 801–1240 query) so fractional viewport widths at the
+ * 800 boundary cannot fall through to the 3-column base. */
+@media (max-width: 1240px) {
+  .ms-body { grid-template-columns: 46px minmax(0, 1fr); }
+  .ms-body.rail-open { grid-template-columns: 218px minmax(0, 1fr); }
+  .ms-rail { padding: 10px 6px; }
+  .ms-rail.open { padding: 12px; }
+  .ms-rail-head { display: none; }
+  .ms-rail-toggle {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px;
+    border: 0; background: none; cursor: pointer; text-align: left;
+    color: var(--muted); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em;
+  }
+  .ms-rail-toggle:hover { color: var(--text); }
+  .ms-rail:not(.open) .ms-rail-toggle { flex: 1; flex-direction: column; justify-content: center; gap: 10px; }
+  .ms-rail:not(.open) .ms-rail-toggle b { writing-mode: vertical-rl; }
+  .ms-rail.open .ms-rail-toggle { padding: 0 2px; }
+  .ms-rail:not(.open) .ms-rail-body { display: none; }
+  .ms-insp-toggle { display: inline-flex; margin-left: auto; }
+  .ms-insp-wrap { display: block; position: fixed; top: 0; right: 0; z-index: 30; width: min(380px, 92%); height: 100dvh; }
+  .ms-insp-wrap:not(.open) { display: none; }
+  .ms-insp-wrap .ms-insp { height: 100%; background: var(--drawer); border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: var(--shadow); }
+  .ms-insp-wrap .insp-tabs { flex: none; padding-right: 36px; }
+  .ms-insp-wrap .insp-body { flex: 1 1 auto; min-height: 0; max-height: none; }
+  .ms-insp-close {
+    display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 10px; z-index: 1;
+    width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm);
+    background: var(--panel); color: var(--text-dim); font: 15px/1 var(--sans); cursor: pointer;
+  }
+  .ms-insp-close:hover { color: var(--text); border-color: var(--line-strong); }
+}
+
 /* ---------- small screens ---------- */
 @media (max-width: 800px) {
-  .ms-body { grid-template-columns: 1fr; }
-  .insp-body { max-height: none; }
+  .ms-body, .ms-body.rail-open { grid-template-columns: minmax(0, 1fr); }
+  .ms-rail, .ms-rail.open { padding: 12px; }
+  .ms-rail:not(.open) .ms-rail-toggle { flex: none; flex-direction: row; justify-content: flex-start; gap: 8px; }
+  .ms-rail:not(.open) .ms-rail-toggle b { writing-mode: horizontal-tb; }
+  .ms-insp-wrap { width: min(380px, 100%); }
   .ms-tool-hint { display: none; }
   .ms-canvas-count { display: none; }
 }

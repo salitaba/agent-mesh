@@ -13,26 +13,76 @@
  *      lifecycle: load → edit → validate → save.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, post } from "../api";
 import { fmt } from "../format";
 import { useMesh } from "../store";
 import "./designer.css";
-import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, YamlCard } from "./chrome";
+import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, SourceStateLine, YamlCard } from "./chrome";
 import CrewRail from "./CrewRail";
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";
-import { clamp, deepCopy, densure, summarizeDiff, tabOfError, TEMPLATES } from "./model";
+import { clamp, deepCopy, densure, sourceState, summarizeDiff, tabOfError, TEMPLATES } from "./model";
 import { clearStored, draft, loadLayout, readStored, ringLayout, saveLayout, storeDraft } from "./storage";
 import Topology from "./Topology";
-import { Button, Input, Pill } from "../components";
+import { Button, Input } from "../components";
+import { register, takePendingAgent, unregister, getVersion, subscribe } from "../commands";
+import { useFocusMode, useMedia } from "../shell";
 import type { Advice, DCtx, Pos, SaveTarget, Tab } from "./types";
 
 /** Debounced after each edit: re-validate, persist draft + node layout. */
 const SAVE_DELAY_MS = 550;
 
+/** WS8: the Designer's own collapse point, same value as the CSS media query. */
+const COMPACT = "(max-width: 1240px)";
+
+/** WS10: handlers the palette commands call; swapped to no-ops on unmount. */
+interface DesignerCommands {
+  addAgent: (preset?: any) => void;
+  validate: () => Promise<void>;
+  pickAgent: (id: string) => void;
+  gotoTab: (t: Tab) => void;
+}
+const NO_COMMANDS: DesignerCommands = {
+  addAgent: () => {},
+  validate: async () => {},
+  pickAgent: () => {},
+  gotoTab: () => {},
+};
+
+/** Lexically resolve `.`/`..` and duplicate slashes the way the server's path.resolve would. */
+function normalizeSavePath(p: string): string {
+  const raw = p.trim().replace(/\\/g, "/");
+  const abs = raw.startsWith("/");
+  const out: string[] = [];
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (out.length && out[out.length - 1] !== "..") out.pop();
+      else if (!abs) out.push(part);
+    } else out.push(part);
+  }
+  return (abs ? "/" : "") + out.join("/");
+}
+
+/**
+ * True when saving to `target` would land on the running file. Mirrors the server:
+ * relative paths resolve against the running file's directory (config.dir is
+ * dirname(filePath)) and a directory target gets mesh.yaml appended. Symlinks and a
+ * server restarted with a different config are beyond what the client can see.
+ */
+function saveLandsOnRunning(target: string, running: string): boolean {
+  const r = normalizeSavePath(running);
+  const raw = target.trim();
+  const dir = r.slice(0, Math.max(0, r.lastIndexOf("/"))) || "/";
+  const t = raw.startsWith("/") ? normalizeSavePath(raw) : normalizeSavePath(`${dir}/${raw}`);
+  return t === r || `${t}/mesh.yaml` === r;
+}
+
 export default function Designer(): React.JSX.Element {
   const { vocab, toast, setView } = useMesh();
+  // Shell-owned (WS9): this component only paints the mode onto its regions.
+  const { focusMode } = useFocusMode();
   const [, setVersion] = useState(0);
   const [cur, setCurState] = useState<string | null>(draft.cur);
   const [layout, setLayoutState] = useState<Record<string, Pos>>(draft.layout);
@@ -55,7 +105,71 @@ export default function Designer(): React.JSX.Element {
   const [runningStale, setRunningStale] = useState(false);
   const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
+  /* Bumped whenever `draft.runningRaw` is replaced (load/save). `draft` is a
+   * module singleton, so useMemo on it alone would go stale after save. */
+  const [runningRev, setRunningRev] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* WS10: the mutation handlers are declared below the loading gate (they close
+   * over a loaded model), but the command registration must be a hook above it.
+   * The ref forwards the latest handlers into the palette command list. */
+  const cmdRef = useRef<DesignerCommands>(NO_COMMANDS);
+  // A "jump to agent" request bumps commands.ts even when the view is already
+  // Designer, so this component re-renders and the effect below can take it.
+  const cmdVersion = useSyncExternalStore(subscribe, getVersion);
+
+  /* -------- WS8 responsive: one instance per region, presentation by CSS -------- */
+
+  const compact = useMedia(COMPACT);
+  const [railOpen, setRailOpen] = useState(false);
+  const [inspOpen, setInspOpen] = useState(false);
+  const inspRef = useRef<HTMLDivElement | null>(null);
+  const inspReturn = useRef<HTMLElement | null>(null);
+  const inspWasOpen = useRef(false);
+  // Drawer is local and non-modal: no scrim, no focus trap, no global slot.
+  const openInspector = () => {
+    if (!compact) return;
+    const opener = document.activeElement;
+    // Never record an opener inside the drawer: links in the panels switch the
+    // selection and would otherwise strand focus on a hidden element on close.
+    if (opener instanceof HTMLElement && opener !== document.body && !inspRef.current?.contains(opener)) inspReturn.current = opener;
+    setInspOpen(true);
+  };
+  useEffect(() => {
+    if (!compact) return;
+    if (inspOpen && !inspWasOpen.current) {
+      const root = inspRef.current;
+      (root?.querySelector<HTMLElement>("button, a[href], input, select, textarea, [tabindex]") ?? root)?.focus();
+    } else if (!inspOpen && inspWasOpen.current) {
+      inspReturn.current?.focus();
+      inspReturn.current = null;
+    }
+    inspWasOpen.current = inspOpen;
+  }, [inspOpen, compact]);
+
+  // Entering focus hides whole regions (rail/inspector/output) on the same DOM.
+  // If focus was inside one of them — palette/Esc entry in WS10, or a click that
+  // moved nothing — rehome it on the toggle instead of stranding it in a
+  // display:none subtree.
+  useEffect(() => {
+    if (!focusMode) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest(".ms-rail, .ms-insp-wrap, .ms-out")) {
+      document.getElementById("ms-focus-toggle")?.focus();
+    }
+  }, [focusMode]);
+
+  // WS10: a palette "jump to agent" leaves a pending id in commands.ts. Take
+  // it as soon as this view can act on it — no bus, no storage, nothing that
+  // survives to the next visit if the user never got here.
+  useEffect(() => {
+    if (!ready || !draft.model) return;
+    const id = takePendingAgent();
+    if (!id || !draft.model.agents[id]) return;
+    draft.cur = id;
+    setCurState(id);
+    setTab("crew");
+    openInspector();
+  }, [ready, cmdVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* -------- edit plumbing -------- */
 
@@ -110,7 +224,10 @@ export default function Designer(): React.JSX.Element {
         draft.model = deepCopy(raw);
         densure(draft.model);
         if (filePath !== null) draft.runningPath = filePath;
-        if (mode === "running") draft.runningRaw = deepCopy(raw);
+        if (mode === "running") {
+          draft.runningRaw = deepCopy(raw);
+          setRunningRev((v) => v + 1);
+        }
         draft.saveMode = mode;
         draft.cur = draft.cur && draft.model.agents[draft.cur] ? draft.cur : Object.keys(draft.model.agents)[0] || null;
         draft.layout = loadLayout(draft.model.mesh?.id || "", Object.keys(draft.model.agents));
@@ -134,6 +251,12 @@ export default function Designer(): React.JSX.Element {
         draft.saveMode = sm;
         if (stored.copyPath?.trim()) draft.copyPath = stored.copyPath;
         applyModel(stored.model, runningPath || null, runningRaw ? sm : "copy");
+        if (runningRaw) {
+          /* applyModel marks the restored draft as "running"; the running FILE
+           * must stay the diff/stale reference, not the draft itself. */
+          draft.runningRaw = deepCopy(runningRaw);
+          setRunningRev((v) => v + 1);
+        }
         setRestoredAt(stored.ts || Date.now());
       } else if (runningRaw) {
         applyModel(runningRaw, runningPath, "running");
@@ -154,25 +277,40 @@ export default function Designer(): React.JSX.Element {
     return () => {
       dead = true;
       if (timer.current) clearTimeout(timer.current);
+      // A stale closure must not run commands against an unmounted workbench.
+      cmdRef.current = NO_COMMANDS;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc closes floating menus; unsaved edits warn on unload.
+  // Esc closes the local inspector drawer first, then floating menus. The
+  // shell runs first and marks what it consumed; only an unconsumed Esc reaches
+  // these local layers, and consuming marks the event for the ones below.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTplOpen(false);
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (compact && inspOpen) {
+        e.preventDefault();
+        setInspOpen(false);
+      } else if (tplOpen) {
+        e.preventDefault();
+        setTplOpen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [inspOpen, compact, tplOpen]);
 
   const m = draft.model;
   const curJson = m ? JSON.stringify(m) : "";
   const dirty = baseline !== null && m !== null && curJson !== baseline;
   const targetPath = saveMode === "running" && draft.runningPath ? draft.runningPath : copyPath.trim();
   const savingRunning = saveMode === "running" && !!draft.runningPath && targetPath === draft.runningPath;
-  const diff = useMemo(() => (m ? summarizeDiff(m, draft.runningRaw) : []), [curJson]); // eslint-disable-line react-hooks/exhaustive-deps
+  // copy-target that resolves to the running file would silently overwrite it while
+  // reporting "copy": refuse the save and make the user pick the running target.
+  const copyTargetsRunning = saveMode === "copy" && !!draft.runningPath && !!targetPath && saveLandsOnRunning(targetPath, draft.runningPath);
+  const diff = useMemo(() => (m ? summarizeDiff(m, draft.runningRaw) : []), [curJson, runningRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const src = sourceState({ dirty, diff, runningRaw: draft.runningRaw, saveMode, restoredAt });
   const errors: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
   const errTabs = useMemo(() => {
     const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0 };
@@ -217,12 +355,28 @@ export default function Designer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curJson]);
 
+  // WS10: Designer-scoped palette commands, registered only while this view is
+  // mounted. The run bodies go through cmdRef because the handlers live below
+  // the loading gate; the list re-registers when the selection or the
+  // validation result changes so the labels stay true.
+  const cmdAgent = m && cur && m.agents[cur] ? cur : null;
+  useEffect(() => {
+    if (!ready || !m) return;
+    register("designer", [
+      { id: "designer.add-agent", label: "Add agent", keywords: "hire new crew member", scope: "designer", run: () => cmdRef.current.addAgent() },
+      { id: "designer.validate", label: "Run validation", keywords: "check verify config yaml", scope: "designer", run: () => void cmdRef.current.validate() },
+      ...(cmdAgent ? [{ id: `designer.open-agent.${cmdAgent}`, label: `Inspect agent “${cmdAgent}”`, keywords: `open agent ${cmdAgent}`, scope: "designer", run: () => cmdRef.current.pickAgent(cmdAgent) }] : []),
+      ...(errors.length ? [{ id: "designer.show-errors", label: `Show errors (${errors.length})`, keywords: "problems invalid validation", scope: "designer", run: () => cmdRef.current.gotoTab(tabOfError(String(errors[0]))) }] : []),
+    ]);
+    return () => unregister("designer");
+  }, [ready, m, cmdAgent, result]);
+
   // NOTE: keep every hook above this gate — the render below returns a
   // different tree when loading, so conditional hooks would change count.
   if (!ready || !m) {
     return (
       <>
-        <div className="view-title"><h2>Designer</h2></div>
+        <div className="view-title"><h2>Mesh Designer</h2></div>
         <div className="view-sub">Opening the running mesh…</div>
         <div className="empty"><div className="big">…</div><div>loading current mesh config</div></div>
       </>
@@ -391,6 +545,7 @@ export default function Designer(): React.JSX.Element {
     if (c.kind === "load" && c.json?.raw) {
       draft.runningPath = c.json.filePath || draft.runningPath;
       draft.runningRaw = deepCopy(c.json.raw);
+      setRunningRev((v) => v + 1);
       draft.saveMode = "running";
       setSaveMode("running");
       applyReplaceModel(deepCopy(c.json.raw), Object.keys(c.json.raw.agents || {})[0] || null, "Loaded running mesh");
@@ -408,6 +563,7 @@ export default function Designer(): React.JSX.Element {
     if (!dirty) {
       draft.runningPath = json.filePath || draft.runningPath;
       draft.runningRaw = deepCopy(json.raw);
+      setRunningRev((v) => v + 1);
       draft.saveMode = "running";
       setSaveMode("running");
       applyReplaceModel(deepCopy(json.raw), Object.keys(json.raw.agents || {})[0] || null, "Loaded running mesh");
@@ -426,8 +582,11 @@ export default function Designer(): React.JSX.Element {
 
   /* -------- save flow -------- */
 
+  const RUNNING_PATH_CONFLICT = "that path is the running config — select the running target or choose a different copy path";
+
   const openReview = async () => {
     if (!targetPath) return toast("save failed", "provide a save path", "bad");
+    if (copyTargetsRunning) return toast("save failed", RUNNING_PATH_CONFLICT, "bad");
     setRunningStale(false);
     if (savingRunning) {
       try {
@@ -441,9 +600,13 @@ export default function Designer(): React.JSX.Element {
     window.setTimeout(() => document.getElementById("d-review")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
   const doSave = async () => {
+    if (copyTargetsRunning) return toast("save failed", RUNNING_PATH_CONFLICT, "bad");
     const { status, json } = await post("/config/save", { config: draft.model, path: targetPath });
     if (status === 200) {
-      if (savingRunning) draft.runningRaw = deepCopy(draft.model);
+      if (savingRunning) {
+        draft.runningRaw = deepCopy(draft.model);
+        setRunningRev((v) => v + 1);
+      }
       setReviewOpen(false);
       setRunningStale(false);
       commitBaseline();
@@ -459,43 +622,62 @@ export default function Designer(): React.JSX.Element {
 
   const valid = result?.status === 200;
   const verdictState = checking ? "checking…" : result ? (valid ? "valid" : `${errors.length} errors`) : checkFailed ? "check failed" : "checking…";
-  const saveLabel = !draft.runningPath ? "Save mesh" : savingRunning ? "Save running mesh" : "Save mesh copy";
+  const verdictTone = !result ? (checkFailed ? "warn" : "") : valid ? "ok" : "bad";
+  const saveLabel = !draft.runningPath ? "Save mesh" : savingRunning ? "Save running config" : "Save copy";
   const gotoTab = (t: Tab) => {
     setTab(t);
     if (t === "crew" && !current && ids[0]) setCurrent(ids[0]);
+    openInspector();
     document.querySelector(".ms-body")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  // Picking an agent (rail, node or gate link) reveals its inspector on compact.
+  const pickAgent = (id: string) => {
+    setCurrent(id);
+    setTab("crew");
+    openInspector();
   };
 
   const ctx: DCtx = {
     m, cur: current, ids, vocab, ints, touch, pushUndo,
     startupSet, toggleStartup, addAgent, duplicateAgent, deleteAgent, renameAgent, toggleWire,
-    setCur: (id) => { setCurrent(id); setTab("crew"); },
+    setCur: pickAgent,
   };
+  cmdRef.current = { addAgent, validate, pickAgent, gotoTab };
 
   return (
-    <div className="ms">
+    <div className={`ms${focusMode ? " focus" : ""}`}>
       <header className="ms-head">
         <div className="view-title">
-          <h2>Designer</h2>
-          {!draft.runningPath
-            ? <Pill tone="idle">new mesh</Pill>
-            : savingRunning
-              ? <Pill tone="awakened">editing running mesh</Pill>
-              : <Pill tone="waiting">running mesh — saving a copy</Pill>}
-          {dirty ? <Pill tone="waiting">unsaved changes</Pill> : <Pill tone="idle">saved</Pill>}
-          <Pill tone={valid ? "completed" : errors.length ? "failed" : "idle"}>{verdictState}</Pill>
+          <h2>Mesh Designer</h2>
+          <Button variant="small" extra="ms-insp-toggle" id="ms-insp-toggle" aria-expanded={inspOpen} aria-controls="ms-inspector" onClick={() => (inspOpen ? setInspOpen(false) : openInspector())}>
+            {inspOpen ? "close inspector" : "inspect agent"}
+          </Button>
+        </div>
+        <div className="ms-workspace">
+          <b>{m.mesh?.name?.trim() || "Untitled mesh"}</b>
+          {m.mesh?.id ? <span className="mono muted">{m.mesh.id}</span> : null}
+          {m.mesh?.goal?.trim() ? <span className="ms-goal">— {m.mesh.goal.trim()}</span> : <span className="muted">— no goal yet</span>}
+        </div>
+        <div className="ms-state" role="status">
+          <b>{ids.length}</b> agent{ids.length === 1 ? "" : "s"}
+          <span aria-hidden="true">·</span>
+          <b>{links.length}</b> wire{links.length === 1 ? "" : "s"}
+          <span aria-hidden="true">·</span>
+          <span className={`ms-verdict ${verdictTone}`}>{verdictState}</span>
         </div>
         <div className="view-sub">
           Editing <b>{targetPath || "…"}</b>
-          {draft.runningPath ? (savingRunning ? " — the mesh this console loaded. Saving overwrites it; restart to pick changes up." : " — a copy. The running mesh keeps working untouched.") : "."}
+          {draft.runningPath
+            ? savingRunning
+              ? " — the running file. Saving writes it; restart the mesh to apply."
+              : " — a new file. Saving writes it; the running mesh keeps working untouched."
+            : "."}
         </div>
       </header>
 
       <HealthStrip
         onGoto={gotoTab}
-        ids={ids}
         startupCount={startupSet.size}
-        goalSet={!!m.mesh?.goal?.trim()}
         gates={Object.keys(m.policies.transitions || {}).length}
         advice={advisors}
         undoLabel={undo ? undo.label : null}
@@ -504,11 +686,11 @@ export default function Designer(): React.JSX.Element {
       <AdvisoryList advice={advisors} onGoto={gotoTab} />
 
       {restoredAt ? (
-        <div className="replace-bar" role="status">
-          <span><b>Restored your unsaved draft</b> <span className="muted">from this browser ({new Date(restoredAt).toLocaleTimeString()}) — it was newer than the running file.</span></span>
+        <div className="replace-bar" role="alert">
+          <span><b>Unsaved local changes</b> <span className="muted">your browser draft ({new Date(restoredAt).toLocaleTimeString()}) {src.hasRunning ? "differs from the running file." : "was restored — no running file is loaded."}</span></span>
           <span className="row">
-            <Button variant="small" onClick={() => { void loadRunningClick(); setRestoredAt(null); }}>discard it, edit the running mesh</Button>
-            <Button variant="ghost" onClick={() => setRestoredAt(null)}>keep working</Button>
+            <Button variant="small" onClick={() => setRestoredAt(null)}>Keep draft</Button>
+            {src.hasRunning ? <Button variant="ghost" onClick={() => { setRestoredAt(null); void loadRunningClick(); }}>Discard draft</Button> : null}
           </span>
         </div>
       ) : null}
@@ -522,14 +704,16 @@ export default function Designer(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="ms-body">
+      <div className={`ms-body${railOpen ? " rail-open" : ""}`}>
         <CrewRail
           agents={m.agents}
           ids={ids}
           current={current}
           startup={startupSet}
           hasError={agentErr}
-          onPick={(id) => { setCurrent(id); setTab("crew"); }}
+          open={railOpen}
+          onToggle={() => setRailOpen((v) => !v)}
+          onPick={pickAgent}
           onHire={() => addAgent()}
         />
         <Topology
@@ -542,7 +726,7 @@ export default function Designer(): React.JSX.Element {
           meshId={m.mesh?.id}
           hasError={agentErr}
           links={links}
-          onSelect={(id) => { setCurrent(id); setTab("crew"); }}
+          onSelect={pickAgent}
           onWire={toggleWire}
           onCut={toggleWire}
           onBoot={toggleStartup}
@@ -550,7 +734,10 @@ export default function Designer(): React.JSX.Element {
           onTemplate={(model) => requestReplace("template", model)}
           onAddAgent={() => addAgent()}
         />
-        <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} />
+        <div id="ms-inspector" className={`ms-insp-wrap${inspOpen ? " open" : ""}`} ref={inspRef}>
+          <button type="button" className="ms-insp-close" aria-label="close inspector" onClick={() => setInspOpen(false)}>×</button>
+          <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} />
+        </div>
       </div>
 
       <div className="ms-out">
@@ -559,6 +746,8 @@ export default function Designer(): React.JSX.Element {
             targetPath={targetPath}
             savingRunning={savingRunning}
             diff={diff}
+            differs={src.kind === "DIFFERS"}
+            targetConflict={copyTargetsRunning}
             runningStale={runningStale}
             blocked={result?.status !== 200}
             errors={errors.length}
@@ -607,15 +796,15 @@ export default function Designer(): React.JSX.Element {
           <label className="chk"><input type="radio" name="d-save-target" checked={saveMode === "copy" || !draft.runningPath} onChange={() => syncSaveMode("copy", copyPath)} /> copy</label>
           {(saveMode === "copy" || !draft.runningPath) ? (
             <Input extra="wb-bar-path" value={copyPath} aria-label="copy save path" placeholder="examples/my-mesh/mesh.yaml" onChange={(e) => syncSaveMode("copy", e.target.value)} />
-          ) : <span className="mono muted wb-bar-path" style={{ fontSize: 12 }}>{draft.runningPath}</span>}
+          ) : <span className="mono muted wb-bar-path tx-value">{draft.runningPath}</span>}
         </div>
         <div className="wb-bar-mid">
-          {draft.runningRaw && diff.length
-            ? <Button variant="linklike" onClick={() => setReviewOpen(!reviewOpen)}>{diff.length} difference{diff.length === 1 ? "" : "s"} — {reviewOpen ? "hide" : "review"}</Button>
-            : draft.runningRaw ? <span className="muted" style={{ fontSize: 12 }}>matches running</span> : null}
-          <span className="muted" style={{ fontSize: 12 }} role="status">{verdictState}{dirty ? " · unsaved" : ""}</span>
+          <SourceStateLine state={src} reviewOpen={reviewOpen} onToggleReview={() => setReviewOpen(!reviewOpen)} />
         </div>
         <div className="wb-bar-actions">
+          <Button variant="primary" aria-describedby="d-save-caveat" disabled={!targetPath || checking} onClick={() => void openReview()}>{saveLabel}</Button>
+          <span className="wb-bar-hint" id="d-save-caveat">writes mesh.yaml · restart to apply</span>
+          <span className="wb-bar-sep" aria-hidden="true" />
           <div className="ms-tpl">
             <Button variant="small" aria-expanded={tplOpen} onClick={() => setTplOpen(!tplOpen)}>template ▾</Button>
             {tplOpen ? (
@@ -630,8 +819,8 @@ export default function Designer(): React.JSX.Element {
           </div>
           <Button variant="small" disabled={!draft.runningPath} onClick={() => void loadRunningClick()}>reload running</Button>
           <Button variant="small" onClick={() => setImportOpen(!importOpen)}>import</Button>
+          <span className="wb-bar-sep" aria-hidden="true" />
           <Button variant="small" danger onClick={() => requestReplace("template", TEMPLATES[1].make())}>reset…</Button>
-          <Button variant="primary" disabled={!targetPath || checking} onClick={() => void openReview()}>{saveLabel}</Button>
         </div>
       </div>
     </div>

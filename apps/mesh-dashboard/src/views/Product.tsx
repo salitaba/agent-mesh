@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useMesh } from "../store";
-import { Button, Card, Chip, Input, Pill } from "../components";
+import { Button, Card, Chip, ErrorState, Input, Pill } from "../components";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 
 interface TreeEntry {
@@ -37,7 +37,7 @@ const fmtSize = (n: number): string =>
   n >= 1024 ? `${(n / 1024).toFixed(n >= 102400 ? 0 : 1)}kB` : `${n}B`;
 
 export default function Product(): React.JSX.Element {
-  const { toast } = useMesh();
+  const { toast, goalId } = useMesh();
   const [info, setInfo] = useState<any>(null);
   const [dir, setDir] = useState("");
   const [tree, setTree] = useState<TreeEntry[]>([]);
@@ -51,24 +51,53 @@ export default function Product(): React.JSX.Element {
   const [runTicker, setRunTicker] = useState(0);
   const [pg, setPg] = useState(false);
   const [pgErr, setPgErr] = useState(false);
+  // Every workspace fetch below used to swallow its error, so a missing or
+  // unreachable checkout rendered as branch "…", head "…", tree "…" forever —
+  // identical to a slow load. The workspace either answered or it did not.
+  const [wsErr, setWsErr] = useState<string | null>(null);
+  const [treeErr, setTreeErr] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const logRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
-    api("GET", "/workspace/info").then(({ json }) => setInfo(json)).catch(() => undefined);
+    // A new goal id means the mission was reset (or a fresh goal was opened):
+    // the old checkout is gone, so drop the stale preview and refetch disk.
+    setFile(null);
+    setFileDiff(null);
+    setHits(null);
+    setQ("");
+    setDir("");
+    setWsErr(null);
+    api("GET", "/workspace/info").then(({ json, timeout }) => {
+      if (timeout || !json || json.error) {
+        setWsErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
+        return;
+      }
+      setInfo(json);
+    }).catch((e: unknown) => setWsErr(e instanceof Error ? e.message : String(e)));
     api("GET", "/workspace/changes").then(({ json }) => {
       if (Array.isArray(json)) setChanges(json);
-    }).catch(() => undefined);
-  }, []);
+    }).catch(() => setChanges([]));
+  }, [goalId, attempt]);
 
   useEffect(() => {
     let dead = false;
-    api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`).then(({ json }) => {
-      if (!dead && Array.isArray(json)) setTree(json as TreeEntry[]);
-    }).catch(() => undefined);
+    setTreeErr(null);
+    api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`).then(({ json, timeout }) => {
+      if (dead) return;
+      if (Array.isArray(json)) {
+        setTree(json as TreeEntry[]);
+        return;
+      }
+      setTree([]);
+      setTreeErr(timeout ? "the request timed out." : String(json?.error ?? "this folder could not be listed."));
+    }).catch((e: unknown) => {
+      if (!dead) setTreeErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
-  }, [dir]);
+  }, [dir, goalId, attempt]);
 
   useEffect(() => {
     if (!run || run.done) return;
@@ -156,20 +185,24 @@ export default function Product(): React.JSX.Element {
 
   return (
     <div>
-      <div className="view-title"><h2>Product</h2><span className={`pill ${info?.gitClean === "true" ? "completed" : "waiting"}`}>{info?.gitBranch || "…"}</span><span className="page-actions"><Button variant="small" onClick={openPg}>{pg ? "close playground" : "open playground"}</Button></span></div>
+      <div className="view-title"><h2>Product</h2><span className={`pill ${wsErr ? "failed" : info?.gitClean === "true" ? "completed" : "waiting"}`}>{wsErr ? "no workspace" : info?.gitBranch || "…"}</span><span className="page-actions"><Button variant="small" onClick={openPg}>{pg ? "close playground" : "open playground"}</Button></span></div>
       <div className="view-sub">The codebase agents delivered — browse the files, build, test, run scenarios.</div>
       <Card style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-          <div className="kpi"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
-          <div className="kpi"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
-          <div className="kpi"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
-          <div className="kpi" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
-          <div style={{ flex: 1 }} />
-          <div className="chips">
-            {scripts.map((s) => <button key={s} className={`chip-toggle${!running ? " on" : ""}`} disabled={running} onClick={() => start(s)} title={RUN_LABELS[s]}>{RUN_LABELS[s].split(" — ")[0]}</button>)}
-            {running ? <button className="chip-toggle bad" onClick={kill}>kill</button> : null}
+        {wsErr ? (
+          <ErrorState what="the workspace" detail={wsErr} onRetry={() => setAttempt((n) => n + 1)} />
+        ) : (
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="kpi"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
+            <div className="kpi"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
+            <div className="kpi"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
+            <div className="kpi" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
+            <div style={{ flex: 1 }} />
+            <div className="chips">
+              {scripts.map((s) => <button key={s} className={`chip-toggle${!running ? " on" : ""}`} disabled={running} onClick={() => start(s)} title={RUN_LABELS[s]}>{RUN_LABELS[s].split(" — ")[0]}</button>)}
+              {running ? <button className="chip-toggle bad" onClick={kill}>kill</button> : null}
+            </div>
           </div>
-        </div>
+        )}
       </Card>
       {run ? (
         <Card
@@ -233,7 +266,7 @@ export default function Product(): React.JSX.Element {
                 <button key={e.path} className="ptree-row" onClick={() => (e.type === "dir" ? setDir(e.path) : openFile(e.path))}>
                   <span className="icon">{e.type === "dir" ? "▸" : "·"}</span><b>{e.name}</b>{e.type === "file" ? <span className="muted mono">{fmtSize(e.size)}</span> : null}
                 </button>
-              )) : <div className="muted" style={{ padding: 12 }}>empty directory</div>}</div>
+              )) : treeErr ? <ErrorState what={dir ? `the folder ${dir}` : "the workspace files"} detail={treeErr} onRetry={() => setAttempt((n) => n + 1)} /> : <div className="muted" style={{ padding: 12 }}>empty directory</div>}</div>
             </>
           )}
         </Card>

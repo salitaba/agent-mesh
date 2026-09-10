@@ -136,6 +136,10 @@ interface MeshState {
   setLivePaused: (b: boolean) => void;
   steps: TurnStep[];
   setSteps: (s: TurnStep[]) => void;
+  /** False until a /steps response has landed once. An empty `steps` array
+   *  means nothing on its own — every consumer used to render "no work yet"
+   *  during the very first fetch. */
+  stepsLoaded: boolean;
   streams: Record<string, StreamBuf>;
   stepLimit: number;
   setStepLimit: (n: number) => void;
@@ -182,6 +186,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   const [serverDown, setServerDown] = useState(false);
   const [livePaused, setLivePaused] = useState(false);
   const [steps, setStepsState] = useState<TurnStep[]>([]);
+  const [stepsLoaded, setStepsLoaded] = useState(false);
   const [streams, setStreams] = useState<Record<string, StreamBuf>>({});
   const [stepLimit, setStepLimit] = useState(60);
   const [stepFilter, setStepFilter] = useState("");
@@ -281,6 +286,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const setSteps = useCallback((s: TurnStep[]) => {
     setStepsState(s);
+    setStepsLoaded(true);
     stepsAt.current = Date.now();
   }, []);
 
@@ -291,6 +297,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
       const { json } = await api("GET", `/steps?limit=${stepLimit}`);
       if (Array.isArray(json)) {
         setStepsState(json);
+        setStepsLoaded(true);
         stepsAt.current = Date.now();
       }
     } catch {
@@ -470,11 +477,11 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   const value = useMemo<MeshState>(
     () => ({
       view, setView, status, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
-      steps, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
+      steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
       toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       streams, detail, openDetail, closeDetail,
     }),
-    [view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, streams, detail, openDetail, closeDetail],
+    [view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, streams, detail, openDetail, closeDetail],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

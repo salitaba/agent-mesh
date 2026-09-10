@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { dur, fmt, plainLifecycle, pillCls, RUNNING, HEALTH_CLS } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { agentColor, AgentAvatar, Card, rowKey } from "../components";
+import { agentColor, AgentAvatar, Card, ErrorState } from "../components";
 import { agentAction } from "../drawers";
 import { vitalsOf } from "../vitals";
 import { useTick } from "../observability";
@@ -23,9 +23,17 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
   const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, running: true, startedAt: step.startedAt }) : null;
   const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;
   return (
-    <div className={`card agent-card${v ? ` ${HEALTH_CLS[v.health]}` : ""}`} data-agent={a.id} role="button" tabIndex={0} onClick={onOpen} onKeyDown={rowKey(onOpen)}>
+    // The card used to be role="button" tabIndex={0} with a real <button> for
+    // wake inside it — nested interactive content, which is invalid HTML and
+    // leaves screen readers announcing one control that contains another. The
+    // card keeps its mouse affordance, but the keyboard entry point is now the
+    // agent name as a genuine button, a sibling of wake rather than its parent.
+    <div className={`card agent-card${v ? ` ${HEALTH_CLS[v.health]}` : ""}`} data-agent={a.id} onClick={onOpen}>
       <div className="agent-head"><AgentAvatar id={a.id} color={agentColor(a.role)} />
-        <div style={{ minWidth: 0 }}><b>{(a.id)}</b><div className="role">{(a.role)} · {(sub)}</div></div>
+        <div style={{ minWidth: 0 }}>
+          <button type="button" className="agent-open" onClick={(e) => { e.stopPropagation(); onOpen(); }}><b>{(a.id)}</b></button>
+          <div className="role">{(a.role)} · {(sub)}</div>
+        </div>
         <span className="row-actions"><button data-act="wake" data-id={a.id} title="Run one step now" onClick={(e) => { e.stopPropagation(); onWake(); }}>wake</button></span></div>
       <div className="agent-foot">
         <span className={`pill ${pillCls(a.lifecycle)}${run ? " running-pulse" : ""}`}>{(plainLifecycle(a.lifecycle))}</span>
@@ -42,7 +50,7 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
 }
 
 export default function Agents(): React.JSX.Element {
-  const { status, toast, openDetail, refreshStatus, steps, refreshSteps } = useMesh();
+  const { status, toast, openDetail, refreshStatus, steps, refreshSteps, serverDown } = useMesh();
   const st = status;
   // Live turns are what make the cards say anything useful, and they only
   // arrive with /steps — the agent list alone has no turn timing.
@@ -69,17 +77,27 @@ export default function Agents(): React.JSX.Element {
       </>
     ) : null;
 
-  if (!st) return <div className="empty"><div className="big">…</div><div>loading agents</div></div>;
+  // Three states, never conflated: the status poll has not answered yet, it
+  // answered and the mesh is genuinely quiet, or the server stopped answering.
+  // The old code showed "Everyone is idle" for all three — an all-clear the
+  // console had not verified.
+  if (!st) {
+    return serverDown
+      ? <ErrorState what="the agent list" detail="the mesh server stopped answering — it may be restarting." onRetry={() => void refreshStatus()} />
+      : <div className="empty"><div className="big">…</div><div>loading agents</div></div>;
+  }
   return (
     <>
       <div className="view-title"><h2>Agents</h2></div>
       <div className="view-sub">Who is working, stuck, or idle. <b>Wake</b> runs one step. Click a card for details.</div>
       {group("Needs you", attention)}
-      {working.length === 0 && attention.length === 0
+      {/* "Everyone is idle" only makes sense when there is someone to be idle:
+          with zero agents it used to stack on top of "No agents yet." */}
+      {all.length && working.length === 0 && attention.length === 0
         ? <Card><div className="empty"><div className="big">◉</div><div>Everyone is idle.</div><div className="muted">Wake someone or send a message to get going.</div></div></Card>
         : group("Working now", working)}
       {group("Idle & waiting", idle)}
-      {!all.length ? <Card><div className="empty"><div className="big">◉</div><div>No agents yet.</div></div></Card> : null}
+      {!all.length ? <Card><div className="empty"><div className="big">◉</div><div>No agents yet.</div><div className="muted">The mesh answered — this goal has no agents configured.</div></div></Card> : null}
     </>
   );
 }

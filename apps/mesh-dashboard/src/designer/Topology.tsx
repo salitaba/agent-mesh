@@ -1,6 +1,7 @@
 /* Topology canvas: SVG org-chart with drag-to-arrange, click-to-inspect,
- * wiring mode (click two agents to add a "may message" edge) and hover-to-cut
- * edges. All layout math happens here; the model only changes via callbacks. */
+ * connect mode (click two agents to add a "may message" edge) and
+ * click-to-select edge cutting (inline Cut or Delete/Backspace).
+ * All layout math happens here; the model only changes via callbacks. */
 
 import { useEffect, useRef, useState } from "react";
 import { CX, CY, H, NODE_R, W } from "./geom";
@@ -8,6 +9,8 @@ import { clamp, fmtNum, TEMPLATES } from "./model";
 import { saveLayout, draft } from "./storage";
 import { hueVar } from "./ui";
 import { Button } from "../components";
+import { register, unregister } from "../commands";
+import { useFocusMode } from "../shell";
 import type { Pos } from "./types";
 
 export interface TopologyProps {
@@ -34,21 +37,73 @@ export interface TopologyProps {
 
 export default function Topology(props: TopologyProps): React.JSX.Element {
   const { agents, ids, layout, setLayout, current, startup, meshId, hasError, links, onSelect, onWire, onCut, onBoot, onArrange, onTemplate, onAddAgent } = props;
+  const { focusMode, setFocusMode } = useFocusMode();
   const [wiring, setWiring] = useState(false);
   const [wireFrom, setWireFrom] = useState<string | null>(null);
   const [mouse, setMouse] = useState<Pos | null>(null);
+  const [selEdge, setSelEdge] = useState<{ src: string; tgt: string } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // Cutting unmounts the focused inline pill, so hand focus back to the canvas
+  // when it was inside it (keyboard flow); mouse cuts leave focus alone.
+  const refocusCanvas = () => {
+    if (svgRef.current?.contains(document.activeElement)) svgRef.current.focus();
+  };
+
+  // Edge selection is local and keyed by {src,tgt}. Drop it when the mode or
+  // inspected agent changes, and whenever the wire it points at disappears:
+  // onCut toggles, so a stale key would let Delete re-add a cut wire.
+  useEffect(() => {
+    setSelEdge(null);
+  }, [wiring, current]);
 
   useEffect(() => {
+    if (selEdge && !links.some((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)) setSelEdge(null);
+  }, [links, selEdge]);
+
+  // WS10: "Connect agents" in the shell palette lands here. Registered while
+  // the canvas is mounted, so the command disappears with the Designer and the
+  // existing tool hint (`.ms-tool-hint`) tells the user what to click next.
+  useEffect(() => {
+    register("designer-wire", [{
+      id: "designer.connect",
+      label: "Connect agents",
+      keywords: "wire link edge may message",
+      scope: "designer",
+      run: () => {
+        setWiring(true);
+        setWireFrom(null);
+        setSelEdge(null);
+      },
+    }]);
+    return () => unregister("designer-wire");
+  }, []);
+
+  useEffect(() => {
+    const isTypingTarget = (t: EventTarget | null): boolean => {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable;
+    };
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.key === "Escape") {
+        if (!wiring && !wireFrom && !selEdge) return;
+        e.preventDefault();
         setWiring(false);
         setWireFrom(null);
+        setSelEdge(null);
+        return;
       }
+      if (!selEdge || (e.key !== "Delete" && e.key !== "Backspace")) return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      refocusCanvas();
+      onCut(selEdge.src, selEdge.tgt);
+      setSelEdge(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [wiring, wireFrom, selEdge, onCut]);
 
   const svgPoint = (e: { clientX: number; clientY: number }): Pos => {
     const svg = svgRef.current;
@@ -67,6 +122,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
         setWireFrom(id); // chain: keep wiring from the node you just linked
       }
     } else {
+      setSelEdge(null);
       onSelect(id);
     }
   };
@@ -110,22 +166,35 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
     return { path: `M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`, mid: { x: 0.25 * sx + 0.5 * mx + 0.25 * ex, y: 0.25 * sy + 0.5 * my + 0.25 * ey } };
   };
 
+  // Paint the selected edge last: in dense graphs later edges' 18px hit strokes
+  // otherwise cover its line and inline Cut pill, making the pill unclickable.
+  const edgeOrder = selEdge && links.some((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)
+    ? [...links.filter((l) => l.src !== selEdge.src || l.tgt !== selEdge.tgt), ...links.filter((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)]
+    : links;
+
   return (
     <section className="card ms-canvas" aria-label="mesh topology">
       <div className="ms-tools">
+        <Button id="ms-focus-toggle" variant="small" extra={focusMode ? "focus-on" : undefined} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)} title="focus mode — hide the crew rail, inspector and output, and give the graph the view">
+          ⛶ focus
+        </Button>
         <Button variant="small" extra={wiring ? "wire-on" : undefined} aria-pressed={wiring} onClick={() => { setWiring(!wiring); setWireFrom(null); }}>
-          {wiring ? "✎ wiring — click two agents" : "✎ wire agents"}
+          {wiring ? "✎ connecting — click two agents" : "✎ connect"}
         </Button>
         <Button variant="small" onClick={onArrange} title="re-space everyone in a ring">⌾ arrange</Button>
         <span className="ms-tool-hint muted">
-          {wiring ? (wireFrom ? `linking FROM “${wireFrom}” — click a target (Esc cancels)` : "pick the sender first") : "drag to arrange · click to inspect · hover an arrow to cut it"}
+          {wiring
+            ? (wireFrom ? `linking FROM “${wireFrom}” — click a target (Esc cancels)` : "pick the sender first")
+            : selEdge
+              ? `wire ${selEdge.src} → ${selEdge.tgt} selected — Cut or press Delete`
+              : "drag to arrange · click to inspect · click an arrow to select and cut it"}
         </span>
         <span className="ms-canvas-count muted" aria-hidden="true">{ids.length} agent{ids.length === 1 ? "" : "s"}{links.length ? ` · ${links.length} wire${links.length === 1 ? "" : "s"}` : ""}</span>
       </div>
-      <svg ref={svgRef} className={`ms-svg${wiring ? " wiring" : ""}`} viewBox={`0 0 ${W} ${H}`} role="application"
+      <svg ref={svgRef} className={`ms-svg${wiring ? " wiring" : ""}`} viewBox={`0 0 ${W} ${H}`} role="application" tabIndex={-1}
         aria-label="mesh topology: agents and who may message whom"
         onPointerMove={(e) => { if (wireFrom) setMouse(svgPoint(e.nativeEvent)); }}
-        onPointerDown={() => { if (wiring) setWireFrom(null); }}>
+        onPointerDown={() => { if (wiring) setWireFrom(null); else setSelEdge(null); }}>
         <defs>
           <pattern id="ms-dots" width="26" height="26" patternUnits="userSpaceOnUse">
             <circle cx="1.5" cy="1.5" r="1" fill="var(--line)" opacity="0.55" />
@@ -135,22 +204,35 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
           </marker>
         </defs>
         <rect x="0" y="0" width={W} height={H} fill="url(#ms-dots)" />
-        {links.map(({ src, tgt }) => {
+        {edgeOrder.map(({ src, tgt }) => {
           const a = layout[src];
           const b = layout[tgt];
           if (!a || !b) return null;
           const paired = links.some((l) => l.src === tgt && l.tgt === src);
           const g = edgeGeom(a, b, paired);
+          const isSel = selEdge?.src === src && selEdge?.tgt === tgt;
+          const related = !current || src === current || tgt === current;
+          const toggleSel = () => setSelEdge(isSel ? null : { src, tgt });
+          const cut = () => { refocusCanvas(); onCut(src, tgt); setSelEdge(null); };
           return (
-            <g key={`${src}→${tgt}`} className="tedge">
-              <title>{`${src} may message ${tgt} — click × to cut`}</title>
-              <path className="tedge-hit" d={g.path} />
+            <g key={`${src}→${tgt}`} className={`tedge${isSel ? " sel" : ""}${related ? "" : " dim"}`}>
+              <title>{`${src} may message ${tgt} — click to select, Delete to cut`}</title>
+              <path className="tedge-hit" d={g.path} tabIndex={0} role="button" aria-selected={isSel} aria-pressed={isSel}
+                aria-label={`wire ${src} may message ${tgt}`}
+                onPointerDown={(e) => { if (!wiring) e.stopPropagation(); }}
+                onClick={(e) => { e.stopPropagation(); if (!wiring) toggleSel(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!wiring) toggleSel(); } }} />
               <path className={`tedge-line${paired ? " paired" : ""}`} d={g.path} markerEnd="url(#ms-ar)" />
-              <g className="edel" transform={`translate(${g.mid.x} ${g.mid.y})`} onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => { e.stopPropagation(); onCut(src, tgt); }} role="button" tabIndex={-1} aria-label={`cut wire ${src} to ${tgt}`}>
-                <circle r="8" />
-                <text y="3.5">×</text>
-              </g>
+              {isSel ? (
+                <g className="ecut" transform={`translate(${g.mid.x} ${g.mid.y})`}
+                  role="button" tabIndex={0} aria-label={`cut wire ${src} to ${tgt}`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); cut(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); cut(); } }}>
+                  <rect x={-31} y={-11} width={62} height={22} rx={11} />
+                  <text y="4">Cut wire</text>
+                </g>
+              ) : null}
             </g>
           );
         })}
@@ -162,9 +244,11 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
           const fromNode = id === wireFrom;
           const boot = startup.has(id);
           const err = hasError(id);
+          const neighbor = current !== null && links.some((l) => (l.src === current && l.tgt === id) || (l.tgt === current && l.src === id));
+          const dim = current !== null && !sel && !neighbor;
           return (
             <g key={id} style={hueVar(id)}
-              className={`tnode${sel ? " sel" : ""}${ag.mode === "service" ? " svc" : ""}${err ? " err" : ""}${fromNode ? " from" : ""}`}
+              className={`tnode${sel ? " sel" : ""}${ag.mode === "service" ? " svc" : ""}${err ? " err" : ""}${fromNode ? " from" : ""}${dim ? " dim" : ""}`}
               transform={`translate(${p.x} ${p.y})`} onPointerDown={(e) => nodeDown(e, id)}
               tabIndex={0} role="button" aria-label={`${id}, ${ag.role || "no role"}${boot ? ", boots at startup" : ""}`}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nodeClick(id); } }}>

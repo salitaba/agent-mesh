@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmt, pillCls, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING } from "../format";
 import { useMesh } from "../store";
-import { Button, Card, Chip, EventRow, Pill, StepMini } from "../components";
+import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
 import { ArtifactDrawer, EventDrawerBySeq, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
 
@@ -39,7 +39,7 @@ function artOfUri(arts: any[], uri: unknown): any | null {
 }
 
 /* cargo manifest: everything the team produced, clickable to read. */
-function Delivered({ goal, arts, openArt }: { goal: any; arts: any[]; openArt: (a: any) => void }): React.JSX.Element | null {
+function Delivered({ goal, arts, artsLoaded, openArt }: { goal: any; arts: any[]; artsLoaded: boolean; openArt: (a: any) => void }): React.JSX.Element | null {
   if (goal.status !== "COMPLETED") return null;
   const mandatory = (goal.acceptanceCriteria || []).filter((c: any) => c.mandatory);
   const ran = dur(Date.parse(goal.completedAt) - Date.parse(goal.createdAt));
@@ -86,7 +86,7 @@ function Delivered({ goal, arts, openArt }: { goal: any; arts: any[]; openArt: (
             <span className="mono path">{shortRef(a.contentRef)}</span>
           </button>
         ))}
-        {!files.length ? <div className="muted">No files recorded for this goal.</div> : null}
+        {!files.length ? <div className="muted">{artsLoaded ? "No files recorded for this goal." : "loading the manifest…"}</div> : null}
       </div>
       {ws ? <div className="deliver-foot muted">Delivered into <span className="mono">{ws}</span></div> : null}
     </div>
@@ -94,9 +94,10 @@ function Delivered({ goal, arts, openArt }: { goal: any; arts: any[]; openArt: (
 }
 
 export default function Overview(): React.JSX.Element {
-  const { status, events, steps, setSteps, setView, openDrawer, goalId } = useMesh();
+  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus } = useMesh();
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
+  const [artsLoaded, setArtsLoaded] = useState(false);
   const { busy: bootBusy, goLive: doBoot } = useGoLive();
   const { busy: resetBusy, resetMission } = useResetMission();
   const { busy: reopenBusy, reopenMission } = useReopenMission();
@@ -112,14 +113,23 @@ export default function Overview(): React.JSX.Element {
       if (dead) return;
       setMetrics(m);
       if (Array.isArray((stepsRes as any).json)) setSteps((stepsRes as any).json);
-      if (Array.isArray((artsRes as any).json)) setArts((artsRes as any).json);
+      if (Array.isArray((artsRes as any).json)) {
+        setArts((artsRes as any).json);
+        setArtsLoaded(true);
+      }
     })().catch(() => undefined);
     return () => {
       dead = true;
     };
   }, [setSteps]);
 
-  if (!status) return <div className="empty"><div className="big">…</div><div>loading overview</div></div>;
+  // A permanent "loading overview" is what an operator saw when the server was
+  // down, because nothing here ever distinguished slow from gone.
+  if (!status) {
+    return serverDown
+      ? <ErrorState what="the overview" detail="the mesh server stopped answering — it may be restarting." onRetry={() => void refreshStatus()} />
+      : <div className="empty"><div className="big">…</div><div>loading overview</div></div>;
+  }
   const st = status;
   const goal = st.goal || {};
   const crit = goal.acceptanceCriteria || [];
@@ -173,7 +183,7 @@ export default function Overview(): React.JSX.Element {
       ) : active.length === 0 && waiting.length === 0 && goal.status === "ACTIVE" ? (
         <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>All quiet. Wake an agent or send a message to get going.</div></div>
       ) : null}
-      <Delivered goal={goal} arts={goalArts} openArt={openArt} />
+      <Delivered goal={goal} arts={goalArts} artsLoaded={artsLoaded} openArt={openArt} />
       <div className="grid kpis">
         <Card variant="kpi"><small>Goal progress</small><b>{pct}%</b><div className="progress"><div style={{ transform: `scaleX(${pct / 100})` }} /></div><div className="delta">{done} of {mandatory.length} checks done</div></Card>
         <Card variant="kpi"><small>Working now</small><b>{active.length}</b><div className="delta">{waiting.length} waiting · {sched.pending ?? 0} queued</div></Card>
@@ -184,20 +194,20 @@ export default function Overview(): React.JSX.Element {
         title={<>Latest work {runningSteps.length ? <Pill tone="awakened" pulse>{runningSteps.length} working now</Pill> : null}</>}
         actions={<Button variant="small" onClick={() => setView("steps")}>All steps</Button>}
       >
-        <div className="steps-mini">{(steps || []).slice(0, 5).map((s: any) => <StepMini key={s.turnId} s={s} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />) || <div className="muted">No work yet — wake an agent or start the mission.</div>}</div>
+        <div className="steps-mini">{(steps || []).length ? (steps || []).slice(0, 5).map((s: any) => <StepMini key={s.turnId} s={s} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />) : stepsLoaded ? <div className="muted">No work yet — wake an agent or start the mission.</div> : <div className="muted">loading recent work…</div>}</div>
       </Card>
       <div className="grid two" style={{ marginTop: 12 }}>
         <Card title="Goal">
           <p style={{ margin: "0 0 10px", maxWidth: "70ch" }}>{((goal.description || "").replace(/\n+/g, " "))}</p>
-          <div>{crit.map((c: any) => (
+          <div>{crit.length ? crit.map((c: any) => (
             // ASSERTED must read differently from both "done" and "to do": an
             // agent claimed it without checking anything, and the operator is
             // the one who needs to know that a claim is standing unproven.
             <div key={c.id} className={`crit ${c.status}`}><span className="icon">{c.status === "EVIDENCED" ? "✔" : c.status === "WAIVED" ? "◌" : c.status === "ASSERTED" ? "!" : "○"}</span><div className="desc"><b>{(c.id)}</b> <span className="muted">· {c.status === "EVIDENCED" ? "done" : c.status === "WAIVED" ? "skipped" : c.status === "ASSERTED" ? "claimed, not verified" : "to do"}</span>{c.mandatory ? null : <Chip>optional</Chip>}<small>{(c.description)}</small></div></div>
-          )) || <div className="muted">no checks declared</div>}</div>
+          )) : <div className="muted">no checks declared</div>}</div>
         </Card>
         <Card title="Just happened" actions={<Button variant="small" onClick={() => setView("events")}>All events</Button>}>
-          <div className="ev-list">{events.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDrawer(<EventDrawerBySeq seq={s} />)} />) || <div className="muted">Waiting for events…</div>}</div>
+          <div className="ev-list">{events.length ? events.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDrawer(<EventDrawerBySeq seq={s} />)} />) : <div className="muted">Waiting for events…</div>}</div>
         </Card>
       </div>
     </div>

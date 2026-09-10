@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, post } from "../api";
 import { ago, fmt, fmtBudget, roundNice } from "../format";
 import { useMesh } from "../store";
-import { Button, Card, Input } from "../components";
+import { Button, Card, ErrorState, Input } from "../components";
 import { AgentDrawer } from "../drawers";
 import { MeshMark } from "./Overview";
 import { isParkedStatus, useGoLive } from "../actions";
@@ -300,22 +300,37 @@ export default function Escalations(): React.JSX.Element {
     const { json } = await api("GET", "/escalations");
     setList(json || []);
   };
+  // The swallowed catch here told the operator "no escalations — the mesh is
+  // converging on its own" whenever the fetch failed. That is the one screen
+  // where a false all-clear costs the most: it is the queue of things that
+  // are blocking the mission on a human answer.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let dead = false;
+    setLoadErr(null);
     (async () => {
-      const [{ json }, stRes] = await Promise.all([
+      const [{ json, timeout }, stRes] = await Promise.all([
         api("GET", "/escalations"),
         api("GET", "/status").catch(() => ({ json: null })),
       ]);
       if (dead) return;
+      if (timeout || (json && json.error)) {
+        setLoadErr(timeout ? "the request timed out — the server may be busy." : String(json.error));
+        return;
+      }
       setList(json || []);
+      setLoaded(true);
       if (stRes.json) await refreshStatus();
-    })().catch(() => undefined);
+    })().catch((e: unknown) => {
+      if (!dead) setLoadErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   const openList = list.filter((e) => e.status === "OPEN");
   const [msgs, setMsgs] = useState<Map<string, any>>(new Map());
@@ -481,7 +496,9 @@ export default function Escalations(): React.JSX.Element {
 
   return (
     <>
-      <div className="view-title"><h2>Waiting on you ({openStuck.length})</h2><span className="muted">{openStuck.length ? "answer one — work restarts by itself" : "all clear"}</span></div>
+      {/* "all clear" is a verdict, so it may only be said once the queue has
+          actually been read. Pre-fetch and post-failure it must not appear. */}
+      <div className="view-title"><h2>Waiting on you{loaded ? ` (${openStuck.length})` : ""}</h2><span className="muted">{openStuck.length ? "answer one — work restarts by itself" : loadErr ? "queue unavailable" : !loaded ? "checking…" : "all clear"}</span></div>
       <div className="view-sub">Each card is one missing answer. Press Send — no second button, no Continue needed.</div>
       {openStuck.length ? openStuck.slice().reverse().map((e) => (
         <EscCard
@@ -506,7 +523,9 @@ export default function Escalations(): React.JSX.Element {
           ))}
         </>
       ) : null}
-      {!list.length ? <Card><div className="empty"><div className="big">⚑</div><div>no escalations — the mesh is converging on its own.<br /><span className="muted">Escalations appear on budget exhaustion, stalemate (deadlock detector), runtime failure, or an agent asking via <code>mesh_escalate</code>.</span></div></div></Card> : null}
+      {!list.length && loadErr ? <Card><ErrorState what="the decision queue" detail={`${loadErr} There may be decisions waiting that this list cannot show.`} onRetry={() => setAttempt((n) => n + 1)} /></Card> : null}
+      {!list.length && !loadErr && !loaded ? <Card><div className="empty"><div className="big">…</div><div>loading decisions</div></div></Card> : null}
+      {!list.length && !loadErr && loaded ? <Card><div className="empty"><div className="big">⚑</div><div>no escalations — the mesh is converging on its own.<br /><span className="muted">Escalations appear on budget exhaustion, stalemate (deadlock detector), runtime failure, or an agent asking via <code>mesh_escalate</code>.</span></div></div></Card> : null}
       {resolved.length ? (
         <details className="esc-raw"><summary>Done ({resolved.length})</summary>
           {resolved.slice().reverse().slice(0, 10).map((e) => (

@@ -1,0 +1,471 @@
+# Designer Page UX/IA Plan — designer-page-ux (reviewed)
+
+Baseline: `398331d37b4e51cb8a056008b4cb4f214503ad2e` (WORKING TREE IS DIRTY — 24 modified
+files incl. `apps/mesh-dashboard/src/**`. All facts verified against the working tree at
+that SHA. Re-verify if those changes are committed or rebased.)
+Input spec: `spec/designer-page-review.md` (25-point senior design review).
+Review panel: 5 lenses (UX, UI, React, SOLID/smells, abstraction) run against the draft;
+findings verified and folded in (§7 ownership, §9 key routing, §12 checks).
+
+User decisions at checkpoint 1:
+- Include P0–P3, including the two new features (focus mode, command palette).
+- Include shared-shell fixes, not Designer-only.
+- Source-of-truth = explicit LOCAL/RUNNING state indicator, no revision numbers,
+  no server/API changes.
+
+## 1. Change Summary
+
+Restructure the Designer page and shared shell to answer five questions within ~2 seconds:
+what am I building, is it running, is it valid, what needs my attention, and what happens
+when I press the primary button. Information architecture + interaction discoverability
+change only: no server, persistence, protocol, or event-log changes. All existing actions,
+hotkeys, draft persistence, and save semantics are preserved.
+
+## 2. Scope
+
+In scope:
+- Shared shell: top-bar status/action separation, needs-you prominence, decide label,
+  sidebar section/hotkey presentation (review points 2, 3, 10, 11, 12, 13, 19).
+- Designer: header/state summary, draft-vs-runtime indicator, bottom action hierarchy,
+  graph affordances, inspector disclosure, permission grouping, visual flattening,
+  typography, responsive layout, focus mode, command palette (points 1, 4–9, 14–18, 20–24).
+- Light and dark themes both remain supported (`isLight`/`toggleTheme`, shell.tsx:114-120,
+  render site :266).
+
+Out of scope (deferred non-goals):
+- Revision numbers/version history (user decision; no server support).
+- Hot-apply of saved config to a running mesh: save stays a file write; restart-to-apply
+  is made explicit instead.
+- Automated UI/component test harness (none exists; §12).
+- Backend/API changes of any kind; new UI/runtime dependencies.
+
+## 3. Requirements
+
+| ID | Requirement | Review pts |
+|---|---|---|
+| REQ-DSG-001 | Designer header states task, workspace/mesh, and state (agents/wires/validity) at a glance, with ONE canonical state line. | 1, 2 |
+| REQ-DSG-002 | Top bar separates runtime telemetry from workspace controls; statuses grouped (system, agents, human action); distinct from the existing `.status-strip` banner component. | 2, 10 |
+| REQ-DSG-003 | Sidebar grouping (Run/Inspect/Build, shell.tsx:13-29) stays; numbers are presented as keyboard shortcuts via the existing `<kbd>` chip, never as step numbers. | 3, 11 |
+| REQ-DSG-004 | Draft vs runtime is an explicit state (matches/differs/restored/copy-saved), with keep/discard actions; copy distinguishes the running FILE from the live process. | 9, 17 |
+| REQ-DSG-005 | Graph interactions are discoverable; edge deletion is explicit selection + action + Delete, with input guards; selected node highlights its paths and dims unrelated ones. | 4, 5, 20 |
+| REQ-DSG-006 | Inspector uses progressive disclosure: grouped collapsible sections; permissions grouped from the canonical CAPS list with counts. | 6, 7 |
+| REQ-DSG-007 | Bottom bar separates environment state from actions; one primary action (save); destructive actions separated and confirmed; save copy states restart-to-apply. | 8, 18 |
+| REQ-DSG-008 | "Needs you" is visually dominant when non-zero and has ONE canonical destination (the escalations view); advisory vs blocking copy is unambiguous. | 12, 13 |
+| REQ-DSG-009 | Nested-container borders are reduced using light-safe tokens; typography has concrete token tiers (page/section/label/value/metadata). | 14, 15 |
+| REQ-DSG-010 | Layout adapts on the EXISTING breakpoint scale (1240 Designer / 800 shell); crew rail and inspector become CSS disclosure/drawers, not columns. | 23 |
+| REQ-DSG-011 | Microcopy: `CREW · N agents`, `Permissions · N enabled`, suggestions vs decisions. | 24, 13 |
+| REQ-DSG-012 | Graph focus mode: graph ≥70% of `#view`, verdict chip still visible, Esc exits, prior selection/panel state preserved (CSS hide, not unmount). | 21 |
+| REQ-DSG-013 | Command palette (⌘K/Ctrl+K): global navigation + Designer-scoped commands registered while Designer is mounted; keyboard-only; no key conflicts. | 22 |
+
+## 4. Invariants
+
+- INV-DSG-001: Every existing action remains reachable: save/reload/import/reset/template/copy,
+  rename/duplicate/delete/boot, wire/cut, pause/resume/message/decide (shell.tsx:287-300,
+  Designer.tsx:604-636, CrewPanel.tsx:107-123, Topology.tsx:116-153). This includes
+  ApprovalDrawer (sole call site shell.tsx:299) — do not orphan it.
+- INV-DSG-002: Number-key view shortcuts keep working (`viewKey`, shell.tsx:30,260).
+- INV-DSG-003: Save semantics unchanged: `POST /config/save` writes the YAML file only
+  (apps/mesh-server/src/index.ts:1136 `fs.writeFileSync`); running/copy target modes and
+  the staleness check (Designer.tsx:433-436) preserved.
+- INV-DSG-004: Draft storage key `mesh-designer-draft-v2` and payload shape stay backward
+  compatible (storage.ts:21-55); adding fields is allowed, renaming is not.
+- INV-DSG-005: Validation flow unchanged (`POST /config/validate`, Designer.tsx:62-66).
+- INV-DSG-006: A11y not regressed: roles/labels/aria and keyboard reachability preserved or
+  improved (Topology.tsx:125,150,180).
+- INV-DSG-007: No new runtime dependencies; both themes still render.
+- INV-DSG-008: No changes outside `apps/mesh-dashboard/src/**` (except the plan/spec files).
+
+## 5. Current System (verified facts)
+
+Shell:
+- `Shell` renders sidebar (shell.tsx:247-269), topbar (:271-301), main view (:303+).
+- Topbar: goal strip + live dot/label + goal text + checks (:273-280); stats spent/working/
+  need you (:281-285); actions pause/resume (:288-297), message (:298), `✓ decide` (:299,
+  opens ApprovalDrawer).
+- Main keydown handler (numbers, Esc, `/`, `p`/`r`/`t`/`?`) at shell.tsx:121-151, bubble
+  phase; Tab trap :212-242; drawer/detail Esc handling :132-135; `NARROW` = max-width 800
+  (:48).
+- Sidebar NAV sections Run/Inspect/Build (shell.tsx:13-29); numbers are hotkeys
+  `viewKey = KEY_VIEWS.indexOf(v)+1` (:30) rendered as `.kbd` (:260), plus the escalations
+  badge also on `.kbd` (:259, styles.css:116-117). Help already lists keys 1..9
+  (shell.tsx:69-74). `<kbd>` chip style exists at styles.css:824.
+- `.status-strip` is an existing banner component (styles.css:177-184) used as a callout
+  across views (Overview.tsx:173-184, Artifacts.tsx:99, Cost.tsx:68, drawers.tsx:68) —
+  NOT a topbar element; do not reuse the name.
+- Generic modal/drawer stack is shell state (`openDrawer`/depth, shell.tsx:313-321);
+  `drawers.tsx` contains concrete drawer contents (ApprovalDrawer :88) with right-side
+  fixed 560px styling (styles.css:591-596).
+
+Designer:
+- Root `Designer` (designer/Designer.tsx:34; re-export views/Designer.tsx). Local actions:
+  validate :62, Esc for template menu :164, `setCurrent` :243, `addAgent` :271, `toggleWire`
+  :349 (pushes undo :354).
+- Header `ms-head` (:477-492): h2 "Designer"; target pills (:480-484), unsaved/saved (:485),
+  verdict pill (:486); subtitle "Editing <path> … restart to pick changes up." (:488-491).
+- Restored draft banner `replace-bar` (:506-514, ephemeral `restoredAt` state :57);
+  discard-confirm banner (:515-523).
+- Body `ms-body` (:525-554): CrewRail, Topology, Inspector; `ms-out` (:556-601):
+  ReviewCard, SavedCard, ImportCard, CheckSection, YamlCard.
+- Sticky `wb-bar` (:604-636): running/copy radios + path (:605-611); diff link /
+  "matches running" + verdict (:612-617); template/reload/import/reset/save (:618-635).
+  `saveLabel` (:462); `verdictState` (:461).
+- Draft/runtime: singleton + localStorage `mesh-designer-draft-v2` (storage.ts:21-55);
+  runtime from `GET /config` (:121); `dirty` (:172); `diff = useMemo(summarizeDiff, [curJson])`
+  (:175, deps deliberately suppressed; `summarizeDiff` model.ts:163); `doSave` mutates
+  `draft.runningRaw` on running-target save (:446) so that memo goes stale; copy saves do
+  not update `runningRaw`.
+- Verdict currently renders up to four times: header pill (:486), wb-bar-mid (:616),
+  CheckSection (chrome.tsx:80-100), HealthStrip tiles (chrome.tsx:24-46, rendered :494).
+- Graph `Topology` (Topology.tsx:35): wiring state local `useState` (:37); Esc cancel :44;
+  tools (:115-124) with wire mode (:116-118 aria-pressed), arrange (:119), persistent hint
+  (:121), counts (:123); edges (:138-156): hit path (:147), hover `×` delete (:149-153,
+  `tabIndex={-1}`), `onCut`; nodes (:158-187), `.sel` (:167), boot toggle (:177-182).
+- Inspector (Inspector.tsx:16-29); CrewPanel fields (:126-161), `CAN DO (N)` (:153), chips
+  (:154-161), bulk edit (:162-165), comms (:174-204), budget (:207-223), `<details>` (:225-245);
+  canonical capability list `CAPS` in model.ts:7 (includes `git.*`, `shell.execute`,
+  `network.request`); CrewRail "CREW" label :19.
+- Styling: `styles.css` tokens (:2-54), light nested fills `--panel-2`/`--sunken` (:75),
+  card (:199), app grid (:96), breakpoints 1100 for `.grid.two` (:197), 800 (:831);
+  `designer.css` 3-col body (:45) collapsing at 1240 (:46), nested bordered boxes
+  (:169-177, 193-195), sticky bar (:208), 800 rules (:233). Inline `fontSize` uses in
+  touched files: Designer.tsx:610,615,616; chrome.tsx:120,124,126,187; CrewPanel.tsx:115,194,222;
+  PolicyPanel.tsx:43,72,76,93.
+
+Verification harness: root + dashboard typecheck (package.json:24), eslint (:25), build
+(:14-15); `tests/integration/bus-api.test.ts:127,179` serves `apps/mesh-dashboard/dist`;
+no component/UI test framework exists.
+
+## 6. Impact Analysis
+
+- Affected: `apps/mesh-dashboard/src/**` only. Shared shell changes affect every view —
+  regression-sensitive; phase order and the §12 checklist mitigate.
+- Unaffected: server, packages, protocol/schemas, event log, persistence, CLI.
+- No API, DB, migration, or messaging surface.
+- Observability: N/A (client SPA); existing toasts/banners remain the feedback channel.
+- Security: N/A in a new sense — no new network surface, no secrets; palette exposes only
+  existing client actions; destructive actions keep confirm (reset) or undo (wire cut).
+- Behaviour preserved: INV-DSG-001..008.
+
+## 7. Proposed Design (workstreams)
+
+Design decisions:
+- DES-DSG-001: No revisions; SourceState derives from existing `dirty`/`diff`/`runningRaw`
+  (user decision).
+- DES-DSG-002: Save stays file-write; copy says so. Do NOT label "Apply changes"
+  (verified false, server index.ts:1136). Primary label "Save mesh" / "Save running config"
+  / "Save copy" with persistent "writes mesh.yaml · restart to apply".
+- DES-DSG-003: Shell included (user decision).
+- DES-DSG-004: Hotkey numbers are restyled with the existing `<kbd>` chip, never removed
+  (INV-DSG-002).
+- DES-DSG-005: Edge cut = click-to-select edge + explicit Cut + Delete key, with input
+  guards; no modal confirm because cut is undoable (Designer.tsx:354). Hover-only `×`
+  removed.
+- DES-DSG-006: Focus mode hides Designer-owned regions with CSS (no unmount) and asks shell
+  to collapse the sidebar through one boolean seam; verdict stays visible.
+- DES-DSG-007: Responsive uses the EXISTING breakpoint scale (1240 Designer / 800 shell);
+  crew rail = CSS disclosure; inspector = scoped right drawer variant. The global modal
+  drawer stack (shell.tsx:313-321, focus trap + scrim) is NOT reused for persistent rails.
+- DES-DSG-008: Command palette = global navigation commands + Designer-scoped commands
+  registered while mounted via a small `src/commands.ts` registry. This is the one new
+  seam; it is flagged for explicit user permission at checkpoint 2 (panel finding).
+
+WS1 — Shell status strip and action hierarchy (REQ-002, 008; pts 2,10,12,13,19)
+- Restructure topbar (shell.tsx:271-301): identity (goal/title + live state) and a compact
+  telemetry strip with categories: system (`goal.status`, :93), agents (`active`, :96),
+  decisions (`escOpen`, :97); spent stays secondary. Namespaced classes (e.g. `.bar-strip`)
+  — do not touch `.status-strip`.
+- Geometry: topbar is a fixed 56px row, no desktop wrap; specify truncation for
+  `#top-goal` (34vw cap, :154) and a length budget for action labels; define 800–1200 behavior.
+- ONE canonical needs-you destination: the escalations view (`setView("escalations")`, as
+  Overview.tsx:176 already does). Relabel `✓ decide` to `Review decisions · N` navigating
+  there; keep ApprovalDrawer reachable (it has distinct approve/reject scope, sole call
+  site shell.tsx:299) — expose it from the escalations view or keep it as a secondary
+  affordance with distinct "approvals" wording.
+- Advisory copy (AdvisoryList, chrome.tsx:53-68): "N suggestions" vs "Decision required".
+
+WS2 — Sidebar clarity and hotkey presentation (REQ-003; pts 3,11)
+- Keep Run/Inspect/Build section headers; no sticky change (sidebar is a non-scrolling flex
+  column, styles.css:99 — sticky is a no-op).
+- Restyle hotkey numbers using the existing `<kbd>` look (styles.css:824); scope selectors
+  to `.tab .kbd:not(.esc-kbd)` so the escalations badge (styles.css:116-117) keeps its pill.
+  Help already lists 1..9 (shell.tsx:69-74) — no change needed there.
+- Vocabulary: nav says "Agents"; CrewRail keeps "CREW" but renders `CREW · N agents`
+  (CrewRail.tsx:19).
+
+WS3 — Designer header and source-of-truth state (REQ-001, 004; pts 1,9,17)
+- Rebuild `ms-head` (:477-492): "Mesh Designer" + workspace line (mesh name/goal/id) +
+  ONE canonical state line (`N agents · M wires · verdict` from `ids`/`links`/`verdictState`).
+  Remove/absorb the verdict and pills it supersedes (also trim HealthStrip tiles :24-46 and
+  wb-bar-mid divergence :612-617), so verdict stops rendering four times — detail remains in
+  CheckSection on demand.
+- Add a pure selector `sourceState()` in model.ts beside `summarizeDiff`: inputs `dirty`,
+  `diff`, `runningRaw`, `saveMode`, `restoredAt`; outputs states NEW / MATCHES_RUNNING_FILE /
+  DIFFERS (N) / RESTORED_DRAFT / COPY_SAVED. Do not conflate `dirty` (vs baseline, reset on
+  save/restore, :149,375,449) with differs-from-running.
+- Fix the stale memo: `diff = useMemo(..., [curJson])` (:175) does not recompute when
+  `doSave` mutates `draft.runningRaw` (:446). Introduce an explicit running-revision counter
+  (bumped on save/load) as a dependency, or compute diff without memo.
+- Copy must distinguish running FILE from live PROCESS: "matches the saved running config —
+  restart the mesh to apply" (restart-to-apply verified :488-491); copy-mode saves show
+  "saved copy at … · runtime unchanged", not "differences".
+- Replace the `replace-bar` restored banner (:506-514) with the SourceState presentation
+  (Keep draft / Discard / replace, reusing `loadRunningClick`, `setRestoredAt`,
+  `confirmReplace`); `restoredAt` is ephemeral (:57) — keep explicit dismiss semantics.
+
+WS4 — Bottom bar and action hierarchy (REQ-007; pts 8,18)
+- WS4 owns the ACTION zone of `wb-bar` (:618-635) and consumes SourceState as props; WS3
+  owns the state zone/`wb-bar-mid`. Explicit prop boundary, no shared state mutation.
+- One primary button (save, `variant="primary"`); secondary reload/import/template ghost/
+  small; destructive reset separated + existing confirm (`requestReplace` :633).
+- Update `saveLabel` (:462) and subtitle copy (:488-491) per DES-DSG-002; state restart-to-
+  apply next to the primary action.
+
+WS5 — Graph interaction model (REQ-005; pts 4,5,20)
+- Keep direct manipulation + wire mode; rename the tool to "connect" with clear on/off
+  (aria-pressed exists :116).
+- Replace hover `×` (:149-153) with edge selection: click the hit path (:147) selects an
+  edge, shows inline "Cut wire" action + highlight. Selection state stays LOCAL to Topology
+  (no Designer lifting — nothing outside needs it); key it by `{src,tgt}` (never an index
+  into `links`, which is rebuilt each render); clear on `wiring`/`current` change.
+- Delete/Backspace cuts the selected edge; the key handler MUST ignore
+  input/textarea/select/contenteditable targets (rename dialog CrewPanel.tsx:114, bulk
+  textareas :164,:186, copy-path input Designer.tsx:609) or Backspace while typing cuts
+  a wire.
+- Keyboard reachability: expose Cut on a focusable target or via the inspector when an edge
+  is selected; `aria-selected` on the selected edge; do not strand keyboard users.
+- Selection focus: when `current` set (:167), highlight incident edges and dim unrelated
+  edges/nodes (both directions from `links`).
+- Keep ONE persistent affordance line (drag/inspect/edge-select) — replacing the hint
+  (:121) with tooltips-only regresses discoverability; arrange (:119), boot (:177-182),
+  counts (:123), keyboard node activation (:170) unchanged.
+
+WS6 — Inspector disclosure and permissions (REQ-006, 011; pts 6,7,24)
+- CrewPanel groups: General / Behavior / Permissions / Communication / Budget / Advanced
+  (existing `<details>` :225-245), collapsible; Permissions collapsed by default showing
+  "Permissions · N enabled" (replacing `CAN DO (N)` :153).
+- Capability grouping: explicit map for known `CAPS` (model.ts:7, incl. `git.*`,
+  `shell.execute`, `network.request`; `code.review` belongs with Review) with prefix
+  fallback → "other"; derive from CAPS order so there is ONE source of truth. Keep
+  ChipPick/CustomChips/CommaAdder behaviour (:154-161).
+- Keep MeshPanel/PolicyPanel structure; align labels with WS7 tiers.
+- CrewRail: `CREW · N agents` (CrewRail.tsx:19).
+
+WS7 — Visual system: borders and typography (REQ-009; pts 14,15)
+- Flatten nesting only in designer.css selectors with named boxes (`.save-review` :193,
+  `.save-done` :195, `.ms-trule` :169, `.gate-card` :170, `.rename-box` :177); use the
+  light-safe levels `--panel-2`/`--sunken` (styles.css:75) plus spacing for grouping; keep
+  `--line` hairlines where levels collapse. `.card` (styles.css:199) stays for top-level
+  regions and is shared app-wide — do not change its global definition.
+- Type tiers with concrete tokens in `:root` (no typography tokens exist today): e.g.
+  page title (18/600), section (12/600 caps), label (11/600), value (13/400), metadata
+  (11/400 muted) — final values in implementation, but tokens must be named and used.
+- Replace ALL inline `fontSize` sites in touched files (Designer.tsx:610,615,616;
+  chrome.tsx:120,124,126,187; CrewPanel.tsx:115,194,222; PolicyPanel.tsx:43,72,76,93).
+- Gate: light + dark theme check (light nested fills are `#ffffff` today, styles.css:56,74).
+
+WS8 — Responsive layout (REQ-010; pt 23)
+- Use the existing scale: Designer 3-col collapses at 1240 (designer.css:46); shell sidebar
+  overlay at 800 (shell.tsx:48, styles.css:831); `.grid.two` at 1100 (styles.css:197).
+  WS8 owns reconciling/removing the old 1240 rule and defining what happens at 800–1240;
+  no invented 1500/1100 thresholds.
+- ≥1240: 3 zones. 800–1240: crew rail becomes a CSS disclosure (left, collapsible);
+  inspector becomes a right-side drawer VARIANT scoped locally. ≤800: existing sidebar
+  overlay; inspector drawer full-width-cap.
+- Do not route rails through the global modal drawer stack (shell.tsx:313-321 — scrim +
+  focus trap + single slot; opening Message would replace a rail). `drawers.tsx` holds
+  contents, not a reusable container; do not touch it unless required.
+- Never render rails twice (duplicate input ids/state). WS8 owned files include
+  Designer.tsx and shell.tsx for the breakpoint/overlay work.
+
+WS9 — Graph focus mode (REQ-012; pt 21)
+- Add a `focusMode` boolean owned by shell (one seam: context or a UI-state flag in
+  shell.tsx) so the sidebar can collapse; toggle from Topology tools; hide Designer-owned
+  crew/inspector/out regions with CSS classes (NOT unmount — remount resets rename/model
+  catalogue state, CrewPanel.tsx:60-66). Graph ≥70% of `#view`.
+- Keep a verdict chip visible in focus mode (the user's "is it valid?" answer must survive).
+- Esc precedence defined once in WS10's dispatcher. Clear focus on view change, because
+  Shell does not unmount on view switch.
+
+WS10 — Command palette and key routing (REQ-013; pt 22)
+- Owning files: shell.tsx + new `apps/mesh-dashboard/src/commands.ts` + a palette component
+  (shell grows WS1/WS2/WS8 already).
+- Registry: global commands (navigate views from `KEY_VIEWS`, open help, search agent) live
+  in shell; Designer-scoped commands (add agent :271, connect agents, run validation :62,
+  open agent :243, show errors) are registered while Designer is mounted and listed only
+  then. If Designer is unmounted, scoped commands are absent/disabled — no hidden cross-view
+  state mutation. "Jump to agent" navigates to Designer and passes a pending selection the
+  Designer consumes on mount (module-level pending id, not a bus).
+- Key routing: the main handler is shell.tsx:121-151 (bubble; early-returns only for
+  inputs), not :240 (that is the Tab trap). Palette must be checked FIRST so `1..9`, `r`,
+  `p`, `?` do not leak through while it is open; else use a capture listener that stops
+  propagation. Number-key view switching keeps working when the palette is closed
+  (INV-DSG-002).
+- Esc: one dispatch order — palette → focus mode → existing drawer/detail stack
+  (shell.tsx:132-135) → local handlers (template menu Designer.tsx:164, wire cancel
+  Topology.tsx:44). Implement via a single shell key table or `defaultPrevented` checks.
+- Palette list includes only non-destructive commands; existing confirms (reset) are not
+  bypassed. No unspecified "destructive commands require confirmation" rule.
+- After "connect agents": close palette, enter wire mode, and show the persistent hint
+  (Topology.tsx:121) so the user is not stranded.
+
+Alternatives considered:
+- Point 5 hover-cut: chosen click-select + Cut + Delete with input guards and existing undo;
+  rejected modal (undo exists) and hover `×` (implicit destructive).
+- Point 4 full Arrange/Connect/Inspect/Delete mode machine: rejected for now (wire mode
+  exists, direct manipulation is the model); chosen explicit affordances + persistent
+  legend + edge selection. Revisit only if discoverability testing still fails.
+- Point 8 "Apply changes": rejected (save is a file write, server index.ts:1136); chosen
+  "Save …" + restart-to-apply copy.
+- Point 17 revisions: rejected (user decision); chosen derived SourceState.
+- WS10 global command bus: rejected as a new global mechanism; chosen scoped registration
+  (requires explicit permission at checkpoint 2, panel finding).
+
+## 8. Detailed Implementation Plan
+
+Owned files and modules:
+- `apps/mesh-dashboard/src/shell.tsx` — WS1, WS2, WS8 (breakpoints/overlay), WS9 (focus
+  seam), WS10 (key routing + palette host)
+- `apps/mesh-dashboard/src/styles.css` — WS1, WS2, WS7, WS8, WS10
+- `apps/mesh-dashboard/src/designer/Designer.tsx` — WS3, WS4, WS8 (breakpoint class), WS9
+- `apps/mesh-dashboard/src/designer/chrome.tsx` — WS1 (advisory copy), WS3, WS4
+- `apps/mesh-dashboard/src/designer/Topology.tsx` — WS5, WS9 (toggle)
+- `apps/mesh-dashboard/src/designer/CrewRail.tsx` — WS6 (label), WS8 (disclosure markup)
+- `apps/mesh-dashboard/src/designer/panels/CrewPanel.tsx` — WS6
+- `apps/mesh-dashboard/src/designer/designer.css` — WS3–WS9
+- `apps/mesh-dashboard/src/designer/model.ts` — WS3 (`sourceState`), WS6 (grouping from CAPS)
+- New: `apps/mesh-dashboard/src/commands.ts` (WS10) + palette and SourceState render
+  components only if needed. `drawers.tsx` untouched unless genuinely required.
+- Explicitly not touched: `apps/mesh-server/**`, `packages/**`, `schemas/**`, `tests/**`.
+
+Phase A (P0): WS1 → WS2 (same file, sequential), WS3 → WS4 (same region, sequential).
+Phase B (P1): WS5, WS6.
+Phase C (P2): WS7 (visual base) → WS8.
+Phase D (P3): WS9 → WS10 (key routing last, after all Esc owners exist).
+Each workstream becomes one task file under `spec/imp-plan/tasks/` (10 tasks). Phases are
+natural session-split boundaries.
+
+Known non-obvious constraints:
+- Keep `KEY_VIEWS`/`viewKey` mapping (shell.tsx:30); keep storage key/payload (INV-DSG-004).
+- Keep `POST /config/save` untouched; keep the stale guard (Designer.tsx:433-436) and
+  ReviewCard warning (chrome.tsx:121).
+- `diff` memo staleness must be fixed before SourceState ships (runningRev dependency).
+- Preserve `aria-pressed`/labels on wire/boot controls (Topology.tsx:116,150,180) and the
+  canvas `role="application"` (:125).
+
+## 9. Concurrency and Consistency
+
+Not applicable in the distributed sense. Local consistencies that matter:
+- Draft is a module singleton + localStorage; multi-tab divergence is handled by the
+  existing stale-running guard — keep it.
+- Key routing is the real concurrency risk: shell.tsx:121-151 (bubble), Tab trap :212-242,
+  drawer Esc :132-135, Designer Esc :164, Topology Esc :44, plus new palette/focus. WS10
+  must define ONE dispatch order (palette → focus → drawer stack → local) so a single Esc
+  does not close several layers at once.
+- `diff` must recompute after `doSave` mutates `draft.runningRaw` (:446) — explicit running
+  revision counter.
+
+## 10. Failure Modes
+
+- Save overwrite/stale running file between validate and save: unchanged; keep ReviewCard
+  warning (chrome.tsx:121).
+- localStorage unavailable/quota: existing handling not inspected (NON-BLOCKING UNKNOWN);
+  SourceState must degrade safely.
+- Diff stale after save: mitigated by the revision counter; manual check in §12.
+- Backspace-to-cut while typing: mitigated by input guards; manual check.
+- Palette command on a stale selection (agent deleted): resolve ids at invocation, no-op
+  with a toast.
+- Focus mode left active across view switch: clear on view change (Shell does not unmount).
+- Breakpoint overlap (800–1240 undefined behavior): WS8 owns reconciliation.
+
+## 11. Database / Migration Plan
+
+Not applicable: no persistence/schema changes. Draft payload stays compatible.
+
+## 12. Verification Plan
+
+Automated (per task and at phase end):
+- `npm run typecheck` (package.json:24) — root + dashboard tsconfig.
+- `npm run lint` (package.json:25).
+- `npm run build` / `npm run build:ui` (package.json:14-15).
+- After a build: `node --test dist/tests/integration/bus-api.test.js` — server still serves
+  the dashboard bundle (bus-api.test.ts:127,179).
+Manual (required; no UI harness — see NON-BLOCKING UNKNOWN):
+- `npm run dev`, both themes, keyboard-only pass. Per workstream:
+  WS1/WS2: all views reachable; hotkeys 1..N when palette closed; decide + stat reach the
+  canonical destination; ApprovalDrawer still reachable; pause/resume/message work; no wrap
+  at 800–1200.
+  WS3/WS4: restore/discard; diff updates immediately after save-running; copy save shows
+  "runtime unchanged"; restart-to-apply copy visible; reset confirm; copy-target save.
+  WS5: select node dims unrelated edges; edge select + Cut + Delete; Backspace in rename/
+  bulk/path inputs does NOT cut; keyboard path to Cut exists; wire/arrange/boot/Esc.
+  WS6: groups collapse; permission groups match CAPS incl. git/shell/network and code.review
+  under Review; add/remove capability works.
+  WS7: light + dark; nested boxes have level cues; all inline fontSizes replaced in touched
+  files.
+  WS8: widths across 1240 and 800; crew disclosure; inspector drawer; no duplicate rails.
+  WS9: focus hides sidebar/rails via CSS; verdict chip visible; Esc exits; state preserved.
+  WS10: ⌘K opens/closes; hotkeys suppressed while open, work when closed; scoped commands
+  absent when Designer unmounted; connect command not stranding; single Esc closes one layer.
+
+Traceability: REQ-DSG-001→WS3, 002→WS1, 003→WS2, 004→WS3, 005→WS5, 006→WS6, 007→WS4,
+008→WS1, 009→WS7, 010→WS8, 011→WS2/WS6, 012→WS9, 013→WS10. Invariants checked by the
+manual checklist (INV-DSG-001..008).
+
+## 13. Deployment Plan
+
+Not applicable beyond the normal build: `npm run build:ui` emits the bundle served
+statically by mesh-server (apps/mesh-server/src/index.ts:1712 comment). No feature flags.
+
+## 14. Rollback Plan
+
+Code rollback: revert the affected dashboard commits; no data/protocol migration.
+localStorage draft remains readable (INV-DSG-004), so drafts survive a rollback.
+
+## 15. Risks and Trade-offs
+
+- Shared-shell changes affect all views: mitigate with phase order + checklist; WS1 before
+  WS2 in the same file.
+- SourceState wording vs reality: the running FILE is not the live process (restart to
+  apply). Wrong copy reintroduces Q17 confusion — gate on the §12 checks.
+- WS10 registry is the one new seam; if rejected at checkpoint 2, fall back to a
+  navigation-only palette (REQ-DSG-013 partially met, scoped commands dropped).
+- Focus mode needs a shell seam; if rejected, scope focus to `#view` only (sidebar stays).
+- Visual flattening can hurt scannability if overdone; keep one bordered card per region
+  and gate both themes.
+- No UI automation: regressions are caught manually; recorded as a limitation.
+
+## 16. Assumptions and Unknowns
+
+Facts: all file:line claims verified in the dirty working tree at `398331d` (anchors
+re-verified after panel review: shell.tsx key handler :121-151, CrewRail label :19,
+isLight/toggleTheme :114-120, topbar actions :287-300).
+Assumptions:
+- A1: The review's screenshots correspond to the current dirty working tree.
+- A2: Text/CSS changes cannot break server tests; only the build/serve integration test
+  touches the dashboard.
+NON-BLOCKING UNKNOWN:
+- U1: No UI/component test harness; verification = typecheck/lint/build/manual.
+- U2: storage.ts quota/failure handling not inspected; SourceState must degrade safely.
+- U3: Final breakpoint behavior at 800–1240 depends on real content; WS8 validates and may
+  adjust values, not the pattern.
+- U4: summarizeDiff coverage for nested/array fields not fully inspected; the revision
+  counter fix is required regardless.
+BLOCKING UNKNOWN: none. Implementation is not blocked.
+
+## 17. Traceability Matrix
+
+| Requirement | Design | Implementation | Verification |
+|---|---|---|---|
+| REQ-DSG-001 | WS3 | Designer.tsx ms-head, chrome.tsx | manual WS3 |
+| REQ-DSG-002 | WS1 | shell.tsx, styles.css | manual WS1 |
+| REQ-DSG-003 | WS2 | shell.tsx, styles.css | manual WS2 |
+| REQ-DSG-004 | WS3 | Designer.tsx, chrome.tsx, model.ts | manual WS3 (save/copy) |
+| REQ-DSG-005 | WS5 | Topology.tsx, designer.css | manual WS5 (input guard) |
+| REQ-DSG-006 | WS6 | CrewPanel.tsx, model.ts | manual WS6 (CAPS coverage) |
+| REQ-DSG-007 | WS4 | Designer.tsx wb-bar, chrome.tsx | manual WS4 |
+| REQ-DSG-008 | WS1 | shell.tsx, chrome.tsx | manual WS1 |
+| REQ-DSG-009 | WS7 | styles.css, designer.css | manual WS7 (both themes) |
+| REQ-DSG-010 | WS8 | designer.css, shell.tsx, Designer.tsx | manual WS8 (1240/800) |
+| REQ-DSG-011 | WS2, WS6 | CrewRail.tsx:19, CrewPanel.tsx | manual WS6 |
+| REQ-DSG-012 | WS9 | shell.tsx, Designer.tsx, Topology.tsx | manual WS9 |
+| REQ-DSG-013 | WS10 | shell.tsx, commands.ts | manual WS10 (key routing) |

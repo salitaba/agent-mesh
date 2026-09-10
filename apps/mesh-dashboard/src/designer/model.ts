@@ -1,10 +1,65 @@
 /* Model facts + pure helpers: known capability list, mesh defaults, starter
- * templates, schema padding (densure), diff summary and error routing.
- * No React here — import from anywhere. */
+ * templates, schema padding (densure), diff summary, source-of-truth state and
+ * error routing. No React here — import from anywhere. */
 
-import type { Tab } from "./types";
+import type { SaveTarget, Tab } from "./types";
 
 export const CAPS = ["repository.read", "repository.write", "architecture.write", "architecture.read", "review.design", "code.review", "task.assign", "test.execute", "test.write", "security.scan", "security.review", "git.commit", "git.merge", "shell.execute", "network.request"];
+
+/* Capability → permissions group. Explicit for every known CAPS entry because
+ * the name and the prefix don't always agree (`code.review` is Review, not
+ * "code"); unknown caps fall back to a known sibling prefix, then `OTHER`. */
+export const CAP_GROUP: Record<string, string> = {
+  "repository.read": "Repository",
+  "repository.write": "Repository",
+  "architecture.read": "Architecture",
+  "architecture.write": "Architecture",
+  "review.design": "Review",
+  "code.review": "Review",
+  "task.assign": "Tasks",
+  "test.execute": "Execution",
+  "test.write": "Execution",
+  "security.scan": "Security",
+  "security.review": "Security",
+  "git.commit": "Version control",
+  "git.merge": "Version control",
+  "shell.execute": "Execution",
+  "network.request": "Execution",
+};
+
+export const OTHER_CAP_GROUP = "Other";
+
+export function capGroup(cap: string): string {
+  const known = CAP_GROUP[cap];
+  if (known) return known;
+  const prefix = cap.split(".")[0];
+  const sibling = prefix ? CAPS.find((c) => c.split(".")[0] === prefix) : undefined;
+  return (sibling && CAP_GROUP[sibling]) || OTHER_CAP_GROUP;
+}
+
+export interface CapGroup {
+  group: string;
+  caps: string[];
+}
+
+/** Bucket `caps` into groups; group order follows CAPS (first appearance).
+ * Custom/unknown caps join their prefix group, or the fallback bucket. */
+export function groupCaps(caps: string[]): CapGroup[] {
+  const out: CapGroup[] = [];
+  const index = new Map<string, CapGroup>();
+  const bucket = (g: string): CapGroup => {
+    let b = index.get(g);
+    if (!b) {
+      b = { group: g, caps: [] };
+      index.set(g, b);
+      out.push(b);
+    }
+    return b;
+  };
+  for (const c of CAPS) if (caps.includes(c)) bucket(capGroup(c)).caps.push(c);
+  for (const c of caps) if (!CAPS.includes(c)) bucket(capGroup(c)).caps.push(c);
+  return out;
+}
 
 export const deepCopy = (v: any): any => JSON.parse(JSON.stringify(v));
 export const clamp = (n: number, lo: number, hi: number): number => Math.min(Math.max(n, lo), hi);
@@ -189,6 +244,46 @@ export function summarizeDiff(cur: any, base: any | null): string[] {
     out.push(`mission budget → ${fmtNum(cur?.budgets?.mission?.tokens)} tokens / ${fmtNum(cur?.budgets?.mission?.wall_clock_minutes)} min / ${fmtNum(cur?.budgets?.mission?.max_events)} events`);
   }
   return out;
+}
+
+/* ---------------- source-of-truth state (draft vs running file vs process) ---------------- */
+
+export type SourceStateKind = "NEW" | "MATCHES_RUNNING_FILE" | "DIFFERS" | "RESTORED_DRAFT" | "COPY_SAVED";
+
+export interface SourceState {
+  kind: SourceStateKind;
+  /** Differences from the running file when known (meaningful for DIFFERS). */
+  n: number;
+  /** Unsaved edits vs the loaded baseline — NOT the same as differing from running. */
+  dirty: boolean;
+  /** Active save target; "copy" means the running FILE and live process stay untouched. */
+  target: SaveTarget;
+  /** Whether a running file/process is known; false means new mesh or offline. */
+  hasRunning: boolean;
+}
+
+export interface SourceStateInput {
+  dirty: boolean;
+  diff: string[];
+  runningRaw: any | null;
+  saveMode: SaveTarget;
+  restoredAt: number | null;
+}
+
+/**
+ * Pure selector for the local draft ↔ saved running file ↔ live process state.
+ * Precedence: restored draft > new mesh > copy target > differs > matches.
+ * `dirty` upgrades a clean diff to DIFFERS because summarizeDiff can miss
+ * nested fields; copy mode never claims to match or differ from the runtime.
+ */
+export function sourceState({ dirty, diff, runningRaw, saveMode, restoredAt }: SourceStateInput): SourceState {
+  const n = diff.length;
+  const base = { n, dirty, target: saveMode, hasRunning: runningRaw != null };
+  if (restoredAt !== null) return { ...base, kind: "RESTORED_DRAFT" };
+  if (!runningRaw) return { ...base, kind: "NEW" };
+  if (saveMode === "copy") return { ...base, kind: "COPY_SAVED" };
+  if (n > 0 || dirty) return { ...base, kind: "DIFFERS" };
+  return { ...base, kind: "MATCHES_RUNNING_FILE" };
 }
 
 /* ---------------- error → inspector tab routing ---------------- */

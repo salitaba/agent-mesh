@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { plainLifecycle, RUNNING } from "../format";
 import { useMesh } from "../store";
-import { Card, rowKey } from "../components";
+import { Card, ErrorState, rowKey } from "../components";
 import { AgentDrawer } from "../drawers";
 
 const KINDS: Array<[string, string, string]> = [
@@ -17,21 +17,46 @@ const KIND_VERB: Record<string, string> = { REQUEST: "asked", APPROVE: "approved
 export default function Graph(): React.JSX.Element {
   const { events, openDrawer } = useMesh();
   const [graph, setGraph] = useState<any>(null);
+  // A swallowed catch here left `graph` null forever, so a dead server was
+  // indistinguishable from a slow one: the view said "loading graph" until
+  // the tab was closed. Failure is now a state, and it is retryable.
+  const [err, setErr] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let dead = false;
-    api("GET", "/graph").then(({ json }) => {
-      if (!dead) setGraph(json);
-    }).catch(() => undefined);
+    setErr(null);
+    api("GET", "/graph").then(({ json, timeout }) => {
+      if (dead) return;
+      if (timeout || !json || json.error) {
+        setErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
+        return;
+      }
+      setGraph(json);
+    }).catch((e: unknown) => {
+      if (!dead) setErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
-  }, []);
+  }, [attempt]);
 
+  if (err && !graph) return <ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} />;
   if (!graph) return <div className="empty"><div className="big">…</div><div>loading graph</div></div>;
   const recentFlows = new Set(
     events.slice(-40).filter((e) => e.type === "message.sent").map((e) => `${e.payload?.message?.from}|${e.payload?.message?.to?.join(",")}`),
   );
   const nodes = (graph.nodes || []).filter((n: any) => n.id !== "human");
+  // Zero agents used to render an empty 900x480 SVG: a blank rectangle that
+  // looks like a broken canvas rather than an empty mesh.
+  if (!nodes.length) {
+    return (
+      <>
+        <div className="view-title"><h2>Graph</h2></div>
+        <div className="view-sub">Who talks to whom. Thicker = more messages. Dashed = active right now. Click an agent for details.</div>
+        <Card><div className="empty"><div className="big">◎</div><div>No agents in this mesh yet.</div><div className="muted">Hire a crew in the designer and the graph draws itself.</div></div></Card>
+      </>
+    );
+  }
   const W = 900, H = 480, cx = W / 2, cy = H / 2;
   const R = Math.min(W, H) / 2 - 60;
   const pos: Record<string, { x: number; y: number; nd: any }> = {};
@@ -75,7 +100,7 @@ export default function Graph(): React.JSX.Element {
         <div className="legend" style={{ marginTop: 8 }}>{KINDS.map(([k, label, v]) => <span key={k}><b style={{ background: `var(--${v})` }} />{label}</span>)}</div>
       </Card>
       <Card title="Most active links" style={{ marginTop: 12 }}>
-        {edges.map((e: any, i: number) => <div key={i} className="row" style={{ justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--line)" }}><span><b>{(e.from)}</b> <span className="muted">{(KIND_VERB[e.kind] || "messaged")}</span> <b>{(e.to)}</b></span><span className="muted">×{e.count}</span></div>) || <div className="muted">No messages yet.</div>}
+        {edges.length ? edges.map((e: any, i: number) => <div key={i} className="row" style={{ justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--line)" }}><span><b>{(e.from)}</b> <span className="muted">{(KIND_VERB[e.kind] || "messaged")}</span> <b>{(e.to)}</b></span><span className="muted">×{e.count}</span></div>) : <div className="muted">No messages yet.</div>}
       </Card>
     </>
   );

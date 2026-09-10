@@ -2,23 +2,35 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmt, friendlyBudgetKey } from "../format";
 import { useMesh } from "../store";
-import { Button, Card, Pill } from "../components";
+import { Button, Card, ErrorState, Pill } from "../components";
 
 export default function Cost(): React.JSX.Element {
   const { refreshStatus, setView } = useMesh();
   const [budgets, setBudgets] = useState<any>(null);
+  // Swallowing this fetch was the worst lie in the console: the view fell back
+  // to zeros and reported "0% used", so a failed request looked like a mission
+  // that had spent nothing. Money numbers must never be invented.
+  const [err, setErr] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let dead = false;
+    setErr(null);
     (async () => {
-      const [{ json: b }] = await Promise.all([api("GET", "/budgets")]);
+      const { json: b, timeout } = await api("GET", "/budgets");
       if (dead) return;
+      if (timeout || !b || b.error) {
+        setErr(timeout ? "the request timed out — the server may be busy." : String(b?.error ?? "the mesh server did not answer."));
+        return;
+      }
       setBudgets(b);
       await refreshStatus();
-    })().catch(() => undefined);
+    })().catch((e: unknown) => {
+      if (!dead) setErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
-  }, [refreshStatus]);
+  }, [refreshStatus, attempt]);
 
   const cost = budgets?.cost || { perAgent: [], missionTokens: 0, missionBudget: 0, models: [] };
   const ranked = (cost.perAgent || []).filter((p: any) => p.agentId !== "human").sort((a: any, b: any) => b.tokens - a.tokens);
@@ -31,6 +43,24 @@ export default function Cost(): React.JSX.Element {
   const models = (cost.models || []) as any[];
   const modelMax = Math.max(1, ...models.map((m: any) => m.tokens));
   const cacheTotal = models.reduce((a: number, m: any) => a + (m.cacheRead || 0), 0);
+  if (err && !budgets) {
+    return (
+      <>
+        <div className="view-title"><h2>Cost</h2></div>
+        <div className="view-sub">Token spend and remaining budget. Over-budget items appear first.</div>
+        <Card><ErrorState what="spend and budgets" detail={err} onRetry={() => setAttempt((n) => n + 1)} /></Card>
+      </>
+    );
+  }
+  if (!budgets) {
+    return (
+      <>
+        <div className="view-title"><h2>Cost</h2></div>
+        <div className="view-sub">Token spend and remaining budget. Over-budget items appear first.</div>
+        <div className="empty"><div className="big">…</div><div>loading spend</div></div>
+      </>
+    );
+  }
   return (
     <>
       <div className="view-title"><h2>Cost</h2></div>
@@ -42,11 +72,11 @@ export default function Cost(): React.JSX.Element {
         <Card variant="kpi"><small>Priciest model</small><b>{(models[0]?.model || "—")}</b><div className="delta">{models[0] ? `${fmt(models[0].tokens)} tokens · ${Math.round(models[0].share * 100)}% of spend` : "no model spend recorded"}</div></Card>
       </div>
       <Card title="By agent">
-        {ranked.map((p: any) => (
+        {ranked.length ? ranked.map((p: any) => (
           <div key={p.agentId} className="bar-row"><span className="lbl">{(p.agentId)} <span className="muted">· ran {p.activations}× · {fmt(p.perTurn)}/turn</span></span>
             <div className="track"><div style={{ transform: `scaleX(${max ? p.tokens / max : 0})` }} /></div>
             <span className="num">{fmt(p.tokens)}</span></div>
-        )) || <div className="muted">No spend yet.</div>}
+        )) : <div className="muted">No spend yet.</div>}
       </Card>
       <Card title="By model" style={{ marginTop: 12 }}>
         {models.length ? (

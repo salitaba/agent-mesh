@@ -78,10 +78,15 @@ export async function api(method: string, path: string, body?: unknown, opts: { 
 
 export const post = (path: string, body?: unknown): Promise<ApiResult> => api("POST", path, body ?? {});
 
-export const getText = async (path: string): Promise<string> => {
+/** Returns null when the body could not be fetched. It used to return "" on
+ *  failure, which made a dead server indistinguishable from a genuinely empty
+ *  file — the caller then rendered a blank viewer as if that were the content. */
+export const getText = async (path: string): Promise<string | null> => {
   try {
-    return await (await fetch(path)).text();
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    return await res.text();
   } catch {
-    return "";
+    return null;
   }
 };

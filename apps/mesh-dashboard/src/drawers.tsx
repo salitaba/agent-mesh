@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api, getText, post } from "./api";
-import { ago, dur, fmt, hhmmss, outcomeOf, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, MESSAGE_PLAIN, RUNNING } from "./format";
+import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
 import { evClass, evSummary } from "./events";
 import { useMesh, type TimelineEvent, type TurnStep } from "./store";
-import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, Input, Pill, Select, TabPanel, Tabs, TextArea, type TabDef } from "./components";
+import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, agentColor, type TabDef } from "./components";
+import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, ToolCallGroups, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, parsePartialOps, vitalsOf, type TurnPhases } from "./vitals";
 import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks, useTick } from "./observability";
@@ -180,11 +181,31 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   useEffect(() => {
     lastLoad.current = 0;
   }, [lastSeq]);
+  // This used to toast and close the drawer *during render* — a side effect in
+  // a render body, which React may run twice, and which yanked the panel out
+  // from under the reader before they could see why. The drawer now stays open
+  // and says what broke; the reader decides when to leave.
+  const failed = Boolean(json?.error);
+  useEffect(() => {
+    if (failed) toast("agent", String(json.error) || "not found", "bad");
+  }, [failed, json?.error, toast]);
   if (!json) return <div className="muted">loading…</div>;
-  if (json.error) {
-    toast("agent", json.error || "not found", "bad");
-    closeDrawer();
-    return <div className="muted">not found</div>;
+  if (failed) {
+    const unreachable = json.error === "unreachable";
+    return (
+      <>
+        <h2>{(id)}<CloseX /></h2>
+        <ErrorState
+          what={`agent ${id}`}
+          detail={unreachable ? "the mesh server did not answer. The agent may still be running." : String(json.error)}
+          onRetry={unreachable ? () => {
+            lastLoad.current = 0;
+            setJson(null);
+          } : undefined}
+        />
+        <div className="row" style={{ marginTop: 8 }}><Button variant="small" onClick={closeDrawer}>close</Button></div>
+      </>
+    );
   }
   const d = json.definition, s = json.state;
   const act = (a: string) => void agentAction(id, a, toast);
@@ -381,12 +402,12 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
       {tab === "config" ? (
         <>
           <h4>What it does</h4>
-          <div>{(d.capabilities || []).map((c: string) => <Chip key={c}>{(c)}</Chip>) || <span className="muted">—</span>}</div>
+          <div>{(d.capabilities || []).length ? (d.capabilities || []).map((c: string) => <Chip key={c}>{(c)}</Chip>) : <span className="muted">—</span>}</div>
           {(d.authority || []).length ? <div style={{ marginTop: 6 }}><span className="muted" style={{ fontSize: 12 }}>Can decide:</span> {(d.authority || []).map((c: string) => <Chip key={c} hot>{(c)}</Chip>)}</div> : null}
           <h4>Setup</h4>
           <table className="tbl"><tbody>
             <tr><td>runtime</td><td className="mono">{(d.runtime)}{d.model ? ` · ${(d.model)}` : ""}</td></tr>
-            <tr><td>listens for</td><td>{(d.interests || []).slice(0, 12).map((c: string) => <Chip key={c}>{(c)}</Chip>) || <span className="muted">—</span>}</td></tr>
+            <tr><td>listens for</td><td>{(d.interests || []).length ? (d.interests || []).slice(0, 12).map((c: string) => <Chip key={c}>{(c)}</Chip>) : <span className="muted">—</span>}</td></tr>
             <tr><td>budget</td><td className="mono">{fmt(d.budget?.tokens ?? 0)} tokens{json.budgets?.mission ? ` · mission ${fmt(json.budgets.mission.consumed)} / ${json.budgets.mission.limit ?? "?"}` : ""}</td></tr>
             {json.communication ? <tr><td>contacts</td><td style={{ fontSize: 12 }}>→ {((json.communication.mayContact || []).join(", ") || "nobody new")}<br />← {((json.communication.mayBeContactedBy || []).join(", ") || "restricted")}</td></tr> : null}
             {json.session ? <tr><td>session</td><td className="mono">{(json.session.sessionId)} ({(json.session.runtime)})</td></tr> : null}
@@ -566,7 +587,9 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
       clearInterval(iv);
     };
   }, [turnId]);
-  if (!json) return <div className="muted">loading…</div>;
+  const listStep: TurnStep | undefined = (steps || []).find((x: any) => x.turnId === turnId);
+  const sbx = useSandboxPerms(json?.turn?.agentId ?? listStep?.agentId);
+  if (!json) return <StepSkeleton />;
   if (!json || json.error || (!json.turn && (json.events || []).length === 0)) {
     const s = (steps || []).find((x: any) => x.turnId === turnId);
     if (!s) {
@@ -614,7 +637,6 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const landedCount = opRows ? opRows.filter((r) => r.fx).length : 0;
   // The Steps list already carries exact op counters; prefer them over the
   // drawer's "how many ops landed" heuristic when the turn is in that list.
-  const listStep: TurnStep | undefined = (steps || []).find((x: any) => x.turnId === turnId);
   const showSplit = typeof t.tokensInput === "number" && typeof t.tokensOutput === "number"
     && t.tokensInput >= 100 && (t.tokensInput + t.tokensOutput) >= (t.tokens ?? 0) * 0.3;
   // Phase marks are live-only; a turn evicted from the server's ring has none,
@@ -648,43 +670,49 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   ];
   const tab = tabs.some((x) => x.id === section) ? section : tabs[0].id;
 
+  const attempt = t.attempt ?? listStep?.attempt;
+  const inShare = showSplit ? Math.round((t.tokensInput / Math.max(1, t.tokensInput + t.tokensOutput)) * 100) : null;
+  const durText = isRunning ? (elapsed !== null ? `${elapsed}s` : "—") : (t.durationMs != null ? dur(t.durationMs) : "—");
+  const hasKpis = t.tokens != null || t.durationMs != null || isRunning || t.toolCalls || opRows;
+  // Outcome-shaped state: raw "waiting" reads like "stuck", so the status
+  // block classifies the turn and always answers why and what happens next.
+  const outcomeInput: OutcomeInput = {
+    status: t.status || "running",
+    ops: listStep?.ops ?? (!isRunning && landedCount > 0 ? { messages: landedCount, artifacts: 0, tasks: 0, decisions: 0 } : undefined),
+    opTimings: t.opTimings ?? listStep?.opTimings,
+  };
+  const outcome = outcomeOf(outcomeInput);
+  const produced = opsSummary(outcomeInput);
+  const state = stateMeta(outcome, t.status || "running", produced);
+  const why = (typeof t.reason?.note === "string" && t.reason.note.trim())
+    ? t.reason.note.trim()
+    : (summaryIsOps ? "" : (typeof t.summary === "string" ? t.summary.trim() : ""))
+      || (outcome === "crashed" ? String(t.error ?? t.errorDetail ?? "") : "");
+  const stepRow = (e: any): React.JSX.Element => (
+    <div className={`ev ${evClass(e.type)}`} key={e.seq ?? e.id} data-seq={e.seq} role={e.seq != null ? "button" : undefined} tabIndex={e.seq != null ? 0 : undefined} onClick={() => e.seq != null && openEvent(e.seq)} onKeyDown={rowKey(() => { if (e.seq != null) openEvent(e.seq); })}>
+      <time><i className="ev-dot" aria-hidden="true" />{hhmmss(e.at)}</time><span className={`type ${evClass(e.type)}`}>{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
+    </div>
+  );
+
   return (
     <>
       <header className="stepd-head">
         <div className="stepd-title">
-          <AgentAvatar id={t.agentId || "?"} />
-          <b>{(t.agentId || "step")}</b>
-          <StatusPillOf status={t.status || "running"} ops={listStep?.ops} landed={landedCount} />
+          <AgentAvatar id={t.agentId || "?"} color={agentColor(t.agentId || "?")} />
+          <div className="stepd-who">
+            <b>{(t.agentId || "step")}</b>
+            <span className="stepd-id mono" title={turnId}>turn-{shortTurn(turnId)} · {ago(t.startedAt || "")}{elapsed !== null ? ` · ${elapsed}s` : ""}</span>
+          </div>
+          <span className={`sstat-badge sstat-${state.tone}`} title={state.headline}>{state.label}</span>
           <CloseX />
         </div>
-        <p className="stepd-sub muted">
-          {(plainReason(t.reason?.kind))}{t.reason?.note ? ` — ${(t.reason.note)}` : ""} · {(ago(t.startedAt || ""))}
-          {t.durationMs != null && !isRunning ? ` · took ${(t.durationMs / 1000).toFixed(1)}s` : ""}
-          {elapsed !== null ? ` · working for ${elapsed}s` : ""}
-          {!isRunning && t.durationMs != null ? <> <BaselineChip value={t.durationMs} base={base} kind="duration" /></> : null}
-        </p>
+        <p className="stepd-ctx muted">{(plainReason(t.reason?.kind))}{attempt != null && attempt > 1 ? ` · attempt ${attempt}` : ""}</p>
         <Tabs idPrefix="step" label="step sections" tabs={tabs} value={tab} onChange={setSection} />
       </header>
 
-      {/* Above the fold on every tab: the two things that decide whether you
-          keep reading — did it crash, and what did it cost. */}
+      {/* Above the fold on every tab: did it crash. Outcome, environment and
+          cost live with their tabs — Result answers what happened, Trace how. */}
       <ErrorPanel err={t.errorDetail ?? listStep?.errorDetail} fallback={t.error} />
-      {(t.tokens != null || t.model || t.toolCalls) ? (
-        <dl className="step-facts">
-          {t.tokens != null ? (
-            <div>
-              <dt>tokens</dt>
-              <dd>
-                {fmt(t.tokens)}
-                {t.tokens ? <> <BaselineChip value={t.tokens} base={base} kind="tokens" /></> : null}
-                <small>{showSplit ? `in ${fmt(t.tokensInput)} · out ${fmt(t.tokensOutput)}` : (t.tokensInput != null ? "incl. reasoning" : "\u00a0")}</small>
-              </dd>
-            </div>
-          ) : null}
-          {t.model ? <div><dt>model</dt><dd className="mono step-fact-model">{(t.model)}</dd></div> : null}
-          {t.toolCalls ? <div><dt>tool calls</dt><dd>{t.toolCalls}</dd></div> : null}
-        </dl>
-      ) : null}
 
       <TabPanel idPrefix="step" id={tab}>
         {tab === "now" ? (
@@ -704,42 +732,49 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
 
         {tab === "result" ? (
           <>
+            <StepStatusBlock outcome={outcome} status={t.status || "running"} produced={produced} why={why} attempt={attempt} />
             {t.summary && !summaryIsOps ? (
               <section className="step-sec">
-                <h4>What it says it did</h4>
+                <div className="sec-head">
+                  <h4>Reported by agent</h4>
+                  <span className="sec-stat">narration · not verified</span>
+                </div>
                 <p className="step-say">{(t.summary)}</p>
               </section>
             ) : null}
             <section className="step-sec">
               <div className="sec-head">
-                <h4>What it did</h4>
+                <h4>Verified by system</h4>
                 {opRows ? (
                   <span className={`sec-tally${landedCount < opRows.length ? " part" : ""}`}>
-                    {landedCount} of {opRows.length} landed
+                    {landedCount} of {opRows.length} recorded
                   </span>
                 ) : null}
               </div>
               {opRows ? (
                 <div className="op-list">{opRows.map((r, i) => (
-                  <div className={`op${r.fx === null ? " op-nofx" : ""}`} key={i}>
-                    <div className="op-head">
-                      <span className="op-name">{r.head.title}</span>
-                      {r.fx === undefined ? null : r.fx ? <span className="op-ok" title="effect found in the event log">landed</span> : <span className="op-miss" title="no matching effect in the event log">no effect</span>}
-                    </div>
-                    {r.head.detail ? <div className="op-detail">{r.head.detail}</div> : null}
-                    {r.fx ? (
-                      <div className="op-fx">
-                        {(r.fx.type === "artifact.created" || r.fx.type === "artifact.versioned") && (r.fx.payload as any)?.artifact?.id ? (
-                          <Button variant="small" onClick={() => openDrawer(<ArtifactDrawer id={(r.fx.payload as any).artifact.id} />)}>
-                            open {(r.fx.payload as any).artifact.name} v{(r.fx.payload as any).artifact.version}
-                          </Button>
-                        ) : (
-                          <Button variant="small" onClick={() => r.fx.seq != null && openEvent(r.fx.seq)}>
-                            see {plainEvent(r.fx.type)} #{r.fx.seq}
-                          </Button>
-                        )}
+                  <div className={`op ${r.fx === undefined ? "op-na" : r.fx ? "op-landed" : "op-nofx"}`} key={i}>
+                    <span className="op-idx mono" aria-hidden="true">{i + 1}</span>
+                    <div className="op-body">
+                      <div className="op-head">
+                        <span className="op-name">{r.head.title}</span>
+                        {r.fx === undefined ? null : r.fx ? <span className="op-ok" title="effect recorded in the event log">recorded</span> : <span className="op-miss" title="no matching effect in the event log">not recorded</span>}
                       </div>
-                    ) : null}
+                      {r.head.detail ? <div className="op-detail">{r.head.detail}</div> : null}
+                      {r.fx ? (
+                        <div className="op-fx">
+                          {(r.fx.type === "artifact.created" || r.fx.type === "artifact.versioned") && (r.fx.payload as any)?.artifact?.id ? (
+                            <Button variant="linklike" onClick={() => openDrawer(<ArtifactDrawer id={(r.fx.payload as any).artifact.id} />)}>
+                              open {(r.fx.payload as any).artifact.name} v{(r.fx.payload as any).artifact.version} →
+                            </Button>
+                          ) : (
+                            <Button variant="linklike" onClick={() => r.fx.seq != null && openEvent(r.fx.seq)}>
+                              see the recorded {plainEvent(r.fx.type)} #{r.fx.seq} →
+                            </Button>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ))}</div>
               ) : (
@@ -752,21 +787,48 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
                     </>
                   ) : (
                     <>
-                      <b>No output was captured.</b>
-                      <span>This step predates output capture, or it left the recent-turn window — a server restart, or over 200 turns ago.</span>
+                      <b>No operations were recorded.</b>
+                      <span>This step ended without attempting anything, or it left the recent-turn window — a server restart, or over 200 turns ago.</span>
                     </>
                   )}
                 </div>
               )}
             </section>
+            <section className="step-sec">
+              <div className="sec-head">
+                <h4>Execution timeline</h4>
+                <span className="sec-stat mono">{timeline.length} events</span>
+              </div>
+              {timeline.length ? (
+                <>
+                  <div className="ev-list ev-rail">{timeline.slice(0, 8).map(stepRow)}</div>
+                  {timeline.length > 8 ? <Button variant="linklike" onClick={() => setSection("trace")}>all {timeline.length} events in Trace →</Button> : null}
+                </>
+              ) : (
+                <div className="step-empty">
+                  <b>No linked events.</b>
+                  <span>Either this step changed nothing, or it is older than the live log window.</span>
+                </div>
+              )}
+            </section>
+            {hasKpis ? (
+              <div className="exec-foot">
+                <span className="sec-stat mono">
+                  {t.tokens != null ? `${fmt(t.tokens)} tokens` : "no tokens"} · {durText} · {toolCalls.length} tools · {opRows ? `${landedCount}/${opRows.length}` : "—"} actions
+                </span>
+              </div>
+            ) : null}
           </>
         ) : null}
 
         {tab === "brief" ? (
           <section className="step-sec">
-            <h4>What it was asked to do</h4>
+            <div className="sec-head">
+              <h4>What it was asked to do</h4>
+              <span className="sec-tools"><span className="sec-stat mono">{textStats(String(t.instructions))}</span><CopyBtn text={String(t.instructions)} /></span>
+            </div>
             <p className="sec-note muted">The prompt the runtime assembled for this turn, inbox and all.</p>
-            <pre className="token-stream">{(String(t.instructions).slice(0, 8000))}</pre>
+            <pre className="token-stream">{(String(t.instructions).slice(0, 8000))}{String(t.instructions).length > 8000 ? "\n… [truncated at 8k chars — copy for the full text]" : ""}</pre>
           </section>
         ) : null}
 
@@ -775,25 +837,60 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
             <CausalRail links={links} onTurn={openStepDrawer} onEvent={openEvent} />
             <PhaseRail phases={phases} running={isRunning} />
             <OpLatency timings={t.opTimings ?? listStep?.opTimings} />
+            <details className="stepd-env">
+              <summary>
+                <span className="sec-label">Environment &amp; execution</span>
+                <span className="stepd-env-line">{(envLine(sbx.perms) ?? (sbx.perms === null ? "loading…" : "not available"))}</span>
+              </summary>
+              <div className="stepd-env-body">
+                <SandboxStrip perms={sbx.perms ?? undefined} runtime={sbx.runtime} loading={sbx.perms === null} />
+                {hasKpis ? (
+                  <div className="stepd-kpis">
+                    <div className="kpi">
+                      <span className="kpi-l">tokens</span>
+                      <span className="kpi-v">{t.tokens != null ? fmt(t.tokens) : "—"}{t.tokens ? <BaselineChip value={t.tokens} base={base} kind="tokens" /> : null}</span>
+                      {showSplit && inShare !== null ? (
+                        <>
+                          <span className="kpi-bar" aria-hidden="true"><i style={{ width: `${inShare}%` }} /></span>
+                          <span className="kpi-s">in {fmt(t.tokensInput)} · out {fmt(t.tokensOutput)}</span>
+                        </>
+                      ) : <span className="kpi-s">{t.tokensInput != null ? "incl. reasoning" : "\u00a0"}</span>}
+                    </div>
+                    <div className="kpi">
+                      <span className="kpi-l">{isRunning ? "elapsed" : "duration"}</span>
+                      <span className="kpi-v">{durText}{!isRunning && t.durationMs != null ? <BaselineChip value={t.durationMs} base={base} kind="duration" /> : null}</span>
+                      <span className="kpi-s">{base.n ? `vs ${dur(base.medianDurationMs)} typical (n=${base.n})` : "\u00a0"}</span>
+                    </div>
+                    <div className="kpi">
+                      <span className="kpi-l">tool calls</span>
+                      <span className="kpi-v">{t.toolCalls ?? toolCalls.length ?? 0}</span>
+                      <span className="kpi-s">{toolCalls.length ? `${new Set(toolCalls.map((c: any) => String(c.name ?? ""))).size} distinct` : "\u00a0"}</span>
+                    </div>
+                    <div className={`kpi${opRows && landedCount < opRows.length ? " kpi-part" : ""}`}>
+                      <span className="kpi-l">actions completed</span>
+                      <span className="kpi-v">{opRows ? `${landedCount}/${opRows.length}` : isRunning && partial ? `${partial.ops.length}…` : "—"}</span>
+                      <span className="kpi-s stepd-model mono" title={t.model}>{t.model || "\u00a0"}</span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </details>
             {toolCalls.length ? (
               <section className="step-sec">
-                <h4>Tool calls ({toolCalls.length})</h4>
-                <div className="tool-list">{toolCalls.slice(0, 30).map((c: any, i: number) => (
-                  <div className="tool-row" key={i}>
-                    <Chip mono>{(String(c.name ?? "tool"))}</Chip>
-                    <span className="muted mono tool-args">{(JSON.stringify(c.args ?? {}).slice(0, 160))}</span>
-                  </div>
-                ))}</div>
+                <div className="sec-head">
+                  <h4>Tool calls</h4>
+                  <span className="sec-stat mono">{toolCalls.length}</span>
+                </div>
+                <ToolCallGroups calls={toolCalls} perms={sbx.perms ?? undefined} />
               </section>
             ) : null}
             <section className="step-sec">
-              <h4>What happened ({timeline.length})</h4>
+              <div className="sec-head">
+                <h4>What happened</h4>
+                <span className="sec-stat mono">{timeline.length}</span>
+              </div>
               {timeline.length ? (
-                <div className="ev-list">{timeline.map((e: any) => (
-                  <div className="ev" key={e.seq ?? e.id} data-seq={e.seq} role={e.seq != null ? "button" : undefined} tabIndex={e.seq != null ? 0 : undefined} onClick={() => e.seq != null && openEvent(e.seq)} onKeyDown={rowKey(() => { if (e.seq != null) openEvent(e.seq); })}>
-                    <time>{hhmmss(e.at)}</time><span className={`type ${evClass(e.type)}`}>{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
-                  </div>
-                ))}</div>
+                <div className="ev-list ev-rail">{timeline.map(stepRow)}</div>
               ) : (
                 <div className="step-empty">
                   <b>No linked events.</b>
@@ -809,7 +906,7 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
             <section className="step-sec">
               <div className="sec-head">
                 <h4>Model output</h4>
-                {t.text ? <Button variant="small" onClick={() => void copyOutput()}>{copied ? "copied ✓" : "copy"}</Button> : null}
+                {t.text || liveText ? <span className="sec-tools"><span className="sec-stat mono">{textStats(String(t.text || liveText))}</span><Button variant="small" onClick={() => void copyOutput()}>{copied ? "copied ✓" : "copy"}</Button></span> : null}
               </div>
               {t.text || liveText
                 ? <pre className="token-stream">{(t.text || liveText)}</pre>
@@ -859,9 +956,12 @@ function LiveStream({ text, hasInstructions, copyOutput, copied }: {
     return (
       <div className="think-box">
         <span className="think-dots"><i /><i /><i /></span>
-        <span className="muted">
-          No tokens yet — the prompt is out and the model has not answered.
-          {hasInstructions ? " The Brief tab shows what it was handed." : ""}
+        <span className="think-txt">
+          <b>Thinking.</b>
+          <span className="muted">
+            No tokens yet — the prompt is out and the model has not answered.
+            {hasInstructions ? " The Brief tab shows what it was handed." : ""}
+          </span>
         </span>
       </div>
     );
@@ -869,13 +969,13 @@ function LiveStream({ text, hasInstructions, copyOutput, copied }: {
   return (
     <div className="stream-wrap">
       <div className="stream-bar">
-        <span className="sec-label">Live output</span>
+        <span className="stream-live"><i className="live-dot on" aria-hidden="true" /><span className="sec-label">Live output</span><span className="sec-stat mono">{textStats(text)}</span></span>
         <span className="row" style={{ gap: 6 }}>
           {!follow ? <Button variant="small" onClick={jumpLive}>↓ jump to live</Button> : null}
           <Button variant="small" onClick={copyOutput}>{copied ? "copied ✓" : "copy"}</Button>
         </span>
       </div>
-      <pre ref={ref} className="token-stream live" onScroll={onScroll} tabIndex={0}>{text}<span className="caret">▍</span></pre>
+      <pre ref={ref} className="token-stream live" onScroll={onScroll} tabIndex={0} aria-live="off">{text}<span className="caret">▍</span></pre>
       {!follow ? <div className="stream-paused muted">Scrolled up — output is still arriving.</div> : null}
     </div>
   );
@@ -947,9 +1047,15 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   const current = data?.a?.version as number | undefined;
   const shown = pick ?? current ?? null;
 
+  // No .catch here meant one rejected fetch pinned the panel on "loading
+  // contents…" for the life of the drawer, with no way to tell a slow blob
+  // from a dead one. Errors are a state now, and switching versions clears it.
+  const [bodyErr, setBodyErr] = useState<string | null>(null);
+  const [bodyAttempt, setBodyAttempt] = useState(0);
   useEffect(() => {
     if (shown == null) return;
     let dead = false;
+    setBodyErr(null);
     const q = `?version=${shown}`;
     void (async () => {
       const [content, { json: d }] = await Promise.all([
@@ -957,13 +1063,19 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
         api("GET", `/artifacts/${encodeURIComponent(id)}/diff?to=${shown}`),
       ]);
       if (dead) return;
+      if (content == null) {
+        setBodyErr("the file body could not be fetched.");
+        return;
+      }
       setBody({ version: shown, content });
       setDiff(d && !d.error ? (d as DiffPayload) : null);
-    })();
+    })().catch((e: unknown) => {
+      if (!dead) setBodyErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
-  }, [id, shown]);
+  }, [id, shown, bodyAttempt]);
 
   if (!data) return <div className="muted">loading…</div>;
   if (data.missing) return <div className="muted">not found</div>;
@@ -992,7 +1104,9 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
         {viewed.digest ? <> · <span className="mono">{String(viewed.digest).slice(0, 12)}</span></> : null}
         {wsPath ? <> · repo path <span className="mono">{wsPath}</span></> : null}
       </p>
-      {body ? (
+      {bodyErr ? (
+        <ErrorState what={`v${shown} of this file`} detail={bodyErr} onRetry={() => setBodyAttempt((n) => n + 1)} />
+      ) : body ? (
         <FileView
           path={`${a.name} (v${body.version})`}
           content={body.content}

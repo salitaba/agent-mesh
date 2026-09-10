@@ -40,7 +40,7 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
                 return <Chip key={r}>{r} → {who.length ? who.map((w) => <Button key={w} variant="linklike" extra="gate-who" onClick={() => ctx.setCur(w)}>{w}</Button>) : <em className="nobody">nobody grants it</em>}</Chip>;
               })}
             </div>
-          ) : <span className="muted" style={{ fontSize: 11 }}>no requirements — this gate lets everything through.</span>}
+          ) : <span className="muted tx-meta">no requirements — this gate lets everything through.</span>}
           <Button variant="small" danger style={{ alignSelf: "flex-start" }} onClick={() => { delete gates[g]; touch(); }}>remove gate</Button>
         </div>
       ))}
@@ -69,11 +69,11 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         <Num label="thread tokens" value={m.budgets?.thread?.tokens ?? 50000} step={5000} onSet={(v) => { setPath(m, "budgets.thread.tokens", v ?? 0); touch(); }} />
         <Num label="task tokens" value={m.budgets?.task?.tokens ?? 100000} step={5000} onSet={(v) => { setPath(m, "budgets.task.tokens", v ?? 0); touch(); }} />
       </div>
-      <div className="muted" style={{ fontSize: 11 }}>Per-agent overrides live in each agent’s inspector (Crew tab).</div>
+      <div className="muted tx-meta">Per-agent overrides live in each agent’s inspector (Crew tab).</div>
 
       <details className="ms-adv">
         <summary>expert — raw policy rules (JSON)</summary>
-        <p className="muted" style={{ fontSize: 12 }}>Advanced when/requires/deny rules enforced by the policy engine. Edit as JSON; the server validates on check.</p>
+        <p className="muted tx-meta">Advanced when/requires/deny rules enforced by the policy engine. Edit as JSON; the server validates on check.</p>
         <TextArea mono rows={6} spellCheck={false} aria-label="policy rules JSON"
           defaultValue={rulesText ?? JSON.stringify(rawRules, null, 1)} key={`rules-${JSON.stringify(rawRules).length}`}
           onChange={(e) => setRulesText(e.target.value)} />
@@ -90,7 +90,7 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
               setRulesErr(String(err?.message || err));
             }
           }}>apply rules</Button>
-          {rulesErr ? <span className="verdict bad" style={{ margin: 0, fontSize: 12 }}>{rulesErr}</span> : null}
+          {rulesErr ? <span className="verdict bad tx-value" style={{ margin: 0 }}>{rulesErr}</span> : null}
         </div>
       </details>
     </div>

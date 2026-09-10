@@ -5,26 +5,25 @@
 
 import { tabOfError } from "./model";
 import { Button, TextArea } from "../components";
+import type { SourceState } from "./model";
 import type { Advice, Tab } from "./types";
 
 /* ---------------- health strip ---------------- */
 
 export interface HealthStripProps {
   onGoto: (t: Tab) => void;
-  ids: string[];
   startupCount: number;
-  goalSet: boolean;
   gates: number;
   advice: Advice[];
   undoLabel: string | null;
   onUndo: () => void;
 }
 
-export function HealthStrip({ onGoto, ids, startupCount, goalSet, gates, advice, undoLabel, onUndo }: HealthStripProps): React.JSX.Element {
+/* crew count and goal live in the Designer header's canonical state line /
+ * workspace line now, so they are not repeated here. */
+export function HealthStrip({ onGoto, startupCount, gates, advice, undoLabel, onUndo }: HealthStripProps): React.JSX.Element {
   const tiles: Array<{ label: string; value: string; bad?: boolean; warn?: boolean; tab: Tab; title?: string }> = [
-    { label: "crew", value: String(ids.length), tab: "crew", title: "agents in this mesh" },
     { label: "boots", value: startupCount ? String(startupCount) : "nobody", warn: !startupCount, tab: "crew", title: "agents that start when the mesh goes live" },
-    { label: "goal", value: goalSet ? "set" : "missing", bad: !goalSet, tab: "mesh", title: "the mission outcome agents work toward" },
     { label: "gates", value: String(gates), tab: "policy", title: "approval gates that pause steps" },
   ];
   return (
@@ -48,15 +47,58 @@ export function HealthStrip({ onGoto, ids, startupCount, goalSet, gates, advice,
   );
 }
 
+/* ---------------- source-of-truth state line ---------------- */
+
+export interface SourceStateLineProps {
+  state: SourceState;
+  reviewOpen: boolean;
+  onToggleReview: () => void;
+}
+
+/** One line for the draft ↔ running-file ↔ process story. WS4 consumes the
+ *  `SourceState` props from here; it must not mutate them. */
+export function SourceStateLine({ state, reviewOpen, onToggleReview }: SourceStateLineProps): React.JSX.Element {
+  let body: React.JSX.Element;
+  switch (state.kind) {
+    case "RESTORED_DRAFT":
+      body = state.hasRunning
+        ? <span className="muted">local draft differs from the running file — keep or discard it above.</span>
+        : <span className="muted">local draft restored — no running file is loaded.</span>;
+      break;
+    case "NEW":
+      body = <span className="muted">new mesh — nothing running to overwrite.</span>;
+      break;
+    case "COPY_SAVED":
+      body = <span className="muted">copy target — saving writes a new file; runtime unchanged.</span>;
+      break;
+    case "DIFFERS":
+      body = (
+        <Button variant="linklike" onClick={onToggleReview}>
+          {state.n ? `${state.n} difference${state.n === 1 ? "" : "s"} from the running config` : "differs from the running config"} — {reviewOpen ? "hide" : "review"}
+        </Button>
+      );
+      break;
+    case "MATCHES_RUNNING_FILE":
+      body = <span className="muted">matches the saved running config — restart the mesh to apply.</span>;
+      break;
+  }
+  const unsaved = state.dirty && state.kind !== "DIFFERS" ? <span className="muted"> · unsaved edits</span> : null;
+  return <span className="ms-src" role="status">{body}{unsaved}</span>;
+}
+
 /* ---------------- advisory notes ---------------- */
 
 export function AdvisoryList({ advice, onGoto }: { advice: Advice[]; onGoto: (t: Tab) => void }): React.JSX.Element | null {
   if (!advice.length) return null;
+  const decisions = advice.filter((a) => a.level === "warn").length;
+  const suggestions = advice.length - decisions;
   return (
     <details className="ms-advice" open={false}>
       <summary>
-        <span className={`adv-ico ${advice.some((a) => a.level === "warn") ? "warn" : ""}`}>!</span>
-        {advice.length} advisory note{advice.length === 1 ? "" : "s"} — not blocking, worth a look
+        <span className={`adv-ico ${decisions ? "warn" : ""}`}>!</span>
+        {decisions ? <b>{decisions} decision{decisions === 1 ? "" : "s"} required</b> : null}
+        {decisions && suggestions ? " · " : null}
+        {suggestions ? `${suggestions} suggestion${suggestions === 1 ? "" : "s"}` : null}
       </summary>
       {advice.map((a, i) => (
         <div key={i} className={`adv ${a.level}`}>
@@ -106,6 +148,10 @@ export interface ReviewCardProps {
   targetPath: string;
   savingRunning: boolean;
   diff: string[];
+  /** SourceState says the draft differs but `diff` did not itemize it. */
+  differs?: boolean;
+  /** Saving would land on the running file even though the target is "copy". */
+  targetConflict?: boolean;
   runningStale: boolean;
   blocked: boolean;
   errors: number;
@@ -113,19 +159,22 @@ export interface ReviewCardProps {
   onClose: () => void;
 }
 
-export function ReviewCard({ targetPath, savingRunning, diff, runningStale, blocked, errors, onSave, onClose }: ReviewCardProps): React.JSX.Element {
+export function ReviewCard({ targetPath, savingRunning, diff, differs, targetConflict, runningStale, blocked, errors, onSave, onClose }: ReviewCardProps): React.JSX.Element {
   return (
     <section className="card save-review" id="d-review" aria-label="review before saving">
       <div className="wb-sec-head"><h3>Review before saving</h3></div>
-      <div className="mono muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>→ {targetPath || "(no path)"}</div>
+      <div className="mono muted tx-value" style={{ overflowWrap: "anywhere" }}>→ {targetPath || "(no path)"}</div>
       {runningStale ? <div className="verdict warn">The running file changed since you opened the Designer (another tab may have saved). Your edits are intact — check the list below carefully.</div> : null}
       {diff.length && savingRunning ? (
         <ul className="diff-list">{diff.map((d, i) => <li key={i}>{d}</li>)}</ul>
-      ) : savingRunning ? <div className="muted" style={{ fontSize: 12 }}>no differences from the running file.</div> : <div className="muted" style={{ fontSize: 12 }}>new copy — the running mesh is untouched.</div>}
+      ) : savingRunning ? (
+        <div className="muted tx-meta">{differs ? "differences here aren’t itemized — saving still overwrites the running file." : "no differences from the running file."}</div>
+      ) : <div className="muted tx-meta">writes a new file — the running mesh keeps working untouched.</div>}
       {blocked ? <div className="verdict bad">Still {errors} error{errors === 1 ? "" : "s"} — saving is blocked until they’re fixed.</div> : null}
-      <div className="muted" style={{ fontSize: 12 }}>{savingRunning ? "Overwrites the running file. The live mesh keeps working; restart picks changes up." : "Writes a new file. Nothing live changes."}</div>
+      {targetConflict ? <div className="verdict bad">that path is the running config — select the running target or choose a different copy path.</div> : null}
+      <div className="muted tx-meta">{savingRunning ? "Overwrites the running file. The live mesh keeps working; restart the mesh to apply." : "Writes a new file. The running mesh keeps working untouched."}</div>
       <div className="row" style={{ marginTop: 8 }}>
-        <Button variant="primary" disabled={blocked || !targetPath} onClick={onSave}>{savingRunning ? "Overwrite running file" : "Save copy"}</Button>
+        <Button variant="primary" disabled={blocked || !targetPath || targetConflict} onClick={onSave}>{savingRunning ? "Overwrite running file" : "Save copy"}</Button>
         <Button variant="ghost" onClick={onClose}>cancel</Button>
       </div>
     </section>
@@ -184,7 +233,7 @@ export function YamlCard({ yaml, targetPath, invalid, stale, onCopy }: YamlCardP
     <section className="card ms-yaml-card" id="d-yaml" aria-label="yaml preview">
       <div className="wb-sec-head">
         <h3>YAML preview</h3>
-        <span className="muted mono" style={{ fontSize: 12, overflowWrap: "anywhere" }}>{targetPath}</span>
+        <span className="muted mono tx-value" style={{ overflowWrap: "anywhere" }}>{targetPath}</span>
         <Button variant="small" onClick={onCopy} style={{ marginLeft: "auto" }}>copy</Button>
       </div>
       {invalid || stale ? <div className="verdict warn" style={{ marginTop: 0 }}>{invalid ? "invalid — showing the last valid version" : "couldn’t re-check — may be stale"}</div> : null}

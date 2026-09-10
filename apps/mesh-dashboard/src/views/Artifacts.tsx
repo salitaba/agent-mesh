@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { ago, plainArtifact, artifactCls } from "../format";
 import { useMesh } from "../store";
-import { Button, Card, Chip, Input, rowKey } from "../components";
+import { Button, Card, Chip, ErrorState, Input, rowKey } from "../components";
 import { ArtifactDrawer } from "../drawers";
 
 /* Files an agent produced. The table used to be an unfiltered dump: on a real
@@ -31,16 +31,38 @@ export default function Artifacts(): React.JSX.Element {
   const [type, setType] = useState("");
   const [group, setGroup] = useState(true);
   const [onlyReview, setOnlyReview] = useState(false);
+  // "No files yet." was printed before the fetch landed and again when it
+  // failed, so a dead server and an empty mesh looked identical.
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let dead = false;
-    api("GET", "/artifacts").then(({ json }) => {
-      if (!dead && Array.isArray(json)) setArts(json.slice().reverse() as Art[]);
-    }).catch(() => undefined);
+    setErr(null);
+    api("GET", "/artifacts").then(({ json, timeout }) => {
+      if (dead) return;
+      if (timeout) {
+        setErr("the request timed out — the server may be busy.");
+        return;
+      }
+      if (json && json.error) {
+        setErr(String(json.error));
+        return;
+      }
+      if (Array.isArray(json)) {
+        setArts(json.slice().reverse() as Art[]);
+        setLoaded(true);
+      } else {
+        setErr("the server sent something this view could not read.");
+      }
+    }).catch((e: unknown) => {
+      if (!dead) setErr(e instanceof Error ? e.message : String(e));
+    });
     return () => {
       dead = true;
     };
-  }, []);
+  }, [attempt]);
 
   const types = useMemo(() => [...new Set(arts.map((a) => a.type))].sort(), [arts]);
   const needsReview = arts.filter((a) => REVIEW_STATES.includes(a.status));
@@ -102,7 +124,11 @@ export default function Artifacts(): React.JSX.Element {
             <td className="mono">{a.owner}</td><td className="muted">{ago(a.createdAt)}</td>
           </tr>
         )) : (
-          <tr><td colSpan={4}><div className="empty"><div className="big">▤</div><div>{arts.length ? "Nothing matches that filter." : "No files yet."}</div><div className="muted">{arts.length ? "Clear the search to see everything." : "They appear here when an agent publishes something."}</div></div></td></tr>
+          <tr><td colSpan={4}>
+            {err && !loaded ? <ErrorState what="the file list" detail={err} onRetry={() => setAttempt((n) => n + 1)} />
+            : !loaded ? <div className="empty"><div className="big">…</div><div>loading files</div></div>
+            : <div className="empty"><div className="big">▤</div><div>{arts.length ? "Nothing matches that filter." : "No files yet."}</div><div className="muted">{arts.length ? "Clear the search to see everything." : "They appear here when an agent publishes something."}</div></div>}
+          </td></tr>
         )}
       </tbody></table></Card>
     </>
