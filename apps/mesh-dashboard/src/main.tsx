@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { MeshProvider, useMesh } from "./store";
+import { ProjectsProvider } from "./projects";
 import { Shell } from "./shell";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
@@ -44,9 +45,16 @@ function ViewSwitch(): React.JSX.Element {
 
 function App(): React.JSX.Element {
   return (
-    <MeshProvider>
-      <Shell viewNode={<ViewSwitch />} />
-    </MeshProvider>
+    <ProjectsProvider>
+      {(activeId) => (
+        // `key` is load-bearing: switching projects must give the new one a
+        // fresh store rather than leave the previous mission's events, steps
+        // and drawers on screen under a different project's name.
+        <MeshProvider key={activeId ?? "none"} projectId={activeId}>
+          <Shell viewNode={<ViewSwitch />} />
+        </MeshProvider>
+      )}
+    </ProjectsProvider>
   );
 }
 

@@ -34,5 +34,9 @@
     "types": ["node"]
   },
   "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"],
+  // The dashboard is excluded below (it is .tsx, DOM-typed, ESM). `route.ts` is
+  // the deliberate exception: it is DOM-free precisely so the routing table can
+  // be covered by node:test, and `files` wins over `exclude`.
+  "files": ["apps/mesh-dashboard/src/route.ts"],
   "exclude": ["node_modules", "dist", "workspace", "**/workspace/**", "apps/mesh-dashboard/src/**/*", "apps/mesh-dashboard/vite.config.mts"]
 }

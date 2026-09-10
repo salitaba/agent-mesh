@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { api, setApiNotifier, onServerDownChange } from "./api";
+import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
+import { VIEWS, hashFor, parseHash, type HashRoute, type View } from "./route";
+import { useProjectsOptional, type ProjectSink } from "./projects";
 
 export interface TimelineEvent {
   seq: number;
@@ -64,17 +66,10 @@ export interface StreamBuf {
 const STREAM_TEXT_MAX = 40000;
 const STREAM_TURNS_MAX = 50;
 
-export const VIEWS = ["overview", "steps", "agents", "graph", "events", "artifacts", "cost", "product", "escalations", "designer"] as const;
-export type View = (typeof VIEWS)[number];
-
-const FALLBACK_TYPES = [
-  "goal.created", "goal.status_changed", "goal.paused", "goal.resumed", "goal.progress",
-  "goal.completed", "goal.escalated", "goal.failed", "agent.awakened", "agent.state_changed",
-  "agent.failed", "message.sent", "message.delivered", "message.rejected", "artifact.created",
-  "artifact.versioned", "artifact.transition", "task.created", "task.claimed", "task.completed",
-  "review.requested", "review.approved", "review.rejected", "budget.consumed", "budget.exceeded",
-  "escalation.requested", "escalation.responded",
-];
+// Routing moved to ./route (DOM-free, and therefore testable); re-exported here
+// because every view imports `View` from the store.
+export { VIEWS, hashFor, parseHash };
+export type { HashRoute, View };
 
 function normEvent(raw: any): TimelineEvent | null {
   if (!raw || typeof raw !== "object") return null;
@@ -95,36 +90,18 @@ function normEvent(raw: any): TimelineEvent | null {
   return null;
 }
 
-/**
- * The hash carries two independent things: which page is shown, and which
- * detail is open on top of it — `#/steps/step/turn-ab12`. Keeping the detail
- * in the URL is what makes a step or agent shareable and survive a refresh;
- * the drawer stack alone lost both.
- */
-export interface HashRoute {
-  view: View;
-  detail?: { kind: "step" | "agent"; id: string };
-}
-
-export function parseHash(hash = window.location.hash): HashRoute {
-  const raw = hash.replace(/^#\/?/, "");
-  const [v, kind, ...rest] = raw.split("/");
-  const view = (VIEWS as readonly string[]).includes(v) ? (v as View) : "overview";
-  const id = rest.join("/");
-  if ((kind === "step" || kind === "agent") && id) {
-    return { view, detail: { kind, id: decodeURIComponent(id) } };
-  }
-  return { view };
-}
-
-export const hashFor = (view: View, detail?: HashRoute["detail"]): string =>
-  detail ? `#/${view}/${detail.kind}/${encodeURIComponent(detail.id)}` : `#/${view}`;
+const currentRoute = (): HashRoute => parseHash(window.location.hash);
 
 function viewFromHash(): View {
-  return parseHash().view;
+  return currentRoute().view;
 }
 
 interface MeshState {
+  /** The project every call from this store is addressed to. */
+  projectId: string | null;
+  /** api/post/getText already bound to `projectId` — the way views should
+   *  reach the server, instead of a bare path that the host has to guess at. */
+  client: ProjectClient;
   view: View;
   setView: (v: View) => void;
   status: any;
@@ -177,9 +154,15 @@ export const useMesh = (): MeshState => {
 
 let toastId = 1;
 
-export function MeshProvider({ children }: { children: ReactNode }): React.JSX.Element {
+/**
+ * One instance per open project, mounted with `key={projectId}` so React gives
+ * each project its own state. `MeshState` deliberately has no project dimension:
+ * a map inside the store would put every projection behind a lookup and make
+ * every consumer responsible for asking about the right project.
+ */
+export function MeshProvider({ children, projectId = null }: { children: ReactNode; projectId?: string | null }): React.JSX.Element {
   const [view, setViewState] = useState<View>(viewFromHash);
-  const [detail, setDetail] = useState<HashRoute["detail"] | null>(() => parseHash().detail ?? null);
+  const [detail, setDetail] = useState<HashRoute["detail"] | null>(() => currentRoute().detail ?? null);
   const [status, setStatus] = useState<any>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [lastSeq, setLastSeq] = useState(0);
@@ -208,16 +191,22 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   vocabRef.current = vocab;
   const lastSeqRef = useRef(0);
   const stepsAt = useRef(0);
-  const sseRef = useRef<EventSource | null>(null);
-  const sseFails = useRef(0);
-  const sseStateRef = useRef<"connecting" | "open" | "reconnecting">("connecting");
-  const [sseState, setSseState] = useState<"connecting" | "open" | "reconnecting">("connecting");
   const statusInflight = useRef<Promise<void> | null>(null);
 
-  const setSse = useCallback((s: "connecting" | "open" | "reconnecting") => {
-    sseStateRef.current = s;
-    setSseState(s);
-  }, []);
+  // Every call this store makes is bound to its own project, so two mounted
+  // providers can never answer each other's requests.
+  const client = useMemo<ProjectClient>(() => clientFor(projectId), [projectId]);
+  const clientRef = useRef(client);
+  clientRef.current = client;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+
+  // The live connection belongs to ProjectsProvider — one socket for every
+  // project, not one per store. Its state is surfaced here unchanged so the
+  // shell's connection indicator keeps working.
+  const projectsCtx = useProjectsOptional();
+  const sseState = projectsCtx?.sseState ?? "connecting";
+  const subscribe = projectsCtx?.subscribe;
 
   const toast = useCallback((title: string, msg: string, kind = "") => {
     const id = toastId++;
@@ -231,7 +220,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   }, [toast]);
 
   const setView = useCallback((v: View) => {
-    window.location.hash = hashFor(v);
+    window.location.hash = hashFor(projectIdRef.current, v);
     setViewState(v);
     setDetail(null);
   }, []);
@@ -242,17 +231,23 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   // a URL of their own.
   const openDetail = useCallback((kind: "step" | "agent", id: string) => {
     setDetail({ kind, id });
-    window.location.hash = hashFor(viewRef.current, { kind, id });
+    window.location.hash = hashFor(projectIdRef.current, viewRef.current, { kind, id });
   }, []);
 
   const closeDetail = useCallback(() => {
     setDetail(null);
-    window.location.hash = hashFor(viewRef.current);
+    window.location.hash = hashFor(projectIdRef.current, viewRef.current);
   }, []);
 
   useEffect(() => {
     const onHash = () => {
-      const r = parseHash();
+      const r = currentRoute();
+      // A bare `#/steps` is a pre-projects link: rewrite it onto this project
+      // rather than letting the hash and the mounted store disagree.
+      if (r.projectId === null && projectIdRef.current) {
+        window.location.replace(hashFor(projectIdRef.current, r.view, r.detail));
+        return;
+      }
       if (r.view !== viewRef.current) setViewState(r.view);
       setDetail((cur) => {
         const next = r.detail ?? null;
@@ -274,7 +269,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
   const refreshStatus = useCallback(async () => {
     if (statusInflight.current) return statusInflight.current;
     statusInflight.current = (async () => {
-      const { json } = await api("GET", "/status");
+      const { json } = await clientRef.current.api("GET", "/status");
       if (!json) return;
       setStatus(json);
       setGoalId(json.goal?.id ?? null);
@@ -294,7 +289,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
     if (viewRef.current !== "steps" && !force) return;
     if (Date.now() - stepsAt.current < 1800 && !force) return;
     try {
-      const { json } = await api("GET", `/steps?limit=${stepLimit}`);
+      const { json } = await clientRef.current.api("GET", `/steps?limit=${stepLimit}`);
       if (Array.isArray(json)) {
         setStepsState(json);
         setStepsLoaded(true);
@@ -364,7 +359,7 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
     void refreshStatus();
     if (viewRef.current === "steps") void refreshSteps(false);
     if (viewRef.current === "overview" && Date.now() - stepsAt.current > 5000) {
-      api("GET", "/steps?limit=6").then(({ json }) => {
+      clientRef.current.api("GET", "/steps?limit=6").then(({ json }) => {
         if (Array.isArray(json)) {
           setSteps(json);
           stepsAt.current = Date.now();
@@ -373,69 +368,33 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
     }
   }, [refreshStatus, refreshSteps]);
 
-  const connectSse = useCallback(() => {
-    try {
-      sseRef.current?.close();
-    } catch {
-      /* noop */
-    }
-    const since = lastSeqRef.current ? `?sinceSeq=${lastSeqRef.current}` : "";
-    // EventSource is the live wire: the server emits `event: <type>` + `id:`
-    // for every event, so subscribe to the full vocabulary, not a subset.
-    const es = new EventSource(`/events/stream${since}`);
-    sseRef.current = es;
-    setSse("connecting");
-    const onData = (m: MessageEvent) => {
-      if (livePausedRef.current) return;
-      try {
-        const raw = JSON.parse(m.data);
+  // Frames arrive from ProjectsProvider's single multiplexed connection rather
+  // than a socket of this store's own. Registering is what puts this project in
+  // the stream's project set; unregistering on unmount is what stops a switched
+  // -away project from streaming forever.
+  useEffect(() => {
+    if (!subscribe || !projectId) return;
+    const sink: ProjectSink = {
+      event: (raw) => {
+        if (livePausedRef.current) return;
         ingestEvent(raw);
-      } catch {
-        /* ignore */
-      }
-      livePatch();
+        livePatch();
+      },
+      stream: (_type, raw) => ingestToken(raw),
+      resync: () => {
+        // Continuity is gone. Refetch instead of carrying on: the alternative
+        // is a timeline that silently misses everything the gap swallowed.
+        seqSeen.current.clear();
+        void refreshStatus();
+        void refreshSteps(true);
+        clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
+          if (Array.isArray(json)) for (const raw of json) ingestEvent(raw);
+        }).catch(() => undefined);
+      },
+      cursor: () => lastSeqRef.current,
     };
-    es.onopen = () => {
-      sseFails.current = 0;
-      setSse("open");
-    };
-    es.onerror = () => {
-      sseFails.current++;
-      if (sseFails.current >= 3) {
-        sseFails.current = 0;
-        setSse("reconnecting");
-        try {
-          es.close();
-        } catch {
-          /* noop */
-        }
-        setTimeout(connectSse, 1500);
-      }
-    };
-    es.onmessage = onData;
-    // Live token frames ride the same SSE connection but are NOT log events:
-    // dedicated listener straight into the stream buffers.
-    try {
-      es.addEventListener("turn.token", ((m: MessageEvent) => {
-        try {
-          ingestToken(JSON.parse(m.data));
-        } catch {
-          /* ignore */
-        }
-      }) as EventListener);
-    } catch {
-      /* noop */
-    }
-    const types: string[] = (vocabRef.current && vocabRef.current.eventTypes) || FALLBACK_TYPES;
-    for (const t of types) {
-      try {
-        es.addEventListener(t, onData as EventListener);
-      } catch {
-        /* noop */
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ingestEvent, ingestToken, livePatch, setSse]);
+    return subscribe(projectId, sink);
+  }, [subscribe, projectId, ingestEvent, ingestToken, livePatch, refreshStatus, refreshSteps]);
 
   useEffect(() => {
     const saved = localStorage.getItem("mesh-theme");
@@ -443,21 +402,19 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
     let dead = false;
     (async () => {
       try {
-        const { json } = await api("GET", "/config/vocabulary");
+        const { json } = await clientRef.current.api("GET", "/config/vocabulary");
         if (!dead && json) {
           setVocab(json);
           vocabRef.current = json;
         }
       } catch {
-        /* SSE falls back to a builtin type list */
+        /* the stream falls back to a builtin type list */
       }
       try {
         await refreshStatus();
       } catch {
         toast("mesh", "server unreachable — retrying…", "bad");
       }
-      if (dead) return;
-      connectSse();
     })();
     const iv = setInterval(() => {
       void refreshStatus().catch(() => undefined);
@@ -465,23 +422,19 @@ export function MeshProvider({ children }: { children: ReactNode }): React.JSX.E
     return () => {
       dead = true;
       clearInterval(iv);
-      try {
-        sseRef.current?.close();
-      } catch {
-        /* noop */
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const value = useMemo<MeshState>(
     () => ({
+      projectId, client,
       view, setView, status, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
       steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
       toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       streams, detail, openDetail, closeDetail,
     }),
-    [view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, streams, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, streams, detail, openDetail, closeDetail],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
