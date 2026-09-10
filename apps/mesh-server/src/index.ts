@@ -10,7 +10,7 @@ const parseYamlText = (text: string): unknown => parseYaml(text);
 import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, type OpResult } from "../../../packages/core/src/index";
 import { missionKey } from "../../../packages/core/src/budgets";
 import { JsonlEventStore, MemoryEventStore, type EventStore } from "../../../packages/event-store/src/index";
-import { PolicyEngine } from "../../../packages/policy-engine/src/index";
+import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-engine/src/index";
 import { Scheduler, type TriageModel } from "../../../packages/scheduler/src/index";
 import { StubRuntime, StaticRuntimeResolver } from "../../../packages/agent-runtime/src/index";
 import { FileSystemArtifactStore, GitWorkspace, InMemoryArtifactStore } from "../../../packages/artifact-store/src/index";
@@ -431,6 +431,47 @@ export interface ServerHandle {
   url: string;
   instance: MeshInstance;
   close(): Promise<void>;
+}
+
+/**
+ * Persona/contract for POST /designer/chat. The whole-config-every-turn rule
+ * is what lets the UI diff one reply against the current draft instead of
+ * replaying a sequence of partial patches.
+ */
+const DESIGNER_SYSTEM_PROMPT = [
+  "You are the crew designer for Agent Mesh: you help an operator author mesh.yaml through chat.",
+  "You are given the current draft config as JSON, then the conversation so far.",
+  "",
+  "Rules:",
+  "- ALWAYS answer with a brief prose explanation followed by exactly one fenced ```json block containing the COMPLETE mesh.yaml document — never a diff, a patch, or a partial fragment. Repeat the whole config unchanged when nothing needs to change.",
+  "- Keep every field the operator did not ask you to change exactly as it was.",
+  "- The document must match the mesh schema: project, mesh (id, name, goal, workspace), agents, policies.transitions, budgets.",
+  "- Transition gates look like `<actor>.<kind>` where actor is an agent id or role. The named actor must exist, and an `approve` token must map to an agent holding the matching authority or capability, or the mission deadlocks at that gate.",
+  "- Agent model fields are `provider/model` strings; leave them blank to use the mesh default.",
+].join("\n");
+
+/**
+ * Pull the whole-config proposal out of a designer reply: the first fenced
+ * JSON/YAML block (or a bare leading object) that parses to a mesh-shaped
+ * object. The system prompt requires the complete config every turn, so the
+ * first such object is the proposal; later blocks are examples/commentary.
+ */
+function extractDesignerConfig(text: string): unknown {
+  const candidates: string[] = [];
+  const fence = /```(?:json|yaml|yml)?[ \t]*\r?\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = fence.exec(text)) !== null) candidates.push(match[1]);
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) candidates.push(trimmed);
+  for (const candidate of candidates) {
+    try {
+      const doc = parseYamlText(candidate);
+      if (doc && typeof doc === "object" && !Array.isArray(doc) && ("agents" in doc || "mesh" in doc)) return doc;
+    } catch {
+      /* not this block */
+    }
+  }
+  return undefined;
 }
 
 export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: string } = {}): http.Server {
@@ -1190,6 +1231,52 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           }
           throw err;
         }
+      }
+
+      // ------------------------------------------------------ designer chat
+      // Conversational front end for the config designer. The model sees the
+      // whole transcript plus the current draft and must answer with the
+      // COMPLETE config each turn; the server extracts that proposal and
+      // validates it (schema + cross-field rules + gate satisfiability) before
+      // the UI can offer to apply it. Stateless by design: the client resends
+      // the transcript, so no server-side chat session is kept.
+      if (parts[0] === "designer" && parts[1] === "chat" && req.method === "POST" && parts.length === 2) {
+        const b = await body();
+        const messages: Array<{ role?: unknown; content?: unknown }> = Array.isArray(b.messages) ? b.messages : [];
+        if (messages.length === 0) return json(400, { error: "messages must be a non-empty array" });
+        const currentConfig = b.currentConfig && typeof b.currentConfig === "object" ? b.currentConfig : undefined;
+        const transcript = messages
+          .map((m) => {
+            const role = String(m?.role ?? "user").toLowerCase() === "assistant" ? "Assistant" : "User";
+            const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
+            return `${role}:\n${content}`;
+          })
+          .join("\n\n");
+        const promptText = [
+          currentConfig
+            ? `Current draft mesh.yaml (as JSON):\n\`\`\`json\n${JSON.stringify(currentConfig, null, 2)}\n\`\`\``
+            : "There is no config yet; the first proposal should be a new mesh.yaml.",
+          `Conversation:\n${transcript}`,
+        ].join("\n\n---\n\n");
+        const reply = await instance.opencodeRuntime.prompt(promptText, { system: DESIGNER_SYSTEM_PROMPT });
+        const proposedConfig = extractDesignerConfig(reply);
+        const problems: string[] = [];
+        if (proposedConfig === undefined) {
+          problems.push("the reply contained no parseable whole-config block");
+        } else {
+          try {
+            const { resolved } = analyzeMeshConfig(proposedConfig, config.dir);
+            // Schema-valid, but a gate that names an actor no agent can play
+            // still deadlocks every mission at that transition.
+            const gateIssues = validateTransitionGates(resolved.raw.policies?.transitions, resolved.raw.agents);
+            for (const warning of resolved.warnings) problems.push(warning);
+            for (const issue of gateIssues) problems.push(`gate '${issue.gate}' token '${issue.token}': ${issue.reason}`);
+          } catch (err) {
+            if (!(err instanceof ConfigError)) throw err;
+            problems.push(...err.errors);
+          }
+        }
+        return json(200, { reply, proposedConfig, problems: [...new Set(problems)] });
       }
 
       // ----------------------------------------------------------- models

@@ -37,9 +37,10 @@ function runtimeCtx(dir: string): RuntimeContext {
   };
 }
 
-function startMockOpenCode(): Promise<{ url: string; close(): void; sessions: Map<string, unknown[]>; aborts: string[] }> {
+function startMockOpenCode(): Promise<{ url: string; close(): void; sessions: Map<string, unknown[]>; aborts: string[]; requestBodies: Array<Record<string, unknown>> }> {
   const sessions = new Map<string, unknown[]>();
   const aborts: string[] = [];
+  const requestBodies: Array<Record<string, unknown>> = [];
   let counter = 0;
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -61,6 +62,7 @@ function startMockOpenCode(): Promise<{ url: string; close(): void; sessions: Ma
       const msg = /^\/session\/([^/]+)\/message$/.exec(url);
       if (req.method === "POST" && msg) {
         const history = sessions.get(msg[1]) ?? [];
+        requestBodies.push(body);
         const userText = (body.parts ?? [])[0]?.text ?? "";
         history.push({ role: "user", text: userText });
         const reply = {
@@ -104,6 +106,7 @@ function startMockOpenCode(): Promise<{ url: string; close(): void; sessions: Ma
         url: `http://127.0.0.1:${port}`,
         sessions,
         aborts,
+        requestBodies,
         close: () => server.close(),
       });
     });
@@ -148,6 +151,24 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
   } finally {
     mock.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opencode adapter: prompt() is context-free, forwards system/model, returns text unparsed", async () => {
+  const mock = await startMockOpenCode();
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false });
+    const text = await adapter.prompt("design me a crew", { system: "you are a designer", model: "other/override" });
+    // Unlike send(), prompt() returns the reply verbatim: the mock's mesh-json
+    // op block is not parsed away, because callers own interpretation.
+    assert.match(text, /publish_artifact/);
+    assert.equal(parseMeshOps(text).length, 2);
+    const body = mock.requestBodies.at(-1) ?? {};
+    assert.equal(body.system, "you are a designer");
+    assert.deepEqual(body.model, { providerID: "other", modelID: "override" });
+    assert.equal(mock.sessions.size, 1, "one throwaway session per prompt call");
+  } finally {
+    mock.close();
   }
 });
 

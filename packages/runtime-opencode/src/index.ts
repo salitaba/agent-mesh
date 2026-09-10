@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { spawn, type ChildProcess } from "child_process";
 import {
@@ -56,6 +57,34 @@ export interface OpenCodeAdapterOptions {
   extraConfig?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }
+
+/** Options for `prompt()` — the context-free, single-turn designer entry point. */
+export interface OpenCodePromptOptions {
+  /** System prompt for this turn (persona/instructions). */
+  system?: string;
+  /** Per-call model override as `provider/model`. Falls back to the adapter default. */
+  model?: string;
+}
+
+/**
+ * Identity for the context-free designer backend. Never registered with the
+ * kernel; it exists so `ensureProcess` has a stable process-map key and a
+ * tool-less permission profile (empty capabilities => read-only).
+ */
+const DESIGNER_AGENT: AgentDefinition = {
+  id: "__mesh_designer",
+  role: "designer",
+  mode: "peer",
+  runtime: "opencode",
+  prompt: { text: "mesh config designer" },
+  capabilities: [],
+  authority: [],
+  communicationPolicy: { mayContact: [], mayBeContactedBy: [] },
+  interests: [],
+  sessionPolicy: { persistent: false },
+  delegationPolicy: { allowDelegation: false, maxDepth: 0, maxWorkers: 0 },
+  budget: {},
+};
 
 interface ProcessHandle {
   proc?: ChildProcess;
@@ -234,6 +263,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
    * front instead of decoding it from a restart loop.
    */
   readonly dispatcherWarning?: string;
+  /** Lazy scratch workspace for the context-free designer backend. */
+  private designerWorkspace?: string;
   private static portCursor = 0;
 
   constructor(private options: OpenCodeAdapterOptions = {}) {
@@ -324,7 +355,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     }
   }
 
-  private agentConfigDir(agent: AgentDefinition, context: RuntimeContext): string {
+  private agentConfigDir(agent: AgentDefinition, context: RuntimeContext, opts: { mcp?: boolean } = {}): string {
     const dir = path.join(context.workspacePath, ".mesh", "agents", agent.id);
     fs.mkdirSync(dir, { recursive: true });
     const promptFile = path.join(dir, "ROLE.md");
@@ -344,20 +375,26 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     const config: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
       instructions: [path.join(dir, "ROLE.md")],
-      mcp: {
-        mesh: {
-          type: "local",
-          command: mcpCmd,
-          enabled: true,
-          environment: {
-            MESH_BUS_URL: context.busUrl,
-            MESH_AGENT_ID: agent.id,
-            MESH_AGENT_TOKEN: context.agentToken,
-          },
-          timeout: 15000,
-        },
-      },
       permission: this.permissionsFor(agent, context),
+      // The context-free designer runs tool-less: no mesh MCP bridge is wired
+      // in, because there is no agent token or bus behind it.
+      ...(opts.mcp === false
+        ? {}
+        : {
+            mcp: {
+              mesh: {
+                type: "local",
+                command: mcpCmd,
+                enabled: true,
+                environment: {
+                  MESH_BUS_URL: context.busUrl,
+                  MESH_AGENT_ID: agent.id,
+                  MESH_AGENT_TOKEN: context.agentToken,
+                },
+                timeout: 15000,
+              },
+            },
+          }),
       ...this.options.extraConfig,
     };
     const model = this.modelFor(agent);
@@ -365,7 +402,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       config.model = `${model.providerID}/${model.modelID}`;
     }
     fs.writeFileSync(path.join(dir, "opencode.json"), JSON.stringify(config, null, 2), "utf8");
-    fs.writeFileSync(path.join(dir, "MESH_CONTEXT.md"), `Goal: ${context.goalId}\nMesh: ${context.meshId}\nWorkspace: ${context.workspacePath}\n`, "utf8");
+    if (opts.mcp !== false) {
+      fs.writeFileSync(path.join(dir, "MESH_CONTEXT.md"), `Goal: ${context.goalId}\nMesh: ${context.meshId}\nWorkspace: ${context.workspacePath}\n`, "utf8");
+    }
     return dir;
   }
 
@@ -393,7 +432,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     return Math.min(65530, Math.max(1024, base));
   }
 
-  private async ensureProcess(agent: AgentDefinition, context: RuntimeContext): Promise<ProcessHandle> {
+  private async ensureProcess(agent: AgentDefinition, context: RuntimeContext, configOpts: { mcp?: boolean } = {}): Promise<ProcessHandle> {
   // Reclaim `opencode serve` children orphaned by a previous adapter lifetime
   // (crash/restart/kill -9): without this every reboot accumulates a fresh set
   // of ~300MB processes. Runs once per workspace, then periodically — agents
@@ -405,7 +444,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       if (await this.probe(existing.baseUrl)) return existing;
       await this.killProcess(agent.id, existing);
     }
-    const configDir = this.agentConfigDir(agent, context);
+    const configDir = this.agentConfigDir(agent, context, configOpts);
     if (!this.spawnProcesses) {
       const baseUrl = this.options.baseUrl ?? `http://127.0.0.1:${this.portBase}`;
       const handle: ProcessHandle = { baseUrl, configDir };
@@ -809,6 +848,43 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         .map((p) => ({ name: String(p.tool ?? "tool"), args: p.state?.input ?? {}, resultDigest: shortDigest(JSON.stringify(p.state?.output ?? "")) })),
       summary: extractSummary(text),
     };
+  }
+
+  /**
+   * One-off model turn for callers outside the mission (the config designer):
+   * no kernel, no bus, no op parsing. Creates a throwaway session on the
+   * adapter's backend and returns the assistant's text verbatim, leaving all
+   * interpretation to the caller. Multi-turn continuity is the caller's job —
+   * it resends the transcript on every call.
+   */
+  async prompt(text: string, opts: OpenCodePromptOptions = {}): Promise<string> {
+    const context: RuntimeContext = {
+      goalId: "designer",
+      meshId: "designer",
+      workspacePath: this.designerWorkspaceDir(),
+      busUrl: "",
+      agentToken: "",
+      rolePromptText: DESIGNER_AGENT.prompt.text ?? "",
+      capabilityGrants: [],
+      env: {},
+    };
+    const handle = await this.ensureProcess(DESIGNER_AGENT, context, { mcp: false });
+    const created = await this.request<{ id?: string }>(handle.baseUrl, "POST", "/session", { title: "mesh:designer" }, this.controlTimeoutMs);
+    const sessionId = created.id ?? newAgentSessionId();
+    const body: Record<string, unknown> = { parts: [{ type: "text", text }] };
+    if (opts.system) body.system = opts.system;
+    const model = parseModelRef(opts.model) ?? this.options.model;
+    if (model) body.model = model;
+    const response = await this.request<OpenCodeMessageResponse>(handle.baseUrl, "POST", `/session/${sessionId}/message`, body);
+    return extractText(response);
+  }
+
+  /** Per-adapter scratch workspace for the designer backend (tools denied). */
+  private designerWorkspaceDir(): string {
+    if (!this.designerWorkspace) {
+      this.designerWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "agent-mesh-designer-"));
+    }
+    return this.designerWorkspace;
   }
 
   /**
