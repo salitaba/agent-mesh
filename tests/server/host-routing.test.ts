@@ -467,3 +467,45 @@ test("host shutdown leaves no child processes behind", { timeout: 30_000 }, asyn
   assert.deepEqual(host.supervisor.runningIds(), []);
   assert.throws(() => process.kill(pid, 0), "the child must not outlive the host that spawned it");
 });
+
+test("adding a mesh-less folder scaffolds only when init is asked for", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const blank = path.join(base, "greenfield");
+  fs.mkdirSync(blank, { recursive: true });
+  const host = await startHost(base);
+  try {
+    // Opt-in, not automatic: a plain add still fails, and writes nothing. The
+    // operator who typed a wrong path gets an error, not a folder full of yaml.
+    const plain = await req(`${host.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ root: blank }),
+    });
+    assert.equal(plain.status, 400);
+    assert.equal(plain.json.code, "missing");
+    assert.equal(fs.existsSync(path.join(blank, "mesh.yaml")), false, "a rejected add writes nothing");
+
+    const scaffolded = await req(`${host.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ root: blank, init: true }),
+    });
+    assert.equal(scaffolded.status, 201, scaffolded.body);
+    assert.equal(scaffolded.json.scaffolded, true);
+    assert.ok(fs.existsSync(path.join(blank, "mesh.yaml")));
+    // The role prompt matters as much as the config: a mesh whose only agent
+    // points at a missing prompt file boots and then dies on first activation.
+    assert.ok(fs.existsSync(path.join(blank, "roles", "architect.md")));
+
+    // Second add of the now-scaffolded folder is an ordinary attach.
+    const again = await req(`${host.url}/api/browse?path=${encodeURIComponent(blank)}`);
+    assert.equal(again.status, 200);
+    assert.equal(again.json.hasMesh, true, "browse reports whether the listed folder itself holds a mesh");
+
+    const parent = await req(`${host.url}/api/browse?path=${encodeURIComponent(base)}`);
+    assert.equal(parent.json.hasMesh, false, "the parent has no mesh.yaml of its own");
+    assert.ok(parent.json.entries.some((e: any) => e.name === "greenfield" && e.hasMesh === true));
+  } finally {
+    await host.close();
+  }
+});

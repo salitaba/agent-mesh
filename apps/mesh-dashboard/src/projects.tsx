@@ -71,7 +71,15 @@ interface ProjectsState {
   activeId: string | null;
   setActive: (id: string) => void;
   refreshProjects: () => Promise<ProjectSummary[]>;
-  addProject: (root: string) => Promise<{ ok: boolean; error?: string; project?: ProjectSummary }>;
+  /**
+   * `opts.init` asks the host to scaffold a mesh.yaml when the folder has none.
+   * Without it a mesh-less folder still fails with `missing`, which the picker
+   * uses to offer an explicit "create mesh here" instead of writing unasked.
+   */
+  addProject: (
+    root: string,
+    opts?: { init?: boolean },
+  ) => Promise<{ ok: boolean; error?: string; project?: ProjectSummary; scaffolded?: boolean; missing?: boolean }>;
   openProject: (id: string) => Promise<ProjectSummary | null>;
   closeProject: (id: string) => Promise<ProjectSummary | null>;
   restartProject: (id: string) => Promise<ProjectSummary | null>;
@@ -285,14 +293,18 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     });
   }, []);
 
-  const addProject = useCallback(async (root: string) => {
-    const { status, json } = await post("/api/projects", { root });
+  const addProject = useCallback(async (root: string, opts?: { init?: boolean }) => {
+    const { status, json } = await post("/api/projects", opts?.init ? { root, init: true } : { root });
     if (status === 201) {
       const summary = asSummary(json);
       applySummary(summary);
-      return { ok: true, project: summary ?? undefined };
+      return { ok: true, project: summary ?? undefined, scaffolded: json?.scaffolded === true };
     }
-    return { ok: false, error: String(json?.error ?? `add failed (${status})`) };
+    return {
+      ok: false,
+      error: String(json?.error ?? `add failed (${status})`),
+      missing: json?.code === "missing",
+    };
   }, [applySummary]);
 
   // open/close/restart answer 200 even when the child failed to come up: the

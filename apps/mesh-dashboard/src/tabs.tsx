@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "./components";
 import { useProjects, type ProjectSummary } from "./projects";
 import { api, post } from "./api";
+import { hashFor } from "./route";
 import { formatRss, moveTab, nextActive, orderTabs, reorderTabs, tabStatus } from "./tabmodel";
 
 const ORDER_KEY = "mesh-tab-order";
@@ -49,10 +50,12 @@ interface BrowseEntry {
  */
 function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
   const { addProject, openProject, setActive } = useProjects();
-  const [dir, setDir] = useState<{ path: string; parent: string | null; entries: BrowseEntry[]; error?: string } | null>(null);
+  const [dir, setDir] = useState<{ path: string; parent: string | null; hasMesh: boolean; entries: BrowseEntry[]; error?: string } | null>(null);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** Set when an add failed purely because the folder holds no mesh.yaml. */
+  const [offerInit, setOfferInit] = useState("");
   const deadRef = useRef(false);
 
   const browse = useCallback(async (path?: string | null) => {
@@ -61,8 +64,15 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
     // The picker can be dismissed while this is in flight; a setState after
     // that is the same leak class that has bitten every step of this spec.
     if (deadRef.current || !json || typeof json.path !== "string") return;
-    setDir({ path: json.path, parent: json.parent ?? null, entries: Array.isArray(json.entries) ? json.entries : [], error: json.error });
+    setDir({
+      path: json.path,
+      parent: json.parent ?? null,
+      hasMesh: json.hasMesh === true,
+      entries: Array.isArray(json.entries) ? json.entries : [],
+      error: json.error,
+    });
     setTyped(json.path);
+    setOfferInit("");
   }, []);
 
   useEffect(() => {
@@ -73,14 +83,19 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
     };
   }, [browse]);
 
-  const add = useCallback(async (root: string) => {
+  const add = useCallback(async (root: string, init = false) => {
     setBusy(true);
     setError("");
-    const res = await addProject(root);
+    setOfferInit("");
+    const res = await addProject(root, init ? { init: true } : undefined);
     if (deadRef.current) return;
     setBusy(false);
     if (!res.ok) {
       setError(res.error ?? "could not add that folder");
+      // The listing said nothing about this path (the operator typed it), so
+      // the host is the first to know it has no mesh. Offer the scaffold as a
+      // second, explicit click rather than writing files behind their back.
+      if (res.missing) setOfferInit(root);
       return;
     }
     // Adding without opening leaves a tab that does nothing, which reads as a
@@ -88,9 +103,18 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
     if (res.project) {
       setActive(res.project.id);
       void openProject(res.project.id);
+      // A freshly scaffolded mesh is a placeholder goal and one agent: the
+      // Designer is the only view where that is worth looking at.
+      if (res.scaffolded) window.location.hash = hashFor(res.project.id, "designer");
     }
     onClose();
   }, [addProject, onClose, openProject, setActive]);
+
+  // The typed path drifts from the listed one as soon as the operator edits the
+  // input without pressing "go", and a stale answer here would scaffold into the
+  // wrong folder. Null means "unknown", which stays on the safe non-init path.
+  const listedHasMesh: boolean | null = dir && dir.path === typed ? dir.hasMesh : null;
+  const confirmLabel = listedHasMesh === false ? "create mesh here" : "add this folder";
 
   return (
     <div className="proj-picker" role="dialog" aria-label="Add a project">
@@ -136,9 +160,19 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
         <span className="muted mono">{dir?.path ?? "…"}</span>
         <div className="proj-picker-acts">
           <Button variant="ghost" onClick={onClose}>cancel</Button>
-          <Button variant="primary" disabled={busy || !typed} onClick={() => void add(typed)}>
-            {busy ? "adding…" : "add this folder"}
-          </Button>
+          {offerInit ? (
+            <Button variant="primary" disabled={busy} onClick={() => void add(offerInit, true)}>
+              {busy ? "creating…" : "create mesh here"}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              disabled={busy || !typed}
+              onClick={() => void add(typed, listedHasMesh === false)}
+            >
+              {busy ? (listedHasMesh === false ? "creating…" : "adding…") : confirmLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>

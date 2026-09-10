@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { spawnSync } from "child_process";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   validateMeshConfig,
@@ -663,6 +664,20 @@ function dedupe(list: string[]): string[] {
 
 export function defaultEventEnvelopeBase(goalId: string): Pick<MeshEvent, "goalId" | "protocolVersion"> {
   return { goalId, protocolVersion: "1.0" };
+}
+
+/**
+ * Is the `opencode` CLI on PATH? Picks the default runtime for a scaffolded
+ * mesh: a machine without the CLI gets `stub`, which boots but does no work,
+ * instead of an `opencode` mesh that fails on first activation.
+ */
+export function hasOpenCodeCli(): boolean {
+  try {
+    const r = spawnSync("opencode", ["--version"], { stdio: "ignore", timeout: 10000, shell: process.platform === "win32" });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
 }
 
 export function writeDefaultMeshYaml(

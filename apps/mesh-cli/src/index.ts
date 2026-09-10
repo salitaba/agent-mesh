@@ -1,17 +1,7 @@
 ﻿import * as fs from "fs";
 import * as path from "path";
-import { spawnSync } from "child_process";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
-import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
-
-function hasOpenCodeCli(): boolean {
-  try {
-    const r = spawnSync("opencode", ["--version"], { stdio: "ignore", timeout: 10000, shell: process.platform === "win32" });
-    return r.status === 0;
-  } catch {
-    return false;
-  }
-}
+import { writeDefaultMeshYaml, hasOpenCodeCli } from "../../../packages/config/src/index";
 import { SCHEMAS } from "../../../packages/protocol/src/index";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";

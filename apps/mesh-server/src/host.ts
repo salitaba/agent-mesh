@@ -37,6 +37,7 @@ import {
   type ProjectSupervisor,
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
+import { writeDefaultMeshYaml, hasOpenCodeCli } from "../../../packages/config/src/index";
 import {
   MultiplexHub,
   SseDecoder,
@@ -575,8 +576,20 @@ export function createHostServer(deps: {
           const b = await body();
           const root = typeof b.root === "string" ? b.root.trim() : "";
           if (!root) return json(400, { error: "body must carry { root }" });
+          // Scaffolding is opt-in. A plain add to a mesh-less folder still 400s
+          // ("missing"), because writing files into a directory the operator
+          // only meant to attach is a surprise no undo covers.
+          let scaffolded = false;
+          const resolved = path.resolve(root);
+          if (b.init === true && !fs.existsSync(path.join(resolved, MESH_CONFIG_FILENAME))) {
+            writeDefaultMeshYaml(resolved, path.basename(resolved), hasOpenCodeCli() ? "opencode" : "stub");
+            scaffolded = true;
+          }
+          // If the add below throws, the scaffolded files stay. They are a valid
+          // mesh the operator explicitly asked for; rolling them back would be a
+          // surprise delete inside a user directory.
           const ref = await registry.add(root);
-          return json(201, summarize(ref));
+          return json(201, { ...summarize(ref), scaffolded });
         }
         if (parts[2]) {
           const id = decodeURIComponent(parts[2]);
@@ -799,6 +812,13 @@ export interface BrowseResult {
   path: string;
   /** Null at the filesystem root, so the UI knows to hide "up". */
   parent: string | null;
+  /**
+   * Does the *listed* directory itself hold a `mesh.yaml`? Distinct from the
+   * per-entry flag: the picker's confirm button acts on the directory it is
+   * currently inside, so without this it cannot tell whether adding that folder
+   * means "attach an existing mesh" or "scaffold a new one".
+   */
+  hasMesh: boolean;
   entries: Array<{ name: string; path: string; hasMesh: boolean }>;
   error?: string;
 }
@@ -819,13 +839,14 @@ export function browseDir(input: string | null): BrowseResult {
     const up = path.dirname(p);
     return up === p ? null : up;
   };
+  const selfHasMesh = fs.existsSync(path.join(target, MESH_CONFIG_FILENAME));
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(target, { withFileTypes: true });
   } catch (err) {
     // An unreadable folder is a normal thing to click on. Answering 200 with
     // the reason keeps the picker on screen instead of blanking it.
-    return { path: target, parent: parentOf(target), entries: [], error: (err as Error).message };
+    return { path: target, parent: parentOf(target), hasMesh: selfHasMesh, entries: [], error: (err as Error).message };
   }
   const dirs = entries
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
@@ -834,7 +855,7 @@ export function browseDir(input: string | null): BrowseResult {
       return { name: e.name, path: full, hasMesh: fs.existsSync(path.join(full, MESH_CONFIG_FILENAME)) };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { path: target, parent: parentOf(target), entries: dirs };
+  return { path: target, parent: parentOf(target), hasMesh: selfHasMesh, entries: dirs };
 }
 
 /** Static dashboard assets. Returns false when nothing matched. */
