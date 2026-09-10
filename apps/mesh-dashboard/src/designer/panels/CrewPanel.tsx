@@ -7,6 +7,7 @@ import { CAPS, fmtNum, groupCaps } from "../model";
 import { ChipPick, CommaAdder, CustomChips, Field, Num, hueVar } from "../ui";
 import { Button, ErrorState, Input, Pill, Select, TextArea } from "../../components";
 import { useModelCatalogue } from "../modelCatalogue";
+import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
 /* Disclosure state lives at module scope so it survives tab switches, which
@@ -36,13 +37,14 @@ function Group({ id, summary, children }: { id: string; summary: React.ReactNode
 
 export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, cur, ids, vocab, ints, touch, startupSet } = ctx;
+  const { client } = useMesh();
   const [intFilter, setIntFilter] = useState("");
   const [bulkCaps, setBulkCaps] = useState(false);
   const [bulkInts, setBulkInts] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [newCap, setNewCap] = useState("");
-  const { state: models, reload: reloadModels } = useModelCatalogue();
+  const { state: models, reload: reloadModels } = useModelCatalogue(client);
   if (!cur || !m.agents[cur]) {
     return (
       <div className="ms-nosel">

@@ -1,17 +1,16 @@
 import { useEffect } from "react";
-import { api } from "../api";
 import { useMesh } from "../store";
 import { Button, Card, EventRow, Input } from "../components";
 import { EventDrawerBySeq } from "../drawers";
 import { EV_FILTER_GROUPS, evGroupOf } from "../events";
 
 export default function Events(): React.JSX.Element {
-  const { events, evSearch, setEvSearch, evFilter, setEvFilter, openDrawer, livePaused, setLivePaused, primeEvents } = useMesh();
+  const { events, evSearch, setEvSearch, evFilter, setEvFilter, openDrawer, livePaused, setLivePaused, primeEvents, client } = useMesh();
 
   useEffect(() => {
     let dead = false;
     if (events.length === 0) {
-      api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
+      client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
         if (!dead) primeEvents(json || []);
       }).catch(() => undefined);
     }

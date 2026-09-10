@@ -2,7 +2,7 @@
  * Shared by the crew panel (per-agent model) and the mesh panel (mesh default). */
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { type ProjectClient } from "../api";
 
 export interface ModelCatalogue {
   models: string[];
@@ -23,7 +23,7 @@ export type CatalogueState =
  * never heard back", and the picker would silently discard a model already
  * written in mesh.yaml.
  */
-export function useModelCatalogue(): { state: CatalogueState; reload: () => void } {
+export function useModelCatalogue(client: ProjectClient): { state: CatalogueState; reload: () => void } {
   const [state, setState] = useState<CatalogueState>({ phase: "loading" });
   const [nonce, setNonce] = useState(0);
   useEffect(() => {
@@ -31,7 +31,7 @@ export function useModelCatalogue(): { state: CatalogueState; reload: () => void
     setState({ phase: "loading" });
     // `refresh=1` on an explicit retry bypasses the server's catalogue cache —
     // the usual reason to retry is "I just configured a provider".
-    api("GET", nonce > 0 ? "/models?refresh=1" : "/models")
+    client.api("GET", nonce > 0 ? "/models?refresh=1" : "/models")
       .then(({ status, json, timeout }) => {
         if (!live) return;
         if (timeout) return setState({ phase: "error", detail: "the request timed out" });
@@ -46,6 +46,6 @@ export function useModelCatalogue(): { state: CatalogueState; reload: () => void
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, client]);
   return { state, reload: useCallback(() => setNonce((n) => n + 1), []) };
 }

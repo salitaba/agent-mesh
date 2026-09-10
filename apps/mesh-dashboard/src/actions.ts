@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { post } from "./api";
 import { useMesh } from "./store";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
@@ -20,7 +19,7 @@ export function confirmResume(status: any, action = "resume"): boolean {
  * types the mesh name, the same guard pattern used for deleting a repo.
  */
 export function useResetMission(): { busy: boolean; resetMission: () => Promise<void> } {
-  const { status, toast, refreshStatus } = useMesh();
+  const { status, toast, refreshStatus, client } = useMesh();
   const [busy, setBusy] = useState(false);
   const resetMission = async () => {
     const name = status?.meshId || status?.mesh?.id || "mesh";
@@ -36,7 +35,7 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
     }
     setBusy(true);
     try {
-      const { status: code, json } = await post("/mission/reset", { confirm: true });
+      const { status: code, json } = await client.post("/mission/reset", { confirm: true });
       toast(
         code === 200 ? "mission reset to zero" : "could not reset",
         json?.note ?? json?.error ?? "",
@@ -58,7 +57,7 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
  * not have to reopen and THEN send a message explaining why.
  */
 export function useReopenMission(): { busy: boolean; reopenMission: () => Promise<void> } {
-  const { toast, refreshStatus } = useMesh();
+  const { toast, refreshStatus, client } = useMesh();
   const [busy, setBusy] = useState(false);
   const reopenMission = async () => {
     const reason = window.prompt(
@@ -73,7 +72,7 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
     }
     setBusy(true);
     try {
-      const { status: code, json } = await post("/mission/reopen", { reason: reason.trim() });
+      const { status: code, json } = await client.post("/mission/reopen", { reason: reason.trim() });
       toast(
         code === 200 ? "mission reopened" : "could not reopen",
         json?.note ?? json?.reason ?? json?.error ?? "",
@@ -88,12 +87,12 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
 }
 
 export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
-  const { toast, refreshStatus } = useMesh();
+  const { toast, refreshStatus, client } = useMesh();
   const [busy, setBusy] = useState(false);
   const goLive = async () => {
     setBusy(true);
     try {
-      const { status, json } = await post("/mission/start");
+      const { status, json } = await client.post("/mission/start");
       const already = json?.started === false;
       toast(status === 200 ? (already ? "already live" : "mission continuing — agents are running") : "could not go live", json?.note ?? json?.error ?? "scheduler live", status === 200 ? "ok" : "bad");
     } finally {

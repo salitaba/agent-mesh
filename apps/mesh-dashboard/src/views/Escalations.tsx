@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { api, post } from "../api";
 import { ago, fmt, fmtBudget, roundNice } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, ErrorState, Input } from "../components";
@@ -290,14 +289,14 @@ function capTarget(kind: "events" | "time", info: { budget?: BudgetInfo }, statu
 
 export default function Escalations(): React.JSX.Element {
   const mesh = useMesh();
-  const { status, setView, openDrawer, toast, refreshStatus } = mesh;
+  const { status, setView, openDrawer, toast, refreshStatus, client } = mesh;
   const [list, setList] = useState<any[]>([]);
   const { busy: bootBusy, goLive } = useGoLive();
   const [raiseBusy, setRaiseBusy] = useState<string | null>(null);
   const parked = isParkedStatus(status);
 
   const reload = async () => {
-    const { json } = await api("GET", "/escalations");
+    const { json } = await client.api("GET", "/escalations");
     setList(json || []);
   };
   // The swallowed catch here told the operator "no escalations — the mesh is
@@ -312,8 +311,8 @@ export default function Escalations(): React.JSX.Element {
     setLoadErr(null);
     (async () => {
       const [{ json, timeout }, stRes] = await Promise.all([
-        api("GET", "/escalations"),
-        api("GET", "/status").catch(() => ({ json: null })),
+        client.api("GET", "/escalations"),
+        client.api("GET", "/status").catch(() => ({ json: null })),
       ]);
       if (dead) return;
       if (timeout || (json && json.error)) {
@@ -360,7 +359,7 @@ export default function Escalations(): React.JSX.Element {
       const next = new Map<string, any>();
       await Promise.all([...ids].slice(0, 20).map(async (id) => {
         try {
-          const { status: st, json } = await api("GET", `/messages/${encodeURIComponent(id)}`);
+          const { status: st, json } = await client.api("GET", `/messages/${encodeURIComponent(id)}`);
           if (st === 200 && json?.id) next.set(id, json);
         } catch {
           /* card renders without the preview */
@@ -371,11 +370,11 @@ export default function Escalations(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [list]);
+  }, [list, client]);
 
   const doRespond = async (escId: string, text: string) => {
     if (!text.trim()) return;
-    const { status: st } = await post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: text });
+    const { status: st } = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: text });
     if (st !== 200) toast("respond failed — try again", escId, "bad");
     else if (parked) toast("recorded — press Continue to go live", escId, "ok");
     else toast("responded — mission resumed", escId, "ok");
@@ -385,7 +384,7 @@ export default function Escalations(): React.JSX.Element {
 
   const doAnswer = async (escId: string, text: string) => {
     if (!text.trim()) return;
-    const { status: st, json } = await post(`/escalations/${encodeURIComponent(escId)}/answer`, { text, response: text });
+    const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/answer`, { text, response: text });
     if (st !== 200) {
       toast("answer failed — try again", json?.reason ?? escId, "bad");
     } else {
@@ -400,7 +399,7 @@ export default function Escalations(): React.JSX.Element {
 
   const doDrop = async (escId: string, label: string) => {
     if (!window.confirm(`Skip this? The waiting agent moves on without it.\n\n${label}`)) return;
-    const { status: st, json } = await post(`/escalations/${encodeURIComponent(escId)}/drop`, { reason: `dropped by operator: ${label}`, response: `dropped: ${label}` });
+    const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/drop`, { reason: `dropped by operator: ${label}`, response: `dropped: ${label}` });
     if (st !== 200) {
       toast("drop failed — try again", json?.reason ?? escId, "bad");
     } else {
@@ -417,12 +416,12 @@ export default function Escalations(): React.JSX.Element {
     const response = (form?.value || "").trim() || `raised budget to ${fmt(newLimit)} — continue with smaller steps`;
     setRaiseBusy(escId + key);
     try {
-      const { status: st, json } = await post("/budgets/raise", { key, limit: newLimit });
+      const { status: st, json } = await client.post("/budgets/raise", { key, limit: newLimit });
       if (st !== 200 || !json?.ok) {
         toast("couldn't raise budget", json?.reason || `status ${st}`, "bad");
         return;
       }
-      const r2 = await post(`/escalations/${encodeURIComponent(escId)}/respond`, { response });
+      const r2 = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response });
       if (r2.status !== 200) toast("budget raised, resume failed", escId, "warn");
       else if (parked) toast("budget raised — press Continue to go live", `${fmtBudget(newLimit, "tokens")} · ${escId}`, "ok");
       else toast("budget raised — mission resumed", `${fmtBudget(newLimit, "tokens")} · ${escId}`, "ok");
@@ -448,28 +447,28 @@ export default function Escalations(): React.JSX.Element {
     setRaiseBusy(escId + kind);
     try {
       const patch = kind === "events" ? { maxEvents: target } : { wallClockMinutes: target };
-      const r = await post("/mission/limits", patch);
+      const r = await client.post("/mission/limits", patch);
       if (!r.json?.ok) {
         toast("couldn't raise cap", r.json?.reason || `status ${r.status}`, "bad");
         return;
       }
       let yamlNote = "";
       try {
-        const { json: cfg } = await api("GET", "/config");
+        const { json: cfg } = await client.api("GET", "/config");
         if (cfg?.raw && cfg?.filePath) {
           const raw = JSON.parse(JSON.stringify(cfg.raw));
           raw.budgets = raw.budgets || {};
           raw.budgets.mission = raw.budgets.mission || {};
           if (kind === "events") raw.budgets.mission.max_events = target;
           else raw.budgets.mission.wall_clock_minutes = target;
-          const saved = await post("/config/save", { config: raw, path: cfg.filePath });
+          const saved = await client.post("/config/save", { config: raw, path: cfg.filePath });
           yamlNote = saved.status === 200 ? " · mesh.yaml updated" : " · mesh.yaml left unchanged";
         }
       } catch {
         yamlNote = " · mesh.yaml left unchanged";
       }
       const label = kind === "events" ? `event cap to ${fmt(target)}` : `time limit to ${target}m`;
-      const r2 = await post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: `raised ${label} — resuming` });
+      const r2 = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: `raised ${label} — resuming` });
       if (r2.status !== 200) toast("cap raised, resume failed", escId, "warn");
       else if (parked) toast(`cap raised — press Continue to go live${yamlNote}`, label, "ok");
       else toast(`cap raised — mission resumed${yamlNote}`, label, "ok");

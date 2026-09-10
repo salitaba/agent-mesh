@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
 import { plainLifecycle, RUNNING } from "../format";
 import { useMesh } from "../store";
 import { Card, ErrorState, rowKey } from "../components";
@@ -15,7 +14,7 @@ const KINDS: Array<[string, string, string]> = [
 const KIND_VERB: Record<string, string> = { REQUEST: "asked", APPROVE: "approved", BLOCK: "blocked", ESCALATE: "escalated", INFORM: "updated", OTHER: "messaged" };
 
 export default function Graph(): React.JSX.Element {
-  const { events, openDrawer } = useMesh();
+  const { events, openDrawer, client } = useMesh();
   const [graph, setGraph] = useState<any>(null);
   // A swallowed catch here left `graph` null forever, so a dead server was
   // indistinguishable from a slow one: the view said "loading graph" until
@@ -25,7 +24,7 @@ export default function Graph(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     setErr(null);
-    api("GET", "/graph").then(({ json, timeout }) => {
+    client.api("GET", "/graph").then(({ json, timeout }) => {
       if (dead) return;
       if (timeout || !json || json.error) {
         setErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
@@ -38,7 +37,7 @@ export default function Graph(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [attempt]);
+  }, [attempt, client]);
 
   if (err && !graph) return <ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} />;
   if (!graph) return <div className="empty"><div className="big">…</div><div>loading graph</div></div>;

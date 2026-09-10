@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, Input, Pill } from "../components";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
@@ -37,7 +36,7 @@ const fmtSize = (n: number): string =>
   n >= 1024 ? `${(n / 1024).toFixed(n >= 102400 ? 0 : 1)}kB` : `${n}B`;
 
 export default function Product(): React.JSX.Element {
-  const { toast, goalId } = useMesh();
+  const { toast, goalId, client } = useMesh();
   const [info, setInfo] = useState<any>(null);
   const [dir, setDir] = useState("");
   const [tree, setTree] = useState<TreeEntry[]>([]);
@@ -68,22 +67,22 @@ export default function Product(): React.JSX.Element {
     setQ("");
     setDir("");
     setWsErr(null);
-    api("GET", "/workspace/info").then(({ json, timeout }) => {
+    client.api("GET", "/workspace/info").then(({ json, timeout }) => {
       if (timeout || !json || json.error) {
         setWsErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
         return;
       }
       setInfo(json);
     }).catch((e: unknown) => setWsErr(e instanceof Error ? e.message : String(e)));
-    api("GET", "/workspace/changes").then(({ json }) => {
+    client.api("GET", "/workspace/changes").then(({ json }) => {
       if (Array.isArray(json)) setChanges(json);
     }).catch(() => setChanges([]));
-  }, [goalId, attempt]);
+  }, [goalId, attempt, client]);
 
   useEffect(() => {
     let dead = false;
     setTreeErr(null);
-    api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`).then(({ json, timeout }) => {
+    client.api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`).then(({ json, timeout }) => {
       if (dead) return;
       if (Array.isArray(json)) {
         setTree(json as TreeEntry[]);
@@ -97,7 +96,7 @@ export default function Product(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [dir, goalId, attempt]);
+  }, [dir, goalId, attempt, client]);
 
   useEffect(() => {
     if (!run || run.done) return;
@@ -107,7 +106,7 @@ export default function Product(): React.JSX.Element {
 
   useEffect(() => {
     if (!run || run.done || !run.id) return;
-    api("GET", `/workspace/run/${encodeURIComponent(run.id)}`).then(({ json }) => {
+    client.api("GET", `/workspace/run/${encodeURIComponent(run.id)}`).then(({ json }) => {
       if (json && json.id) {
         setRun(json);
         if (json.done && json.exitCode !== 0) toast("run finished", `exit code ${json.exitCode}`, "warn");
@@ -120,7 +119,7 @@ export default function Product(): React.JSX.Element {
   }, [run?.log?.length]);
 
   const openFile = async (p: string): Promise<void> => {
-    const { json } = await api("GET", `/workspace/file?path=${encodeURIComponent(p)}`);
+    const { json } = await client.api("GET", `/workspace/file?path=${encodeURIComponent(p)}`);
     if (!json || json.error) {
       if (json?.error) toast("cannot open", String(json.error), "warn");
       return;
@@ -136,7 +135,7 @@ export default function Product(): React.JSX.Element {
     // Uncommitted delta for this exact file, so a reviewer can see what an
     // agent changed without leaving the console for a terminal.
     setFileDiff(null);
-    const { json: d } = await api("GET", `/workspace/diff?path=${encodeURIComponent(p)}`);
+    const { json: d } = await client.api("GET", `/workspace/diff?path=${encodeURIComponent(p)}`);
     if (d && !d.error && !d.identical) setFileDiff(d as DiffPayload);
   };
 
@@ -147,13 +146,13 @@ export default function Product(): React.JSX.Element {
       return;
     }
     setSearching(true);
-    const { json } = await api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000 });
+    const { json } = await client.api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000 });
     setSearching(false);
     setHits(json && Array.isArray(json.results) ? (json.results as SearchHit[]) : []);
   };
 
   const start = async (script: string): Promise<void> => {
-    const { json } = await api("POST", "/workspace/run", { script });
+    const { json } = await client.api("POST", "/workspace/run", { script });
     if (json?.runId) {
       setRun({ id: json.runId, done: false, log: `$ ${script}\n`, exitCode: null, startedAt: Date.now() });
       setRunTicker(1);
@@ -164,13 +163,13 @@ export default function Product(): React.JSX.Element {
 
   const kill = async (): Promise<void> => {
     if (!run) return;
-    const { json } = await api("POST", `/workspace/run/${encodeURIComponent(run.id)}/kill`);
+    const { json } = await client.api("POST", `/workspace/run/${encodeURIComponent(run.id)}/kill`);
     if (json?.ok) toast("run killed", "stopped the script", "warn");
   };
 
   const openPg = (): void => {
     if (!pg) {
-      api("GET", "/playground/").then(({ json }) => {
+      client.api("GET", "/playground/").then(({ json }) => {
         void json;
         setPgErr(false);
       }).catch(() => undefined);

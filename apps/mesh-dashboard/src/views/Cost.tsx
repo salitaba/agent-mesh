@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
 import { fmt, friendlyBudgetKey } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, ErrorState, Pill } from "../components";
 
 export default function Cost(): React.JSX.Element {
-  const { refreshStatus, setView } = useMesh();
+  const { refreshStatus, setView, client } = useMesh();
   const [budgets, setBudgets] = useState<any>(null);
   // Swallowing this fetch was the worst lie in the console: the view fell back
   // to zeros and reported "0% used", so a failed request looked like a mission
@@ -16,7 +15,7 @@ export default function Cost(): React.JSX.Element {
     let dead = false;
     setErr(null);
     (async () => {
-      const { json: b, timeout } = await api("GET", "/budgets");
+      const { json: b, timeout } = await client.api("GET", "/budgets");
       if (dead) return;
       if (timeout || !b || b.error) {
         setErr(timeout ? "the request timed out — the server may be busy." : String(b?.error ?? "the mesh server did not answer."));
@@ -30,7 +29,7 @@ export default function Cost(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [refreshStatus, attempt]);
+  }, [refreshStatus, attempt, client]);
 
   const cost = budgets?.cost || { perAgent: [], missionTokens: 0, missionBudget: 0, models: [] };
   const ranked = (cost.perAgent || []).filter((p: any) => p.agentId !== "human").sort((a: any, b: any) => b.tokens - a.tokens);

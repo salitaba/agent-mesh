@@ -14,7 +14,6 @@
  */
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { api, post } from "../api";
 import { fmt } from "../format";
 import { useMesh } from "../store";
 import "./designer.css";
@@ -86,7 +85,7 @@ function saveLandsOnRunning(target: string, running: string): boolean {
 }
 
 export default function Designer(): React.JSX.Element {
-  const { vocab, toast, setView } = useMesh();
+  const { vocab, toast, setView, client } = useMesh();
   // Shell-owned (WS9): this component only paints the mode onto its regions.
   const { focusMode } = useFocusMode();
   const [, setVersion] = useState(0);
@@ -184,7 +183,7 @@ export default function Designer(): React.JSX.Element {
     if (!draft.model) return;
     setChecking(true);
     try {
-      const { status, json } = await post("/config/validate", { config: draft.model });
+      const { status, json } = await client.post("/config/validate", { config: draft.model });
       setResult({ status, json });
       setCheckFailed(false);
       if (status === 200 && json?.yaml) setLastYaml(json.yaml);
@@ -242,7 +241,7 @@ export default function Designer(): React.JSX.Element {
       let runningRaw: any = null;
       let runningPath = "";
       try {
-        const { json } = await api("GET", "/config");
+        const { json } = await client.api("GET", "/config");
         if (json?.raw) {
           runningRaw = json.raw;
           runningPath = json.filePath || "";
@@ -576,7 +575,7 @@ export default function Designer(): React.JSX.Element {
   };
 
   const loadRunningClick = async () => {
-    const { json } = await api("GET", "/config");
+    const { json } = await client.api("GET", "/config");
     if (!json?.raw) return toast("designer", "no running config", "bad");
     if (!dirty) {
       draft.runningPath = json.filePath || draft.runningPath;
@@ -592,7 +591,7 @@ export default function Designer(): React.JSX.Element {
   };
 
   const importApply = async () => {
-    const { status, json } = await post("/config/parse", { yaml: importText });
+    const { status, json } = await client.post("/config/parse", { yaml: importText });
     if (status !== 200) return toast("parse failed", (json.errors || []).join("; ").slice(0, 200), "bad");
     setImportOpen(false);
     requestReplace("import", json.config);
@@ -608,7 +607,7 @@ export default function Designer(): React.JSX.Element {
     setRunningStale(false);
     if (savingRunning) {
       try {
-        const { json } = await api("GET", "/config");
+        const { json } = await client.api("GET", "/config");
         if (json?.raw && JSON.stringify(json.raw) !== JSON.stringify(draft.runningRaw)) setRunningStale(true);
       } catch {
         /* offline: review still shows the diff */
@@ -619,7 +618,7 @@ export default function Designer(): React.JSX.Element {
   };
   const doSave = async () => {
     if (copyTargetsRunning) return toast("save failed", RUNNING_PATH_CONFLICT, "bad");
-    const { status, json } = await post("/config/save", { config: draft.model, path: targetPath });
+    const { status, json } = await client.post("/config/save", { config: draft.model, path: targetPath });
     if (status === 200) {
       if (savingRunning) {
         draft.runningRaw = deepCopy(draft.model);

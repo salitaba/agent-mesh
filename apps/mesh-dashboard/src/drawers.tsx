@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, getText, post } from "./api";
+import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
 import { evClass, evSummary } from "./events";
 import { useMesh, type TimelineEvent, type TurnStep } from "./store";
@@ -14,8 +14,8 @@ export function CloseX(): React.JSX.Element {
   return <button className="close-x" onClick={closeDrawer}>×</button>;
 }
 
-export async function agentAction(id: string, act: string, toast: (t: string, m: string, k?: string) => void, after?: () => void): Promise<void> {
-  const { status, json } = await post(`/agents/${encodeURIComponent(id)}/${act}`);
+export async function agentAction(client: ProjectClient, id: string, act: string, toast: (t: string, m: string, k?: string) => void, after?: () => void): Promise<void> {
+  const { status, json } = await client.post(`/agents/${encodeURIComponent(id)}/${act}`);
   if (status === 200) toast(act, `${id}: ok`, "ok");
   else toast(`${act} blocked`, `${id}: ${json?.reason ?? "denied"}`, "warn");
   if (after) setTimeout(after, 400);
@@ -26,7 +26,7 @@ function agentsToWake(agents: any[]): string[] {
 }
 
 export function MessageDrawer(): React.JSX.Element {
-  const { status, vocab, toast, refreshStatus, closeDrawer } = useMesh();
+  const { status, vocab, toast, refreshStatus, closeDrawer, client } = useMesh();
   const ids = (status?.agents || []).filter((a: any) => a.id !== "human").map((a: any) => a.id);
   const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
   const missionOver = status?.goal?.status === "COMPLETED" || status?.goal?.status === "FAILED";
@@ -55,7 +55,7 @@ export function MessageDrawer(): React.JSX.Element {
       body = { note };
     }
     const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
-    const { status: st, json } = await post("/messages", { to: recipients, type, payload: body, wake });
+    const { status: st, json } = await client.post("/messages", { to: recipients, type, payload: body, wake });
     setOut(st === 202 ? "Sent." : `Couldn't send: ${json?.reason ?? st}`);
     if (st === 202) toast("Sent", `to ${recipients.join(", ")}`, "ok");
     void refreshStatus();
@@ -86,7 +86,7 @@ export function MessageDrawer(): React.JSX.Element {
 }
 
 export function ApprovalDrawer(): React.JSX.Element {
-  const { status, toast, refreshStatus } = useMesh();
+  const { status, toast, refreshStatus, client } = useMesh();
   const subjects = ["architecture", "implementation", "quality", "security", "requirements", "release"];
   const [arts, setArts] = useState<any[]>([]);
   const [kind, setKind] = useState("approve");
@@ -94,13 +94,13 @@ export function ApprovalDrawer(): React.JSX.Element {
   const [comment, setComment] = useState("");
   const [out, setOut] = useState("");
   useEffect(() => {
-    api("GET", "/artifacts").then(({ json }) => {
+    client.api("GET", "/artifacts").then(({ json }) => {
       if (Array.isArray(json)) setArts(json.slice().reverse());
     }).catch(() => undefined);
-  }, []);
+  }, [client]);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const { status: st, json } = await post("/approvals", { kind, subject, comment: comment || undefined });
+    const { status: st, json } = await client.post("/approvals", { kind, subject, comment: comment || undefined });
     setOut(st === 200 ? "Recorded." : `Couldn't record: ${json?.reason ?? st}`);
     if (st === 200) toast("Recorded", `${kind} ${subject}`, "ok");
     void refreshStatus();
@@ -149,7 +149,7 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; hint: string }> = [
 ];
 
 export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
-  const { toast, closeDrawer, openDrawer, streams, steps: allSteps, lastSeq } = useMesh();
+  const { toast, closeDrawer, openDrawer, streams, steps: allSteps, lastSeq, client } = useMesh();
   const [json, setJson] = useState<any>(null);
   const [tab, setTab] = useState<AgentTab>("now");
   // The old drawer fetched once and then lied for the rest of its life: open
@@ -162,7 +162,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     const load = async (): Promise<void> => {
       lastLoad.current = Date.now();
       try {
-        const { json: j } = await api("GET", `/agents/${encodeURIComponent(id)}?limit=10`, undefined, { timeoutMs: 45000 });
+        const { json: j } = await client.api("GET", `/agents/${encodeURIComponent(id)}?limit=10`, undefined, { timeoutMs: 45000 });
         if (!dead) setJson(j);
       } catch {
         if (!dead) setJson((prev: any) => prev ?? { error: "unreachable" });
@@ -176,7 +176,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
       dead = true;
       clearInterval(iv);
     };
-  }, [id]);
+  }, [id, client]);
   // Nudge a refresh as soon as the log moves, instead of waiting out the poll.
   useEffect(() => {
     lastLoad.current = 0;
@@ -208,7 +208,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     );
   }
   const d = json.definition, s = json.state;
-  const act = (a: string) => void agentAction(id, a, toast);
+  const act = (a: string) => void agentAction(client, id, a, toast);
   const unreadFull: any[] = Array.isArray(json.unreadMessages) ? json.unreadMessages : [];
   const unreadCount: number = Array.isArray(json.unread) ? json.unread.length : unreadFull.length;
   const steps: any[] = Array.isArray(json.recentSteps) ? json.recentSteps : [];
@@ -556,7 +556,7 @@ export function matchOpEffects(ops: any[], timeline: any[]): OpRow[] {
 }
 
 export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }): React.JSX.Element {
-  const { toast, openDrawer, events, streams } = useMesh();
+  const { toast, openDrawer, events, streams, client } = useMesh();
   const [json, setJson] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   // Empty means "whatever the turn's own state says is most useful" — see the
@@ -566,7 +566,7 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
     let dead = false;
     const load = async (): Promise<boolean> => {
       try {
-        const { json: j } = await api("GET", `/turns/${encodeURIComponent(turnId)}`, undefined, { timeoutMs: 15000 });
+        const { json: j } = await client.api("GET", `/turns/${encodeURIComponent(turnId)}`, undefined, { timeoutMs: 15000 });
         if (!dead) setJson(j);
         return (j as any)?.turn?.status === "running";
       } catch {
@@ -586,7 +586,7 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
       dead = true;
       clearInterval(iv);
     };
-  }, [turnId]);
+  }, [turnId, client]);
   const listStep: TurnStep | undefined = (steps || []).find((x: any) => x.turnId === turnId);
   const sbx = useSandboxPerms(json?.turn?.agentId ?? listStep?.agentId);
   if (!json) return <StepSkeleton />;
@@ -1018,6 +1018,7 @@ function StepOpener({ turnId }: { turnId: string }): React.JSX.Element {
 }
 
 export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
+  const { client } = useMesh();
   const [data, setData] = useState<any>(null);
   // Which version the reader is looking at. null = the current one; picking an
   // older version refetches that blob instead of showing the latest, which is
@@ -1029,12 +1030,12 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     (async () => {
-      const { json: a } = await api("GET", `/artifacts/${encodeURIComponent(id)}`);
+      const { json: a } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}`);
       if (!a || a.error) {
         if (!dead) setData({ missing: true });
         return;
       }
-      const { json: versions } = await api("GET", `/artifacts/${encodeURIComponent(id)}/versions`);
+      const { json: versions } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}/versions`);
       if (!dead) setData({ a, versions: Array.isArray(versions) ? versions : [] });
     })().catch(() => {
       if (!dead) setData({ missing: true });
@@ -1042,7 +1043,7 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [id]);
+  }, [id, client]);
 
   const current = data?.a?.version as number | undefined;
   const shown = pick ?? current ?? null;
@@ -1059,8 +1060,8 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
     const q = `?version=${shown}`;
     void (async () => {
       const [content, { json: d }] = await Promise.all([
-        getText(`/artifacts/${encodeURIComponent(id)}/content${q}`),
-        api("GET", `/artifacts/${encodeURIComponent(id)}/diff?to=${shown}`),
+        client.getText(`/artifacts/${encodeURIComponent(id)}/content${q}`),
+        client.api("GET", `/artifacts/${encodeURIComponent(id)}/diff?to=${shown}`),
       ]);
       if (dead) return;
       if (content == null) {
@@ -1075,7 +1076,7 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [id, shown, bodyAttempt]);
+  }, [id, shown, bodyAttempt, client]);
 
   if (!data) return <div className="muted">loading…</div>;
   if (data.missing) return <div className="muted">not found</div>;

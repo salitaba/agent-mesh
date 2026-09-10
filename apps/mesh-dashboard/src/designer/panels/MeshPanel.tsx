@@ -5,11 +5,13 @@ import { Num, Field } from "../ui";
 import { Button, ErrorState, Input, Select, TextArea } from "../../components";
 import { setPath } from "../model";
 import { useModelCatalogue } from "../modelCatalogue";
+import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
 export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, touch, ids } = ctx;
-  const { state: catalogue, reload: reloadModels } = useModelCatalogue();
+  const { client } = useMesh();
+  const { state: catalogue, reload: reloadModels } = useModelCatalogue(client);
   const crit = (m.mesh.acceptance_criteria ||= []);
   const triage = m.scheduling.triage || { mode: "off" };
   const rules: any[] = (triage.rules ||= []);

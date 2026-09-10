@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { useMesh } from "./store";
 import { Button, rowKey } from "./components";
 import { type Outcome } from "./format";
 
@@ -37,12 +37,13 @@ interface AgentDef { capabilities?: string[]; runtime?: string }
 /** Fetches the agent once per id; `null` until loaded, `undefined` on failure
  *  so callers can drop the strip instead of rendering a wrong one. */
 export function useSandboxPerms(agentId: string | undefined): { perms: SandboxPerms | null | undefined; runtime?: string } {
+  const { client } = useMesh();
   const [state, setState] = useState<{ perms: SandboxPerms | null | undefined; runtime?: string }>({ perms: null });
   useEffect(() => {
     if (!agentId) { setState({ perms: undefined }); return; }
     let dead = false;
     setState({ perms: null });
-    api("GET", `/agents/${encodeURIComponent(agentId)}`, undefined, { timeoutMs: 8000 })
+    client.api("GET", `/agents/${encodeURIComponent(agentId)}`, undefined, { timeoutMs: 8000 })
       .then(({ json }) => {
         if (dead) return;
         const d: AgentDef = (json as any)?.definition ?? {};
@@ -50,7 +51,7 @@ export function useSandboxPerms(agentId: string | undefined): { perms: SandboxPe
       })
       .catch(() => { if (!dead) setState({ perms: undefined }); });
     return () => { dead = true; };
-  }, [agentId]);
+  }, [agentId, client]);
   return state;
 }
 

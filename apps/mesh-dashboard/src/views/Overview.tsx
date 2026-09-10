@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
 import { fmt, pillCls, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
@@ -94,7 +93,7 @@ function Delivered({ goal, arts, artsLoaded, openArt }: { goal: any; arts: any[]
 }
 
 export default function Overview(): React.JSX.Element {
-  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus } = useMesh();
+  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus, client } = useMesh();
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
   const [artsLoaded, setArtsLoaded] = useState(false);
@@ -106,9 +105,9 @@ export default function Overview(): React.JSX.Element {
     let dead = false;
     (async () => {
       const [{ json: m }, stepsRes, artsRes] = await Promise.all([
-        api("GET", "/metrics"),
-        api("GET", "/steps?limit=6").catch(() => ({ json: [] as unknown })),
-        api("GET", "/artifacts").catch(() => ({ json: [] as unknown })),
+        client.api("GET", "/metrics"),
+        client.api("GET", "/steps?limit=6").catch(() => ({ json: [] as unknown })),
+        client.api("GET", "/artifacts").catch(() => ({ json: [] as unknown })),
       ]);
       if (dead) return;
       setMetrics(m);
@@ -121,7 +120,7 @@ export default function Overview(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [setSteps]);
+  }, [setSteps, client]);
 
   // A permanent "loading overview" is what an operator saw when the server was
   // down, because nothing here ever distinguished slow from gone.
@@ -155,7 +154,7 @@ export default function Overview(): React.JSX.Element {
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
 
   const doReplay = async () => {
-    const { json } = await api("GET", `/goals/${encodeURIComponent(goalId ?? "")}/replay`, undefined, { timeoutMs: 60000 });
+    const { json } = await client.api("GET", `/goals/${encodeURIComponent(goalId ?? "")}/replay`, undefined, { timeoutMs: 60000 });
     openDrawer(
       <>
         <h2>Deterministic replay <CloseX /></h2>

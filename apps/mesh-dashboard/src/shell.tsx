@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fmt } from "./format";
 import { RUNNING } from "./format";
-import { post } from "./api";
 import { useMesh, type View } from "./store";
 import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 import { Button } from "./components";
@@ -167,7 +166,7 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
 
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
-  const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps } = mesh;
+  const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client } = mesh;
   const goal = status?.goal || {};
   const crit = goal.acceptanceCriteria || [];
   const done = crit.filter((c: any) => c.status !== "UNSATISFIED").length;
@@ -322,10 +321,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     }
     if (ev.key === "?") return openHelp();
     if (ev.key === "t") toggleTheme();
-    if (ev.key === "p" && goalId) void post(`/goals/${goalId}/pause`).then(() => { toast("mission paused", "agents stopped — nothing lost", "warn"); refreshStatus(); });
+    if (ev.key === "p" && goalId) void client.post(`/goals/${goalId}/pause`).then(() => { toast("mission paused", "agents stopped — nothing lost", "warn"); refreshStatus(); });
     if (ev.key === "r" && goalId) {
       if (!confirmResume(status, "Resume")) return;
-      void post(`/goals/${goalId}/resume`).then(() => { toast("mission resumed", "agents are running", "ok"); refreshStatus(); });
+      void client.post(`/goals/${goalId}/resume`).then(() => { toast("mission resumed", "agents are running", "ok"); refreshStatus(); });
     }
     if (ev.key === "/") {
       ev.preventDefault();
@@ -478,13 +477,13 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         <div className="top-actions">
           {!paused ? (
             <Button id="btn-pause" variant="soft" title="Pause the mission — agents stop, nothing is lost" onClick={async () => {
-              if (goalId) { await post(`/goals/${goalId}/pause`); toast("mission paused", "agents stopped — nothing lost", "warn"); void refreshStatus(); }
+              if (goalId) { await client.post(`/goals/${goalId}/pause`); toast("mission paused", "agents stopped — nothing lost", "warn"); void refreshStatus(); }
             }}>❚❚ <span className="act-lbl">pause</span></Button>
           ) : goal.status === "PAUSED" ? (
             <Button id="btn-resume" variant="soft" title="Resume the mission" onClick={async () => {
               if (!goalId) return;
               if (!confirmResume(status, "Resume")) return;
-              await post(`/goals/${goalId}/resume`); toast("mission resumed", "agents are running", "ok"); void refreshStatus();
+              await client.post(`/goals/${goalId}/resume`); toast("mission resumed", "agents are running", "ok"); void refreshStatus();
             }}>▶ <span className="act-lbl">resume</span></Button>
           ) : null}
           <Button id="btn-message" variant="soft" title="Send a message as the human — highest priority" onClick={() => openDrawer(<MessageDrawer />)}>✉ <span className="act-lbl">message</span></Button>

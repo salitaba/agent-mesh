@@ -50,7 +50,7 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
 }
 
 export default function Agents(): React.JSX.Element {
-  const { status, toast, openDetail, refreshStatus, steps, refreshSteps, serverDown } = useMesh();
+  const { status, toast, openDetail, refreshStatus, steps, refreshSteps, serverDown, client } = useMesh();
   const st = status;
   // Live turns are what make the cards say anything useful, and they only
   // arrive with /steps — the agent list alone has no turn timing.
@@ -68,7 +68,7 @@ export default function Agents(): React.JSX.Element {
   const attention = all.filter((a: any) => a.lifecycle === "FAILED" || a.lifecycle === "BLOCKED");
   const working = all.filter((a: any) => RUNNING.has(a.lifecycle));
   const idle = all.filter((a: any) => !RUNNING.has(a.lifecycle) && a.lifecycle !== "FAILED" && a.lifecycle !== "BLOCKED");
-  const wake = (id: string) => void agentAction(id, "wake", toast, () => void refreshStatus());
+  const wake = (id: string) => void agentAction(client, id, "wake", toast, () => void refreshStatus());
   const group = (title: string, list: any[]) =>
     list.length ? (
       <>

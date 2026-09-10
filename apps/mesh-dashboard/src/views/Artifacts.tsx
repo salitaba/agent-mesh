@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
 import { ago, plainArtifact, artifactCls } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, Input, rowKey } from "../components";
@@ -25,7 +24,7 @@ interface Art {
 const REVIEW_STATES = ["READY_FOR_REVIEW", "UNDER_REVIEW"];
 
 export default function Artifacts(): React.JSX.Element {
-  const { openDrawer } = useMesh();
+  const { openDrawer, client } = useMesh();
   const [arts, setArts] = useState<Art[]>([]);
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
@@ -40,7 +39,7 @@ export default function Artifacts(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     setErr(null);
-    api("GET", "/artifacts").then(({ json, timeout }) => {
+    client.api("GET", "/artifacts").then(({ json, timeout }) => {
       if (dead) return;
       if (timeout) {
         setErr("the request timed out — the server may be busy.");
@@ -62,7 +61,7 @@ export default function Artifacts(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [attempt]);
+  }, [attempt, client]);
 
   const types = useMemo(() => [...new Set(arts.map((a) => a.type))].sort(), [arts]);
   const needsReview = arts.filter((a) => REVIEW_STATES.includes(a.status));
