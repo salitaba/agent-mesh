@@ -264,21 +264,46 @@ GET /api/events/stream?projects=a,b,c&since=a:120,b:44
 Unlimited project count — process isolation makes that structurally safe, so an arbitrary
 cap would be nannying. What replaces the cap is real enforcement:
 
+`~/.agent-mesh/host.yaml`, beside `projects.json` — **not** a block in any project's
+`mesh.yaml`. Every knob here is cross-project, and an aggregate ceiling declared by one
+project would be one of N conflicting ceilings with no principled winner. The file is
+optional; absent or malformed, it resolves to these defaults with a warning.
+
 ```yaml
 host:
   project_memory_mb: 512        # per-child --max-old-space-size
   max_concurrent_turns: null    # null = unlimited
   spend_ceiling_usd: 50         # aggregate across open projects; null disables
+  model_prices:                 # USD per million tokens
+    anthropic/claude-sonnet-4: { input_per_mtok: 3, output_per_mtok: 15 }
+  default_usd_per_mtok: 3       # unpriced models bill here, never at zero
 ```
 
 - Memory is enforced per child by the runtime itself. An OOM kills one project, and the
   supervisor surfaces it as a crashed tab.
 - `/api/projects` reports aggregate live cost across open projects, so total spend is
   always visible rather than inferred from N separate budget views.
+- **Cost is measured in tokens and priced host-side.** The kernel has no notion of money
+  and should not gain one — a child must not know what its operator pays. Children report
+  cumulative billed tokens per model on the heartbeat that already carries RSS; the host
+  multiplies by `model_prices`. Cumulative, not deltas, so a dropped line cannot silently
+  shrink the total. A model with no price bills at `default_usd_per_mtok` rather than zero:
+  an unpriced model billing at zero would be an invisible way to spend past the ceiling,
+  which is the one failure a backstop cannot have.
 - The spend ceiling defaults **on** at a high value. Per-mesh budgets in `packages/core`
   are unchanged and still authoritative within a project; this is only the cross-project
   backstop. N projects × per-mesh budget otherwise has no ceiling at all, and each running
   project spawns its own `runtime-opencode` children. One line disables it.
+- **Both aggregate limits park, they do not kill,** and both act after the fact. Parking
+  keeps the state dir, event log and lock, so raising the ceiling resumes a mission instead
+  of replaying it. Enforcement is after-the-fact because intercepting a turn would need an
+  IPC lease protocol; inventing one to gain seconds of precision on a backstop is not worth
+  the machinery. The ceiling parks *every* open project — it is a total, so any project
+  left live keeps pushing an already-breached number up. `max_concurrent_turns` parks
+  newest-first and only until the total fits.
+- Enforcement runs on each heartbeat and on each `/api/projects` poll. Neither adds a timer
+  to the host: the beat already exists, is already `unref`'d, and is already cleared on
+  shutdown, so nothing here can outlive `close()`.
 
 ## Sequencing
 

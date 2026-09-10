@@ -30,6 +30,28 @@ export const CHILD_BEAT_PREFIX = "@@mesh-child-beat@@";
  */
 export const CHILD_BEAT_INTERVAL_MS = 2_000;
 
+/**
+ * What one beat tells the host about the child's spend.
+ *
+ * Riding the existing heartbeat rather than adding a cost-polling timer is
+ * deliberate. A timer or an aggregation fetch on the host side is the exact
+ * shape of bug this design has hit repeatedly — an async resource opened while
+ * shutdown is already running that nothing then closes. The beat already
+ * exists, is already `unref`'d, and is already cleared on shutdown, so the
+ * aggregate cost view costs no new lifecycle at all.
+ *
+ * Tokens are reported, not dollars: pricing is host-side config, and a child
+ * has no business knowing what its operator pays.
+ */
+export interface ChildBeatPayload {
+  rss: number;
+  pid: number;
+  /** Billed tokens per model. `cacheRead` is excluded — it is never billed. */
+  models: Array<{ model: string; input: number; output: number }>;
+  /** Turns in flight in this child's scheduler, for the aggregate turn cap. */
+  runningTurns: number;
+}
+
 /** Exit codes the supervisor maps onto `ProjectStatus` without parsing prose. */
 export const CHILD_EXIT = {
   /** State dir is held by another live process — `status: 'locked'`. */
@@ -82,7 +104,24 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
   emit(CHILD_READY_PREFIX, ready);
 
   const beat = setInterval(() => {
-    emit(CHILD_BEAT_PREFIX, { rss: process.memoryUsage.rss(), pid: process.pid });
+    const payload: ChildBeatPayload = {
+      rss: process.memoryUsage.rss(),
+      pid: process.pid,
+      models: [],
+      runningTurns: 0,
+    };
+    // Best-effort: a beat that throws would take the interval down with it and
+    // the host would read a live child as silent. Spend is a view, liveness is
+    // the contract, and the contract wins.
+    try {
+      for (const m of handle.instance.kernel.state.modelSpend.values()) {
+        payload.models.push({ model: m.model, input: m.input, output: m.output });
+      }
+      payload.runningTurns = handle.instance.scheduler.running();
+    } catch {
+      /* report liveness anyway */
+    }
+    emit(CHILD_BEAT_PREFIX, payload);
   }, CHILD_BEAT_INTERVAL_MS);
   // Never hold the process open for a heartbeat: the beat reports liveness, it
   // is not a reason to be alive.

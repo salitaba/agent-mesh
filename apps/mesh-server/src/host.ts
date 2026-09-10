@@ -27,6 +27,10 @@ import {
   MESH_CONFIG_FILENAME,
   ProjectError,
   SupervisionTree,
+  defaultHostConfig,
+  loadHostConfig,
+  priceTokens,
+  type HostConfig,
   type ProjectHandle,
   type ProjectRef,
   type ProjectStatus,
@@ -100,8 +104,13 @@ export interface HostOptions {
   port?: number;
   host?: string;
   dashboardDir?: string;
-  /** Per-child `--max-old-space-size`, from `host.project_memory_mb`. */
+  /**
+   * Per-child `--max-old-space-size`. Overrides `host.yaml`'s
+   * `project_memory_mb` when set, so a flag beats the persisted default.
+   */
   projectMemoryMb?: number;
+  /** Resource policy. Loaded from `<home>/host.yaml` when omitted. */
+  hostConfig?: HostConfig;
   /** Children boot parked by default, mirroring `mesh console`. */
   childMode?: "parked" | "live";
   useGit?: boolean;
@@ -138,6 +147,29 @@ export interface ProjectSummary extends ProjectRef {
   restartInMs?: number;
   /** Crash-loop breaker tripped: the UI offers manual retry only. */
   tripped: boolean;
+  /** Live spend, from the child's last heartbeat. Absent until one lands. */
+  spend?: { tokens: number; usd: number; runningTurns: number };
+}
+
+/**
+ * Aggregate resource picture across every open project.
+ *
+ * This is the answer to a question no per-project view can give: N projects
+ * each inside their own per-mesh budget can still add up to a bill nobody
+ * approved, and `usd` is the only number that makes that visible.
+ */
+export interface HostSpend {
+  usd: number;
+  tokens: number;
+  runningTurns: number;
+  /** `null` when the ceiling is disabled. */
+  ceilingUsd: number | null;
+  /** `null` when the concurrency cap is disabled. */
+  maxConcurrentTurns: number | null;
+  /** The ceiling has been hit and open projects were parked. */
+  ceilingTripped: boolean;
+  /** Projects parked by the ceiling or the turn cap, in the order parked. */
+  parked: string[];
 }
 
 /**
@@ -192,7 +224,13 @@ export class SupervisedProjects implements ProjectSupervisor {
 }
 
 /** The host server, plus the multiplexer that must be drained with it. */
-export type HostServer = http.Server & { multiplex: MultiplexHub };
+export type HostServer = http.Server & {
+  multiplex: MultiplexHub;
+  /** Re-check the aggregate limits. Driven by heartbeats and `/api/projects`. */
+  enforceLimits(): Promise<void>;
+  /** Current aggregate resource picture. */
+  spend(): HostSpend;
+};
 
 export function createHostServer(deps: {
   registry: FileProjectRegistry;
@@ -203,9 +241,12 @@ export function createHostServer(deps: {
   startedAt?: number;
   /** Cap on the frames one browser may fall behind by. Tests shrink it. */
   multiplexQueue?: number;
+  /** Resource policy. Defaults (ceiling on, no memory cap) when omitted. */
+  hostConfig?: HostConfig;
 }): HostServer {
   const { registry, tree, supervisor, projects } = deps;
   const startedAt = deps.startedAt ?? Date.now();
+  const hostConfig = deps.hostConfig ?? defaultHostConfig();
 
   /**
    * The host's own subscription to one child's `/events/stream`.
@@ -299,6 +340,134 @@ export function createHostServer(deps: {
     return tree.status(id);
   };
 
+  /**
+   * Ids parked by a resource limit, in the order they were parked.
+   *
+   * Kept separate from the crash-loop breaker: this is not a failure, it is
+   * the host doing what it was configured to do, and the UI must be able to
+   * say so rather than showing a project as broken.
+   */
+  const parkedByPolicy: string[] = [];
+  let ceilingTripped = false;
+
+  /** Live spend for one project, from its last heartbeat. */
+  const spendOf = (id: string): { tokens: number; usd: number; runningTurns: number } | undefined => {
+    const beat = supervisor.running(id)?.lastHeartbeat;
+    if (!beat) return undefined;
+    let tokens = 0;
+    let usd = 0;
+    for (const m of beat.models) {
+      tokens += m.input + m.output;
+      usd += priceTokens(hostConfig, m.model, m.input, m.output);
+    }
+    return { tokens, usd, runningTurns: beat.runningTurns };
+  };
+
+  const aggregateSpend = (): HostSpend => {
+    let usd = 0;
+    let tokens = 0;
+    let runningTurns = 0;
+    for (const id of supervisor.runningIds()) {
+      const spend = spendOf(id);
+      if (!spend) continue;
+      usd += spend.usd;
+      tokens += spend.tokens;
+      runningTurns += spend.runningTurns;
+    }
+    return {
+      usd,
+      tokens,
+      runningTurns,
+      ceilingUsd: hostConfig.spendCeilingUsd,
+      maxConcurrentTurns: hostConfig.maxConcurrentTurns,
+      ceilingTripped,
+      parked: [...parkedByPolicy],
+    };
+  };
+
+  /**
+   * Park a running child through its own `/mission/park` route.
+   *
+   * Parking, not killing: the ceiling is a brake, not a crash. A parked child
+   * keeps its state dir, its event log and its lock, so the operator can raise
+   * the ceiling and resume rather than replaying a mission from scratch.
+   */
+  const parkChild = async (projectId: string): Promise<void> => {
+    const child = supervisor.running(projectId);
+    if (!child) return;
+    await new Promise<void>((resolve) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: child.port,
+          method: "POST",
+          path: "/mission/park",
+          headers: { authorization: `Bearer ${child.token}`, "content-length": 0 },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve());
+          res.on("error", () => resolve());
+        },
+      );
+      // A child that will not park is already unreachable, which the watchdog
+      // handles. Never let this hang: it runs on the request path.
+      req.setTimeout(2_000, () => req.destroy());
+      req.on("error", () => resolve());
+      req.on("close", () => resolve());
+      req.end();
+    });
+    if (!parkedByPolicy.includes(projectId)) parkedByPolicy.push(projectId);
+  };
+
+  /**
+   * Apply the aggregate limits.
+   *
+   * Both limits are enforced after the fact, and that is honest rather than
+   * ideal: the host has no way to intercept a turn without an IPC lease
+   * protocol, and inventing one to gain a few seconds of precision on a
+   * backstop is not a trade worth making. Newest offenders park first — the
+   * project that pushed the total over is the one whose work the operator is
+   * least likely to have been watching.
+   */
+  let enforcing = false;
+  const enforceLimits = async (): Promise<void> => {
+    // Beats from N children arrive interleaved; without this, one over-ceiling
+    // moment fires N overlapping park storms against the same processes.
+    if (enforcing) return;
+    enforcing = true;
+    try {
+      await applyLimits();
+    } finally {
+      enforcing = false;
+    }
+  };
+
+  const applyLimits = async (): Promise<void> => {
+    const totals = aggregateSpend();
+    if (hostConfig.spendCeilingUsd !== null && totals.usd >= hostConfig.spendCeilingUsd) {
+      ceilingTripped = true;
+      // Everything, not the newest: the ceiling is a total, so leaving any
+      // project live means the total keeps climbing past a limit already hit.
+      for (const id of supervisor.runningIds()) await parkChild(id);
+      return;
+    }
+    const cap = hostConfig.maxConcurrentTurns;
+    if (cap === null || totals.runningTurns <= cap) return;
+    let over = totals.runningTurns - cap;
+    const newestFirst = supervisor
+      .runningIds()
+      .map((id) => ({ id, startedAt: supervisor.running(id)?.startedAt ?? "" }))
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    for (const { id } of newestFirst) {
+      if (over <= 0) break;
+      const spend = spendOf(id);
+      if (!spend || spend.runningTurns === 0) continue;
+      await parkChild(id);
+      over -= spend.runningTurns;
+    }
+  };
+
   const summarize = (ref: ProjectRef): ProjectSummary => {
     const handle: ProjectHandle | undefined = registry.get(ref.id);
     const child = supervisor.running(ref.id);
@@ -314,6 +483,8 @@ export function createHostServer(deps: {
     if (handle?.error) summary.error = handle.error;
     const retry = tree.pendingRestartMs(ref.id);
     if (typeof retry === "number") summary.restartInMs = retry;
+    const spend = spendOf(ref.id);
+    if (spend) summary.spend = spend;
     return summary;
   };
 
@@ -394,7 +565,11 @@ export function createHostServer(deps: {
       if (parts[0] === "api" && parts[1] === "projects") {
         if (parts.length === 2 && req.method === "GET") {
           registry.reload();
-          return json(200, { projects: registry.list().map(summarize) });
+          // The dashboard polls this, so it doubles as the enforcement tick:
+          // no interval, no timer to leak past close(). A host nobody is
+          // watching still enforces, because every heartbeat checks too.
+          await enforceLimits();
+          return json(200, { projects: registry.list().map(summarize), spend: aggregateSpend() });
         }
         if (parts.length === 2 && req.method === "POST") {
           const b = await body();
@@ -614,6 +789,8 @@ export function createHostServer(deps: {
 
   const hosted = server as HostServer;
   hosted.multiplex = multiplex;
+  hosted.enforceLimits = enforceLimits;
+  hosted.spend = aggregateSpend;
   return hosted;
 }
 
@@ -699,15 +876,34 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
 }
 
 export async function startHostServer(options: HostOptions = {}): Promise<HostHandle> {
+  // File first, flags on top: `mesh host --memory 512` is a deliberate
+  // one-run override of a persisted default, so the flag has to win.
+  const hostConfig = options.hostConfig ?? loadHostConfig(options.home);
+  const memoryMb = options.projectMemoryMb ?? hostConfig.projectMemoryMb;
+
   const supervisorOptions: ConstructorParameters<typeof ChildProcessSupervisor>[0] = {
     mode: options.childMode ?? "parked",
     useGit: options.useGit ?? false,
   };
-  if (options.projectMemoryMb) supervisorOptions.memoryMb = options.projectMemoryMb;
+  if (memoryMb) supervisorOptions.memoryMb = memoryMb;
   if (options.childScript) supervisorOptions.childScript = options.childScript;
   if (options.readyTimeoutMs) supervisorOptions.readyTimeoutMs = options.readyTimeoutMs;
   if (options.stopGraceMs) supervisorOptions.stopGraceMs = options.stopGraceMs;
   if (options.onLog) supervisorOptions.onLog = options.onLog;
+
+  // Every beat is an enforcement tick. This is the whole reason spend rides the
+  // heartbeat instead of a poller: the check runs on a timer that already
+  // exists in the child, is already unref'd and is already cleared on
+  // shutdown, so nothing added here can outlive `close()`. The `shuttingDown`
+  // guard covers the last beats in flight while children are being drained.
+  let hosted: HostServer | undefined;
+  let shuttingDown = false;
+  supervisorOptions.onHeartbeat = () => {
+    if (shuttingDown || !hosted) return;
+    void hosted.enforceLimits().catch(() => {
+      /* best-effort: a failed park retries on the next beat */
+    });
+  };
 
   // The tree and the supervisor are mutually referential: the supervisor
   // reports exits, the tree decides what they mean. Late-binding `onExit`
@@ -738,7 +934,8 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
       path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
     ].find((d) => fs.existsSync(d));
 
-  const server = createHostServer({ registry, tree, supervisor, projects, dashboardDir });
+  const server = createHostServer({ registry, tree, supervisor, projects, dashboardDir, hostConfig });
+  hosted = server;
   const port = options.port ?? 7420;
   const host = options.host ?? "127.0.0.1";
   await new Promise<void>((resolve, reject) => {
@@ -762,6 +959,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
     // Idempotent: SIGTERM during an in-flight close must not start a second
     // teardown that races the first over the same children.
     if (closing) return closing;
+    shuttingDown = true;
     closing = (async () => {
       // Before the socket teardown: the hub owns loopback subscriptions to the
       // children, and one left open would keep `server.close()` waiting on a

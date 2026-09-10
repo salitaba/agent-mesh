@@ -38,6 +38,18 @@ export interface ProjectSummary {
   error?: { reason: string; detail?: string };
   restartInMs?: number;
   tripped: boolean;
+  spend?: { tokens: number; usd: number; runningTurns: number };
+}
+
+/** Mirrors `HostSpend` from apps/mesh-server/src/host.ts. */
+export interface HostSpend {
+  usd: number;
+  tokens: number;
+  runningTurns: number;
+  ceilingUsd: number | null;
+  maxConcurrentTurns: number | null;
+  ceilingTripped: boolean;
+  parked: string[];
 }
 
 /** What a `MeshProvider` hands up so its project's frames reach it. */

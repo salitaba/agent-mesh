@@ -48,6 +48,13 @@ export interface ChildProcessSupervisorOptions {
   onHeartbeat?: (info: { ref: ProjectRef; rss: number; at: string }) => void;
 }
 
+/** Billed token counts for one model, as last reported by a child. */
+export interface ChildModelTokens {
+  model: string;
+  input: number;
+  output: number;
+}
+
 /** Liveness sample from a child, as last observed by the supervisor. */
 export interface ChildHeartbeat {
   rss: number;
@@ -55,6 +62,14 @@ export interface ChildHeartbeat {
   at: string;
   /** `Date.now()` at receipt: monotonic-enough for a missed-window check. */
   receivedAt: number;
+  /**
+   * Cumulative billed tokens per model. Cumulative, not a delta: a beat lost
+   * to a dropped line or a restart must not silently vanish from the total,
+   * which is the one property an aggregate ceiling depends on.
+   */
+  models: ChildModelTokens[];
+  /** Turns in flight in this child, for the aggregate concurrency cap. */
+  runningTurns: number;
 }
 
 export interface RunningChild {
@@ -398,7 +413,25 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
         try {
           const payload = JSON.parse(line.slice(CHILD_BEAT_PREFIX.length).trim());
           const rss = typeof payload.rss === "number" ? payload.rss : 0;
-          const beat: ChildHeartbeat = { rss, at: new Date().toISOString(), receivedAt: Date.now() };
+          const models: ChildModelTokens[] = Array.isArray(payload.models)
+            ? (payload.models as unknown[]).flatMap((m) => {
+                if (!m || typeof m !== "object") return [];
+                const entry = m as { model?: unknown; input?: unknown; output?: unknown };
+                if (typeof entry.model !== "string") return [];
+                return [{
+                  model: entry.model,
+                  input: typeof entry.input === "number" ? entry.input : 0,
+                  output: typeof entry.output === "number" ? entry.output : 0,
+                }];
+              })
+            : [];
+          const beat: ChildHeartbeat = {
+            rss,
+            at: new Date().toISOString(),
+            receivedAt: Date.now(),
+            models,
+            runningTurns: typeof payload.runningTurns === "number" ? payload.runningTurns : 0,
+          };
           const child = this.children.get(ref.id);
           // A beat from a child we no longer track is from a process being
           // replaced; recording it would revive a dead entry's health.

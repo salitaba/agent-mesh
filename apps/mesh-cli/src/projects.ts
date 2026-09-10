@@ -240,7 +240,15 @@ export const HOST_HELP = `usage:
     --home       registry home (default $MESH_HOME or ~/.agent-mesh)
     --memory     per-child --max-old-space-size in MB
     --live       children boot live; default is parked, like 'mesh console'
-    --git        children use git worktrees for artifacts`;
+    --git        children use git worktrees for artifacts
+
+  resource policy lives in <home>/host.yaml (all keys optional):
+    host:
+      project_memory_mb: 512        # per-child --max-old-space-size
+      max_concurrent_turns: null    # null = unlimited
+      spend_ceiling_usd: 50         # aggregate across open projects; null disables
+      model_prices:                 # USD per million tokens
+        anthropic/claude-sonnet-4: { input_per_mtok: 3, output_per_mtok: 15 }`;
 
 /** Flags -> `HostOptions`, kept pure so the mapping is testable without a boot. */
 export function hostOptionsFromFlags(flags: Flags): Record<string, unknown> {
