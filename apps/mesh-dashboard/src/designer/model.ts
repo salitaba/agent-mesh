@@ -146,7 +146,7 @@ function tplTriad(): any {
   const m = baseMesh("my-mesh", "My Mesh", "Describe the mission goal here.", "stub");
   m.startup.activate = ["architect"];
   m.agents.architect = {
-    role: "architect", capabilities: ["repository.read", "architecture.write", "review.design"], authority: ["architecture.approve"],
+    role: "architect", capabilities: ["repository.read", "architecture.write", "review.design", "code.review"], authority: ["architecture.approve", "implementation.approve"],
     interests: ["architecture.*", "design.question"], session: { persistent: true }, budget: { tokens: 300000 },
   };
   m.agents.developer = {

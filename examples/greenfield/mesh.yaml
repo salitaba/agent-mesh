@@ -29,8 +29,8 @@ agents:
     role: architect
     runtime: opencode
     prompt: ../../roles/architect.md
-    capabilities: [repository.read, architecture.write, review.design]
-    authority: [architecture.approve]
+    capabilities: [repository.read, architecture.write, review.design, code.review]
+    authority: [architecture.approve, implementation.approve]
     interests: [architecture.*, design.question, goal.escalated]
 
   developer:

@@ -141,11 +141,9 @@ export class PolicyEngine implements PolicyEvaluator {
       if (owner === actorId && hasPeerReviewerFor(ctx, actorId, artifact)) {
         return { decision: "DENY", reason: "artifact owner cannot approve or reject their own artifact", ruleId: "self-approval" };
       }
-      const reviewCap = REVIEW_CAPABILITIES[artifact.type] ?? null;
-      const hasAuthority = def.authority.includes(`${reviewSubject(artifact)}.approve`) || def.authority.includes(`${reviewSubject(artifact)}.*`) || def.authority.includes("*");
-      const hasCap = reviewCap !== null && def.capabilities.includes(reviewCap);
-      if (!hasAuthority && !hasCap) {
-        return { decision: "DENY", reason: `reviewing ${artifact.type} requires authority '${reviewSubject(artifact)}.approve' or capability '${reviewCap}'`, ruleId: "review-authority" };
+      const review = canReviewArtifactType(def, artifact.type);
+      if (!review.ok) {
+        return { decision: "DENY", reason: `reviewing ${artifact.type} requires authority '${review.required}' or capability '${review.capability}'`, ruleId: "review-authority" };
       }
     }
     if (to === "MERGED") {
@@ -351,7 +349,7 @@ export const REVIEW_CAPABILITIES: Partial<Record<Artifact["type"], string>> = {
   RequirementsDoc: "review.design",
 };
 
-export function reviewSubject(artifact: Artifact): string {
+export function reviewSubject(artifact: Pick<Artifact, "type">): string {
   switch (artifact.type) {
     case "ArchitectureDocument":
     case "ADR":
@@ -371,6 +369,91 @@ export function reviewSubject(artifact: Artifact): string {
     default:
       return "architecture";
   }
+}
+
+/**
+ * Can this agent definition review artifacts of `type`?
+ *
+ * The single source of truth for the `review-authority` rule: evaluateTransition
+ * enforces it and config-time gate validation mirrors it. Duplicating the
+ * authority grammar here and there is how a valid config silently becomes an
+ * unsatisfiable gate.
+ */
+export function canReviewArtifactType(
+  def: { authority?: readonly string[]; capabilities?: readonly string[] },
+  type: Artifact["type"],
+): { ok: boolean; required: string; capability: string | null } {
+  const subject = reviewSubject({ type });
+  const capability = REVIEW_CAPABILITIES[type] ?? null;
+  const authority = def.authority ?? [];
+  const ok =
+    authority.includes(`${subject}.approve`) ||
+    authority.includes(`${subject}.*`) ||
+    authority.includes("*") ||
+    (capability !== null && (def.capabilities ?? []).includes(capability));
+  return { ok, required: `${subject}.approve`, capability };
+}
+
+export interface GateIssue {
+  gate: string;
+  token: string;
+  reason: string;
+}
+
+/** Gates whose artifact type is fixed by `gateForTransition`. */
+const GATE_ARTIFACT_TYPES: Record<string, Artifact["type"]> = {
+  "patch.merge": "CodePatch",
+  "patch.approve": "CodePatch",
+  "release.accepted": "ReleasePlan",
+  "implementation.completed": "ReleasePlan",
+};
+
+/**
+ * Can every transition gate in this config ever be satisfied?
+ *
+ * AJV validates the shape of `policies.transitions` but not whether the agents
+ * it names can produce the approval it demands. A gate on `architect.approve`
+ * where the architect holds neither `implementation.approve` nor `code.review`
+ * validates, boots, and then DEADLOCKS every mission at that transition.
+ *
+ * Checks each token's actor resolves to an agent id or role (the human seat is
+ * always valid) and that `approve` tokens on known artifact gates pass the same
+ * review predicate the runtime applies.
+ */
+export function validateTransitionGates(
+  transitions: Record<string, { requires?: string[] } | undefined> | undefined,
+  agents: Record<string, { role?: string; authority?: string[]; capabilities?: string[] } | undefined> | undefined,
+): GateIssue[] {
+  const issues: GateIssue[] = [];
+  for (const [gate, entry] of Object.entries(transitions ?? {})) {
+    const artifactType = GATE_ARTIFACT_TYPES[gate];
+    for (const token of entry?.requires ?? []) {
+      const idx = token.lastIndexOf(".");
+      if (idx <= 0) {
+        issues.push({ gate, token, reason: `token '${token}' is not '<actor>.<kind>'; it can never match an approval` });
+        continue;
+      }
+      const actor = token.slice(0, idx);
+      const kind = token.slice(idx + 1);
+      if (actor === HUMAN_AGENT_ID) continue;
+      const matches = Object.entries(agents ?? {}).filter(([id, a]) => id === actor || a?.role === actor);
+      if (matches.length === 0) {
+        issues.push({ gate, token, reason: `no agent has id or role '${actor}'` });
+        continue;
+      }
+      if (kind !== "approve" || !artifactType) continue;
+      const reviews = matches.map(([, a]) => canReviewArtifactType(a ?? {}, artifactType));
+      if (!reviews.some((r) => r.ok)) {
+        const need = reviews[0];
+        issues.push({
+          gate,
+          token,
+          reason: `${matches.map(([id]) => id).join("/")} cannot review ${artifactType}: needs authority '${need.required}' or capability '${need.capability}'`,
+        });
+      }
+    }
+  }
+  return issues;
 }
 
 function hasPeerReviewerFor(ctx: PolicyContext, actorId: string, artifact: Artifact): boolean {
