@@ -18,6 +18,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "npm run build && node --test \"dist/tests/**/*.test.js\"",
     "test:only": "node --test \"dist/tests/**/*.test.js\"",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage \"dist/tests/**/*.test.js\"",
+    "test:coverage:only": "node --test --experimental-test-coverage \"dist/tests/**/*.test.js\"",
     "mesh": "node dist/apps/mesh-cli/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit -p apps/mesh-dashboard/tsconfig.json",
     "lint": "eslint packages apps tests"
