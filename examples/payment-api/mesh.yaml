@@ -97,6 +97,7 @@ agents:
 
     authority:
       - quality.block
+      - quality.pass
 
     interests:
       - patch.ready
@@ -115,6 +116,7 @@ agents:
 
     authority:
       - security.block
+      - security.pass
 
     interests:
       - authentication.changed

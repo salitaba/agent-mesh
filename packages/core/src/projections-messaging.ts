@@ -3,7 +3,7 @@ import type { Projections } from "./state";
 import type { MeshMessage, Thread } from "../../protocol/src/index";
 import { RESPONSE_TYPES } from "../../protocol/src/index";
 import { MAX_UNREAD_PER_AGENT, MAX_FINGERPRINTS_PER_THREAD, dischargeCommitment, evictOverflowingPendingRequests, setBounded, stillOwes } from "./state";
-import { bumpConflict, clearPendingForArtifactReview, fingerprintOf, pendingTargetsArtifact, recordApproval } from "./projections-helpers";
+import { artifactForRef, bumpConflict, clearPendingForArtifactReview, fingerprintOf, hasPeerReviewerFor, holdsAuthority, pendingTargetsArtifact, recordApproval } from "./projections-helpers";
 
 export function applyMessagingEvent(
   state: Projections,
@@ -144,34 +144,97 @@ export function applyMessagingEvent(
         const pl = (m.payload ?? {}) as Record<string, unknown>;
         if (pl.result === "PASSED") {
           const subject = (pl.subject as string) ?? (m.type === "TEST_RESULT" ? "quality" : "security");
-          recordApproval(
-            state,
-            {
-              subject,
-              artifactId: (pl.artifactId as string) ?? undefined,
-              artifactRef: m.artifactRefs[0],
-              actorId: m.from,
-              actorRole: state.agents.get(m.from)?.definition.role ?? "",
-            },
-            event,
-            "pass",
-          );
+          const sender = state.agents.get(m.from);
+          /**
+           * A sign-off requires the authority to sign, on the message path
+           * exactly as on the op path.
+           *
+           * `payload` is verbatim agent input. Without this check any agent
+           * permitted to send a TEST_RESULT to anyone could satisfy a
+           * `<role>.pass` transition gate — for ANY subject, since
+           * `payload.subject` above is agent-supplied too — purely by
+           * asserting `result: "PASSED"`. The op path runs
+           * `evaluateAuthority` before recording (see recordDecision in
+           * supervisor.ts); this path ran nothing, so the cheapest way to
+           * move an artifact was to claim rather than to be entitled.
+           *
+           * The message stays in the log and is still delivered either way:
+           * an unentitled PASSED is a report, not a verdict.
+           *
+           * The second screen is self-approval, and it mirrors the op path
+           * (`recordDecision` in supervisor.ts): holding `<subject>.pass` is
+           * standing to sign OTHER agents' work, not licence to sign your
+           * own. Without it the owner of an artifact who happens to hold the
+           * authority could satisfy its own gate by message, which is the
+           * whole point of a gate. Self-sign stays legal only when no peer
+           * could have reviewed — `hasPeerReviewerFor` carries that rule, and
+           * the single-agent control group depends on it.
+           *
+           * The target is resolved from `payload.artifactId` OR
+           * `artifactRefs[0].uri`, because `recordApproval` below records
+           * under both and screening only one would leave the other open.
+           */
+          const target = artifactForRef(state, pl.artifactId as string | undefined, m.artifactRefs[0]?.uri);
+          const selfApproval = !!target && target.owner === m.from && hasPeerReviewerFor(state, m.from, target);
+          if (holdsAuthority(sender?.definition.authority, subject, "pass") && !selfApproval) {
+            recordApproval(
+              state,
+              {
+                subject,
+                artifactId: (pl.artifactId as string) ?? undefined,
+                artifactRef: m.artifactRefs[0],
+                actorId: m.from,
+                actorRole: sender?.definition.role ?? "",
+              },
+              event,
+              "pass",
+            );
+          }
         }
       }
       if (m.type === "BLOCK") {
         const pl = (m.payload ?? {}) as Record<string, unknown>;
         const subject = (pl.subject as string) ?? "quality";
-        recordApproval(
-          state,
-          {
-            subject,
-            artifactId: (pl.artifactId as string) ?? undefined,
-            actorId: m.from,
-            actorRole: state.agents.get(m.from)?.definition.role ?? "",
-          },
-          event,
-          "block",
-        );
+        const blocker = state.agents.get(m.from);
+        /**
+         * A block is a verdict too, so it needs `<subject>.block` exactly as a
+         * sign-off needs `<subject>.pass`. `payload.subject` is agent-supplied,
+         * so without this any agent able to send a BLOCK could withhold a
+         * MERGED transition in a domain it has no standing in.
+         *
+         * A refused block must NOT vanish. Unlike an unentitled PASSED — where
+         * recording nothing is the safe outcome — an unentitled BLOCK that is
+         * silently discarded means the sender believes it objected while the
+         * artifact ships anyway. So the refusal is counted as a conflict, which
+         * `metrics.ts` reports and the deadlock scan escalates once it repeats
+         * (`repeatedConflictThreshold`). The supervisor's send path
+         * additionally tells the sender directly.
+         *
+         * The message itself is still logged and delivered: an unentitled
+         * BLOCK is a concern, not a verdict.
+         */
+        if (holdsAuthority(blocker?.definition.authority, subject, "block")) {
+          recordApproval(
+            state,
+            {
+              subject,
+              artifactId: (pl.artifactId as string) ?? undefined,
+              actorId: m.from,
+              actorRole: blocker?.definition.role ?? "",
+            },
+            event,
+            "block",
+          );
+        } else {
+          bumpConflict(
+            state,
+            `unauthorized-block:${m.from}:${subject}`,
+            m.from,
+            event.timestamp,
+            m.threadId,
+            (pl.artifactId as string) ?? m.artifactRefs[0]?.uri,
+          );
+        }
       }
       const fp = fingerprintOf(m);
       const seen = state.messageFingerprints.get(m.threadId) ?? new Set<string>();

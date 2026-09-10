@@ -111,6 +111,7 @@ agents:
       - test.write
     authority:
       - quality.block
+      - quality.pass
     interests:
       - patch.ready
       - implementation.completed

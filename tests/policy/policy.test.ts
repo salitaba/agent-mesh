@@ -136,7 +136,10 @@ test("policy: qa block is recorded as evidence and survives replay of approvals"
   const m = await makeMesh({
     agents: [
       { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
-      { id: "qa", role: "qa", capabilities: ["test.write"], authority: ["quality.block"], interests: [] },
+      // `quality.pass` is what entitles the TEST_RESULT below to be recorded
+      // as the `qa.pass` sign-off. Without it the message is still delivered
+      // but signs nothing — see transition-gate.test.ts for that refusal.
+      { id: "qa", role: "qa", capabilities: ["test.write"], authority: ["quality.block", "quality.pass"], interests: [] },
     ],
     mayContact: { dev: ["qa"], qa: ["dev"] },
     transitions: { "release.accepted": ["qa.pass", "security.pass"] },

@@ -71,14 +71,27 @@ function thread(over: Partial<Thread> = {}): Thread {
   } as Thread;
 }
 
-function agentDef(id: string, role: string): AgentDefinition {
-  return { id, role, mode: "peer", capabilities: [], authority: [], interests: [] } as unknown as AgentDefinition;
+function agentDef(id: string, role: string, authority: string[] = []): AgentDefinition {
+  return { id, role, mode: "peer", capabilities: [], authority, interests: [] } as unknown as AgentDefinition;
 }
 
-/** A state with the given agents registered and one open thread. */
-function seed(agents: Array<[string, string]> = [["architect", "architect"], ["dev", "developer"], ["qa", "qa"]]): Projections {
+/**
+ * A state with the given agents registered and one open thread.
+ *
+ * The optional third tuple slot is the seat's authority. It matters for the
+ * approval tests below: recording a verdict from a message — a sign-off OR a
+ * block — is gated on the sender actually holding the authority for it, so a
+ * seat with `[]` can report a result but cannot certify or withhold one.
+ */
+function seed(
+  agents: Array<[string, string] | [string, string, string[]]> = [
+    ["architect", "architect"],
+    ["dev", "developer"],
+    ["qa", "qa", ["quality.pass", "quality.block"]],
+  ],
+): Projections {
   const state = createInitialState();
-  for (const [id, role] of agents) applyEvent(state, evt("agent.created", { agent: agentDef(id, role) }));
+  for (const [id, role, authority] of agents) applyEvent(state, evt("agent.created", { agent: agentDef(id, role, authority) }));
   applyEvent(state, evt("thread.created", { thread: thread() }));
   return state;
 }
@@ -388,7 +401,7 @@ test("TEST_RESULT PASSED records a pass approval; any other result records none"
 });
 
 test("SECURITY_FINDING PASSED defaults to the security subject and carries the artifact ref", () => {
-  const state = seed([["sec", "security"], ["dev", "developer"]]);
+  const state = seed([["sec", "security", ["security.pass"]], ["dev", "developer"]]);
   const refs: ArtifactRef[] = [{ uri: "artifact://CodePatch/api/3" }];
   send(state, message({ id: "m-sec", from: "sec", to: ["dev"], type: "SECURITY_FINDING", artifactRefs: refs, payload: { result: "PASSED", artifactId: "art-9" } }));
 
@@ -399,11 +412,70 @@ test("SECURITY_FINDING PASSED defaults to the security subject and carries the a
 });
 
 test("an explicit payload subject overrides the default approval subject", () => {
-  const state = seed();
+  const state = seed([["dev", "developer"], ["qa", "qa", ["quality.pass", "architecture.pass"]]]);
   send(state, message({ id: "m-pass", from: "qa", to: ["dev"], type: "TEST_RESULT", payload: { result: "PASSED", subject: "architecture" } }));
 
   assert.equal((state.approvals.get(approvalKey("architecture", "pass")) ?? []).length, 1);
   assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 0);
+});
+
+test("the payload subject is checked against authority, so it cannot be used to sign another domain", () => {
+  // `payload.subject` is agent-supplied, so the override above must not become
+  // a way to reach a domain the sender was never entitled to: qa holds only
+  // `quality.pass` here and the message claims `architecture`.
+  const state = seed([["dev", "developer"], ["qa", "qa", ["quality.pass"]]]);
+  send(state, message({ id: "m-reach", from: "qa", to: ["dev"], type: "TEST_RESULT", payload: { result: "PASSED", subject: "architecture" } }));
+
+  assert.equal((state.approvals.get(approvalKey("architecture", "pass")) ?? []).length, 0, "an unheld subject signs nothing");
+  assert.equal(state.messages.size, 1, "the message is still recorded — it is a report, not a verdict");
+});
+
+test("a TEST_RESULT PASSED from a seat without the authority records no approval", () => {
+  const state = seed([["dev", "developer"], ["qa", "qa"]]);
+  send(state, message({ id: "m-bare", from: "qa", to: ["dev"], type: "TEST_RESULT", payload: { result: "PASSED" } }));
+
+  assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 0, "asserting PASSED is not holding quality.pass");
+});
+
+test("an owner cannot sign off their own artifact by message while a peer could review it", () => {
+  // Holding `quality.pass` is standing to sign OTHER agents' work, not licence
+  // to sign your own — the op path screens this before recording (see
+  // recordDecision in supervisor.ts) and the message path must screen it too,
+  // or the gate is satisfiable by its own author.
+  const state = seed([["dev", "developer", ["quality.pass"]], ["qa", "qa", ["quality.pass", "implementation.approve"]]]);
+  state.artifacts.set("art-own", { id: "art-own", type: "CodePatch", name: "checkout", version: 1, owner: "dev", goalId: GOAL_ID, contentRef: "artifact://CodePatch/checkout/1" } as never);
+  send(state, message({ id: "m-self", from: "dev", to: ["qa"], type: "TEST_RESULT", payload: { result: "PASSED", artifactId: "art-own" } }));
+
+  assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 0, "an owner's own sign-off records nothing");
+  assert.equal(state.messages.size, 1, "the result is still recorded — it is a report, not a verdict");
+
+  // The same message from the peer is a real signature: the screen is about
+  // WHO owns the artifact, not about the channel.
+  send(state, message({ id: "m-peer", from: "qa", to: ["dev"], type: "TEST_RESULT", payload: { result: "PASSED", artifactId: "art-own" } }));
+  assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 1, "a peer's sign-off is recorded");
+});
+
+test("the self-approval screen also reads artifactRefs, so the uri path is not a way around it", () => {
+  // `recordApproval` stores BOTH `payload.artifactId` and `artifactRefs[0]`,
+  // and a gate can be satisfied through either. Screening only the explicit id
+  // would leave the uri open, which is the same hole one level down.
+  const state = seed([["dev", "developer", ["quality.pass"]], ["qa", "qa", ["quality.pass", "implementation.approve"]]]);
+  state.artifacts.set("art-uri", { id: "art-uri", type: "CodePatch", name: "checkout", version: 2, owner: "dev", goalId: GOAL_ID, contentRef: "artifact://CodePatch/checkout/2" } as never);
+  send(state, message({ id: "m-uri", from: "dev", to: ["qa"], type: "TEST_RESULT", artifactRefs: [{ uri: "artifact://CodePatch/checkout/2" }], payload: { result: "PASSED" } }));
+
+  assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 0, "a uri-addressed self sign-off records nothing either");
+});
+
+test("with no peer able to review, an owner may still sign their own artifact", () => {
+  // The single-agent control group has no peers. Self-review is refused only
+  // when some OTHER live agent could have reviewed — tightening this into
+  // "owners never self-approve" would make the benchmark's solo arm unable to
+  // finish anything, so the exemption is load-bearing, not a leftover.
+  const state = seed([["dev", "developer", ["quality.pass"]]]);
+  state.artifacts.set("art-solo", { id: "art-solo", type: "CodePatch", name: "solo", version: 1, owner: "dev", goalId: GOAL_ID, contentRef: "artifact://CodePatch/solo/1" } as never);
+  send(state, message({ id: "m-solo", from: "dev", to: ["dev"], type: "TEST_RESULT", payload: { result: "PASSED", artifactId: "art-solo" } }));
+
+  assert.equal((state.approvals.get(approvalKey("quality", "pass")) ?? []).length, 1, "with nobody else to ask, the owner signs");
 });
 
 test("a BLOCK message records a block approval regardless of payload result", () => {
@@ -414,6 +486,41 @@ test("a BLOCK message records a block approval regardless of payload result", ()
   assert.equal(blocks.length, 1, "BLOCK defaults to the quality subject");
   assert.equal(blocks[0]!.artifactId, "art-4");
   assert.equal(blocks[0]!.actorId, "qa");
+});
+
+test("a BLOCK from a seat without the authority records no block, and the refusal is visible", () => {
+  // A block withholds a MERGED transition, so it is a verdict and needs
+  // `<subject>.block` exactly as a sign-off needs `<subject>.pass`. But a
+  // silently dropped block is worse than a dropped pass: the sender believes
+  // the artifact is held while it ships. So the refusal must leave a trace.
+  const state = seed([["dev", "developer"], ["qa", "qa", ["quality.pass"]]]);
+  send(state, message({ id: "m-nb", from: "dev", to: ["qa"], type: "BLOCK", payload: { artifactId: "art-7" } }));
+
+  assert.equal((state.approvals.get(approvalKey("quality", "block")) ?? []).length, 0, "asserting BLOCK is not holding quality.block");
+  assert.equal(state.messages.size, 1, "the message is still recorded — it is a concern, not a verdict");
+  const conflict = state.conflicts.get("unauthorized-block:dev:quality");
+  assert.ok(conflict, "the refused block is counted as a conflict so it cannot vanish");
+  assert.equal(conflict!.count, 1);
+  assert.equal(conflict!.lastActor, "dev");
+  assert.equal(conflict!.artifactId, "art-7");
+});
+
+test("the BLOCK payload subject is checked against authority, so it cannot withhold another domain", () => {
+  // `payload.subject` is agent-supplied: qa holds `quality.block` only, so a
+  // BLOCK claiming `security` must not stall the security gate.
+  const state = seed([["dev", "developer"], ["qa", "qa", ["quality.block"]]]);
+  send(state, message({ id: "m-xb", from: "qa", to: ["dev"], type: "BLOCK", payload: { subject: "security", artifactId: "art-8" } }));
+
+  assert.equal((state.approvals.get(approvalKey("security", "block")) ?? []).length, 0, "an unheld subject blocks nothing");
+  assert.ok(state.conflicts.get("unauthorized-block:qa:security"), "the cross-domain attempt is recorded");
+});
+
+test("repeated unauthorized blocks accumulate on one conflict key, so the deadlock scan can escalate them", () => {
+  const state = seed([["dev", "developer"], ["qa", "qa", ["quality.pass"]]]);
+  send(state, message({ id: "m-r1", from: "dev", to: ["qa"], type: "BLOCK", payload: { artifactId: "art-7" } }));
+  send(state, message({ id: "m-r2", from: "dev", to: ["qa"], type: "BLOCK", payload: { artifactId: "art-7", reason: "again" } }));
+
+  assert.equal(state.conflicts.get("unauthorized-block:dev:quality")!.count, 2, "the counter is what crosses repeatedConflictThreshold");
 });
 
 // ------------------------------------------------------- loop detection

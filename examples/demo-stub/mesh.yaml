@@ -66,14 +66,14 @@ agents:
     runtime: stub
     prompt: ../../roles/qa.md
     capabilities: [repository.read, test.execute, test.write]
-    authority: [quality.block]
+    authority: [quality.block, quality.pass]
     interests: [patch.ready, implementation.completed, release.candidate]
   security:
     role: security
     runtime: stub
     prompt: ../../roles/security.md
     capabilities: [repository.read, security.scan, security.review]
-    authority: [security.block]
+    authority: [security.block, security.pass]
     interests: [release.candidate, authentication.changed, dependency.changed]
   explorer:
     role: explorer

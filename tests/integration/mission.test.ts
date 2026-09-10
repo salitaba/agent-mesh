@@ -8,8 +8,12 @@ const MISSION_AGENTS = [
   { id: "architect", role: "architect", authority: ["architecture.approve"], interests: ["architecture.*", "design.question", "requirements.created", "research.completed", "implementation.completed"], capabilities: ["repository.read", "architecture.write", "review.design"] },
   { id: "tech-lead", role: "tech-lead", authority: ["implementation.approve"], interests: ["patch.ready", "implementation.completed", "architecture.approved"], capabilities: ["code.review", "review.design", "git.merge", "task.assign"] },
   { id: "developer", role: "developer", interests: ["architecture.approved", "review.rejected"], capabilities: ["repository.write", "test.execute", "git.commit"] },
-  { id: "qa", role: "qa", authority: ["quality.block"], interests: ["patch.ready", "release.candidate"], capabilities: ["test.write", "test.execute"] },
-  { id: "security", role: "security", authority: ["security.block"], interests: ["release.candidate", "dependency.changed"], capabilities: ["security.scan", "security.review"] },
+  // `quality.pass` / `security.pass` are what let a TEST_RESULT or
+  // SECURITY_FINDING carrying `result: "PASSED"` be recorded as the sign-off
+  // the `qa.pass` / `security.pass` gates below ask for. Without the
+  // authority the message is delivered but records nothing.
+  { id: "qa", role: "qa", authority: ["quality.block", "quality.pass"], interests: ["patch.ready", "release.candidate"], capabilities: ["test.write", "test.execute"] },
+  { id: "security", role: "security", authority: ["security.block", "security.pass"], interests: ["release.candidate", "dependency.changed"], capabilities: ["security.scan", "security.review"] },
   { id: "explorer", role: "explorer", mode: "service" as const, interests: ["research.requested"], capabilities: ["repository.read"] },
 ];
 

@@ -45,7 +45,7 @@ import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../.
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, checkApprovals, transitionLifecycle } from "./projections";
+import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, transitionLifecycle } from "./projections";
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
 import type { BudgetManager } from "./budgets";
@@ -966,21 +966,42 @@ export class Supervisor {
         await this.deps.kernel.emit("design.question", { artifactId: art.id, question: (m.payload as any)?.question ?? null, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
       }
     }
-    if (m.type === "TEST_RESULT" && (m.payload as any)?.result === "PASSED") {
-      await this.markCriterionEvidence("quality-verified", {
-        kind: "test-pass",
-        artifactRef: m.artifactRefs[0],
-        by: m.from,
-        recordedAt: this.deps.kernel.clock.iso(),
-      });
-    }
-    if (m.type === "SECURITY_FINDING" && (m.payload as any)?.result === "PASSED") {
-      await this.markCriterionEvidence("security-verified", {
-        kind: "security-pass",
-        artifactRef: m.artifactRefs[0],
-        by: m.from,
-        recordedAt: this.deps.kernel.clock.iso(),
-      });
+    if ((m.type === "TEST_RESULT" || m.type === "SECURITY_FINDING") && (m.payload as any)?.result === "PASSED") {
+      // The reducer refuses to record an owner's sign-off on their own
+      // artifact when a peer could have reviewed it. Tell the sender, for the
+      // same reason a refused BLOCK is surfaced: silence here is worse than
+      // noise. An unentitled PASSED can be dropped quietly — the sender was
+      // never going to move the artifact and loses nothing. A refused
+      // SELF-approval is different: the owner is the one agent that will now
+      // sit and wait on a gate it believes it satisfied, so the artifact
+      // stalls with nobody looking for a reviewer. One rejection turns that
+      // deadlock into a next action.
+      //
+      // Emitted AFTER `message.sent`: the result is still logged and still
+      // delivered. It is a report, not a verdict.
+      const target = artifactForRef(this.state, (m.payload as any)?.artifactId, primary);
+      const selfApproval = !!target && target.owner === from && hasPeerReviewerFor(this.state, from, target, HUMAN_AGENT_ID);
+      if (selfApproval) {
+        await this.denied(from, target.id, `pass ${target.name}`, {
+          decision: "DENY",
+          reason: `cannot sign off your own artifact '${target.name}' while another agent could review it — the result was delivered as a report but records no approval`,
+          ruleId: "authority.self-approval",
+        });
+      } else if (m.type === "TEST_RESULT") {
+        await this.markCriterionEvidence("quality-verified", {
+          kind: "test-pass",
+          artifactRef: m.artifactRefs[0],
+          by: m.from,
+          recordedAt: this.deps.kernel.clock.iso(),
+        });
+      } else {
+        await this.markCriterionEvidence("security-verified", {
+          kind: "security-pass",
+          artifactRef: m.artifactRefs[0],
+          by: m.from,
+          recordedAt: this.deps.kernel.clock.iso(),
+        });
+      }
     }
     if (m.type === "REQUEST_RESEARCH") {
       await this.deps.kernel.emit("research.requested", { question: (m.payload as any)?.question ?? m.payload, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
@@ -989,6 +1010,29 @@ export class Supervisor {
       const art = primary ? this.findArtifactByUri(primary) : undefined;
       await this.deps.kernel.emit("patch.ready", { artifactId: art?.id, artifactRef: primary, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
       await this.auditTransition(art?.id, m.id, goalId, corr);
+    }
+    if (m.type === "BLOCK") {
+      // The reducer refuses to record a block from a seat without
+      // `<subject>.block`, and counts the refusal as a conflict so it is
+      // visible in metrics and escalates if repeated. But the SENDER also has
+      // to learn its objection carried no weight — otherwise it goes quiet
+      // believing the artifact is held, and the artifact ships anyway.
+      //
+      // Deliberate `op: block` never reaches here unentitled: executeOp runs
+      // evaluateAuthority before it sends. This catches the raw message path.
+      //
+      // Emitted AFTER `message.sent`: an unentitled BLOCK is still logged and
+      // still delivered, exactly like an unentitled PASSED. It is a concern,
+      // not a verdict.
+      const subject = (m.payload as any)?.subject ?? "quality";
+      if (!holdsAuthority(this.state.agents.get(from)?.definition.authority, subject, "block")) {
+        const reason = `no authority to block '${subject}' (requires ${subject}.block) — the objection was delivered as a concern but does not withhold the transition`;
+        await this.denied(from, (m.payload as any)?.artifactId ?? primary, `block ${subject}`, {
+          decision: "DENY",
+          reason,
+          ruleId: "authority.block",
+        });
+      }
     }
     if (m.type === "ESCALATE") {
       // already an explicit escalation op path; keep audit-only
@@ -1652,7 +1696,7 @@ export class Supervisor {
     }
     let authorityCheck = this.deps.policy.evaluateAuthority(actorId, domain, kind, ctx);
     if (authorityCheck.decision !== "ALLOW" && artifact && (kind === "approve" || kind === "reject")) {
-      const reviewCap = this.capabilityForReview(artifact);
+      const reviewCap = capabilityForReview(artifact.type);
       if (reviewCap) {
         const capCheck = this.deps.policy.evaluateCapability(actorId, reviewCap, ctx);
         if (capCheck.decision === "ALLOW" && (artifact.owner !== actorId || !this.hasPeerReviewer(actorId, artifact))) {
@@ -1672,6 +1716,11 @@ export class Supervisor {
     const payload = {
       subject: artifactId ? `artifact:${artifactId}` : subject,
       fallbackSubject: subject,
+      // The declared verdict must survive the emit. `approve` and `pass` share
+      // the `review.approved` event type, so without this the projection cannot
+      // tell them apart and a gate written as `qa.pass` is unsatisfiable by any
+      // deliberate agent op.
+      kind,
       artifactId,
       artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
       actorId,
@@ -1726,31 +1775,7 @@ export class Supervisor {
   }
 
   private domainOfSubject(subject: string, artifactId?: string): string {
-    if (subject.startsWith("criterion:")) return "requirements";
-    if (["architecture", "implementation", "quality", "security", "requirements", "release"].includes(subject)) return subject;
-    const artifact = artifactId ? this.state.artifacts.get(artifactId) : undefined;
-    if (artifact) {
-      switch (artifact.type) {
-        case "ArchitectureDocument":
-        case "ApiSpec":
-        case "ADR":
-          return "architecture";
-        case "CodePatch":
-          return "implementation";
-        case "ReleasePlan":
-          return "release";
-        case "TestReport":
-          return "quality";
-        case "SecurityReport":
-          return "security";
-        case "RequirementsDoc":
-        case "Requirement":
-          return "requirements";
-        default:
-          return subject;
-      }
-    }
-    return subject;
+    return domainOfSubject(this.state, subject, artifactId);
   }
 
   private async settleReviewAsks(actorId: string, artifact: Artifact | undefined, eventId: string): Promise<void> {
@@ -3406,7 +3431,7 @@ export class Supervisor {
           const a = targetId ? this.state.artifacts.get(targetId) : undefined;
           if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"}` };
           const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
-          const cap = this.capabilityForReview(a);
+          const cap = capabilityForReview(a.type);
           if (cap) {
             const decision = this.deps.policy.evaluateCapability(actorId, cap, ctx);
             if (decision.decision !== "ALLOW") await this.denied(actorId, a.id, "request review", decision);
@@ -3830,39 +3855,17 @@ export class Supervisor {
     return has ? null : `missing capability ${need}`;
   }
 
-  private capabilityForReview(a: Artifact): string | null {
-    switch (a.type) {
-      case "ArchitectureDocument":
-      case "ADR":
-      case "ApiSpec":
-        return "review.design";
-      case "CodePatch":
-        return "code.review";
-      case "SecurityReport":
-        return "security.review";
-      default:
-        return null;
-    }
-  }
-
   /**
    * In a real organization an author may never approve their own work. But a
    * single-agent control group has no peers; the benchmark (§71) needs to be
    * mechanically comparable, so self-review is allowed only when no OTHER
    * registered agent could have reviewed the artifact.
+   *
+   * Delegates so the op path and the message-path reducer screen self-approval
+   * against ONE definition — see `hasPeerReviewerFor` in projections-helpers.
    */
   hasPeerReviewer(actorId: string, artifact: Artifact): boolean {
-    const reviewCap = this.capabilityForReview(artifact);
-    const subject = this.domainOfSubject(artifact.type, artifact.id);
-    for (const rec of this.state.agents.values()) {
-      const id = rec.definition.id;
-      if (id === actorId || id === HUMAN_AGENT_ID) continue;
-      if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED") continue;
-      const auth = rec.definition.authority;
-      if (auth.includes(`${subject}.approve`) || auth.includes(`${subject}.*`) || auth.includes("*")) return true;
-      if (reviewCap && rec.definition.capabilities.includes(reviewCap)) return true;
-    }
-    return false;
+    return hasPeerReviewerFor(this.state, actorId, artifact, HUMAN_AGENT_ID);
   }
 
   resolveArtifactRef(explicit?: string, uri?: string): string | undefined {

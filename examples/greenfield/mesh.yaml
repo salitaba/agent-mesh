@@ -45,7 +45,7 @@ agents:
     runtime: opencode
     prompt: ../../roles/qa.md
     capabilities: [repository.read, test.execute, test.write]
-    authority: [quality.block]
+    authority: [quality.block, quality.pass]
     interests: [patch.ready, implementation.completed]
 
 policies:

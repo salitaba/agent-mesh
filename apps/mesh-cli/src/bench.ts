@@ -145,14 +145,14 @@ agents:
     role: qa
     runtime: stub
     capabilities: [repository.read, test.execute, test.write]
-    authority: [quality.block]
+    authority: [quality.block, quality.pass]
     interests: [patch.ready, implementation.completed, release.candidate]
     budget: { tokens: 200000 }
   security:
     role: security
     runtime: stub
     capabilities: [repository.read, security.scan, security.review]
-    authority: [security.block]
+    authority: [security.block, security.pass]
     interests: [authentication.changed, authorization.changed, dependency.changed, release.candidate]
     budget: { tokens: 200000 }
   explorer:
@@ -223,7 +223,7 @@ agents:
     role: solo
     runtime: stub
     capabilities: [repository.read, repository.write, architecture.write, review.design, code.review, test.execute, test.write, security.scan, security.review, git.commit, git.merge, task.assign]
-    authority: [architecture.approve, implementation.approve, requirements.accept, release.accept, quality.block, security.block]
+    authority: [architecture.approve, implementation.approve, requirements.accept, release.accept, quality.block, quality.pass, security.block, security.pass]
     interests: []
     budget: { tokens: 5000000 }
 

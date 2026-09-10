@@ -6,7 +6,7 @@
   PolicyDecisionResult,
 } from "../../protocol/src/index";
 import type { PolicyContext, PolicyEvaluator } from "../../core/src/ports";
-import { checkApprovals, gateForTransition } from "../../core/src/projections";
+import { checkApprovals, gateForTransition, holdsAuthority } from "../../core/src/projections";
 import { approvalKey } from "../../core/src/state";
 import type { RawPolicyRule } from "../../config/src/index";
 import { HUMAN_AGENT_ID } from "../../core/src/supervisor";
@@ -112,7 +112,7 @@ export class PolicyEngine implements PolicyEvaluator {
     const def = this.agentDef(ctx, actorId);
     if (!def) return { decision: "DENY", reason: `unknown agent ${actorId}`, ruleId: "registry" };
     const required = `${subject}.${kind}`;
-    const has = def.authority.includes(required) || def.authority.includes(`${subject}.*`) || def.authority.includes("*");
+    const has = holdsAuthority(def.authority, subject, kind);
     if (!has) {
       const rule = this.matchRule(ctx, { actorId, authority: required });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `authority '${required}' missing; rule '${rule.id}' escalates`, ruleId: rule.id };

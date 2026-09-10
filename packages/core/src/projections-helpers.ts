@@ -163,6 +163,141 @@ export function clearPendingForTask(state: Projections, taskId: string, at: stri
   }
 }
 
+/**
+ * Does this authority list grant `<subject>.<kind>`?
+ *
+ * The single definition of "holds authority" for the whole runtime. The
+ * deliberate op path asks the policy engine (`evaluateAuthority`), but
+ * projections are pure reducers over the event log and cannot reach the
+ * engine: policy-engine already imports from core, so the reverse import
+ * would be a cycle. Both call this instead, so a sign-off recorded from a
+ * message obeys exactly the rule a sign-off recorded from an op obeys.
+ *
+ * Safe inside a reducer because `definition.authority` is itself projected
+ * from `agent.registered` in the log — replay stays deterministic.
+ *
+ * The human seat needs no special case here: its definition carries
+ * `authority: ["*"]`.
+ */
+export function holdsAuthority(authority: readonly string[] | undefined, subject: string, kind: string): boolean {
+  if (!authority) return false;
+  return authority.includes(`${subject}.${kind}`) || authority.includes(`${subject}.*`) || authority.includes("*");
+}
+
+/** Which capability lets an agent review this kind of artifact? */
+export function capabilityForReview(type: Artifact["type"]): string | null {
+  switch (type) {
+    case "ArchitectureDocument":
+    case "ADR":
+    case "ApiSpec":
+      return "review.design";
+    case "CodePatch":
+      return "code.review";
+    case "SecurityReport":
+      return "security.review";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Which authority domain governs a subject?
+ *
+ * `subject` may already BE a domain, a `criterion:` subject, or an artifact
+ * type — the op path passes all three.
+ */
+export function domainOfSubject(state: Projections, subject: string, artifactId?: string): string {
+  if (subject.startsWith("criterion:")) return "requirements";
+  if (["architecture", "implementation", "quality", "security", "requirements", "release"].includes(subject)) return subject;
+  const artifact = artifactId ? state.artifacts.get(artifactId) : undefined;
+  if (artifact) {
+    switch (artifact.type) {
+      case "ArchitectureDocument":
+      case "ApiSpec":
+      case "ADR":
+        return "architecture";
+      case "CodePatch":
+        return "implementation";
+      case "ReleasePlan":
+        return "release";
+      case "TestReport":
+        return "quality";
+      case "SecurityReport":
+        return "security";
+      case "RequirementsDoc":
+      case "Requirement":
+        return "requirements";
+      default:
+        return subject;
+    }
+  }
+  return subject;
+}
+
+/**
+ * Could some agent OTHER than `actorId` have reviewed this artifact?
+ *
+ * The single definition of "a peer exists" for the whole runtime, so the
+ * self-approval screen on the message path is the same screen the op path
+ * applies (supervisor.ts `hasPeerReviewer` delegates here).
+ *
+ * In a real organization an author may never approve their own work. But a
+ * single-agent control group has no peers; the benchmark (§71) needs to be
+ * mechanically comparable, so self-review is allowed only when no OTHER
+ * registered agent could have reviewed the artifact. The human seat is never
+ * that peer: it is not a reviewer the mesh can schedule.
+ *
+ * Pure over `state.agents` and `state.artifacts`, both projected from the log,
+ * so this is safe inside a reducer — exactly like `holdsAuthority`.
+ */
+export function hasPeerReviewerFor(
+  state: Projections,
+  actorId: string,
+  artifact: Artifact,
+  humanAgentId = "human",
+): boolean {
+  const reviewCap = capabilityForReview(artifact.type);
+  const subject = domainOfSubject(state, artifact.type, artifact.id);
+  for (const rec of state.agents.values()) {
+    const id = rec.definition.id;
+    if (id === actorId || id === humanAgentId) continue;
+    if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED") continue;
+    const auth = rec.definition.authority;
+    if (auth.includes(`${subject}.approve`) || auth.includes(`${subject}.*`) || auth.includes("*")) return true;
+    if (reviewCap && rec.definition.capabilities.includes(reviewCap)) return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve the artifact a message points at.
+ *
+ * A message carries BOTH `payload.artifactId` and `artifactRefs[0].uri`, and
+ * either alone can identify the target — screening only the explicit id would
+ * leave the URI path open. Exact-match only: the supervisor's fuzzy
+ * `findArtifactByUri` exists for model-invented URIs on the deliberate op
+ * path, and its heuristics do not belong in a replay-deterministic reducer.
+ */
+export function artifactForRef(state: Projections, artifactId?: string, uri?: string): Artifact | undefined {
+  if (artifactId) {
+    const direct = state.artifacts.get(artifactId);
+    if (direct) return direct;
+  }
+  const candidates = [uri, artifactId].filter((u): u is string => typeof u === "string" && u.length > 0);
+  for (const u of candidates) {
+    for (const a of state.artifacts.values()) {
+      if (a.id === u || a.contentRef === u || `artifact://${a.type}/${a.name}/${a.version}` === u) return a;
+    }
+    const parsed = /^artifact:\/\/([^/]+)\/([^/]+)/.exec(u);
+    if (parsed) {
+      for (const a of state.artifacts.values()) {
+        if (a.type === parsed[1] && a.name === decodeURIComponent(parsed[2]!)) return a;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function recordApproval(
   state: Projections,
   p: Record<string, any>,
@@ -238,7 +373,10 @@ export function hasApproval(state: Projections, subject: string, kind: string, a
 export function hasApprovalForArtifact(state: Projections, artifactId: string, kind: string): boolean {
   for (const list of state.approvals.values()) {
     for (const r of list) {
-      if (r.kind === kind && r.artifactId === artifactId) return true;
+      // A `pass` is a verified sign-off, so it is strictly stronger than a bare
+      // `approve` and satisfies anything asking for one. The converse does NOT
+      // hold: an `approve` never stands in for a required `pass`.
+      if ((r.kind === kind || (kind === "approve" && r.kind === "pass")) && r.artifactId === artifactId) return true;
     }
   }
   return false;
@@ -282,7 +420,8 @@ export function checkApprovals(
         (artifactId === undefined || r.artifactId === undefined || r.artifactId === artifactId),
     );
     const satisfiedKind = (r: import("../../protocol/src/index").ApprovalRecord) =>
-      r.kind === kind || (kind === "approve" && (r.kind === "accept" || r.kind === "merge")) ||
+      r.kind === kind ||
+      (kind === "approve" && (r.kind === "accept" || r.kind === "merge" || r.kind === "pass")) ||
       (kind === "pass" && (r.kind === "accept" || r.kind === "merge"));
     const approving = relevant.filter(satisfiedKind);
     if (approving.length === 0) {

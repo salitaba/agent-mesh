@@ -113,7 +113,10 @@ export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Reco
       break;
     }
     case "review.approved": {
-      recordApproval(state, p, event, "approve");
+      // `pass` and `approve` both ride this event type; record what the actor
+      // actually declared so a `<role>.pass` gate can be satisfied by a real
+      // sign-off. Older logs carry no kind and replay as `approve`.
+      recordApproval(state, p, event, p.kind === "pass" ? "pass" : "approve");
       if (p.artifactId && event.actorId) clearPendingForArtifactReview(state, p.artifactId, event.actorId);
       const a = p.artifactId ? state.artifacts.get(p.artifactId) : undefined;
       if (a && (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW") && (a.type === "ArchitectureDocument" || a.type === "CodePatch" || a.type === "ApiSpec")) {
