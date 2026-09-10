@@ -18,6 +18,7 @@ import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
+import { DEFAULT_HOST_PORT, resolveBus, runHostCommand, runProjectCommand } from "./projects";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -236,6 +237,11 @@ usage:
   mesh reject --subject s [--artifact id] [--comment text]
   mesh respond <escalationId> <text>       human escalation response
   mesh artifacts [--bus url]               artifact ledger
+  mesh host [--port n] [--home dir] [--memory mb] [--live]
+    multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
+  mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
+    project registry; add/remove/list work without a host, open/close/restart need one (--host url)
+  any --bus command also takes --project <id> to address one project through a host
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
   bench [--mesh config.yaml] [--single config.yaml] [--out report.json]
 `;
@@ -363,9 +369,19 @@ async function launchMesh(opts: {
 
 export async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
-  const bus = String(args.flags.bus ?? DEFAULT_BUS);
+  // `--project id` rewrites the bus to the host's proxy prefix, so every
+  // existing command works against one project of a multi-project host
+  // without each case knowing that hosts exist.
+  const bus = resolveBus(args.flags, DEFAULT_BUS);
   try {
     switch (args.command) {
+      case "host": {
+        return runHostCommand(args.flags);
+      }
+      case "project":
+      case "projects": {
+        return runProjectCommand(args.positional, args.flags);
+      }
       case "init": {
         const dir = path.resolve(args.positional[0] ?? ".");
         const runtime = hasOpenCodeCli() ? "opencode" : "stub";
