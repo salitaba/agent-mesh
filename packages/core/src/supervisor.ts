@@ -4224,9 +4224,12 @@ export class Supervisor {
       const a = rec.state;
       if (a.agentId === HUMAN_AGENT_ID) continue;
       if (a.lifecycle === "IDLE" || a.lifecycle === "WAITING") {
+        // Tolerant: one refused transition must not abort the sweep. But NOT
+        // silent — a swallowed rejection here is how agents used to survive a
+        // finished mission stuck in WAITING with nothing in the log to say so.
         await this.deps.kernel
           .emit("agent.completed", { agentId: a.agentId }, { actorId: HUMAN_AGENT_ID })
-          .catch(() => undefined);
+          .catch((err) => this.auditLine(`completion sweep could not retire ${a.agentId} from ${a.lifecycle}: ${(err as Error).message}`));
       }
     }
     await this.shutdown();

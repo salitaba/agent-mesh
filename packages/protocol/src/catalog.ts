@@ -156,7 +156,11 @@ export const LIFECYCLE_TRANSITIONS: Record<LifecycleState, LifecycleState[]> = {
   THINKING: ["REQUESTING", "WORKING", "WAITING", "REVIEWING", "IDLE", "BLOCKED", "SUSPENDED", "FAILED"],
   REQUESTING: ["WAITING", "REVIEWING", "IDLE", "THINKING", "SUSPENDED", "FAILED"],
   WORKING: ["REVIEWING", "WAITING", "IDLE", "THINKING", "BLOCKED", "SUSPENDED", "FAILED"],
-  WAITING: ["AWAKENED", "IDLE", "BLOCKED", "SUSPENDED", "FAILED"],
+  // COMPLETED is reachable from WAITING because a parked agent is idle-with-a-debt,
+  // not busy: when the mission ends the completion sweep must be able to retire it.
+  // Without this edge the sweep's `agent.completed` is rejected by the projection and
+  // the agent is left in WAITING for the life of a finished mesh.
+  WAITING: ["AWAKENED", "IDLE", "BLOCKED", "SUSPENDED", "COMPLETED", "FAILED"],
   REVIEWING: ["IDLE", "BLOCKED", "THINKING", "SUSPENDED", "FAILED"],
   BLOCKED: ["THINKING", "IDLE", "AWAKENED", "SUSPENDED", "FAILED"],
   SUSPENDED: ["IDLE", "FAILED"],

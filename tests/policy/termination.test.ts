@@ -35,6 +35,29 @@ test("termination: successful completion needs every mandatory criterion evidenc
   await m.cleanup();
 });
 
+test("termination: the completion sweep retires a parked (WAITING) agent, not just idle ones", async () => {
+  // A WAITING agent is idle-with-a-debt, not busy. If the sweep cannot retire
+  // it, the mesh reports a completed mission while pm/qa/security sit in
+  // WAITING forever — the projection refuses `agent.completed` and the
+  // rejection is swallowed, so nothing in the mission view says why.
+  const m = await makeMesh({
+    agents: [
+      { id: "pm", role: "pm", authority: ["requirements.accept"], interests: [] },
+      { id: "qa", role: "qa", interests: [] },
+    ],
+    criteria: [{ id: "c1", description: "one", mandatory: true }],
+  });
+  await park(m, "qa");
+  assert.equal(m.kernel.state.agents.get("qa")?.state.lifecycle, "WAITING");
+
+  const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
+  await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
+  await waitFor("qa retired", () => m.kernel.state.agents.get("qa")?.state.lifecycle === "COMPLETED", 5000);
+  await m.cleanup();
+});
+
 test("termination: mission token budget exhaustion escalates (not silently halts)", async () => {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", interests: ["message.sent"], capabilities: ["repository.write"] }],
