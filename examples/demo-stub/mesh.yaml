@@ -3,8 +3,9 @@ version: 1
 # Runnable demonstration mesh using deterministic stub agents.
 # `mesh run` auto-attaches a scripted demo team (bench.ts attachDemoTeam) so
 # the payment mission converges end-to-end with zero model calls — QA BLOCKs
-# once so you can watch conflict handling, then the release gates, evidence
-# based acceptance and goal completion. Design your own at /#/designer.
+# once (an accepted block is a BLOCK message, not a review.rejected) so you
+# can watch conflict handling, then the release gates, evidence based
+# acceptance and goal completion. Design your own at /#/designer.
 
 mesh:
   id: demo-stub
