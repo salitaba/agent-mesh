@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { parse as parseYaml } from "yaml";
-import { analyzeMeshConfig, parseMeshSource, writeDefaultMeshYaml, ConfigError } from "../../packages/config/src/index";
+import { analyzeMeshConfig, parseMeshSource, writeDefaultMeshYaml, ConfigError, materializeRolePrompts, resolveConfig, stringifyMesh } from "../../packages/config/src/index";
 import { isProjectId, toProjectId, validateMeshConfig } from "../../packages/protocol/src/index";
 import { testConfigYaml } from "../helpers";
 
@@ -144,4 +144,36 @@ test("mesh init: an explicit projectId overrides the folder-derived one", () => 
 test("mesh init: an invalid explicit projectId is rejected up front", () => {
   const dir = tmpDir("whatever");
   assert.throws(() => writeDefaultMeshYaml(dir, "whatever", "stub", { projectId: "Not Valid" }), ConfigError);
+});
+
+test("role prompts: save materializes missing relative prompt refs", () => {
+  const dir = tmpDir("designed");
+  const raw = parseMeshSource(`version: 1
+mesh: { id: designed, goal: g }
+agents:
+  backend: { role: backend, prompt: ./roles/backend.md }
+  qa: { role: qa, prompt: ./roles/qa.md }
+  release: { role: tech-lead, prompt: ./prompts/lead.md }
+`);
+  const created = materializeRolePrompts(raw, dir);
+  assert.deepEqual(created.map((c) => c.agent).sort(), ["backend", "qa", "release"]);
+  assert.ok(fs.existsSync(path.join(dir, "roles", "backend.md")), "generated stub for a role with no repo file");
+  assert.ok(fs.existsSync(path.join(dir, "prompts", "lead.md")), "nested relative refs are created");
+  assert.equal(created.find((c) => c.agent === "qa")?.source, "role", "repo roles/qa.md is copied when it exists");
+  assert.equal(created.find((c) => c.agent === "backend")?.source, "generated");
+
+  // Never overwrite: a user-edited prompt survives a re-save.
+  fs.writeFileSync(path.join(dir, "roles", "backend.md"), "hand-written\n");
+  assert.deepEqual(materializeRolePrompts(raw, dir), []);
+  assert.equal(fs.readFileSync(path.join(dir, "roles", "backend.md"), "utf8"), "hand-written\n");
+
+  // End to end: the saved config resolves instead of failing as invalid_config.
+  const cfgPath = path.join(dir, "mesh.yaml");
+  fs.writeFileSync(cfgPath, stringifyMesh(raw), "utf8");
+  assert.equal(resolveConfig(cfgPath).agents.qa.prompt?.file, "./roles/qa.md");
+
+  // A ref that escapes the project dir is left alone.
+  const escaping = parseMeshSource(`version: 1\nmesh: { id: e, goal: g }\nagents:\n  a: { role: a, prompt: ../escape.md }\n`);
+  assert.deepEqual(materializeRolePrompts(escaping, dir), []);
+  assert.ok(!fs.existsSync(path.join(path.dirname(dir), "escape.md")));
 });

@@ -4,7 +4,7 @@ import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { URL } from "url";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact } from "../../../packages/protocol/src/index";
-import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError } from "../../../packages/config/src/index";
+import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
 import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, type OpResult } from "../../../packages/core/src/index";
@@ -1384,6 +1384,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const warnings: string[] = [];
           let target: string | null = null;
           let archived: string | null = null;
+          let createdPrompts: ReturnType<typeof materializeRolePrompts> = [];
           if (parts[1] === "save") {
             if (!b.path) return json(400, { valid: false, errors: ["save requires a path"] });
             target = path.resolve(String(b.path));
@@ -1404,6 +1405,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             }
             fs.writeFileSync(target, yamlText, "utf8");
             const dir = path.dirname(target);
+            // Make the prompt refs this save just wrote real, or the project
+            // opens as invalid_config. Existing files are never overwritten.
+            createdPrompts = materializeRolePrompts(resolved.raw, dir);
             for (const id of Object.keys(resolved.raw.agents)) {
               const p = resolved.raw.agents[id].prompt;
               if (p && !fs.existsSync(path.resolve(dir, p))) {
@@ -1417,6 +1421,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             savedTo: target,
             archived,
             warnings,
+            createdPrompts,
             summary: {
               meshId: resolved.meshId,
               agents: resolved.agentOrder,

@@ -203,8 +203,8 @@ test("http api: config designer — validate/parse/save + designer page served",
       mesh: { id: "designed", goal: "designer test mesh" },
       startup: { activate: ["lead"] },
       agents: {
-        lead: { role: "lead", capabilities: ["repository.write"], authority: ["implementation.approve"], interests: ["patch.ready"] },
-        qa: { role: "qa", capabilities: ["test.write"], authority: ["quality.block"], interests: ["release.candidate"] },
+        lead: { role: "lead", prompt: "./roles/lead.md", capabilities: ["repository.write"], authority: ["implementation.approve"], interests: ["patch.ready"] },
+        qa: { role: "qa", prompt: "./roles/qa.md", capabilities: ["test.write"], authority: ["quality.block"], interests: ["release.candidate"] },
       },
       policies: { communication: { lead: { may_contact: ["qa"] }, qa: { may_contact: ["lead"] } }, transitions: { "patch.merge": { requires: ["lead.approve"] } } },
       budgets: { mission: { tokens: 100000 } },
@@ -234,10 +234,17 @@ test("http api: config designer — validate/parse/save + designer page served",
     const saved = await post("/config/save", { config: doc, path: target });
     assert.equal(saved.status, 200, JSON.stringify(saved.json));
     assert.equal(saved.json.savedTo, target);
-    const { loadMeshFile, analyzeMeshConfig } = require("../../packages/config/src/index");
+    // A save whose config references prompt files must leave the project openable:
+    // the refs are materialized (repo role file or generated stub), no dangling
+    // path for resolveConfig to reject as invalid_config.
+    assert.deepEqual(saved.json.createdPrompts.map((c: any) => c.agent).sort(), ["lead", "qa"]);
+    assert.ok(fs.existsSync(path.join(dir, "roles", "qa.md")), "referenced role prompts are written next to mesh.yaml");
+    assert.ok(fs.existsSync(path.join(dir, "roles", "lead.md")));
+    const { loadMeshFile, analyzeMeshConfig, resolveConfig } = require("../../packages/config/src/index");
     const rawBack = loadMeshFile(target);
     assert.equal(rawBack.mesh.id, "designed");
     analyzeMeshConfig(rawBack, dir);
+    resolveConfig(target);
     assert.equal(saved.json.archived, null, "first save has nothing to archive");
     const revisedCopy = JSON.parse(JSON.stringify(doc));
     revisedCopy.mesh.goal = "second proposal";

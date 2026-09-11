@@ -555,6 +555,63 @@ export function loadRolePrompt(config: ResolvedMeshConfig, agentId: string, fall
   return `You are the ${config.agents[agentId]?.role ?? fallback?.role ?? agentId} agent in mesh '${config.meshId}'.`;
 }
 
+export interface RolePromptRef {
+  mesh: { id: string };
+  agents: Record<string, { role: string; prompt?: string }>;
+}
+
+export interface MaterializedRolePrompt {
+  agent: string;
+  file: string;
+  source: "role" | "generated";
+}
+
+function defaultRolePrompt(role: string, meshId: string): string {
+  if (role === "architect") {
+    return `# Architect\n\nYou are the architect of mesh '${meshId}'.\n\n- Turn mission goals into approved architecture artifacts.\n- Publish ArchitectureDocument / ADR artifacts; never paste large documents into messages — reference artifacts.\n- Request review from the tech lead before implementation begins.\n- Consult the explorer for repository facts instead of guessing.\n- Respond to reviews with APPROVE/REJECT/PROPOSE via mesh tools only.\n`;
+  }
+  const title = role.charAt(0).toUpperCase() + role.slice(1);
+  return `# ${title}\n\nYou are the ${role} agent in mesh '${meshId}'.\n\n- Work from the mission goal and approved architecture artifacts; never paste large documents into messages — reference artifacts.\n- Respond to reviews with APPROVE/REJECT/PROPOSE via mesh tools only.\n`;
+}
+
+/**
+ * Make a config's prompt refs real. `resolveConfig` deliberately refuses a
+ * config whose agent prompt file is missing, but the designer happily writes
+ * `prompt: ./roles/<id>.md` refs that point nowhere — the saved project then
+ * opens as `invalid_config`. Called at the write boundary (scaffold + save):
+ * for every relative prompt ref that has no file yet, copy the repo's
+ * `roles/<agent.role>.md` when one exists, else generate a stub header. Never
+ * overwrites an existing file, and never writes outside `targetDir`.
+ */
+export function materializeRolePrompts(
+  source: RolePromptRef,
+  targetDir: string,
+  opts: { rolesDir?: string } = {},
+): MaterializedRolePrompt[] {
+  const root = path.resolve(targetDir);
+  const rolesDir = opts.rolesDir ?? path.resolve(__dirname, "..", "..", "..", "..", "roles");
+  const created: MaterializedRolePrompt[] = [];
+  for (const [id, agent] of Object.entries(source.agents)) {
+    const ref = agent.prompt;
+    if (!ref || path.isAbsolute(ref)) continue;
+    const dest = path.resolve(root, ref);
+    const rel = path.relative(root, dest);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
+    if (fs.existsSync(dest)) continue;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const roleFile = path.join(rolesDir, `${agent.role}.md`);
+    let kind: MaterializedRolePrompt["source"] = "generated";
+    if (fs.existsSync(roleFile)) {
+      fs.copyFileSync(roleFile, dest);
+      kind = "role";
+    } else {
+      fs.writeFileSync(dest, defaultRolePrompt(agent.role, source.mesh.id), "utf8");
+    }
+    created.push({ agent: id, file: dest, source: kind });
+  }
+  return created;
+}
+
 const INTEREST_PATTERN = /^[a-z_]+(\.[a-z_*]+)+$/;
 
 export function validateInterestExpressions(agents: AgentDefinition[]): string[] {
@@ -759,15 +816,6 @@ scheduling:
     max_active_agents: 4
 `;
   fs.writeFileSync(target, template, "utf8");
-  const rolesDir = path.join(targetDir, "roles");
-  fs.mkdirSync(rolesDir, { recursive: true });
-  const architectRole = path.join(rolesDir, "architect.md");
-  if (!fs.existsSync(architectRole)) {
-    fs.writeFileSync(
-      architectRole,
-      `# Architect\n\nYou are the architect of mesh '${meshId}'.\n\n- Turn mission goals into approved architecture artifacts.\n- Publish ArchitectureDocument / ADR artifacts; never paste large documents into messages — reference artifacts.\n- Request review from the tech lead before implementation begins.\n- Consult the explorer for repository facts instead of guessing.\n- Respond to reviews with APPROVE/REJECT/PROPOSE via mesh tools only.\n`,
-      "utf8",
-    );
-  }
+  materializeRolePrompts(parseMeshSource(template), targetDir);
   return target;
 }
