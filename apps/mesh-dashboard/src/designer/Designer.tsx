@@ -13,7 +13,7 @@
  *      load → edit → validate → save.
  */
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
 import { fmt } from "../format";
 import { useMesh } from "../store";
 import "./designer.css";
@@ -21,8 +21,8 @@ import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedC
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";
 import { hueVar } from "./ui";
-import { clamp, deepCopy, densure, sourceState, summarizeDiff, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
-import { clearStored, draft, loadLayout, readStored, ringLayout, saveLayout, storeDraft } from "./storage";
+import { baseName, clamp, deepCopy, densure, saveLandsOnRunning, sourceState, summarizeDiff, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
+import { clearStored, commitDraft, getDraftSnapshot, loadLayout, readStored, ringLayout, saveLayout, storeDraft, useDraft, type DraftState } from "./storage";
 import Topology from "./Topology";
 import { Button, Input } from "../components";
 import { register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
@@ -37,11 +37,11 @@ const COMPACT = "(max-width: 1240px)";
 
 /** WS10: handlers the palette commands call; swapped to no-ops on unmount. */
 interface DesignerCommands {
-  addAgent: (preset?: any) => void;
+  addAgent: (preset?: unknown) => void;
   validate: () => Promise<void>;
   pickAgent: (id: string) => void;
   gotoTab: (t: Tab) => void;
-  applyProposal: (model: any) => void;
+  applyProposal: (model: unknown) => void;
 }
 const NO_COMMANDS: DesignerCommands = {
   addAgent: () => {},
@@ -50,27 +50,6 @@ const NO_COMMANDS: DesignerCommands = {
   gotoTab: () => {},
   applyProposal: () => {},
 };
-
-/** Lexically resolve `.`/`..` and duplicate slashes the way the server's path.resolve would. */
-function normalizeSavePath(p: string): string {
-  const raw = p.trim().replace(/\\/g, "/");
-  const abs = raw.startsWith("/");
-  const out: string[] = [];
-  for (const part of raw.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (out.length && out[out.length - 1] !== "..") out.pop();
-      else if (!abs) out.push(part);
-    } else out.push(part);
-  }
-  return (abs ? "/" : "") + out.join("/");
-}
-
-/** Last path segment — the save hint names the file it will actually write. */
-function baseName(p: string): string {
-  const parts = normalizeSavePath(p).split("/");
-  return parts[parts.length - 1] || p;
-}
 
 /** Compact text for the header's draft/source chip; the sticky bar keeps the full sentence. */
 function sourceChipText(kind: SourceStateKind, n: number): string {
@@ -81,32 +60,15 @@ function sourceChipText(kind: SourceStateKind, n: number): string {
   return "new mesh";
 }
 
-/**
- * True when saving to `target` would land on the running file. Mirrors the server:
- * relative paths resolve against the running file's directory (config.dir is
- * dirname(filePath)) and a directory target gets mesh.yaml appended. Symlinks and a
- * server restarted with a different config are beyond what the client can see.
- */
-function saveLandsOnRunning(target: string, running: string): boolean {
-  const r = normalizeSavePath(running);
-  const raw = target.trim();
-  const dir = r.slice(0, Math.max(0, r.lastIndexOf("/"))) || "/";
-  const t = raw.startsWith("/") ? normalizeSavePath(raw) : normalizeSavePath(`${dir}/${raw}`);
-  return t === r || `${t}/mesh.yaml` === r;
-}
-
 export default function Designer(): React.JSX.Element {
   const { vocab, toast, setView, client } = useMesh();
   // Shell-owned (WS9): this component only paints the mode onto its regions.
   const { focusMode } = useFocusMode();
-  const [, setVersion] = useState(0);
-  const [cur, setCurState] = useState<string | null>(draft.cur);
-  const [layout, setLayoutState] = useState<Record<string, Pos>>(draft.layout);
+  const draft = useDraft();
+  const { model: m, cur, layout, runningPath, runningRaw, saveMode, copyPath, loaded } = draft;
+  const ready = loaded && !!m;
   const [tab, setTab] = useState<Tab>("crew");
-  const [saveMode, setSaveMode] = useState<SaveTarget>(draft.saveMode);
-  const [copyPath, setCopyPath] = useState(draft.copyPath);
-  const [ready, setReady] = useState(draft.loaded && !!draft.model);
-  const [baseline, setBaseline] = useState<string | null>(draft.model ? JSON.stringify(draft.model) : null);
+  const [dirty, setDirty] = useState(false);
   const [editCount, setEditCount] = useState(0);
   const [result, setResult] = useState<{ status: number; json: any } | null>(null);
   const [checking, setChecking] = useState(false);
@@ -128,9 +90,6 @@ export default function Designer(): React.JSX.Element {
   const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
-  /* Bumped whenever `draft.runningRaw` is replaced (load/save). `draft` is a
-   * module singleton, so useMemo on it alone would go stale after save. */
-  const [runningRev, setRunningRev] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* WS10: the mutation handlers are declared below the loading gate (they close
    * over a loaded model), but the command registration must be a hook above it.
@@ -150,14 +109,14 @@ export default function Designer(): React.JSX.Element {
   const inspReturn = useRef<HTMLElement | null>(null);
   const inspWasOpen = useRef(false);
   // Drawer is local and non-modal: no scrim, no focus trap, no global slot.
-  const openInspector = () => {
+  const openInspector = useCallback(() => {
     setCtxOpen(true);
     if (!compact) return;
     const opener = document.activeElement;
     // Never record an opener inside the drawer: links in the panels switch the
     // selection and would otherwise strand focus on a hidden element on close.
     if (opener instanceof HTMLElement && opener !== document.body && !inspRef.current?.contains(opener)) inspReturn.current = opener;
-  };
+  }, [compact]);
   useEffect(() => {
     if (!compact) return;
     if (ctxOpen && !inspWasOpen.current) {
@@ -184,85 +143,96 @@ export default function Designer(): React.JSX.Element {
     }
   }, [focusMode]);
 
+  // The palette commands need the latest handlers; writing the ref after every
+  // render keeps them fresh without mutating it during render.
+  useEffect(() => {
+    if (!ready || !m) {
+      cmdRef.current = NO_COMMANDS;
+      return;
+    }
+    cmdRef.current = { addAgent, validate, pickAgent, gotoTab, applyProposal: applyChatProposal };
+  });
+
   // WS10: a palette "jump to agent" leaves a pending id in commands.ts. Take
   // it as soon as this view can act on it — no bus, no storage, nothing that
   // survives to the next visit if the user never got here. A chat proposal
   // from the global assistant arrives through the same one-shot seam.
   useEffect(() => {
-    if (!ready || !draft.model) return;
+    if (!ready) return;
+    const current = getDraftSnapshot();
+    if (!current.model) return;
     const proposal = takePendingProposal();
     if (proposal) {
       cmdRef.current.applyProposal(proposal);
       return;
     }
     const id = takePendingAgent();
-    if (!id || !draft.model.agents[id]) return;
-    draft.cur = id;
-    setCurState(id);
+    if (!id || !current.model.agents[id]) return;
+    commitDraft({ cur: id });
     setTab("crew");
     openInspector();
-  }, [ready, cmdVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, cmdVersion, openInspector]);
 
   /* -------- edit plumbing -------- */
 
-  const validate = async () => {
-    if (!draft.model) return;
+  const validateSeq = useRef(0);
+
+  const validate = useCallback(async () => {
+    const model = getDraftSnapshot().model;
+    if (!model) return;
+    const seq = ++validateSeq.current;
     setChecking(true);
     try {
-      const { status, json } = await client.post("/config/validate", { config: draft.model });
+      const { status, json } = await client.post("/config/validate", { config: model });
+      if (seq !== validateSeq.current) return;
       setResult({ status, json });
       setCheckFailed(false);
       if (status === 200 && json?.yaml) setLastYaml(json.yaml);
     } catch {
-      setCheckFailed(true);
+      if (seq === validateSeq.current) setCheckFailed(true);
     } finally {
-      setChecking(false);
+      if (seq === validateSeq.current) setChecking(false);
     }
-  };
+  }, [client]);
 
   /** Call after any mutation of draft.model: re-render + fire the debounce. */
-  const touch = () => {
-    setVersion((v) => v + 1);
+  const touch = useCallback(() => {
+    commitDraft({});
+    setDirty(true);
     setEditCount((n) => n + 1);
     setSavedInfo(null);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       void validate();
       storeDraft();
-      if (draft.model) saveLayout(draft.model.mesh?.id || "", draft.layout);
+      const d = getDraftSnapshot();
+      if (d.model) saveLayout(d.model.mesh?.id || "", d.layout);
     }, SAVE_DELAY_MS);
-  };
+  }, [validate]);
 
-  const setLayout = (l: Record<string, Pos>) => {
-    draft.layout = l;
-    setLayoutState(l);
-  };
+  const setLayout = useCallback((next: SetStateAction<Record<string, Pos>>) => {
+    commitDraft((prev) => ({ layout: typeof next === "function" ? next(prev.layout) : next }));
+  }, []);
 
   /* -------- first visit: browser draft > running mesh > starter template -------- */
 
   useEffect(() => {
     let dead = false;
     (async () => {
-      if (draft.loaded && draft.model) {
-        setCurState(draft.cur);
-        setLayoutState(draft.layout);
-        setSaveMode(draft.saveMode);
-        setCopyPath(draft.copyPath);
-        setBaseline(JSON.stringify(draft.model));
-        setReady(true);
-        return;
-      }
+      if (getDraftSnapshot().loaded && getDraftSnapshot().model) return;
       const applyModel = (raw: any, filePath: string | null, mode: SaveTarget) => {
-        draft.model = deepCopy(raw);
-        densure(draft.model);
-        if (filePath !== null) draft.runningPath = filePath;
-        if (mode === "running") {
-          draft.runningRaw = deepCopy(raw);
-          setRunningRev((v) => v + 1);
-        }
-        draft.saveMode = mode;
-        draft.cur = draft.cur && draft.model.agents[draft.cur] ? draft.cur : Object.keys(draft.model.agents)[0] || null;
-        draft.layout = loadLayout(draft.model.mesh?.id || "", Object.keys(draft.model.agents));
+        const model = deepCopy(raw);
+        densure(model);
+        const prev = getDraftSnapshot();
+        const patch: Partial<DraftState> = {
+          model,
+          saveMode: mode,
+          cur: prev.cur && model.agents[prev.cur] ? prev.cur : Object.keys(model.agents)[0] || null,
+          layout: loadLayout(model.mesh?.id || "", Object.keys(model.agents)),
+        };
+        if (filePath !== null) patch.runningPath = filePath;
+        if (mode === "running") patch.runningRaw = deepCopy(raw);
+        commitDraft(patch);
       };
       let runningRaw: any = null;
       let runningPath = "";
@@ -280,14 +250,12 @@ export default function Designer(): React.JSX.Element {
       if (stored && JSON.stringify(stored.model) !== JSON.stringify(runningRaw)) {
         // Draft beats the running file only when it differs from it.
         const sm: SaveTarget = runningRaw ? (stored.saveMode === "copy" ? "copy" : "running") : "copy";
-        draft.saveMode = sm;
-        if (stored.copyPath?.trim()) draft.copyPath = stored.copyPath;
         applyModel(stored.model, runningPath || null, runningRaw ? sm : "copy");
+        if (stored.copyPath?.trim()) commitDraft({ copyPath: stored.copyPath });
         if (runningRaw) {
           /* applyModel marks the restored draft as "running"; the running FILE
            * must stay the diff/stale reference, not the draft itself. */
-          draft.runningRaw = deepCopy(runningRaw);
-          setRunningRev((v) => v + 1);
+          commitDraft({ runningRaw: deepCopy(runningRaw) });
         }
         setRestoredAt(stored.ts || Date.now());
       } else if (runningRaw) {
@@ -296,14 +264,8 @@ export default function Designer(): React.JSX.Element {
       } else {
         applyModel(TEMPLATES[1].make(), null, "copy"); // triad starter
       }
-      draft.loaded = true;
-      setCurState(draft.cur);
-      setLayout(draft.layout);
-      setSaveMode(draft.saveMode);
-      setCopyPath(draft.copyPath);
-      setBaseline(JSON.stringify(draft.model));
+      commitDraft({ loaded: true });
       setEditCount(0);
-      setReady(true);
       void validate();
     })();
     return () => {
@@ -312,8 +274,7 @@ export default function Designer(): React.JSX.Element {
       // A stale closure must not run commands against an unmounted workbench.
       cmdRef.current = NO_COMMANDS;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [client, validate]);
 
   // Esc unwinds the topmost local layer first: YAML slide-over, checks popover,
   // overflow menu, then the compact inspector drawer. The shell runs first and
@@ -370,22 +331,24 @@ export default function Designer(): React.JSX.Element {
     setYamlOpen(true);
   };
 
-  const m = draft.model;
-  const curJson = m ? JSON.stringify(m) : "";
-  const dirty = baseline !== null && m !== null && curJson !== baseline;
-  const targetPath = saveMode === "running" && draft.runningPath ? draft.runningPath : copyPath.trim();
-  const savingRunning = saveMode === "running" && !!draft.runningPath && targetPath === draft.runningPath;
+  const targetPath = saveMode === "running" && runningPath ? runningPath : copyPath.trim();
+  const savingRunning = saveMode === "running" && !!runningPath && targetPath === runningPath;
   // copy-target that resolves to the running file would silently overwrite it while
   // reporting "copy": refuse the save and make the user pick the running target.
-  const copyTargetsRunning = saveMode === "copy" && !!draft.runningPath && !!targetPath && saveLandsOnRunning(targetPath, draft.runningPath);
-  const diff = useMemo(() => (m ? summarizeDiff(m, draft.runningRaw) : []), [curJson, runningRev]); // eslint-disable-line react-hooks/exhaustive-deps
-  const src = sourceState({ dirty, diff, runningRaw: draft.runningRaw, saveMode, restoredAt });
+  const copyTargetsRunning = saveMode === "copy" && !!runningPath && !!targetPath && saveLandsOnRunning(targetPath, runningPath);
+  const diff = useMemo(() => {
+    // The model is mutated in place; editCount is the invalidation signal.
+    void editCount;
+    return m ? summarizeDiff(m, runningRaw) : [];
+  }, [m, runningRaw, editCount]);
+  const src = sourceState({ dirty, diff, runningRaw, saveMode, restoredAt });
   const errors: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
   const errTabs = useMemo(() => {
     const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0 };
-    for (const e of errors) counts[tabOfError(String(e))]++;
+    const errs: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
+    for (const e of errs) counts[tabOfError(String(e))]++;
     return counts;
-  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result]);
   const agentErr = (id: string): boolean => errors.some((e) => String(e).includes(`'${id}'`));
 
   useEffect(() => {
@@ -398,6 +361,8 @@ export default function Designer(): React.JSX.Element {
   /* -------- advisors: soft checks the server won't flag -------- */
 
   const advisors = useMemo(() => {
+    // The model is mutated in place; editCount is the invalidation signal.
+    void editCount;
     const list: Advice[] = [];
     const mm = m;
     if (!mm) return list;
@@ -421,9 +386,7 @@ export default function Designer(): React.JSX.Element {
     if (sum > (mm.budgets?.mission?.tokens ?? 2000000)) list.push({ level: "info", tab: "policy", msg: `crew budgets add up to ${fmt(sum)} — more than the ${fmt(mm.budgets?.mission?.tokens)} mission cap. Fine, just know someone stops early.` });
     if (!mm.mesh?.goal?.trim()) list.push({ level: "warn", tab: "mesh", msg: "the mission has no goal — agents will drift." });
     return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curJson]);
-
+  }, [m, editCount]);
   // WS10: Designer-scoped palette commands, registered only while this view is
   // mounted. The run bodies go through cmdRef because the handlers live below
   // the loading gate; the list re-registers when the selection or the
@@ -442,6 +405,54 @@ export default function Designer(): React.JSX.Element {
     ]);
     return () => unregister("designer");
   }, [ready, m, cmdAgent, result]);
+
+  /* -------- stable edit handlers (hooks, so they live above the gate) -------- */
+
+  const setCurrent = useCallback((id: string | null) => {
+    commitDraft({ cur: id });
+  }, []);
+  const commitBaseline = useCallback(() => {
+    setDirty(false);
+    setEditCount(0);
+  }, []);
+  const pushUndo = useCallback((label: string) => {
+    const d = getDraftSnapshot();
+    setUndo({ label, model: deepCopy(d.model), cur: d.cur });
+  }, []);
+  const toggleWire = useCallback((src: string, tgt: string) => {
+    if (src === tgt) return;
+    const model = getDraftSnapshot().model;
+    if (!model) return;
+    model.policies.communication[src] ||= { may_contact: [] };
+    const l = new Set(model.policies.communication[src].may_contact || []);
+    const had = l.has(tgt);
+    pushUndo(had ? `Unwired ${src} → ${tgt}` : `Wired ${src} → ${tgt}`);
+    if (had) l.delete(tgt); else l.add(tgt);
+    model.policies.communication[src].may_contact = [...l];
+    touch();
+  }, [pushUndo, touch]);
+  const gotoTab = useCallback((t: Tab) => {
+    setTab(t);
+    const d = getDraftSnapshot();
+    const id0 = Object.keys(d.model?.agents || {})[0] || null;
+    if (t === "crew" && (!d.cur || !d.model?.agents?.[d.cur]) && id0) commitDraft({ cur: id0 });
+    openInspector();
+    document.querySelector(".ms-body")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [openInspector]);
+  // Picking an agent (roster, gate link, palette) reveals the context column.
+  const pickAgent = useCallback((id: string) => {
+    commitDraft({ cur: id });
+    setTab("crew");
+    openInspector();
+  }, [openInspector]);
+  // A canvas pick selects but does not force the wide column open: the avatar
+  // strip shows the selection, and the explicit toggle (or compact drawer)
+  // reveals the editor when wanted.
+  const selectAgent = useCallback((id: string) => {
+    commitDraft({ cur: id });
+    setTab("crew");
+    if (compact) openInspector();
+  }, [compact, openInspector]);
 
   // NOTE: keep every hook above this gate — the render below returns a
   // different tree when loading, so conditional hooks would change count.
@@ -466,35 +477,19 @@ export default function Designer(): React.JSX.Element {
 
   /* -------- structural mutations (all undo-able) -------- */
 
-  const setCurrent = (id: string | null) => {
-    draft.cur = id;
-    setCurState(id);
-  };
-  const commitBaseline = () => {
-    setBaseline(JSON.stringify(draft.model));
-    setEditCount(0);
-  };
-  const pushUndo = (label: string) => {
-    setUndo({ label, model: deepCopy(draft.model), cur: draft.cur });
-  };
   const doUndo = () => {
     if (!undo) return;
-    draft.model = deepCopy(undo.model);
-    draft.cur = undo.cur;
-    setCurState(undo.cur);
+    commitDraft({ model: deepCopy(undo.model), cur: undo.cur });
     setReviewOpen(false);
     setUndo(null);
     toast("undone", undo.label, "ok");
     touch();
   };
   const syncSaveMode = (mode: SaveTarget, cp: string) => {
-    draft.saveMode = mode;
-    draft.copyPath = cp;
-    setSaveMode(mode);
-    setCopyPath(cp);
+    commitDraft({ saveMode: mode, copyPath: cp });
   };
 
-  const addAgent = (preset?: any) => {
+  const addAgent = (preset?: unknown) => {
     pushUndo("Added agent");
     let i = 1;
     while (m.agents[`agent-${i}`]) i++;
@@ -503,7 +498,7 @@ export default function Designer(): React.JSX.Element {
     densure(m);
     setCurrent(id);
     setTab("crew");
-    setLayout({ ...draft.layout, [id]: { x: CX + ((ids.length % 5) - 2) * 60, y: CY + (Math.floor(ids.length / 5) - 1) * 60 } });
+    setLayout({ ...layout, [id]: { x: CX + ((ids.length % 5) - 2) * 60, y: CY + (Math.floor(ids.length / 5) - 1) * 60 } });
     touch();
   };
   const duplicateAgent = () => {
@@ -514,8 +509,8 @@ export default function Designer(): React.JSX.Element {
     const nid = `${current}-${i}`;
     m.agents[nid] = deepCopy(m.agents[current]);
     if (m.policies.communication[current]) m.policies.communication[nid] = deepCopy(m.policies.communication[current]);
-    const src = draft.layout[current] || { x: CX, y: CY };
-    setLayout({ ...draft.layout, [nid]: { x: clamp(src.x + 48, 40, 960), y: clamp(src.y + 48, 40, 580) } });
+    const src = layout[current] || { x: CX, y: CY };
+    setLayout({ ...layout, [nid]: { x: clamp(src.x + 48, 40, 960), y: clamp(src.y + 48, 40, 580) } });
     setCurrent(nid);
     touch();
   };
@@ -533,7 +528,7 @@ export default function Designer(): React.JSX.Element {
     if (m.budgets?.agent) delete m.budgets.agent[c];
     for (const r of (m.policies.rules || [])) if (r.when?.actor === c) r.when.actor = "";
     for (const t of (m.scheduling?.triage?.rules || [])) if (t.agent === c) t.agent = "";
-    const L = { ...draft.layout };
+    const L = { ...layout };
     delete L[c];
     setLayout(L);
     setCurrent(Object.keys(m.agents)[0] || null);
@@ -558,7 +553,7 @@ export default function Designer(): React.JSX.Element {
       delete m.budgets.agent[old];
     }
     for (const r of (m.scheduling?.triage?.rules || [])) if (r.agent === old) r.agent = nn;
-    const L = { ...draft.layout };
+    const L = { ...layout };
     L[nn] = L[old] || { x: CX, y: CY };
     delete L[old];
     setLayout(L);
@@ -572,16 +567,6 @@ export default function Designer(): React.JSX.Element {
     m.startup.activate = [...l];
     touch();
   };
-  const toggleWire = (src: string, tgt: string) => {
-    if (src === tgt) return;
-    m.policies.communication[src] ||= { may_contact: [] };
-    const l = new Set(m.policies.communication[src].may_contact || []);
-    const had = l.has(tgt);
-    pushUndo(had ? `Unwired ${src} → ${tgt}` : `Wired ${src} → ${tgt}`);
-    if (had) l.delete(tgt); else l.add(tgt);
-    m.policies.communication[src].may_contact = [...l];
-    touch();
-  };
   const autoArrange = () => {
     setLayout(ringLayout(ids));
     touch();
@@ -589,28 +574,33 @@ export default function Designer(): React.JSX.Element {
 
   const applyReplaceModel = (model: any, nextCur: string | null, label: string) => {
     pushUndo(label);
-    draft.model = model;
-    densure(draft.model);
-    draft.cur = nextCur;
-    setCurState(nextCur);
-    draft.layout = loadLayout(draft.model.mesh?.id || "", Object.keys(draft.model.agents));
-    setLayout(draft.layout);
+    const next = model;
+    densure(next);
+    commitDraft({
+      model: next,
+      cur: nextCur,
+      layout: loadLayout(next.mesh?.id || "", Object.keys(next.agents)),
+    });
     setReviewOpen(false);
     setConfirmReplace(null);
     setRestoredAt(null);
     commitBaseline();
     touch();
+    // A freshly loaded model is the baseline, so the touched "dirty" flag is a lie.
+    setDirty(false);
   };
   /** A chat proposal replaces the whole model like a template does, but it is
    *  still an unsent draft edit: push undo and touch, never commitBaseline. */
-  const applyChatProposal = (model: any) => {
+  const applyChatProposal = (model: unknown) => {
     pushUndo("Applied chat proposal");
-    draft.model = deepCopy(model);
-    densure(draft.model);
-    draft.cur = draft.cur && draft.model.agents[draft.cur] ? draft.cur : Object.keys(draft.model.agents)[0] || null;
-    setCurState(draft.cur);
-    draft.layout = loadLayout(draft.model.mesh?.id || "", Object.keys(draft.model.agents));
-    setLayout(draft.layout);
+    const next = deepCopy(model);
+    densure(next);
+    const prev = getDraftSnapshot();
+    commitDraft({
+      model: next,
+      cur: prev.cur && next.agents[prev.cur] ? prev.cur : Object.keys(next.agents)[0] || null,
+      layout: loadLayout(next.mesh?.id || "", Object.keys(next.agents)),
+    });
     setReviewOpen(false);
     setConfirmReplace(null);
     setRestoredAt(null);
@@ -630,11 +620,12 @@ export default function Designer(): React.JSX.Element {
     const c = confirmReplace;
     if (!c) return;
     if (c.kind === "load" && c.json?.raw) {
-      draft.runningPath = c.json.filePath || draft.runningPath;
-      draft.runningRaw = deepCopy(c.json.raw);
-      setRunningRev((v) => v + 1);
-      draft.saveMode = "running";
-      setSaveMode("running");
+      const prev = getDraftSnapshot();
+      commitDraft({
+        runningPath: c.json.filePath || prev.runningPath,
+        runningRaw: deepCopy(c.json.raw),
+        saveMode: "running",
+      });
       applyReplaceModel(deepCopy(c.json.raw), Object.keys(c.json.raw.agents || {})[0] || null, "Loaded running mesh");
       toast("designer", "editing running mesh — your unsent edits were discarded", "warn");
     } else if (c.kind === "template") {
@@ -645,26 +636,32 @@ export default function Designer(): React.JSX.Element {
   };
 
   const loadRunningClick = async () => {
-    const { json } = await client.api("GET", "/config");
-    if (!json?.raw) return toast("designer", "no running config", "bad");
-    if (!dirty) {
-      draft.runningPath = json.filePath || draft.runningPath;
-      draft.runningRaw = deepCopy(json.raw);
-      setRunningRev((v) => v + 1);
-      draft.saveMode = "running";
-      setSaveMode("running");
-      applyReplaceModel(deepCopy(json.raw), Object.keys(json.raw.agents || {})[0] || null, "Loaded running mesh");
-      toast("designer", `editing running mesh: ${draft.runningPath}`, "ok");
-    } else {
-      setConfirmReplace({ kind: "load", json });
+    try {
+      const { json } = await client.api("GET", "/config");
+      if (!json?.raw) return toast("designer", "no running config", "bad");
+      if (!dirty) {
+        const prev = getDraftSnapshot();
+        const path = json.filePath || prev.runningPath;
+        commitDraft({ runningPath: path, runningRaw: deepCopy(json.raw), saveMode: "running" });
+        applyReplaceModel(deepCopy(json.raw), Object.keys(json.raw.agents || {})[0] || null, "Loaded running mesh");
+        toast("designer", `editing running mesh: ${path}`, "ok");
+      } else {
+        setConfirmReplace({ kind: "load", json });
+      }
+    } catch (err) {
+      toast("designer", err instanceof Error ? err.message : "the server is unreachable", "bad");
     }
   };
 
   const importApply = async () => {
-    const { status, json } = await client.post("/config/parse", { yaml: importText });
-    if (status !== 200) return toast("parse failed", (json.errors || []).join("; ").slice(0, 200), "bad");
-    setImportOpen(false);
-    requestReplace("import", json.config);
+    try {
+      const { status, json } = await client.post("/config/parse", { yaml: importText });
+      if (status !== 200) return toast("parse failed", (json.errors || []).join("; ").slice(0, 200), "bad");
+      setImportOpen(false);
+      requestReplace("import", json.config);
+    } catch (err) {
+      toast("import failed", err instanceof Error ? err.message : "the server is unreachable", "bad");
+    }
   };
 
   /* -------- save flow -------- */
@@ -678,7 +675,7 @@ export default function Designer(): React.JSX.Element {
     if (savingRunning) {
       try {
         const { json } = await client.api("GET", "/config");
-        if (json?.raw && JSON.stringify(json.raw) !== JSON.stringify(draft.runningRaw)) setRunningStale(true);
+        if (json?.raw && JSON.stringify(json.raw) !== JSON.stringify(runningRaw)) setRunningStale(true);
       } catch {
         /* offline: review still shows the diff */
       }
@@ -691,11 +688,10 @@ export default function Designer(): React.JSX.Element {
     if (copyTargetsRunning) return toast("save failed", RUNNING_PATH_CONFLICT, "bad");
     setSaving(true);
     try {
-      const { status, json } = await client.post("/config/save", { config: draft.model, path: targetPath });
+      const { status, json } = await client.post("/config/save", { config: m, path: targetPath });
       if (status === 200) {
         if (savingRunning) {
-          draft.runningRaw = deepCopy(draft.model);
-          setRunningRev((v) => v + 1);
+          commitDraft({ runningRaw: deepCopy(m) });
         }
         setReviewOpen(false);
         setRunningStale(false);
@@ -722,34 +718,13 @@ export default function Designer(): React.JSX.Element {
   const valid = result?.status === 200;
   const verdictState = checking ? "checking…" : result ? (valid ? "valid" : `${errors.length} errors`) : checkFailed ? "check failed" : "checking…";
   const verdictTone = !result ? (checkFailed ? "warn" : "") : valid ? "ok" : "bad";
-  const saveLabel = !draft.runningPath ? "Save mesh" : savingRunning ? "Save running config" : "Save copy";
-  const gotoTab = (t: Tab) => {
-    setTab(t);
-    if (t === "crew" && !current && ids[0]) setCurrent(ids[0]);
-    openInspector();
-    document.querySelector(".ms-body")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-  // Picking an agent (roster, gate link, palette) reveals the context column.
-  const pickAgent = (id: string) => {
-    setCurrent(id);
-    setTab("crew");
-    openInspector();
-  };
-  // A canvas pick selects but does not force the wide column open: the avatar
-  // strip shows the selection, and the explicit toggle (or compact drawer)
-  // reveals the editor when wanted.
-  const selectAgent = (id: string) => {
-    setCurrent(id);
-    setTab("crew");
-    if (compact) openInspector();
-  };
+  const saveLabel = !runningPath ? "Save mesh" : savingRunning ? "Save running config" : "Save copy";
 
   const ctx: DCtx = {
     m, cur: current, ids, vocab, ints, touch, pushUndo,
     startupSet, toggleStartup, addAgent, duplicateAgent, deleteAgent, renameAgent, toggleWire,
     setCur: pickAgent,
   };
-  cmdRef.current = { addAgent, validate, pickAgent, gotoTab, applyProposal: applyChatProposal };
 
   return (
     <div className={`ms${focusMode ? " focus" : ""}`}>
@@ -831,7 +806,7 @@ export default function Designer(): React.JSX.Element {
           </button>
           {moreOpen ? (
             <div className="ms-menu" role="menu" aria-label="mesh actions">
-              <button role="menuitem" disabled={!draft.runningPath} onClick={() => { setMoreOpen(false); void loadRunningClick(); }}>
+              <button role="menuitem" disabled={!runningPath} onClick={() => { setMoreOpen(false); void loadRunningClick(); }}>
                 Load running mesh
               </button>
               <div className="ms-menu-sep" role="separator" />
@@ -955,7 +930,7 @@ export default function Designer(): React.JSX.Element {
         {savedInfo ? (
           <SavedCard
             path={savedInfo.path}
-            isRunning={savingRunning || savedInfo.path === draft.runningPath}
+            isRunning={savingRunning || savedInfo.path === runningPath}
             onYaml={openYaml}
             onHome={() => setView("overview")}
           />
@@ -975,18 +950,18 @@ export default function Designer(): React.JSX.Element {
         <div className="wb-bar-target">
           <span className="wb-bar-label" id="d-save-to">save to</span>
           <div className="wb-seg" role="radiogroup" aria-labelledby="d-save-to">
-            <label className="wb-seg-opt" title={draft.runningPath ? `overwrite the running file: ${draft.runningPath}` : "no running file is loaded"}>
-              <input type="radio" name="d-save-target" checked={saveMode === "running" && !!draft.runningPath} disabled={!draft.runningPath} onChange={() => syncSaveMode("running", copyPath)} />
+            <label className="wb-seg-opt" title={runningPath ? `overwrite the running file: ${runningPath}` : "no running file is loaded"}>
+              <input type="radio" name="d-save-target" checked={saveMode === "running" && !!runningPath} disabled={!runningPath} onChange={() => syncSaveMode("running", copyPath)} />
               <span>running</span>
             </label>
             <label className="wb-seg-opt" title="write a new file; the running mesh is untouched">
-              <input type="radio" name="d-save-target" checked={saveMode === "copy" || !draft.runningPath} onChange={() => syncSaveMode("copy", copyPath)} />
+              <input type="radio" name="d-save-target" checked={saveMode === "copy" || !runningPath} onChange={() => syncSaveMode("copy", copyPath)} />
               <span>copy</span>
             </label>
           </div>
-          {(saveMode === "copy" || !draft.runningPath) ? (
+          {(saveMode === "copy" || !runningPath) ? (
             <Input extra="wb-bar-path" value={copyPath} aria-label="copy save path" placeholder="examples/my-mesh/mesh.yaml" onChange={(e) => syncSaveMode("copy", e.target.value)} />
-          ) : <span className="mono muted wb-bar-path" title={draft.runningPath} dir="rtl">{draft.runningPath}</span>}
+          ) : <span className="mono muted wb-bar-path" title={runningPath} dir="rtl">{runningPath}</span>}
         </div>
         <div className="wb-bar-mid">
           <SourceStateLine state={src} reviewOpen={reviewOpen} onToggleReview={() => setReviewOpen(!reviewOpen)} />

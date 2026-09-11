@@ -64,6 +64,43 @@ export function groupCaps(caps: string[]): CapGroup[] {
 export const deepCopy = (v: any): any => JSON.parse(JSON.stringify(v));
 export const clamp = (n: number, lo: number, hi: number): number => Math.min(Math.max(n, lo), hi);
 
+/* ---------------- save-path helpers ---------------- */
+
+/** Lexically resolve `.`/`..` and duplicate slashes the way the server's path.resolve would. */
+export function normalizeSavePath(p: string): string {
+  const raw = p.trim().replace(/\\/g, "/");
+  const abs = raw.startsWith("/");
+  const out: string[] = [];
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (out.length && out[out.length - 1] !== "..") out.pop();
+      else if (!abs) out.push(part);
+    } else out.push(part);
+  }
+  return (abs ? "/" : "") + out.join("/");
+}
+
+/** Last path segment — the save hint names the file it will actually write. */
+export function baseName(p: string): string {
+  const parts = normalizeSavePath(p).split("/");
+  return parts[parts.length - 1] || p;
+}
+
+/**
+ * True when saving to `target` would land on the running file. Mirrors the server:
+ * relative paths resolve against the running file's directory (config.dir is
+ * dirname(filePath)) and a directory target gets mesh.yaml appended. Symlinks and a
+ * server restarted with a different config are beyond what the client can see.
+ */
+export function saveLandsOnRunning(target: string, running: string): boolean {
+  const r = normalizeSavePath(running);
+  const raw = target.trim();
+  const dir = r.slice(0, Math.max(0, r.lastIndexOf("/"))) || "/";
+  const t = raw.startsWith("/") ? normalizeSavePath(raw) : normalizeSavePath(`${dir}/${raw}`);
+  return t === r || `${t}/mesh.yaml` === r;
+}
+
 export function fmtNum(n: any): string {
   return typeof n === "number" ? n.toLocaleString("en-US") : String(n ?? "—");
 }

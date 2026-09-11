@@ -109,9 +109,14 @@ export default function Product(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [run, runTicker]);
 
+  const runRef = useRef(run);
   useEffect(() => {
-    if (!run || run.done || !run.id) return;
-    const id = run.id;
+    runRef.current = run;
+  });
+  useEffect(() => {
+    const cur = runRef.current;
+    if (!cur || cur.done || !cur.id) return;
+    const id = cur.id;
     client.api("GET", `/workspace/run/${encodeURIComponent(id)}`).then(({ json }) => {
       // A late answer for an older run must not replace the one on screen.
       if (json && json.id === id) {
@@ -119,7 +124,7 @@ export default function Product(): React.JSX.Element {
         if (json.done && json.exitCode !== 0) toast("run finished", `exit code ${json.exitCode}`, "warn");
       }
     }).catch(() => undefined);
-  }, [runTicker]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [runTicker, client, toast]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -182,13 +187,17 @@ export default function Product(): React.JSX.Element {
   };
 
   const openPg = (): void => {
-    if (!pg) {
-      client.api("GET", "/playground/").then(({ json }) => {
-        void json;
-        setPgErr(false);
-      }).catch(() => undefined);
+    if (pg) {
+      setPg(false);
+      return;
     }
-    setPg(!pg);
+    client.api("GET", "/playground/").then(({ status, timeout }) => {
+      setPgErr(timeout || status >= 400);
+      setPg(true);
+    }).catch(() => {
+      setPgErr(true);
+      setPg(true);
+    });
   };
 
   const running = Boolean(run && !run.done);
@@ -205,10 +214,10 @@ export default function Product(): React.JSX.Element {
           <ErrorState what="the workspace" detail={wsErr} onRetry={() => setAttempt((n) => n + 1)} />
         ) : (
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-            <div className="kpi"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
-            <div className="kpi"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
-            <div className="kpi"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
-            <div className="kpi" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
+            <div className="kpi kpi-tile"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
+            <div className="kpi kpi-tile"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
+            <div className="kpi kpi-tile"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
+            <div className="kpi kpi-tile" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
             <div style={{ flex: 1 }} />
             <div className="chips">
               {scripts.map((s) => <button key={s} className={`chip-toggle${!running ? " on" : ""}`} disabled={running} onClick={() => start(s)} title={RUN_LABELS[s]}>{((RUN_LABELS[s] ?? s)).split(" — ")[0]}</button>)}

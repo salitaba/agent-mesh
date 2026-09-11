@@ -122,6 +122,23 @@ const SSE_FAILS_BEFORE_RECONNECT = 3;
 const asSummary = (json: any): ProjectSummary | null =>
   json && typeof json === "object" && typeof json.id === "string" ? (json as ProjectSummary) : null;
 
+/** Field-by-field so a poll that changes nothing returns the previous array
+ *  reference and React bails out instead of re-rendering the whole tree. */
+function sameProject(a: ProjectSummary, b: ProjectSummary): boolean {
+  return (
+    a.id === b.id && a.name === b.name && a.root === b.root && a.configPath === b.configPath &&
+    a.addedAt === b.addedAt && a.lastOpenedAt === b.lastOpenedAt && a.status === b.status &&
+    a.pid === b.pid && a.tripped === b.tripped && a.restartInMs === b.restartInMs &&
+    a.health?.rss === b.health?.rss && a.health?.lastHeartbeat === b.health?.lastHeartbeat && a.health?.restarts === b.health?.restarts &&
+    a.error?.reason === b.error?.reason && a.error?.detail === b.error?.detail &&
+    a.spend?.tokens === b.spend?.tokens && a.spend?.usd === b.spend?.usd && a.spend?.runningTurns === b.spend?.runningTurns
+  );
+}
+
+function sameProjects(a: ProjectSummary[], b: ProjectSummary[]): boolean {
+  return a.length === b.length && a.every((p, i) => sameProject(p, b[i]));
+}
+
 export function ProjectsProvider({ children, eventTypes }: { children: (activeId: string | null) => ReactNode; eventTypes?: string[] }): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -156,7 +173,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     }
     setHostDown(false);
     const list: ProjectSummary[] = Array.isArray(json?.projects) ? json.projects : [];
-    setProjects(list);
+    setProjects((prev) => (sameProjects(prev, list) ? prev : list));
     setLoaded(true);
     return list;
   }, []);
@@ -402,10 +419,9 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
       }
       esRef.current = null;
     };
-    // Boot-time resolution runs once; `openProject` is stable and re-running
-    // this on every registry poll would fight the operator's tab choice.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Boot-time resolution runs once. Both callbacks are stable, so listing
+    // them cannot re-run this on the 5s registry poll.
+  }, [refreshProjects, openProject]);
 
   const value = useMemo<ProjectsState>(
     () => ({

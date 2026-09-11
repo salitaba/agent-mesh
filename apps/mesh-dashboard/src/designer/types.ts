@@ -9,12 +9,27 @@ export type Tab = "crew" | "mesh" | "policy";
 export type SaveTarget = "running" | "copy";
 
 /**
+ * Loose shape of the editable mesh config. Sub-objects stay `any` until the
+ * protocol types are wired here; the panels mutate and pad them in place.
+ */
+export interface MeshModel {
+  version?: number;
+  mesh?: any;
+  startup?: any;
+  agents: Record<string, any>;
+  policies: any;
+  budgets?: any;
+  scheduling?: any;
+  server?: any;
+}
+
+/**
  * Everything a sub-panel needs to read + mutate the model. The model object
  * itself (`m`) is mutated in place; every mutation must end with `touch()`
  * so the Designer re-renders, re-validates and re-stores the draft.
  */
 export interface DCtx {
-  m: any;
+  m: MeshModel;
   cur: string | null;
   ids: string[];
   vocab: any;

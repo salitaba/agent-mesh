@@ -9,8 +9,20 @@ import { summarizeDiff } from "../model";
 import { Button, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
-import { draft } from "../storage";
+import { getDraftSnapshot, type DraftState } from "../storage";
 import { setPendingProposal } from "../../commands";
+
+/* Diffs are pure but not cheap; streamed tokens re-render the panel on every
+ * delta, so cache each proposal's diff until the draft store commits again. */
+const DIFF_CACHE = new WeakMap<object, { snapshot: DraftState; diff: string[] }>();
+function proposalDiff(proposed: any, snapshot: DraftState): string[] {
+  if (proposed === null || (typeof proposed !== "object" && typeof proposed !== "function")) return summarizeDiff(proposed, snapshot.model);
+  const hit = DIFF_CACHE.get(proposed);
+  if (hit && hit.snapshot === snapshot) return hit.diff;
+  const diff = summarizeDiff(proposed, snapshot.model);
+  DIFF_CACHE.set(proposed, { snapshot, diff });
+  return diff;
+}
 
 export default function ChatPanel(): React.JSX.Element {
   const { client, toast, setView } = useMesh();
@@ -29,7 +41,7 @@ export default function ChatPanel(): React.JSX.Element {
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
-    void sendMessage(client, text, draft.model ?? undefined);
+    void sendMessage(client, text, getDraftSnapshot().model ?? undefined);
   };
 
   const apply = (i: number, proposed: any) => {
@@ -58,9 +70,9 @@ export default function ChatPanel(): React.JSX.Element {
       >
         {entries.length === 0 ? <div className="muted">No messages yet.</div> : null}
         {entries.map((e, i) => {
-          const diff = e.proposed !== undefined ? summarizeDiff(e.proposed, draft.model) : [];
+          const diff = e.proposed !== undefined ? proposalDiff(e.proposed, getDraftSnapshot()) : [];
           return (
-            <div key={i} className={`ms-chat-msg ${e.role}`}>
+            <div key={e.id} className={`ms-chat-msg ${e.role}`}>
               <span className="ms-chat-who">{e.role === "user" ? "You" : "Designer"}</span>
               {e.role === "assistant" && showThinking && e.thinking ? (
                 <details className="ms-chat-thinking">
@@ -71,7 +83,7 @@ export default function ChatPanel(): React.JSX.Element {
               {e.content}
               {e.role === "assistant" && e.problems?.length ? (
                 <ul className="ms-chat-problems">
-                  {e.problems.map((p, j) => <li key={j}>{p}</li>)}
+                  {e.problems.map((p) => <li key={p}>{p}</li>)}
                 </ul>
               ) : null}
               {e.role === "assistant" && e.proposed !== undefined ? (
@@ -84,7 +96,7 @@ export default function ChatPanel(): React.JSX.Element {
                   </div>
                   {review === i ? (
                     <>
-                      {diff.length ? <ul className="diff-list">{diff.map((d, j) => <li key={j}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
+                      {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
                       {e.problems?.length ? <div className="verdict warn">the server flagged this proposal — applying it puts those problems in your draft.</div> : null}
                       <div className="ms-chat-actions">
                         <Button variant="primary" disabled={applied === i} onClick={() => apply(i, e.proposed)}>

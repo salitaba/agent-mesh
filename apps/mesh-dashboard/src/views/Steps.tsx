@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ago, dur, fmt, opsSummary, outcomeOf, plainReason, refusalSummary, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
 import { rowKey, agentColor, AgentAvatar, Button, ErrorState } from "../components";
@@ -173,10 +173,9 @@ function axisTicks(t0: number, t1: number): { at: number; label: string }[] {
 /* One strip: what is running, what it cost, and who was busy when. */
 
 function Console({
-  steps, now, onPick, filter, setFilter, counts, missionTokens,
+  steps, onPick, filter, setFilter, counts, missionTokens,
 }: {
   steps: TurnStep[];
-  now: number;
   onPick: (s: TurnStep) => void;
   filter: string;
   setFilter: (v: string) => void;
@@ -184,6 +183,7 @@ function Console({
   /** Whole-mission spend from the budget projection, or null before /status lands. */
   missionTokens: number | null;
 }): React.JSX.Element {
+  const now = useNow(1000);
   const [win, setWin] = useState<string | null>(null);
   const auto = useMemo(() => autoWindow(steps, Date.now()), [steps]);
   const winId = win ?? auto;
@@ -229,10 +229,7 @@ function Console({
       }))
       .sort((a, b) => b.busy - a.busy);
     return { t0, t1, span, lanes, hidden: steps.length - shown.length, ticks: axisTicks(t0, t1) };
-    // `now` ticks every second; the lane geometry only needs to follow the data
-    // and the chosen window, so it is deliberately not a dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps, winId]);
+  }, [steps, winId, now]);
 
   const mix = OUTCOME_ORDER.map((o) => ({ o, n: counts[o] || 0 })).filter((x) => x.n > 0);
 
@@ -370,12 +367,18 @@ function Console({
 
 /* ------------------------------ ledger ------------------------------- */
 
-function StepRow({ s, now, maxTokens, onPick }: { s: TurnStep; now: number; maxTokens: number; onPick: (s: TurnStep) => void }): React.JSX.Element {
+function LiveElapsed({ startedAt }: { startedAt: string }): React.JSX.Element {
+  const now = useNow(1000);
+  return <>{dur(now - Date.parse(startedAt)) || "—"}</>;
+}
+
+const StepRow = memo(function StepRow({ s, maxTokens, onPick }: { s: TurnStep; maxTokens: number; onPick: (s: TurnStep) => void }): React.JSX.Element {
   const oc = outcomeOf(s);
   const meta = OUTCOME_META[oc];
   const refusal = refusalSummary(s);
   const open = () => onPick(s);
-  const elapsed = oc === "live" ? now - Date.parse(s.startedAt) : s.durationMs;
+  const live = oc === "live";
+  const elapsed = live ? Date.now() - Date.parse(s.startedAt) : s.durationMs;
   const share = maxTokens && s.tokens ? Math.max(4, Math.round((s.tokens / maxTokens) * 100)) : 0;
   const note = s.reasonNote && s.reasonNote !== s.triggerEventType ? s.reasonNote.slice(0, 110) : "";
   return (
@@ -408,7 +411,7 @@ function StepRow({ s, now, maxTokens, onPick }: { s: TurnStep; now: number; maxT
       </div>
       <OpsBadges s={s} />
       <div className="st-num">
-        <b>{dur(elapsed) || "—"}</b>
+        <b>{live ? <LiveElapsed startedAt={s.startedAt} /> : (dur(elapsed) || "—")}</b>
         <span className="st-tok" title={s.tokens ? `${fmt(s.tokens)} tokens — bar is relative to the costliest loaded turn` : "no tokens spent"}>
           {share ? <i style={{ width: `${share}%` }} /> : null}
           {s.tokens ? `${fmt(s.tokens)} tok` : "no cost"}
@@ -417,9 +420,9 @@ function StepRow({ s, now, maxTokens, onPick }: { s: TurnStep; now: number; maxT
       </div>
     </li>
   );
-}
+});
 
-function FoldRow({ items, now, maxTokens, onPick }: { items: TurnStep[]; now: number; maxTokens: number; onPick: (s: TurnStep) => void }): React.JSX.Element {
+const FoldRow = memo(function FoldRow({ items, maxTokens, onPick }: { items: TurnStep[]; maxTokens: number; onPick: (s: TurnStep) => void }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const tokens = items.reduce((a, s) => a + (s.tokens || 0), 0);
   const agents = [...new Set(items.map((s) => s.agentId))];
@@ -439,12 +442,12 @@ function FoldRow({ items, now, maxTokens, onPick }: { items: TurnStep[]; now: nu
       </button>
       {open ? (
         <ol className="st-fold-body">
-          {items.map((s) => <StepRow key={s.turnId} s={s} now={now} maxTokens={maxTokens} onPick={onPick} />)}
+          {items.map((s) => <StepRow key={s.turnId} s={s} maxTokens={maxTokens} onPick={onPick} />)}
         </ol>
       ) : null}
     </li>
   );
-}
+});
 
 function Skeleton(): React.JSX.Element {
   return (
@@ -476,7 +479,9 @@ function EmptyGlyph({ dashed }: { dashed?: boolean }): React.JSX.Element {
 export default function Steps(): React.JSX.Element {
   const { steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown } = useMesh();
   const [fold, setFold] = useState(true);
-  const now = useNow(1000);
+  // Buckets only move at minute scale; a 30s clock keeps the ledger out of the
+  // per-second render path while live durations tick inside their own leaves.
+  const now = useNow(30_000);
 
   // Mission-wide spend lives in the budget projection, not in the step tail.
   // `/status` is already polled every 4s by the store, so this costs nothing.
@@ -496,13 +501,16 @@ export default function Steps(): React.JSX.Element {
   const all = useMemo(() => steps ?? [], [steps]);
   // Deep link rather than a bare drawer push: a step someone is debugging
   // should survive a refresh and be pasteable into a chat.
-  const pick = (s: TurnStep) => openDetail("step", s.turnId);
+  const pick = useCallback((s: TurnStep) => openDetail("step", s.turnId), [openDetail]);
 
   const q = (stepSearch || "").toLowerCase();
-  const rows = all.filter(
-    (s) =>
-      (!stepFilter || outcomeOf(s) === stepFilter) &&
-      (!q || `${s.agentId} ${plainReason(s.reasonKind)} ${s.reasonNote || ""}`.toLowerCase().includes(q)),
+  const rows = useMemo(
+    () => all.filter(
+      (s) =>
+        (!stepFilter || outcomeOf(s) === stepFilter) &&
+        (!q || `${s.agentId} ${plainReason(s.reasonKind)} ${s.reasonNote || ""}`.toLowerCase().includes(q)),
+    ),
+    [all, stepFilter, q],
   );
 
   const counts = useMemo(() => {
@@ -526,11 +534,10 @@ export default function Steps(): React.JSX.Element {
       const list = by.get(b.id)!;
       return { ...b, list, rows: foldQuiet(list, folding), tokens: list.reduce((a, s) => a + (s.tokens || 0), 0) };
     });
-    // Re-group on data, filter and bucket-boundary changes. Keying this on
+    // Re-group on data, filter and coarse-tick changes. Keying this on
     // rows.length/rows[0] reused stale TurnStep objects when a refresh kept the
     // same length and first id (in-place updates), showing old rows for up to 30s.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, stepFilter, q, folding, Math.floor(now / 30_000)]);
+  }, [rows, folding, now]);
 
   const filtered = Boolean(stepFilter || q);
 
@@ -554,7 +561,6 @@ export default function Steps(): React.JSX.Element {
 
       <Console
         steps={all}
-        now={now}
         onPick={pick}
         filter={stepFilter}
         setFilter={setStepFilter}
@@ -604,9 +610,9 @@ export default function Steps(): React.JSX.Element {
               <ol className="st-list">
                 {g.rows.map((r) =>
                   r.kind === "fold" ? (
-                    <FoldRow key={`fold-${r.items[0].turnId}`} items={r.items} now={now} maxTokens={maxTokens} onPick={pick} />
+                    <FoldRow key={`fold-${r.items[0].turnId}`} items={r.items} maxTokens={maxTokens} onPick={pick} />
                   ) : (
-                    <StepRow key={r.s.turnId} s={r.s} now={now} maxTokens={maxTokens} onPick={pick} />
+                    <StepRow key={r.s.turnId} s={r.s} maxTokens={maxTokens} onPick={pick} />
                   ),
                 )}
               </ol>

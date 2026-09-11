@@ -1,6 +1,7 @@
 /* Mesh inspector: whole-mesh settings — identity, goal, workspace, wake-up
  * strategy, done-when checklist, concurrency, triage, timeouts, server. */
 
+import { useRef } from "react";
 import { Num, Field } from "../ui";
 import { Button, ErrorState, Input, Select, TextArea } from "../../components";
 import { setPath } from "../model";
@@ -12,6 +13,18 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, touch, ids } = ctx;
   const { client } = useMesh();
   const { state: catalogue, reload: reloadModels } = useModelCatalogue(client);
+  /* Rows are spliceable and their visible fields are edited in place; a stable
+   * identity per object keeps React from remounting the row being typed into. */
+  const keySeq = useRef(0);
+  const rowKeys = useRef(new WeakMap<object, string>());
+  const rowKey = (o: object): string => {
+    let k = rowKeys.current.get(o);
+    if (!k) {
+      k = `ms-row-${++keySeq.current}`;
+      rowKeys.current.set(o, k);
+    }
+    return k;
+  };
   const crit = (m.mesh.acceptance_criteria ||= []);
   const triage = m.scheduling.triage || { mode: "off" };
   const rules: any[] = (triage.rules ||= []);
@@ -71,7 +84,7 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       <div className="field">
         <label>done-when checklist ({crit.length ? `${crit.length} criteria` : "the five default checks"})</label>
         {crit.map((c: any, i: number) => (
-          <div className="row-edit" key={i}>
+          <div className="row-edit" key={rowKey(c)}>
             <Input value={c.id} aria-label="criterion id" onChange={(e) => { c.id = e.target.value; touch(); }} />
             <Input value={c.description} aria-label="criterion description" onChange={(e) => { c.description = e.target.value; touch(); }} />
             <label className="chk"><input type="checkbox" checked={c.mandatory !== false} onChange={(e) => { c.mandatory = e.target.checked; touch(); }} /> must</label>
@@ -109,7 +122,7 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         </Select>
       </Field>
       {rules.map((r: any, i: number) => (
-        <div className="ms-trule" key={i}>
+        <div className="ms-trule" key={rowKey(r)}>
           <div className="row">
             <Select value={r.agent || ""} aria-label="triage rule agent" onChange={(e) => { r.agent = e.target.value; touch(); }}>
               <option value="">(pick agent)…</option>
@@ -118,9 +131,9 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             <Input value={r.event || ""} list="d-etypes" placeholder="event (optional, e.g. dependency.changed)" aria-label="triage rule event" onChange={(e) => { if (e.target.value) r.event = e.target.value; else delete r.event; touch(); }} />
             <Button variant="small" danger aria-label="remove triage rule" onClick={() => { rules.splice(i, 1); touch(); }}>×</Button>
           </div>
-          <Input defaultValue={(r.ignore_if_text_matches || []).join(", ")} key={`ign-${i}-${(r.ignore_if_text_matches || []).join(",")}`} placeholder="ignore if text matches (comma-separated)" aria-label="triage ignore patterns"
+          <Input defaultValue={(r.ignore_if_text_matches || []).join(", ")} key={`ign-${rowKey(r)}`} placeholder="ignore if text matches (comma-separated)" aria-label="triage ignore patterns"
             onBlur={(e) => { const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); if (l.length) r.ignore_if_text_matches = l; else delete r.ignore_if_text_matches; touch(); }} />
-          <Input defaultValue={(r.act_if_text_matches || []).join(", ")} key={`act-${i}-${(r.act_if_text_matches || []).join(",")}`} placeholder="act if text matches (comma-separated)" aria-label="triage act patterns"
+          <Input defaultValue={(r.act_if_text_matches || []).join(", ")} key={`act-${rowKey(r)}`} placeholder="act if text matches (comma-separated)" aria-label="triage act patterns"
             onBlur={(e) => { const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); if (l.length) r.act_if_text_matches = l; else delete r.act_if_text_matches; touch(); }} />
         </div>
       ))}

@@ -3,10 +3,10 @@
  * click-to-select edge cutting (inline Cut or Delete/Backspace).
  * All layout math happens here; the model only changes via callbacks. */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 import { CX, CY, H, NODE_R, W } from "./geom";
 import { clamp, fmtNum, TEMPLATES } from "./model";
-import { saveLayout, draft } from "./storage";
+import { getDraftSnapshot, saveLayout } from "./storage";
 import { hueVar } from "./ui";
 import { Button } from "../components";
 import { register, unregister } from "../commands";
@@ -17,7 +17,7 @@ export interface TopologyProps {
   agents: Record<string, any>;
   ids: string[];
   layout: Record<string, Pos>;
-  setLayout: (l: Record<string, Pos>) => void;
+  setLayout: (next: SetStateAction<Record<string, Pos>>) => void;
   current: string | null;
   startup: Set<string>;
   meshId: string | undefined;
@@ -40,29 +40,28 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
   const { focusMode, setFocusMode } = useFocusMode();
   const [wiring, setWiring] = useState(false);
   const [wireFrom, setWireFrom] = useState<string | null>(null);
-  const [mouse, setMouse] = useState<Pos | null>(null);
   const [selEdge, setSelEdge] = useState<{ src: string; tgt: string } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const guideRef = useRef<SVGPathElement | null>(null);
   // A drag interrupted by unmount (view switch, focus mode) must not leave
   // window listeners behind; clearing them also stops setLayout on a dead tree.
   const dragCleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => dragCleanup.current?.(), []);
   // Cutting unmounts the focused inline pill, so hand focus back to the canvas
   // when it was inside it (keyboard flow); mouse cuts leave focus alone.
-  const refocusCanvas = () => {
+  const refocusCanvas = useCallback(() => {
     if (svgRef.current?.contains(document.activeElement)) svgRef.current.focus();
-  };
+  }, []);
 
   // Edge selection is local and keyed by {src,tgt}. Drop it when the mode or
-  // inspected agent changes, and whenever the wire it points at disappears:
-  // onCut toggles, so a stale key would let Delete re-add a cut wire.
+  // inspected agent changes; a wire that disappears is filtered out during
+  // render, so a stale key can never let Delete re-add a cut wire.
   useEffect(() => {
     setSelEdge(null);
   }, [wiring, current]);
 
-  useEffect(() => {
-    if (selEdge && !links.some((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)) setSelEdge(null);
-  }, [links, selEdge]);
+  /** Selection only counts while the wire still exists; no effect needed. */
+  const activeEdge = selEdge && links.some((l) => l.src === selEdge.src && l.tgt === selEdge.tgt) ? selEdge : null;
 
   // WS10: "Connect agents" in the shell palette lands here. Registered while
   // the canvas is mounted, so the command disappears with the Designer and the
@@ -91,23 +90,23 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (e.key === "Escape") {
-        if (!wiring && !wireFrom && !selEdge) return;
+        if (!wiring && !wireFrom && !activeEdge) return;
         e.preventDefault();
         setWiring(false);
         setWireFrom(null);
         setSelEdge(null);
         return;
       }
-      if (!selEdge || (e.key !== "Delete" && e.key !== "Backspace")) return;
+      if (!activeEdge || (e.key !== "Delete" && e.key !== "Backspace")) return;
       if (isTypingTarget(e.target)) return;
       e.preventDefault();
       refocusCanvas();
-      onCut(selEdge.src, selEdge.tgt);
+      onCut(activeEdge.src, activeEdge.tgt);
       setSelEdge(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [wiring, wireFrom, selEdge, onCut]);
+  }, [wiring, wireFrom, activeEdge, onCut, refocusCanvas]);
 
   const svgPoint = (e: { clientX: number; clientY: number }): Pos => {
     const svg = svgRef.current;
@@ -141,7 +140,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
     const move = (e: PointerEvent) => {
       const p = svgPoint(e);
       if (!moved && Math.hypot(p.x - start.x, p.y - start.y) > 5) moved = true;
-      if (moved) setLayout({ ...layout, [id]: { x: clamp(p.x - (start.x - pos0.x), NODE_R + 4, W - NODE_R - 4), y: clamp(p.y - (start.y - pos0.y), NODE_R + 4, H - NODE_R - 4) } });
+      if (moved) setLayout((prev) => ({ ...prev, [id]: { x: clamp(p.x - (start.x - pos0.x), NODE_R + 4, W - NODE_R - 4), y: clamp(p.y - (start.y - pos0.y), NODE_R + 4, H - NODE_R - 4) } }));
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
@@ -151,8 +150,8 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
     const up = () => {
       cleanup();
       if (moved) {
-        // setLayout kept draft.layout in sync while dragging; persist the final ring.
-        if (meshId) saveLayout(meshId, draft.layout);
+        // setLayout kept the draft store in sync while dragging; persist the final ring.
+        if (meshId) saveLayout(meshId, getDraftSnapshot().layout);
       } else nodeClick(id);
     };
     dragCleanup.current = cleanup;
@@ -178,8 +177,8 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
 
   // Paint the selected edge last: in dense graphs later edges' 18px hit strokes
   // otherwise cover its line and inline Cut pill, making the pill unclickable.
-  const edgeOrder = selEdge && links.some((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)
-    ? [...links.filter((l) => l.src !== selEdge.src || l.tgt !== selEdge.tgt), ...links.filter((l) => l.src === selEdge.src && l.tgt === selEdge.tgt)]
+  const edgeOrder = activeEdge
+    ? [...links.filter((l) => l.src !== activeEdge.src || l.tgt !== activeEdge.tgt), ...links.filter((l) => l.src === activeEdge.src && l.tgt === activeEdge.tgt)]
     : links;
 
   return (
@@ -195,14 +194,21 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
         <span className="ms-tool-hint muted">
           {wiring
             ? (wireFrom ? `linking FROM “${wireFrom}” — click a target (Esc cancels)` : "pick the sender first")
-            : selEdge
-              ? `wire ${selEdge.src} → ${selEdge.tgt} selected — Cut or press Delete`
+            : activeEdge
+              ? `wire ${activeEdge.src} → ${activeEdge.tgt} selected — Cut or press Delete`
               : "drag to arrange · click to inspect · click an arrow to select and cut it"}
         </span>
       </div>
       <svg ref={svgRef} className={`ms-svg${wiring ? " wiring" : ""}`} viewBox={`0 0 ${W} ${H}`} role="application" tabIndex={-1}
         aria-label="mesh topology: agents and who may message whom"
-        onPointerMove={(e) => { if (wireFrom) setMouse(svgPoint(e.nativeEvent)); }}
+        onPointerMove={(e) => {
+          const guide = guideRef.current;
+          if (!guide || !wireFrom) return;
+          const from = layout[wireFrom];
+          if (!from) return;
+          const p = svgPoint(e.nativeEvent);
+          guide.setAttribute("d", `M ${from.x} ${from.y} L ${p.x} ${p.y}`);
+        }}
         onPointerDown={() => { if (wiring) setWireFrom(null); else setSelEdge(null); }}>
         <defs>
           <pattern id="ms-dots" width="26" height="26" patternUnits="userSpaceOnUse">
@@ -219,7 +225,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
           if (!a || !b) return null;
           const paired = links.some((l) => l.src === tgt && l.tgt === src);
           const g = edgeGeom(a, b, paired);
-          const isSel = selEdge?.src === src && selEdge?.tgt === tgt;
+          const isSel = activeEdge?.src === src && activeEdge?.tgt === tgt;
           const related = !current || src === current || tgt === current;
           const toggleSel = () => setSelEdge(isSel ? null : { src, tgt });
           const cut = () => { refocusCanvas(); onCut(src, tgt); setSelEdge(null); };
@@ -245,7 +251,9 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
             </g>
           );
         })}
-        {wireFrom && mouse && layout[wireFrom] ? <path className="guide" d={`M ${layout[wireFrom].x} ${layout[wireFrom].y} L ${mouse.x} ${mouse.y}`} /> : null}
+        {wireFrom && layout[wireFrom] ? (
+          <path ref={guideRef} className="guide" d={`M ${layout[wireFrom].x} ${layout[wireFrom].y} L ${layout[wireFrom].x} ${layout[wireFrom].y}`} />
+        ) : null}
         {ids.map((id) => {
           const p = layout[id] || { x: CX, y: CY };
           const ag = agents[id] || {};
@@ -267,9 +275,10 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
               <text className="av" y="5">{(id[0] || "?").toUpperCase()}</text>
               <text className="nm" y={NODE_R + 18}>{id}</text>
               <text className="rl" y={NODE_R + 32}>{ag.role || "no role"}</text>
-              <circle className={`bboot${boot ? " on" : ""}`} cx={NODE_R - 10} cy={-(NODE_R - 10)} r={8}
+              <circle className={`bboot${boot ? " on" : ""}`} cx={NODE_R - 10} cy={-(NODE_R - 10)} r={8} tabIndex={0}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); onBoot(id); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onBoot(id); } }}
                 role="button" aria-label={`toggle boot for ${id}`}>
                 <title>{boot ? `${id} boots at startup — click to stop` : `${id} does not boot — click to boot at startup`}</title>
               </circle>

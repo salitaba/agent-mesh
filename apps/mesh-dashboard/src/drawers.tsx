@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
 import { evClass, evSummary } from "./events";
-import { useMesh, type TimelineEvent, type TurnStep } from "./store";
+import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, agentColor, type TabDef } from "./components";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, ToolCallGroups, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
@@ -171,7 +171,8 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; hint: string }> = [
 ];
 
 export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
-  const { toast, closeDrawer, openDrawer, streams, steps: allSteps, lastSeq, client } = useMesh();
+  const { toast, closeDrawer, openDrawer, steps: allSteps, lastSeq, client } = useMesh();
+  const { streams } = useMeshStreams();
   const [json, setJson] = useState<any>(null);
   const [tab, setTab] = useState<AgentTab>("now");
   // The old drawer fetched once and then lied for the rest of its life: open
@@ -578,9 +579,12 @@ export function matchOpEffects(ops: any[], timeline: any[]): OpRow[] {
 }
 
 export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }): React.JSX.Element {
-  const { toast, openDrawer, events, streams, client } = useMesh();
+  const { toast, openDrawer, events, client } = useMesh();
+  const { streams } = useMeshStreams();
   const [json, setJson] = useState<any>(null);
   const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
   // Empty means "whatever the turn's own state says is most useful" — see the
   // tab resolver below. Set only when the reader picks a section themselves.
   const [section, setSection] = useState("");
@@ -648,7 +652,8 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
     try {
       await navigator.clipboard.writeText(String(t.text || ""));
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard unavailable */
     }

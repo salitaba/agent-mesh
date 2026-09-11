@@ -118,7 +118,6 @@ interface MeshState {
    *  means nothing on its own — every consumer used to render "no work yet"
    *  during the very first fetch. */
   stepsLoaded: boolean;
-  streams: Record<string, StreamBuf>;
   stepLimit: number;
   setStepLimit: (n: number) => void;
   stepFilter: string;
@@ -152,6 +151,9 @@ export const useMesh = (): MeshState => {
   if (!v) throw new Error("useMesh outside provider");
   return v;
 };
+
+const StreamsCtx = createContext<{ streams: Record<string, StreamBuf> }>({ streams: {} });
+export const useMeshStreams = (): { streams: Record<string, StreamBuf> } => useContext(StreamsCtx);
 
 let toastId = 1;
 
@@ -430,7 +432,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
       resync: () => {
         // Continuity is gone. Refetch instead of carrying on: the alternative
         // is a timeline that silently misses everything the gap swallowed.
-        seqSeen.current.clear();
+        // The dedupe set is kept on purpose — ingestEvent drops events already
+        // seen by seq/id, so the refill merges instead of duplicating the tail.
         void refreshStatus();
         void refreshSteps(true);
         clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
@@ -494,8 +497,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
       dead = true;
       clearInterval(iv);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshStatus, toast]);
 
   const value = useMemo<MeshState>(
     () => ({
@@ -503,10 +505,17 @@ export function MeshProvider({ children, projectId = null, background = false }:
       view, setView, status, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
       steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
       toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
-      streams, detail, openDetail, closeDetail,
+      detail, openDetail, closeDetail,
     }),
-    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, streams, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
   );
+  // Token deltas replace this object up to dozens of times a second; in its own
+  // context only the live-stream consumers re-render per token.
+  const streamsValue = useMemo(() => ({ streams }), [streams]);
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      <StreamsCtx.Provider value={streamsValue}>{children}</StreamsCtx.Provider>
+    </Ctx.Provider>
+  );
 }

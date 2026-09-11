@@ -3,7 +3,7 @@
  * open it too; the transcript lives in chatStore, so closing the panel or
  * switching views never loses the conversation. */
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import ChatPanel from "./panels/ChatPanel";
 import { markSeen, useChatSelector } from "./chatStore";
 
@@ -30,6 +30,12 @@ export default function ChatDock({ open, onOpen, onClose }: {
     wasOpen.current = open;
   }, [open]);
 
+  // The shell may hand a fresh onClose each render; keep the key listener
+  // subscribed to a stable wrapper instead of re-binding on every render.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+  const close = useCallback(() => onCloseRef.current(), []);
+
   // The shell's key router unwinds its own layers first; Esc reaches here only
   // when nothing else claimed it, so the dock is the innermost floating layer.
   useEffect(() => {
@@ -37,12 +43,12 @@ export default function ChatDock({ open, onOpen, onClose }: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
-        onClose();
+        close();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, close]);
 
   const unread = !open && !busy && entryCount > seen && lastRole === "assistant";
 

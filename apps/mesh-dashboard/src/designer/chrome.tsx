@@ -22,14 +22,14 @@ export interface HealthStripProps {
 /* crew count and goal live in the Designer header's canonical state line /
  * workspace line now, so they are not repeated here. */
 export function HealthStrip({ onGoto, startupCount, gates, advice, undoLabel, onUndo }: HealthStripProps): React.JSX.Element {
-  const tiles: Array<{ label: string; value: string; bad?: boolean; warn?: boolean; tab: Tab; title?: string }> = [
+  const tiles: Array<{ label: string; value: string; warn?: boolean; tab: Tab; title?: string }> = [
     { label: "boots", value: startupCount ? String(startupCount) : "nobody", warn: !startupCount, tab: "crew", title: "agents that start when the mesh goes live" },
     { label: "gates", value: String(gates), tab: "policy", title: "approval gates that pause steps" },
   ];
   return (
     <div className="ms-checks" role="toolbar" aria-label="mesh readiness">
       {tiles.map((t) => (
-        <button key={t.label} className={`hstat${t.bad ? " bad" : t.warn ? " warn" : ""}`} onClick={() => onGoto(t.tab)} title={t.title}>
+        <button key={t.label} className={`hstat${t.warn ? " warn" : ""}`} onClick={() => onGoto(t.tab)} title={t.title}>
           <small>{t.label}</small>
           <b>{t.value}</b>
         </button>
@@ -100,8 +100,8 @@ export function AdvisoryList({ advice, onGoto }: { advice: Advice[]; onGoto: (t:
         {decisions && suggestions ? " · " : null}
         {suggestions ? `${suggestions} suggestion${suggestions === 1 ? "" : "s"}` : null}
       </summary>
-      {advice.map((a, i) => (
-        <div key={i} className={`adv ${a.level}`}>
+      {advice.map((a) => (
+        <div key={`${a.tab}-${a.msg}`} className={`adv ${a.level}`}>
           <Button variant="linklike" onClick={() => onGoto(a.tab)}>{a.msg}</Button>
         </div>
       ))}
@@ -128,8 +128,8 @@ export function CheckSection({ checking, valid, errors, offline, onGoto }: Check
     <>
       <div className="verdict bad">{errors.length} error{errors.length === 1 ? "" : "s"} — fix them, then save</div>
       <ul className="errs">
-        {errors.map((e, i) => (
-          <li key={i}><Button variant="linklike" extra="err-inline" onClick={() => onGoto(tabOfError(String(e)))}>{e}</Button></li>
+        {errors.map((e) => (
+          <li key={e}><Button variant="linklike" extra="err-inline" onClick={() => onGoto(tabOfError(String(e)))}>{e}</Button></li>
         ))}
       </ul>
     </>
@@ -167,7 +167,7 @@ export function ReviewCard({ targetPath, savingRunning, diff, differs, targetCon
       <div className="mono muted tx-value" style={{ overflowWrap: "anywhere" }}>→ {targetPath || "(no path)"}</div>
       {runningStale ? <div className="verdict warn">The running file changed since you opened the Designer (another tab may have saved). Your edits are intact — check the list below carefully.</div> : null}
       {diff.length && savingRunning ? (
-        <ul className="diff-list">{diff.map((d, i) => <li key={i}>{d}</li>)}</ul>
+        <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul>
       ) : savingRunning ? (
         <div className="muted tx-meta">{differs ? "differences here aren’t itemized — saving still overwrites the running file." : "no differences from the running file."}</div>
       ) : <div className="muted tx-meta">writes a new file — the running mesh keeps working untouched.</div>}

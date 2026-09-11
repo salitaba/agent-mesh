@@ -1,7 +1,7 @@
 /* Small shared inputs + color identity helpers for the Mesh Studio. */
 
-import { CSSProperties, useState } from "react";
-import { Button, Input } from "../components";
+import { cloneElement, isValidElement, useId, useState, type CSSProperties } from "react";
+import { Button, Input, Select, TextArea } from "../components";
 
 /* ---------------- per-agent identity color ---------------- */
 
@@ -16,16 +16,29 @@ export function hueFor(id: string): number {
 }
 
 export function hueVar(id: string): CSSProperties {
-  return { ["--h" as any]: hueFor(id) } as CSSProperties;
+  return { "--h": hueFor(id) } as CSSProperties;
 }
 
 /* ---------------- form primitives ---------------- */
 
-export function Field({ label, children, span, hint }: { label: string; children: React.ReactNode; span?: boolean; hint?: string }): React.JSX.Element {
+/**
+ * Visible label form row. The label is tied to the wrapped control through
+ * htmlFor/useId (or the control's own id when it already has one); a control
+ * that cannot take an id (e.g. an error state) is left alone.
+ */
+const ID_CONTROLS = new Set<unknown>([Input, TextArea, Select]);
+
+export function Field({ label, children, span, hint, id: idProp }: { label: string; children: React.ReactNode; span?: boolean; hint?: string; id?: string }): React.JSX.Element {
+  const autoId = useId();
+  const child = isValidElement<{ id?: string }>(children) ? children : null;
+  const acceptsId = child !== null && (typeof child.type === "string" || ID_CONTROLS.has(child.type));
+  const childId = acceptsId ? child.props.id : undefined;
+  const id = idProp ?? childId ?? autoId;
+  const control = child !== null && acceptsId && !childId ? cloneElement(child, { id }) : children;
   return (
     <div className={`field${span ? " ms-span" : ""}`}>
-      <label>{label}</label>
-      {children}
+      <label htmlFor={acceptsId ? id : undefined}>{label}</label>
+      {control}
       {hint ? <span className="ms-hint">{hint}</span> : null}
     </div>
   );
@@ -70,7 +83,7 @@ export function CommaAdder({ placeholder, onAdd }: { placeholder: string; onAdd:
   const [v, setV] = useState("");
   return (
     <div className="row">
-      <Input style={{ flex: 1 }} placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} />
+      <Input style={{ flex: 1 }} aria-label={placeholder} placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} />
       <Button variant="small" disabled={!v.trim()} onClick={() => { onAdd(v.trim()); setV(""); }}>add</Button>
     </div>
   );

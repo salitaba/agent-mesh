@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { MeshProvider, useMesh } from "./store";
@@ -7,13 +7,16 @@ import { Shell } from "./shell";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
 import Agents from "./views/Agents";
-import Graph from "./views/Graph";
 import Events from "./views/Events";
 import Artifacts from "./views/Artifacts";
 import Cost from "./views/Cost";
-import Product from "./views/Product";
 import Escalations from "./views/Escalations";
-import Designer from "./views/Designer";
+
+const Graph = lazy(() => import("./views/Graph"));
+const Product = lazy(() => import("./views/Product"));
+const Designer = lazy(() => import("./views/Designer"));
+
+const viewFallback = <div className="empty">loading…</div>;
 
 function ViewSwitch(): React.JSX.Element {
   const { view } = useMesh();
@@ -63,14 +66,14 @@ function Projects({ activeId }: { activeId: string | null }): React.JSX.Element 
         // `key` is load-bearing: a project must never inherit another
         // mission's events, steps and drawers under a different name.
         <MeshProvider key={id} projectId={id} background={id !== activeId}>
-          {id === activeId ? <Shell viewNode={<ViewSwitch />} /> : null}
+          {id === activeId ? <Shell viewNode={<Suspense fallback={viewFallback}><ViewSwitch /></Suspense>} /> : null}
         </MeshProvider>
       ))}
       {/* No project at all: the shell still has to render, because the
           Designer is how an operator creates the first mesh. */}
       {!activeId ? (
         <MeshProvider key="none" projectId={null}>
-          <Shell viewNode={<ViewSwitch />} />
+          <Shell viewNode={<Suspense fallback={viewFallback}><ViewSwitch /></Suspense>} />
         </MeshProvider>
       ) : null}
     </>

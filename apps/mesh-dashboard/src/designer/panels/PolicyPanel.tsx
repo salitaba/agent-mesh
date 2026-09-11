@@ -49,7 +49,7 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       ))}
       <datalist id="d-gnames">{(ctx.vocab?.gateKinds || []).map((g: string) => <option key={g}>{g}</option>)}</datalist>
       <div className="row">
-        <Input style={{ flex: 1 }} placeholder="new gate, e.g. patch.merge" value={newGate} onChange={(e) => setNewGate(e.target.value)} />
+        <Input style={{ flex: 1 }} aria-label="new gate name" placeholder="new gate, e.g. patch.merge" value={newGate} onChange={(e) => setNewGate(e.target.value)} />
         <Button variant="small" disabled={!newGate.trim() || !!gates[newGate.trim()]} onClick={() => {
           gates[newGate.trim()] = { requires: [] };
           setNewGate("");

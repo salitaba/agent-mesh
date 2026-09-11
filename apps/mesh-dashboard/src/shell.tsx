@@ -114,12 +114,11 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Re-list when a scope registers/unregisters: a view can unmount while the
   // palette is open (browser Back), and its commands must vanish with it.
-  const cmdVersion = useSyncExternalStore(subscribe, getVersion);
+  // Re-render on every registry change; `list()` is a cheap pure read of the
+  // module registry, so the snapshot is taken directly at render time.
+  useSyncExternalStore(subscribe, getVersion);
   const needle = q.trim().toLowerCase();
-  // cmdVersion is the re-list trigger; list() reads the module registry rather
-  // than a render value, so exhaustive-deps sees it as unnecessary.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const all = useMemo(() => list(), [cmdVersion]);
+  const all = list();
   const matches = needle ? all.filter((c) => `${c.label} ${c.keywords ?? ""} ${c.id}`.toLowerCase().includes(needle)) : all;
   const active = Math.min(sel, Math.max(0, matches.length - 1));
   const choose = (c: Command | undefined): void => {
@@ -297,7 +296,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // render through a ref. View-local owners bail on `defaultPrevented`, so
   // exactly one layer closes per Esc no matter which listener runs first.
   const onKeyRef = useRef<(ev: KeyboardEvent) => void>(() => {});
-  onKeyRef.current = (ev: KeyboardEvent) => {
+  const handleKey = (ev: KeyboardEvent): void => {
     if (ev.defaultPrevented) return;
     // ⌘K/Ctrl+K works from anywhere, including inside an input.
     if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") {
@@ -305,6 +304,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       togglePalette();
       return;
     }
+    // Bare letters and digits are shortcuts only without a chord modifier:
+    // Ctrl+P / Ctrl+T / Ctrl+1 belong to the browser or the OS. Shift stays
+    // available for shifted characters like "?" and "/".
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     // The open palette owns every other key: view hotkeys, pause/resume,
     // help and the search slash must not fire behind it. The input handles
     // arrows/Enter/Tab itself.
@@ -355,6 +358,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       if (s) s.focus();
     }
   };
+  useEffect(() => {
+    onKeyRef.current = handleKey;
+  });
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => onKeyRef.current(ev);
     window.addEventListener("keydown", onKey);

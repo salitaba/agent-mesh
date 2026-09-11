@@ -17,8 +17,7 @@ export default function Events(): React.JSX.Element {
     return () => {
       dead = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [events.length, client, primeEvents]);
 
   // The haystack only changes when the buffer does; building it inside the
   // filter re-stringified up to 800 payloads on every keystroke.

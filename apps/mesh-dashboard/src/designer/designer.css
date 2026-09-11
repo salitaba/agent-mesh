@@ -4,6 +4,11 @@
  * Sections: page frame → health strip → advice → context column → canvas
  * → inspector → sticky save bar → dialogs. */
 
+/* Identity tint: --h arrives inline per agent (designer/ui.tsx hueVar). Resolve
+   the base triplet once here; every surface derives from --tint instead of
+   repeating hsl(var(--h, 222) 85% 60%). */
+.ms-av, .crew-av, .tnode { --tint: hsl(var(--h, 222) 85% 60%); }
+
 /* A sticky `bottom: 0` resolves against the SCROLLPORT PADDING BOX, so #view's
  * 18px bottom padding would leave a permanent gap under the save bar and no
  * negative margin on the bar itself can close it — the padding has to go, and
@@ -25,9 +30,11 @@
 .tx-meta { font: var(--tx-meta); }
 
 /* ---------- header chips, checks popover, overflow menu ---------- */
+/* Shared chip base for this sheet: same hairline, panel fill and muted text as
+   the chip family in styles.css. */
+.ms-chip, .hstat { border: 1px solid var(--line); background: var(--panel); color: var(--text-dim); }
 .ms-chip {
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  border: 1px solid var(--line); background: var(--panel); color: var(--text-dim);
   border-radius: 999px; padding: 3px 11px; font: 600 12px var(--sans);
 }
 button.ms-chip { cursor: pointer; transition: border-color .12s, color .12s; }
@@ -39,7 +46,7 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 
 .ms-checks-anchor { position: relative; display: inline-flex; }
 .ms-pop {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-overlay);
   width: min(480px, calc(100vw - 36px));
   display: flex; flex-direction: column; gap: 12px; padding: 14px;
   background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow);
@@ -56,7 +63,7 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 }
 .ms-more-btn:hover, .ms-more-btn[aria-expanded="true"] { color: var(--text); border-color: var(--line-strong); }
 .ms-menu {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--z-overlay);
   display: flex; flex-direction: column; min-width: 260px; padding: 4px;
   background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow);
 }
@@ -75,7 +82,7 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 
 /* YAML slide-over: on-demand preview, keeps the page canvas unobstructed */
 .ms-slide {
-  position: fixed; top: 0; right: 0; z-index: 45; width: min(560px, 94vw); height: 100dvh;
+  position: fixed; top: 0; right: 0; z-index: var(--z-slide); width: min(560px, 94vw); height: 100dvh;
   display: flex; flex-direction: column; padding: 16px; overflow: auto;
   background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
 }
@@ -83,7 +90,7 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .ms-slide .ms-yaml-card .wb-sec-head { padding-right: 34px; }
 .ms-slide .ms-yaml-card .yaml-pane { flex: 1 1 auto; max-height: none; min-height: 0; }
 .ms-slide-close {
-  display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 10px; right: 12px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 10px; right: 12px; z-index: var(--z-raise);
   width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--panel); color: var(--text-dim); font: 16px/1 var(--sans); cursor: pointer;
 }
@@ -93,7 +100,6 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .ms-checks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .hstat {
   display: inline-flex; align-items: center; gap: 8px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--text-dim);
   border-radius: 9px; padding: 5px 12px; font: inherit; cursor: pointer;
   transition: border-color .12s, color .12s, transform .12s;
 }
@@ -158,16 +164,16 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .ms-av {
   position: relative; flex: none; width: 30px; height: 30px; padding: 0; border-radius: 9px;
   display: grid; place-items: center; cursor: pointer; font: 700 12px var(--mono);
-  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 16%, var(--panel-2));
-  border: 1px solid color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 45%, var(--line-strong));
+  background: color-mix(in srgb, var(--tint) 16%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--tint) 45%, var(--line-strong));
   color: hsl(var(--h, 222) 85% 62%);
   transition: border-color .12s, background .12s, color .12s;
 }
 [data-theme="light"] .ms-av { color: hsl(var(--h, 222) 85% 30%); }
-.ms-av:hover { border-color: hsl(var(--h, 222) 85% 60%); }
+.ms-av:hover { border-color: var(--tint); }
 .ms-av.sel {
   border-color: hsl(var(--h, 222) 90% 66%); color: var(--text);
-  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 26%, var(--panel-2));
+  background: color-mix(in srgb, var(--tint) 26%, var(--panel-2));
   box-shadow: 0 0 0 2px color-mix(in srgb, hsl(var(--h, 222) 90% 60%) 30%, transparent);
 }
 .ms-av:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -183,8 +189,8 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .crew-av {
   flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
   font: 700 12px var(--mono);
-  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 16%, var(--panel-2));
-  border: 1px solid color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 45%, var(--line-strong));
+  background: color-mix(in srgb, var(--tint) 16%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--tint) 45%, var(--line-strong));
   color: hsl(var(--h, 222) 85% 62%);
 }
 [data-theme="light"] .crew-av { color: hsl(var(--h, 222) 85% 30%); }
@@ -210,15 +216,15 @@ button.small.wire-on, button.small.focus-on { border-color: var(--accent); color
 .tnode:active { cursor: grabbing; }
 .tnode:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 10px; }
 .tnode circle.body {
-  fill: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 13%, var(--panel));
-  stroke: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 55%, var(--line-strong));
+  fill: color-mix(in srgb, var(--tint) 13%, var(--panel));
+  stroke: color-mix(in srgb, var(--tint) 55%, var(--line-strong));
   stroke-width: 1.6;
   transition: stroke .12s, fill .12s, filter .12s;
 }
-.tnode:hover circle.body { stroke: hsl(var(--h, 222) 90% 64%); fill: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 20%, var(--panel)); }
+.tnode:hover circle.body { stroke: hsl(var(--h, 222) 90% 64%); fill: color-mix(in srgb, var(--tint) 20%, var(--panel)); }
 .tnode.sel circle.body {
   stroke: hsl(var(--h, 222) 92% 66%); stroke-width: 2.6;
-  fill: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 24%, var(--panel));
+  fill: color-mix(in srgb, var(--tint) 24%, var(--panel));
   filter: drop-shadow(0 4px 16px color-mix(in srgb, hsl(var(--h, 222) 90% 60%) 45%, transparent));
 }
 .tnode.err circle.body { stroke: var(--bad); stroke-width: 2.2; }
@@ -315,7 +321,7 @@ button.err-inline { margin: 0; color: var(--bad); }
 
 /* ---------- global designer assistant (FAB + non-modal dock) ---------- */
 .ms-dock-fab {
-  position: fixed; right: 18px; bottom: 18px; z-index: 34;
+  position: fixed; right: 18px; bottom: 18px; z-index: var(--z-dock);
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   /* One stable width across idle/busy/unread: the sticky save bar reserves
    * exactly this slot (see `--dock-slot`), so any growth would collide. */
@@ -338,7 +344,7 @@ button.err-inline { margin: 0; color: var(--bad); }
 @keyframes ms-spark-pulse { 50% { opacity: .35; transform: scale(.82); } }
 
 .ms-dock {
-  position: fixed; top: 0; right: 0; z-index: 34; width: min(440px, 94vw); height: 100dvh;
+  position: fixed; top: 0; right: 0; z-index: var(--z-dock); width: min(440px, 94vw); height: 100dvh;
   display: flex; flex-direction: column; padding: 14px 16px 16px;
   background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
 }
@@ -391,7 +397,7 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
    * 18px inset + 148px button + 12px breathing gap. The action cluster below
    * subtracts the bar's own right padding from this to stop clear of it. */
   --dock-slot: 178px;
-  position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 16px;
+  position: sticky; bottom: 0; z-index: var(--z-savebar); display: flex; align-items: center; gap: 16px;
   /* auto-top pins it to the viewport bottom when the page is short; the negative
    * side margins bleed it over #view's horizontal padding, edge to edge. */
   margin: auto -18px 0; padding: 9px 18px;
@@ -417,7 +423,7 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
   white-space: nowrap; transition: background .12s, color .12s;
 }
 .wb-seg-opt input:hover:not(:disabled) + span { color: var(--text); }
-.wb-seg-opt input:checked + span { background: var(--bg-2); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .25); }
+.wb-seg-opt input:checked + span { background: var(--bg-2); color: var(--text); box-shadow: 0 1px 2px var(--overlay); }
 .wb-seg-opt input:disabled { cursor: not-allowed; }
 .wb-seg-opt input:disabled + span { opacity: .45; }
 .wb-seg-opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -448,7 +454,7 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
   .ms-body { grid-template-columns: minmax(0, 1fr); }
   .ms-insp-toggle { display: inline-flex; margin-left: auto; }
   /* the context column is the local right drawer: same DOM, same open state */
-  .ms-ctx { display: none; position: fixed; top: 0; right: 0; z-index: 30; width: min(380px, 92%); height: 100dvh; flex-direction: column; gap: 0; }
+  .ms-ctx { display: none; position: fixed; top: 0; right: 0; z-index: var(--z-ctx); width: min(380px, 92%); height: 100dvh; flex-direction: column; gap: 0; }
   .ms-ctx.open { display: flex; }
   .ms-ctx .ms-roster {
     flex-direction: row; width: 100%; padding: 8px 44px 8px 10px;
@@ -461,7 +467,7 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
   .ms-ctx .insp-tabs { flex: none; padding-right: 36px; }
   .ms-ctx .insp-body { flex: 1 1 auto; min-height: 0; max-height: none; }
   .ms-insp-close {
-    display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 10px; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 10px; z-index: var(--z-raise);
     width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm);
     background: var(--panel); color: var(--text-dim); font: 15px/1 var(--sans); cursor: pointer;
   }

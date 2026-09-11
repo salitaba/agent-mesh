@@ -93,7 +93,7 @@ function Delivered({ goal, arts, artsLoaded, openArt }: { goal: any; arts: any[]
 }
 
 export default function Overview(): React.JSX.Element {
-  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus, client } = useMesh();
+  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus, toast, client } = useMesh();
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
   const [artsLoaded, setArtsLoaded] = useState(false);
@@ -156,14 +156,18 @@ export default function Overview(): React.JSX.Element {
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
 
   const doReplay = async () => {
-    const { json } = await client.api("GET", `/goals/${encodeURIComponent(goalId ?? "")}/replay`, undefined, { timeoutMs: 60000 });
-    openDrawer(
-      <>
-        <h2>Deterministic replay <CloseX /></h2>
-        <p className="muted">rebuilt from {json?.eventCount ?? 0} events with zero model calls</p>
-        <pre>{(JSON.stringify({ goal: json?.goal?.status, agents: json?.agents?.map((a: any) => [a.agentId, a.lifecycle]), artifacts: json?.artifacts?.length, budgets: json?.budgets }, null, 1))}</pre>
-      </>,
-    );
+    try {
+      const { json } = await client.api("GET", `/goals/${encodeURIComponent(goalId ?? "")}/replay`, undefined, { timeoutMs: 60000 });
+      openDrawer(
+        <>
+          <h2>Deterministic replay <CloseX /></h2>
+          <p className="muted">rebuilt from {json?.eventCount ?? 0} events with zero model calls</p>
+          <pre>{(JSON.stringify({ goal: json?.goal?.status, agents: json?.agents?.map((a: any) => [a.agentId, a.lifecycle]), artifacts: json?.artifacts?.length, budgets: json?.budgets }, null, 1))}</pre>
+        </>,
+      );
+    } catch {
+      toast("replay failed", "the server did not answer", "bad");
+    }
   };
 
   return (

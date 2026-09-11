@@ -1,7 +1,10 @@
-/* Cross-session persistence: the module-level draft (survives view switches
- * without re-fetching the running mesh) and localStorage mirrors for the
- * draft + node positions. */
+/* Cross-session persistence: the draft store (survives view switches without
+ * re-fetching the running mesh) plus localStorage mirrors for the draft + node
+ * positions. The store is a module singleton with useSyncExternalStore
+ * subscriptions; `model` is still mutated in place by the designer's edit
+ * handlers, so every commit must replace the snapshot wrapper to notify. */
 
+import { useSyncExternalStore } from "react";
 import { CX, CY } from "./geom";
 import type { Pos, SaveTarget } from "./types";
 
@@ -16,13 +19,37 @@ export interface DraftState {
   loaded: boolean;
 }
 
-/* Module-level draft so switching views doesn't lose work. Mutate in place,
- * then notify the Designer so it re-renders. */
-export const draft: DraftState = {
+const INITIAL: DraftState = {
   model: null, cur: null, layout: {},
   runningPath: "", runningRaw: null,
   saveMode: "copy", copyPath: "examples/my-mesh/mesh.yaml", loaded: false,
 };
+
+let snapshot: DraftState = INITIAL;
+const listeners = new Set<() => void>();
+
+export function subscribeDraft(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/** Stable between commits — safe as a useSyncExternalStore snapshot. */
+export function getDraftSnapshot(): DraftState {
+  return snapshot;
+}
+
+/** Replace the snapshot and notify subscribers. An updater receives the
+ *  latest snapshot so concurrent handlers (e.g. drag moves) never drop each
+ *  other's patch. */
+export function commitDraft(patch: Partial<DraftState> | ((prev: DraftState) => Partial<DraftState>)): void {
+  snapshot = { ...snapshot, ...(typeof patch === "function" ? patch(snapshot) : patch) };
+  for (const l of listeners) l();
+}
+
+/** Subscribe the calling component to every draft commit. */
+export function useDraft(): DraftState {
+  return useSyncExternalStore(subscribeDraft, getDraftSnapshot);
+}
 
 /* ---------------- browser-local draft ---------------- */
 
@@ -30,8 +57,9 @@ const DRAFT_KEY = "mesh-designer-draft-v2";
 
 export function storeDraft(): void {
   try {
-    if (!draft.model) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), model: draft.model, saveMode: draft.saveMode, copyPath: draft.copyPath }));
+    const { model, saveMode, copyPath } = snapshot;
+    if (!model) return;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), model, saveMode, copyPath }));
   } catch {
     /* storage may be unavailable */
   }

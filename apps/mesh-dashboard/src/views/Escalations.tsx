@@ -336,8 +336,7 @@ export default function Escalations(): React.JSX.Element {
     return () => {
       dead = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, client, refreshStatus]);
 
   const openList = list.filter((e) => e.status === "OPEN");
   const [msgs, setMsgs] = useState<Map<string, any>>(new Map());
@@ -455,6 +454,8 @@ export default function Escalations(): React.JSX.Element {
       if (r2.status !== 200) toast("budget raised, resume failed", escId, "warn");
       else if (parked) toast("budget raised — press Continue to go live", `${fmtBudget(newLimit, "tokens")} · ${escId}`, "ok");
       else toast("budget raised — mission resumed", `${fmtBudget(newLimit, "tokens")} · ${escId}`, "ok");
+    } catch {
+      toast("couldn't raise budget", "the server did not answer", "bad");
     } finally {
       setRaiseBusy(null);
     }
@@ -502,6 +503,8 @@ export default function Escalations(): React.JSX.Element {
       if (r2.status !== 200) toast("cap raised, resume failed", escId, "warn");
       else if (parked) toast(`cap raised — press Continue to go live${yamlNote}`, label, "ok");
       else toast(`cap raised — mission resumed${yamlNote}`, label, "ok");
+    } catch {
+      toast("couldn't raise cap", "the server did not answer", "bad");
     } finally {
       setRaiseBusy(null);
     }

@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react";
 import type { ProjectClient } from "../api";
 
 export interface ChatEntry {
+  id: string;
   role: "user" | "assistant";
   content: string;
   thinking?: string;
@@ -35,13 +36,20 @@ const MAX_ENTRIES = 60;
 /** Reasoning can be long; keep the persisted transcript out of localStorage bloat. */
 const MAX_THINKING = 20000;
 
+let idSeq = 0;
+function nextId(): string {
+  idSeq++;
+  return `${Date.now().toString(36)}-${idSeq.toString(36)}`;
+}
+
 function load(): ChatEntry[] {
   try {
     const raw = JSON.parse(String(localStorage.getItem(CHAT_KEY) || "null"));
     if (!Array.isArray(raw)) return [];
     return raw
       .filter((e: any) => e && (e.role === "user" || e.role === "assistant") && typeof e.content === "string")
-      .slice(-MAX_ENTRIES);
+      .slice(-MAX_ENTRIES)
+      .map((e: any) => ({ ...e, id: typeof e.id === "string" ? e.id : nextId() }));
   } catch {
     return [];
   }
@@ -77,10 +85,23 @@ export function useChatSelector<T>(select: (s: ChatState) => T): T {
 }
 
 function set(patch: Partial<ChatState>): void {
-  state = { ...state, ...patch };
+  let next: ChatState = { ...state, ...patch };
+  // Trim in memory on append, not only on persist; shift the index-based
+  // review/applied/seen bookkeeping so it keeps pointing at the same entries.
+  if (patch.entries && next.entries.length > MAX_ENTRIES) {
+    const drop = next.entries.length - MAX_ENTRIES;
+    next = {
+      ...next,
+      entries: next.entries.slice(drop),
+      seen: Math.max(0, next.seen - drop),
+      review: next.review == null ? null : next.review >= drop ? next.review - drop : null,
+      applied: next.applied == null ? null : next.applied >= drop ? next.applied - drop : null,
+    };
+  }
+  state = next;
   if (patch.entries) {
     try {
-      const trimmed = state.entries.slice(-MAX_ENTRIES).map((e) =>
+      const trimmed = state.entries.map((e) =>
         e.thinking && e.thinking.length > MAX_THINKING ? { ...e, thinking: e.thinking.slice(-MAX_THINKING) } : e,
       );
       localStorage.setItem(CHAT_KEY, JSON.stringify(trimmed));
@@ -125,7 +146,7 @@ export function clearChat(): void {
 export async function sendMessage(client: ProjectClient, text: string, currentConfig: any): Promise<void> {
   const body = text.trim();
   if (!body || state.busy) return;
-  const next: ChatEntry[] = [...state.entries, { role: "user", content: body }];
+  const next: ChatEntry[] = [...state.entries, { id: nextId(), role: "user", content: body }];
   set({ entries: next, busy: true, failed: null, review: null, live: { thinking: "", text: "" } });
 
   const finish = (patch: Partial<ChatState>): void => set({ busy: false, live: null, ...patch });
@@ -153,6 +174,7 @@ export async function sendMessage(client: ProjectClient, text: string, currentCo
         const live = state.live ?? { thinking: "", text: "" };
         finish({
           entries: [...next, {
+            id: nextId(),
             role: "assistant",
             content: typeof evt.reply === "string" ? evt.reply : live.text,
             // The tap can miss reasoning when the backend has no /event; the
