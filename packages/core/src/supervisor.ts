@@ -786,9 +786,9 @@ export class Supervisor {
     type: MessageType;
     goalId?: GoalId;
     threadId?: string;
-    newThread?: { subject: string; artifactRefs?: ArtifactRef[]; parentThreadId?: string };
+    newThread?: { subject: string; artifactRefs?: Array<ArtifactRef | string>; parentThreadId?: string };
     replyTo?: string;
-    artifactRefs?: ArtifactRef[];
+    artifactRefs?: Array<ArtifactRef | string>;
     payload?: unknown;
     priority?: MeshMessage["priority"];
     taskId?: string;
@@ -802,6 +802,11 @@ export class Supervisor {
     // input. Structural: after this line no forged `control` (or a forged
     // copy hidden in `payload`) exists to be read further down.
     input = sanitizeAgentMessageInput(input);
+    // MCP tools and prose ops declare refs as `artifact://` strings; the wire
+    // schema wants {uri,...} objects. Normalize once here — the choke point
+    // every sender (agent turn, MCP bus, HTTP) passes through.
+    const messageRefs = normalizeArtifactRefs(input.artifactRefs);
+    const newThreadRefs = normalizeArtifactRefs(input.newThread?.artifactRefs);
     const goalId = this.state.activeGoalId;
     if (!goalId) return { accepted: false, reason: "no active goal" };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
@@ -861,7 +866,7 @@ export class Supervisor {
         goalId,
         subject: input.newThread?.subject ?? `${input.type} ${input.from}->${recipients.join(",")}`,
         initiator: input.from,
-        artifactRefs: input.newThread?.artifactRefs ?? input.artifactRefs ?? [],
+        artifactRefs: newThreadRefs ?? messageRefs ?? [],
         participants: [input.from, ...recipients],
         depth,
         parentThreadId: parent?.id,
@@ -890,7 +895,7 @@ export class Supervisor {
       threadId: threadId!,
       replyTo: input.replyTo,
       causationId: input.causationId,
-      artifactRefs: input.artifactRefs ?? [],
+      artifactRefs: messageRefs ?? [],
       payload: input.payload ?? {},
       priority: input.priority ?? (recipients.some((r) => this.config.agents[r]?.mode === "service") ? "HIGH" : "NORMAL"),
       taskId: input.taskId,
@@ -3624,7 +3629,7 @@ export class Supervisor {
     title: string,
     description: string,
     requiredCapabilities?: string[],
-    artifactRefs?: ArtifactRef[],
+    artifactRefs?: Array<ArtifactRef | string>,
     parentTaskId?: string,
     budgetHint?: BudgetHint,
   ): Task {
@@ -3638,7 +3643,7 @@ export class Supervisor {
       createdBy,
       status: "OPEN",
       requiredCapabilities: requiredCapabilities ?? [],
-      artifactRefs: artifactRefs ?? [],
+      artifactRefs: normalizeArtifactRefs(artifactRefs) ?? [],
       parentTaskId,
       delegationDepth: (parent?.delegationDepth ?? 0) + (parentTaskId ? 1 : 0),
       budget: { tokens: budgetHint?.maxTokens ?? this.config.budgets.taskTokens },
@@ -4684,6 +4689,17 @@ export class RuntimeFailure extends Error {
  * evidence, failures, overruns, task/goal/escalation changes — scans
  * immediately, preserving the old per-event timing guarantees.
  */
+/**
+ * MCP tools and prose `mesh-json` ops declare artifact refs as plain
+ * `artifact://` strings; the message schema requires `{uri,...}` objects and
+ * `validateMessage` rejects a bare string. Normalize at the one choke point
+ * every send passes through, passing proper object refs through untouched.
+ */
+function normalizeArtifactRefs(refs: unknown): ArtifactRef[] | undefined {
+  if (!Array.isArray(refs)) return undefined;
+  return refs.map((ref) => (typeof ref === "string" ? { uri: ref } : (ref as ArtifactRef)));
+}
+
 /**
  * Did the mesh actually MOVE? These are the events that mean a human or an
  * agent introduced something new — as opposed to the mesh narrating its own

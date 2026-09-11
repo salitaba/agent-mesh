@@ -55,6 +55,7 @@ export interface BootstrapOptions {
     baseUrl?: string;
     model?: { providerID: string; modelID: string };
     spawnProcesses?: boolean;
+    requestTimeoutMs?: number;
   };
   httpRuntimeUrl?: string;
 }
@@ -192,6 +193,10 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     // Explicit bootstrap override wins; otherwise the mesh-wide default from
     // mesh.runtime.model. Agents with their own `model` still override both.
     model: options.opencodeOptions?.model ?? parseModelRef(config.defaultModel),
+    // The adapter's HTTP deadline must outlive the supervisor's turn timeout,
+    // which fires first and interrupts the session. Without this the adapter
+    // aborted at its 600s default even when config asked for a longer turn.
+    requestTimeoutMs: options.opencodeOptions?.requestTimeoutMs ?? config.scheduling.turnTimeoutMs + 30000,
     mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
   });
   resolver.register("opencode", opencodeAdapter);

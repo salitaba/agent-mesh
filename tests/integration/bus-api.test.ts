@@ -39,6 +39,12 @@ test("mcp bus: initialize, tools/list, and a policy-governed tools/call", async 
   assert.equal(published.ok, true);
   assert.ok(published.artifactUri.startsWith("artifact://CodePatch/mcp-patch"));
 
+  const refSend = (await mcp.handle("dev", tok, mcpReq("tools/call", { name: "mesh_send", arguments: { type: "INFORM", to: ["qa"], newThread: { subject: "artifact refs" }, artifactRefs: ["artifact://CodePatch/mcp-patch", { uri: "artifact://CodePatch/mcp-patch", version: 1 }] } }))) as { result: { isError: boolean; content: Array<{ text: string }> } };
+  const refBody = JSON.parse(refSend.result.content[0].text);
+  assert.equal(refBody.ok, true, refSend.result.content[0].text);
+  const storedRefs = m.kernel.state.messages.get(refBody.messageId)?.artifactRefs;
+  assert.deepEqual(storedRefs, [{ uri: "artifact://CodePatch/mcp-patch" }, { uri: "artifact://CodePatch/mcp-patch", version: 1 }], "string refs are coerced; object refs pass through untouched");
+
   const illegal = (await mcp.handle("dev", tok, mcpReq("tools/call", { name: "mesh_block", arguments: { subject: "quality", reason: "I do not have blocking authority" } }))) as { result: { isError: boolean; content: Array<{ text: string }> } };
   const illegalBody = JSON.parse(illegal.result.content[0].text);
   assert.equal(illegalBody.ok, false, "developer must not exercise qa's blocking authority through the bus");
@@ -99,6 +105,25 @@ test("mcp bus: read-only observability tools answer run questions", async () => 
   assert.ok(digest.eventCount > 0);
   assert.ok(digest.topEventTypes.length > 0);
 
+  await m.cleanup();
+});
+
+test("mcp bus: read-only toolset serves only observability tools", async () => {
+  const m = await makeMesh({ agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }], mayContact: { dev: [] } });
+  const mcp = createMcpToolset(m.supervisor, { readOnly: true });
+  const tok = `${m.config.meshId}:dev:${shortHash(m.kernel.state.activeGoalId!)}`;
+
+  const list = (await mcp.handle("dev", tok, mcpReq("tools/list", {}))) as { result: { tools: Array<{ name: string }> } };
+  assert.deepEqual(
+    list.result.tools.map((t) => t.name).sort(),
+    ["mesh_agent_activity", "mesh_failures", "mesh_query_events", "mesh_run_digest", "mesh_run_status", "mesh_steps"],
+  );
+
+  const status = (await mcp.handle("dev", tok, mcpReq("tools/call", { name: "mesh_run_status", arguments: {} }))) as { result: { isError: boolean } };
+  assert.equal(status.result.isError, false, "observability tools still answer in read-only mode");
+
+  const action = (await mcp.handle("dev", tok, mcpReq("tools/call", { name: "mesh_send", arguments: { type: "INFORM", to: ["dev"] } }))) as { error?: { code: number } };
+  assert.equal(action.error?.code, -32601, "action tools must not exist in the read-only toolset");
   await m.cleanup();
 });
 

@@ -7,6 +7,7 @@ import * as path from "path";
 import { OpenCodeRuntimeAdapter, parseMeshOps, extractText } from "../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../packages/runtime-http/src/index";
 import { BackendUnreachableError } from "../../packages/protocol/src/index";
+import { makeMesh } from "../helpers";
 import type { AgentDefinition, AgentInput, RuntimeContext } from "../../packages/protocol/src/index";
 
 const devDef: AgentDefinition = {
@@ -185,6 +186,7 @@ test("opencode adapter: designer prompt config disables built-in tools and wires
     assert.equal(cfg.mcp.mesh_designer.enabled, true, "designer gets its own read-only MCP server");
     assert.equal(cfg.mcp.mesh_designer.command.at(-1), "designer-mcp");
     assert.equal(cfg.mcp.mesh_designer.environment, undefined, "designer tools need no bus URL or token");
+    assert.equal(cfg.mcp.mesh_observe, undefined, "no observation MCP without a known bus URL");
     for (const tool of ["read", "glob", "grep", "edit", "write", "bash", "task", "webfetch", "todowrite", "skill", "question"]) {
       assert.equal(cfg.tools[tool], false, `${tool} must be disabled for the designer`);
     }
@@ -193,6 +195,28 @@ test("opencode adapter: designer prompt config disables built-in tools and wires
     assert.equal(cfg.permission.grep, "deny");
     assert.equal(cfg.permission.bash, "deny");
     assert.equal(cfg.permission.external_directory, "deny");
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opencode adapter: a known bus URL adds the designer's read-only observation MCP", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-observe-"));
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({
+      baseUrl: mock.url,
+      spawnProcesses: false,
+      designerWorkspace: dir,
+      designerObserve: () => ({ busUrl: "http://127.0.0.1:7421", token: "human-local" }),
+    });
+    await adapter.prompt("how is the run going?", { system: "you are a designer" });
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "__mesh_designer", "opencode.json"), "utf8"));
+    assert.equal(cfg.mcp.mesh_observe.enabled, true, "designer gets a read-only observation MCP");
+    assert.ok(cfg.mcp.mesh_observe.command.includes("--read-only"));
+    assert.ok(cfg.mcp.mesh_observe.command.includes("http://127.0.0.1:7421"));
+    assert.equal(cfg.mcp.mesh_designer.enabled, true, "config tools stay wired alongside observation");
   } finally {
     mock.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -257,6 +281,13 @@ test("opencode adapter: our own request timeout stays unlabeled (slow, not dead)
     for (const s of sockets) s.destroy();
     await new Promise<void>((r) => hanging.close(() => r()));
   }
+});
+
+test("opencode adapter: mesh bootstrap derives requestTimeoutMs from scheduling.turnTimeoutMs", async () => {
+  const m = await makeMesh({ agents: [{ id: "dev", role: "developer", interests: [] }], mayContact: { dev: [] }, turnTimeoutMs: 123000 });
+  const adapter = m.opencodeRuntime as unknown as { requestTimeoutMs: number };
+  assert.ok(adapter.requestTimeoutMs > 123000, `adapter deadline ${adapter.requestTimeoutMs} must outlive the supervisor's 123000ms turn timeout`);
+  await m.cleanup();
 });
 
 test("http adapter: dead backend throws a labeled BackendUnreachableError", async () => {
