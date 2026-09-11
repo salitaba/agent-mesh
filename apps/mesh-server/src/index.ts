@@ -31,6 +31,7 @@ import {
   SseHub,
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
+import { mergeTurnSteps } from "./steps-view";
 import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { requireAuth, resolveActor } from "./auth";
@@ -1125,41 +1126,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         // events; in-memory live turns cover the freshest ones anyway).
         const events = await store.read({ tail: Math.min(2000, Math.max(400, limit * 10)) });
         const fromLog = buildTurnSteps(events, limit * 2);
-        const live = supervisor.getRecentTurns(limit);
-        const merged = new Map<string, (typeof fromLog)[number]>();
-        for (const s of fromLog) merged.set(s.turnId, s);
-        for (const t of live) {
-          const prev = merged.get(t.turnId);
-          merged.set(t.turnId, {
-            turnId: t.turnId,
-            agentId: t.agentId,
-            reasonKind: t.reason.kind,
-            reasonNote: t.reason.note ?? (t.reason as unknown as Record<string, unknown>).eventType as string | undefined,
-            triggerEventType: (t.reason as unknown as Record<string, unknown>).eventType as string | undefined,
-            startedAt: t.startedAt,
-            endedAt: t.endedAt ?? prev?.endedAt,
-            durationMs: t.durationMs ?? prev?.durationMs,
-            status: t.status === "ok" ? "ok" : t.status === "waiting" ? "waiting" : t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : prev?.status ?? "running",
-            lifecycle: prev?.lifecycle ?? (t.status === "running" ? "THINKING" : "IDLE"),
-            ops: prev?.ops ?? { messages: 0, artifacts: 0, tasks: 0, decisions: 0 },
-            messageIds: prev?.messageIds ?? [],
-            artifactIds: prev?.artifactIds ?? [],
-            tokens: t.tokens ?? prev?.tokens ?? 0,
-            model: t.model ?? prev?.model,
-            error: t.error ?? prev?.error,
-            seqStart: prev?.seqStart ?? 0,
-            seqEnd: prev?.seqEnd ?? 0,
-            eventCount: prev?.eventCount ?? 0,
-            // Sub-turn timing exists only in memory — the log has no marks —
-            // so it rides along here or not at all.
-            phases: t.phases ?? prev?.phases,
-            attempt: t.attempt ?? prev?.attempt,
-            streamChars: t.streamChars ?? prev?.streamChars,
-            errorDetail: t.errorDetail ?? prev?.errorDetail,
-            opTimings: t.opTimings ?? prev?.opTimings,
-          });
-        }
-        const steps = [...merged.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, limit);
+        const steps = mergeTurnSteps(fromLog, supervisor.getRecentTurns(limit))
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+          .slice(0, limit);
         return json(200, steps);
       }
       if (parts[0] === "turns" && parts.length === 1 && req.method === "GET") {

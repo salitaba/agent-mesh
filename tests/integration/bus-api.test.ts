@@ -45,6 +45,63 @@ test("mcp bus: initialize, tools/list, and a policy-governed tools/call", async 
   await m.cleanup();
 });
 
+test("mcp bus: read-only observability tools answer run questions", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "qa", role: "qa", capabilities: ["test.execute"], authority: ["quality.block"], interests: [] },
+    ],
+    mayContact: { dev: ["qa"], qa: ["dev"] },
+  });
+  const goalId = m.kernel.state.activeGoalId!;
+  const mcp = createMcpToolset(m.supervisor);
+  const tok = `${m.config.meshId}:dev:${shortHash(goalId)}`;
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = (await mcp.handle("dev", tok, mcpReq("tools/call", { name, arguments: args }))) as { result: { isError: boolean; content: Array<{ text: string }> } };
+    assert.equal(res.result.isError, false, res.result.content[0]?.text);
+    return JSON.parse(res.result.content[0].text) as any;
+  };
+
+  const list = (await mcp.handle("dev", tok, mcpReq("tools/list", {}))) as { result: { tools: Array<{ name: string }> } };
+  const names = list.result.tools.map((t) => t.name);
+  for (const required of ["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest"]) {
+    assert.ok(names.includes(required), `missing read tool ${required}`);
+  }
+
+  await m.supervisor.createArtifact({ actorId: "dev", name: "obs-doc", type: "ApiSpec", content: "openapi: 3.1" });
+  await m.supervisor.sendMessage({ from: "dev", to: ["qa"], type: "INFORM", newThread: { subject: "obs thread" }, payload: { note: "x" } });
+
+  const status = await call("mesh_run_status");
+  assert.equal(status.goal.status, "ACTIVE");
+  assert.ok(status.metrics.events > 0);
+  assert.ok(status.agents.find((a: { agentId: string }) => a.agentId === "dev"));
+
+  const events = await call("mesh_query_events", { type: "message.sent", limit: 5 });
+  assert.ok(events.events.some((e: { type: string }) => e.type === "message.sent"));
+  assert.equal(typeof events.lastSeq, "number");
+  assert.ok(!("payload" in events.events[0]), "payload omitted unless includePayload");
+  const withPayload = await call("mesh_query_events", { type: "message.sent", limit: 1, includePayload: true });
+  assert.ok("payload" in withPayload.events[0]);
+
+  const steps = await call("mesh_steps", { limit: 5 });
+  assert.ok(Array.isArray(steps.steps));
+
+  const failures = await call("mesh_failures");
+  assert.ok(Array.isArray(failures.agentFailures));
+  assert.ok(failures.stuckArtifacts.some((a: { name: string }) => a.name === "obs-doc"));
+
+  const activity = await call("mesh_agent_activity", { agentId: "dev" });
+  assert.equal(activity.agents.length, 1);
+  assert.equal(activity.agents[0].agentId, "dev");
+
+  const digest = await call("mesh_run_digest");
+  assert.equal(digest.outcome, "UNTERMINATED");
+  assert.ok(digest.eventCount > 0);
+  assert.ok(digest.topEventTypes.length > 0);
+
+  await m.cleanup();
+});
+
 test("http api: Â§60 endpoints serve projections built from events", async () => {
   const m = await makeMesh({
     agents: [

@@ -1,6 +1,15 @@
-﻿import { shortHash, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
-import type { Supervisor, OpResult } from "../../../packages/core/src/index";
+﻿import { shortHash, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
+import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
 import { HUMAN_AGENT_ID } from "../../../packages/core/src/index";
+import {
+  buildAgentActivity,
+  buildCostReport,
+  buildGoalView,
+  buildMetrics,
+  buildTurnSteps,
+  eventTimeline,
+} from "../../../packages/observability/src/index";
+import { mergeTurnSteps } from "./steps-view";
 
 export interface McpToolDefinition {
   name: string;
@@ -9,6 +18,15 @@ export interface McpToolDefinition {
 }
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
+
+/** Artifact statuses that mean the artifact reached the end of its state machine. */
+const TERMINAL_ARTIFACT_STATUS = new Set(["MERGED", "ACCEPTED", "FINAL", "ARCHIVED", "REJECTED"]);
+
+/**
+ * Read-only observability tools. They never pass through `executeOp`, so they
+ * touch no policy gate and can be called by any token holder at any time.
+ */
+const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest"]);
 
 export class McpToolset {
   private tools: Map<string, McpToolDefinition>;
@@ -57,6 +75,10 @@ export class McpToolset {
           return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown tool ${name}` } };
         }
         try {
+          if (READ_TOOLS.has(name)) {
+            const payload = await this.readTool(name, args);
+            return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false } };
+          }
           const op = this.toOp(name, args);
           const turn = {
             turnId: `mcp-${Date.now()}`,
@@ -171,6 +193,250 @@ export class McpToolset {
     }
   }
 
+  // ---------------------------------------------------- read-only observability
+
+  private async readTool(name: string, a: Record<string, any>): Promise<unknown> {
+    switch (name) {
+      case "mesh_run_status":
+        return this.runStatus();
+      case "mesh_query_events":
+        return this.queryEvents(a);
+      case "mesh_steps":
+        return this.stepsView(a);
+      case "mesh_failures":
+        return this.failuresView(a);
+      case "mesh_agent_activity":
+        return this.agentActivityView(a);
+      case "mesh_run_digest":
+        return this.runDigest(a);
+      default:
+        throw new Error(`unknown read tool ${name}`);
+    }
+  }
+
+  private eventStore() {
+    return this.supervisor.deps.kernel.store;
+  }
+
+  private clampInt(raw: unknown, fallback: number, max: number): number {
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(Math.max(n, 1), max);
+  }
+
+  /** Wall clock since the active goal was created, floored so rates stay finite. */
+  private goalWallClockMs(): number {
+    const state = this.supervisor.state;
+    const goalId = state.activeGoalId;
+    const createdAt = goalId ? state.goals.get(goalId)?.createdAt : undefined;
+    const start = createdAt ? Date.parse(createdAt) : NaN;
+    return Number.isFinite(start) ? Math.max(Date.now() - start, 1000) : 1000;
+  }
+
+  private async runStatus(): Promise<Record<string, unknown>> {
+    const state = this.supervisor.state;
+    const recent = await this.eventStore().read({ tail: 200 });
+    return {
+      goal: buildGoalView(state),
+      metrics: buildMetrics(state, this.goalWallClockMs(), recent),
+      cost: buildCostReport(state, this.supervisor.config),
+      agents: [...state.agents.values()].map((r) => ({
+        agentId: r.definition.id,
+        role: r.definition.role,
+        lifecycle: r.state.lifecycle,
+        activations: r.state.activations,
+        tokens: r.state.tokensConsumed,
+        mailbox: state.unread.get(r.definition.id)?.length ?? 0,
+        activeTaskId: r.state.activeTaskId,
+        lastError: r.state.lastError,
+      })),
+      openEscalations: [...state.escalations.values()]
+        .filter((e) => e.status === "OPEN")
+        .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
+    };
+  }
+
+  private async queryEvents(a: Record<string, any>): Promise<Record<string, unknown>> {
+    const limit = this.clampInt(a.limit, 30, 200);
+    const events = await this.eventStore().read({
+      types: a.type ? [String(a.type) as MeshEvent["type"]] : undefined,
+      actorId: a.actorId ? String(a.actorId) : undefined,
+      sinceSeq: a.sinceSeq === undefined ? undefined : Number(a.sinceSeq),
+      tail: limit,
+    });
+    const timeline = eventTimeline(events, events.length);
+    const trimmed = a.includePayload
+      ? timeline
+      : timeline.map((e) => ({
+          seq: e.seq,
+          at: e.at,
+          type: e.type,
+          actor: e.actor,
+          summary: e.summary,
+          id: e.id,
+          goalId: e.goalId,
+          correlationId: e.correlationId,
+        }));
+    const last = events[events.length - 1];
+    return { count: trimmed.length, lastSeq: last?.seq ?? null, events: trimmed };
+  }
+
+  private async stepsView(a: Record<string, any>): Promise<Record<string, unknown>> {
+    const limit = this.clampInt(a.limit, 20, 100);
+    // Scale the scan to the requested output; the in-memory turns cover the
+    // freshest ones even when the log tail is short.
+    const events = await this.eventStore().read({ tail: Math.min(2000, Math.max(400, limit * 10)) });
+    let steps = mergeTurnSteps(buildTurnSteps(events, limit * 2), this.supervisor.getRecentTurns(limit));
+    if (a.agentId) steps = steps.filter((s) => s.agentId === String(a.agentId));
+    if (a.status) steps = steps.filter((s) => s.status === String(a.status));
+    if (a.turnId) steps = steps.filter((s) => s.turnId === String(a.turnId));
+    steps.sort((x, y) => y.startedAt.localeCompare(x.startedAt));
+    steps = steps.slice(0, limit);
+    return { count: steps.length, steps };
+  }
+
+  /**
+   * Shared failure aggregation over the event window + recent in-memory turns.
+   * The log carries denials and runtime failures; rejected ops and no-tool
+   * turns only exist in the turn tracker.
+   */
+  private collectFailureSignals(events: MeshEvent[], turns: TurnRecord[]) {
+    const denials = new Map<string, { ruleId: string | null; action: string | null; reason: string; count: number }>();
+    const opFailures = new Map<string, { op: string; reason: string; count: number }>();
+    const gateBlocked = new Map<string, number>();
+    const noToolTurns = new Map<string, number>();
+    const agentFailures: Array<{ seq: number | undefined; at: string; agentId: string; error: string }> = [];
+    const failedTurns: Array<{ turnId: string; agentId: string; startedAt: string; error?: string; errorKind?: string }> = [];
+    let allRejectedTurns = 0;
+
+    for (const e of events) {
+      const p = (e.payload ?? {}) as Record<string, any>;
+      if (e.type === "agent.failed") {
+        agentFailures.push({
+          seq: e.seq,
+          at: e.timestamp,
+          agentId: String(p.agentId ?? e.actorId ?? ""),
+          error: String(p.error ?? "runtime failure").slice(0, 300),
+        });
+      } else if (e.type === "message.rejected") {
+        const key = `${p.ruleId ?? "-"}|${p.action ?? "-"}|${String(p.reason ?? "").slice(0, 160)}`;
+        const cur = denials.get(key) ?? { ruleId: p.ruleId ?? null, action: p.action ?? null, reason: String(p.reason ?? "").slice(0, 160), count: 0 };
+        cur.count++;
+        denials.set(key, cur);
+      } else if (e.type === "artifact.transition" && p.gateSatisfied === false) {
+        const id = String(p.artifactId ?? "");
+        if (id) gateBlocked.set(id, (gateBlocked.get(id) ?? 0) + 1);
+      }
+    }
+
+    for (const t of turns) {
+      const timings = t.opTimings ?? [];
+      for (const o of timings) {
+        if (o.ok) continue;
+        const key = `${o.op}|${String(o.reason ?? "").slice(0, 120)}`;
+        const cur = opFailures.get(key) ?? { op: o.op, reason: String(o.reason ?? "").slice(0, 160), count: 0 };
+        cur.count++;
+        opFailures.set(key, cur);
+      }
+      if ((t.ops?.length ?? 0) > 0 && timings.length > 0 && timings.every((o) => !o.ok)) allRejectedTurns++;
+      if ((t.toolCalls ?? 0) === 0) noToolTurns.set(t.agentId, (noToolTurns.get(t.agentId) ?? 0) + 1);
+      if (t.status === "failed") {
+        failedTurns.push({ turnId: t.turnId, agentId: t.agentId, startedAt: t.startedAt, error: t.error, errorKind: t.errorDetail?.kind });
+      }
+    }
+
+    return { denials, opFailures, gateBlocked, noToolTurns, agentFailures, failedTurns, allRejectedTurns };
+  }
+
+  private async failuresView(a: Record<string, any>): Promise<Record<string, unknown>> {
+    const limit = this.clampInt(a.limit, 20, 100);
+    const window = this.clampInt(a.window, 2000, 10000);
+    const events = await this.eventStore().read({ tail: window });
+    const turns = this.supervisor.getRecentTurns(200);
+    const sig = this.collectFailureSignals(events, turns);
+    const state = this.supervisor.state;
+    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count).slice(0, limit);
+    return {
+      scanned: { events: events.length, recentTurns: turns.length },
+      agentFailures: sig.agentFailures.slice(-limit),
+      failedTurns: sig.failedTurns.slice(-limit),
+      denials: byCount([...sig.denials.values()]),
+      rejectedOps: byCount([...sig.opFailures.values()]),
+      turnsWithEveryOpRejected: sig.allRejectedTurns,
+      turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
+        .map(([agentId, count]) => ({ agentId, count }))
+        .sort((x, y) => y.count - x.count)
+        .slice(0, limit),
+      stuckArtifacts: [...state.artifacts.values()]
+        .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
+        .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status, gateBlocked: sig.gateBlocked.get(art.id) ?? 0 }))
+        .slice(0, limit),
+      openEscalations: [...state.escalations.values()]
+        .filter((e) => e.status === "OPEN")
+        .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
+    };
+  }
+
+  private async agentActivityView(a: Record<string, any>): Promise<Record<string, unknown>> {
+    const events = await this.eventStore().read({ tail: 600 });
+    const activity = buildAgentActivity(this.supervisor.state, buildTurnSteps(events, 60));
+    const agents = a.agentId ? activity.filter((x) => x.agentId === String(a.agentId)) : activity;
+    return { count: agents.length, agents };
+  }
+
+  private async runDigest(a: Record<string, any>): Promise<Record<string, unknown>> {
+    const top = this.clampInt(a.top, 5, 20);
+    const window = this.clampInt(a.window, 2000, 10000);
+    const events = await this.eventStore().read({ tail: window });
+    const turns = this.supervisor.getRecentTurns(200);
+    const sig = this.collectFailureSignals(events, turns);
+    const state = this.supervisor.state;
+    const byType = new Map<string, number>();
+    for (const e of events) byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
+    let outcome = "UNTERMINATED";
+    let reason = "";
+    for (const e of events) {
+      if (e.type === "goal.completed" || e.type === "goal.failed" || e.type === "goal.escalated") {
+        outcome = e.type;
+        reason = String((e.payload as Record<string, any>)?.reason ?? "").slice(0, 200);
+      }
+    }
+    const blocks = events.filter((e) => e.type === "message.sent" && (e.payload as Record<string, any>)?.message?.type === "BLOCK").length;
+    const interesting = ["review.rejected", "requirement.blocked", "escalation.requested", "escalation.responded", "deadlock.auto_resolved", "goal.reopened", "agent.failed", "agent.restarted", "budget.exceeded"];
+    const mission = state.budgets.get(`mission:${state.activeGoalId ?? ""}`);
+    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count).slice(0, top);
+    return {
+      outcome,
+      reason,
+      scanned: { events: events.length, recentTurns: turns.length },
+      goal: buildGoalView(state),
+      eventCount: state.eventCount,
+      denials: byCount([...sig.denials.values()]),
+      rejectedOps: byCount([...sig.opFailures.values()]),
+      turnsWithEveryOpRejected: sig.allRejectedTurns,
+      turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
+        .map(([agentId, count]) => ({ agentId, count }))
+        .sort((x, y) => y.count - x.count)
+        .slice(0, top),
+      agentFailures: sig.agentFailures.length,
+      stuckArtifacts: [...state.artifacts.values()]
+        .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
+        .slice(0, top)
+        .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status })),
+      openEscalations: [...state.escalations.values()].filter((e) => e.status === "OPEN").length,
+      interesting: interesting.map((type) => ({ type, count: byType.get(type) ?? 0 })).filter((r) => r.count > 0),
+      blocks,
+      tokens: {
+        mission: mission?.consumed ?? null,
+        perAgent: [...state.agents.values()].map((r) => ({ agentId: r.definition.id, tokens: r.state.tokensConsumed })),
+      },
+      topEventTypes: [...byType.entries()]
+        .sort((x, y) => y[1] - x[1])
+        .slice(0, top)
+        .map(([type, count]) => ({ type, count })),
+    };
+  }
+
   private buildTools(): McpToolDefinition[] {
     const str = (desc: string) => ({ type: "string", description: desc });
     const strArr = (desc: string) => ({ type: "array", items: { type: "string" }, description: desc });
@@ -206,6 +472,12 @@ export class McpToolset {
       { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
       { name: "mesh_spawn_worker", description: "Spawn a depth-1 delegated worker (only if your delegation policy allows). Parent receives only the structured result contract.", inputSchema: { type: "object", required: ["title", "taskSpec"], properties: { title: str("worker task title"), taskSpec: str("precise task specification"), capabilities: strArr("required capabilities"), budgetTokens: { type: "number", description: "worker token budget" } }, additionalProperties: false } },
       { name: "mesh_submit_result", description: "Worker-only: submit the fractal result contract {status,summary,artifacts,findings,risks,recommendation}.", inputSchema: { type: "object", required: ["taskId", "result"], properties: { taskId: str("delegated task"), result: obj("SubAgentResult contract") }, additionalProperties: false } },
+      { name: "mesh_run_status", description: "Read-only mission snapshot: goal status and criteria progress, event/message/task/token counters and rates, per-agent lifecycle/cost/last error, open escalations. Use to answer 'how is the run doing?'.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+      { name: "mesh_query_events", description: "Read-only query over the event log, newest first. Returns compact timeline entries; lastSeq is a cursor for incremental polling. Use includePayload only when the summary is not enough.", inputSchema: { type: "object", properties: { type: str("exact event type, e.g. message.sent or agent.failed"), actorId: str("only events acted by this agent"), sinceSeq: { type: "number", description: "only events after this sequence number (poll cursor)" }, limit: { type: "number", description: "max events (default 30, max 200)" }, includePayload: { type: "boolean", description: "include full event payloads (default false)" } }, additionalProperties: false } },
+      { name: "mesh_steps", description: "Read-only turn/step traces: lifecycle, status, ops, tokens, timing, errors for recent agent turns (log reconstruction merged with live turns). Filter by agent, status or exact turn id to find failures or slow/no-op turns.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max steps (default 20, max 100)" }, agentId: str("filter to one agent"), status: { ...str("filter by turn status"), enum: ["running", "ok", "waiting", "blocked", "failed"] }, turnId: str("exact turn id") }, additionalProperties: false } },
+      { name: "mesh_failures", description: "Read-only failure report: runtime agent failures, policy denials (message.rejected), rejected ops, turns where every op was rejected, turns with zero tool calls, gate-blocked/non-terminal artifacts, open escalations. Start here when asked what went wrong.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max rows per section (default 20, max 100)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" } }, additionalProperties: false } },
+      { name: "mesh_agent_activity", description: "Read-only per-agent activity snapshot: lifecycle, running turn, mailbox depth, activations, tokens, last error. Optionally filter to one agent.", inputSchema: { type: "object", properties: { agentId: str("filter to one agent") }, additionalProperties: false } },
+      { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" } }, additionalProperties: false } },
     ];
   }
 }
