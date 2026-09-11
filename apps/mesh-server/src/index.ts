@@ -445,6 +445,7 @@ const DESIGNER_SYSTEM_PROMPT = [
   "",
   "Rules:",
   "- You have no filesystem or shell access. Never try to read, list, or search files. Use the mesh_designer_schema, mesh_designer_vocabulary, and mesh_designer_validate tools to check field names, allowed values, and whether a draft is valid; answer from the draft config and conversation you are given.",
+  "- You can also observe the live mission read-only when the mesh_run_status, mesh_query_events, mesh_steps, mesh_failures, mesh_agent_activity, and mesh_run_digest tools are available. When the operator asks how the run is going, what the agents are doing, or what failed, call them instead of saying you cannot observe runs. Start broad (mesh_run_digest or mesh_run_status), then drill into mesh_steps, mesh_failures, or mesh_query_events.",
   "- ALWAYS answer with a brief prose explanation followed by exactly one fenced ```json block. It contains either the COMPLETE mesh.yaml document, or — when editing an existing draft — a JSON Patch object (see below). Never a prose diff, a fragment, or multiple blocks. Repeat the whole config unchanged when nothing needs to change.",
   "- To edit an existing draft, you may reply with a JSON Patch instead of the whole document: one fenced ```json block containing an object with a `patch` array of RFC 6902 `add`/`remove`/`replace` operations (each has `op`, `path`, and `value` except `remove`) and an optional `summary`. Array paths end with an index or `/-` to append. The server applies the patch to the current draft before validating, so fields you did not touch are preserved. Use the complete-document form for a new config or a structural rewrite.",
   "- Keep every field the operator did not ask you to change exactly as it was.",
@@ -671,6 +672,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     },
   };
   const mcp = createMcpToolset(supervisor);
+  // Served to local observers (the designer's mesh_observe MCP) via
+  // `/internal/mcp/:agent?readOnly=1`: observability tools only.
+  const mcpReadOnly = createMcpToolset(supervisor, { readOnly: true });
   const startedAt = instance.startedAt;
 
   /**
@@ -740,7 +744,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const agentId = decodeURIComponent(parts[2] ?? "");
         const token = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
         const payload = await body();
-        const result = await mcp.handle(agentId, String(token ?? ""), payload);
+        const toolset = u.searchParams.get("readOnly") === "1" ? mcpReadOnly : mcp;
+        const result = await toolset.handle(agentId, String(token ?? ""), payload);
         return json(200, result);
       }
 
@@ -1678,6 +1683,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     serverCleanups.delete(server);
   });
   serverCleanups.set(server, serverCleanup);
+  // The designer's read-only run-observation MCP needs the port this server
+  // actually listens on, which is unknown until `listen()` runs. Bind the
+  // locator lazily so a server that never listens (tests, embedded use) costs
+  // nothing and the designer falls back to config-only tools.
+  instance.opencodeRuntime.setDesignerObserve(() => {
+    const addr = server.address();
+    if (!addr || typeof addr === "string") return undefined;
+    return { busUrl: `http://127.0.0.1:${addr.port}`, token: "human-local" };
+  });
   return server;
 }
 

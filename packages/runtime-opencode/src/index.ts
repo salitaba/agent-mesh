@@ -62,6 +62,12 @@ export interface OpenCodeAdapterOptions {
    * `opencode.json` is discoverable after the process is created.
    */
   designerWorkspace?: string;
+  /**
+   * Lazy locator for the designer's read-only run-observation MCP server.
+   * Returns undefined until the hosting server knows the address it listens
+   * on, so config-only designer usage keeps working without a bus.
+   */
+  designerObserve?: () => { busUrl: string; token: string } | undefined;
 }
 
 /** Options for `prompt()` — the context-free, single-turn designer entry point. */
@@ -405,6 +411,14 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     }
   }
 
+  /**
+   * Late-bind the bus locator: the HTTP server only learns its port at listen
+   * time, and the designer config is written on first prompt (after that).
+   */
+  setDesignerObserve(provider: () => { busUrl: string; token: string } | undefined): void {
+    this.options.designerObserve = provider;
+  }
+
   private agentConfigDir(agent: AgentDefinition, context: RuntimeContext, opts: { mcp?: boolean } = {}): string {
     const dir = path.join(context.workspacePath, ".mesh", "agents", agent.id);
     fs.mkdirSync(dir, { recursive: true });
@@ -424,6 +438,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         context.agentToken,
       ];
     const designerMcpCmd = [process.execPath, meshCliBin, "designer-mcp"];
+    const designerObserve = opts.mcp === false ? this.options.designerObserve?.() : undefined;
     const config: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
       instructions: [path.join(dir, "ROLE.md")],
@@ -433,6 +448,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       // token or bus behind it). Instead it gets the read-only designer MCP
       // server (schema/vocabulary/validate), which validates locally through
       // packages/config + policy-engine and can never reach the live mission.
+      // When the hosting server can name its own bus URL, a second read-only
+      // MCP (mesh_observe) is added so the designer can answer questions about
+      // the live run; it exposes only the observability tools.
       ...(opts.mcp === false
         ? {
             tools: DESIGNER_DENIED_TOOLS,
@@ -443,6 +461,27 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
                 enabled: true,
                 timeout: 15000,
               },
+              ...(designerObserve
+                ? {
+                    mesh_observe: {
+                      type: "local",
+                      command: [
+                        process.execPath,
+                        meshCliBin,
+                        "mcp",
+                        "--agent",
+                        "human",
+                        "--token",
+                        designerObserve.token,
+                        "--read-only",
+                        "--bus",
+                        designerObserve.busUrl,
+                      ],
+                      enabled: true,
+                      timeout: 15000,
+                    },
+                  }
+                : {}),
             },
           }
         : {

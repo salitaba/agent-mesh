@@ -75,6 +75,8 @@ test("designer chat: a valid whole-config proposal validates clean and the draft
     assert.match(h.seen.system ?? "", /How to design a good mesh/i);
     assert.match(h.seen.system ?? "", /Gate every irreversible transition/i);
     assert.match(h.seen.system ?? "", /mesh_designer_validate/);
+    assert.match(h.seen.system ?? "", /mesh_run_status/);
+    assert.match(h.seen.system ?? "", /observe the live mission/i);
   } finally {
     await h.close();
   }

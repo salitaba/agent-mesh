@@ -445,6 +445,7 @@ export async function main(argv: string[]): Promise<number> {
           agent: String(args.flags.agent ?? ""),
           bus: String(args.flags.bus ?? DEFAULT_BUS),
           token: String(args.flags.token ?? ""),
+          readOnly: Boolean(args.flags["read-only"]),
         });
         return 0;
       }

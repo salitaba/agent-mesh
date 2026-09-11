@@ -4,6 +4,12 @@ export interface McpBridgeOptions {
   agent: string;
   bus: string;
   token: string;
+  /**
+   * Expose only the observability tools. The bus enforces this server-side
+   * (it serves a read-only toolset for `?readOnly=1`), so the flag is a
+   * capability reduction the caller cannot use to gain access.
+   */
+  readOnly?: boolean;
 }
 
 export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void> {
@@ -48,7 +54,8 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
   async function handle(request: Record<string, unknown>): Promise<void> {
     const isNotification = !("id" in request) || request.id === null || request.id === undefined;
     try {
-      const res = await fetch(`${bus}/internal/mcp/${encodeURIComponent(agent)}`, {
+      const url = `${bus}/internal/mcp/${encodeURIComponent(agent)}${options.readOnly ? "?readOnly=1" : ""}`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "x-mesh-token": token },
         body: JSON.stringify(request),

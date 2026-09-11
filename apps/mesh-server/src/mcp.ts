@@ -31,9 +31,12 @@ const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps"
 export class McpToolset {
   private tools: Map<string, McpToolDefinition>;
 
-  constructor(private supervisor: Supervisor) {
+  constructor(private supervisor: Supervisor, opts: { readOnly?: boolean } = {}) {
     this.tools = new Map();
-    for (const t of this.buildTools()) this.tools.set(t.name, t);
+    for (const t of this.buildTools()) {
+      if (opts.readOnly && !READ_TOOLS.has(t.name)) continue;
+      this.tools.set(t.name, t);
+    }
   }
 
   verifyToken(agentId: string, token: string): boolean {
@@ -482,6 +485,6 @@ export class McpToolset {
   }
 }
 
-export function createMcpToolset(supervisor: Supervisor): McpToolset {
-  return new McpToolset(supervisor);
+export function createMcpToolset(supervisor: Supervisor, opts: { readOnly?: boolean } = {}): McpToolset {
+  return new McpToolset(supervisor, opts);
 }

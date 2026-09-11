@@ -91,9 +91,16 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
 }
 
 export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
-  const { toast, refreshStatus, client } = useMesh();
+  const { status, toast, refreshStatus, client } = useMesh();
   const [busy, setBusy] = useState(false);
   const goLive = async () => {
+    // Parked is the safe state: going live is the one click that lets agents
+    // run and spend. Both call sites (the parked banner's Continue and the
+    // auto-resume after an escalation answer) must ask first, or a stray click
+    // starts the mission silently.
+    const names = agentsToWake(status);
+    const who = names.length ? `${names.join(", ")} will be woken. ` : "";
+    if (!window.confirm(`Start the mission? ${who}Agents run and spend tokens until you park again.`)) return;
     setBusy(true);
     try {
       const { status, json } = await client.post("/mission/start");
