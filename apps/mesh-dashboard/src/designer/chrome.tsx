@@ -154,12 +154,13 @@ export interface ReviewCardProps {
   targetConflict?: boolean;
   runningStale: boolean;
   blocked: boolean;
+  saving: boolean;
   errors: number;
   onSave: () => void;
   onClose: () => void;
 }
 
-export function ReviewCard({ targetPath, savingRunning, diff, differs, targetConflict, runningStale, blocked, errors, onSave, onClose }: ReviewCardProps): React.JSX.Element {
+export function ReviewCard({ targetPath, savingRunning, diff, differs, targetConflict, runningStale, blocked, saving, errors, onSave, onClose }: ReviewCardProps): React.JSX.Element {
   return (
     <section className="card save-review" id="d-review" aria-label="review before saving">
       <div className="wb-sec-head"><h3>Review before saving</h3></div>
@@ -174,7 +175,7 @@ export function ReviewCard({ targetPath, savingRunning, diff, differs, targetCon
       {targetConflict ? <div className="verdict bad">that path is the running config — select the running target or choose a different copy path.</div> : null}
       <div className="muted tx-meta">{savingRunning ? "Overwrites the running file. The live mesh keeps working; restart the mesh to apply." : "Writes a new file. The running mesh keeps working untouched."}</div>
       <div className="row" style={{ marginTop: 8 }}>
-        <Button variant="primary" disabled={blocked || !targetPath || targetConflict} onClick={onSave}>{savingRunning ? "Overwrite running file" : "Save copy"}</Button>
+        <Button variant="primary" disabled={blocked || !targetPath || targetConflict || saving} onClick={onSave}>{saving ? "saving…" : savingRunning ? "Overwrite running file" : "Save copy"}</Button>
         <Button variant="ghost" onClick={onClose}>cancel</Button>
       </div>
     </section>

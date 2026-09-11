@@ -8,9 +8,9 @@
  *
  * Layout of this file:
  *   1. Everything below the `Designer()` return is extracted into
- *      ./chrome.tsx (page chrome), ./Topology.tsx (canvas), ./CrewRail.tsx,
- *      ./Inspector.tsx and ./panels/*. This component only owns the model
- *      lifecycle: load → edit → validate → save.
+ *      ./chrome.tsx (page chrome), ./Topology.tsx (canvas), ./Inspector.tsx
+ *      and ./panels/*. This component only owns the model lifecycle:
+ *      load → edit → validate → save.
  */
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -18,14 +18,14 @@ import { fmt } from "../format";
 import { useMesh } from "../store";
 import "./designer.css";
 import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, SourceStateLine, YamlCard } from "./chrome";
-import CrewRail from "./CrewRail";
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";
-import { clamp, deepCopy, densure, sourceState, summarizeDiff, tabOfError, TEMPLATES } from "./model";
+import { hueVar } from "./ui";
+import { clamp, deepCopy, densure, sourceState, summarizeDiff, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
 import { clearStored, draft, loadLayout, readStored, ringLayout, saveLayout, storeDraft } from "./storage";
 import Topology from "./Topology";
 import { Button, Input } from "../components";
-import { register, takePendingAgent, unregister, getVersion, subscribe } from "../commands";
+import { register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
 import { useFocusMode, useMedia } from "../shell";
 import type { Advice, DCtx, Pos, SaveTarget, Tab } from "./types";
 
@@ -41,12 +41,14 @@ interface DesignerCommands {
   validate: () => Promise<void>;
   pickAgent: (id: string) => void;
   gotoTab: (t: Tab) => void;
+  applyProposal: (model: any) => void;
 }
 const NO_COMMANDS: DesignerCommands = {
   addAgent: () => {},
   validate: async () => {},
   pickAgent: () => {},
   gotoTab: () => {},
+  applyProposal: () => {},
 };
 
 /** Lexically resolve `.`/`..` and duplicate slashes the way the server's path.resolve would. */
@@ -68,6 +70,15 @@ function normalizeSavePath(p: string): string {
 function baseName(p: string): string {
   const parts = normalizeSavePath(p).split("/");
   return parts[parts.length - 1] || p;
+}
+
+/** Compact text for the header's draft/source chip; the sticky bar keeps the full sentence. */
+function sourceChipText(kind: SourceStateKind, n: number): string {
+  if (kind === "DIFFERS") return n ? `${n} difference${n === 1 ? "" : "s"}` : "differs";
+  if (kind === "RESTORED_DRAFT") return "local draft";
+  if (kind === "COPY_SAVED") return "copy target";
+  if (kind === "MATCHES_RUNNING_FILE") return "matches running";
+  return "new mesh";
 }
 
 /**
@@ -103,13 +114,19 @@ export default function Designer(): React.JSX.Element {
   const [lastYaml, setLastYaml] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
-  const [tplOpen, setTplOpen] = useState(false);
-  const tplRef = useRef<HTMLDivElement | null>(null);
+  const [checksOpen, setChecksOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [yamlOpen, setYamlOpen] = useState(false);
+  const checksRef = useRef<HTMLDivElement | null>(null);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  const yamlRef = useRef<HTMLDivElement | null>(null);
+  const yamlReturn = useRef<HTMLElement | null>(null);
   const [undo, setUndo] = useState<{ label: string; model: any; cur: string | null } | null>(null);
   const [confirmReplace, setConfirmReplace] = useState<null | { kind: "load" | "template" | "import"; json?: any; model?: any }>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [runningStale, setRunningStale] = useState(false);
   const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   /* Bumped whenever `draft.runningRaw` is replaced (load/save). `draft` is a
    * module singleton, so useMemo on it alone would go stale after save. */
@@ -126,31 +143,34 @@ export default function Designer(): React.JSX.Element {
   /* -------- WS8 responsive: one instance per region, presentation by CSS -------- */
 
   const compact = useMedia(COMPACT);
-  const [railOpen, setRailOpen] = useState(false);
-  const [inspOpen, setInspOpen] = useState(false);
+  /* One state for both presentations of the context column: the wide 48px
+   * strip / expanded inspector, and the compact right drawer. */
+  const [ctxOpen, setCtxOpen] = useState(false);
   const inspRef = useRef<HTMLDivElement | null>(null);
   const inspReturn = useRef<HTMLElement | null>(null);
   const inspWasOpen = useRef(false);
   // Drawer is local and non-modal: no scrim, no focus trap, no global slot.
   const openInspector = () => {
+    setCtxOpen(true);
     if (!compact) return;
     const opener = document.activeElement;
     // Never record an opener inside the drawer: links in the panels switch the
     // selection and would otherwise strand focus on a hidden element on close.
     if (opener instanceof HTMLElement && opener !== document.body && !inspRef.current?.contains(opener)) inspReturn.current = opener;
-    setInspOpen(true);
   };
   useEffect(() => {
     if (!compact) return;
-    if (inspOpen && !inspWasOpen.current) {
-      const root = inspRef.current;
-      (root?.querySelector<HTMLElement>("button, a[href], input, select, textarea, [tabindex]") ?? root)?.focus();
-    } else if (!inspOpen && inspWasOpen.current) {
+    if (ctxOpen && !inspWasOpen.current) {
+      // Scope to the panel: the compact roster strip is display:none, so a
+      // query from the column root could land on an unfocusable hidden avatar.
+      const panel = inspRef.current?.querySelector<HTMLElement>(".ms-insp-wrap") ?? inspRef.current;
+      (panel?.querySelector<HTMLElement>("button, a[href], input, select, textarea, [tabindex]") ?? panel)?.focus();
+    } else if (!ctxOpen && inspWasOpen.current) {
       inspReturn.current?.focus();
       inspReturn.current = null;
     }
-    inspWasOpen.current = inspOpen;
-  }, [inspOpen, compact]);
+    inspWasOpen.current = ctxOpen;
+  }, [ctxOpen, compact]);
 
   // Entering focus hides whole regions (rail/inspector/output) on the same DOM.
   // If focus was inside one of them — palette/Esc entry in WS10, or a click that
@@ -159,16 +179,22 @@ export default function Designer(): React.JSX.Element {
   useEffect(() => {
     if (!focusMode) return;
     const active = document.activeElement;
-    if (active instanceof HTMLElement && active.closest(".ms-rail, .ms-insp-wrap, .ms-out")) {
+    if (active instanceof HTMLElement && active.closest(".ms-ctx, .ms-out")) {
       document.getElementById("ms-focus-toggle")?.focus();
     }
   }, [focusMode]);
 
   // WS10: a palette "jump to agent" leaves a pending id in commands.ts. Take
   // it as soon as this view can act on it — no bus, no storage, nothing that
-  // survives to the next visit if the user never got here.
+  // survives to the next visit if the user never got here. A chat proposal
+  // from the global assistant arrives through the same one-shot seam.
   useEffect(() => {
     if (!ready || !draft.model) return;
+    const proposal = takePendingProposal();
+    if (proposal) {
+      cmdRef.current.applyProposal(proposal);
+      return;
+    }
     const id = takePendingAgent();
     if (!id || !draft.model.agents[id]) return;
     draft.cur = id;
@@ -289,34 +315,60 @@ export default function Designer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc closes the local inspector drawer first, then floating menus. The
-  // shell runs first and marks what it consumed; only an unconsumed Esc reaches
-  // these local layers, and consuming marks the event for the ones below.
+  // Esc unwinds the topmost local layer first: YAML slide-over, checks popover,
+  // overflow menu, then the compact inspector drawer. The shell runs first and
+  // marks what it consumed; only an unconsumed Esc reaches these local layers.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (compact && inspOpen) {
+      if (yamlOpen) {
         e.preventDefault();
-        setInspOpen(false);
-      } else if (tplOpen) {
+        setYamlOpen(false);
+      } else if (checksOpen) {
         e.preventDefault();
-        setTplOpen(false);
+        setChecksOpen(false);
+      } else if (moreOpen) {
+        e.preventDefault();
+        setMoreOpen(false);
+      } else if (compact && ctxOpen) {
+        e.preventDefault();
+        setCtxOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [inspOpen, compact, tplOpen]);
+  }, [ctxOpen, compact, checksOpen, moreOpen, yamlOpen]);
 
-  // A floating menu that only closes on Esc traps the pointer: any click outside
-  // the template popover dismisses it too.
+  // Floating layers that only close on Esc trap the pointer: any click outside
+  // the checks popover or the overflow menu dismisses them too.
   useEffect(() => {
-    if (!tplOpen) return;
+    if (!checksOpen && !moreOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (!tplRef.current?.contains(e.target as Node)) setTplOpen(false);
+      const t = e.target as Node;
+      if (checksOpen && !checksRef.current?.contains(t)) setChecksOpen(false);
+      if (moreOpen && !moreRef.current?.contains(t)) setMoreOpen(false);
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
-  }, [tplOpen]);
+  }, [checksOpen, moreOpen]);
+
+  // YAML slide-over: focus moves to the panel on open and back to its trigger
+  // on close, so keyboard users are not stranded behind the overlay.
+  useEffect(() => {
+    if (!yamlOpen) return;
+    const root = yamlRef.current;
+    (root?.querySelector<HTMLElement>("button, [tabindex]") ?? root)?.focus();
+    return () => {
+      yamlReturn.current?.focus();
+      yamlReturn.current = null;
+    };
+  }, [yamlOpen]);
+
+  const openYaml = () => {
+    if (document.activeElement instanceof HTMLElement) yamlReturn.current = document.activeElement;
+    setChecksOpen(false);
+    setYamlOpen(true);
+  };
 
   const m = draft.model;
   const curJson = m ? JSON.stringify(m) : "";
@@ -330,7 +382,7 @@ export default function Designer(): React.JSX.Element {
   const src = sourceState({ dirty, diff, runningRaw: draft.runningRaw, saveMode, restoredAt });
   const errors: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
   const errTabs = useMemo(() => {
-    const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0, chat: 0 };
+    const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0 };
     for (const e of errors) counts[tabOfError(String(e))]++;
     return counts;
   }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -338,7 +390,7 @@ export default function Designer(): React.JSX.Element {
 
   useEffect(() => {
     if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const warn = (e: BeforeUnloadEvent) => { storeDraft(); e.preventDefault(); };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
@@ -379,11 +431,14 @@ export default function Designer(): React.JSX.Element {
   const cmdAgent = m && cur && m.agents[cur] ? cur : null;
   useEffect(() => {
     if (!ready || !m) return;
+    // Derive from `result` inside the effect: `errors` is a fresh array each
+    // render, so depending on it would re-register commands every render.
+    const errs: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
     register("designer", [
       { id: "designer.add-agent", label: "Add agent", keywords: "hire new crew member", scope: "designer", run: () => cmdRef.current.addAgent() },
       { id: "designer.validate", label: "Run validation", keywords: "check verify config yaml", scope: "designer", run: () => void cmdRef.current.validate() },
       ...(cmdAgent ? [{ id: `designer.open-agent.${cmdAgent}`, label: `Inspect agent “${cmdAgent}”`, keywords: `open agent ${cmdAgent}`, scope: "designer", run: () => cmdRef.current.pickAgent(cmdAgent) }] : []),
-      ...(errors.length ? [{ id: "designer.show-errors", label: `Show errors (${errors.length})`, keywords: "problems invalid validation", scope: "designer", run: () => cmdRef.current.gotoTab(tabOfError(String(errors[0]))) }] : []),
+      ...(errs.length ? [{ id: "designer.show-errors", label: `Show errors (${errs.length})`, keywords: "problems invalid validation", scope: "designer", run: () => cmdRef.current.gotoTab(tabOfError(String(errs[0]))) }] : []),
     ]);
     return () => unregister("designer");
   }, [ready, m, cmdAgent, result]);
@@ -569,7 +624,7 @@ export default function Designer(): React.JSX.Element {
       return;
     }
     setConfirmReplace({ kind, json });
-    setTplOpen(false);
+    setMoreOpen(false);
   };
   const confirmReplaceDo = () => {
     const c = confirmReplace;
@@ -632,22 +687,34 @@ export default function Designer(): React.JSX.Element {
     window.setTimeout(() => document.getElementById("d-review")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
   const doSave = async () => {
+    if (saving) return;
     if (copyTargetsRunning) return toast("save failed", RUNNING_PATH_CONFLICT, "bad");
-    const { status, json } = await client.post("/config/save", { config: draft.model, path: targetPath });
-    if (status === 200) {
-      if (savingRunning) {
-        draft.runningRaw = deepCopy(draft.model);
-        setRunningRev((v) => v + 1);
+    setSaving(true);
+    try {
+      const { status, json } = await client.post("/config/save", { config: draft.model, path: targetPath });
+      if (status === 200) {
+        if (savingRunning) {
+          draft.runningRaw = deepCopy(draft.model);
+          setRunningRev((v) => v + 1);
+        }
+        setReviewOpen(false);
+        setRunningStale(false);
+        commitBaseline();
+        setUndo(null);
+        setRestoredAt(null);
+        clearStored();
+        setSavedInfo({ path: json.savedTo });
+        toast("saved", json.archived ? `${json.savedTo} — previous kept in ${json.archived}` : json.savedTo, "ok");
+      } else {
+        toast("save failed", (json?.errors || [json?.error, "invalid"]).filter(Boolean).join("; ").slice(0, 240), "bad");
       }
-      setReviewOpen(false);
-      setRunningStale(false);
-      commitBaseline();
-      setUndo(null);
-      setRestoredAt(null);
-      clearStored();
-      setSavedInfo({ path: json.savedTo });
-      toast("saved", json.savedTo, "ok");
-    } else toast("save failed", (json?.errors || ["invalid"]).join("; ").slice(0, 240), "bad");
+    } catch (err) {
+      // api() rethrows transport failures; without this catch a dead server
+      // made the save button look like a no-op.
+      toast("save failed", err instanceof Error ? err.message : "the server is unreachable", "bad");
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* -------- derived header state -------- */
@@ -662,11 +729,19 @@ export default function Designer(): React.JSX.Element {
     openInspector();
     document.querySelector(".ms-body")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  // Picking an agent (rail, node or gate link) reveals its inspector on compact.
+  // Picking an agent (roster, gate link, palette) reveals the context column.
   const pickAgent = (id: string) => {
     setCurrent(id);
     setTab("crew");
     openInspector();
+  };
+  // A canvas pick selects but does not force the wide column open: the avatar
+  // strip shows the selection, and the explicit toggle (or compact drawer)
+  // reveals the editor when wanted.
+  const selectAgent = (id: string) => {
+    setCurrent(id);
+    setTab("crew");
+    if (compact) openInspector();
   };
 
   const ctx: DCtx = {
@@ -674,48 +749,110 @@ export default function Designer(): React.JSX.Element {
     startupSet, toggleStartup, addAgent, duplicateAgent, deleteAgent, renameAgent, toggleWire,
     setCur: pickAgent,
   };
-  cmdRef.current = { addAgent, validate, pickAgent, gotoTab };
+  cmdRef.current = { addAgent, validate, pickAgent, gotoTab, applyProposal: applyChatProposal };
 
   return (
     <div className={`ms${focusMode ? " focus" : ""}`}>
       <header className="ms-head">
-        <div className="view-title">
-          <h2>Mesh Designer</h2>
-          <Button variant="small" extra="ms-insp-toggle" id="ms-insp-toggle" aria-expanded={inspOpen} aria-controls="ms-inspector" onClick={() => (inspOpen ? setInspOpen(false) : openInspector())}>
-            {inspOpen ? "close inspector" : "inspect agent"}
-          </Button>
-        </div>
-        <div className="ms-workspace">
+        <h2 className="sr-only">Mesh Designer</h2>
+        <div className="ms-head-name">
           <b>{m.mesh?.name?.trim() || "Untitled mesh"}</b>
           {m.mesh?.id ? <span className="mono muted">{m.mesh.id}</span> : null}
           {m.mesh?.goal?.trim() ? <span className="ms-goal">— {m.mesh.goal.trim()}</span> : <span className="muted">— no goal yet</span>}
         </div>
-        <div className="ms-state" role="status">
+        <span className="ms-state" role="status">
           <b>{ids.length}</b> agent{ids.length === 1 ? "" : "s"}
           <span aria-hidden="true">·</span>
           <b>{links.length}</b> wire{links.length === 1 ? "" : "s"}
-          <span aria-hidden="true">·</span>
-          <span className={`ms-verdict ${verdictTone}`}>{verdictState}</span>
+        </span>
+        <div className="ms-checks-anchor" ref={checksRef}>
+          <button
+            type="button"
+            className={`ms-chip ms-verdict ${verdictTone}`}
+            aria-expanded={checksOpen}
+            aria-haspopup="dialog"
+            title="validation errors and advisors"
+            onClick={() => setChecksOpen((v) => !v)}
+          >
+            {verdictState}
+          </button>
+          {checksOpen ? (
+            <div className="ms-pop" role="dialog" aria-label="mesh checks">
+              <HealthStrip
+                onGoto={gotoTab}
+                startupCount={startupSet.size}
+                gates={Object.keys(m.policies.transitions || {}).length}
+                advice={advisors}
+                undoLabel={undo ? undo.label : null}
+                onUndo={doUndo}
+              />
+              <AdvisoryList advice={advisors} onGoto={gotoTab} />
+              <CheckSection
+                checking={checking}
+                valid={valid}
+                errors={errors}
+                offline={checkFailed}
+                onGoto={gotoTab}
+              />
+              <div className="ms-pop-foot">
+                <Button variant="small" onClick={openYaml}>view YAML</Button>
+              </div>
+            </div>
+          ) : null}
         </div>
-        <div className="view-sub">
-          Editing <b>{targetPath || "…"}</b>
-          {draft.runningPath
-            ? savingRunning
-              ? " — the running file. Saving writes it; restart the mesh to apply."
-              : " — a new file. Saving writes it; the running mesh keeps working untouched."
-            : "."}
+        {src.kind === "DIFFERS" ? (
+          <button
+            type="button"
+            className="ms-chip ms-src-chip"
+            aria-pressed={reviewOpen}
+            title="differences from the running config — review before saving"
+            onClick={() => setReviewOpen(!reviewOpen)}
+          >
+            {sourceChipText(src.kind, src.n)}
+          </button>
+        ) : (
+          <span className={`ms-chip ms-src-chip${src.dirty ? " dirty" : ""}`} role="status" title={`Editing ${targetPath || "…"}`}>
+            {sourceChipText(src.kind, src.n)}
+          </span>
+        )}
+        <Button variant="small" extra="ms-insp-toggle" id="ms-insp-toggle" aria-expanded={ctxOpen} aria-controls="ms-inspector" onClick={() => (ctxOpen ? setCtxOpen(false) : openInspector())}>
+          {ctxOpen ? "close inspector" : "inspect agent"}
+        </Button>
+        <div className="ms-more" ref={moreRef}>
+          <button
+            type="button"
+            className="ms-more-btn"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            aria-label="more mesh actions"
+            onClick={() => setMoreOpen((v) => !v)}
+          >
+            ⋯
+          </button>
+          {moreOpen ? (
+            <div className="ms-menu" role="menu" aria-label="mesh actions">
+              <button role="menuitem" disabled={!draft.runningPath} onClick={() => { setMoreOpen(false); void loadRunningClick(); }}>
+                Load running mesh
+              </button>
+              <div className="ms-menu-sep" role="separator" />
+              <div className="ms-menu-label">New from template</div>
+              {TEMPLATES.map((t) => (
+                <button key={t.key} role="menuitem" onClick={() => { setMoreOpen(false); requestReplace("template", t.make()); }}>
+                  <b>{t.name}</b>
+                  <small>{t.desc}</small>
+                </button>
+              ))}
+              <div className="ms-menu-sep" role="separator" />
+              <button role="menuitem" onClick={() => { setMoreOpen(false); setImportOpen(true); }}>
+                Import YAML…
+              </button>
+              <button role="menuitem" className="danger" onClick={() => { setMoreOpen(false); requestReplace("template", TEMPLATES[1].make()); }}>
+                Reset to starter…
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
-
-      <HealthStrip
-        onGoto={gotoTab}
-        startupCount={startupSet.size}
-        gates={Object.keys(m.policies.transitions || {}).length}
-        advice={advisors}
-        undoLabel={undo ? undo.label : null}
-        onUndo={doUndo}
-      />
-      <AdvisoryList advice={advisors} onGoto={gotoTab} />
 
       {restoredAt ? (
         <div className="replace-bar" role="alert">
@@ -736,18 +873,7 @@ export default function Designer(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className={`ms-body${railOpen ? " rail-open" : ""}`}>
-        <CrewRail
-          agents={m.agents}
-          ids={ids}
-          current={current}
-          startup={startupSet}
-          hasError={agentErr}
-          open={railOpen}
-          onToggle={() => setRailOpen((v) => !v)}
-          onPick={pickAgent}
-          onHire={() => addAgent()}
-        />
+      <div className="ms-body">
         <Topology
           agents={m.agents}
           ids={ids}
@@ -758,7 +884,7 @@ export default function Designer(): React.JSX.Element {
           meshId={m.mesh?.id}
           hasError={agentErr}
           links={links}
-          onSelect={pickAgent}
+          onSelect={selectAgent}
           onWire={toggleWire}
           onCut={toggleWire}
           onBoot={toggleStartup}
@@ -766,9 +892,47 @@ export default function Designer(): React.JSX.Element {
           onTemplate={(model) => requestReplace("template", model)}
           onAddAgent={() => addAgent()}
         />
-        <div id="ms-inspector" className={`ms-insp-wrap${inspOpen ? " open" : ""}`} ref={inspRef}>
-          <button type="button" className="ms-insp-close" aria-label="close inspector" onClick={() => setInspOpen(false)}>×</button>
-          <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} onApplyProposal={applyChatProposal} />
+        <div className={`ms-ctx${ctxOpen ? " open" : ""}`} ref={inspRef}>
+          <aside className="card ms-roster" aria-label="crew">
+            <button
+              type="button"
+              className="ms-roster-toggle"
+              aria-expanded={ctxOpen}
+              aria-controls="ms-inspector"
+              aria-label={ctxOpen ? "collapse context panel" : "expand context panel"}
+              title={ctxOpen ? "collapse panel" : "expand panel"}
+              onClick={() => setCtxOpen((v) => !v)}
+            >
+              <span aria-hidden="true">{ctxOpen ? "»" : "«"}</span>
+            </button>
+            <div className="ms-roster-list">
+              {ids.map((id) => {
+                const ag = m.agents[id] || {};
+                const boot = startupSet.has(id);
+                const sel = id === current;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`ms-av${sel ? " sel" : ""}${boot ? " boot" : ""}`}
+                    style={hueVar(id)}
+                    aria-pressed={sel}
+                    aria-label={`${id}, ${ag.role || "no role"}${ag.mode === "service" ? ", service" : ""}${boot ? ", boots at startup" : ""}${agentErr(id) ? ", has errors" : ""}`}
+                    title={`${id} · ${ag.role || "no role"}${ag.mode === "service" ? " · service" : ""}${boot ? " · boots at startup" : ""}`}
+                    onClick={() => pickAgent(id)}
+                  >
+                    {(id[0] || "?").toUpperCase()}
+                    {agentErr(id) ? <span className="ms-av-err" aria-hidden="true">!</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <button type="button" className="ms-roster-hire" aria-label="hire agent" title="hire agent" onClick={() => addAgent()}>+</button>
+          </aside>
+          <div id="ms-inspector" className="ms-insp-wrap">
+            <button type="button" className="ms-insp-close" aria-label="close inspector" onClick={() => setCtxOpen(false)}>×</button>
+            <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} />
+          </div>
         </div>
       </div>
 
@@ -777,6 +941,7 @@ export default function Designer(): React.JSX.Element {
           <ReviewCard
             targetPath={targetPath}
             savingRunning={savingRunning}
+            saving={saving}
             diff={diff}
             differs={src.kind === "DIFFERS"}
             targetConflict={copyTargetsRunning}
@@ -791,7 +956,7 @@ export default function Designer(): React.JSX.Element {
           <SavedCard
             path={savedInfo.path}
             isRunning={savingRunning || savedInfo.path === draft.runningPath}
-            onYaml={() => document.getElementById("d-yaml")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            onYaml={openYaml}
             onHome={() => setView("overview")}
           />
         ) : null}
@@ -803,22 +968,6 @@ export default function Designer(): React.JSX.Element {
             onCancel={() => setImportOpen(false)}
           />
         ) : null}
-        <div className="ms-out-grid">
-          <CheckSection
-            checking={checking}
-            valid={valid}
-            errors={errors}
-            offline={checkFailed}
-            onGoto={gotoTab}
-          />
-          <YamlCard
-            yaml={lastYaml}
-            targetPath={targetPath}
-            invalid={result?.status !== 200}
-            stale={checkFailed}
-            onCopy={() => { void navigator.clipboard?.writeText(lastYaml || "").then(() => toast("yaml", "copied", "ok"), () => toast("yaml", "clipboard blocked", "warn")); }}
-          />
-        </div>
       </div>
 
       {/* sticky action bar: the one place that saves */}
@@ -843,31 +992,27 @@ export default function Designer(): React.JSX.Element {
           <SourceStateLine state={src} reviewOpen={reviewOpen} onToggleReview={() => setReviewOpen(!reviewOpen)} />
         </div>
         <div className="wb-bar-actions">
-          <Button variant="small" danger onClick={() => requestReplace("template", TEMPLATES[1].make())}>reset…</Button>
-          <span className="wb-bar-sep" aria-hidden="true" />
-          <div className="ms-tpl" ref={tplRef}>
-            <Button variant="small" aria-expanded={tplOpen} aria-haspopup="menu" onClick={() => setTplOpen(!tplOpen)}>template ▾</Button>
-            {tplOpen ? (
-              <div className="ms-tpl-menu" role="menu">
-                {TEMPLATES.map((t) => (
-                  <button key={t.key} role="menuitem" onClick={() => requestReplace("template", t.make())}>
-                    <b>{t.name}</b> <span className="muted">{t.desc}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <Button variant="small" disabled={!draft.runningPath} onClick={() => void loadRunningClick()}>reload running</Button>
-          <Button variant="small" onClick={() => setImportOpen(!importOpen)}>import</Button>
-          <span className="wb-bar-sep" aria-hidden="true" />
           <div className="wb-bar-save">
-            <Button variant="primary" aria-describedby="d-save-caveat" disabled={!targetPath || checking} onClick={() => void openReview()}>{saveLabel}</Button>
+            <Button variant="primary" aria-describedby="d-save-caveat" disabled={!targetPath || checking || saving} onClick={() => void openReview()}>{saveLabel}</Button>
             <span className="wb-bar-hint" id="d-save-caveat">
               {targetPath ? <>writes <b className="mono">{baseName(targetPath)}</b> · restart to apply</> : "pick a save target"}
             </span>
           </div>
         </div>
       </div>
+
+      {yamlOpen ? (
+        <div className="ms-slide" role="dialog" aria-label="yaml preview" ref={yamlRef} tabIndex={-1}>
+          <button type="button" className="ms-slide-close" aria-label="close yaml preview" onClick={() => setYamlOpen(false)}>×</button>
+          <YamlCard
+            yaml={lastYaml}
+            targetPath={targetPath}
+            invalid={result?.status !== 200}
+            stale={checkFailed}
+            onCopy={() => { void navigator.clipboard?.writeText(lastYaml || "").then(() => toast("yaml", "copied", "ok"), () => toast("yaml", "clipboard blocked", "warn")); }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

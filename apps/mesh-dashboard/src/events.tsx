@@ -20,7 +20,7 @@ export function evSummary(e: TimelineEvent): string {
   if (typeof p.summary === "string" && p.summary) return esc(p.summary);
   switch (e.type) {
     case "message.sent":
-      return `<b>${esc(p.message?.from)}</b> → ${(p.message?.to || []).join(", ")} · ${esc(MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase())}`;
+      return `<b>${esc(p.message?.from)}</b> → ${(p.message?.to || []).map((x: string) => esc(x)).join(", ")} · ${esc(MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase())}`;
     case "message.rejected":
       return `Couldn't deliver — ${esc(String(p.reason || "").slice(0, 90))}`;
     case "artifact.created":

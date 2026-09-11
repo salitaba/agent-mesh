@@ -21,16 +21,19 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       <div className="ms-h">Gates — a step holds until every approval lands</div>
       {gateNames.map((g) => (
         <div className="gate-card" key={g}>
-          <Input mono value={g} list="d-gnames" aria-label="gate name" onChange={(e) => {
-            const old = g;
-            const nv = e.target.value.trim();
-            if (!nv) return;
-            if (nv !== old && !gates[nv]) {
-              gates[nv] = gates[old];
-              delete gates[old];
-            }
-            touch();
-          }} />
+          {/* Renaming live on every keystroke changed this row's key and
+              remounted the input, dropping focus after one character. The
+              draft stays local and commits on blur/Enter. */}
+          <Input mono defaultValue={g} list="d-gnames" aria-label="gate name"
+            onBlur={(e) => {
+              const nv = e.target.value.trim();
+              if (nv === g) return;
+              if (!nv || gates[nv]) { e.target.value = g; return; }
+              gates[nv] = gates[g];
+              delete gates[g];
+              touch();
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
           <Input defaultValue={(gates[g]?.requires || []).join(", ")} key={`${g}-req`} placeholder="approvals required — tech-lead.approve, qa.pass" aria-label={`approvals required by ${g}`}
             onBlur={(e) => { gates[g].requires = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
           {(gates[g]?.requires || []).length ? (

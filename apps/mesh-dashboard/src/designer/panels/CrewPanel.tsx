@@ -152,7 +152,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
           </div>
           <Button variant="linklike" onClick={() => setBulkInts(!bulkInts)}>{bulkInts ? "hide bulk edit" : "bulk edit as text…"}</Button>
           {bulkInts ? (
-            <TextArea rows={2} aria-label="interests bulk edit" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}`} onBlur={(e) => { a.interests = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
+            <TextArea rows={2} aria-label="interests bulk edit" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}-${(a.interests || []).join(",")}`} onBlur={(e) => { a.interests = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
           ) : null}
         </div>
       </Group>
@@ -172,10 +172,10 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         <CommaAdder placeholder="custom capability, e.g. k8s.deploy…" onAdd={(v) => { a.capabilities = [...new Set([...(a.capabilities || []), v])]; touch(); }} />
         <Button variant="linklike" onClick={() => setBulkCaps(!bulkCaps)}>{bulkCaps ? "hide bulk edit" : "bulk edit as text…"}</Button>
         {bulkCaps ? (
-          <TextArea rows={2} aria-label="capabilities bulk edit" defaultValue={(a.capabilities || []).join(", ")} key={`caps-${cur}`} onBlur={(e) => { a.capabilities = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
+          <TextArea rows={2} aria-label="capabilities bulk edit" defaultValue={(a.capabilities || []).join(", ")} key={`caps-${cur}-${(a.capabilities || []).join(",")}`} onBlur={(e) => { a.capabilities = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
         ) : null}
         <Field label="can decide alone" hint="e.g. architecture.approve unlocks a gate">
-          <Input defaultValue={(a.authority || []).join(", ")} key={`auth-${cur}`} placeholder="architecture.approve, quality.block…"
+          <Input defaultValue={(a.authority || []).join(", ")} key={`auth-${cur}-${(a.authority || []).join(",")}`} placeholder="architecture.approve, quality.block…"
             onBlur={(e) => { a.authority = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
         </Field>
       </Group>
@@ -188,7 +188,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
           ) : <span className="muted tx-meta">no other agents yet.</span>}
         </div>
         <Field label="may be contacted by" hint="blank = anyone wired to it">
-          <Input defaultValue={incoming.join(", ")} key={`inb-${cur}`} placeholder="blank, or comma-separated agent ids"
+          <Input defaultValue={incoming.join(", ")} key={`inb-${cur}-${incoming.join(",")}`} placeholder="blank, or comma-separated agent ids"
             onBlur={(e) => {
               m.policies.communication[cur] ||= {};
               const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean);

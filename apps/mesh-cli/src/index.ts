@@ -233,6 +233,7 @@ usage:
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
   any --bus command also takes --project <id> to address one project through a host
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
+  designer-mcp                             (internal) stdio MCP server for the config designer
   bench [--mesh config.yaml] [--single config.yaml] [--out report.json]
 `;
 
@@ -445,6 +446,11 @@ export async function main(argv: string[]): Promise<number> {
           bus: String(args.flags.bus ?? DEFAULT_BUS),
           token: String(args.flags.token ?? ""),
         });
+        return 0;
+      }
+      case "designer-mcp": {
+        const { runStdioDesignerMcp } = await import("./designer-mcp");
+        await runStdioDesignerMcp();
         return 0;
       }
       case "status": {

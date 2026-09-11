@@ -124,6 +124,7 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
     const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "developer", "opencode.json"), "utf8"));
     assert.equal(cfg.mcp.mesh.enabled, true);
     assert.equal(cfg.permission.edit, "allow");
+    assert.equal(cfg.permission.read, "allow", "mission agents keep read access");
 
     const output = await adapter.send(session, {
       agentId: "developer",
@@ -169,6 +170,32 @@ test("opencode adapter: prompt() is context-free, forwards system/model, returns
     assert.equal(mock.sessions.size, 1, "one throwaway session per prompt call");
   } finally {
     mock.close();
+  }
+});
+
+test("opencode adapter: designer prompt config disables built-in tools and wires only the designer MCP server", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-designer-"));
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false, designerWorkspace: dir });
+    const text = await adapter.prompt("design me a crew", { system: "you are a designer" });
+    assert.match(text, /publish_artifact/, "prompt reply is returned verbatim");
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "__mesh_designer", "opencode.json"), "utf8"));
+    assert.equal(cfg.mcp.mesh, undefined, "designer must not get the mission MCP bridge");
+    assert.equal(cfg.mcp.mesh_designer.enabled, true, "designer gets its own read-only MCP server");
+    assert.equal(cfg.mcp.mesh_designer.command.at(-1), "designer-mcp");
+    assert.equal(cfg.mcp.mesh_designer.environment, undefined, "designer tools need no bus URL or token");
+    for (const tool of ["read", "glob", "grep", "edit", "write", "bash", "task", "webfetch", "todowrite", "skill", "question"]) {
+      assert.equal(cfg.tools[tool], false, `${tool} must be disabled for the designer`);
+    }
+    assert.equal(cfg.permission.read, "deny");
+    assert.equal(cfg.permission.glob, "deny");
+    assert.equal(cfg.permission.grep, "deny");
+    assert.equal(cfg.permission.bash, "deny");
+    assert.equal(cfg.permission.external_directory, "deny");
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

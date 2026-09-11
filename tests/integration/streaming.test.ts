@@ -4,7 +4,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { OpenCodeRuntimeAdapter, extractSessionDelta } from "../../packages/runtime-opencode/src/index";
+import { OpenCodeRuntimeAdapter, extractReasoning, extractSessionDelta, extractSessionPart } from "../../packages/runtime-opencode/src/index";
 import { TurnTracker, type TurnRecord } from "../../packages/core/src/turn-tracker";
 import { makeMesh } from "../helpers";
 import { createHttpServer, closeHttpServer } from "../../apps/mesh-server/src/index";
@@ -74,6 +74,20 @@ test("extractSessionDelta pulls text deltas for our session only", () => {
   );
   assert.equal(extractSessionDelta("not json at all", "ses_abc"), null);
   assert.equal(extractSessionDelta("", "ses_abc"), null);
+  // Reasoning deltas are tagged, kept out of the answer buffer, and handed to
+  // the designer tap with their field intact.
+  const reasoning = frame({ sessionID: "ses_abc", field: "reasoning", delta: "hmm" });
+  assert.equal(extractSessionDelta(reasoning, "ses_abc"), null);
+  assert.deepEqual(extractSessionPart(reasoning, "ses_abc"), { field: "reasoning", delta: "hmm" });
+});
+
+test("extractReasoning joins reasoning parts and ignores text/tool parts", () => {
+  assert.equal(
+    extractReasoning({ parts: [{ type: "reasoning", text: "step 1" }, { type: "text", text: "answer" }, { type: "reasoning", text: "step 2" }] }),
+    "step 1\nstep 2",
+  );
+  assert.equal(extractReasoning({ parts: [{ type: "text", text: "answer" }] }), "");
+  assert.equal(extractReasoning({}), "");
 });
 
 /** Mock backend: /event streams deltas, /message answers after a delay. */

@@ -41,6 +41,8 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
         json?.note ?? json?.error ?? "",
         code === 200 ? "ok" : "bad",
       );
+    } catch {
+      toast("could not reset", "the server did not answer", "bad");
     } finally {
       setBusy(false);
     }
@@ -78,6 +80,8 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
         json?.note ?? json?.reason ?? json?.error ?? "",
         code === 200 ? "ok" : "bad",
       );
+    } catch {
+      toast("could not reopen", "the server did not answer", "bad");
     } finally {
       setBusy(false);
     }
@@ -95,6 +99,8 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
       const { status, json } = await client.post("/mission/start");
       const already = json?.started === false;
       toast(status === 200 ? (already ? "already live" : "mission continuing — agents are running") : "could not go live", json?.note ?? json?.error ?? "scheduler live", status === 200 ? "ok" : "bad");
+    } catch {
+      toast("could not go live", "the server did not answer", "bad");
     } finally {
       setBusy(false);
     }

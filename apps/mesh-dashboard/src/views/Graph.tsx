@@ -73,7 +73,7 @@ export default function Graph(): React.JSX.Element {
       <Card variant="graph-wrap">
         <svg id="graph-svg" role="img" aria-label="mesh graph" viewBox={`0 0 ${W} ${H}`}>
           <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
-          {(graph.edges || []).map((e: any, i: number) => {
+          {edges.map((e: any) => {
             const p = pos[e.from], q = pos[e.to];
             if (!p || !q) return null;
             const dx = q.x - p.x, dy = q.y - p.y, dist = Math.hypot(dx, dy) || 1;
@@ -81,7 +81,7 @@ export default function Graph(): React.JSX.Element {
             const ex = q.x - (dx / dist) * 30, ey = q.y - (dy / dist) * 30;
             const mx = (sx + ex) / 2 + dy * 0.14, my = (sy + ey) / 2 - dx * 0.14;
             const flow = [...recentFlows].some((f) => f.startsWith(`${e.from}|`) && f.includes(e.to));
-            return <path key={i} className={`edge ${e.kind}${flow ? " flowing" : ""}`} d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`} markerEnd="url(#ar)" strokeWidth={Math.min(4, 1 + e.count * 0.4)}><title>{`${e.from} ${e.kind} ${e.to} ×${e.count}`}</title></path>;
+            return <path key={`${e.from}|${e.to}|${e.kind}`} className={`edge ${e.kind}${flow ? " flowing" : ""}`} d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`} markerEnd="url(#ar)" strokeWidth={Math.min(4, 1 + e.count * 0.4)}><title>{`${e.from} ${e.kind} ${e.to} ×${e.count}`}</title></path>;
           })}
           {Object.keys(pos).map((id) => {
             const { x, y, nd } = pos[id];

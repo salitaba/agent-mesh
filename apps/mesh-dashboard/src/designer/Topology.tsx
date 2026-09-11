@@ -43,6 +43,10 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
   const [mouse, setMouse] = useState<Pos | null>(null);
   const [selEdge, setSelEdge] = useState<{ src: string; tgt: string } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // A drag interrupted by unmount (view switch, focus mode) must not leave
+  // window listeners behind; clearing them also stops setLayout on a dead tree.
+  const dragCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragCleanup.current?.(), []);
   // Cutting unmounts the focused inline pill, so hand focus back to the canvas
   // when it was inside it (keyboard flow); mouse cuts leave focus alone.
   const refocusCanvas = () => {
@@ -130,6 +134,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
   const nodeDown = (ev: React.PointerEvent, id: string) => {
     ev.stopPropagation();
     ev.preventDefault();
+    dragCleanup.current?.();
     const start = svgPoint(ev);
     const pos0 = layout[id] || { x: CX, y: CY };
     let moved = false;
@@ -138,14 +143,19 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
       if (!moved && Math.hypot(p.x - start.x, p.y - start.y) > 5) moved = true;
       if (moved) setLayout({ ...layout, [id]: { x: clamp(p.x - (start.x - pos0.x), NODE_R + 4, W - NODE_R - 4), y: clamp(p.y - (start.y - pos0.y), NODE_R + 4, H - NODE_R - 4) } });
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      dragCleanup.current = null;
+    };
+    const up = () => {
+      cleanup();
       if (moved) {
         // setLayout kept draft.layout in sync while dragging; persist the final ring.
         if (meshId) saveLayout(meshId, draft.layout);
       } else nodeClick(id);
     };
+    dragCleanup.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
@@ -175,13 +185,13 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
   return (
     <section className="card ms-canvas" aria-label="mesh topology">
       <div className="ms-tools">
-        <Button id="ms-focus-toggle" variant="small" extra={focusMode ? "focus-on" : undefined} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)} title="focus mode — hide the crew rail, inspector and output, and give the graph the view">
-          ⛶ focus
-        </Button>
         <Button variant="small" extra={wiring ? "wire-on" : undefined} aria-pressed={wiring} onClick={() => { setWiring(!wiring); setWireFrom(null); }}>
           {wiring ? "✎ connecting — click two agents" : "✎ connect"}
         </Button>
         <Button variant="small" onClick={onArrange} title="re-space everyone in a ring">⌾ arrange</Button>
+        <Button id="ms-focus-toggle" variant="small" extra={focusMode ? "focus-on" : undefined} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)} title="focus mode — hide the crew rail, inspector and output, and give the graph the view">
+          ⛶ focus
+        </Button>
         <span className="ms-tool-hint muted">
           {wiring
             ? (wireFrom ? `linking FROM “${wireFrom}” — click a target (Esc cancels)` : "pick the sender first")
@@ -189,7 +199,6 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
               ? `wire ${selEdge.src} → ${selEdge.tgt} selected — Cut or press Delete`
               : "drag to arrange · click to inspect · click an arrow to select and cut it"}
         </span>
-        <span className="ms-canvas-count muted" aria-hidden="true">{ids.length} agent{ids.length === 1 ? "" : "s"}{links.length ? ` · ${links.length} wire${links.length === 1 ? "" : "s"}` : ""}</span>
       </div>
       <svg ref={svgRef} className={`ms-svg${wiring ? " wiring" : ""}`} viewBox={`0 0 ${W} ${H}`} role="application" tabIndex={-1}
         aria-label="mesh topology: agents and who may message whom"

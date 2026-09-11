@@ -493,7 +493,7 @@ export default function Steps(): React.JSX.Element {
     return () => clearInterval(iv);
   }, [refreshSteps]);
 
-  const all = steps || [];
+  const all = useMemo(() => steps ?? [], [steps]);
   // Deep link rather than a bare drawer push: a step someone is debugging
   // should survive a refresh and be pasteable into a chat.
   const pick = (s: TurnStep) => openDetail("step", s.turnId);
@@ -526,10 +526,11 @@ export default function Steps(): React.JSX.Element {
       const list = by.get(b.id)!;
       return { ...b, list, rows: foldQuiet(list, folding), tokens: list.reduce((a, s) => a + (s.tokens || 0), 0) };
     });
-    // The clock ticks every second, but bucket membership only changes at
-    // minute boundaries; re-group on data and filter changes, not on ticks.
+    // Re-group on data, filter and bucket-boundary changes. Keying this on
+    // rows.length/rows[0] reused stale TurnStep objects when a refresh kept the
+    // same length and first id (in-place updates), showing old rows for up to 30s.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length, rows[0]?.turnId, folding, Math.floor(now / 30_000)]);
+  }, [all, stepFilter, q, folding, Math.floor(now / 30_000)]);
 
   const filtered = Boolean(stepFilter || q);
 

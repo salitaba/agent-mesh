@@ -15,9 +15,13 @@ export function CloseX(): React.JSX.Element {
 }
 
 export async function agentAction(client: ProjectClient, id: string, act: string, toast: (t: string, m: string, k?: string) => void, after?: () => void): Promise<void> {
-  const { status, json } = await client.post(`/agents/${encodeURIComponent(id)}/${act}`);
-  if (status === 200) toast(act, `${id}: ok`, "ok");
-  else toast(`${act} blocked`, `${id}: ${json?.reason ?? "denied"}`, "warn");
+  try {
+    const { status, json } = await client.post(`/agents/${encodeURIComponent(id)}/${act}`);
+    if (status === 200) toast(act, `${id}: ok`, "ok");
+    else toast(`${act} blocked`, `${id}: ${json?.reason ?? "denied"}`, "warn");
+  } catch {
+    toast(`${act} failed`, `${id}: the server did not answer`, "bad");
+  }
   if (after) setTimeout(after, 400);
 }
 
@@ -41,8 +45,10 @@ export function MessageDrawer(): React.JSX.Element {
   // box stayed unticked and the message sat unread in the mailbox.
   const [wake, setWake] = useState(parked || missionOver);
   const [out, setOut] = useState("");
+  const [sending, setSending] = useState(false);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (sending) return;
     let body: unknown;
     if (advanced) {
       try {
@@ -55,9 +61,16 @@ export function MessageDrawer(): React.JSX.Element {
       body = { note };
     }
     const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
-    const { status: st, json } = await client.post("/messages", { to: recipients, type, payload: body, wake });
-    setOut(st === 202 ? "Sent." : `Couldn't send: ${json?.reason ?? st}`);
-    if (st === 202) toast("Sent", `to ${recipients.join(", ")}`, "ok");
+    setSending(true);
+    try {
+      const { status: st, json } = await client.post("/messages", { to: recipients, type, payload: body, wake });
+      setOut(st === 202 ? "Sent." : `Couldn't send: ${json?.reason ?? st}`);
+      if (st === 202) toast("Sent", `to ${recipients.join(", ")}`, "ok");
+    } catch {
+      setOut("The server did not answer — try again.");
+    } finally {
+      setSending(false);
+    }
     void refreshStatus();
   };
   return (
@@ -79,7 +92,7 @@ export function MessageDrawer(): React.JSX.Element {
         )}
         <div className="row"><label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} /> send a raw JSON payload</label></div>
         <div className="row"><label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={wake} onChange={(e) => setWake(e.target.checked)} /> run them right after sending</label></div>
-        <div className="row"><Button variant="primary" type="submit">send</Button><span className="muted">{out}</span></div>
+        <div className="row"><Button variant="primary" type="submit" disabled={sending}>{sending ? "sending…" : "send"}</Button><span className="muted">{out}</span></div>
       </form>
     </>
   );
@@ -93,6 +106,7 @@ export function ApprovalDrawer(): React.JSX.Element {
   const [subject, setSubject] = useState("");
   const [comment, setComment] = useState("");
   const [out, setOut] = useState("");
+  const [sending, setSending] = useState(false);
   useEffect(() => {
     client.api("GET", "/artifacts").then(({ json }) => {
       if (Array.isArray(json)) setArts(json.slice().reverse());
@@ -100,9 +114,17 @@ export function ApprovalDrawer(): React.JSX.Element {
   }, [client]);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const { status: st, json } = await client.post("/approvals", { kind, subject, comment: comment || undefined });
-    setOut(st === 200 ? "Recorded." : `Couldn't record: ${json?.reason ?? st}`);
-    if (st === 200) toast("Recorded", `${kind} ${subject}`, "ok");
+    if (sending) return;
+    setSending(true);
+    try {
+      const { status: st, json } = await client.post("/approvals", { kind, subject, comment: comment || undefined });
+      setOut(st === 200 ? "Recorded." : `Couldn't record: ${json?.reason ?? st}`);
+      if (st === 200) toast("Recorded", `${kind} ${subject}`, "ok");
+    } catch {
+      setOut("The server did not answer — try again.");
+    } finally {
+      setSending(false);
+    }
     void refreshStatus();
   };
   return (
@@ -115,7 +137,7 @@ export function ApprovalDrawer(): React.JSX.Element {
           <datalist id="subj">{[...subjects, ...((status?.goal?.acceptanceCriteria || []).map((c: any) => `criterion:${c.id}`))].map((s: string) => <option key={s}>{s}</option>)}</datalist></div>
         <div className="field"><label htmlFor="appr-comment">Why? (optional)</label><Input id="appr-comment" placeholder="one line for the log" value={comment} onChange={(e) => setComment(e.target.value)} /></div>
         {arts.length > 0 && <div className="muted" style={{ fontSize: 12 }}>Recent files: {arts.slice(0, 3).map((a) => a.name).join(", ")}</div>}
-        <div className="row"><Button variant="primary" type="submit">record it</Button><span className="muted">{out}</span></div>
+        <div className="row"><Button variant="primary" type="submit" disabled={sending}>{sending ? "recording…" : "record it"}</Button><span className="muted">{out}</span></div>
       </form>
     </>
   );
@@ -589,18 +611,20 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   }, [turnId, client]);
   const listStep: TurnStep | undefined = (steps || []).find((x: any) => x.turnId === turnId);
   const sbx = useSandboxPerms(json?.turn?.agentId ?? listStep?.agentId);
+  // Keep render pure: toasting here updated a parent while rendering a child,
+  // which React may run twice. The effect below owns the notification.
+  const missingStep = Boolean(json) && Boolean(json.error || (!json.turn && (json.events || []).length === 0)) && !listStep;
+  useEffect(() => {
+    if (missingStep) toast("step", "not found", "bad");
+  }, [missingStep, toast]);
   if (!json) return <StepSkeleton />;
-  if (!json || json.error || (!json.turn && (json.events || []).length === 0)) {
-    const s = (steps || []).find((x: any) => x.turnId === turnId);
-    if (!s) {
-      toast("step", "not found", "bad");
-      return <div className="muted">not found</div>;
-    }
+  if (json.error || (!json.turn && (json.events || []).length === 0)) {
+    if (!listStep) return <div className="muted">not found</div>;
     return (
       <>
         <h2>Step <span className="mono muted">{(turnId)}</span><CloseX /></h2>
-        <div className="row"><StatusPillOf status={s.status} ops={s.ops} /><span className="muted">{(s.agentId)} · {(s.reasonKind)}</span></div>
-        <pre>{(JSON.stringify(s, null, 2))}</pre>
+        <div className="row"><StatusPillOf status={listStep.status} ops={listStep.ops} /><span className="muted">{(listStep.agentId)} · {(listStep.reasonKind)}</span></div>
+        <pre>{(JSON.stringify(listStep, null, 2))}</pre>
       </>
     );
   }

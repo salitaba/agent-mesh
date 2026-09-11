@@ -120,7 +120,9 @@ export default function Overview(): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [setSteps, client]);
+    // goalId is in the deps so a Reset/reopen refetches the manifest instead of
+    // showing the previous mission's artifacts.
+  }, [setSteps, client, goalId]);
 
   // A permanent "loading overview" is what an operator saw when the server was
   // down, because nothing here ever distinguished slow from gone.

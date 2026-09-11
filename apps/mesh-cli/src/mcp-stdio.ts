@@ -16,6 +16,13 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
     process.exit(2);
   }
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  // Every write is tracked so the loop can flush before resolving: callers
+  // (`main` → `mesh.mjs`) exit the process the moment this function returns,
+  // and `process.exit` truncates async pipe writes.
+  const flushing: Array<Promise<void>> = [];
+  // In-flight calls are drained before resolving for the same reason: a client
+  // that sends requests and closes stdin must still get its replies.
+  const pending = new Set<Promise<void>>();
   rl.on("line", (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -26,9 +33,17 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
       writeResponse({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
       return;
     }
-    void handle(request);
+    const done = handle(request);
+    pending.add(done);
+    void done.finally(() => pending.delete(done));
   });
-  rl.on("close", () => process.exit(0));
+  await new Promise<void>((resolve) => {
+    rl.on("close", () => {
+      void Promise.all([...pending])
+        .then(() => Promise.all(flushing))
+        .finally(resolve);
+    });
+  });
 
   async function handle(request: Record<string, unknown>): Promise<void> {
     const isNotification = !("id" in request) || request.id === null || request.id === undefined;
@@ -53,7 +68,7 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
   }
 
   function writeResponse(payload: unknown): void {
-    process.stdout.write(JSON.stringify(payload) + "\n");
+    flushing.push(new Promise((resolve) => process.stdout.write(JSON.stringify(payload) + "\n", () => resolve())));
   }
 }
 

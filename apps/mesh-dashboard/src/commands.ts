@@ -67,3 +67,19 @@ export function takePendingAgent(): string | null {
   pendingAgent = null;
   return id;
 }
+
+/**
+ * Chat-proposal hand-off: the global assistant records one whole-config
+ * proposal and opens the Designer, which applies it through the same
+ * undo/touch path as a template. One-shot, module-level, same as the agent id.
+ */
+let pendingProposal: any | null = null;
+export function setPendingProposal(model: any): void {
+  pendingProposal = model;
+  bump();
+}
+export function takePendingProposal(): any | null {
+  const model = pendingProposal;
+  pendingProposal = null;
+  return model;
+}

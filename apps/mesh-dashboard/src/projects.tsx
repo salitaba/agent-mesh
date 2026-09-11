@@ -139,7 +139,16 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   if (eventTypes && eventTypes.length) typesRef.current = eventTypes;
 
   const refreshProjects = useCallback(async (): Promise<ProjectSummary[]> => {
-    const { status, json, timeout } = await api("GET", "/api/projects");
+    let res: Awaited<ReturnType<typeof api>>;
+    try {
+      res = await api("GET", "/api/projects");
+    } catch {
+      // A refused connection is not a timeout: surface it as host-down here so
+      // no caller has to deal with a rejected poll.
+      setHostDown(true);
+      return [];
+    }
+    const { status, json, timeout } = res;
     if (deadRef.current) return [];
     if (timeout || status === 0) {
       setHostDown(true);
@@ -267,7 +276,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
         connect(followedIds());
       }, RECONNECT_MS);
     };
-  }, []);
+  }, [followedIds]);
 
   const subscribe = useCallback((projectId: string, sink: ProjectSink) => {
     sinks.current.set(projectId, sink);
@@ -311,11 +320,15 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   // request succeeded and the status is the outcome. Reading `status` rather
   // than the HTTP code is what lets a crashed project render as a crashed tab.
   const lifecycle = useCallback(async (id: string, action: "open" | "close" | "restart") => {
-    const { status, json } = await post(`/api/projects/${encodeURIComponent(id)}/${action}`);
-    if (status !== 200) return null;
-    const summary = asSummary(json);
-    applySummary(summary);
-    return summary;
+    try {
+      const { status, json } = await post(`/api/projects/${encodeURIComponent(id)}/${action}`);
+      if (status !== 200) return null;
+      const summary = asSummary(json);
+      applySummary(summary);
+      return summary;
+    } catch {
+      return null;
+    }
   }, [applySummary]);
 
   const openProject = useCallback((id: string) => lifecycle(id, "open"), [lifecycle]);
@@ -323,7 +336,12 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const restartProject = useCallback((id: string) => lifecycle(id, "restart"), [lifecycle]);
 
   const removeProject = useCallback(async (id: string) => {
-    const { status } = await api("DELETE", `/api/projects/${encodeURIComponent(id)}`);
+    let status: number;
+    try {
+      ({ status } = await api("DELETE", `/api/projects/${encodeURIComponent(id)}`));
+    } catch {
+      return false;
+    }
     if (status !== 200) return false;
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setActiveId((cur) => (cur === id ? null : cur));

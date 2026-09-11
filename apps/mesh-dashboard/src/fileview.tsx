@@ -6,7 +6,7 @@
  * the artifact drawer and the Product view mount it, so a fix here fixes
  * both. */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip } from "./components";
 
 export type FileKind = "text" | "markdown" | "image" | "binary";
@@ -51,7 +51,8 @@ function download(name: string, content: string, mime = "text/plain"): void {
  * markdown dependency into the console for this is not worth the bytes. */
 function renderMarkdown(src: string): string {
   const esc = (s: string): string =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const fences: string[] = [];
   let text = src.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
     fences.push(`<pre class="md-code" data-lang="${esc(lang)}">${esc(code)}</pre>`);
@@ -66,7 +67,8 @@ function renderMarkdown(src: string): string {
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, href: string) =>
+        `<a href="${/^(https?:|mailto:|#|\/)/i.test(href) ? href : "#"}" target="_blank" rel="noreferrer noopener">${label}</a>`);
   for (const raw of lines) {
     const line = raw.trimEnd();
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -153,13 +155,16 @@ export function FileView({
   const [mode, setMode] = useState<"content" | "diff" | "raw">("content");
   const [wrap, setWrap] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
   const lines = useMemo(() => (content ?? "").split("\n"), [content]);
   const effectiveMode = diff && mode === "diff" ? "diff" : mode === "diff" ? "content" : mode;
 
   const copy = (): void => {
     void navigator.clipboard?.writeText(content ?? dataUrl ?? "").then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1400);
     });
   };
 

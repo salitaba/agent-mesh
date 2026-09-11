@@ -238,10 +238,27 @@ test("http api: config designer — validate/parse/save + designer page served",
     const rawBack = loadMeshFile(target);
     assert.equal(rawBack.mesh.id, "designed");
     analyzeMeshConfig(rawBack, dir);
+    assert.equal(saved.json.archived, null, "first save has nothing to archive");
+    const revisedCopy = JSON.parse(JSON.stringify(doc));
+    revisedCopy.mesh.goal = "second proposal";
+    const resaved = await post("/config/save", { config: revisedCopy, path: target });
+    assert.equal(resaved.status, 200, JSON.stringify(resaved.json));
+    assert.ok(String(resaved.json.archived).startsWith(path.join(dir, ".mesh-versions")), `archived: ${resaved.json.archived}`);
+    assert.match(fs.readFileSync(resaved.json.archived, "utf8"), /designed/, "the overwritten bytes are recoverable");
+    assert.equal(loadMeshFile(target).mesh.goal, "second proposal");
     fs.rmSync(dir, { recursive: true, force: true });
 
     const noPath = await post("/config/save", { config: doc });
     assert.equal(noPath.status, 400);
+
+    // GET /config is the designer's running-FILE baseline: after an overwrite
+    // it must reflect the bytes on disk, not the snapshot resolved at boot.
+    const revised = JSON.parse(JSON.stringify(current.raw));
+    revised.mesh.goal = "revised from the designer";
+    const overwrite = await post("/config/save", { config: revised, path: current.filePath });
+    assert.equal(overwrite.status, 200, JSON.stringify(overwrite.json));
+    const afterSave = (await (await fetch(`${base}/config`)).json()) as any;
+    assert.equal(afterSave.raw.mesh.goal, "revised from the designer", "GET /config must re-read the overwritten running file");
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     await m.cleanup();

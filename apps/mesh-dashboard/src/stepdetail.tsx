@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMesh } from "./store";
 import { Button, rowKey } from "./components";
 import { type Outcome } from "./format";
@@ -224,11 +224,14 @@ export function ToolCallGroups({ calls, perms }: { calls: ToolCall[]; perms?: Sa
 /** Copy button with its own two-second "copied" state. */
 export function CopyBtn({ text }: { text: string }): React.JSX.Element {
   const [done, setDone] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const go = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
       setDone(true);
-      setTimeout(() => setDone(false), 2000);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setDone(false), 2000);
     } catch { /* clipboard unavailable */ }
   };
   return <Button variant="small" onClick={() => void go()}>{done ? "copied ✓" : "copy"}</Button>;

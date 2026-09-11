@@ -106,6 +106,71 @@ export const getText = async (path: string, opts: ApiOptions = {}): Promise<stri
   }
 };
 
+export interface StreamResult {
+  status: number;
+  error?: string;
+}
+
+/**
+ * POST that consumes a `text/event-stream` response, invoking `onEvent` per
+ * `data:` frame. Used by designer chat: the turn is long-lived (the model may
+ * think for minutes), so there is no client timeout and the caller owns error
+ * surfacing. Resolves when the server ends the stream; a transport drop is
+ * reported instead of thrown so the caller can settle its busy state.
+ */
+export async function postStream(
+  path: string,
+  body: unknown,
+  onEvent: (event: any) => void,
+  opts: ApiOptions = {},
+): Promise<StreamResult> {
+  let res: Response;
+  try {
+    res = await fetch(projectPath(opts.projectId, path), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch {
+    return { status: 0, error: "designer chat failed — the server is unreachable" };
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    return { status: res.status, error: text ? text.slice(0, 200) : `designer chat failed (${res.status})` };
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const line = block.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        try {
+          onEvent(JSON.parse(line.slice(5).trim()));
+        } catch {
+          /* skip malformed frame */
+        }
+      }
+    }
+  } catch {
+    return { status: res.status, error: "designer chat — the stream was interrupted" };
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* noop */
+    }
+  }
+  return { status: res.status };
+}
+
 /**
  * The same three calls with a project already bound. Components take this off
  * `useMesh()` instead of threading an id through every call, and a non-component
@@ -115,6 +180,8 @@ export interface ProjectClient {
   api: (method: string, path: string, body?: unknown, opts?: ApiOptions) => Promise<ApiResult>;
   post: (path: string, body?: unknown, opts?: ApiOptions) => Promise<ApiResult>;
   getText: (path: string, opts?: ApiOptions) => Promise<string | null>;
+  /** SSE POST for long model turns (designer chat). */
+  postStream: (path: string, body: unknown, onEvent: (event: any) => void, opts?: ApiOptions) => Promise<StreamResult>;
 }
 
 export function clientFor(projectId: string | null): ProjectClient {
@@ -122,5 +189,6 @@ export function clientFor(projectId: string | null): ProjectClient {
     api: (method, path, body, opts = {}) => api(method, path, body, { ...opts, projectId }),
     post: (path, body, opts = {}) => post(path, body, { ...opts, projectId }),
     getText: (path, opts = {}) => getText(path, { ...opts, projectId }),
+    postStream: (path, body, onEvent, opts = {}) => postStream(path, body, onEvent, { ...opts, projectId }),
   };
 }

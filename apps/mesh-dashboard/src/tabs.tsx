@@ -87,27 +87,33 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
     setBusy(true);
     setError("");
     setOfferInit("");
-    const res = await addProject(root, init ? { init: true } : undefined);
-    if (deadRef.current) return;
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error ?? "could not add that folder");
-      // The listing said nothing about this path (the operator typed it), so
-      // the host is the first to know it has no mesh. Offer the scaffold as a
-      // second, explicit click rather than writing files behind their back.
-      if (res.missing) setOfferInit(root);
-      return;
+    try {
+      const res = await addProject(root, init ? { init: true } : undefined);
+      if (deadRef.current) return;
+      setBusy(false);
+      if (!res.ok) {
+        setError(res.error ?? "could not add that folder");
+        // The listing said nothing about this path (the operator typed it), so
+        // the host is the first to know it has no mesh. Offer the scaffold as a
+        // second, explicit click rather than writing files behind their back.
+        if (res.missing) setOfferInit(root);
+        return;
+      }
+      // Adding without opening leaves a tab that does nothing, which reads as a
+      // failure. The operator picked this folder to work in it.
+      if (res.project) {
+        setActive(res.project.id);
+        void openProject(res.project.id);
+        // A freshly scaffolded mesh is a placeholder goal and one agent: the
+        // Designer is the only view where that is worth looking at.
+        if (res.scaffolded) window.location.hash = hashFor(res.project.id, "designer");
+      }
+      onClose();
+    } catch {
+      if (deadRef.current) return;
+      setBusy(false);
+      setError("the host did not answer — is the mesh process running?");
     }
-    // Adding without opening leaves a tab that does nothing, which reads as a
-    // failure. The operator picked this folder to work in it.
-    if (res.project) {
-      setActive(res.project.id);
-      void openProject(res.project.id);
-      // A freshly scaffolded mesh is a placeholder goal and one agent: the
-      // Designer is the only view where that is worth looking at.
-      if (res.scaffolded) window.location.hash = hashFor(res.project.id, "designer");
-    }
-    onClose();
   }, [addProject, onClose, openProject, setActive]);
 
   // The typed path drifts from the listed one as soon as the operator edits the
@@ -183,19 +189,24 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
 function CrashBanner({ project }: { project: ProjectSummary }): React.JSX.Element {
   const { restartProject } = useProjects();
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const st = tabStatus(project);
   return (
     <div className="banner bad proj-crash" role="alert">
       <b>{project.name} {st.label}.</b>
       <span className="muted">{st.hint}</span>
       {project.error?.detail ? <code className="proj-crash-detail">{project.error.detail}</code> : null}
+      {err ? <code className="proj-crash-detail">{err}</code> : null}
       <Button
         variant="banner-act"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
+          setErr("");
           try {
             await restartProject(project.id);
+          } catch {
+            setErr("restart request failed — is the host still running?");
           } finally {
             setBusy(false);
           }
@@ -281,14 +292,13 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
   // removed on another machine does not accumulate in localStorage forever.
   useEffect(() => {
     if (!loaded) return;
-    setOrder((prev) => {
-      const live = orderedIds;
-      if (prev.length === live.length && prev.every((id, i) => id === live[i])) return prev;
-      writeOrder(live);
-      return live;
-    });
+    const live = orderedIds;
+    if (order.length === live.length && order.every((id, i) => id === live[i])) return;
+    setOrder(live);
+    writeOrder(live);
     // `orderedIds` is derived from `projects`; depending on the array itself
-    // would re-run this on every 5s poll that changed nothing.
+    // would re-run this on every 5s poll that changed nothing. `order` is read
+    // for comparison only — this effect exists to reconcile it with the ids.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, orderedIds.join(",")]);
 

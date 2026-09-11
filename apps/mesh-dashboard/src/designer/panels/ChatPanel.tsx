@@ -1,88 +1,73 @@
-/* Chat inspector: converse with the config designer. Each assistant turn may
- * carry a whole-config proposal; nothing touches the draft until the operator
- * reviews the diff against the current model and applies it. The transcript is
- * client-side only — the server is stateless and gets it resent each turn. */
+/* Global designer assistant: converse with the config designer from any view.
+ * Each assistant turn may carry a whole-config proposal; applying it hands the
+ * model to the Designer as a pending proposal, so the draft, undo stack and
+ * validation all stay owned by one place. The transcript lives in chatStore
+ * (localStorage-backed), so switching views or refreshing never loses it. */
 
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { summarizeDiff } from "../model";
 import { Button, TextArea } from "../../components";
 import { useMesh } from "../../store";
-import type { DCtx } from "../types";
+import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
+import { draft } from "../storage";
+import { setPendingProposal } from "../../commands";
 
-interface ChatEntry {
-  role: "user" | "assistant";
-  content: string;
-  proposed?: any;
-  problems?: string[];
-}
-
-/** Model turns can take far longer than the client's 20s default. */
-const CHAT_TIMEOUT_MS = 120000;
-
-export default function ChatPanel({ ctx, onApply }: { ctx: DCtx; onApply: (model: any) => void }): React.JSX.Element {
-  const { client, toast } = useMesh();
-  const [entries, setEntries] = useState<ChatEntry[]>([]);
+export default function ChatPanel(): React.JSX.Element {
+  const { client, toast, setView } = useMesh();
+  const { entries, busy, failed, review, applied, live, showThinking } = useSyncExternalStore(subscribe, getSnapshot);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const [review, setReview] = useState<number | null>(null);
-  const [applied, setApplied] = useState<number | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
+  /* Follow the latest turn while the reader is already at the bottom; the
+   * closing panel unmounts, so reopening lands at the end instead of the top. */
+  const stick = useRef(true);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [entries.length, busy, live?.text.length, live?.thinking.length, showThinking]);
 
-  const send = async () => {
+  const send = () => {
     const text = input.trim();
     if (!text || busy) return;
-    const next: ChatEntry[] = [...entries, { role: "user", content: text }];
-    setEntries(next);
     setInput("");
-    setFailed(null);
-    setReview(null);
-    setBusy(true);
-    try {
-      const { status, json } = await client.post(
-        "/designer/chat",
-        { messages: next.map(({ role, content }) => ({ role, content })), currentConfig: ctx.m },
-        { timeoutMs: CHAT_TIMEOUT_MS },
-      );
-      if (status !== 200) {
-        setFailed(json?.error || `designer chat failed (${status})`);
-      } else {
-        setEntries([
-          ...next,
-          {
-            role: "assistant",
-            content: typeof json?.reply === "string" ? json.reply : "",
-            proposed: json?.proposedConfig,
-            problems: Array.isArray(json?.problems) ? json.problems : [],
-          },
-        ]);
-      }
-    } catch {
-      setFailed("designer chat failed — check the server and the model backend");
-    } finally {
-      setBusy(false);
-    }
+    void sendMessage(client, text, draft.model ?? undefined);
   };
 
   const apply = (i: number, proposed: any) => {
-    onApply(proposed);
-    setApplied(i);
-    setReview(null);
+    setPendingProposal(proposed);
+    markApplied(i);
+    setView("designer");
     toast("designer chat", "proposal applied to the draft — review and save", "ok");
   };
 
   return (
     <div className="ms-panel ms-chat">
       <p className="ms-hint">
-        Describe the crew or the change you want. Each answer proposes a whole mesh.yaml; the draft changes
-        only after you review the diff and apply it.
+        Describe the crew or the change you want. Each answer proposes a whole mesh.yaml; applying it opens the
+        Designer with the proposal in the draft, so you can review the diff before saving.
       </p>
-      <div className="ms-chat-log" role="log" aria-live="polite" aria-label="designer conversation">
+      <div
+        className="ms-chat-log"
+        role="log"
+        aria-live="polite"
+        aria-label="designer conversation"
+        ref={logRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+      >
         {entries.length === 0 ? <div className="muted">No messages yet.</div> : null}
         {entries.map((e, i) => {
-          const diff = e.proposed !== undefined ? summarizeDiff(e.proposed, ctx.m) : [];
+          const diff = e.proposed !== undefined ? summarizeDiff(e.proposed, draft.model) : [];
           return (
             <div key={i} className={`ms-chat-msg ${e.role}`}>
               <span className="ms-chat-who">{e.role === "user" ? "You" : "Designer"}</span>
+              {e.role === "assistant" && showThinking && e.thinking ? (
+                <details className="ms-chat-thinking">
+                  <summary>thinking</summary>
+                  <pre>{e.thinking}</pre>
+                </details>
+              ) : null}
               {e.content}
               {e.role === "assistant" && e.problems?.length ? (
                 <ul className="ms-chat-problems">
@@ -114,7 +99,19 @@ export default function ChatPanel({ ctx, onApply }: { ctx: DCtx; onApply: (model
             </div>
           );
         })}
-        {busy ? <div className="muted" role="status">designer is thinking…</div> : null}
+        {busy && showThinking && live?.thinking ? (
+          <div className="ms-chat-thinking live">
+            <span className="ms-chat-who">Thinking</span>
+            <pre>{live.thinking}</pre>
+          </div>
+        ) : null}
+        {busy && live?.text ? (
+          <div className="ms-chat-msg assistant live">
+            <span className="ms-chat-who">Designer</span>
+            {live.text}
+          </div>
+        ) : null}
+        {busy && !live?.text && !(showThinking && live?.thinking) ? <div className="muted" role="status">designer is thinking…</div> : null}
       </div>
       {failed ? <div className="verdict bad" role="alert">{failed}</div> : null}
       <div className="ms-chat-compose">
@@ -124,12 +121,21 @@ export default function ChatPanel({ ctx, onApply }: { ctx: DCtx; onApply: (model
           aria-label="message to the designer"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              send();
+            }
+          }}
         />
         <div className="ms-chat-actions">
-          <Button variant="primary" disabled={busy || !input.trim()} onClick={() => void send()}>{busy ? "waiting…" : "send"}</Button>
-          <Button variant="ghost" disabled={busy || entries.length === 0} onClick={() => { setEntries([]); setReview(null); setApplied(null); setFailed(null); }}>
-            clear
-          </Button>
+          <Button variant="primary" disabled={busy || !input.trim()} onClick={send}>{busy ? "waiting…" : "send"}</Button>
+          <Button variant="ghost" disabled={busy || entries.length === 0} onClick={clearChat}>clear</Button>
+          <label className="ms-chat-think" title="show the model's reasoning as it streams">
+            <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
+            show thinking
+          </label>
+          <span className="ms-chat-kbd muted" aria-hidden="true">Ctrl/⌘ + Enter sends</span>
         </div>
       </div>
     </div>

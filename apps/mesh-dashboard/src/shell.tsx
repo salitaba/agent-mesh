@@ -9,6 +9,7 @@ import { confirmResume } from "./actions";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
+import ChatDock from "./designer/ChatDock";
 
 // Single source of truth for nav order, sidebar kbd hints, and the 1-9 key
 // map — the badge and the keydown handler can never drift apart again.
@@ -115,6 +116,9 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
   // palette is open (browser Back), and its commands must vanish with it.
   const cmdVersion = useSyncExternalStore(subscribe, getVersion);
   const needle = q.trim().toLowerCase();
+  // cmdVersion is the re-list trigger; list() reads the module registry rather
+  // than a render value, so exhaustive-deps sees it as unnecessary.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const all = useMemo(() => list(), [cmdVersion]);
   const matches = needle ? all.filter((c) => `${c.label} ${c.keywords ?? ""} ${c.id}`.toLowerCase().includes(needle)) : all;
   const active = Math.min(sel, Math.max(0, matches.length - 1));
@@ -206,9 +210,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const focusValue = useMemo(() => ({ focusMode: focusOn, setFocusMode }), [focusOn]);
   // Shell outlives view switches; focus belongs to one Designer visit. Leaving
   // the view must not leave the sidebar collapsed behind the next one.
-  useEffect(() => {
-    setFocusMode(false);
-  }, [view]);
+  // Adjusted during render rather than in an effect: no extra commit, no flash.
+  const [prevView, setPrevView] = useState(view);
+  if (view !== prevView) {
+    setPrevView(view);
+    if (focusMode) setFocusMode(false);
+  }
   // Collapsing the sidebar takes it out of the layout. The menu state goes with
   // it, and keyboard focus must not be stranded inside a hidden element.
   useEffect(() => {
@@ -220,6 +227,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // Palette (WS10): open state here, commands in commands.ts, markup in
   // CommandPalette. `paletteReturn` restores the pre-palette control on close.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Global designer assistant: Shell owns `open` so the palette can summon it;
+  // `ChatDock` owns the button + slide-over and the transcript lives in
+  // chatStore, so it survives view switches and refreshes.
+  const [chatOpen, setChatOpen] = useState(false);
   const paletteReturn = useRef<HTMLElement | null>(null);
   function togglePalette(): void {
     if (!paletteOpen) {
@@ -267,6 +278,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         };
       }),
       { id: "help.open", label: "Open help", keywords: "keyboard shortcuts keys ?", scope: "global", run: openHelp },
+      { id: "chat.ask", label: "Ask the designer", keywords: "chat assistant mesh config propose", scope: "global", run: () => setChatOpen(true) },
       ...(status?.agents || [])
         .filter((a: any) => a.id && a.id !== "human")
         .map((a: any) => ({
@@ -326,10 +338,16 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     }
     if (ev.key === "?") return openHelp();
     if (ev.key === "t") toggleTheme();
-    if (ev.key === "p" && goalId) void client.post(`/goals/${goalId}/pause`).then(() => { toast("mission paused", "agents stopped — nothing lost", "warn"); refreshStatus(); });
+    if (ev.key === "p" && goalId) {
+      void client.post(`/goals/${goalId}/pause`)
+        .then(() => { toast("mission paused", "agents stopped — nothing lost", "warn"); refreshStatus(); })
+        .catch(() => toast("pause failed", "the server did not answer", "bad"));
+    }
     if (ev.key === "r" && goalId) {
       if (!confirmResume(status, "Resume")) return;
-      void client.post(`/goals/${goalId}/resume`).then(() => { toast("mission resumed", "agents are running", "ok"); refreshStatus(); });
+      void client.post(`/goals/${goalId}/resume`)
+        .then(() => { toast("mission resumed", "agents are running", "ok"); refreshStatus(); })
+        .catch(() => toast("resume failed", "the server did not answer", "bad"));
     }
     if (ev.key === "/") {
       ev.preventDefault();
@@ -486,13 +504,26 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         <div className="top-actions">
           {!paused ? (
             <Button id="btn-pause" variant="soft" title="Pause the mission — agents stop, nothing is lost" onClick={async () => {
-              if (goalId) { await client.post(`/goals/${goalId}/pause`); toast("mission paused", "agents stopped — nothing lost", "warn"); void refreshStatus(); }
+              if (!goalId) return;
+              try {
+                await client.post(`/goals/${goalId}/pause`);
+                toast("mission paused", "agents stopped — nothing lost", "warn");
+              } catch {
+                toast("pause failed", "the server did not answer", "bad");
+              }
+              void refreshStatus();
             }}>❚❚ <span className="act-lbl">pause</span></Button>
           ) : goal.status === "PAUSED" ? (
             <Button id="btn-resume" variant="soft" title="Resume the mission" onClick={async () => {
               if (!goalId) return;
               if (!confirmResume(status, "Resume")) return;
-              await client.post(`/goals/${goalId}/resume`); toast("mission resumed", "agents are running", "ok"); void refreshStatus();
+              try {
+                await client.post(`/goals/${goalId}/resume`);
+                toast("mission resumed", "agents are running", "ok");
+              } catch {
+                toast("resume failed", "the server did not answer", "bad");
+              }
+              void refreshStatus();
             }}>▶ <span className="act-lbl">resume</span></Button>
           ) : null}
           <Button id="btn-message" variant="soft" title="Send a message as the human — highest priority" onClick={() => openDrawer(<MessageDrawer />)}>✉ <span className="act-lbl">message</span></Button>
@@ -529,6 +560,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <CommandPalette onClose={closePalette} />
         </>
       )}
+      <ChatDock open={chatOpen} onOpen={() => setChatOpen(true)} onClose={() => setChatOpen(false)} />
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}><b>{t.title}</b>{t.msg}</div>

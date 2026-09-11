@@ -61,6 +61,7 @@ export default function Product(): React.JSX.Element {
   useEffect(() => {
     // A new goal id means the mission was reset (or a fresh goal was opened):
     // the old checkout is gone, so drop the stale preview and refetch disk.
+    let dead = false;
     setFile(null);
     setFileDiff(null);
     setHits(null);
@@ -68,15 +69,19 @@ export default function Product(): React.JSX.Element {
     setDir("");
     setWsErr(null);
     client.api("GET", "/workspace/info").then(({ json, timeout }) => {
+      if (dead) return;
       if (timeout || !json || json.error) {
         setWsErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
         return;
       }
       setInfo(json);
-    }).catch((e: unknown) => setWsErr(e instanceof Error ? e.message : String(e)));
+    }).catch((e: unknown) => { if (!dead) setWsErr(e instanceof Error ? e.message : String(e)); });
     client.api("GET", "/workspace/changes").then(({ json }) => {
-      if (Array.isArray(json)) setChanges(json);
-    }).catch(() => setChanges([]));
+      if (!dead && Array.isArray(json)) setChanges(json);
+    }).catch(() => { if (!dead) setChanges([]); });
+    return () => {
+      dead = true;
+    };
   }, [goalId, attempt, client]);
 
   useEffect(() => {
@@ -106,8 +111,10 @@ export default function Product(): React.JSX.Element {
 
   useEffect(() => {
     if (!run || run.done || !run.id) return;
-    client.api("GET", `/workspace/run/${encodeURIComponent(run.id)}`).then(({ json }) => {
-      if (json && json.id) {
+    const id = run.id;
+    client.api("GET", `/workspace/run/${encodeURIComponent(id)}`).then(({ json }) => {
+      // A late answer for an older run must not replace the one on screen.
+      if (json && json.id === id) {
         setRun(json);
         if (json.done && json.exitCode !== 0) toast("run finished", `exit code ${json.exitCode}`, "warn");
       }
@@ -118,8 +125,12 @@ export default function Product(): React.JSX.Element {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [run?.log?.length]);
 
+  const fileReq = useRef(0);
+  const searchReq = useRef(0);
   const openFile = async (p: string): Promise<void> => {
+    const req = ++fileReq.current;
     const { json } = await client.api("GET", `/workspace/file?path=${encodeURIComponent(p)}`);
+    if (req !== fileReq.current) return;
     if (!json || json.error) {
       if (json?.error) toast("cannot open", String(json.error), "warn");
       return;
@@ -136,6 +147,7 @@ export default function Product(): React.JSX.Element {
     // agent changed without leaving the console for a terminal.
     setFileDiff(null);
     const { json: d } = await client.api("GET", `/workspace/diff?path=${encodeURIComponent(p)}`);
+    if (req !== fileReq.current) return;
     if (d && !d.error && !d.identical) setFileDiff(d as DiffPayload);
   };
 
@@ -145,8 +157,10 @@ export default function Product(): React.JSX.Element {
       setHits(null);
       return;
     }
+    const req = ++searchReq.current;
     setSearching(true);
     const { json } = await client.api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000 });
+    if (req !== searchReq.current) return;
     setSearching(false);
     setHits(json && Array.isArray(json.results) ? (json.results as SearchHit[]) : []);
   };
@@ -197,7 +211,7 @@ export default function Product(): React.JSX.Element {
             <div className="kpi" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
             <div style={{ flex: 1 }} />
             <div className="chips">
-              {scripts.map((s) => <button key={s} className={`chip-toggle${!running ? " on" : ""}`} disabled={running} onClick={() => start(s)} title={RUN_LABELS[s]}>{RUN_LABELS[s].split(" — ")[0]}</button>)}
+              {scripts.map((s) => <button key={s} className={`chip-toggle${!running ? " on" : ""}`} disabled={running} onClick={() => start(s)} title={RUN_LABELS[s]}>{((RUN_LABELS[s] ?? s)).split(" — ")[0]}</button>)}
               {running ? <button className="chip-toggle bad" onClick={kill}>kill</button> : null}
             </div>
           </div>

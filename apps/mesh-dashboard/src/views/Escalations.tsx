@@ -293,11 +293,19 @@ export default function Escalations(): React.JSX.Element {
   const [list, setList] = useState<any[]>([]);
   const { busy: bootBusy, goLive } = useGoLive();
   const [raiseBusy, setRaiseBusy] = useState<string | null>(null);
+  // One in-flight decision at a time: the question is the gate, and a
+  // double-click must not send it twice.
+  const [opBusy, setOpBusy] = useState<string | null>(null);
   const parked = isParkedStatus(status);
 
   const reload = async () => {
-    const { json } = await client.api("GET", "/escalations");
-    setList(json || []);
+    try {
+      const { json } = await client.api("GET", "/escalations");
+      // An error payload is an object; assigning it made list.filter throw.
+      if (Array.isArray(json)) setList(json);
+    } catch {
+      /* keep the last list; the load effect's retry is the visible path */
+    }
   };
   // The swallowed catch here told the operator "no escalations — the mesh is
   // converging on its own" whenever the fetch failed. That is the one screen
@@ -373,25 +381,39 @@ export default function Escalations(): React.JSX.Element {
   }, [list, client]);
 
   const doRespond = async (escId: string, text: string) => {
-    if (!text.trim()) return;
-    const { status: st } = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: text });
-    if (st !== 200) toast("respond failed — try again", escId, "bad");
-    else if (parked) toast("recorded — press Continue to go live", escId, "ok");
-    else toast("responded — mission resumed", escId, "ok");
+    if (!text.trim() || opBusy) return;
+    setOpBusy(escId);
+    try {
+      const { status: st } = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: text });
+      if (st !== 200) toast("respond failed — try again", escId, "bad");
+      else if (parked) toast("recorded — press Continue to go live", escId, "ok");
+      else toast("responded — mission resumed", escId, "ok");
+    } catch {
+      toast("respond failed", "the server did not answer", "bad");
+    } finally {
+      setOpBusy(null);
+    }
     await reload();
     void refreshStatus();
   };
 
   const doAnswer = async (escId: string, text: string) => {
-    if (!text.trim()) return;
-    const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/answer`, { text, response: text });
-    if (st !== 200) {
-      toast("answer failed — try again", json?.reason ?? escId, "bad");
-    } else {
-      toast("answered — work resumed", escId, "ok");
-      // Parked consoles used to need a second "Continue" click after every
-      // answer. Fold it in: one click sends the answer AND restarts work.
-      if (parked) await goLive().catch(() => undefined);
+    if (!text.trim() || opBusy) return;
+    setOpBusy(escId);
+    try {
+      const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/answer`, { text, response: text });
+      if (st !== 200) {
+        toast("answer failed — try again", json?.reason ?? escId, "bad");
+      } else {
+        toast("answered — work resumed", escId, "ok");
+        // Parked consoles used to need a second "Continue" click after every
+        // answer. Fold it in: one click sends the answer AND restarts work.
+        if (parked) await goLive().catch(() => undefined);
+      }
+    } catch {
+      toast("answer failed", "the server did not answer", "bad");
+    } finally {
+      setOpBusy(null);
     }
     await reload();
     void refreshStatus();
@@ -399,12 +421,20 @@ export default function Escalations(): React.JSX.Element {
 
   const doDrop = async (escId: string, label: string) => {
     if (!window.confirm(`Skip this? The waiting agent moves on without it.\n\n${label}`)) return;
-    const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/drop`, { reason: `dropped by operator: ${label}`, response: `dropped: ${label}` });
-    if (st !== 200) {
-      toast("drop failed — try again", json?.reason ?? escId, "bad");
-    } else {
-      toast("skipped — work resumed", escId, "ok");
-      if (parked) await goLive().catch(() => undefined);
+    if (opBusy) return;
+    setOpBusy(escId);
+    try {
+      const { status: st, json } = await client.post(`/escalations/${encodeURIComponent(escId)}/drop`, { reason: `dropped by operator: ${label}`, response: `dropped: ${label}` });
+      if (st !== 200) {
+        toast("drop failed — try again", json?.reason ?? escId, "bad");
+      } else {
+        toast("skipped — work resumed", escId, "ok");
+        if (parked) await goLive().catch(() => undefined);
+      }
+    } catch {
+      toast("drop failed", "the server did not answer", "bad");
+    } finally {
+      setOpBusy(null);
     }
     await reload();
     void refreshStatus();
@@ -655,7 +685,7 @@ function StuckTaskCard(props: {
       {refs.length > 0 ? <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>file: <code>{(refs.map((r: any) => shortArt(String(r?.uri || ""))).join(", "))}</code></div> : null}
       <form className="respond-form" data-id={e.id} id={`respond-form-${e.id}`} onSubmit={submit}>
         <div className="row" style={{ marginTop: 10 }}>
-          <Input style={{ flex: 1 }} defaultValue={placeholder} required />
+          <Input style={{ flex: 1 }} defaultValue={placeholder} key={placeholder || "empty"} required />
           <Button variant="primary" type="submit">Send + resume work</Button>
         </div>
         <div className="row" style={{ marginTop: 6 }}>

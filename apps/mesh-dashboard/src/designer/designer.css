@@ -1,8 +1,8 @@
 /* ============ Mesh Studio (Designer) ============
  * All styles for src/designer/* live here, imported by that module, so the
  * main styles.css stays generic. Reuses the design tokens from :root.
- * Sections: page frame → health strip → advice → rail → canvas → inspector
- * → output grid → sticky save bar → dialogs. */
+ * Sections: page frame → health strip → advice → context column → canvas
+ * → inspector → sticky save bar → dialogs. */
 
 /* A sticky `bottom: 0` resolves against the SCROLLPORT PADDING BOX, so #view's
  * 18px bottom padding would leave a permanent gap under the save bar and no
@@ -10,24 +10,84 @@
  * this view supplies its own edge instead. min-height keeps the bar pinned to
  * the bottom on short content too (see .wb-bar's auto top margin). */
 #view:has(> .ms) { padding-bottom: 0; display: flex; flex-direction: column; }
-.ms { display: flex; flex-direction: column; gap: 14px; flex: 1 0 auto; }
-.ms-head .view-title { margin-bottom: 6px; }
-.ms-head .view-title h2 { font: var(--tx-title); }
-.ms-head .view-sub { margin-bottom: 2px; }
+.ms { display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; min-height: 0; }
+/* one-row chrome: identity · counts · checks · source · overflow */
+.ms-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ms-head-name { display: flex; align-items: baseline; gap: 9px; min-width: 0; flex: 1 1 320px; }
+.ms-head-name b { font: var(--tx-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-goal { color: var(--text-dim); max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.ms-state { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+.ms-state b { font: 700 14px var(--mono); color: var(--text); }
+.ms-src { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 /* WS7 type tiers for one-off sites that used to carry inline font sizes. */
 .tx-value { font: var(--tx-value); }
 .tx-value.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .tx-meta { font: var(--tx-meta); }
-.ms-workspace { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; font-size: 13px; }
-.ms-workspace b { font-size: 15px; }
-.ms-workspace .ms-goal { color: var(--text-dim); max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-state { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
-.ms-state b { font: 700 14px var(--mono); color: var(--text); }
-.ms-state .ms-verdict { font-weight: 600; }
-.ms-state .ms-verdict.ok { color: var(--ok); }
-.ms-state .ms-verdict.bad { color: var(--bad); }
-.ms-state .ms-verdict.warn { color: var(--warn); }
-.ms-src { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+
+/* ---------- header chips, checks popover, overflow menu ---------- */
+.ms-chip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text-dim);
+  border-radius: 999px; padding: 3px 11px; font: 600 12px var(--sans);
+}
+button.ms-chip { cursor: pointer; transition: border-color .12s, color .12s; }
+button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(--line-strong); color: var(--text); }
+.ms-chip.ms-verdict.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.ms-chip.ms-verdict.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); background: color-mix(in srgb, var(--bad) 7%, var(--panel)); }
+.ms-chip.ms-verdict.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.ms-chip.ms-src-chip.dirty { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+
+.ms-checks-anchor { position: relative; display: inline-flex; }
+.ms-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  width: min(480px, calc(100vw - 36px));
+  display: flex; flex-direction: column; gap: 12px; padding: 14px;
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow);
+}
+/* the popover is the card; sections inside drop their own chrome */
+.ms-pop .card { border: 0; background: none; padding: 0; border-radius: 0; }
+.ms-pop-foot { display: flex; justify-content: flex-end; }
+
+.ms-more { position: relative; display: inline-flex; }
+.ms-more-btn {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0 0 5px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
+  color: var(--text-dim); font: 700 15px/1 var(--sans); cursor: pointer;
+}
+.ms-more-btn:hover, .ms-more-btn[aria-expanded="true"] { color: var(--text); border-color: var(--line-strong); }
+.ms-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  display: flex; flex-direction: column; min-width: 260px; padding: 4px;
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow);
+}
+.ms-menu button {
+  display: flex; flex-direction: column; gap: 1px; background: none; border: 0;
+  color: var(--text); font: 12.5px var(--sans); text-align: left; padding: 8px 10px;
+  border-radius: var(--r-sm); cursor: pointer;
+}
+.ms-menu button:hover { background: var(--panel); }
+.ms-menu button:disabled { opacity: .45; cursor: not-allowed; }
+.ms-menu button b { font-family: var(--mono); font-size: 12.5px; }
+.ms-menu button small { color: var(--muted); font-size: 11px; }
+.ms-menu button.danger { color: var(--bad); }
+.ms-menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.ms-menu-label { font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 6px 10px 2px; }
+
+/* YAML slide-over: on-demand preview, keeps the page canvas unobstructed */
+.ms-slide {
+  position: fixed; top: 0; right: 0; z-index: 45; width: min(560px, 94vw); height: 100dvh;
+  display: flex; flex-direction: column; padding: 16px; overflow: auto;
+  background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
+}
+.ms-slide .card { display: flex; flex-direction: column; min-height: 0; border: 0; background: none; padding: 0; border-radius: 0; }
+.ms-slide .ms-yaml-card .wb-sec-head { padding-right: 34px; }
+.ms-slide .ms-yaml-card .yaml-pane { flex: 1 1 auto; max-height: none; min-height: 0; }
+.ms-slide-close {
+  display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 10px; right: 12px; z-index: 1;
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--text-dim); font: 16px/1 var(--sans); cursor: pointer;
+}
+.ms-slide-close:hover { color: var(--text); border-color: var(--line-strong); }
 
 /* ---------- health strip (crew / boots / goal / gates / advice) ---------- */
 .ms-checks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -62,15 +122,16 @@
 .ms-advice .adv.warn .linklike { color: var(--warn); }
 .ms-advice .adv.info .linklike:hover, .ms-advice .adv.warn .linklike:hover { text-decoration: underline; }
 
-/* ---------- workbench 3-column layout ----------
- * WS8: one DOM instance per region; the breakpoint only changes presentation. */
-.ms-body { display: grid; grid-template-columns: 218px minmax(0, 1fr) minmax(340px, 380px); gap: 12px; align-items: stretch; }
-.ms-rail-toggle { display: none; }
-.ms-rail-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 auto; }
+/* ---------- workbench: canvas + right context column ----------
+ * WS8: one DOM instance per region; the breakpoint only changes presentation.
+ * The context column is a 48px roster strip until it expands into the tabbed
+ * inspector; ≤1240 the whole column becomes the local right drawer. */
+.ms-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: stretch; flex: 1 1 auto; min-height: 0; }
+.ms-ctx { display: flex; align-items: stretch; gap: 12px; min-width: 0; min-height: 0; }
+.ms-ctx:not(.open) .ms-insp-wrap { display: none; }
 .ms-insp-toggle { display: none; }
-/* Transparent in the wide grid; ≤1240 it becomes the local drawer, so
- * Inspector.tsx itself needs no drawer variant. */
-.ms-insp-wrap { display: contents; }
+.ms-insp-wrap { display: flex; flex-direction: column; min-height: 0; width: clamp(330px, 30vw, 380px); }
+.ms-insp-wrap .ms-insp { flex: 1 1 auto; min-height: 0; }
 .ms-insp-close { display: none; }
 
 /* ---------- graph focus mode (WS9) ----------
@@ -79,25 +140,46 @@
  * so rename input, model catalogue and selection survive enter/exit. The
  * verdict chip lives in .ms-head and stays visible. */
 .ms.focus .ms-body { grid-template-columns: minmax(0, 1fr); }
-.ms.focus .ms-rail,
-.ms.focus .ms-insp-wrap,
+.ms.focus .ms-ctx,
 .ms.focus .ms-out,
 .ms.focus .ms-insp-toggle { display: none; }
 
-/* ---------- crew rail ---------- */
-.ms-rail { display: flex; flex-direction: column; gap: 8px; padding: 12px; min-width: 0; }
-.ms-rail-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px; }
-.ms-rail-head b { font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.ms-crew-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; max-height: min(56vh, 460px); }
-.crew {
-  display: flex; gap: 9px; align-items: center; width: 100%; text-align: left;
-  border: 1px solid transparent; background: transparent; border-radius: var(--r-sm);
-  padding: 6px 8px; cursor: pointer; font: inherit; color: var(--text-dim); min-width: 0;
-  transition: background .1s, border-color .1s;
+/* ---------- context roster strip ---------- */
+.ms-roster { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; width: 48px; padding: 8px 5px; min-height: 0; }
+.ms-roster-list { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px; }
+.ms-roster-toggle, .ms-roster-hire {
+  flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 9px; background: none; color: var(--text-dim);
+  font: 600 14px/1 var(--sans); cursor: pointer;
 }
-.crew:hover { background: var(--panel-2); color: var(--text); }
-.crew.sel { border-color: color-mix(in srgb, hsl(var(--h) 85% 60%) 55%, var(--line)); background: color-mix(in srgb, hsl(var(--h) 85% 60%) 10%, var(--bg-2)); color: var(--text); }
-.crew:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ms-roster-hire { border-style: dashed; }
+.ms-roster-toggle:hover, .ms-roster-hire:hover { color: var(--text); border-color: var(--line-strong); }
+.ms-roster-toggle:focus-visible, .ms-roster-hire:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ms-av {
+  position: relative; flex: none; width: 30px; height: 30px; padding: 0; border-radius: 9px;
+  display: grid; place-items: center; cursor: pointer; font: 700 12px var(--mono);
+  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 16%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 45%, var(--line-strong));
+  color: hsl(var(--h, 222) 85% 62%);
+  transition: border-color .12s, background .12s, color .12s;
+}
+[data-theme="light"] .ms-av { color: hsl(var(--h, 222) 85% 30%); }
+.ms-av:hover { border-color: hsl(var(--h, 222) 85% 60%); }
+.ms-av.sel {
+  border-color: hsl(var(--h, 222) 90% 66%); color: var(--text);
+  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 26%, var(--panel-2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, hsl(var(--h, 222) 90% 60%) 30%, transparent);
+}
+.ms-av:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ms-av.boot::after {
+  content: ""; position: absolute; left: 2px; bottom: 2px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 1.5px var(--bg-2);
+}
+.ms-av-err {
+  position: absolute; top: 1px; right: 1px; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--bad); color: var(--text-on-hot); font: 700 8px/11px var(--sans);
+  text-align: center; box-shadow: 0 0 0 1.5px var(--bg-2);
+}
 .crew-av {
   flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
   font: 700 12px var(--mono);
@@ -106,32 +188,14 @@
   color: hsl(var(--h, 222) 85% 62%);
 }
 [data-theme="light"] .crew-av { color: hsl(var(--h, 222) 85% 30%); }
-.crew-av.boot {
-  background: color-mix(in srgb, hsl(var(--h, 222) 85% 60%) 30%, var(--bg-2));
-  border-color: hsl(var(--h, 222) 85% 60%);
-  color: hsl(var(--h, 222) 75% 70%);
-}
-[data-theme="light"] .crew-av.boot { color: hsl(var(--h, 222) 85% 30%); }
-.crew-nm { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.crew-nm b { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crew-nm small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crew-err { margin-left: auto; flex: none; width: 15px; height: 15px; border-radius: 8px; background: var(--bad); color: var(--text-on-hot); font: 700 10px var(--sans); display: grid; place-items: center; }
-.ms-rail-empty { padding: 8px 4px; font-size: 12.5px; }
-.ms-hire { width: 100%; min-height: 30px; }
-.ms-rail-legend { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 11px; color: var(--muted); }
-.ms-rail-legend .lg { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
-.lg-boot { background: var(--ok); }
-.lg-svc { background: none; border: 1.5px dashed var(--info); }
-.lg-edge { width: 14px; height: 2px; border-radius: 2px; background: var(--line-strong); }
 
 /* ---------- topology canvas ---------- */
-.ms-canvas { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; min-width: 0; }
+.ms-canvas { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; min-width: 0; min-height: 0; }
 .ms-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 button.small.wire-on, button.small.focus-on { border-color: var(--accent); color: var(--accent-2); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ms-tool-hint { font-size: 11.5px; margin-left: auto; text-align: right; color: var(--muted); }
-.ms-canvas-count { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
 .ms-svg {
-  width: 100%; height: auto; aspect-ratio: 1000 / 620; display: block;
+  width: 100%; flex: 1 1 auto; min-height: 300px; display: block;
   background:
     radial-gradient(760px 460px at 50% 40%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 70%),
     var(--bg);
@@ -199,7 +263,7 @@ path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dashar
 }
 .insp-tabs button:hover { color: var(--text); background: var(--panel-2); }
 .insp-tabs button.on { color: var(--text); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.insp-body { padding: 12px 14px 18px; overflow: auto; max-height: min(74vh, 800px); }
+.insp-body { padding: 12px 14px 18px; overflow: auto; flex: 1 1 auto; min-height: 0; max-height: none; }
 .ms-panel { display: flex; flex-direction: column; gap: 12px; }
 .ms-nosel { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 8px 2px; }
 .ms-span { grid-column: 1 / -1; }
@@ -234,12 +298,65 @@ button.err-inline { margin: 0; color: var(--bad); }
 .ms-chat-problems { margin: 6px 0 0; padding-left: 18px; color: var(--warn); font-size: 12px; }
 .ms-chat-review { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .ms-chat-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ms-chat-kbd { margin-left: auto; font-size: 11px; }
+.ms-chat-think { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; user-select: none; }
+.ms-chat-think input { margin: 0; accent-color: var(--accent); }
+.ms-chat-thinking {
+  margin: 6px 0 0; padding: 2px 0 2px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.ms-chat-thinking summary { cursor: pointer; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ms-chat-thinking pre {
+  margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 11.5px/1.55 var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto;
+}
+.ms-chat-thinking.live pre { color: var(--muted); }
 .ms-chat-compose { display: flex; flex-direction: column; gap: 8px; }
 
-/* ---------- output grid (check + yaml) ---------- */
+/* ---------- global designer assistant (FAB + non-modal dock) ---------- */
+.ms-dock-fab {
+  position: fixed; right: 18px; bottom: 18px; z-index: 34;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  /* One stable width across idle/busy/unread: the sticky save bar reserves
+   * exactly this slot (see `--dock-slot`), so any growth would collide. */
+  min-width: 148px;
+  padding: 10px 15px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line-strong));
+  border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, var(--drawer));
+  color: var(--text); font: 600 12.5px var(--sans); cursor: pointer;
+  box-shadow: var(--shadow); transition: transform .12s, border-color .12s, background .12s;
+}
+.ms-dock-fab .ms-dock-spark { color: var(--accent); font-size: 14px; line-height: 1; }
+.ms-dock-fab:hover { transform: translateY(-2px); border-color: var(--accent); }
+.ms-dock-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ms-dock-fab.busy { border-color: var(--accent); }
+.ms-dock-fab.busy .ms-dock-spark { animation: ms-spark-pulse 1.1s ease-in-out infinite; }
+.ms-dock-unread {
+  position: absolute; top: 5px; right: 7px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+@keyframes ms-spark-pulse { 50% { opacity: .35; transform: scale(.82); } }
+
+.ms-dock {
+  position: fixed; top: 0; right: 0; z-index: 34; width: min(440px, 94vw); height: 100dvh;
+  display: flex; flex-direction: column; padding: 14px 16px 16px;
+  background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
+}
+.ms-dock-head {
+  display: flex; flex-direction: column; gap: 2px; padding: 0 34px 10px 0;
+  border-bottom: 1px solid var(--line); margin-bottom: 10px;
+}
+.ms-dock-head b { font: 600 13px var(--sans); }
+.ms-dock-head .muted { font-size: 11.5px; }
+.ms-dock .ms-chat { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
+.ms-dock .ms-chat-log { flex: 1 1 auto; max-height: none; }
+.ms-dock .ms-chat-compose { flex: none; }
+@media (max-width: 560px) {
+  .ms-dock { width: 100vw; }
+}
+
+/* ---------- transient output cards (review / saved / import) ---------- */
 .ms-out { display: flex; flex-direction: column; gap: 12px; }
-.ms-out-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 12px; align-items: stretch; }
-@media (max-width: 900px) { .ms-out-grid { grid-template-columns: 1fr; } }
 .ms-check-card, .ms-yaml-card { min-width: 0; }
 .live-note { font-size: 12px; }
 .ms-yaml-card .yaml-pane { max-height: min(46vh, 420px); }
@@ -270,6 +387,10 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
  * Everything here stays on ONE line: the bar is sticky, so a wrapping path or
  * hint eats canvas height on every scroll. */
 .wb-bar {
+  /* Total viewport width the floating assistant occupies at bottom-right:
+   * 18px inset + 148px button + 12px breathing gap. The action cluster below
+   * subtracts the bar's own right padding from this to stop clear of it. */
+  --dock-slot: 178px;
   position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 16px;
   /* auto-top pins it to the viewport bottom when the page is short; the negative
    * side margins bleed it over #view's horizontal padding, edge to edge. */
@@ -304,53 +425,41 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
 .wb-bar-mid { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .wb-bar-mid .ms-src { min-width: 0; }
 .wb-bar-mid .ms-src > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* Reserve the assistant's corner (see `--dock-slot` on .wb-bar): the FAB is
+ * fixed to the viewport, so the Save cluster and its hint must end before it
+ * rather than ever sliding underneath. */
+.wb-bar-actions { display: flex; align-items: center; gap: 8px; margin-right: calc(var(--dock-slot) - 18px); margin-left: auto; }
 /* primary + its caveat stack, so the hint cannot push the button off the edge */
 .wb-bar-save { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .wb-bar-hint { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .wb-bar-hint b { font-weight: 500; color: var(--text-dim); }
-.wb-bar-sep { align-self: center; width: 1px; height: 20px; background: var(--line); }
 
-/* ---------- template menu ---------- */
-.ms-tpl { position: relative; }
-.ms-tpl-menu {
-  position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 20;
-  display: flex; flex-direction: column; min-width: 260px;
-  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r);
-  box-shadow: var(--shadow); padding: 4px;
-}
-.ms-tpl-menu button { background: none; border: 0; color: var(--text); font: 12.5px var(--sans); text-align: left; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
-.ms-tpl-menu button:hover { background: var(--panel); }
-.ms-tpl-menu b { font-family: var(--mono); }
+
+/* ---------- transient output cards sit above the sticky bar ---------- */
 
 /* ---------- responsive workbench (WS8) ----------
- * ≥1241: three columns. ≤1240: crew = left disclosure, inspector = local right
- * drawer (no scrim, no focus trap, no global slot). ≤800: rail stacks above the
- * canvas and the drawer caps at the viewport width. The ≤1240 grid is declared
- * here (not in a separate 801–1240 query) so fractional viewport widths at the
- * 800 boundary cannot fall through to the 3-column base. */
+ * ≥1241: canvas + context column (48px roster strip ↔ expanded inspector).
+ * ≤1240: the context column is the local right drawer (no scrim, no focus
+ * trap, no global slot). ≤800: the drawer stacks full width over the canvas.
+ * The ≤1240 grid is declared here (not in a separate 801–1240 query) so
+ * fractional viewport widths at the 800 boundary cannot fall through to the
+ * two-column base. */
 @media (max-width: 1240px) {
-  .ms-body { grid-template-columns: 46px minmax(0, 1fr); }
-  .ms-body.rail-open { grid-template-columns: 218px minmax(0, 1fr); }
-  .ms-rail { padding: 10px 6px; }
-  .ms-rail.open { padding: 12px; }
-  .ms-rail-head { display: none; }
-  .ms-rail-toggle {
-    display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px;
-    border: 0; background: none; cursor: pointer; text-align: left;
-    color: var(--muted); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em;
-  }
-  .ms-rail-toggle:hover { color: var(--text); }
-  .ms-rail:not(.open) .ms-rail-toggle { flex: 1; flex-direction: column; justify-content: center; gap: 10px; }
-  .ms-rail:not(.open) .ms-rail-toggle b { writing-mode: vertical-rl; }
-  .ms-rail.open .ms-rail-toggle { padding: 0 2px; }
-  .ms-rail:not(.open) .ms-rail-body { display: none; }
+  .ms-body { grid-template-columns: minmax(0, 1fr); }
   .ms-insp-toggle { display: inline-flex; margin-left: auto; }
-  .ms-insp-wrap { display: block; position: fixed; top: 0; right: 0; z-index: 30; width: min(380px, 92%); height: 100dvh; }
-  .ms-insp-wrap:not(.open) { display: none; }
-  .ms-insp-wrap .ms-insp { height: 100%; background: var(--drawer); border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: var(--shadow); }
-  .ms-insp-wrap .insp-tabs { flex: none; padding-right: 36px; }
-  .ms-insp-wrap .insp-body { flex: 1 1 auto; min-height: 0; max-height: none; }
+  /* the context column is the local right drawer: same DOM, same open state */
+  .ms-ctx { display: none; position: fixed; top: 0; right: 0; z-index: 30; width: min(380px, 92%); height: 100dvh; flex-direction: column; gap: 0; }
+  .ms-ctx.open { display: flex; }
+  .ms-ctx .ms-roster {
+    flex-direction: row; width: 100%; padding: 8px 44px 8px 10px;
+    border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: var(--drawer);
+  }
+  .ms-ctx .ms-roster-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .ms-ctx .ms-roster-toggle { display: none; }
+  .ms-ctx .ms-insp-wrap { display: flex; width: 100%; flex: 1 1 auto; min-height: 0; }
+  .ms-ctx .ms-insp { height: 100%; background: var(--drawer); border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: var(--shadow); }
+  .ms-ctx .insp-tabs { flex: none; padding-right: 36px; }
+  .ms-ctx .insp-body { flex: 1 1 auto; min-height: 0; max-height: none; }
   .ms-insp-close {
     display: inline-flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 10px; z-index: 1;
     width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -366,18 +475,15 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
 
 /* ---------- small screens ---------- */
 @media (max-width: 800px) {
-  .ms-body, .ms-body.rail-open { grid-template-columns: minmax(0, 1fr); }
-  .ms-rail, .ms-rail.open { padding: 12px; }
-  .ms-rail:not(.open) .ms-rail-toggle { flex: none; flex-direction: row; justify-content: flex-start; gap: 8px; }
-  .ms-rail:not(.open) .ms-rail-toggle b { writing-mode: horizontal-tb; }
-  .ms-insp-wrap { width: min(380px, 100%); }
+  /* the drawer stacks over the canvas, roster row on top */
+  .ms-ctx { width: 100%; }
   .ms-tool-hint { display: none; }
-  .ms-canvas-count { display: none; }
   .wb-bar { padding: 9px 12px; margin: auto -12px 0; }   /* #view drops to 12px padding here */
   .wb-bar-label { display: none; }
   .wb-bar-mid { flex: 1 1 100%; order: 3; }
-  .wb-bar-actions { flex: 1 1 100%; order: 4; margin-left: 0; flex-wrap: wrap; }
+  /* 12px bar padding (not 18px) -> the assistant's slot needs 6px more */
+  .wb-bar-actions { flex: 1 1 100%; order: 4; margin-left: 0; margin-right: calc(var(--dock-slot) - 12px); flex-wrap: wrap; }
   .wb-bar-save { flex: 1 1 auto; align-items: stretch; }
   .wb-bar-save .primary { width: 100%; }
-  .wb-bar-hint { text-align: center; }
+  .wb-bar-hint { text-align: center; white-space: normal; }
 }

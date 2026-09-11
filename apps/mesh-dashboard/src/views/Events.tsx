@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useMesh } from "../store";
 import { Button, Card, EventRow, Input } from "../components";
 import { EventDrawerBySeq } from "../drawers";
@@ -20,12 +20,23 @@ export default function Events(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const q = evSearch.toLowerCase();
-  const rows = events.slice().reverse().filter(
-    (e) =>
-      (!evFilter || evGroupOf(e.type) === evFilter) &&
-      (!q || (e.type + " " + (e.actorId || "") + " " + JSON.stringify(e.payload || {}).slice(0, 600)).toLowerCase().includes(q)),
-  ).slice(0, 200);
+  // The haystack only changes when the buffer does; building it inside the
+  // filter re-stringified up to 800 payloads on every keystroke.
+  const hay = useMemo(
+    () => events.map((e) => `${e.type} ${e.actorId || ""} ${JSON.stringify(e.payload || {}).slice(0, 600)}`.toLowerCase()),
+    [events],
+  );
+  const rows = useMemo(() => {
+    const q = evSearch.toLowerCase();
+    const out = [] as typeof events;
+    for (let i = events.length - 1; i >= 0 && out.length < 200; i--) {
+      const e = events[i];
+      if (evFilter && evGroupOf(e.type) !== evFilter) continue;
+      if (q && !hay[i].includes(q)) continue;
+      out.push(e);
+    }
+    return out;
+  }, [events, hay, evSearch, evFilter]);
 
   return (
     <>

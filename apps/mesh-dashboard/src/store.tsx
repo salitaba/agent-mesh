@@ -179,7 +179,15 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const [steps, setStepsState] = useState<TurnStep[]>([]);
   const [stepsLoaded, setStepsLoaded] = useState(false);
   const [streams, setStreams] = useState<Record<string, StreamBuf>>({});
-  const [stepLimit, setStepLimit] = useState(60);
+  const [stepLimit, setStepLimitState] = useState(60);
+  // refreshSteps reads the limit through a ref: a plain dep made "load older
+  // turns" rebuild the subscription effect and reconnect the shared SSE
+  // stream twice on every click.
+  const stepLimitRef = useRef(stepLimit);
+  const setStepLimit = useCallback((n: number) => {
+    stepLimitRef.current = n;
+    setStepLimitState(n);
+  }, []);
   const [stepFilter, setStepFilter] = useState("");
   const [stepSearch, setStepSearch] = useState("");
   const [evSearch, setEvSearch] = useState("");
@@ -192,11 +200,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const eventById = useRef(new Map<string, TimelineEvent>());
   const seqSeen = useRef(new Set<string | number>());
   const viewRef = useRef(view);
-  viewRef.current = view;
   const livePausedRef = useRef(livePaused);
-  livePausedRef.current = livePaused;
   const vocabRef = useRef(vocab);
-  vocabRef.current = vocab;
   const lastSeqRef = useRef(0);
   const stepsAt = useRef(0);
   const statusInflight = useRef<Promise<void> | null>(null);
@@ -205,11 +210,19 @@ export function MeshProvider({ children, projectId = null, background = false }:
   // providers can never answer each other's requests.
   const client = useMemo<ProjectClient>(() => clientFor(projectId), [projectId]);
   const clientRef = useRef(client);
-  clientRef.current = client;
   const projectIdRef = useRef(projectId);
-  projectIdRef.current = projectId;
   const backgroundRef = useRef(background);
-  backgroundRef.current = background;
+  // Refs are synced after commit, not during render, so a discarded concurrent
+  // render cannot leak its values into handlers or the SSE sink. Declared
+  // before every consumer effect, so they all read fresh values.
+  useEffect(() => {
+    viewRef.current = view;
+    livePausedRef.current = livePaused;
+    vocabRef.current = vocab;
+    clientRef.current = client;
+    projectIdRef.current = projectId;
+    backgroundRef.current = background;
+  });
   /** Set while backgrounded and cleared on focus: what tells the refill it has
    *  a gap to close rather than a full buffer it can trust. */
   const droppedRef = useRef(false);
@@ -228,9 +241,12 @@ export function MeshProvider({ children, projectId = null, background = false }:
   }, []);
 
   useEffect(() => {
-    setApiNotifier((t, m, k) => toast(t, m, k));
+    // Only the foreground store may own the notifier: a background provider
+    // renders no Shell, so its toasts would land in state nothing shows, and
+    // registering from both means whichever mounted last wins.
+    if (!background) setApiNotifier((t, m, k) => toast(t, m, k));
     return onServerDownChange(setServerDown);
-  }, [toast]);
+  }, [toast, background]);
 
   const setView = useCallback((v: View) => {
     window.location.hash = hashFor(projectIdRef.current, v);
@@ -286,9 +302,13 @@ export function MeshProvider({ children, projectId = null, background = false }:
       if (!json) return;
       setStatus(json);
       setGoalId(json.goal?.id ?? null);
-    })().finally(() => {
-      statusInflight.current = null;
-    });
+    })()
+      // A status poll must never reject: it is fired from keyboard handlers,
+      // the interval and livePatch, none of which can present a failure.
+      .catch(() => undefined)
+      .finally(() => {
+        statusInflight.current = null;
+      });
     return statusInflight.current;
   }, []);
 
@@ -302,7 +322,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
     if (viewRef.current !== "steps" && !force) return;
     if (Date.now() - stepsAt.current < 1800 && !force) return;
     try {
-      const { json } = await clientRef.current.api("GET", `/steps?limit=${stepLimit}`);
+      const { json } = await clientRef.current.api("GET", `/steps?limit=${stepLimitRef.current}`);
       if (Array.isArray(json)) {
         setStepsState(json);
         setStepsLoaded(true);
@@ -311,7 +331,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
     } catch {
       /* keep stale */
     }
-  }, [stepLimit]);
+  }, []);
 
   const ingestEvent = useCallback((raw: any) => {
     const e = normEvent(raw);
@@ -392,7 +412,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
         }
       }).catch(() => undefined);
     }
-  }, [refreshStatus, refreshSteps]);
+  }, [refreshStatus, refreshSteps, setSteps]);
 
   // Frames arrive from ProjectsProvider's single multiplexed connection rather
   // than a socket of this store's own. Registering is what puts this project in

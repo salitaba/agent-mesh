@@ -3,10 +3,11 @@
 // Legacy relative deep imports (`../../protocol/src/index`) still compile for
 // backward compatibility but are discouraged — migrate on touch.
 import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
   {
-    files: ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"],
+    files: ["packages/**/*.ts", "apps/**/*.ts", "apps/**/*.tsx", "tests/**/*.ts"],
     // Without a TypeScript parser ESLint falls back to espree, which cannot
     // read `import type`, generics, or annotations — every source file failed
     // with "Parsing error: Unexpected token" and NO rule ever ran. The
@@ -15,7 +16,10 @@ export default [
       parser: tseslint.parser,
       parserOptions: { ecmaVersion: "latest", sourceType: "module" },
     },
+    plugins: { "react-hooks": reactHooks },
     rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "no-restricted-imports": [
         "warn",
         {

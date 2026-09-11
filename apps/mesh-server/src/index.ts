@@ -4,7 +4,7 @@ import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { URL } from "url";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact } from "../../../packages/protocol/src/index";
-import { resolveConfig, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError } from "../../../packages/config/src/index";
+import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
 import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, type OpResult } from "../../../packages/core/src/index";
@@ -443,41 +443,218 @@ const DESIGNER_SYSTEM_PROMPT = [
   "You are given the current draft config as JSON, then the conversation so far.",
   "",
   "Rules:",
-  "- ALWAYS answer with a brief prose explanation followed by exactly one fenced ```json block containing the COMPLETE mesh.yaml document — never a diff, a patch, or a partial fragment. Repeat the whole config unchanged when nothing needs to change.",
+  "- You have no filesystem or shell access. Never try to read, list, or search files. Use the mesh_designer_schema, mesh_designer_vocabulary, and mesh_designer_validate tools to check field names, allowed values, and whether a draft is valid; answer from the draft config and conversation you are given.",
+  "- ALWAYS answer with a brief prose explanation followed by exactly one fenced ```json block. It contains either the COMPLETE mesh.yaml document, or — when editing an existing draft — a JSON Patch object (see below). Never a prose diff, a fragment, or multiple blocks. Repeat the whole config unchanged when nothing needs to change.",
+  "- To edit an existing draft, you may reply with a JSON Patch instead of the whole document: one fenced ```json block containing an object with a `patch` array of RFC 6902 `add`/`remove`/`replace` operations (each has `op`, `path`, and `value` except `remove`) and an optional `summary`. Array paths end with an index or `/-` to append. The server applies the patch to the current draft before validating, so fields you did not touch are preserved. Use the complete-document form for a new config or a structural rewrite.",
   "- Keep every field the operator did not ask you to change exactly as it was.",
   "- The document must match the mesh schema: project, mesh (id, name, goal, workspace), agents, policies.transitions, budgets.",
   "- Transition gates look like `<actor>.<kind>` where actor is an agent id or role. The named actor must exist, and an `approve` token must map to an agent holding the matching authority or capability, or the mission deadlocks at that gate.",
   "- Agent model fields are `provider/model` strings; leave them blank to use the mesh default.",
+  "",
+  "How to design a good mesh:",
+  "- Start from the goal. Read mesh.goal first and let it decide the crew: who produces the work, who reviews it, and who should never be able to self-approve.",
+  "- Keep the crew minimal and non-redundant. One agent per responsibility; merge overlapping roles instead of adding a second agent that does the same job. A smaller crew is cheaper and easier to govern.",
+  "- Give each agent the least it needs: capabilities for what it must do, interests for the events it must react to (use mesh_designer_vocabulary for exact capability and event names), and no more. Do not hand every agent the same generous set.",
+  "- Wire communication deliberately with policies.communication: represent the real reporting and review structure rather than a fully-connected graph, and route work and approvals through the coordinating role.",
+  "- Choose activation on purpose: put coordinators and long-lived services in startup, and let workers wake from interests only when there is work.",
+  "- Gate every irreversible transition in policies.transitions. Put approvals in front of merge, release, and similar actions; the approving actor must exist and hold the matching authority or capability, or the gate deadlocks. mesh_designer_validate checks this.",
+  "- Set a mission token budget in budgets.mission.tokens that fits the goal, and let the crew size follow the budget — not the other way around.",
+  "- Prefer a clear pipeline (produce, review, approve) over a swarm of peers. When the operator does not specify governance, propose the simplest correct arrangement and say what you chose.",
+  "- Validate before replying: call mesh_designer_validate on the complete proposal. If it reports problems, fix them in your next whole-config block instead of explaining them away.",
+  "- If the goal is ambiguous about scope, deliverables, or who may approve, ask 1-3 focused questions before proposing. Otherwise propose a complete draft rather than interrogating the operator.",
 ].join("\n");
 
 /**
- * Pull the whole-config proposal out of a designer reply: the first fenced
- * JSON/YAML block (or a bare leading object) that parses to a mesh-shaped
- * object. The system prompt requires the complete config every turn, so the
- * first such object is the proposal; later blocks are examples/commentary.
+ * Parse the fenced JSON/YAML blocks of a designer reply (plus a bare leading
+ * object), in order. The system prompt allows exactly one proposal block per
+ * reply, so the first candidate of the right shape wins; later blocks are
+ * examples/commentary.
  */
-function extractDesignerConfig(text: string): unknown {
+function candidateObjects(text: string): unknown[] {
   const candidates: string[] = [];
   const fence = /```(?:json|yaml|yml)?[ \t]*\r?\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = fence.exec(text)) !== null) candidates.push(match[1]);
   const trimmed = text.trim();
   if (trimmed.startsWith("{")) candidates.push(trimmed);
+  const out: unknown[] = [];
   for (const candidate of candidates) {
     try {
       const doc = parseYamlText(candidate);
-      if (doc && typeof doc === "object" && !Array.isArray(doc) && ("agents" in doc || "mesh" in doc)) return doc;
+      if (doc && typeof doc === "object" && !Array.isArray(doc)) out.push(doc);
     } catch {
       /* not this block */
     }
   }
+  return out;
+}
+
+/** First candidate that is a whole config (has `agents` or `mesh`). */
+function extractDesignerConfig(text: string): unknown {
+  for (const doc of candidateObjects(text)) {
+    const obj = doc as Record<string, unknown>;
+    if ("agents" in obj || "mesh" in obj) return doc;
+  }
   return undefined;
+}
+
+/** First candidate that is a patch proposal, i.e. `{ patch: [...] }`. */
+function extractDesignerPatch(text: string): unknown[] | undefined {
+  for (const doc of candidateObjects(text)) {
+    const patch = (doc as { patch?: unknown }).patch;
+    if (Array.isArray(patch)) return patch;
+  }
+  return undefined;
+}
+
+/**
+ * Apply a JSON Patch (RFC 6902 subset: add/remove/replace) to a deep copy of
+ * the draft. `test`/`copy`/`move` are not needed for config edits, and quietly
+ * ignoring an unknown op would be worse than rejecting it.
+ */
+function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
+  const root = JSON.parse(JSON.stringify(doc ?? {})) as Record<string, any>;
+  const tokens = (path: unknown): string[] => {
+    if (typeof path !== "string" || !path.startsWith("/")) throw new Error(`invalid path '${String(path)}'`);
+    return path
+      .slice(1)
+      .split("/")
+      .map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"));
+  };
+  const at = (path: unknown): { parent: any; key: string } => {
+    const parts = tokens(path);
+    if (parts.length === 0) throw new Error("the document root cannot be patched");
+    let parent: any = root;
+    for (const part of parts.slice(0, -1)) {
+      if (parent === null || typeof parent !== "object") throw new Error(`path '${String(path)}' does not exist`);
+      parent = parent[part];
+    }
+    if (parent === null || typeof parent !== "object") throw new Error(`path '${String(path)}' does not exist`);
+    return { parent, key: parts[parts.length - 1] };
+  };
+  const index = (parent: any[], key: string, path: unknown): number => {
+    if (key === "-") return parent.length;
+    const i = Number(key);
+    if (!Number.isInteger(i) || i < 0 || i > parent.length) throw new Error(`bad array index '${key}' for ${String(path)}`);
+    return i;
+  };
+  for (const raw of ops) {
+    const op = raw as { op?: unknown; path?: unknown; value?: unknown };
+    if (!op || typeof op !== "object") throw new Error("each patch entry must be an object");
+    const { parent, key } = at(op.path);
+    if (op.op === "add") {
+      if (Array.isArray(parent)) parent.splice(index(parent, key, op.path), 0, op.value);
+      else parent[key] = op.value;
+    } else if (op.op === "replace") {
+      if (Array.isArray(parent)) {
+        const i = index(parent, key, op.path);
+        if (i >= parent.length) throw new Error(`path '${String(op.path)}' does not exist`);
+        parent[i] = op.value;
+      } else {
+        if (!(key in parent)) throw new Error(`path '${String(op.path)}' does not exist`);
+        parent[key] = op.value;
+      }
+    } else if (op.op === "remove") {
+      if (Array.isArray(parent)) {
+        const i = index(parent, key, op.path);
+        if (i >= parent.length) throw new Error(`path '${String(op.path)}' does not exist`);
+        parent.splice(i, 1);
+      } else {
+        if (!(key in parent)) throw new Error(`path '${String(op.path)}' does not exist`);
+        delete parent[key];
+      }
+    } else {
+      throw new Error(`unsupported patch op '${String(op.op)}'`);
+    }
+  }
+  return root;
 }
 
 export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: string } = {}): http.Server {
   const { supervisor, kernel, config, store } = instance;
   const hub = new SseHub();
   kernel.subscribe((e) => hub.broadcast(e));
+
+  /** Shared by the JSON and SSE designer-chat routes: request body → model prompt. */
+  const buildDesignerPrompt = (b: Record<string, any>): { promptText: string; currentConfig: unknown } | { error: string } => {
+    const messages: Array<{ role?: unknown; content?: unknown; problems?: unknown }> = Array.isArray(b.messages) ? b.messages : [];
+    if (messages.length === 0) return { error: "messages must be a non-empty array" };
+    const currentConfig = b.currentConfig && typeof b.currentConfig === "object" ? b.currentConfig : undefined;
+    const transcript = messages
+      .map((m) => {
+        const role = String(m?.role ?? "user").toLowerCase() === "assistant" ? "Assistant" : "User";
+        const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
+        return `${role}:\n${content}`;
+      })
+      .join("\n\n");
+    // The client echoes back the problems from its latest proposal, so the
+    // model sees why the turn before was rejected instead of repeating it.
+    const problems = [
+      ...new Set(
+        messages
+          .flatMap((m) => (Array.isArray(m?.problems) ? m.problems : []))
+          .filter((p): p is string => typeof p === "string" && p.trim().length > 0),
+      ),
+    ];
+    const sections = [
+      currentConfig
+        ? `Current draft mesh.yaml (as JSON):\n\`\`\`json\n${JSON.stringify(currentConfig, null, 2)}\n\`\`\``
+        : "There is no config yet; the first proposal should be a new mesh.yaml.",
+      `Conversation:\n${transcript}`,
+    ];
+    if (problems.length > 0) {
+      sections.push(
+        `The previous proposal failed validation. Fix every problem below and reply with the complete corrected mesh.yaml:\n${problems
+          .map((p) => `- ${p}`)
+          .join("\n")}`,
+      );
+    }
+    return { promptText: sections.join("\n\n---\n\n"), currentConfig };
+  };
+
+  /** Validate any candidate config; returns the problem list (empty = clean). */
+  const validateDesignerConfig = (proposedConfig: unknown): string[] => {
+    const problems: string[] = [];
+    try {
+      const { resolved } = analyzeMeshConfig(proposedConfig, config.dir);
+      // Schema-valid, but a gate that names an actor no agent can play
+      // still deadlocks every mission at that transition.
+      const gateIssues = validateTransitionGates(resolved.raw.policies?.transitions, resolved.raw.agents);
+      for (const warning of resolved.warnings) problems.push(warning);
+      for (const issue of gateIssues) problems.push(`gate '${issue.gate}' token '${issue.token}': ${issue.reason}`);
+    } catch (err) {
+      if (!(err instanceof ConfigError)) throw err;
+      problems.push(...err.errors);
+    }
+    return problems;
+  };
+
+  /**
+   * Proposal extraction + validation shared by the JSON and SSE routes. A
+   * reply may carry the whole config or a JSON Patch against `currentConfig`;
+   * either way the route returns a complete validated proposal for the UI.
+   */
+  const analyzeDesignerReply = (reply: string, currentConfig?: unknown): { proposedConfig: unknown; problems: string[] } => {
+    const proposedConfig = extractDesignerConfig(reply);
+    if (proposedConfig !== undefined) return { proposedConfig, problems: validateDesignerConfig(proposedConfig) };
+    const patch = extractDesignerPatch(reply);
+    if (patch === undefined) {
+      return { proposedConfig: undefined, problems: ["the reply contained no parseable whole-config block or patch"] };
+    }
+    if (currentConfig === undefined || currentConfig === null || typeof currentConfig !== "object") {
+      return {
+        proposedConfig: undefined,
+        problems: ["the reply used a patch, but there is no current draft to apply it to — send the complete config instead"],
+      };
+    }
+    try {
+      const patched = applyJsonPatch(currentConfig, patch);
+      return { proposedConfig: patched, problems: validateDesignerConfig(patched) };
+    } catch (err) {
+      return { proposedConfig: undefined, problems: [`the patch could not be applied: ${(err as Error).message}`] };
+    }
+  };
+
   // Live token fan-out: supervisor hook → out-of-band SSE frame. Late-bound
   // here because the hub is owned by the HTTP layer, not the supervisor.
   const prevHooks = supervisor.deps.hooks;
@@ -1168,7 +1345,17 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         return json(200, { eventTypes: EVENT_TYPES, messageTypes: MESSAGE_TYPES, artifactTypes: ARTIFACT_TYPES, trustSources: TRUST_SOURCES, gateKinds: ["patch.merge", "patch.commit", "patch.approve", "implementation.completed", "release.accepted"] });
       }
       if (parts[0] === "config" && req.method === "GET" && parts.length === 1) {
-        return json(200, { filePath: config.filePath, dir: config.dir, raw: config.raw });
+        // The running file can be overwritten while this process still serves
+        // the boot config; the designer treats this endpoint as the file's
+        // current bytes, so re-read it and fall back to the boot snapshot only
+        // when the file is unreadable.
+        let raw = config.raw;
+        try {
+          raw = loadMeshFile(config.filePath);
+        } catch {
+          /* keep the boot snapshot */
+        }
+        return json(200, { filePath: config.filePath, dir: config.dir, raw });
       }
       if (parts[0] === "config" && parts[1] === "parse" && req.method === "POST") {
         const b = await body();
@@ -1196,11 +1383,25 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const yamlText = stringifyMesh(doc);
           const warnings: string[] = [];
           let target: string | null = null;
+          let archived: string | null = null;
           if (parts[1] === "save") {
             if (!b.path) return json(400, { valid: false, errors: ["save requires a path"] });
             target = path.resolve(String(b.path));
             if (fs.existsSync(target) && fs.statSync(target).isDirectory()) target = path.join(target, "mesh.yaml");
             fs.mkdirSync(path.dirname(target), { recursive: true });
+            // Keep the bytes we are about to overwrite as a recoverable version:
+            // the save UI has no undo once it commits the new baseline.
+            const previous = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : null;
+            if (previous !== null && previous !== yamlText) {
+              const versionsDir = path.join(path.dirname(target), ".mesh-versions");
+              fs.mkdirSync(versionsDir, { recursive: true });
+              const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+              const base = path.basename(target).replace(/\.(ya?ml)$/i, "");
+              let candidate = path.join(versionsDir, `${base}-${stamp}.yaml`);
+              for (let n = 2; fs.existsSync(candidate); n += 1) candidate = path.join(versionsDir, `${base}-${stamp}-${n}.yaml`);
+              fs.writeFileSync(candidate, previous, "utf8");
+              archived = candidate;
+            }
             fs.writeFileSync(target, yamlText, "utf8");
             const dir = path.dirname(target);
             for (const id of Object.keys(resolved.raw.agents)) {
@@ -1214,6 +1415,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             valid: true,
             yaml: yamlText,
             savedTo: target,
+            archived,
             warnings,
             summary: {
               meshId: resolved.meshId,
@@ -1241,42 +1443,48 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // the UI can offer to apply it. Stateless by design: the client resends
       // the transcript, so no server-side chat session is kept.
       if (parts[0] === "designer" && parts[1] === "chat" && req.method === "POST" && parts.length === 2) {
-        const b = await body();
-        const messages: Array<{ role?: unknown; content?: unknown }> = Array.isArray(b.messages) ? b.messages : [];
-        if (messages.length === 0) return json(400, { error: "messages must be a non-empty array" });
-        const currentConfig = b.currentConfig && typeof b.currentConfig === "object" ? b.currentConfig : undefined;
-        const transcript = messages
-          .map((m) => {
-            const role = String(m?.role ?? "user").toLowerCase() === "assistant" ? "Assistant" : "User";
-            const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
-            return `${role}:\n${content}`;
-          })
-          .join("\n\n");
-        const promptText = [
-          currentConfig
-            ? `Current draft mesh.yaml (as JSON):\n\`\`\`json\n${JSON.stringify(currentConfig, null, 2)}\n\`\`\``
-            : "There is no config yet; the first proposal should be a new mesh.yaml.",
-          `Conversation:\n${transcript}`,
-        ].join("\n\n---\n\n");
-        const reply = await instance.opencodeRuntime.prompt(promptText, { system: DESIGNER_SYSTEM_PROMPT });
-        const proposedConfig = extractDesignerConfig(reply);
-        const problems: string[] = [];
-        if (proposedConfig === undefined) {
-          problems.push("the reply contained no parseable whole-config block");
-        } else {
-          try {
-            const { resolved } = analyzeMeshConfig(proposedConfig, config.dir);
-            // Schema-valid, but a gate that names an actor no agent can play
-            // still deadlocks every mission at that transition.
-            const gateIssues = validateTransitionGates(resolved.raw.policies?.transitions, resolved.raw.agents);
-            for (const warning of resolved.warnings) problems.push(warning);
-            for (const issue of gateIssues) problems.push(`gate '${issue.gate}' token '${issue.token}': ${issue.reason}`);
-          } catch (err) {
-            if (!(err instanceof ConfigError)) throw err;
-            problems.push(...err.errors);
-          }
-        }
+        const built = buildDesignerPrompt(await body());
+        if ("error" in built) return json(400, { error: built.error });
+        const reply = await instance.opencodeRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT });
+        const { proposedConfig, problems } = analyzeDesignerReply(reply, built.currentConfig);
         return json(200, { reply, proposedConfig, problems: [...new Set(problems)] });
+      }
+
+      // Same turn, streamed as SSE for the "show thinking" view: `thinking`
+      // and `text` delta frames while the model runs, then one `final` frame
+      // carrying the whole reply (and the reasoning the tap may have missed).
+      // The transcript is still client-owned; nothing is persisted here.
+      if (parts[0] === "designer" && parts[1] === "chat" && parts[2] === "stream" && req.method === "POST" && parts.length === 3) {
+        const built = buildDesignerPrompt(await body());
+        if ("error" in built) return json(400, { error: built.error });
+        // A client that navigates away must not keep the model turn writing
+        // into a dead socket; the runtime tap stops when this route returns.
+        let closed = false;
+        res.on("close", () => { closed = true; });
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        const send = (frame: unknown): void => {
+          if (!closed) res.write(`data: ${JSON.stringify(frame)}\n\n`);
+        };
+        try {
+          const { reply, thinking } = await instance.opencodeRuntime.promptStream(
+            built.promptText,
+            { system: DESIGNER_SYSTEM_PROMPT },
+            (delta) => send({ type: delta.kind, delta: delta.delta }),
+          );
+          const { proposedConfig, problems } = analyzeDesignerReply(reply, built.currentConfig);
+          send({ type: "final", reply, thinking, proposedConfig, problems: [...new Set(problems)] });
+        } catch (err) {
+          send({ type: "error", error: err instanceof Error ? err.message : String(err) });
+        } finally {
+          closed = true;
+          res.end();
+        }
+        return;
       }
 
       // ----------------------------------------------------------- models

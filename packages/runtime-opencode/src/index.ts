@@ -56,6 +56,12 @@ export interface OpenCodeAdapterOptions {
   mcpCommand?: string[];
   extraConfig?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
+  /**
+   * Explicit scratch workspace for the context-free designer backend. Defaults
+   * to a fresh mkdtemp dir; callers (tests, embeddings) pin it so the generated
+   * `opencode.json` is discoverable after the process is created.
+   */
+  designerWorkspace?: string;
 }
 
 /** Options for `prompt()` — the context-free, single-turn designer entry point. */
@@ -84,6 +90,50 @@ const DESIGNER_AGENT: AgentDefinition = {
   sessionPolicy: { persistent: false },
   delegationPolicy: { allowDelegation: false, maxDepth: 0, maxWorkers: 0 },
   budget: {},
+};
+
+/**
+ * Built-in tool IDs the context-free designer backend must never register.
+ * Verified against OpenCode 1.18.x with `opencode debug agent build`: the
+ * resolved tool list is exactly read/glob/grep/edit/write/bash/task/webfetch/
+ * todowrite/skill/question (no `list`, `patch`, `todoread`, `websearch` or
+ * `batch` tool exists in that version). False entries remove the tool from the
+ * model's toolset, which is what stops it probing the workspace and home dir.
+ */
+const DESIGNER_DENIED_TOOLS: Record<string, boolean> = {
+  read: false,
+  glob: false,
+  grep: false,
+  edit: false,
+  write: false,
+  bash: false,
+  task: false,
+  webfetch: false,
+  todowrite: false,
+  skill: false,
+  question: false,
+};
+
+/**
+ * Defense in depth for the designer: `permission` is the schema-current
+ * mechanism (the per-agent `tools` field is marked deprecated), and its keys
+ * cover tool IDs a future OpenCode version may register that the tools map
+ * above does not know about.
+ */
+const DESIGNER_DENIED_PERMISSIONS: Record<string, unknown> = {
+  read: "deny",
+  glob: "deny",
+  grep: "deny",
+  list: "deny",
+  edit: "deny",
+  bash: "deny",
+  task: "deny",
+  webfetch: "deny",
+  websearch: "deny",
+  todowrite: "deny",
+  skill: "deny",
+  question: "deny",
+  external_directory: "deny",
 };
 
 interface ProcessHandle {
@@ -360,10 +410,11 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     fs.mkdirSync(dir, { recursive: true });
     const promptFile = path.join(dir, "ROLE.md");
     fs.writeFileSync(promptFile, context.rolePromptText, "utf8");
+    const meshCliBin = path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs");
     const mcpCmd =
       this.options.mcpCommand ?? [
         process.execPath,
-        path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs"),
+        meshCliBin,
         "mcp",
         "--agent",
         agent.id,
@@ -372,14 +423,28 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         "--token",
         context.agentToken,
       ];
+    const designerMcpCmd = [process.execPath, meshCliBin, "designer-mcp"];
     const config: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
       instructions: [path.join(dir, "ROLE.md")],
-      permission: this.permissionsFor(agent, context),
-      // The context-free designer runs tool-less: no mesh MCP bridge is wired
-      // in, because there is no agent token or bus behind it.
+      permission: opts.mcp === false ? DESIGNER_DENIED_PERMISSIONS : this.permissionsFor(agent, context),
+      // The context-free designer runs with no mission tools: the built-in
+      // tools are switched off and no mission MCP bridge is wired in (no agent
+      // token or bus behind it). Instead it gets the read-only designer MCP
+      // server (schema/vocabulary/validate), which validates locally through
+      // packages/config + policy-engine and can never reach the live mission.
       ...(opts.mcp === false
-        ? {}
+        ? {
+            tools: DESIGNER_DENIED_TOOLS,
+            mcp: {
+              mesh_designer: {
+                type: "local",
+                command: designerMcpCmd,
+                enabled: true,
+                timeout: 15000,
+              },
+            },
+          }
         : {
             mcp: {
               mesh: {
@@ -879,10 +944,50 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     return extractText(response);
   }
 
+  /**
+   * Streaming variant of `prompt()` for the designer chat. Same throwaway
+   * session and blocking POST, but taps the backend's SSE while the turn runs
+   * and forwards each delta tagged as `text` or `thinking`, so the caller can
+   * render a live reasoning stream. The tap is best-effort: a backend without
+   * `/event` still resolves with the final reply (and `thinking` lifted from
+   * the completed message's reasoning parts).
+   */
+  async promptStream(
+    text: string,
+    opts: OpenCodePromptOptions = {},
+    onDelta?: (delta: PromptStreamDelta) => void,
+  ): Promise<PromptStreamResult> {
+    const context: RuntimeContext = {
+      goalId: "designer",
+      meshId: "designer",
+      workspacePath: this.designerWorkspaceDir(),
+      busUrl: "",
+      agentToken: "",
+      rolePromptText: DESIGNER_AGENT.prompt.text ?? "",
+      capabilityGrants: [],
+      env: {},
+    };
+    const handle = await this.ensureProcess(DESIGNER_AGENT, context, { mcp: false });
+    const created = await this.request<{ id?: string }>(handle.baseUrl, "POST", "/session", { title: "mesh:designer" }, this.controlTimeoutMs);
+    const sessionId = created.id ?? newAgentSessionId();
+    const body: Record<string, unknown> = { parts: [{ type: "text", text }] };
+    if (opts.system) body.system = opts.system;
+    const model = parseModelRef(opts.model) ?? this.options.model;
+    if (model) body.model = model;
+    const stopTap = onDelta ? this.tapPromptStream(handle.baseUrl, sessionId, onDelta) : undefined;
+    let response: OpenCodeMessageResponse;
+    try {
+      response = await this.request<OpenCodeMessageResponse>(handle.baseUrl, "POST", `/session/${sessionId}/message`, body);
+    } finally {
+      stopTap?.();
+    }
+    return { reply: extractText(response), thinking: extractReasoning(response) };
+  }
+
   /** Per-adapter scratch workspace for the designer backend (tools denied). */
   private designerWorkspaceDir(): string {
     if (!this.designerWorkspace) {
-      this.designerWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "agent-mesh-designer-"));
+      this.designerWorkspace = this.options.designerWorkspace ?? fs.mkdtempSync(path.join(os.tmpdir(), "agent-mesh-designer-"));
     }
     return this.designerWorkspace;
   }
@@ -958,6 +1063,65 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         /* best-effort: abort, network error, or backend without /event */
       } finally {
         if (timer) clearInterval(timer);
+        try {
+          reader?.releaseLock();
+        } catch {
+          /* noop */
+        }
+      }
+    })();
+    return stop;
+  }
+
+  /**
+   * Designer-chat variant of `tapTokenStream`: same SSE plumbing, but deltas
+   * are tagged by the part field they belong to (`reasoning`/`thinking` vs
+   * everything else, which is answer text). No batching — the consumer is an
+   * HTTP SSE writer, not a per-turn observer.
+   */
+  private tapPromptStream(baseUrl: string, sessionId: string, onDelta: (delta: PromptStreamDelta) => void): () => void {
+    const ctrl = new AbortController();
+    let stopped = false;
+    const stop = (): void => {
+      stopped = true;
+      try {
+        ctrl.abort();
+      } catch {
+        /* already closed */
+      }
+    };
+    void (async () => {
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const res = await this.fetch(`${baseUrl}/event`, {
+          headers: { accept: "text/event-stream" },
+          signal: ctrl.signal,
+        });
+        if (!res.ok || !res.body) return;
+        reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || stopped) break;
+          buf += dec.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            const part = extractSessionPart(block, sessionId);
+            if (!part) continue;
+            const kind = part.field === "reasoning" || part.field === "thinking" ? "thinking" : "text";
+            try {
+              onDelta({ kind, delta: part.delta });
+            } catch {
+              /* observer must never break the stream */
+            }
+          }
+        }
+      } catch {
+        /* best-effort: abort, network error, or backend without /event */
+      } finally {
         try {
           reader?.releaseLock();
         } catch {
@@ -1045,6 +1209,25 @@ export function extractText(response: OpenCodeMessageResponse): string {
     .join("\n");
 }
 
+/** Reasoning/thinking parts of a completed message, joined for display. */
+export function extractReasoning(response: OpenCodeMessageResponse): string {
+  const parts = response.parts ?? (Array.isArray(response) ? (response as unknown as OpenCodeMessageResponse["parts"]) : []);
+  return (parts ?? [])
+    .filter((p) => p.type === "reasoning" && typeof p.text === "string")
+    .map((p) => p.text!)
+    .join("\n");
+}
+
+export interface PromptStreamDelta {
+  kind: "text" | "thinking";
+  delta: string;
+}
+
+export interface PromptStreamResult {
+  reply: string;
+  thinking: string;
+}
+
 const OPS_BLOCK = /```(?:mesh-json|json)?\s*\n?([\s\S]*?)```/g;
 
 /**
@@ -1052,7 +1235,17 @@ const OPS_BLOCK = /```(?:mesh-json|json)?\s*\n?([\s\S]*?)```/g;
  * Returns the delta string or null. Tolerant of framing variants: standard
  * `data:` lines or bare JSON lines.
  */
-export function extractSessionDelta(block: string, sessionId: string): string | null {
+export interface SessionDelta {
+  field: string;
+  delta: string;
+}
+
+/**
+ * One `message.part.delta` frame for our session, with the part field it
+ * belongs to. Callers that only care about answer text use
+ * `extractSessionDelta`; the designer tap distinguishes reasoning deltas.
+ */
+export function extractSessionPart(block: string, sessionId: string): SessionDelta | null {
   const lines = block.split("\n");
   const dataLines = lines.filter((l) => l.startsWith("data:"));
   const candidates = dataLines.length > 0 ? [dataLines.map((l) => l.slice(5).trim()).join("\n")] : [block.trim()];
@@ -1061,16 +1254,23 @@ export function extractSessionDelta(block: string, sessionId: string): string | 
     try {
       const evt = JSON.parse(candidate) as {
         type?: string;
-        properties?: { sessionID?: string; delta?: unknown };
+        properties?: { sessionID?: string; field?: unknown; delta?: unknown };
       };
       if (evt.type === "message.part.delta" && evt.properties?.sessionID === sessionId && typeof evt.properties.delta === "string") {
-        return evt.properties.delta;
+        return { field: typeof evt.properties.field === "string" ? evt.properties.field : "text", delta: evt.properties.delta };
       }
     } catch {
       continue;
     }
   }
   return null;
+}
+
+export function extractSessionDelta(block: string, sessionId: string): string | null {
+  const part = extractSessionPart(block, sessionId);
+  // Only answer text feeds the turn's live buffer; reasoning deltas are
+  // thinking, not output, and would otherwise pollute the streamed answer.
+  return part && part.field === "text" ? part.delta : null;
 }
 export function parseMeshOps(text: string): MeshOp[] {
   const candidates: string[] = [];
