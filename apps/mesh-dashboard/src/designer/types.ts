@@ -2,8 +2,9 @@
 
 export type Pos = { x: number; y: number };
 
-/** Inspector tabs. Errors route to the tab that owns the offending field. */
-export type Tab = "crew" | "mesh" | "policy";
+/** Inspector tabs. Errors route to the tab that owns the offending field;
+ *  "chat" is proposal-only and owns no fields (its count stays zero). */
+export type Tab = "crew" | "mesh" | "policy" | "chat";
 
 /** Where a save goes: overwrite the mesh the console runs, or a new file. */
 export type SaveTarget = "running" | "copy";

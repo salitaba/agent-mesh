@@ -330,7 +330,7 @@ export default function Designer(): React.JSX.Element {
   const src = sourceState({ dirty, diff, runningRaw: draft.runningRaw, saveMode, restoredAt });
   const errors: string[] = result && result.status !== 200 ? (result.json?.errors || ["invalid"]) : [];
   const errTabs = useMemo(() => {
-    const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0 };
+    const counts: Record<Tab, number> = { crew: 0, mesh: 0, policy: 0, chat: 0 };
     for (const e of errors) counts[tabOfError(String(e))]++;
     return counts;
   }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -546,6 +546,21 @@ export default function Designer(): React.JSX.Element {
     commitBaseline();
     touch();
   };
+  /** A chat proposal replaces the whole model like a template does, but it is
+   *  still an unsent draft edit: push undo and touch, never commitBaseline. */
+  const applyChatProposal = (model: any) => {
+    pushUndo("Applied chat proposal");
+    draft.model = deepCopy(model);
+    densure(draft.model);
+    draft.cur = draft.cur && draft.model.agents[draft.cur] ? draft.cur : Object.keys(draft.model.agents)[0] || null;
+    setCurState(draft.cur);
+    draft.layout = loadLayout(draft.model.mesh?.id || "", Object.keys(draft.model.agents));
+    setLayout(draft.layout);
+    setReviewOpen(false);
+    setConfirmReplace(null);
+    setRestoredAt(null);
+    touch();
+  };
   const requestReplace = (kind: "load" | "template" | "import", json?: any) => {
     if (!dirty) {
       if (kind === "load" && json?.raw) applyReplaceModel(deepCopy(json.raw), Object.keys(json.raw.agents || {})[0] || null, "Loaded running mesh");
@@ -753,7 +768,7 @@ export default function Designer(): React.JSX.Element {
         />
         <div id="ms-inspector" className={`ms-insp-wrap${inspOpen ? " open" : ""}`} ref={inspRef}>
           <button type="button" className="ms-insp-close" aria-label="close inspector" onClick={() => setInspOpen(false)}>×</button>
-          <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} />
+          <Inspector ctx={ctx} tab={tab} setTab={setTab} errTabs={errTabs} onApplyProposal={applyChatProposal} />
         </div>
       </div>
 

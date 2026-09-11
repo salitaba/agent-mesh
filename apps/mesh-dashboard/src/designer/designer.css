@@ -225,6 +225,17 @@ button.err-inline { margin: 0; color: var(--bad); }
 .chip-toggle.custom { border-style: dashed; }
 .rename-box { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: var(--sunken); }
 
+/* ---------- designer chat ---------- */
+.ms-chat-log { display: flex; flex-direction: column; gap: 8px; max-height: min(42vh, 420px); overflow: auto; }
+.ms-chat-msg { border-radius: var(--r-sm); padding: 8px 10px; font: var(--tx-value); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ms-chat-msg.user { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); }
+.ms-chat-msg.assistant { background: var(--sunken); border: 1px solid var(--line); color: var(--text-dim); }
+.ms-chat-who { display: block; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+.ms-chat-problems { margin: 6px 0 0; padding-left: 18px; color: var(--warn); font-size: 12px; }
+.ms-chat-review { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ms-chat-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ms-chat-compose { display: flex; flex-direction: column; gap: 8px; }
+
 /* ---------- output grid (check + yaml) ---------- */
 .ms-out { display: flex; flex-direction: column; gap: 12px; }
 .ms-out-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 12px; align-items: stretch; }

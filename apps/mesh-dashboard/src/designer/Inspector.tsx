@@ -1,6 +1,7 @@
 /* Inspector column: tab bar (Crew / Mesh / Policy & budget) + active panel.
  * Error counts per tab come from validation routing. */
 
+import ChatPanel from "./panels/ChatPanel";
 import CrewPanel from "./panels/CrewPanel";
 import MeshPanel from "./panels/MeshPanel";
 import PolicyPanel from "./panels/PolicyPanel";
@@ -11,11 +12,12 @@ export interface InspectorProps {
   tab: Tab;
   setTab: (t: Tab) => void;
   errTabs: Record<Tab, number>;
+  onApplyProposal: (model: any) => void;
 }
 
-const TABS: Array<[Tab, string]> = [["crew", "Crew"], ["mesh", "Mesh"], ["policy", "Policy & budget"]];
+const TABS: Array<[Tab, string]> = [["crew", "Crew"], ["mesh", "Mesh"], ["policy", "Policy & budget"], ["chat", "Chat"]];
 
-export default function Inspector({ ctx, tab, setTab, errTabs }: InspectorProps): React.JSX.Element {
+export default function Inspector({ ctx, tab, setTab, errTabs, onApplyProposal }: InspectorProps): React.JSX.Element {
   return (
     <aside className="card ms-insp" aria-label="inspector">
       <div className="insp-tabs" role="tablist">
@@ -26,7 +28,7 @@ export default function Inspector({ ctx, tab, setTab, errTabs }: InspectorProps)
         ))}
       </div>
       <div className="insp-body">
-        {tab === "crew" ? <CrewPanel ctx={ctx} /> : tab === "mesh" ? <MeshPanel ctx={ctx} /> : <PolicyPanel ctx={ctx} />}
+        {tab === "crew" ? <CrewPanel ctx={ctx} /> : tab === "mesh" ? <MeshPanel ctx={ctx} /> : tab === "policy" ? <PolicyPanel ctx={ctx} /> : <ChatPanel ctx={ctx} onApply={onApplyProposal} />}
       </div>
     </aside>
   );
