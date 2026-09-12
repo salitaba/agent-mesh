@@ -15,6 +15,15 @@ wake on events they care about, act via typed messages and artifact references,
 and the mesh converges — or escalates on conflict, budget exhaustion, or
 stalemate.
 
+## Demo
+
+![Agent Mesh dashboard: a scripted 7-role team ships a payment endpoint](docs/assets/demo-stub.gif)
+
+Recorded from the token-free `demo-stub` run (parked console → start mission):
+requirements → research → design review → implementation → QA block with rework →
+merge → release gates → evidence-based completion. No model calls, no API keys;
+run it yourself with `npm run mesh -- run examples/demo-stub/mesh.yaml`.
+
 ## Quick start (no model, no keys)
 
 ```bash
