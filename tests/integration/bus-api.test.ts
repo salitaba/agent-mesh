@@ -304,6 +304,12 @@ test("http api: config designer — validate/parse/save + designer page served",
     assert.ok(good.json.yaml.includes("designed"));
     assert.deepEqual(good.json.summary.agents, ["lead", "qa"]);
 
+    const ghostGate = JSON.parse(JSON.stringify(doc));
+    ghostGate.policies.transitions["patch.merge"].requires = ["ghost.approve"];
+    const gg = await post("/config/validate", { config: ghostGate });
+    assert.equal(gg.status, 200);
+    assert.ok(gg.json.warnings.some((w: string) => /ghost/.test(w)), "gate satisfiability warnings reach the draft validator");
+
     const bad = JSON.parse(JSON.stringify(doc));
     bad.policies.communication.lead.may_contact = ["ghost"];
     const badRes = await post("/config/validate", { config: bad });

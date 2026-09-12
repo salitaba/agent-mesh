@@ -366,6 +366,11 @@ export default function Designer(): React.JSX.Element {
     const mm = m;
     if (!mm) return list;
     const ag = Object.keys(mm.agents || {});
+    const serverWarnings: string[] =
+      result && result.status === 200 && Array.isArray(result.json?.warnings) ? result.json.warnings : [];
+    for (const w of serverWarnings) {
+      if (typeof w === "string") list.push({ level: "warn", tab: tabOfError(w), msg: w });
+    }
     if (ag.length > 1) {
       for (const id of ag) {
         const outN = ((mm.policies.communication[id] || {}).may_contact || []).filter((t: string) => mm.agents[t] && t !== id).length;
@@ -373,19 +378,18 @@ export default function Designer(): React.JSX.Element {
         if (!outN && !inN) list.push({ level: "warn", tab: "crew", msg: `“${id}” is wired to nobody — it can’t ask for help or be asked.` });
       }
     }
-    for (const [g, t] of Object.entries(mm.policies.transitions || {}) as Array<[string, any]>) {
-      for (const req of t.requires || []) {
-        if (!ag.some((id) => (mm.agents[id]?.authority || []).includes(req))) {
-          list.push({ level: "warn", tab: "policy", msg: `gate “${g}” waits for “${req}” but no agent can decide that.` });
-        }
-      }
-    }
+    // Gate satisfiability is NOT re-derived here: a gate token is
+    // `<actor>.<kind>` matched against recorded approvals by actor id/role, so
+    // requiring the literal token in an agent's `authority` list produces
+    // false "no agent can decide that" warnings on every correctly-wired mesh.
+    // The server owns this check (validateTransitionGates, surfaced as
+    // proposal `problems`); keep this list to checks the server won't flag.
     if (ag.length && !(mm.startup?.activate || []).length) list.push({ level: "info", tab: "crew", msg: "nobody boots — going live starts an idle mesh; wake an agent by hand." });
     const sum = ag.reduce((n, id) => n + (mm.budgets?.agent?.[id] ?? mm.agents[id]?.budget?.tokens ?? 200000), 0);
     if (sum > (mm.budgets?.mission?.tokens ?? 2000000)) list.push({ level: "info", tab: "policy", msg: `crew budgets add up to ${fmt(sum)} — more than the ${fmt(mm.budgets?.mission?.tokens)} mission cap. Fine, just know someone stops early.` });
     if (!mm.mesh?.goal?.trim()) list.push({ level: "warn", tab: "mesh", msg: "the mission has no goal — agents will drift." });
     return list;
-  }, [m, editCount]);
+  }, [m, editCount, result]);
   // WS10: Designer-scoped palette commands, registered only while this view is
   // mounted. The run bodies go through cmdRef because the handlers live below
   // the loading gate; the list re-registers when the selection or the

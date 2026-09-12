@@ -1376,6 +1376,13 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const { resolved } = analyzeMeshConfig(doc, baseDir);
           const yamlText = stringifyMesh(doc);
           const warnings: string[] = [];
+          // Schema-valid drafts can still name a gate actor no agent can play,
+          // or an approve the named agent has no way to record. Run the same
+          // satisfiability preflight the designer-proposal path runs so manual
+          // edits get the same verdict as AI proposals.
+          for (const issue of validateTransitionGates(resolved.raw.policies?.transitions, resolved.raw.agents)) {
+            warnings.push(`gate '${issue.gate}' token '${issue.token}': ${issue.reason}`);
+          }
           let target: string | null = null;
           let archived: string | null = null;
           let createdPrompts: ReturnType<typeof materializeRolePrompts> = [];
@@ -1414,7 +1421,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             yaml: yamlText,
             savedTo: target,
             archived,
-            warnings,
+            warnings: [...new Set(warnings)],
             createdPrompts,
             summary: {
               meshId: resolved.meshId,
