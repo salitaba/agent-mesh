@@ -42,3 +42,32 @@ test("defaultModel is undefined when mesh.runtime.model is absent or blank", () 
 test("a non-string mesh.runtime.model fails schema validation", () => {
   assert.throws(() => resolveRaw(meshWith("runtime: { model: 42 }")), ConfigError);
 });
+
+test("mesh.runtime.variant resolves to defaultVariant and stays in the raw config", () => {
+  const cfg = resolveRaw(meshWith("runtime: { default: opencode, variant: max }"));
+  assert.equal(cfg.defaultVariant, "max");
+  assert.equal(cfg.raw.mesh.runtime?.variant, "max");
+});
+
+test("defaultVariant is undefined when mesh.runtime.variant is absent or blank", () => {
+  assert.equal(resolveRaw(meshWith("runtime: { default: stub }")).defaultVariant, undefined);
+  assert.equal(resolveRaw(meshWith('runtime: { variant: "  " }')).defaultVariant, undefined);
+});
+
+test("a non-string mesh.runtime.variant fails schema validation", () => {
+  assert.throws(() => resolveRaw(meshWith("runtime: { variant: 3 }")), ConfigError);
+});
+
+test("agents.<id>.variant resolves onto the AgentDefinition without inheriting the mesh default", () => {
+  const cfg = resolveRaw(`version: 1
+mesh:
+  id: cfgtest
+  goal: |
+    Test.
+  runtime: { default: opencode, variant: max }
+agents:
+  a: { role: worker, variant: low }
+`);
+  assert.equal(cfg.agents.a?.variant, "low");
+  assert.equal(cfg.defaultVariant, "max");
+});

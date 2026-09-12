@@ -84,6 +84,9 @@
             },
             "model": {
               "type": "string"
+            },
+            "variant": {
+              "type": "string"
             }
           },
           "additionalProperties": false
@@ -119,6 +122,9 @@
             "type": "string"
           },
           "model": {
+            "type": "string"
+          },
+          "variant": {
             "type": "string"
           },
           "mode": {

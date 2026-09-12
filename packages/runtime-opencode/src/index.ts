@@ -52,6 +52,12 @@ export interface OpenCodeAdapterOptions {
    */
   controlTimeoutMs?: number;
   model?: OpenCodeModelRef;
+  /**
+   * Mesh-wide thinking variant (opencode `--variant`, e.g. `low` | `high` |
+   * `max`). A per-agent `AgentDefinition.variant` overrides it; absent on both
+   * leaves the backend's own default.
+   */
+  variant?: string;
   spawnProcesses?: boolean;
   baseUrl?: string;
   mcpCommand?: string[];
@@ -355,6 +361,15 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
    */
   private modelFor(agent: AgentDefinition): OpenCodeModelRef | undefined {
     return parseModelRef(agent.model) ?? this.options.model;
+  }
+
+  /**
+   * Resolve the thinking variant for one agent, mirroring `modelFor`: the
+   * per-role `variant` from mesh.yaml when set, else the mesh-wide adapter
+   * default. Both absent means the backend's own default.
+   */
+  private variantFor(agent: AgentDefinition): string | undefined {
+    return agent.variant?.trim() || this.options.variant;
   }
 
   private async request<T>(baseUrl: string, method: string, urlPath: string, body?: unknown, timeoutMs?: number): Promise<T> {
@@ -870,9 +885,10 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       agentId: agent.id,
       runtime: this.name,
       createdAt: new Date().toISOString(),
-      // The resolved model rides along in the handle because `send` only ever
-      // receives an AgentSession — it has no AgentDefinition to re-resolve from.
-      handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent) },
+      // The resolved model and variant ride along in the handle because `send`
+      // only ever receives an AgentSession — it has no AgentDefinition to
+      // re-resolve from.
+      handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent), variant: this.variantFor(agent) },
     };
   }
 
@@ -888,7 +904,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
           agentId: agent.id,
           runtime: this.name,
           createdAt: new Date().toISOString(),
-          handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent) },
+          handle: { baseUrl: handle.baseUrl, model: this.modelFor(agent), variant: this.variantFor(agent) },
         };
       }
       return null;
@@ -898,18 +914,20 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   }
 
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
-    const handle = session.handle as { baseUrl: string; model?: OpenCodeModelRef };
+    const handle = session.handle as { baseUrl: string; model?: OpenCodeModelRef; variant?: string };
     const baseUrl = handle.baseUrl;
     // A handle rehydrated from a persisted session predates per-agent models,
     // so fall back to the mesh-wide default rather than dropping the override
     // silently to "whatever the backend picks".
     const model = handle.model ?? this.options.model;
+    const variant = handle.variant ?? this.options.variant;
     this.statuses.set(session.agentId, "RUNNING");
     const body: Record<string, unknown> = {
       parts: [{ type: "text", text: input.instructions }],
       system: input.context.rolePrompt,
     };
     if (model) body.model = model;
+    if (variant) body.variant = variant;
     // Live token tap: opencode's POST /message blocks until the turn ends,
     // but GET /event streams `message.part.delta` frames while it runs.
     // Best-effort observability only — any failure here degrades to the old

@@ -422,6 +422,8 @@ export interface AgentDefinition {
   mode: AgentMode;
   runtime: RuntimeTypeName;
   model?: string;
+  /** Provider-specific reasoning variant (opencode: `low` | `high` | `max`). */
+  variant?: string;
   prompt: PromptReference;
   capabilities: string[];
   authority: Authority[];

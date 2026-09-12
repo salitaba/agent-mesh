@@ -35,7 +35,7 @@ export interface RawMeshFile {
     goal: string;
     acceptance_criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
     workspace?: { path?: string };
-    runtime?: { default?: string; model?: string };
+    runtime?: { default?: string; model?: string; variant?: string };
   };
   startup?: { activate?: string[] };
   agents: Record<string, RawAgent>;
@@ -156,6 +156,11 @@ export interface RawAgent {
   role: string;
   runtime?: string;
   model?: string;
+  /**
+   * Provider-specific thinking variant (opencode: `low` | `high` | `max`).
+   * Overrides `mesh.runtime.variant`; blank inherits it.
+   */
+  variant?: string;
   mode?: "peer" | "service";
   prompt?: string;
   capabilities?: string[];
@@ -210,6 +215,8 @@ export interface ResolvedMeshConfig {
   defaultRuntime: string;
   /** Mesh-wide model applied to agents that leave `model` blank. */
   defaultModel?: string;
+  /** Mesh-wide thinking variant applied to agents that leave `variant` blank. */
+  defaultVariant?: string;
   startupActivate: string[];
   /**
    * Non-fatal configuration problems (currently: transition gates naming an
@@ -357,6 +364,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
 
   const defaultRuntime = raw.mesh.runtime?.default ?? "opencode";
   const defaultModel = raw.mesh.runtime?.model?.trim() || undefined;
+  const defaultVariant = raw.mesh.runtime?.variant?.trim() || undefined;
   const workspacePath = path.resolve(dir, raw.mesh.workspace?.path ?? "./workspace");
   const stateDir = path.resolve(dir, raw.server?.state_dir ?? path.join(raw.mesh.workspace?.path ?? "./workspace", ".mesh-state"));
 
@@ -374,6 +382,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       mode: a.mode ?? "peer",
       runtime: a.runtime ?? defaultRuntime,
       model: a.model,
+      variant: a.variant,
       prompt: { file: a.prompt },
       capabilities: [...capPolicy],
       authority: a.authority ?? [],
@@ -463,6 +472,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     stateDir,
     defaultRuntime,
     defaultModel,
+    defaultVariant,
     startupActivate,
     warnings: configWarnings,
     agents,

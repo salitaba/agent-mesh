@@ -144,6 +144,7 @@ const agentConfigSchema = {
     role: { type: "string" },
     runtime: { type: "string" },
     model: { type: "string" },
+    variant: { type: "string" },
     mode: { type: "string", enum: ["peer", "service"] },
     prompt: { type: "string" },
     capabilities: { type: "array", items: { type: "string" } },
@@ -225,7 +226,7 @@ export const meshConfigSchema = {
         },
         runtime: {
           type: "object",
-          properties: { default: { type: "string" }, model: { type: "string" } },
+          properties: { default: { type: "string" }, model: { type: "string" }, variant: { type: "string" } },
           additionalProperties: false,
         },
       },

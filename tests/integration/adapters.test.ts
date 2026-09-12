@@ -156,6 +156,39 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
   }
 });
 
+test("opencode adapter: variant resolution — per-agent wins, mesh default fills in, absent stays unset", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-variant-"));
+  const input = (instructions: string): AgentInput => ({
+    agentId: "developer",
+    goalId: "goal-1",
+    activation: { kind: "manual" },
+    context: { rolePrompt: "x", mission: "m", relevantPolicies: [], agentState: { agentId: "developer", lifecycle: "THINKING", mailboxDepth: 0, currentArtifactIds: [], tokensConsumed: 0, activations: 0, lastActivityAt: "" }, relevantDecisions: [], relevantArtifacts: [], unreadMail: [], recentOwnActivity: [], agentMemory: [], openThreads: [], budgetSnapshot: { agentTokensUsed: 0, agentTokenBudget: 0, missionTokensUsed: 0, missionTokenBudget: 0 }, outstanding: { awaitingResponse: [], owedByYou: [] }, goalCriteria: [] },
+    instructions,
+  });
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false, variant: "max" });
+    const perAgent = await adapter.start({ ...devDef, variant: "low" }, runtimeCtx(dir));
+    await adapter.send(perAgent, input("hi"));
+    assert.equal((mock.requestBodies.at(-1) ?? {}).variant, "low", "per-agent variant overrides the mesh-wide default");
+    await adapter.stop(perAgent);
+
+    const inherited = await adapter.start(devDef, runtimeCtx(dir));
+    await adapter.send(inherited, input("hi"));
+    assert.equal((mock.requestBodies.at(-1) ?? {}).variant, "max", "agent without a variant inherits the mesh-wide default");
+    await adapter.stop(inherited);
+
+    const bare = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false });
+    const noVariant = await bare.start(devDef, runtimeCtx(dir));
+    await bare.send(noVariant, input("hi"));
+    assert.equal("variant" in (mock.requestBodies.at(-1) ?? {}), false, "no variant anywhere leaves the field off the request");
+    await bare.stop(noVariant);
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("opencode adapter: alias capabilities open edit/bash instead of silently denying them", async () => {
   const mock = await startMockOpenCode();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-alias-"));

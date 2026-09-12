@@ -54,6 +54,8 @@ export interface BootstrapOptions {
     executable?: string;
     baseUrl?: string;
     model?: { providerID: string; modelID: string };
+    /** Mesh-wide thinking variant; `agents.<id>.variant` overrides per agent. */
+    variant?: string;
     spawnProcesses?: boolean;
     requestTimeoutMs?: number;
   };
@@ -193,6 +195,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     // Explicit bootstrap override wins; otherwise the mesh-wide default from
     // mesh.runtime.model. Agents with their own `model` still override both.
     model: options.opencodeOptions?.model ?? parseModelRef(config.defaultModel),
+    variant: options.opencodeOptions?.variant ?? config.defaultVariant,
     // The adapter's HTTP deadline must outlive the supervisor's turn timeout,
     // which fires first and interrupts the session. Without this the adapter
     // aborted at its 600s default even when config asked for a longer turn.
