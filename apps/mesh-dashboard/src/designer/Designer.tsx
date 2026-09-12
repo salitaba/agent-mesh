@@ -16,7 +16,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
 import { fmt } from "../format";
 import { useMesh } from "../store";
-import "./designer.css";
 import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, SourceStateLine, YamlCard } from "./chrome";
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";

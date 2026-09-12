@@ -6,6 +6,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import ChatPanel from "./panels/ChatPanel";
 import { markSeen, useChatSelector } from "./chatStore";
+// Imported here rather than in the lazy Designer view: ChatDock is eager (it
+// renders on every shell view), so the shared ms-* styles must ride the eager
+// chunk or the floating button is unstyled until Designer first loads.
+import "./designer.css";
 
 export default function ChatDock({ open, onOpen, onClose }: {
   open: boolean;
