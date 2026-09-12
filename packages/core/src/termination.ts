@@ -1,4 +1,4 @@
-import type { GoalId } from "../../protocol/src/index";
+import { isSettledArtifactStatus, type GoalId } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
@@ -119,15 +119,16 @@ export class DeadlockDetector {
   private scanReviewRounds(state: Projections, goalId: GoalId): DeadlockFinding[] {
     const out: DeadlockFinding[] = [];
     for (const [artifactId, rounds] of state.reviewRounds) {
-      if (rounds < this.config.escalation.artifactReviewRoundsMax) continue;
+      if (rounds <= this.config.escalation.artifactReviewRoundsMax) continue;
       const artifact = state.artifacts.get(artifactId);
+      if (!artifact || isSettledArtifactStatus(artifact.status)) continue;
       out.push({
         kind: "review_rounds",
         goalId,
         conflictKey: `review_rounds:${artifactId}`,
         artifactId,
-        description: `Artifact ${artifact?.name ?? artifactId} exceeded ${this.config.escalation.artifactReviewRoundsMax} review rounds`,
-        participants: artifact ? [artifact.owner] : [],
+        description: `Artifact ${artifact.name} exceeded ${this.config.escalation.artifactReviewRoundsMax} review rounds`,
+        participants: [artifact.owner],
       });
     }
     return out;

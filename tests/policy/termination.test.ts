@@ -235,6 +235,38 @@ test("deadlock: detector flags repeated conflict and review-round overflow; esca
   await m.cleanup();
 });
 
+test("deadlock: review rounds escalate only past the cap, and settle with the artifact", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
+    mayContact: { dev: [] },
+  });
+  const state = m.kernel.state;
+  const created = await m.supervisor.createArtifact({ actorId: "dev", name: "rounded", type: "CodePatch", content: "diff" });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  const artifactId = created.artifact.id;
+  const key = `review_rounds:${artifactId}`;
+  const max = m.config.escalation.artifactReviewRoundsMax;
+  const findings = () => new DeadlockDetector(m.config).scan(state).filter((f) => f.conflictKey === key);
+
+  await m.kernel.emit("review.requested", { artifactId }, { actorId: "dev", goalId: state.activeGoalId ?? undefined });
+  assert.equal(state.artifacts.get(artifactId)?.status, "UNDER_REVIEW");
+  assert.equal(state.reviewRounds.get(artifactId), 1);
+
+  state.reviewRounds.set(artifactId, max);
+  assert.equal(findings().length, 0, "the last allowed round must not deadlock");
+
+  state.reviewRounds.set(artifactId, max + 1);
+  assert.equal(findings().length, 1, "starting a round past the cap must deadlock");
+
+  await m.kernel.emit("review.approved", { artifactId, kind: "approve" }, { actorId: "dev", goalId: state.activeGoalId ?? undefined });
+  assert.equal(state.artifacts.get(artifactId)?.status, "APPROVED");
+  assert.equal(state.reviewRounds.has(artifactId), false, "settling resets the round counter");
+
+  state.reviewRounds.set(artifactId, max + 1);
+  assert.equal(findings().length, 0, "a settled artifact never re-escalates");
+  await m.cleanup();
+});
+
 test("deadlock: a resolved finding is forgotten, so a recurrence escalates again", async () => {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],

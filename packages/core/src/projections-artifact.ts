@@ -1,6 +1,7 @@
 import {
   MACHINE_TRANSITIONS,
   artifactMachineOf,
+  isSettledArtifactStatus,
   type Artifact,
   type ArtifactStatus,
   type ArtifactType,
@@ -38,6 +39,9 @@ function doTransition(
   state.artifactHistory.set(a.id, hist);
   if (to === "UNDER_REVIEW") {
     state.reviewRounds.set(a.id, (state.reviewRounds.get(a.id) ?? 0) + 1);
+  }
+  if (isSettledArtifactStatus(to)) {
+    state.reviewRounds.delete(a.id);
   }
   if (to === "MERGED") {
     const lease = state.activeLeaseByArtifact.get(a.id);

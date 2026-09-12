@@ -215,6 +215,20 @@ export const ARTIFACT_STATUSES: ArtifactStatus[] = [
   "ARCHIVED",
 ];
 
+export const SETTLED_ARTIFACT_STATUSES: ArtifactStatus[] = [
+  "APPROVED",
+  "VERIFIED",
+  "MERGEABLE",
+  "MERGED",
+  "ACCEPTED",
+  "FINAL",
+  "ARCHIVED",
+];
+
+export function isSettledArtifactStatus(status: ArtifactStatus): boolean {
+  return SETTLED_ARTIFACT_STATUSES.includes(status);
+}
+
 export const CODE_ARTIFACT_TRANSITIONS: Partial<Record<ArtifactStatus, ArtifactStatus[]>> = {
   DRAFT: ["READY_FOR_REVIEW", "ARCHIVED"],
   READY_FOR_REVIEW: ["UNDER_REVIEW", "APPROVED", "DRAFT", "ARCHIVED"],
