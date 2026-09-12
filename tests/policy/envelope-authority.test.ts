@@ -198,3 +198,20 @@ test("loop detection: a paraphrasing agent now actually trips the conflict count
     "the counter that feeds `fingerprint_loop` escalation now sees the loop it was written to catch",
   );
 });
+
+test("loop detection: answering a different request is not a repeat", () => {
+  const ready = msg({ type: "INFORM", replyTo: "msg-request-A", payload: { status: "READY" } });
+  const done = msg({ type: "INFORM", replyTo: "msg-request-B", payload: { status: "DONE", artifact_state: "MERGEABLE -> MERGED" } });
+  assert.notEqual(
+    fingerprintOf(ready),
+    fingerprintOf(done),
+    "a reply to a new request is new work even when the status narration rhymes",
+  );
+
+  const rephrased = msg({ type: "INFORM", replyTo: "msg-request-A", payload: { status: "READY, still waiting" } });
+  assert.equal(
+    fingerprintOf(ready),
+    fingerprintOf(rephrased),
+    "re-answering the same request is still a repeat, however it is reworded",
+  );
+});

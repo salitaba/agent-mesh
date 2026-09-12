@@ -177,9 +177,12 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
     }
     default:
       if (String(e.reason || "").startsWith("deadlock:")) {
+        const desc = typeof d.description === "string" ? d.description.trim() : "";
         return {
           title: "Deadlock detected",
-          what: `${who} found agents blocking each other (${e.reason}). Work is paused to avoid burning budget.`,
+          what: desc
+            ? `${who}: ${desc}. Work is paused to avoid burning budget.`
+            : `${who} found agents blocking each other (${e.reason}). Work is paused to avoid burning budget.`,
           next: "Break the cycle: approve / reject the contested artifact, or respond with who should yield.",
           placeholder: "e.g. approve v2; the other side yields",
         };
@@ -727,11 +730,13 @@ function DerivedStuckSummary(props: { e: any; list: any[]; msgs?: Map<string, an
           const dd = (u?.detail && typeof u.detail === "object" ? u.detail : {}) as Record<string, any>;
           const rid = typeof dd.requestMessageId === "string" ? dd.requestMessageId : "";
           const m = rid && msgs ? msgs.get(rid) : undefined;
-          const task = plainTaskOf(m, dd.requestType);
-          const who = dd.agentId ? `needs ${dd.agentId}` : "waiting";
+          const desc = typeof dd.description === "string" ? dd.description.trim() : "";
+          const title = m ? plainTaskOf(m, dd.requestType).title : desc || plainTaskOf(m, dd.requestType).title;
+          const participants = Array.isArray(dd.participants) ? dd.participants.filter((p: any) => typeof p === "string") : [];
+          const who = dd.agentId ? `needs ${dd.agentId}` : participants.length > 0 ? participants.join(", ") : "waiting";
           return (
             <div key={id} className="row" style={{ justifyContent: "space-between" }}>
-              <span style={{ fontSize: 13 }}>{(task.title)} <span className="muted">· {(who)}</span></span>
+              <span style={{ fontSize: 13 }}>{(title)} <span className="muted">· {(who)}</span></span>
               <Button
                 variant="small"
                 onClick={() => document.querySelector(`[data-esc="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}

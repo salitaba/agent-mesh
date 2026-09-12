@@ -336,6 +336,55 @@ test("stall tick: a refused driver keeps the cooldown unspent and re-arms the fa
   }
 });
 
+test("stall tick: a silent stream is interrupted even when the goal is ESCALATED", async () => {
+  // The stall escalates to a human, which flips the goal to ESCALATED — and
+  // the old ACTIVE gate then disabled the watchdog, leaving the frozen turn
+  // running until its 10-20 minute timeout. That self-made deadlock is what
+  // this pins shut.
+  const m = await makeMesh({ agents: AGENTS, startup: ["pm"], mode: "parked" });
+  try {
+    const p = probe(m);
+    (m.supervisor.config.scheduling as { turnSilenceMs: number }).turnSilenceMs = 100;
+    p.liveMode = true;
+    m.kernel.state.goals.get(m.kernel.state.activeGoalId!)!.status = "ESCALATED";
+    const wakes = blockActivations(m, true);
+    const posed = poseStreamingTurn(m, "dev", 5000);
+
+    await p.checkStall();
+
+    assert.deepEqual(posed.interrupts, ["sess-dev"], "an escalated goal must not shield a frozen stream");
+    assert.deepEqual(wakes, [], "a non-active goal must still not be nudged");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("stall tick: a silent stream is interrupted while the scheduler counts the turn as running", async () => {
+  // In production the interrupted turn holds a scheduler running slot
+  // (runningMap is cleared only when runTurn settles), and the old guard order
+  // returned before the silence check because of it, making the watchdog
+  // unreachable for every turn it was meant to watch. The in-flight check must
+  // precede the scheduler-occupancy gate.
+  const m = await makeMesh({ agents: AGENTS, startup: ["pm"], mode: "parked" });
+  try {
+    const p = probe(m);
+    (m.supervisor.config.scheduling as { turnSilenceMs: number }).turnSilenceMs = 100;
+    p.liveMode = true;
+    const sched = m.supervisor.deps.scheduler as unknown as { running(): number; pending(): number };
+    sched.running = () => 1;
+    sched.pending = () => 0;
+    const wakes = blockActivations(m, true);
+    const posed = poseStreamingTurn(m, "dev", 5000);
+
+    await p.checkStall();
+
+    assert.deepEqual(posed.interrupts, ["sess-dev"], "scheduler occupancy must not hide a silent turn");
+    assert.deepEqual(wakes, [], "a busy scheduler must not be nudged");
+  } finally {
+    await m.cleanup();
+  }
+});
+
 // --- interruptSilentTurns ---
 
 test("silence watch: a stream that stopped mid-turn is interrupted exactly once", async () => {

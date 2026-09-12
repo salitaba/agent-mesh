@@ -517,8 +517,14 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       stallIdleMs: raw.scheduling?.timeouts?.stall_idle_ms ?? 180000,
       stallCooldownMs: raw.scheduling?.timeouts?.stall_cooldown_ms ?? 300000,
       stallNoopRetryMs: raw.scheduling?.timeouts?.stall_noop_retry_ms ?? 45000,
+      // Post-first-token silence means a frozen stream, not slow thinking, so
+      // the default is capped at two minutes and decays with short turn
+      // timeouts. Half-the-timeout alone tied the old 600s adapter cap, and a
+      // 1200s turn timeout pushed detection to 10 minutes — by then the stall
+      // had become a human escalation. Overridable per mesh via
+      // turn_silence_ms.
       turnSilenceMs: raw.scheduling?.timeouts?.turn_silence_ms ??
-        Math.max(60000, Math.floor((raw.scheduling?.timeouts?.turn_timeout_ms ?? 600000) / 2)),
+        Math.min(120000, Math.max(60000, Math.floor((raw.scheduling?.timeouts?.turn_timeout_ms ?? 600000) / 2))),
     },
     server: {
       host: raw.server?.host ?? "127.0.0.1",

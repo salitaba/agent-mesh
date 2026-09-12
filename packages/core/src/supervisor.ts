@@ -509,8 +509,21 @@ export class Supervisor {
     // 7. register agents (+ human seat, Â§36)
     await this.registerHuman();
     for (const id of this.config.agentOrder) {
-      if (!this.state.agents.has(id)) {
-        await this.registerAgent(this.config.agents[id]);
+      const existing = this.state.agents.get(id);
+      const def = this.config.agents[id];
+      if (!existing) {
+        await this.registerAgent(def);
+      } else if (JSON.stringify(existing.definition) !== JSON.stringify(def)) {
+        await this.deps.kernel.emit(
+          "agent.replaced",
+          {
+            agentId: id,
+            agent: def,
+            inheritArtifactIds: existing.state.currentArtifactIds,
+            inheritTaskId: existing.state.activeTaskId,
+          },
+          { actorId: HUMAN_AGENT_ID },
+        );
       }
     }
     // 8. allocate budgets
@@ -4321,19 +4334,23 @@ export class Supervisor {
    */
   private async checkStall(): Promise<void> {
     if (this.stopping || !this.liveMode) return;
+    const now = Date.now();
+    // The silence check runs FIRST, before every mission-level guard: a stream
+    // frozen after its first token is a stall regardless of goal status and
+    // regardless of other scheduler work. Ordered after those guards it was
+    // unreachable in exactly the case it exists for — a turn in flight keeps a
+    // scheduler running slot occupied, and the ESCALATED/PAUSED goal a stall
+    // produces fails the ACTIVE gate — so the frozen turn sat until its
+    // 10-20 minute timeout. The mission-quiet gates below only make sense when
+    // nothing is in flight, so this branch returns after the silence check.
+    if (this.turnInFlight.size !== 0) {
+      this.interruptSilentTurns(now);
+      return;
+    }
     const goalId = this.state.activeGoalId;
     const goal = goalId ? this.state.goals.get(goalId) : undefined;
     if (!goal || goal.status !== "ACTIVE") return;
     if (this.deps.scheduler.pending() !== 0 || this.deps.scheduler.running() !== 0) return;
-    const now = Date.now();
-    if (this.turnInFlight.size !== 0) {
-      // A streamed-then-silent turn is the watchdog's blind spot: the old bail
-      // here left a post-stream freeze holding the message pending until the
-      // turn timeout. Streaming turns get interrupted below; the mission-quiet
-      // gates that follow only make sense when nothing is in flight.
-      this.interruptSilentTurns(now);
-      return;
-    }
     // A no-op turn arms a fast retry: the idle and cooldown gates both apply
     // to work-producing turns (their async ripple may still be landing), but
     // a turn that changed nothing deserves the next driver in seconds. Guarded
@@ -4396,6 +4413,12 @@ export class Supervisor {
    * is only for runtimes whose interrupt is a no-op (stub), whose send()
    * would otherwise hang forever. Guarded per turn so neither path double-
    * fires.
+   *
+   * Interrupting while the goal is ESCALATED or PAUSED is deliberate: the
+   * interrupt still aborts the dead stream, but the recovery activation
+   * `handleAgentFailure` schedules is refused by `activateAgent` for every
+   * non-ACTIVE status, so the retry stays parked until the operator responds
+   * to the escalation rather than racing it.
    */
   private interruptSilentTurns(now: number): void {
     const silenceMs = this.config.scheduling.turnSilenceMs;

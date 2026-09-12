@@ -231,6 +231,14 @@ test("http api: dashboard SPA shell + bundle served (vite build)", async () => {
       assert.match(r.headers.get("content-type") ?? "", /javascript/);
       js += await r.text();
     }
+    // The SPA code-splits: the shell loads the entry chunk, which lazy-loads
+    // the rest at runtime. Aggregate every emitted chunk, not just the script
+    // tags in the shell, or this wiring check only ever sees the entry.
+    const fs = require("fs");
+    const assetsDir = require("path").resolve(dashDir, "assets");
+    for (const f of fs.readdirSync(assetsDir).filter((f: string) => f.endsWith(".js"))) {
+      js += fs.readFileSync(require("path").resolve(assetsDir, f), "utf8");
+    }
     assert.ok(js.includes("respond-form") && js.includes("/config/save") && js.includes("EventSource"), "escalation replies, designer save, live SSE all wired");
     assert.ok(js.includes("data-view") && js.includes("Needs you"), "all views present in bundle");
     assert.ok(hrefs.length >= 1, "shell references a stylesheet");

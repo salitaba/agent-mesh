@@ -32,8 +32,9 @@ function resolveWith(timeouts: string) {
   }
 }
 
-test("turn_silence_ms defaults to half the turn timeout, never below a minute", () => {
-  assert.equal(resolveWith("").scheduling.turnSilenceMs, 300000);
+test("turn_silence_ms defaults to half the turn timeout, capped at two minutes and never below a minute", () => {
+  assert.equal(resolveWith("").scheduling.turnSilenceMs, 120000);
+  assert.equal(resolveWith("turn_timeout_ms: 2400000").scheduling.turnSilenceMs, 120000);
   assert.equal(resolveWith("turn_timeout_ms: 100000").scheduling.turnSilenceMs, 60000);
   assert.equal(resolveWith("turn_timeout_ms: 20000").scheduling.turnSilenceMs, 60000);
 });

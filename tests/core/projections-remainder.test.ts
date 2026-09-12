@@ -86,6 +86,15 @@ test("agent.replaced: an inheritance the event does not name keeps what the reco
   assert.equal(rec.state.activeTaskId, "task-1");
 });
 
+test("agent.replaced: a definition carried by the event replaces the stored one", () => {
+  const state = seeded();
+  spawnAgent(state, "dev");
+  applyEvent(state, evt("agent.replaced", { agentId: "dev", agent: { id: "dev", role: "dev", capabilities: ["git.merge"] } as AgentDefinition }));
+
+  const rec = state.agents.get("dev")!;
+  assert.deepEqual(rec.definition.capabilities, ["git.merge"]);
+});
+
 test("agent.replaced: replacing an agent that was never created is ignored, not fatal", () => {
   const state = seeded();
   assert.doesNotThrow(() => applyEvent(state, evt("agent.replaced", { agentId: "ghost", inheritTaskId: "task-1" })));

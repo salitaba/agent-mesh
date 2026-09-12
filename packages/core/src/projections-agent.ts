@@ -78,6 +78,7 @@ export function applyAgentEvent(state: Projections, event: MeshEvent, p: Record<
     case "agent.replaced": {
       const rec = state.agents.get(p.agentId);
       if (rec) {
+        if (p.agent) rec.definition = p.agent as AgentDefinition;
         rec.state.currentArtifactIds = p.inheritArtifactIds ?? rec.state.currentArtifactIds;
         rec.state.activeTaskId = p.inheritTaskId ?? rec.state.activeTaskId;
       }

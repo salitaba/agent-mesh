@@ -51,6 +51,13 @@ export class ProjectionError extends Error {
  * payload carries one (`result` is the obvious case: TEST_RESULT PASSED and
  * TEST_RESULT FAILED are genuinely different messages, not a repetition), so
  * distinguishing outcomes does not require distinguishing wording.
+ *
+ * The envelope's `replyTo` is part of identity too. Answering a *different*
+ * request is different work however the words change, while re-answering the
+ * *same* request still collides. Without it every INFORM an agent sends in a
+ * thread collapses into one fingerprint, so routine status narration (READY,
+ * then DONE after the actual work lands) was counted as a verbatim resend and
+ * raised `fingerprint_loop` against an agent that was progressing.
  */
 export function fingerprintOf(m: MeshMessage): string {
   const parts = [
@@ -65,6 +72,8 @@ export function fingerprintOf(m: MeshMessage): string {
     m.taskId ?? "",
     ":",
     m.threadId ?? "",
+    ":",
+    m.replyTo ?? "",
     ":",
     payloadDiscriminator(m.payload),
   ];

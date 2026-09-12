@@ -87,6 +87,7 @@ export class DeadlockDetector {
     const out: DeadlockFinding[] = [];
     for (const conflict of state.conflicts.values()) {
       if (conflict.count < this.config.escalation.repeatedConflictThreshold) continue;
+      if (this.alreadyEscalated(state, goalId, conflict.key, conflict.lastAt)) continue;
       // `loop:<agent>:<thread>` counters come from the duplicate-message
       // fingerprint check, which is a different failure (an agent repeating
       // itself verbatim) than two agents disagreeing. Labelling it as such
@@ -106,6 +107,13 @@ export class DeadlockDetector {
       });
     }
     return out;
+  }
+
+  private alreadyEscalated(state: Projections, goalId: GoalId, conflictKey: string, lastAt: string): boolean {
+    for (const esc of state.escalations.values()) {
+      if (esc.goalId === goalId && esc.conflictKey === conflictKey && esc.createdAt >= lastAt) return true;
+    }
+    return false;
   }
 
   private scanReviewRounds(state: Projections, goalId: GoalId): DeadlockFinding[] {

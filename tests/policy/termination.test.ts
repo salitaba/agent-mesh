@@ -215,13 +215,16 @@ test("deadlock: detector flags repeated conflict and review-round overflow; esca
   const { bumpConflict } = await import("../../packages/core/src/projections");
   const ts = new Date().toISOString();
   for (let i = 0; i < 3; i++) bumpConflict(state, "conflict:dev:rev:patchA", "dev", ts, undefined, "art-A");
+  assert.ok(
+    new DeadlockDetector(m.config).scan(state).some((f) => f.kind === "repeated_conflict"),
+    "repeated conflict must be detected before the live watchdog escalates it during the awaits below",
+  );
   const reviewArt = await m.supervisor.createArtifact({ actorId: "dev", name: "looping-patch", type: "CodePatch", content: "diff" });
   if ("artifact" in reviewArt) state.reviewRounds.set(reviewArt.artifact.id, 99);
   const threadEvt = await m.kernel.emit("thread.created", { thread: { id: "deep", goalId: state.activeGoalId, subject: "s", initiator: "dev", artifactRefs: [], participants: ["dev"], depth: 9, messageIds: [], status: "OPEN", budget: {}, createdAt: ts } }, { actorId: "dev" });
   void threadEvt;
   const detector = new DeadlockDetector(m.config);
   const findings = detector.scan(state);
-  assert.ok(findings.some((f) => f.kind === "repeated_conflict"), "repeated conflict must be detected");
   assert.ok(findings.some((f) => f.kind === "review_rounds"), "review round overflow must be detected");
   assert.ok(findings.some((f) => f.kind === "thread_depth"), "thread depth overflow must be detected");
 
@@ -278,6 +281,38 @@ test("deadlock: clear(goalId) actually forgets that goal's findings", async () =
   assert.ok(
     detector.scan(state).some((f) => f.conflictKey === "conflict:dev:persist"),
     "clear() must drop this goal's memory (real keys carry no goalId, so endsWith never matched)",
+  );
+  await m.cleanup();
+});
+
+test("deadlock: a replayed conflict already covered by an escalation is not re-reported after restart", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
+    mayContact: { dev: [] },
+  });
+  const state = m.kernel.state;
+  const { bumpConflict } = await import("../../packages/core/src/projections");
+  const ts = new Date().toISOString();
+  for (let i = 0; i < 3; i++) bumpConflict(state, "loop:dev:thread-1", "dev", ts, "thread-1");
+
+  const esc = await m.supervisor.escalate({
+    reason: "deadlock:fingerprint_loop",
+    raisedBy: "deadlock-detector",
+    conflictKey: "loop:dev:thread-1",
+  });
+  assert.equal(esc.conflictKey, "loop:dev:thread-1");
+
+  assert.equal(
+    new DeadlockDetector(m.config).scan(state).filter((f) => f.conflictKey === "loop:dev:thread-1").length,
+    0,
+    "a card raised at/after the last repetition already covers that counter state",
+  );
+
+  bumpConflict(state, "loop:dev:thread-1", "dev", new Date(Date.parse(esc.createdAt) + 1000).toISOString(), "thread-1");
+  assert.equal(
+    new DeadlockDetector(m.config).scan(state).filter((f) => f.conflictKey === "loop:dev:thread-1").length,
+    1,
+    "a repetition newer than the card is news and must escalate again",
   );
   await m.cleanup();
 });

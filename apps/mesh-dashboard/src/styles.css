@@ -653,7 +653,7 @@ input.search { min-width: 220px; }
    of relying on the reader's memory of what order things came in. */
 /* `stepd-` prefix, not `step-`: the Steps list cards already own `.step-top`
    and `.step-sub`, and a shared name here silently restyled that view. */
-.stepd-head { position: sticky; top: 0; z-index: var(--z-sticky); margin: calc(var(--s5) * -1) -22px 0; padding: var(--s5) 22px 0;
+.stepd-head { position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-sticky); margin: calc(var(--s5) * -1) -22px 0; padding: var(--s5) 22px 0;
   background: color-mix(in srgb, var(--drawer) 92%, transparent); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line); }
 .stepd-title { display: flex; align-items: center; gap: 10px; font-size: 17px; min-width: 0; }
@@ -1041,7 +1041,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   .tab-btn { flex: none; }
   .stepd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sbx-rt { margin-left: 0; width: 100%; }
-  .stepd-head { margin: -16px -14px 0; padding: 16px 14px 0; }
+  .stepd-head { top: -16px; margin: -16px -14px 0; padding: 16px 14px 0; }
   .stepd-id { display: none; }
 }
 
