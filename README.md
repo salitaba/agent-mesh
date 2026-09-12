@@ -23,6 +23,7 @@ Recorded from the token-free `demo-stub` run (parked console → start mission):
 requirements → research → design review → implementation → QA block with rework →
 merge → release gates → evidence-based completion. No model calls, no API keys;
 run it yourself with `npm run mesh -- run examples/demo-stub/mesh.yaml`.
+Regenerate the GIF with `npm run demo:capture` (needs a built repo, Chrome/Chromium, and ffmpeg).
 
 ## Quick start (no model, no keys)
 
