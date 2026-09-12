@@ -278,10 +278,17 @@ export interface StateArchiveResult {
  * when `archiveRoot` is given, otherwise beside the directory. The rename is
  * atomic on the same filesystem; across devices (EXDEV) it falls back to a
  * copy + delete. Returns the archive path, or null when `dir` does not exist.
+ *
+ * `exclude` keeps a subtree in place (the live state dir inside a non-git
+ * workspace, for example). With exclusions the move is per top-level entry,
+ * not atomic, and an entry that merely *contains* an exclusion is skipped
+ * whole; an exclusion that IS `dir` archives nothing. Returns null when
+ * nothing survived the exclusions.
  */
-export function archiveDir(dir: string, opts: { archiveRoot?: string } = {}): string | null {
+export function archiveDir(dir: string, opts: { archiveRoot?: string; exclude?: string[] } = {}): string | null {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) return null;
+  const excludes = (opts.exclude ?? []).map((e) => path.resolve(e));
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
   const root = opts.archiveRoot ? path.resolve(opts.archiveRoot) : path.dirname(resolved);
   const base = path.basename(resolved);
@@ -290,15 +297,29 @@ export function archiveDir(dir: string, opts: { archiveRoot?: string } = {}): st
   // Two resets inside the same second must not clobber the first archive.
   let n = 1;
   while (fs.existsSync(target)) target = path.join(root, `${base}.bak-${stamp}-${n++}`);
-  try {
-    fs.renameSync(resolved, target);
-  } catch (err) {
-    // Different filesystem (e.g. a state_dir on another mount): rename
-    // cannot cross devices, so fall back to a copy + delete.
-    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
-    fs.cpSync(resolved, target, { recursive: true });
-    fs.rmSync(resolved, { recursive: true, force: true });
+  const move = (from: string, to: string): void => {
+    try {
+      fs.renameSync(from, to);
+    } catch (err) {
+      // Different filesystem (e.g. a state_dir on another mount): rename
+      // cannot cross devices, so fall back to a copy + delete.
+      if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+      fs.cpSync(from, to, { recursive: true });
+      fs.rmSync(from, { recursive: true, force: true });
+    }
+  };
+  if (excludes.length === 0) {
+    move(resolved, target);
+    return target;
   }
+  if (excludes.some((ex) => ex === resolved)) return null;
+  const entries = fs.readdirSync(resolved).filter((name) => {
+    const entry = path.join(resolved, name);
+    return !excludes.some((ex) => ex === entry || ex.startsWith(entry + path.sep));
+  });
+  if (entries.length === 0) return null;
+  fs.mkdirSync(target, { recursive: true });
+  for (const name of entries) move(path.join(resolved, name), path.join(target, name));
   return target;
 }
 

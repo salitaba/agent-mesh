@@ -99,8 +99,9 @@ export interface MeshInstance {
   park(): Promise<void>;
   /**
    * Wipe the mission back to tick zero and re-boot it from the config, in
-   * place. Archives the state dir outside the agent workspace and deletes the
-   * old run's git worktrees; always lands parked.
+   * place. Archives the state dir outside the agent workspace and clears the
+   * old run's product tree (git: `workspace/main`; non-git: the configured
+   * workspace root, state dir excluded); always lands parked.
    */
   reset(opts?: { keepArtifacts?: boolean }): Promise<ResetReport>;
   close(): Promise<void>;
@@ -110,7 +111,7 @@ export interface ResetReport {
   ok: boolean;
   /** Absolute path of the archived previous state dir, null when there was none. */
   archivedTo: string | null;
-  /** Absolute path of the archived product checkout (`workspace/main`), null when git mode is off or there was none. */
+  /** Absolute path of the archived product tree (`workspace/main` in git mode, the workspace root otherwise), null when off/none. */
   productArchivedTo: string | null;
   /** Worktree directory names that were deleted (empty when git mode is off). */
   worktreesRemoved: string[];
@@ -346,9 +347,14 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       //    run's files. Sessions are already stopped, so no process is using
       //    them.
       const worktreesRemoved = workspace ? await workspace.removeAllWorktrees() : [];
-      // 3. The product checkout is mission scratch too: archive `workspace/main`
-      //    outside the workspace, then re-init an empty repo so the Product
-      //    page (and the next run) sees no files from the previous mission.
+      // 3. The product checkout is mission scratch too: archive it outside the
+      //    workspace, then leave an empty product root so the Product page
+      //    (and the next run) sees no files from the previous mission. Git
+      //    mode owns the dedicated `main/` checkout. Without git the mission
+      //    materializes product files (and the playground build) straight into
+      //    the workspace root, so that root is what gets archived. The state
+      //    dir lives inside the workspace by default and step 5 archives it
+      //    separately, so exclude it here instead of double-archiving.
       let productArchivedTo: string | null = null;
       if (workspace && !options.inMemory) {
         productArchivedTo = archiveDir(workspace.mainPath, {
@@ -356,6 +362,12 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         });
         workspace.removeMain();
         await workspace.ensureRepo();
+      } else if (!options.inMemory) {
+        productArchivedTo = archiveDir(config.workspacePath, {
+          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
+          exclude: [config.stateDir],
+        });
+        fs.mkdirSync(config.workspacePath, { recursive: true });
       }
       // 4. Release the sqlite index handle before the directory moves; an open
       //    handle would keep writing into the archived copy.

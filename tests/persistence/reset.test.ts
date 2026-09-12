@@ -119,6 +119,44 @@ test("reset: archives and wipes the product checkout", { skip: !hasGit && "git u
   }
 });
 
+test("reset: archives and wipes the non-git product workspace", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-product-nogit-"));
+  const m = await boot(dir);
+  try {
+    const root = m.productPath;
+    assert.equal(root, path.join(dir, "workspace"), "non-git product root is the configured workspace");
+    fs.writeFileSync(path.join(root, "PRODUCT.txt"), "shipped by the old mission", "utf8");
+    fs.mkdirSync(path.join(root, "apps", "playground"), { recursive: true });
+    fs.writeFileSync(path.join(root, "apps", "playground", "index.html"), "<!doctype html>", "utf8");
+
+    const report = await m.reset({});
+
+    assert.ok(report.productArchivedTo, "the non-git product workspace must be archived, not silently dropped");
+    assert.ok(
+      report.productArchivedTo!.startsWith(path.join(dir, ".mesh-backups")),
+      "product archive must live outside the agent workspace",
+    );
+    assert.ok(
+      fs.existsSync(path.join(report.productArchivedTo!, "PRODUCT.txt")),
+      "the archive must contain the old product files",
+    );
+    assert.ok(
+      fs.existsSync(path.join(report.productArchivedTo!, "apps", "playground", "index.html")),
+      "the archive must contain the old playground build",
+    );
+    assert.ok(!fs.existsSync(path.join(root, "PRODUCT.txt")), "old product must not survive on disk");
+    assert.ok(!fs.existsSync(path.join(root, "apps")), "old playground must not survive on disk");
+    assert.ok(
+      !fs.existsSync(path.join(report.productArchivedTo!, ".mesh-state")),
+      "the live state dir must not be double-archived into the product archive",
+    );
+    assert.ok(fs.existsSync(path.join(root, ".mesh-state")), "the state dir must stay in the workspace");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("reset: the mesh keeps working afterwards (same live objects)", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-usable-"));
   const m = await boot(dir);
