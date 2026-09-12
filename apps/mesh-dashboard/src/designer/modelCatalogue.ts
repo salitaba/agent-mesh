@@ -10,6 +10,8 @@ export interface ModelCatalogue {
   models: string[];
   /** The mesh-wide fallback used when an agent leaves `model` blank. */
   default?: string;
+  /** `provider/model` -> thinking variant names; `{}` when the CLI supplied the list. */
+  variants: Record<string, string[]>;
 }
 
 export type CatalogueState =
@@ -18,6 +20,11 @@ export type CatalogueState =
   | { phase: "error"; detail: string };
 
 const TTL_MS = 5 * 60_000;
+
+/** Thinking variants declared for one `provider/model`, `[]` when none/unknown. */
+export function variantsFor(catalogue: ModelCatalogue, model: string): string[] {
+  return model ? catalogue.variants[model] ?? [] : [];
+}
 
 interface Cache {
   state: CatalogueState;
@@ -54,7 +61,10 @@ function load(cache: Cache, client: ProjectClient, refresh: boolean): Promise<vo
       if (status !== 200 || !json || !Array.isArray(json.models)) {
         return publish(cache, { phase: "error", detail: json?.error || `the server answered ${status}` });
       }
-      publish(cache, { phase: "ready", catalogue: { models: json.models, default: json.default } });
+      const variants = json.variants && typeof json.variants === "object" && !Array.isArray(json.variants)
+        ? (json.variants as Record<string, string[]>)
+        : {};
+      publish(cache, { phase: "ready", catalogue: { models: json.models, default: json.default, variants } });
       cache.loadedAt = Date.now();
     })
     .catch((err: unknown) => {

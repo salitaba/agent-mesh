@@ -669,7 +669,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
    * indistinguishable from "no providers configured", so failures are reported
    * as an explicit `error` instead of a silent `[]`.
    */
-  async listModels(): Promise<{ models: string[]; default?: string; error?: string }> {
+  async listModels(): Promise<{ models: string[]; default?: string; error?: string; variants?: Record<string, string[]> }> {
     if (this.options.baseUrl) {
       try {
         const res = await this.request<OpenCodeProviderList>(this.options.baseUrl, "GET", "/provider", undefined, this.controlTimeoutMs);
@@ -678,15 +678,27 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         // servers) means "no filter available", not "none connected".
         const connected = res.connected?.length ? new Set(res.connected) : undefined;
         const models: string[] = [];
+        // provider/model -> thinking variant names (e.g. low | high | max).
+        // Only the HTTP provider listing carries these; the CLI cannot see them.
+        const variants: Record<string, string[]> = {};
         for (const p of providers) {
           if (connected && !connected.has(p.id)) continue;
-          for (const modelID of Object.keys(p.models ?? {})) models.push(`${p.id}/${modelID}`);
+          for (const [modelID, model] of Object.entries(p.models ?? {})) {
+            const id = `${p.id}/${modelID}`;
+            models.push(id);
+            const declared = (model as { variants?: Record<string, unknown> } | null)?.variants;
+            if (declared && typeof declared === "object" && !Array.isArray(declared)) {
+              const names = Object.keys(declared);
+              if (names.length) variants[id] = names;
+            }
+          }
         }
         const defaults = res.default ?? {};
         const firstDefault = Object.entries(defaults)[0];
         return {
           models: models.sort(),
           default: firstDefault ? `${firstDefault[0]}/${firstDefault[1]}` : undefined,
+          variants: Object.keys(variants).length ? variants : undefined,
         };
       } catch (err) {
         return { models: [], error: (err as Error).message };

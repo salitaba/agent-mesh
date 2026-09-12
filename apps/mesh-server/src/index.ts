@@ -1489,11 +1489,11 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const listed = await instance.opencodeRuntime.listModels();
           modelCatalogue = { at: now, value: listed };
         }
-        const { models, default: fallback, error } = modelCatalogue.value;
+        const { models, default: fallback, error, variants } = modelCatalogue.value;
         // 503, not 200-with-empty-list: an empty catalogue and a failed lookup
         // are different states, and the client renders a retry for the latter.
         if (error) return json(503, { models: [], error });
-        return json(200, { models, default: fallback });
+        return json(200, { models, default: fallback, variants: variants ?? {} });
       }
 
       // --------------------------------------------------------- presets

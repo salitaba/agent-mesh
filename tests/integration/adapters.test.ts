@@ -96,6 +96,17 @@ function startMockOpenCode(): Promise<{ url: string; close(): void; sessions: Ma
         res.end(JSON.stringify({ id: get[1] }));
         return;
       }
+      if (req.method === "GET" && url === "/provider") {
+        res.end(JSON.stringify({
+          all: [
+            { id: "stub", models: { "provider-model": { variants: { low: {}, high: {}, max: {} } } } },
+            { id: "plain", models: { "no-variants": {} } },
+          ],
+          connected: ["stub", "plain"],
+          default: { stub: "provider-model" },
+        }));
+        return;
+      }
       res.statusCode = 404;
       res.end(JSON.stringify({ error: "no route" }));
     });
@@ -186,6 +197,19 @@ test("opencode adapter: variant resolution — per-agent wins, mesh default fill
   } finally {
     mock.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opencode adapter: listModels carries per-model thinking variants from /provider", async () => {
+  const mock = await startMockOpenCode();
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false });
+    const listed = await adapter.listModels();
+    assert.deepEqual(listed.models, ["plain/no-variants", "stub/provider-model"]);
+    assert.equal(listed.default, "stub/provider-model");
+    assert.deepEqual(listed.variants, { "stub/provider-model": ["low", "high", "max"] }, "only models that declare variants appear in the map");
+  } finally {
+    mock.close();
   }
 });
 

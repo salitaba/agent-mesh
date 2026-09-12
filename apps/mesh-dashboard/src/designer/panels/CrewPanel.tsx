@@ -6,7 +6,7 @@ import { useState } from "react";
 import { CAPS, fmtNum, groupCaps } from "../model";
 import { ChipPick, CommaAdder, CustomChips, Field, Num, hueVar } from "../ui";
 import { Button, ErrorState, Input, Pill, Select, TextArea } from "../../components";
-import { useModelCatalogue } from "../modelCatalogue";
+import { useModelCatalogue, variantsFor } from "../modelCatalogue";
 import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
@@ -81,6 +81,17 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const modelHint = models.phase === "ready" && saved && !knownModels.has(saved)
     ? "this model is not installed here — turns will fail until it is"
     : "blank = mesh default";
+  const meshModel = typeof m.mesh.runtime?.model === "string" ? m.mesh.runtime.model.trim() : "";
+  const meshVariant = typeof m.mesh.runtime?.variant === "string" ? m.mesh.runtime.variant.trim() : "";
+  const savedVariant = typeof a.variant === "string" ? a.variant.trim() : "";
+  /* The variants on offer belong to the model this agent will actually run:
+   * its own, else the mesh default, else the backend default. */
+  const effectiveModel = saved || meshModel || (models.phase === "ready" ? models.catalogue.default ?? "" : "");
+  const modelVariants = models.phase === "ready" ? variantsFor(models.catalogue, effectiveModel) : [];
+  const variantOptions = savedVariant && !modelVariants.includes(savedVariant) ? [savedVariant, ...modelVariants] : modelVariants;
+  const variantHint = models.phase === "ready" && effectiveModel && modelVariants.length === 0
+    ? "this model has no thinking variants"
+    : "blank = mesh default";
   const renameClean = renameValue.trim();
   const renameOk = !!renameClean && renameClean !== cur && !m.agents[renameClean];
 
@@ -126,6 +137,16 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
               </Select>
             )}
           </Field>
+          {variantOptions.length ? (
+            <Field label="thinking variant" hint={variantHint}>
+              <Select value={savedVariant} disabled={models.phase === "loading"} aria-label="thinking variant" onChange={(e) => set("variant", e.target.value)}>
+                <option value="">mesh default{meshVariant ? ` (${meshVariant})` : ""}</option>
+                {variantOptions.map((v) => (
+                  <option key={v} value={v}>{v}{modelVariants.includes(v) ? "" : " — not available for this model"}</option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
           <Field label="runtime" hint="blank = mesh default"><Input value={a.runtime || ""} placeholder={m.mesh.runtime?.default || "opencode"} onChange={(e) => set("runtime", e.target.value.trim())} /></Field>
           <Field label="mode">
             <Select value={a.mode === "service" ? "service" : "peer"} onChange={(e) => set("mode", e.target.value === "service" ? "service" : "")}>

@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { Num, Field } from "../ui";
 import { Button, ErrorState, Input, Select, TextArea } from "../../components";
 import { setPath } from "../model";
-import { useModelCatalogue } from "../modelCatalogue";
+import { useModelCatalogue, variantsFor } from "../modelCatalogue";
 import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
@@ -31,6 +31,15 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const knownModels = new Set<string>(catalogue.phase === "ready" ? catalogue.catalogue.models : []);
   const savedModel = typeof m.mesh.runtime?.model === "string" ? m.mesh.runtime.model.trim() : "";
   const modelOptions = savedModel && !knownModels.has(savedModel) ? [savedModel, ...knownModels] : [...knownModels];
+  const savedVariant = typeof m.mesh.runtime?.variant === "string" ? m.mesh.runtime.variant.trim() : "";
+  /* Variants are a property of the model that will actually run, so when the
+   * mesh leaves the model blank they belong to the catalogue's backend default. */
+  const effectiveModel = savedModel || (catalogue.phase === "ready" ? catalogue.catalogue.default ?? "" : "");
+  const modelVariants = catalogue.phase === "ready" ? variantsFor(catalogue.catalogue, effectiveModel) : [];
+  const variantOptions = savedVariant && !modelVariants.includes(savedVariant) ? [savedVariant, ...modelVariants] : modelVariants;
+  const variantHint = catalogue.phase === "ready" && effectiveModel && modelVariants.length === 0
+    ? "this model has no thinking variants"
+    : "blank = model default";
   return (
     <div className="ms-panel">
       <div className="grid2">
@@ -41,7 +50,7 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         <TextArea rows={3} value={m.mesh.goal || ""} onChange={(e) => { setPath(m, "mesh.goal", e.target.value); touch(); }} />
       </Field>
       <Field label="workspace path" span><Input value={m.mesh.workspace?.path || "./workspace"} onChange={(e) => { setPath(m, "mesh.workspace.path", e.target.value); touch(); }} /></Field>
-      <div className="grid3">
+      <div className="grid2">
         <Field label="default runtime">
           <Select value={m.mesh.runtime?.default || "stub"} onChange={(e) => { setPath(m, "mesh.runtime.default", e.target.value); touch(); }}>
             <option>opencode</option><option>stub</option><option>http</option>
@@ -73,6 +82,30 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             </Select>
           )}
         </Field>
+        {variantOptions.length ? (
+          <Field label="default thinking variant" hint={variantHint}>
+            <Select
+              value={savedVariant}
+              disabled={catalogue.phase === "loading"}
+              aria-label="mesh default thinking variant"
+              onChange={(e) => {
+                const v = e.target.value;
+                m.mesh.runtime ||= {};
+                if (v) m.mesh.runtime.variant = v;
+                else delete m.mesh.runtime.variant;
+                touch();
+              }}
+            >
+              <option value="">model default</option>
+              {/* A variant already saved in mesh.yaml but absent from the
+                * selected model still belongs in the list — dropping it would
+                * silently rewrite the config on the next save. */}
+              {variantOptions.map((v) => (
+                <option key={v} value={v}>{v}{modelVariants.includes(v) ? "" : " — not available for this model"}</option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <Field label="how agents wake up">
           <Select value={m.scheduling?.activation?.strategy || "interest"} onChange={(e) => { setPath(m, "scheduling.activation.strategy", e.target.value); touch(); }}>
             <option value="interest">on matching events</option>
