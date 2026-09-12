@@ -213,6 +213,60 @@ test("opencode adapter: listModels carries per-model thinking variants from /pro
   }
 });
 
+test("opencode adapter: listModels parses thinking variants from `models --verbose`", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-cli-"));
+  try {
+    const executable = path.join(dir, "opencode-verbose");
+    fs.writeFileSync(
+      executable,
+      `#!/bin/sh
+cat <<'MESH_EOF'
+opencode-go/deepseek-v4.1-flash
+{
+  "id": "deepseek-v4.1-flash",
+  "providerID": "opencode-go",
+  "variants": {
+    "low": { "reasoningEffort": "low" },
+    "high": { "reasoningEffort": "high" },
+    "max": { "reasoningEffort": "max" }
+  }
+}
+plain/no-variants
+{
+  "id": "no-variants",
+  "variants": {}
+}
+MESH_EOF
+`,
+      { mode: 0o755 },
+    );
+    const adapter = new OpenCodeRuntimeAdapter({ executable, spawnProcesses: false });
+    const listed = await adapter.listModels();
+    assert.deepEqual(listed.models, ["opencode-go/deepseek-v4.1-flash", "plain/no-variants"]);
+    assert.deepEqual(
+      listed.variants,
+      { "opencode-go/deepseek-v4.1-flash": ["low", "high", "max"] },
+      "the verbose detail block populates variants; empty ones stay out of the map",
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opencode adapter: listModels falls back to bare ids when the CLI emits no verbose detail", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-cli-plain-"));
+  try {
+    const executable = path.join(dir, "opencode-plain");
+    fs.writeFileSync(executable, `#!/bin/sh\necho "stub/provider-model"\necho "plain/no-variants"\n`, { mode: 0o755 });
+    const adapter = new OpenCodeRuntimeAdapter({ executable, spawnProcesses: false });
+    const listed = await adapter.listModels();
+    assert.deepEqual(listed.models, ["stub/provider-model", "plain/no-variants"]);
+    assert.equal(listed.variants, undefined, "no detail blocks means no variants map");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("opencode adapter: alias capabilities open edit/bash instead of silently denying them", async () => {
   const mock = await startMockOpenCode();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-alias-"));

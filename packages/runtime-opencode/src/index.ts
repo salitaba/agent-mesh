@@ -301,6 +301,59 @@ function isOpencodeServePid(pid: number): boolean {
   }
 }
 
+/**
+ * Parse `opencode models --verbose` output into ids plus their thinking-variant
+ * names. The CLI prints a bare `provider/model` line followed by the model's
+ * pretty-printed JSON detail, whose `variants` object names the supported
+ * thinking levels (`low` | `high` | `max`). Older CLIs ignore the flag and
+ * print ids only, so when no JSON detail appears the whole output is parsed as
+ * a bare list — the pre-`--verbose` behavior.
+ */
+function parseCliModels(out: string): { models: string[]; variants: Record<string, string[]> } {
+  const lines = out.split("\n");
+  const models: string[] = [];
+  const variants: Record<string, string[]> = {};
+  let sawDetail = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || /^\s/.test(line)) continue;
+    const id = line.trim();
+    if (!id.includes("/") || id === "{") continue;
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() === "") j++;
+    if (lines[j]?.trim() !== "{") {
+      models.push(id);
+      continue;
+    }
+    sawDetail = true;
+    models.push(id);
+    let depth = 0;
+    let json = "";
+    for (; j < lines.length; j++) {
+      json += lines[j] + "\n";
+      for (const ch of lines[j]) {
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+      }
+      if (depth <= 0) break;
+    }
+    i = j;
+    try {
+      const declared = (JSON.parse(json) as { variants?: unknown }).variants;
+      if (declared && typeof declared === "object" && !Array.isArray(declared)) {
+        const names = Object.keys(declared as Record<string, unknown>);
+        if (names.length) variants[id] = names;
+      }
+    } catch {
+      /* truncated or non-JSON detail: the id from the same block still counts */
+    }
+  }
+  if (!sawDetail) {
+    return { models: out.split("\n").map((l) => l.trim()).filter((l) => l.includes("/")), variants: {} };
+  }
+  return { models, variants };
+}
+
 export class OpenCodeRuntimeAdapter implements AgentRuntime {
   readonly name = "opencode";
   private processes = new Map<string, ProcessHandle>();
@@ -678,8 +731,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         // servers) means "no filter available", not "none connected".
         const connected = res.connected?.length ? new Set(res.connected) : undefined;
         const models: string[] = [];
-        // provider/model -> thinking variant names (e.g. low | high | max).
-        // Only the HTTP provider listing carries these; the CLI cannot see them.
+        // provider/model -> thinking variant names (e.g. low | high | max),
+        // as declared by the backend's provider catalogue. Both supply paths
+        // fill this in; the CLI fallback parses `models --verbose` for it.
         const variants: Record<string, string[]> = {};
         for (const p of providers) {
           if (connected && !connected.has(p.id)) continue;
@@ -707,12 +761,16 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     return await this.listModelsViaCli();
   }
 
-  /** `opencode models` — one `provider/model-id` per line on stdout. */
-  private listModelsViaCli(): Promise<{ models: string[]; default?: string; error?: string }> {
+  /**
+   * `opencode models --verbose` — one `provider/model-id` line per model,
+   * each followed by the model's JSON detail block, which carries `variants`
+   * when the model supports thinking levels.
+   */
+  private listModelsViaCli(): Promise<{ models: string[]; default?: string; error?: string; variants?: Record<string, string[]> }> {
     return new Promise((resolve) => {
       let proc: ChildProcess;
       try {
-        proc = spawn(this.executable, ["models"], {
+        proc = spawn(this.executable, ["models", "--verbose"], {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
           shell: process.platform === "win32",
@@ -724,7 +782,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       let out = "";
       let errText = "";
       let settled = false;
-      const finish = (result: { models: string[]; default?: string; error?: string }): void => {
+      const finish = (result: { models: string[]; default?: string; error?: string; variants?: Record<string, string[]> }): void => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -753,11 +811,12 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
           finish({ models: [], error: `'${this.executable} models' exited ${code}: ${errText.trim().slice(0, 300)}` });
           return;
         }
-        const models = out
-          .split("\n")
-          .map((l) => l.trim())
-          .filter((l) => l.includes("/"));
-        finish({ models, default: this.options.model ? `${this.options.model.providerID}/${this.options.model.modelID}` : undefined });
+        const parsed = parseCliModels(out);
+        finish({
+          models: parsed.models,
+          variants: Object.keys(parsed.variants).length ? parsed.variants : undefined,
+          default: this.options.model ? `${this.options.model.providerID}/${this.options.model.modelID}` : undefined,
+        });
       });
     });
   }
