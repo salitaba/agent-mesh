@@ -46,6 +46,7 @@ import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, transitionLifecycle } from "./projections";
+import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
 import type { BudgetManager } from "./budgets";
@@ -1507,13 +1508,6 @@ export class Supervisor {
         kind: "architecture-approved",
         artifactRef: { uri: artifactUri(a.type, a.name, a.version) },
         by: a.owner,
-        recordedAt: this.deps.kernel.clock.iso(),
-      });
-    }
-    if (to === "MERGED") {
-      await this.markCriterionEvidence("implementation-merged", {
-        kind: "patch-merged",
-        artifactRef: { uri: artifactUri(a.type, a.name, a.version) },
         recordedAt: this.deps.kernel.clock.iso(),
       });
     }
@@ -3891,14 +3885,75 @@ export class Supervisor {
       const merged = await this.deps.workspace.mergeWorktree(artifactId, artifact.owner, comment ?? `merge ${artifact.name}`);
       await this.transitionArtifact(HUMAN_AGENT_ID, artifactId, { to: "MERGED" }).catch(() => undefined);
       void merged;
+      await this.markMergeEvidence(artifact);
+      return { ok: true, op: "merge", eventId: res.eventId };
     }
+    const materialized = await this.materializeProductFiles(artifact);
+    if (!materialized.ok) {
+      this.auditLine(`merge of '${artifact.name}': ${materialized.reason} — implementation-merged stays UNEVIDENCED`);
+      return { ok: true, op: "merge", eventId: res.eventId, reason: materialized.reason };
+    }
+    this.auditLine(`merge of '${artifact.name}': materialized ${materialized.reason}`);
+    await this.markMergeEvidence(artifact);
+    return { ok: true, op: "merge", eventId: res.eventId, reason: `materialized ${materialized.reason}` };
+  }
+
+  /**
+   * Merge evidence is runtime-derived: the worktree merged or the product
+   * files were actually written on disk. It carries no claiming agent, so it
+   * lands EVIDENCED by construction — call it only after the merge step ran.
+   */
+  private async markMergeEvidence(artifact: Artifact): Promise<void> {
     await this.markCriterionEvidence("implementation-merged", {
       kind: "merge",
       artifactRef: { uri: artifactUri(artifact.type, artifact.name, artifact.version) },
-      by: actorId,
       recordedAt: this.deps.kernel.clock.iso(),
     });
-    return { ok: true, op: "merge", eventId: res.eventId };
+  }
+
+  /**
+   * Non-git merge: write the patch's files into the product workspace.
+   *
+   * Without git a MERGED record is only a record, so the CodePatch carries its
+   * files: `metadata.path` + raw content (single file) or `## File: <path>` /
+   * `### <path>` sections (bundle, raw bodies). Every path is confined to the
+   * workspace and every target is resolved before the first byte is written.
+   */
+  private async materializeProductFiles(artifact: Artifact): Promise<{ ok: true; reason: string } | { ok: false; reason: string }> {
+    const meta = artifact.metadata as { path?: unknown } | undefined;
+    const metadataPath = typeof meta?.path === "string" && meta.path.trim() ? meta.path.trim() : undefined;
+    let content: string;
+    try {
+      content = await this.deps.content.read(artifact.contentRef);
+    } catch (err) {
+      return { ok: false, reason: `cannot read artifact content: ${(err as Error).message}` };
+    }
+    const files = extractPatchFiles(content, metadataPath);
+    if (files.length === 0) {
+      return {
+        ok: false,
+        reason: metadataPath
+          ? `no '## File: ${metadataPath}' section found in a multi-file bundle`
+          : "no file sections found (use '## File: <path>' sections or metadata.path for a single file)",
+      };
+    }
+    const targets: Array<{ file: PatchFile; target: string }> = [];
+    for (const file of files) {
+      const target = safeProductPath(this.config.workspacePath, file.path);
+      if (!target) return { ok: false, reason: `path '${file.path}' is not inside the workspace` };
+      targets.push({ file, target });
+    }
+    const written: string[] = [];
+    for (const { file, target } of targets) {
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, file.content, "utf8");
+      } catch (err) {
+        return { ok: false, reason: `write '${file.path}' failed: ${(err as Error).message}` };
+      }
+      written.push(file.path);
+    }
+    return { ok: true, reason: written.join(", ") };
   }
 
   private sendMessageCapability(actorId: string, type: MessageType): string | null {

@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 import { makeMesh, evidenceContent } from "../helpers";
 import type { MeshInstance } from "../../apps/mesh-server/src/index";
 import type { MeshOp } from "../../packages/protocol/src/index";
@@ -31,8 +33,8 @@ function countingTurn(agentId: string) {
   return fakeTurn(agentId) as unknown as { sentOps: number; publishedOps: number; escalated: boolean };
 }
 
-async function publish(m: MeshInstance, actorId: string, name: string, type: string, content: string) {
-  const res = await m.supervisor.executeOp(actorId, { op: "publish_artifact", name, type, content } as MeshOp, fakeTurn(actorId));
+async function publish(m: MeshInstance, actorId: string, name: string, type: string, content: string, metadata?: Record<string, unknown>) {
+  const res = await m.supervisor.executeOp(actorId, { op: "publish_artifact", name, type, content, metadata } as MeshOp, fakeTurn(actorId));
   assert.equal(res.ok, true, `publish ${name}: ${res.reason}`);
   return res.artifactId!;
 }
@@ -758,6 +760,67 @@ test("merge with no resolvable reference reports the unknown artifact", async ()
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactUri: "CodePatch-nothing-v1" } as MeshOp, fakeTurn("lead"));
     assert.equal(res.ok, false);
     assert.equal(res.reason, "unknown artifact");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+// --- opMerge: non-git materialization -----------------------------------
+
+const MERGE_AGENTS = [
+  { id: "dev", role: "developer", capabilities: ["repository.write", "test.execute", "git.commit"], interests: [] },
+  { id: "lead", role: "tech-lead", capabilities: ["code.review", "git.merge"], authority: ["implementation.approve"], interests: [] },
+];
+
+async function patchAtMergeable(m: MeshInstance, content: string, metadata?: Record<string, unknown>): Promise<string> {
+  const artId = await publish(m, "dev", "playground", "CodePatch", content, metadata);
+  const op = (actorId: string, o: MeshOp) => m.supervisor.executeOp(actorId, o, fakeTurn(actorId));
+  assert.equal((await op("dev", { op: "transition_artifact", artifactId: artId, to: "READY_FOR_REVIEW" })).ok, true);
+  assert.equal((await op("lead", { op: "transition_artifact", artifactId: artId, to: "UNDER_REVIEW" })).ok, true);
+  assert.equal((await op("lead", { op: "approve", subject: "implementation", artifactId: artId })).ok, true);
+  assert.equal((await op("lead", { op: "transition_artifact", artifactId: artId, to: "APPROVED" })).ok, true);
+  assert.equal((await op("dev", { op: "transition_artifact", artifactId: artId, to: "VERIFIED" })).ok, true);
+  assert.equal((await op("dev", { op: "transition_artifact", artifactId: artId, to: "MERGEABLE" })).ok, true);
+  return artId;
+}
+
+function criterionStatus(m: MeshInstance, id: string): string | undefined {
+  const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId ?? "");
+  return goal?.acceptanceCriteria.find((c) => c.id === id)?.status;
+}
+
+test("non-git merge materializes the patch files and evidences implementation-merged", async () => {
+  const m = await makeMesh({
+    agents: MERGE_AGENTS,
+    criteria: [{ id: "implementation-merged", description: "the work is merged", mandatory: true }],
+    mode: "parked",
+  });
+  try {
+    const content = ["## File: web/playground.html", "<html>play</html>", "", "## Manual verification / AC traceability", "- checked"].join("\n");
+    const artId = await patchAtMergeable(m, content);
+    const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: artId } as MeshOp, fakeTurn("lead"));
+    assert.equal(res.ok, true, res.reason);
+
+    const target = path.join(m.supervisor.config.workspacePath, "web/playground.html");
+    assert.equal(fs.readFileSync(target, "utf8"), "<html>play</html>");
+    assert.equal(criterionStatus(m, "implementation-merged"), "EVIDENCED");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("non-git merge with no materializable content stays truthful: no file, no evidence", async () => {
+  const m = await makeMesh({
+    agents: MERGE_AGENTS,
+    criteria: [{ id: "implementation-merged", description: "the work is merged", mandatory: true }],
+    mode: "parked",
+  });
+  try {
+    const artId = await patchAtMergeable(m, evidenceContent("prose only, no file sections"));
+    const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: artId } as MeshOp, fakeTurn("lead"));
+    assert.equal(res.ok, true, res.reason);
+    assert.match(res.reason ?? "", /no file sections/);
+    assert.notEqual(criterionStatus(m, "implementation-merged"), "EVIDENCED");
   } finally {
     await m.cleanup();
   }
