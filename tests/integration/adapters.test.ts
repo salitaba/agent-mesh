@@ -156,6 +156,30 @@ test("opencode adapter: creates sessions, sends turns, parses mesh ops and token
   }
 });
 
+test("opencode adapter: alias capabilities open edit/bash instead of silently denying them", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-alias-"));
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false });
+    const writer: AgentDefinition = { ...devDef, capabilities: ["api.write", "test.run"] };
+    const session = await adapter.start(writer, { ...runtimeCtx(dir), capabilityGrants: writer.capabilities });
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "developer", "opencode.json"), "utf8"));
+    assert.equal(cfg.permission.edit, "allow", "api.write must map to repository.write, not silently deny edit");
+    assert.equal(cfg.permission.bash, "allow", "test.run must map to test.execute");
+    await adapter.stop(session);
+
+    const reader: AgentDefinition = { ...devDef, id: "reader", capabilities: ["repository.read"] };
+    const readerSession = await adapter.start(reader, { ...runtimeCtx(dir), capabilityGrants: reader.capabilities });
+    const readerCfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "reader", "opencode.json"), "utf8"));
+    assert.equal(readerCfg.permission.edit, "deny", "read-only seats keep the edit tool off");
+    assert.equal(readerCfg.permission.bash, "deny");
+    await adapter.stop(readerSession);
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("opencode adapter: prompt() is context-free, forwards system/model, returns text unparsed", async () => {
   const mock = await startMockOpenCode();
   try {

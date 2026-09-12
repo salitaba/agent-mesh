@@ -307,6 +307,60 @@ export const AUTHORITY_TOKENS: string[] = [
   ...AUTHORITY_DOMAINS.flatMap((d) => AUTHORITY_VERBS.map((v) => `${d}.${v}`)),
 ];
 
+/**
+ * Every capability token the policy engine and runtime can satisfy.
+ *
+ * Same failure mode as authority tokens: a capability the engine never checks
+ * (or a typo like `repository.writ`) loads and boots, but every grant silently
+ * does nothing — the seat gets no edit/bash tools and the mission cannot write
+ * a product. Config load rejects anything outside this list; the aliases below
+ * are normalized first so hand-written meshes keep working.
+ */
+export const CAPABILITY_TOKENS: string[] = [
+  "repository.read",
+  "repository.write",
+  "architecture.read",
+  "architecture.write",
+  "review.design",
+  "code.review",
+  "task.assign",
+  "test.write",
+  "test.execute",
+  "security.scan",
+  "security.review",
+  "git.commit",
+  "git.merge",
+  "shell.execute",
+  "network.request",
+  // Message-standing grant checked by `sendMessageCapability` for
+  // REQUEST_REVIEW / REQUEST_RESEARCH; repository.read also confers it.
+  "request_review",
+];
+
+/**
+ * Domain-flavored names seen in hand-written mesh.yaml files (api.write,
+ * ui.write, ...) mapped onto the canonical tokens the runtime checks. Without
+ * this a mesh that "grants" api.write grants nothing: policy denies every
+ * write op and the generated opencode config denies the edit tool.
+ */
+export const CAPABILITY_ALIASES: Record<string, string> = {
+  "api.read": "repository.read",
+  "ui.read": "repository.read",
+  "data.read": "repository.read",
+  "api.write": "repository.write",
+  "ui.write": "repository.write",
+  "data.write": "repository.write",
+  "code.write": "repository.write",
+  "docs.write": "repository.write",
+  "test.run": "test.execute",
+  "quality.verify": "test.execute",
+  "repository.merge": "git.merge",
+};
+
+export function normalizeCapability(capability: string): string {
+  return CAPABILITY_ALIASES[capability] ?? capability;
+}
+
 export const TRUST_SOURCES = [
   "human",
   "system",

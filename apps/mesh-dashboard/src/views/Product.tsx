@@ -311,7 +311,15 @@ export default function Product(): React.JSX.Element {
       {pg ? (
         <Card title={<>Playground {pgErr ? <Pill tone="waiting">not built</Pill> : null}</>}>
           {pgErr ? (
-            <div className="muted">Run <b>build</b> above to compile the playground, then reopen it.</div>
+            tree.filter((e) => !e.name.startsWith(".")).length === 0 ? (
+              <div className="muted">
+                No product files in this workspace yet — the mission has not written any code to{" "}
+                <span className="mono">{String(info?.path || "")}</span>. What the agents did produce is under{" "}
+                <b>Artifacts</b>.
+              </div>
+            ) : (
+              <div className="muted">Run <b>build</b> above to compile the playground, then reopen it.</div>
+            )
           ) : (
             <iframe title="playground" src="/playground/" className="playframe" onError={() => setPgErr(true)} />
           )}

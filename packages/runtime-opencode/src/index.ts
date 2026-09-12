@@ -8,6 +8,7 @@ import {
   isConnectionError,
   newAgentSessionId,
   aliasTextOp,
+  normalizeCapability,
   type AgentDefinition,
   type AgentInput,
   type AgentOutput,
@@ -513,12 +514,21 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   }
 
   private permissionsFor(agent: AgentDefinition, context: RuntimeContext): Record<string, unknown> {
-    const caps = new Set(context.capabilityGrants.length ? context.capabilityGrants : agent.capabilities);
-    const can = (c: string) => (caps.has(c) ? "allow" : "deny");
+    const raw = context.capabilityGrants.length ? context.capabilityGrants : agent.capabilities;
+    // Normalize again here even though config load already canonicalizes:
+    // capabilityGrants also arrive from direct AgentDefinition construction
+    // (tests, bench harnesses), and a seat granted `api.write` must still get
+    // the edit tool rather than silently producing artifact text only.
+    const caps = new Set(raw.map(normalizeCapability));
+    // Any token that lets the seat produce files in the repo opens the edit
+    // tool: repository.write is canonical, but a seat allowed to write tests
+    // or architecture docs still edits files.
+    const canEdit = caps.has("repository.write") || caps.has("architecture.write") || caps.has("test.write");
+    const canBash = caps.has("shell.execute") || caps.has("test.execute");
     return {
-      edit: can("repository.write"),
-      bash: caps.has("shell.execute") || caps.has("test.execute") ? "allow" : caps.has("git.commit") ? "ask" : "deny",
-      webfetch: can("network.request"),
+      edit: canEdit ? "allow" : "deny",
+      bash: canBash ? "allow" : caps.has("git.commit") ? "ask" : "deny",
+      webfetch: caps.has("network.request") ? "allow" : "deny",
       read: "allow",
     };
   }

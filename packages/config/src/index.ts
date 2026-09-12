@@ -6,6 +6,8 @@ import {
   validateMeshConfig,
   EVENT_TYPES,
   AUTHORITY_TOKENS,
+  CAPABILITY_TOKENS,
+  normalizeCapability,
   PROJECT_ID_PATTERN,
   isProjectId,
   toProjectId,
@@ -365,7 +367,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const id of agentIds) {
     const a = raw.agents[id];
     const comm = raw.policies?.communication?.[id];
-    const capPolicy = new Set([...(a.capabilities ?? [])]);
+    const capPolicy = new Set([...(a.capabilities ?? [])].map(normalizeCapability));
     const def: AgentDefinition = {
       id,
       role: a.role,
@@ -432,6 +434,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   const interestErrors = validateInterestExpressions(Object.values(agents));
   errors.push(...interestErrors);
   errors.push(...validateAuthorityTokens(Object.values(agents)));
+  errors.push(...validateCapabilityTokens(Object.values(agents)));
   // Gate-actor problems are reported, not fatal: a gate may legitimately name
   // a role that a larger mesh adds later, and some fixtures assert on a
   // deliberately unsatisfiable gate. Surfacing beats silently deadlocking.
@@ -657,6 +660,29 @@ export function validateAuthorityTokens(agents: AgentDefinition[]): string[] {
       if (!known.has(token)) {
         errors.push(
           `agent '${agent.id}' declares unknown authority '${token}' — the runtime can never satisfy it (known: ${AUTHORITY_TOKENS.join(", ")})`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+/**
+ * Capability tokens must be ones the policy engine can actually match.
+ *
+ * Mirrors validateAuthorityTokens: an invented name used to load and boot,
+ * then silently grant nothing (no edit/bash tools, every capability check
+ * DENY). Aliases are normalized before this runs, so the error only names
+ * genuinely unknown tokens.
+ */
+export function validateCapabilityTokens(agents: AgentDefinition[]): string[] {
+  const errors: string[] = [];
+  const known = new Set(CAPABILITY_TOKENS);
+  for (const agent of agents) {
+    for (const token of agent.capabilities) {
+      if (!known.has(token)) {
+        errors.push(
+          `agent '${agent.id}' declares unknown capability '${token}' — the policy engine can never match it (known: ${CAPABILITY_TOKENS.join(", ")})`,
         );
       }
     }

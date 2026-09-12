@@ -1514,7 +1514,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "workspace" && req.method === "GET") {
         if (parts[1] === "info" && parts.length === 2) {
           const git = gitFacts(wsRoot);
-          return json(200, { path: wsRoot, ...git, scripts: Object.keys(RUN_SCRIPTS) });
+          return json(200, { path: wsRoot, ...git, scripts: Object.keys(runScripts(wsRoot)) });
         }
         if (parts[1] === "tree" && parts.length === 2) {
           const rel = String(u.searchParams.get("path") ?? "");
@@ -1589,8 +1589,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "workspace" && parts[1] === "run" && parts.length === 2 && req.method === "POST") {
         const b = await body();
         const script = String(b.script ?? "");
-        const def = RUN_SCRIPTS[script as keyof typeof RUN_SCRIPTS];
-        if (!def) return json(400, { error: `unknown script (allowed: ${Object.keys(RUN_SCRIPTS).join(", ")})` });
+        const defs = runScripts(wsRoot);
+        const def = defs[script];
+        if (!def) return json(400, { error: `unknown script (allowed: ${Object.keys(defs).join(", ") || "none — no package.json scripts in the product workspace"})` });
         const run = startRun(wsRoot, script, def);
         if (!run) return json(409, { error: "a run is already in progress" });
         return json(201, { runId: run.id });
@@ -1607,11 +1608,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const pgDir = path.join(wsRoot, "apps", "playground");
         if (parts.length === 1) {
           const html = await fs.promises.readFile(path.join(pgDir, "index.html"), "utf8").catch(() => "");
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
           if (!html) {
-            res.end("<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No apps/playground/index.html in the workspace.</body>");
+            // 404 (not 200) so the dashboard's playground probe treats this as
+            // "not built" instead of embedding the fallback text in an iframe.
+            res.writeHead(404, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+            res.end("<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No product build in this workspace — expected apps/playground/index.html, and the mission has not written one.</body>");
             return;
           }
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
           res.end(html);
           return;
         }
@@ -1771,16 +1775,44 @@ function artifactVersion(instance: MeshInstance, id: string, version: number): A
  * Workspace window + whitelisted runner (see /workspace routes).
  * ---------------------------------------------------------------------- */
 
-const RUN_SCRIPTS = {
-  test: { cmd: "npm", args: ["test"], label: "run the full test suite (vitest)" },
-  typecheck: { cmd: "npm", args: ["run", "typecheck"], label: "TypeScript typecheck" },
-  build: { cmd: "npm", args: ["run", "build"], label: "build packages + playground (tsc -b)" },
-  "headless-hairpin": {
-    cmd: "node",
-    args: ["tools/headless/dist/main.js", "--scenario", "demos/hairpin.scenario.json", "--out", ".mesh-state/run/hairpin-trace.json", "--ticks", "6600"],
-    label: "run the hairpin demo scenario headless (6600 ticks)",
-  },
-} as const;
+/**
+ * Scripts the console may run against the product workspace. The product owns
+ * its own package.json, so an arbitrary mesh gets its own build/test/dev — the
+ * old fixed list only ever worked for the bundled simulator demo. Only
+ * whitelisted script *names* are exposed and the request just names one; the
+ * command and args are always `npm run <name>`, so this stays a non-shell API.
+ */
+const RUN_SCRIPT_NAMES = new Set(["build", "test", "typecheck", "dev", "start", "serve", "preview", "lint"]);
+
+export interface RunScriptDef {
+  cmd: string;
+  args: readonly string[];
+  label: string;
+}
+
+export function runScripts(root: string): Record<string, RunScriptDef> {
+  const defs: Record<string, RunScriptDef> = {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as { scripts?: Record<string, unknown> };
+    for (const name of Object.keys(pkg.scripts ?? {})) {
+      if (!RUN_SCRIPT_NAMES.has(name)) continue;
+      const body = pkg.scripts?.[name];
+      defs[name] = { cmd: "npm", args: ["run", name], label: typeof body === "string" ? `${name} — ${body}` : name };
+    }
+  } catch {
+    // No package.json (or invalid JSON): the product simply exposes no scripts.
+  }
+  // The bundled simulator's headless demo predates the package.json convention.
+  // Keep the entry visible only when its entrypoint actually exists on disk.
+  if (fs.existsSync(path.join(root, "tools", "headless", "dist", "main.js"))) {
+    defs["headless-hairpin"] = {
+      cmd: "node",
+      args: ["tools/headless/dist/main.js", "--scenario", "demos/hairpin.scenario.json", "--out", ".mesh-state/run/hairpin-trace.json", "--ticks", "6600"],
+      label: "headless-hairpin — run the hairpin demo scenario (6600 ticks)",
+    };
+  }
+  return defs;
+}
 
 interface ActiveRun {
   id: string;

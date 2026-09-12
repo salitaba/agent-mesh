@@ -12,6 +12,7 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 // host, which looks exactly like a missing route on the server.
 const API_ROOTS = [
   "api",
+  "playground", "presets",
   "status", "metrics", "steps", "turns", "scheduler", "activity", "events",
   "graph", "timeline", "agents", "threads", "messages", "artifacts", "budgets",
   "approvals", "escalations", "mission", "goals", "config", "internal", "health",
