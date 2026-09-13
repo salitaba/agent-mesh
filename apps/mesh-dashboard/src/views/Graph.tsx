@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { plainLifecycle, RUNNING } from "../format";
+import { useEffect, useMemo, useState } from "react";
+import { ago, plainLifecycle, RUNNING } from "../format";
 import { useMesh } from "../store";
 import { Card, ErrorState, rowKey } from "../components";
 import { AgentDrawer } from "../drawers";
@@ -21,6 +21,18 @@ export default function Graph(): React.JSX.Element {
   // the tab was closed. Failure is now a state, and it is retryable.
   const [err, setErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // When this drawing was made. The dashed "active right now" overlay is
+  // computed from the live event stream, so a frozen /graph fetch put two
+  // different moments in one picture: current activity drawn on stale edges.
+  const [at, setAt] = useState<string | null>(null);
+  // Edges are message counts and nodes are the roster, so those two event
+  // families are exactly what invalidates the drawing. Keying on the top seq
+  // refetches once per change rather than on a timer.
+  const graphSeq = useMemo(() => {
+    let top = 0;
+    for (const e of events) if ((e.type === "message.sent" || e.type.startsWith("agent.")) && e.seq > top) top = e.seq;
+    return top;
+  }, [events]);
   useEffect(() => {
     let dead = false;
     setErr(null);
@@ -31,13 +43,14 @@ export default function Graph(): React.JSX.Element {
         return;
       }
       setGraph(json);
+      setAt(new Date().toISOString());
     }).catch((e: unknown) => {
       if (!dead) setErr(e instanceof Error ? e.message : String(e));
     });
     return () => {
       dead = true;
     };
-  }, [attempt, client]);
+  }, [attempt, graphSeq, client]);
 
   if (err && !graph) return <ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} />;
   if (!graph) return <div className="empty"><div className="big">…</div><div>loading graph</div></div>;
@@ -68,7 +81,7 @@ export default function Graph(): React.JSX.Element {
 
   return (
     <>
-      <div className="view-title"><h2>Graph</h2></div>
+      <div className="view-title"><h2>Graph</h2><span className="muted">{err ? "refresh failed — showing the last drawing" : at ? `as of ${ago(at)}` : ""}</span></div>
       <div className="view-sub">Who talks to whom. Thicker = more messages. Dashed = active right now. Click an agent for details.</div>
       <Card variant="graph-wrap">
         <svg id="graph-svg" role="img" aria-label="mesh graph" viewBox={`0 0 ${W} ${H}`}>

@@ -1,7 +1,138 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { ago, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSummary } from "./events";
 import type { TimelineEvent, TurnStep } from "./store";
+
+export const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// Only what a keyboard user can actually reach: `offsetParent === null` drops
+// anything a parent hid with display:none, which is how the drawers collapse
+// their inactive tab panels.
+export function focusables(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) => el.offsetParent !== null || el === document.activeElement,
+  );
+}
+
+/**
+ * Which overlay currently owns Tab.
+ *
+ * Two independent document-CAPTURE Tab traps used to be able to run on the same
+ * event: the shell's drawer trap and a dialog's own. The shell registers first,
+ * so on every Tab it saw focus outside #drawer, preventDefault'd and pulled
+ * focus back to the drawer's first control -- then the dialog's trap ran on the
+ * same event and pulled it to the dialog's first control. Forward Tab therefore
+ * pinned on the first item forever and every control between first and last was
+ * unreachable. In the "Reset to zero" confirm (match-text input, Cancel,
+ * Confirm) that left Cancel with no keyboard route at all, reachable via the
+ * global `r` shortcut over an open drawer.
+ *
+ * A trap only acts when it is the innermost one. Order is push order, so the
+ * most recently opened layer wins, which is what "topmost" means here.
+ */
+const trapStack: HTMLElement[] = [];
+
+export function pushTrap(el: HTMLElement): () => void {
+  trapStack.push(el);
+  return () => {
+    const i = trapStack.lastIndexOf(el);
+    if (i >= 0) trapStack.splice(i, 1);
+  };
+}
+
+export const isTopTrap = (el: HTMLElement | null): boolean => !!el && trapStack[trapStack.length - 1] === el;
+
+/**
+ * The three things every modal owes a keyboard user: focus moves in when it
+ * opens, Tab cannot escape it, Esc closes it, and focus returns to whatever
+ * opened it. The shell implements a stack-aware version for its drawer; this is
+ * the single-layer case, for dialogs that are simply open or closed.
+ *
+ * Attach the returned ref to the dialog root.
+ */
+export function useDismissable<T extends HTMLElement>(open: boolean, onClose: () => void): RefObject<T | null> {
+  const ref = useRef<T | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  // Callers write `onClose={() => setOpen(false)}`, a fresh identity every
+  // render. Depending on it directly would re-run the effect on each parent
+  // re-render — re-stealing focus mid-typing and forgetting the real opener.
+  const close = useRef(onClose);
+  close.current = onClose;
+  // Where focus goes on close depends on how the user closed it, and the only
+  // moment that is knowable is during the interaction itself: this cleanup runs
+  // BEFORE mousedown's default focus action, so reading document.activeElement
+  // here reports stale state, and calling focus() unconditionally merely races
+  // that default (measured: the call ran, then the browser overrode it).
+  //
+  // Suppress the restore only when the press landed on something the browser
+  // will focus -- yanking focus off a control the user just clicked is the one
+  // harmful case. A scrim (ConfirmDialog, the project picker) and inert canvas
+  // are not focusable, so those still restore to the opener rather than
+  // stranding focus on <body>, where the next Tab restarts at the document top.
+  const viaPointer = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    viaPointer.current = false;
+    const from = document.activeElement;
+    opener.current = from instanceof HTMLElement && from !== document.body ? from : null;
+    const root = ref.current;
+    if (root) (focusables(root)[0] ?? root).focus();
+    const pop = root ? pushTrap(root) : () => {};
+    const onKey = (ev: KeyboardEvent) => {
+      // Last interaction wins: a stray earlier click must not disarm the
+      // restore for a close the user then drives from the keyboard.
+      viaPointer.current = false;
+      if (ev.key === "Escape") {
+        ev.stopPropagation();
+        close.current();
+        return;
+      }
+      if (ev.key !== "Tab") return;
+      const el = ref.current;
+      if (!el) return;
+      // Only the innermost open overlay may move focus; otherwise this trap and
+      // the shell's drawer trap both fire on the same Tab and fight.
+      if (!isTopTrap(el)) return;
+      const items = focusables(el);
+      if (!items.length) {
+        ev.preventDefault();
+        el.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const act = document.activeElement;
+      if (!(act instanceof HTMLElement) || !el.contains(act)) {
+        ev.preventDefault();
+        (ev.shiftKey ? last : first).focus();
+      } else if (ev.shiftKey && act === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && act === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    };
+    const onDown = (ev: PointerEvent) => {
+      const el = ref.current;
+      const t = ev.target;
+      viaPointer.current =
+        !!el && t instanceof Element && !el.contains(t) && !!t.closest(FOCUSABLE);
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      pop();
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onDown, true);
+      const back = opener.current;
+      if (!viaPointer.current && back && back.isConnected) back.focus();
+    };
+  }, [open]);
+  return ref;
+}
 
 /* Shared keyboard activation for clickable rows/cards (the Artifacts table
    proved the pattern: tabIndex + Enter/Space). Guards against double-firing
@@ -99,6 +230,85 @@ type BtnProps =
 export function Button({ variant, danger, extra, type, ...rest }: BtnProps): React.JSX.Element {
   const cls = `${variant}${danger ? " danger" : ""}${extra ? ` ${extra}` : ""}`;
   return <button type={type ?? "button"} className={cls} {...rest} />;
+}
+
+/** Menu button, for a bar that has run out of width. The topbar carries four
+ *  mission actions; measured at 390px those wrapped the header to four rows,
+ *  138px tall, and pushed the document into horizontal scroll. The secondary
+ *  ones collapse in here while the one that is asking for an answer stays out.
+ *
+ *  It lives here rather than in the shell because it is chrome, not mission
+ *  logic — the next toolbar to run out of width should reuse it. Items are
+ *  data rather than children on purpose: that is what keeps role="menuitem",
+ *  the arrow keys and the focus return correct no matter who calls it.
+ *  Follows the ARIA menu-button pattern (styles.css .menu-wrap). */
+export type MenuItem = { id?: string; label: ReactNode; title?: string; danger?: boolean; onClick: () => void };
+
+export function Menu({ id, label, title, items, align = "right" }: {
+  id?: string; label: ReactNode; title?: string; items: MenuItem[]; align?: "left" | "right";
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const btn = useRef<HTMLButtonElement | null>(null);
+
+  // pointerdown, not click: the panel is gone before whatever is underneath
+  // reacts, and the outside target still gets its own event.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
+
+  // A menu you have to tab into is a menu the keyboard cannot use.
+  useEffect(() => {
+    if (open) wrap.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [open]);
+
+  const close = (restore: boolean) => { setOpen(false); if (restore) btn.current?.focus(); };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") { e.stopPropagation(); close(true); return; }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const list = [...(wrap.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
+    if (!list.length) return;
+    const i = list.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === "Home" ? 0
+      : e.key === "End" ? list.length - 1
+      : e.key === "ArrowDown" ? (i + 1) % list.length
+      : i <= 0 ? list.length - 1 : i - 1;
+    list[next]?.focus();
+  };
+
+  // Tab moves focus out of an open panel without ever crossing the outside
+  // pointerdown handler, which left the menu hanging open behind whatever the
+  // user had tabbed to. Close on focus leaving the wrapper — but do not pull
+  // focus back, because the user moved it on purpose. relatedTarget is null
+  // when focus lands on nothing, which should also close.
+  const onBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!wrap.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+  };
+
+  return (
+    <div className="menu-wrap" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
+      <button ref={btn} id={id} type="button" className="soft menu-btn" title={title} aria-label={title}
+        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>{label}</button>
+      {open ? (
+        <div className={`menu-panel ${align}`} role="menu">
+          {items.map((it, i) => (
+            /* Focus goes back to the trigger before the action runs, so a item
+               that opens a drawer records the trigger as its return target. */
+            <button key={it.id ?? i} id={it.id} type="button" role="menuitem"
+              className={`menu-item${it.danger ? " danger" : ""}`} title={it.title}
+              onClick={() => { close(true); it.onClick(); }}>{it.label}</button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** .card (styles.css:155) with its `.card h3` header (156). `variant` is a
@@ -240,5 +450,109 @@ export function agentColor(role: string): string {
       "tech-lead": "var(--role-tech-lead)", pm: "var(--role-pm)",
       explorer: "var(--role-explorer)",
     }[role] || "var(--accent)"
+  );
+}
+
+/**
+ * What a native confirm() cannot do: say which mesh it is about, show the list
+ * of agents it is about to wake, mark a destructive action as destructive, or
+ * be styled, focus-trapped and dismissed like the rest of the console. It also
+ * blocks the whole tab while it is up, which on a live SSE view means the
+ * stream backs up behind a modal the browser drew.
+ *
+ * One dialog covers all three guards the console actually uses:
+ *   - plain yes/no                (`require` omitted)
+ *   - type-the-name to arm        (`require.kind === "match"`)
+ *   - give a reason to proceed    (`require.kind === "text"`)
+ * so a caller picks a shape rather than hand-rolling a modal.
+ */
+export interface ConfirmRequest {
+  title: string;
+  /** Each string is its own paragraph — consequences read better as a list than as one wall. */
+  body?: string[];
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Paints the confirm button as destructive and holds it until `require` is satisfied. */
+  danger?: boolean;
+  require?:
+    | { kind: "match"; value: string; label: string }
+    | { kind: "text"; label: string; placeholder?: string };
+}
+
+/**
+ * Resolves with the typed text on confirm (`""` when nothing was required), or
+ * `null` on cancel — so `if ((await confirm(…)) === null) return;` reads the
+ * same way the old `if (!window.confirm(…)) return;` did.
+ */
+export type ConfirmFn = (req: ConfirmRequest) => Promise<string | null>;
+
+export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResolve: (v: string | null) => void }): React.JSX.Element {
+  const [text, setText] = useState("");
+  const cancel = useCallback(() => onResolve(null), [onResolve]);
+  const ref = useDismissable<HTMLDivElement>(true, cancel);
+  const need = req.require;
+  // A `match` guard is the point of the dialog, so it is checked exactly: no
+  // case folding, only the surrounding whitespace a copy-paste drags along.
+  const armed = !need ? true : need.kind === "match" ? text.trim() === need.value : text.trim().length > 0;
+  const descId = "confirm-body";
+  return (
+    <>
+      <div className="confirm-scrim" onClick={cancel} />
+      <div className="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={req.body?.length ? descId : undefined} ref={ref}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (armed) onResolve(text.trim());
+          }}
+        >
+          <h2 id="confirm-title">{req.title}</h2>
+          {req.body?.length ? (
+            <div id={descId} className="confirm-body">
+              {req.body.map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+            </div>
+          ) : null}
+          {need ? (
+            <label className="confirm-field">
+              <span>{need.label}</span>
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={need.kind === "match" ? need.value : need.placeholder}
+                /* The guard is the whole point — never let a password manager or
+                   the browser's own history pre-arm it. */
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby={need.kind === "match" ? "confirm-hint" : undefined}
+              />
+              {need.kind === "match" ? (
+                <small id="confirm-hint" className="muted">
+                  {/* Says what is still missing rather than only greying the button:
+                      a disabled control with no reason given is a dead end. */}
+                  {armed ? "matches — the action is armed" : `type ${need.value} exactly to continue`}
+                </small>
+              ) : null}
+            </label>
+          ) : null}
+          <div className="confirm-acts">
+            <Button variant="soft" onClick={cancel}>
+              {req.cancelLabel ?? "Cancel"}
+            </Button>
+            {/* Split rather than a computed `variant`: `danger` is only legal on
+                the soft/small arms of BtnProps, and a ternary defeats that check. */}
+            {req.danger ? (
+              <Button variant="soft" danger type="submit" disabled={!armed}>
+                {req.confirmLabel ?? "Confirm"}
+              </Button>
+            ) : (
+              <Button variant="primary" type="submit" disabled={!armed}>
+                {req.confirmLabel ?? "Confirm"}
+              </Button>
+            )}
+          </div>
+        </form>
+      </div>
+    </>
   );
 }

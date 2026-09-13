@@ -24,6 +24,27 @@ export const pillCls = (lifecycle: unknown): string => String(lifecycle || "").t
 
 export const RUNNING = new Set(["THINKING", "WORKING", "AWAKENED", "OBSERVING", "REQUESTING", "REVIEWING"]);
 
+/**
+ * Progress has to be counted the way the kernel counts it. `CriterionStatus` is
+ * UNSATISFIED | ASSERTED | EVIDENCED | WAIVED, and every gate in core —
+ * termination, projections-goal, context — counts only EVIDENCED or WAIVED.
+ * ASSERTED means an agent claimed the criterion from a turn that verified
+ * nothing, and is excluded on purpose.
+ *
+ * The console counted `!== "UNSATISFIED"`, so an ASSERTED claim moved the
+ * progress bar. Overview then showed "6 of 6 checks done" directly above a list
+ * labelling one of them "claimed, not verified", on a mission the gate would
+ * never let terminate. Same predicate everywhere, or the console lies.
+ */
+export const criterionDone = (c: { status?: unknown }): boolean => c.status === "EVIDENCED" || c.status === "WAIVED";
+
+/** Only mandatory criteria reach the termination gate, so only they are scored. */
+export function mandatoryProgress(criteria: readonly unknown[] | undefined): { done: number; total: number; pct: number } {
+  const mandatory = (criteria || []).filter((c: any) => c.mandatory);
+  const done = mandatory.filter((c: any) => criterionDone(c)).length;
+  return { done, total: mandatory.length, pct: mandatory.length ? Math.round((done / mandatory.length) * 100) : 0 };
+}
+
 const LIFECYCLE_PLAIN: Record<string, string> = {
   STARTING: "starting", IDLE: "idle", AWAKENED: "started work", OBSERVING: "reading inbox",
   THINKING: "working", REQUESTING: "asking for help", WORKING: "working", WAITING: "waiting",
@@ -38,6 +59,20 @@ const GOAL_PLAIN: Record<string, string> = {
 };
 export const plainGoal = (s: unknown): string =>
   GOAL_PLAIN[String(s || "").toUpperCase()] || String(s || "-").toLowerCase();
+
+/**
+ * Goal statuses are not lifecycle values, so lowercasing them the way `pillCls`
+ * does produced `.pill.active` / `.pill.paused` / `.pill.escalated` — three
+ * classes that do not exist. The pill fell back to its neutral base, which is
+ * why a mission that needed a decision looked exactly like a healthy one.
+ * Mapped explicitly onto the tones that *are* defined.
+ */
+const GOAL_TONE: Record<string, string> = {
+  CREATED: "starting", ACTIVE: "working", CONVERGING: "reviewing",
+  PAUSED: "waiting", BLOCKED: "blocked", ESCALATED: "blocked",
+  COMPLETED: "completed", FAILED: "failed",
+};
+export const goalTone = (s: unknown): string => GOAL_TONE[String(s || "").toUpperCase()] || "idle";
 
 const REASON_PLAIN: Record<string, string> = {
   startup: "mission started", message: "new message", interest_event: "something it cares about happened",

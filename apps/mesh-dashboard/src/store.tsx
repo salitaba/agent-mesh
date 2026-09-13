@@ -4,6 +4,7 @@ import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient 
 import { VIEWS, hashFor, parseHash, type HashRoute, type View } from "./route";
 import { useProjectsOptional, type ProjectSink } from "./projects";
 import { retainCap, trimRetained } from "./tabmodel";
+import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
 
 export interface TimelineEvent {
   seq: number;
@@ -52,6 +53,13 @@ export interface Toast {
   title: string;
   msg: string;
   kind: string;
+  /**
+   * An optional one-click follow-up, for the case where the notice is the only
+   * chance to act — undoing a delete, retrying a failed save. A toast carrying
+   * one stays up longer, because an affordance that disappears before it can be
+   * read is worse than none at all.
+   */
+  action?: { label: string; run: () => void };
 }
 
 /** Live token buffer for one running turn (out-of-band, never in the log). */
@@ -127,7 +135,14 @@ interface MeshState {
   vocab: any;
   goalId: string | null;
   toasts: Toast[];
-  toast: (title: string, msg: string, kind?: string) => void;
+  toast: (title: string, msg: string, kind?: string, action?: Toast["action"]) => void;
+  /**
+   * Ask before something irreversible. Resolves to the typed text on confirm
+   * (`""` when the dialog asked for none) and `null` on cancel — awaited, so
+   * unlike window.confirm() it does not freeze the tab and stall the SSE
+   * stream behind a browser-drawn modal.
+   */
+  confirm: ConfirmFn;
   drawer: ReactNode;
   drawerDepth: number;
   openDrawer: (node: ReactNode) => void;
@@ -234,12 +249,34 @@ export function MeshProvider({ children, projectId = null, background = false }:
   // shell's connection indicator keeps working.
   const projectsCtx = useProjectsOptional();
   const sseState = projectsCtx?.sseState ?? "connecting";
+  /**
+   * Whether there is a mesh behind this server to talk to *yet*. Three states
+   * collapse into it:
+   *   - no projects provider at all  → single mesh, always ready
+   *   - registry answered 404        → `mesh console`, one mesh, ready
+   *   - registry answered with rows  → host with a project open, ready
+   *   - registry unknown or empty    → hold
+   * Every mesh-scoped route answers 409 ("no project is open") in the hold
+   * state, and firing them anyway is how the dashboard used to paint a full
+   * Overview of zeros out of five failed requests.
+   */
+  const meshReady = !projectsCtx
+    ? true
+    : projectsCtx.hasRegistry === false || (projectsCtx.loaded && projectsCtx.projects.length > 0);
+  // A ref because the 4s poll reads it from inside a long-lived interval that
+  // must not be rebuilt every time the project list changes.
+  const holdMeshRef = useRef(!meshReady);
+  holdMeshRef.current = !meshReady;
   const subscribe = projectsCtx?.subscribe;
 
-  const toast = useCallback((title: string, msg: string, kind = "") => {
+  const toast = useCallback((title: string, msg: string, kind = "", action?: Toast["action"]) => {
     const id = toastId++;
-    setToasts((t) => [...t.slice(-3), { id, title, msg, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "bad" ? 7600 : 4800);
+    const dismiss = () => setToasts((t) => t.filter((x) => x.id !== id));
+    const wrapped = action ? { ...action, run: () => { dismiss(); action.run(); } } : undefined;
+    setToasts((t) => [...t.slice(-3), { id, title, msg, kind, action: wrapped }]);
+    // 4.8s is enough to read a confirmation but not to notice, aim at and press
+    // an Undo button — so an actionable toast gets roughly twice the window.
+    setTimeout(dismiss, action ? 10000 : kind === "bad" ? 7600 : 4800);
   }, []);
 
   useEffect(() => {
@@ -475,6 +512,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
     let dead = false;
     (async () => {
       try {
+        // Mesh-scoped like the rest: 409s on a host with nothing open.
+        if (holdMeshRef.current) throw new Error("no mesh yet");
         const { json } = await clientRef.current.api("GET", "/config/vocabulary");
         if (!dead && json) {
           setVocab(json);
@@ -484,13 +523,16 @@ export function MeshProvider({ children, projectId = null, background = false }:
         /* the stream falls back to a builtin type list */
       }
       try {
-        await refreshStatus();
+        if (!holdMeshRef.current) await refreshStatus();
       } catch {
         toast("mesh", "server unreachable — retrying…", "bad");
       }
     })();
     const iv = setInterval(() => {
       if (backgroundRef.current) return;
+      // Nothing to ask about yet; the effect below picks it up the moment a
+      // project opens, so this does not need to keep knocking.
+      if (holdMeshRef.current) return;
       void refreshStatus().catch(() => undefined);
     }, 4000);
     return () => {
@@ -499,15 +541,40 @@ export function MeshProvider({ children, projectId = null, background = false }:
     };
   }, [refreshStatus, toast]);
 
+  // The poll above idles until a mesh exists; the registry answering, or the
+  // first project opening, has to wake it — otherwise the dashboard sits blank
+  // until the next reload.
+  useEffect(() => {
+    if (!meshReady) return;
+    void refreshStatus().catch(() => undefined);
+  }, [meshReady, refreshStatus]);
+
+  // One dialog instance per provider, driven by whichever call is awaiting it.
+  // Holding the resolver here (rather than inside the component) keeps the
+  // promise and the unmount in one place: closing always settles the await.
+  const [confirmReq, setConfirmReq] = useState<{ req: ConfirmRequest; resolve: (v: string | null) => void } | null>(null);
+  const confirm = useCallback<ConfirmFn>(
+    (req) =>
+      new Promise((resolve) => {
+        // A second ask while one is already open would strand the first
+        // caller's promise forever, so the older one resolves as cancelled.
+        setConfirmReq((prev) => {
+          if (prev) prev.resolve(null);
+          return { req, resolve };
+        });
+      }),
+    [],
+  );
+
   const value = useMemo<MeshState>(
     () => ({
       projectId, client,
       view, setView, status, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
       steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
-      toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
+      toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       detail, openDetail, closeDetail,
     }),
-    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
   );
   // Token deltas replace this object up to dozens of times a second; in its own
   // context only the live-stream consumers re-render per token.
@@ -516,6 +583,15 @@ export function MeshProvider({ children, projectId = null, background = false }:
   return (
     <Ctx.Provider value={value}>
       <StreamsCtx.Provider value={streamsValue}>{children}</StreamsCtx.Provider>
+      {confirmReq ? (
+        <ConfirmDialog
+          req={confirmReq.req}
+          onResolve={(v) => {
+            confirmReq.resolve(v);
+            setConfirmReq(null);
+          }}
+        />
+      ) : null}
     </Ctx.Provider>
   );
 }

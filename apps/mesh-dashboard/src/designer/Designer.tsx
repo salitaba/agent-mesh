@@ -23,7 +23,7 @@ import { hueVar } from "./ui";
 import { baseName, clamp, deepCopy, densure, saveLandsOnRunning, sourceState, summarizeDiff, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
 import { clearStored, commitDraft, getDraftSnapshot, loadLayout, readStored, ringLayout, saveLayout, storeDraft, useDraft, type DraftState } from "./storage";
 import Topology from "./Topology";
-import { Button, Input } from "../components";
+import { Button, Input, useDismissable } from "../components";
 import { register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
 import { useFocusMode, useMedia } from "../shell";
 import type { Advice, DCtx, Pos, SaveTarget, Tab } from "./types";
@@ -37,6 +37,8 @@ const COMPACT = "(max-width: 1240px)";
 /** WS10: handlers the palette commands call; swapped to no-ops on unmount. */
 interface DesignerCommands {
   addAgent: (preset?: unknown) => void;
+  undo: () => void;
+  redo: () => void;
   validate: () => Promise<void>;
   pickAgent: (id: string) => void;
   gotoTab: (t: Tab) => void;
@@ -44,6 +46,8 @@ interface DesignerCommands {
 }
 const NO_COMMANDS: DesignerCommands = {
   addAgent: () => {},
+  undo: () => {},
+  redo: () => {},
   validate: async () => {},
   pickAgent: () => {},
   gotoTab: () => {},
@@ -79,16 +83,42 @@ export default function Designer(): React.JSX.Element {
   const [moreOpen, setMoreOpen] = useState(false);
   const [yamlOpen, setYamlOpen] = useState(false);
   const checksRef = useRef<HTMLDivElement | null>(null);
+  // The popover advertised role="dialog" + aria-haspopup="dialog" and had none
+  // of the contract: nothing moved focus in, nothing brought it back, Tab was
+  // not contained. Esc and outside-click unmounted whatever was focused inside
+  // it, dropping focus on <body> so the next Tab restarted at the top of the
+  // document. The .ms-more menu beside it already does all of this.
+  const popRef = useDismissable<HTMLDivElement>(checksOpen, () => setChecksOpen(false));
+  // Opener for the YAML slide-over. openYaml unmounts the "view YAML" button
+  // one line after recording it, so document.activeElement would be a detached
+  // node by the time the slide-over restores focus -- a silent no-op that drops
+  // focus on <body>, the same defect one layer later.
+  const checksBtnRef = useRef<HTMLButtonElement | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
   const yamlRef = useRef<HTMLDivElement | null>(null);
   const yamlReturn = useRef<HTMLElement | null>(null);
   const [undo, setUndo] = useState<{ label: string; model: any; cur: string | null } | null>(null);
+  /**
+   * Undo was a one-way door: it restored the snapshot and cleared itself, so a
+   * mis-press was unrecoverable — and worse, field edits made *after* the
+   * snapshot (typing only calls `touch()`, never `pushUndo`) were discarded
+   * without a word. Keeping the pre-undo state as a redo makes the button safe
+   * to press: whatever it rolls back can be rolled forward again.
+   */
+  const [redo, setRedo] = useState<{ label: string; model: any; cur: string | null } | null>(null);
   const [confirmReplace, setConfirmReplace] = useState<null | { kind: "load" | "template" | "import"; json?: any; model?: any }>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [runningStale, setRunningStale] = useState(false);
   const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
+  // A first visit with no running mesh loads a starter template. It used to do
+  // that silently, so the workbench opened on a three-agent org chart the
+  // operator never made and had no reason to think was a suggestion — the same
+  // failure as a dashboard of zeros: it looks like their data. Say where it
+  // came from, and offer the two ways out.
+  const [starter, setStarter] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* WS10: the mutation handlers are declared below the loading gate (they close
    * over a loaded model), but the command registration must be a hook above it.
@@ -149,7 +179,7 @@ export default function Designer(): React.JSX.Element {
       cmdRef.current = NO_COMMANDS;
       return;
     }
-    cmdRef.current = { addAgent, validate, pickAgent, gotoTab, applyProposal: applyChatProposal };
+    cmdRef.current = { addAgent, undo: doUndo, redo: doRedo, validate, pickAgent, gotoTab, applyProposal: applyChatProposal };
   });
 
   // WS10: a palette "jump to agent" leaves a pending id in commands.ts. Take
@@ -262,6 +292,7 @@ export default function Designer(): React.JSX.Element {
         clearStored();
       } else {
         applyModel(TEMPLATES[1].make(), null, "copy"); // triad starter
+        setStarter(TEMPLATES[1].name);
       }
       commitDraft({ loaded: true });
       setEditCount(0);
@@ -275,18 +306,33 @@ export default function Designer(): React.JSX.Element {
     };
   }, [client, validate]);
 
-  // Esc unwinds the topmost local layer first: YAML slide-over, checks popover,
-  // overflow menu, then the compact inspector drawer. The shell runs first and
-  // marks what it consumed; only an unconsumed Esc reaches these local layers.
+  // Esc unwinds the topmost local layer first: YAML slide-over, overflow menu,
+  // then the compact inspector drawer. The shell runs first and marks what it
+  // consumed; only an unconsumed Esc reaches these local layers.
+  //
+  // The checks popover is NOT in this chain: useDismissable listens on document
+  // in the capture phase and stopPropagation()s Escape, so it claims the key
+  // ahead of every window-bubble listener including the shell's. That is
+  // correct topmost-layer-first behaviour for an overlay, and the overlap is
+  // near-unreachable anyway -- the popover's own outside-pointerdown closes it
+  // the moment you click toward anything else.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Undo/redo are the one pair every editor is expected to answer. The
+      // Designer had them on a toolbar button only, so the reflex did nothing.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.defaultPrevented) {
+        const el = document.activeElement;
+        // Never steal it from a text field — there it means "undo my typing",
+        // which the browser already does better than we could.
+        if (el instanceof HTMLElement && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName))) return;
+        e.preventDefault();
+        if (e.shiftKey) cmdRef.current.redo(); else cmdRef.current.undo();
+        return;
+      }
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (yamlOpen) {
         e.preventDefault();
         setYamlOpen(false);
-      } else if (checksOpen) {
-        e.preventDefault();
-        setChecksOpen(false);
       } else if (moreOpen) {
         e.preventDefault();
         setMoreOpen(false);
@@ -298,6 +344,31 @@ export default function Designer(): React.JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [ctxOpen, compact, checksOpen, moreOpen, yamlOpen]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    moreRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  }, [moreOpen]);
+
+  const onMoreKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setMoreOpen(false);
+      moreBtnRef.current?.focus();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = [...(moreRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+    if (!items.length) return;
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const n = e.key === "Home" ? 0
+      : e.key === "End" ? items.length - 1
+      : e.key === "ArrowDown" ? (at + 1) % items.length
+      : (at - 1 + items.length) % items.length;
+    items[n]?.focus();
+  };
 
   // Floating layers that only close on Esc trap the pointer: any click outside
   // the checks popover or the overflow menu dismisses them too.
@@ -319,13 +390,18 @@ export default function Designer(): React.JSX.Element {
     const root = yamlRef.current;
     (root?.querySelector<HTMLElement>("button, [tabindex]") ?? root)?.focus();
     return () => {
-      yamlReturn.current?.focus();
+      const back = yamlReturn.current;
+      if (back?.isConnected) back.focus();
       yamlReturn.current = null;
     };
   }, [yamlOpen]);
 
   const openYaml = () => {
-    if (document.activeElement instanceof HTMLElement) yamlReturn.current = document.activeElement;
+    // On the popover path the active element is the "view YAML" button, which
+    // setChecksOpen(false) unmounts on the very next line; focusing a detached
+    // node is a silent no-op. Fall back to the chip that owns the popover.
+    const from = checksOpen ? checksBtnRef.current : document.activeElement;
+    if (from instanceof HTMLElement) yamlReturn.current = from;
     setChecksOpen(false);
     setYamlOpen(true);
   };
@@ -421,6 +497,9 @@ export default function Designer(): React.JSX.Element {
   const pushUndo = useCallback((label: string) => {
     const d = getDraftSnapshot();
     setUndo({ label, model: deepCopy(d.model), cur: d.cur });
+    // A new edit forks the history: the old redo now points at a future that
+    // can no longer be reached from here.
+    setRedo(null);
   }, []);
   const toggleWire = useCallback((src: string, tgt: string) => {
     if (src === tgt) return;
@@ -480,14 +559,23 @@ export default function Designer(): React.JSX.Element {
 
   /* -------- structural mutations (all undo-able) -------- */
 
-  const doUndo = () => {
-    if (!undo) return;
-    commitDraft({ model: deepCopy(undo.model), cur: undo.cur });
+  /** Swap the draft with a saved snapshot, keeping the displaced one to return to. */
+  const swapTo = (
+    snap: { label: string; model: any; cur: string | null },
+    keep: (s: { label: string; model: any; cur: string | null } | null) => void,
+    drop: (s: null) => void,
+    title: string,
+  ) => {
+    const d = getDraftSnapshot();
+    keep({ label: snap.label, model: deepCopy(d.model), cur: d.cur });
+    drop(null);
+    commitDraft({ model: deepCopy(snap.model), cur: snap.cur });
     setReviewOpen(false);
-    setUndo(null);
-    toast("undone", undo.label, "ok");
+    toast(title, snap.label, "ok");
     touch();
   };
+  const doUndo = () => { if (undo) swapTo(undo, setRedo, setUndo, "undone"); };
+  const doRedo = () => { if (redo) swapTo(redo, setUndo, setRedo, "redone"); };
   const syncSaveMode = (mode: SaveTarget, cp: string) => {
     commitDraft({ saveMode: mode, copyPath: cp });
   };
@@ -536,6 +624,10 @@ export default function Designer(): React.JSX.Element {
     setLayout(L);
     setCurrent(Object.keys(m.agents)[0] || null);
     touch();
+    // Deleting an agent cascades through comms, startup, budgets, rules, triage
+    // and layout. The Undo button lives in the toolbar, which is not where the
+    // eye is after a delete — so the confirmation carries the way back.
+    toast("agent deleted", `${c} and its wiring were removed`, "warn", { label: `Undo — restore ${c}`, run: () => cmdRef.current.undo() });
   };
   const renameAgent = (old: string, nn: string): boolean => {
     if (!old || !nn || nn === old || m.agents[nn]) return false;
@@ -700,6 +792,7 @@ export default function Designer(): React.JSX.Element {
         setRunningStale(false);
         commitBaseline();
         setUndo(null);
+        setRedo(null);
         setRestoredAt(null);
         clearStored();
         setSavedInfo({ path: json.savedTo });
@@ -746,6 +839,7 @@ export default function Designer(): React.JSX.Element {
         <div className="ms-checks-anchor" ref={checksRef}>
           <button
             type="button"
+            ref={checksBtnRef}
             className={`ms-chip ms-verdict ${verdictTone}`}
             aria-expanded={checksOpen}
             aria-haspopup="dialog"
@@ -755,7 +849,7 @@ export default function Designer(): React.JSX.Element {
             {verdictState}
           </button>
           {checksOpen ? (
-            <div className="ms-pop" role="dialog" aria-label="mesh checks">
+            <div className="ms-pop" role="dialog" aria-label="mesh checks" ref={popRef} tabIndex={-1}>
               <HealthStrip
                 onGoto={gotoTab}
                 startupCount={startupSet.size}
@@ -763,6 +857,8 @@ export default function Designer(): React.JSX.Element {
                 advice={advisors}
                 undoLabel={undo ? undo.label : null}
                 onUndo={doUndo}
+                redoLabel={redo?.label || null}
+                onRedo={doRedo}
               />
               <AdvisoryList advice={advisors} onGoto={gotoTab} />
               <CheckSection
@@ -796,9 +892,15 @@ export default function Designer(): React.JSX.Element {
         <Button variant="small" extra="ms-insp-toggle" id="ms-insp-toggle" aria-expanded={ctxOpen} aria-controls="ms-inspector" onClick={() => (ctxOpen ? setCtxOpen(false) : openInspector())}>
           {ctxOpen ? "close inspector" : "inspect agent"}
         </Button>
-        <div className="ms-more" ref={moreRef}>
+        <div
+          className="ms-more"
+          ref={moreRef}
+          onKeyDown={onMoreKey}
+          onBlur={(e) => { if (moreOpen && !moreRef.current?.contains(e.relatedTarget as Node | null)) setMoreOpen(false); }}
+        >
           <button
             type="button"
+            ref={moreBtnRef}
             className="ms-more-btn"
             aria-haspopup="menu"
             aria-expanded={moreOpen}
@@ -809,22 +911,22 @@ export default function Designer(): React.JSX.Element {
           </button>
           {moreOpen ? (
             <div className="ms-menu" role="menu" aria-label="mesh actions">
-              <button role="menuitem" disabled={!runningPath} onClick={() => { setMoreOpen(false); void loadRunningClick(); }}>
+              <button role="menuitem" tabIndex={-1} disabled={!runningPath} onClick={() => { setMoreOpen(false); void loadRunningClick(); }}>
                 Load running mesh
               </button>
               <div className="ms-menu-sep" role="separator" />
               <div className="ms-menu-label">New from template</div>
               {TEMPLATES.map((t) => (
-                <button key={t.key} role="menuitem" onClick={() => { setMoreOpen(false); requestReplace("template", t.make()); }}>
+                <button key={t.key} role="menuitem" tabIndex={-1} onClick={() => { setMoreOpen(false); requestReplace("template", t.make()); }}>
                   <b>{t.name}</b>
                   <small>{t.desc}</small>
                 </button>
               ))}
               <div className="ms-menu-sep" role="separator" />
-              <button role="menuitem" onClick={() => { setMoreOpen(false); setImportOpen(true); }}>
+              <button role="menuitem" tabIndex={-1} onClick={() => { setMoreOpen(false); setImportOpen(true); }}>
                 Import YAML…
               </button>
-              <button role="menuitem" className="danger" onClick={() => { setMoreOpen(false); requestReplace("template", TEMPLATES[1].make()); }}>
+              <button role="menuitem" tabIndex={-1} className="danger" onClick={() => { setMoreOpen(false); requestReplace("template", TEMPLATES[1].make()); }}>
                 Reset to starter…
               </button>
             </div>
@@ -832,6 +934,17 @@ export default function Designer(): React.JSX.Element {
         </div>
       </header>
 
+      {starter && editCount === 0 ? (
+        <div className="replace-bar" role="status">
+          <span><b>Starter template: {starter}</b> <span className="muted">no mesh.yaml is running, so the workbench opened on an example. Edit it, or start from a different shape.</span></span>
+          <span className="row">
+            <Button variant="small" onClick={() => setStarter(null)}>Edit this one</Button>
+            {TEMPLATES.filter((t) => t.name !== starter).map((t) => (
+              <Button key={t.key} variant="ghost" onClick={() => { setStarter(t.name); requestReplace("template", t.make()); }}>{t.name}</Button>
+            ))}
+          </span>
+        </div>
+      ) : null}
       {restoredAt ? (
         <div className="replace-bar" role="alert">
           <span><b>Unsaved local changes</b> <span className="muted">your browser draft ({new Date(restoredAt).toLocaleTimeString()}) {src.hasRunning ? "differs from the running file." : "was restored — no running file is loaded."}</span></span>

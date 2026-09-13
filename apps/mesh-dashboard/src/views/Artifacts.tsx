@@ -98,7 +98,7 @@ export default function Artifacts(): React.JSX.Element {
       {needsReview.length ? <div className="status-strip warn" style={{ marginBottom: 12 }}><div><b>{needsReview.length} waiting for review.</b> <span className="muted">Someone asked for feedback and is blocked until it lands.</span> <Button variant="banner-act" onClick={() => needsReview[0] && open(needsReview[0].id)}>Review now</Button></div></div> : null}
       <Card style={{ marginBottom: 10 }}>
         <div className="fv-filters">
-          <Input search mono placeholder="search name, owner, type, path…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input search mono aria-label="Search files" placeholder="search name, owner, type, path…" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="chips">
             <Chip hot={!type} onClick={() => setType("")}>all types</Chip>
             {types.map((t) => <Chip key={t} hot={type === t} onClick={() => setType(type === t ? "" : t)}>{t}</Chip>)}

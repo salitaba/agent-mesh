@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "./components";
+import { Button, useDismissable } from "./components";
 import { useProjects, type ProjectSummary } from "./projects";
 import { api, post } from "./api";
 import { hashFor } from "./route";
@@ -57,6 +57,11 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
   /** Set when an add failed purely because the folder holds no mesh.yaml. */
   const [offerInit, setOfferInit] = useState("");
   const deadRef = useRef(false);
+  // A dialog that does not take focus, hold it, or give it back is a dialog
+  // only to a sighted mouse user: Tab used to walk straight out of the picker
+  // into the tab strip behind the scrim, Esc did nothing, and closing dropped
+  // focus on <body> so the next Tab restarted from the top of the page.
+  const dialogRef = useDismissable<HTMLDivElement>(true, onClose);
 
   const browse = useCallback(async (path?: string | null) => {
     const q = path ? `?path=${encodeURIComponent(path)}` : "";
@@ -123,7 +128,7 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
   const confirmLabel = listedHasMesh === false ? "create mesh here" : "add this folder";
 
   return (
-    <div className="proj-picker" role="dialog" aria-label="Add a project">
+    <div className="proj-picker" role="dialog" aria-modal="true" aria-label="Add a project" ref={dialogRef}>
       <div className="proj-picker-head">
         <b>Add a project</b>
         <span className="muted">Pick the folder that holds its <code>mesh.yaml</code>.</span>
@@ -279,6 +284,37 @@ function Tab({ project, active, parked, onPick, onClose, onDragStart, onDrop, on
  * only the active project has a store to read it from. Every other tab shows
  * the registry's view, which is all the host can honestly say about it.
  */
+/**
+ * `mesh host` with an empty registry used to render the whole Overview against
+ * a server answering 409 "no project is open": GOAL PROGRESS 0%, "0 of 0 checks
+ * done", "SPENT 0/0". Every figure looked like a measurement and none of them
+ * meant anything — the worst kind of empty state, one indistinguishable from a
+ * healthy idle mission. An empty registry is a first-run state, so say that and
+ * offer the single action that leaves it.
+ */
+export function HostEmptyState(): React.JSX.Element {
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="host-empty">
+      <h2>No project open</h2>
+      <p>
+        A project is a folder containing a <code>mesh.yaml</code>. The host supervises one process
+        per open project, and this dashboard follows whichever project is in front.
+      </p>
+      <Button variant="primary" onClick={() => setAdding(true)}>Add a project folder</Button>
+      <p className="muted host-empty-alt">
+        Or from a shell: <code>mesh project add &lt;dir&gt;</code>
+      </p>
+      {adding ? (
+        <>
+          <div id="palette-scrim" aria-hidden="true" onClick={() => setAdding(false)} />
+          <AddProject onClose={() => setAdding(false)} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?: string | null }): React.JSX.Element | null {
   const { projects, activeId, setActive, openProject, closeProject, loaded, hostDown } = useProjects();
   const [order, setOrder] = useState<string[]>(readOrder);
@@ -331,7 +367,18 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
 
   return (
     <div id="ptabs-bar">
-      <div className="ptabs" role="tablist" aria-label="open projects">
+      {/* Not a tablist. role="tablist" promises the APG tabs contract -- bare
+          Left/Right moves selection, one strip-level tab stop, an owned
+          tabpanel -- and none of that exists here: the only arrow handler
+          requires Ctrl/Meta and REORDERS, each project owns two tab stops
+          (name + close), and #view is not a tabpanel. Worse, wiring selection
+          to a bare arrow would call pick(), which boots a child process for any
+          project that is not already open -- one supervised process per
+          keypress. A nav landmark with aria-current="page" is the honest
+          semantic for "a list of places you can go", and it matches the
+          sidebar. Ctrl/Meta+Arrow reorder stays; it no longer collides with a
+          binding the role was advertising. */}
+      <nav className="ptabs" aria-label="Open projects">
         {ordered.map((p) => (
           <Tab
             key={p.id}
@@ -351,7 +398,7 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
         ))}
         <button type="button" className="ptab-add" title="Add a project folder" aria-label="Add a project" onClick={() => setAdding(true)}>+</button>
         {!ordered.length ? <span className="muted ptabs-empty">No projects yet — add the folder that holds a mesh.yaml.</span> : null}
-      </div>
+      </nav>
       {adding ? (
         <>
           <div id="palette-scrim" aria-hidden="true" onClick={() => setAdding(false)} />

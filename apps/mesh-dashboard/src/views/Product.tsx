@@ -258,6 +258,7 @@ export default function Product(): React.JSX.Element {
             <Input
               search
               mono
+              aria-label="Search the workspace"
               placeholder="search the whole workspace…"
               value={q}
               onChange={(e) => {

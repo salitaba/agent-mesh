@@ -72,7 +72,7 @@ export function CustomChips({ values, onRemove }: { values: string[]; onRemove: 
   return (
     <div className="chips">
       {values.map((c) => (
-        <button key={c} type="button" aria-pressed className="chip-toggle on custom" title="click to remove" onClick={() => onRemove(c)}>{c} ×</button>
+        <button key={c} type="button" aria-label={`remove ${c}`} className="chip-toggle on custom" title="click to remove" onClick={() => onRemove(c)}>{c} ×</button>
       ))}
     </div>
   );

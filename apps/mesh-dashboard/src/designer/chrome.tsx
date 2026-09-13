@@ -17,11 +17,13 @@ export interface HealthStripProps {
   advice: Advice[];
   undoLabel: string | null;
   onUndo: () => void;
+  redoLabel: string | null;
+  onRedo: () => void;
 }
 
 /* crew count and goal live in the Designer header's canonical state line /
  * workspace line now, so they are not repeated here. */
-export function HealthStrip({ onGoto, startupCount, gates, advice, undoLabel, onUndo }: HealthStripProps): React.JSX.Element {
+export function HealthStrip({ onGoto, startupCount, gates, advice, undoLabel, onUndo, redoLabel, onRedo }: HealthStripProps): React.JSX.Element {
   const tiles: Array<{ label: string; value: string; warn?: boolean; tab: Tab; title?: string }> = [
     { label: "boots", value: startupCount ? String(startupCount) : "nobody", warn: !startupCount, tab: "crew", title: "agents that start when the mesh goes live" },
     { label: "gates", value: String(gates), tab: "policy", title: "approval gates that pause steps" },
@@ -42,7 +44,10 @@ export function HealthStrip({ onGoto, startupCount, gates, advice, undoLabel, on
       ) : (
         <span className="hstat muted-read" aria-hidden="true"><small>advice</small><b>0</b></span>
       )}
-      {undoLabel ? <button className="hstat undo" onClick={onUndo} title="undo the last structural change">↩ undo “{undoLabel}”</button> : null}
+      {undoLabel ? <button className="hstat undo" onClick={onUndo} title="undo the last structural change (Ctrl/Cmd+Z)">↩ undo “{undoLabel}”</button> : null}
+      {/* Redo only appears once there is something to redo, so the strip does
+          not carry a permanently dead control. */}
+      {redoLabel ? <button className="hstat undo" onClick={onRedo} title="redo what you just undid (Ctrl/Cmd+Shift+Z)">↪ redo “{redoLabel}”</button> : null}
     </div>
   );
 }

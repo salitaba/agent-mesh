@@ -9,9 +9,13 @@ import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, parsePartialOps, vitalsOf, type TurnPhases } from "./vitals";
 import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks, useTick } from "./observability";
 
-export function CloseX(): React.JSX.Element {
+export function CloseX({ extra }: { extra?: string } = {}): React.JSX.Element {
   const { closeDrawer } = useMesh();
-  return <button className="close-x" onClick={closeDrawer}>×</button>;
+  return (
+    <button type="button" className={`close-x${extra ? ` ${extra}` : ""}`} aria-label="Close panel" title="Close (Esc)" onClick={closeDrawer}>
+      <span aria-hidden="true">×</span>
+    </button>
+  );
 }
 
 export async function agentAction(client: ProjectClient, id: string, act: string, toast: (t: string, m: string, k?: string) => void, after?: () => void): Promise<void> {
@@ -23,10 +27,6 @@ export async function agentAction(client: ProjectClient, id: string, act: string
     toast(`${act} failed`, `${id}: the server did not answer`, "bad");
   }
   if (after) setTimeout(after, 400);
-}
-
-function agentsToWake(agents: any[]): string[] {
-  return (agents || []).filter((a: any) => a.id !== "human" && ["WAITING", "SUSPENDED", "IDLE"].includes(a.lifecycle)).map((a: any) => a.id).slice(0, 4);
 }
 
 export function MessageDrawer(): React.JSX.Element {
@@ -75,7 +75,7 @@ export function MessageDrawer(): React.JSX.Element {
   };
   return (
     <>
-      <h2>Message an agent <CloseX /></h2>
+      <h2 id="drawer-title">Message an agent <CloseX /></h2>
       <p className="muted" style={{ marginTop: 0 }}>You speak as <b>human</b> — agents always listen. {parked ? <>Currently <b>parked</b>: tick <i>run them right after</i> so they act immediately.</> : null}</p>
       {missionOver ? (
         <p className="status-strip warn" style={{ marginTop: 0 }}>
@@ -129,7 +129,7 @@ export function ApprovalDrawer(): React.JSX.Element {
   };
   return (
     <>
-      <h2>Decide <CloseX /></h2>
+      <h2 id="drawer-title">Decide <CloseX /></h2>
       <p className="muted" style={{ marginTop: 0 }}>Say yes or no to something. Gates listen to this — e.g. release can't finish without your approval.</p>
       <form className="stack" onSubmit={submit}>
         <div className="field"><label htmlFor="appr-kind">Decision</label><Select id="appr-kind" value={kind} onChange={(e) => setKind(e.target.value)}><option value="approve">Approve</option><option value="reject">Reject</option><option value="accept">Accept</option></Select></div>
@@ -217,7 +217,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     const unreachable = json.error === "unreachable";
     return (
       <>
-        <h2>{(id)}<CloseX /></h2>
+        <h2 id="drawer-title">{(id)}<CloseX /></h2>
         <ErrorState
           what={`agent ${id}`}
           detail={unreachable ? "the mesh server did not answer. The agent may still be running." : String(json.error)}
@@ -270,7 +270,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   const signalCount = approvals.length + decisions.length + escalations.length + pending.length;
   return (
     <>
-      <h2><AgentAvatar id={id} color="var(--accent)" />{(id)}
+      <h2 id="drawer-title"><AgentAvatar id={id} color="var(--accent)" />{(id)}
         <span className={`pill ${pillCls(s.lifecycle)}${RUNNING.has(s.lifecycle) ? " running-pulse" : ""}`}>{(plainLifecycle(s.lifecycle))}</span>
         <CloseX /></h2>
       <p className="muted" style={{ margin: "4px 0" }}>{(d.role)} · active {(ago(s.lastActivityAt))}</p>
@@ -623,10 +623,15 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   }, [missingStep, toast]);
   if (!json) return <StepSkeleton />;
   if (json.error || (!json.turn && (json.events || []).length === 0)) {
-    if (!listStep) return <div className="muted">not found</div>;
+    if (!listStep) return (
+      <>
+        <h2 id="drawer-title">Step <span className="mono muted">{(turnId)}</span><CloseX /></h2>
+        <p className="muted">this turn is no longer in the log — a mission reset clears past steps.</p>
+      </>
+    );
     return (
       <>
-        <h2>Step <span className="mono muted">{(turnId)}</span><CloseX /></h2>
+        <h2 id="drawer-title">Step <span className="mono muted">{(turnId)}</span><CloseX /></h2>
         <div className="row"><StatusPillOf status={listStep.status} ops={listStep.ops} /><span className="muted">{(listStep.agentId)} · {(listStep.reasonKind)}</span></div>
         <pre>{(JSON.stringify(listStep, null, 2))}</pre>
       </>
@@ -1028,7 +1033,7 @@ export function EventDrawerBySeq({ seq }: { seq: number }): React.JSX.Element {
   const isTurn = e.correlationId && String(e.correlationId).startsWith("turn-");
   return (
     <>
-      <h2>{(plainEvent(e.type))} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>{(e.type)} · #{e.seq}</span><CloseX /></h2>
+      <h2 id="drawer-title">{(plainEvent(e.type))} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>{(e.type)} · #{e.seq}</span><CloseX /></h2>
       <p className="muted" style={{ margin: "4px 0" }}>{(hhmmss(e.timestamp))} · by {(e.actorId ?? "system")}</p>
       <p dangerouslySetInnerHTML={{ __html: evSummary(e) }} />
       {isTurn ? <div className="row" style={{ margin: "8px 0" }}><StepOpener turnId={e.correlationId as string} /></div> : null}
@@ -1055,6 +1060,9 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   const [pick, setPick] = useState<number | null>(null);
   const [body, setBody] = useState<{ version: number; content: string } | null>(null);
   const [diff, setDiff] = useState<DiffPayload | null>(null);
+  // `missing` conflates "absent from the manifest" with "the fetch failed", so
+  // the not-found panel offers a retry; it has to refetch the METADATA, not the body.
+  const [metaAttempt, setMetaAttempt] = useState(0);
 
   useEffect(() => {
     let dead = false;
@@ -1072,7 +1080,7 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [id, client]);
+  }, [id, client, metaAttempt]);
 
   const current = data?.a?.version as number | undefined;
   const shown = pick ?? current ?? null;
@@ -1108,7 +1116,13 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   }, [id, shown, bodyAttempt, client]);
 
   if (!data) return <div className="muted">loading…</div>;
-  if (data.missing) return <div className="muted">not found</div>;
+  if (data.missing) return (
+    <>
+      <h2 id="drawer-title">File <span className="mono muted">{(id)}</span><CloseX /></h2>
+      <p className="muted">this file is not in the manifest — it may have been removed, or the fetch failed.</p>
+      <Button variant="soft" onClick={() => { setData(null); setMetaAttempt((n) => n + 1); }}>try again</Button>
+    </>
+  );
   const { a } = data;
   const versions: any[] = data.versions.length ? data.versions : [a];
   const done = ["MERGED", "ACCEPTED", "APPROVED", "FINAL", "VERIFIED", "MERGEABLE", "QA_VERIFIED", "SECURITY_VERIFIED"].includes(a.status);
@@ -1118,7 +1132,7 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
 
   return (
     <>
-      <h2>{(a.name)} <Pill tone={done ? "completed" : a.status === "REJECTED" ? "failed" : "idle"}>{(plainArtifact(a.status))}</Pill><CloseX /></h2>
+      <h2 id="drawer-title">{(a.name)} <Pill tone={done ? "completed" : a.status === "REJECTED" ? "failed" : "idle"}>{(plainArtifact(a.status))}</Pill><CloseX /></h2>
       <p className="muted" style={{ margin: "4px 0" }}>v{a.version} · {(a.type)} · by {(a.owner)} · {(ago(a.createdAt))}</p>
       <div className="fv-versions">
         <span className="muted" style={{ fontSize: 11 }}>versions</span>
@@ -1152,11 +1166,3 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
   );
 }
 
-export function useAgentsToWakeConfirm(): (action: string) => boolean {
-  const { status } = useMesh();
-  return (action: string) => {
-    const names = agentsToWake(status?.agents || []);
-    if (!names.length) return true;
-    return window.confirm(`${action} wakes ${names.join(", ")} and resumes spend. Continue?`);
-  };
-}

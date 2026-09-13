@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { fmt } from "./format";
-import { RUNNING } from "./format";
+import { fmt, mandatoryProgress, RUNNING } from "./format";
 import { useMesh, type View } from "./store";
-import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
-import { Button } from "./components";
+import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
+// The shell keeps its own stack-aware trap (drawer over drawer), but it must
+// agree with every other dialog about what "focusable" means.
+import { Button, Menu, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { confirmResume } from "./actions";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
-import { ProjectTabs } from "./tabs";
+import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
 import ChatDock from "./designer/ChatDock";
 
@@ -32,23 +33,16 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
 const KEY_VIEWS: View[] = ["overview", "steps", "agents", "escalations", "events", "graph", "artifacts", "product", "cost", "designer"];
 const viewKey = (v: View): string => String(KEY_VIEWS.indexOf(v) + 1);
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-// Only what a keyboard user can actually reach: `offsetParent === null` drops
-// anything a parent hid with display:none, which is how the drawers collapse
-// their inactive tab panels.
-function focusables(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement,
-  );
-}
-
 // Mirrors the `@media (max-width: 800px)` rule in styles.css that turns the
 // sidebar into an off-canvas drawer. Below it the sidebar is translated out of
 // view but still in the tab order unless we mark it inert, so a keyboard user
 // tabs through ten invisible nav buttons before reaching the page.
 const NARROW = "(max-width: 800px)";
+/* Below this the topbar stops being a bar. Measured at 390px the four mission
+   actions plus the telemetry strip wrapped the header to four rows (138px) and
+   pushed the document into horizontal scroll; 620 is the widest point at which
+   the collapsed layout is still the better one, so tablets keep today's shape. */
+const PHONE = "(max-width: 620px)";
 /** Match a media query and re-render when it flips. Shared with the Designer,
  *  whose workbench changes shape at its own 1240 breakpoint. */
 export function useMedia(query: string): boolean {
@@ -106,8 +100,12 @@ function Help(): React.JSX.Element {
 
 /** ⌘K/Ctrl+K palette. Lists whatever `commands.ts` holds right now, so the
  *  Designer's commands appear only while it is mounted. The input keeps the
- *  focus (Tab is trapped) and the shell owns Escape, so one dispatch order
- *  closes palette → focus → panel. */
+ *  focus (Tab is trapped) and the shell owns Escape for everything that routes
+ *  through handleKey, so one dispatch order closes palette → focus → panel.
+ *  The exception is any overlay built on useDismissable (the Designer's checks
+ *  popover): it listens on document in the CAPTURE phase and stops Escape
+ *  before the shell's window listener sees it. That is deliberate — the
+ *  innermost open layer should claim the key. */
 function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -171,13 +169,27 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
 
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
-  const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client } = mesh;
-  // Optional on purpose: single-process `mesh serve` / `mesh console` has one
-  // mesh and no registry, and must not gain an empty tab strip.
-  const hasProjects = useProjectsOptional() !== null;
+  const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client, confirm } = mesh;
+  // Single-process `mesh serve` / `mesh console` has one mesh and no registry,
+  // and must not gain an empty tab strip. "Is the provider mounted" did not
+  // answer that — the provider mounts in both modes — so ask the server, and
+  // show the strip only once it confirms a registry exists.
+  const projectsCtx = useProjectsOptional();
+  const hasProjects = projectsCtx?.hasRegistry === true;
+  // A registry that has answered and holds nothing is first-run, not "a mission
+  // reading zero". Every mesh-scoped request 409s in that state, so rendering
+  // the views paints a dashboard out of failures.
+  const noProjects = hasProjects && projectsCtx.loaded && projectsCtx.projects.length === 0;
+  // Until the registry answers we do not know which of the two servers this is,
+  // and the views must not fetch on the guess. It is one local request, so this
+  // holds the content area for a few milliseconds rather than showing a
+  // skeleton — the chrome around it is already painted.
+  const registryPending = projectsCtx != null && projectsCtx.hasRegistry === null;
   const goal = status?.goal || {};
-  const crit = goal.acceptanceCriteria || [];
-  const done = crit.filter((c: any) => c.status !== "UNSATISFIED").length;
+  // Mandatory-only, matching Overview and the termination gate. The header used
+  // to score every criterion including optional ones, so the two screens
+  // disagreed about the same mission.
+  const { done, total: critTotal } = mandatoryProgress(goal.acceptanceCriteria);
   const statusWord =
     ({ ACTIVE: "running", PAUSED: "paused", ESCALATED: "needs you", COMPLETED: "done", FAILED: "failed" } as Record<string, string>)[goal.status] ||
     (goal.status || "").toLowerCase();
@@ -199,6 +211,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
   const [menuOpen, setMenuOpen] = useState(false);
   const narrow = useNarrow();
+  const phone = useMedia(PHONE);
   // Hidden off-canvas, so it must leave the tab order and the a11y tree too.
   const sidebarHidden = narrow && !menuOpen;
   const [focusMode, setFocusMode] = useState(false);
@@ -258,8 +271,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     setIsLight(cur === "light");
   }, []);
   const openHelp = useCallback(() => openDrawer(
-    <><Help /><button className="close-x" style={{ position: "absolute", top: 16, right: 18 }} onClick={closeDrawer}>×</button></>,
-  ), [openDrawer, closeDrawer]);
+    <><Help /><CloseX extra="close-x-float" /></>,
+  ), [openDrawer]);
 
   // Global palette commands: every view, help, and one "jump to agent" per
   // agent. Picking an agent only leaves a pending id in commands.ts and asks
@@ -326,17 +339,35 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       }
       return;
     }
+    // An open panel is aria-modal, so it owns the keyboard exactly as the
+    // palette does: view digits, theme, pause/resume and the search slash must
+    // not reach the page behind the scrim. `/` was the worst of them -- it
+    // focuses #ev-search / #step-search, which live in #view, invisible under
+    // the scrim and outside the drawer's Tab trap, so keystrokes went into a
+    // field the user could not see and the next Tab yanked them back.
+    //
+    // This sits BELOW the text-input guard on purpose: above it, Esc inside the
+    // drawer's own fields (send-to, send-note, appr-comment) would tear down
+    // the drawer and discard a half-typed message instead of blurring.
+    if (drawerDepth > 0 || detail) {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        if (drawerDepth > 0) closeDrawer();
+        else closeDetail();
+      }
+      return;
+    }
     const map: Record<string, View> = Object.fromEntries(KEY_VIEWS.map((v, i) => [String(i + 1), v]));
     if (map[ev.key]) return setView(map[ev.key]);
-    // Esc unwinds exactly one layer, in this order: focus mode, off-canvas
-    // menu, pushed drawers, then the deep-linked detail. Local handlers
-    // (Designer menu/inspector, wire cancel) run only when none of those
-    // claimed the key.
+    // Esc unwinds exactly one layer. A modal panel is innermost and claims it
+    // in the guard above; below that the order is focus mode, then the
+    // off-canvas menu. Local handlers (Designer menu/inspector, wire cancel)
+    // run only when none of those claimed the key.
     if (ev.key === "Escape") {
       if (focusOn) { ev.preventDefault(); setFocusMode(false); return; }
       if (menuOpen) { ev.preventDefault(); setMenuOpen(false); return; }
-      if (drawerDepth > 0) { ev.preventDefault(); closeDrawer(); return; }
-      if (detail) { ev.preventDefault(); closeDetail(); return; }
+      // drawer/detail are handled by the modal guard above, which returns
+      // before this branch whenever either is open.
       return;
     }
     if (ev.key === "?") return openHelp();
@@ -347,10 +378,18 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         .catch(() => toast("pause failed", "the server did not answer", "bad"));
     }
     if (ev.key === "r" && goalId) {
-      if (!confirmResume(status, "Resume")) return;
-      void client.post(`/goals/${goalId}/resume`)
-        .then(() => { toast("mission resumed", "agents are running", "ok"); refreshStatus(); })
-        .catch(() => toast("resume failed", "the server did not answer", "bad"));
+      // The guard is a real dialog now, so the shortcut has to wait for it;
+      // the rest of the key router must not.
+      void (async () => {
+        if (!(await confirmResume(confirm, status, "Resume"))) return;
+        try {
+          await client.post(`/goals/${goalId}/resume`);
+          toast("mission resumed", "agents are running", "ok");
+          refreshStatus();
+        } catch {
+          toast("resume failed", "the server did not answer", "bad");
+        }
+      })();
     }
     if (ev.key === "/") {
       ev.preventDefault();
@@ -369,10 +408,24 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
   // Opening the off-canvas menu should put the keyboard in it; closing it must
   // hand focus back to ☰ rather than dropping it on <body>.
+  //
+  // The `else` branch cannot fire on first render. It reads "menu is closed and
+  // focus is on body", which is also the state of every fresh page load at
+  // narrow width -- so it used to steal focus to ☰ before the user had touched
+  // anything. That is an unexpected focus change on load, and it lands PAST the
+  // skip link in DOM order, putting the one control that exists to bypass the
+  // chrome behind the user where no forward Tab can reach it. Only hand focus
+  // back after a menu we actually opened has closed.
+  const menuWasOpen = useRef(false);
   useEffect(() => {
     if (!narrow) return;
-    if (menuOpen) document.querySelector<HTMLElement>("#sidebar .tab")?.focus();
-    else if (document.activeElement === document.body) document.getElementById("btn-menu")?.focus();
+    if (menuOpen) {
+      menuWasOpen.current = true;
+      document.querySelector<HTMLElement>("#sidebar .tab")?.focus();
+    } else if (menuWasOpen.current && document.activeElement === document.body) {
+      menuWasOpen.current = false;
+      document.getElementById("btn-menu")?.focus();
+    }
   }, [menuOpen, narrow]);
 
   // The deep-linked detail is the bottom panel layer; anything the user drills
@@ -424,14 +477,29 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     }
   }, [panelDepth]);
 
+  // Register the panel as a Tab trap for as long as it is open. Keyed on the
+  // BOOLEAN, not the depth: a push/pop on every depth change would re-order the
+  // stack and hand ownership back to the drawer whenever a nested panel opened
+  // over it.
+  const panelOpen = panelDepth > 0;
+  useEffect(() => {
+    const root = drawerRef.current;
+    if (!root || !panelOpen) return;
+    return pushTrap(root);
+  }, [panelOpen]);
+
   // Tab cycles inside the open panel. Without this the next Tab walks into the
   // sidebar behind the scrim, which is visually unreachable.
   useEffect(() => {
-    if (panelDepth === 0) return;
+    if (panelDepth === 0 || paletteOpen) return;
     const onTab = (ev: KeyboardEvent) => {
       if (ev.key !== "Tab") return;
       const root = drawerRef.current;
       if (!root) return;
+      // A dialog opened OVER the panel (confirm, palette) is the innermost
+      // layer and owns Tab; this trap must stand down or the two fight on the
+      // same event and focus pins to whichever ran last.
+      if (!isTopTrap(root)) return;
       const items = focusables(root);
       if (!items.length) {
         ev.preventDefault();
@@ -456,11 +524,68 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     };
     document.addEventListener("keydown", onTab, true);
     return () => document.removeEventListener("keydown", onTab, true);
-  }, [panelDepth]);
+    // paletteOpen: the command palette does not use useDismissable, so it is
+    // not on the trap stack; without bailing on it, Ctrl+K over an open panel
+    // leaks every Tab back into the panel behind the palette.
+  }, [panelDepth, paletteOpen]);
 
   const closeMenu = () => setMenuOpen(false);
+
+  /* One definition per action, rendered either as a button in the bar or as a
+     row in the ⋯ menu. Written out here rather than inline so the two places
+     cannot drift into doing different things under the same label. */
+  const secondaryActions: Array<{ id: string; glyph: string; short: string; title: string; onClick: () => void }> = [];
+  if (!paused) {
+    secondaryActions.push({
+      id: "btn-pause", glyph: "❚❚", short: "pause",
+      title: "Pause the mission — agents stop, nothing is lost",
+      onClick: () => void (async () => {
+        if (!goalId) return;
+        try {
+          await client.post(`/goals/${goalId}/pause`);
+          toast("mission paused", "agents stopped — nothing lost", "warn");
+        } catch {
+          toast("pause failed", "the server did not answer", "bad");
+        }
+        void refreshStatus();
+      })(),
+    });
+  } else if (goal.status === "PAUSED") {
+    secondaryActions.push({
+      id: "btn-resume", glyph: "▶", short: "resume", title: "Resume the mission",
+      onClick: () => void (async () => {
+        if (!goalId) return;
+        if (!(await confirmResume(confirm, status, "Resume"))) return;
+        try {
+          await client.post(`/goals/${goalId}/resume`);
+          toast("mission resumed", "agents are running", "ok");
+        } catch {
+          toast("resume failed", "the server did not answer", "bad");
+        }
+        void refreshStatus();
+      })(),
+    });
+  }
+  secondaryActions.push(
+    { id: "btn-message", glyph: "✉", short: "message", title: "Send a message as the human — highest priority", onClick: () => openDrawer(<MessageDrawer />) },
+    { id: "btn-approval", glyph: "✓", short: "approvals", title: "Approve or reject something (release, design, quality…)", onClick: () => openDrawer(<ApprovalDrawer />) },
+  );
+
   return (
     <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
+      {/* WCAG 2.4.1. Roughly 20 chrome tab stops -- the project strip, 10 nav
+          buttons, 3 sidebar footer buttons, the topbar -- sit ahead of the
+          content on every single view, with no way past them.
+
+          A fragment href is NOT usable here: #view is not a route, and
+          parseHash() would read it as { projectId: null, view: "overview" },
+          bouncing the user to Overview and dropping any open detail. Move
+          focus directly and leave the hash alone. #view is already
+          tabIndex={-1} and already has a :focus-visible ring, so it can
+          receive focus and says so when it does. */}
+      <button type="button" className="skip-link" onClick={() => document.getElementById("view")?.focus()}>
+        Skip to content
+      </button>
       {/* Host-level, so it sits above the per-project chrome and survives every
           project switch. Rendered only under a ProjectsProvider: `mesh serve`
           runs one mesh with no registry and has no tabs to show. */}
@@ -475,7 +600,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             n.section ? (
               <div className="nav-label" key={`s${i}`}>{n.section}</div>
             ) : (
-              <button key={n.view} data-view={n.view} className={`tab${view === n.view ? " active" : ""}`} title={n.title} onClick={() => { setView(n.view as View); closeMenu(); }}>
+              <button key={n.view} data-view={n.view} className={`tab${view === n.view ? " active" : ""}`} aria-current={view === n.view ? "page" : undefined} title={n.title} onClick={() => { setView(n.view as View); closeMenu(); }}>
                 <i>{n.icon}</i>{n.label}
                 {n.view === "escalations" && escOpen ? <em className="kbd esc-kbd" id="esc-badge" title={`${escOpen} open decisions`}>{escOpen}</em> : null}
                 <em className="kbd">{viewKey(n.view as View)}</em>
@@ -484,6 +609,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           )}
         </nav>
         <div className="side-foot">
+          {/* The palette was ⌘K-only: the fastest route to every view, agent and
+              action in the product, discoverable solely by already knowing it
+              existed. It lives beside help because that is the persistent
+              chrome — the topbar is already at its width budget. */}
+          <Button id="btn-palette" variant="ghost" title="Search views, agents and actions (⌘K / Ctrl K)" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>⌕ commands<em className="kbd">⌘K</em></Button>
           <Button id="btn-theme" variant="ghost" title="toggle theme" aria-pressed={isLight} onClick={toggleTheme}>◐ theme</Button>
           <Button id="btn-help" variant="ghost" title="keyboard shortcuts" onClick={openHelp}>? help</Button>
         </div>
@@ -496,64 +626,56 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <span className={`live-label live-${liveState}`} role="status">{liveState === "connecting" ? "connecting…" : liveState === "reconnecting" ? "reconnecting…" : liveState}</span>
           <div className="goal-text">
             <strong id="top-goal">{status ? (goal.description || "no goal").split("\n")[0].slice(0, 70) : "connecting…"}</strong>
-            <span id="top-criteria" className="muted">{goal.status ? `${done}/${crit.length} checks done` : ""}</span>
+            <span id="top-criteria" className="muted">{goal.status ? `${done}/${critTotal} checks done` : ""}</span>
           </div>
         </div>
         <div className="bar-strip" role="group" aria-label="mission telemetry">
           <div className="bar-strip-stat" title="Mission status"><b>{goal.status ? statusWord : "—"}</b><span>status</span></div>
-          <div className="bar-strip-stat" title="Agents currently working"><b>{active}</b><span>agents</span></div>
+          <div className="bar-strip-stat agents" title="Agents currently working"><b>{active}</b><span>agents</span></div>
           <button type="button" className={`bar-strip-stat decisions${escOpen ? " hot" : ""}`} aria-label={decisionHint} title={decisionHint} onClick={() => setView("escalations")}>
             <b>{escOpen}</b><span>decisions</span>
           </button>
           <div className="bar-strip-stat secondary" title="Tokens spent out of mission budget"><b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b><span>spent</span></div>
         </div>
         <div className="top-actions">
-          {!paused ? (
-            <Button id="btn-pause" variant="soft" title="Pause the mission — agents stop, nothing is lost" onClick={async () => {
-              if (!goalId) return;
-              try {
-                await client.post(`/goals/${goalId}/pause`);
-                toast("mission paused", "agents stopped — nothing lost", "warn");
-              } catch {
-                toast("pause failed", "the server did not answer", "bad");
-              }
-              void refreshStatus();
-            }}>❚❚ <span className="act-lbl">pause</span></Button>
-          ) : goal.status === "PAUSED" ? (
-            <Button id="btn-resume" variant="soft" title="Resume the mission" onClick={async () => {
-              if (!goalId) return;
-              if (!confirmResume(status, "Resume")) return;
-              try {
-                await client.post(`/goals/${goalId}/resume`);
-                toast("mission resumed", "agents are running", "ok");
-              } catch {
-                toast("resume failed", "the server did not answer", "bad");
-              }
-              void refreshStatus();
-            }}>▶ <span className="act-lbl">resume</span></Button>
+          {/* Inline on anything wider than a phone; the same three actions,
+              same ids and same handlers, move into the ⋯ menu below 620 where
+              they no longer fit. Decisions never collapses — it is the one
+              asking for something, and its count is the reason to look here. */}
+          {phone ? null : secondaryActions.map((a) => (
+            <Button key={a.id} id={a.id} variant="soft" title={a.title} onClick={a.onClick}>
+              {a.glyph} <span className="act-lbl">{a.short}</span>
+            </Button>
+          ))}
+          <Button id="btn-decisions" variant={escOpen ? "primary" : "ghost"} aria-label={`Review decisions — ${escOpen} open`} title="Open the Needs you view" onClick={() => setView("escalations")}><span className="dec-lbl">Review decisions · </span>{escOpen}</Button>
+          {phone && secondaryActions.length > 0 ? (
+            <Menu id="btn-more" label="⋯" title="More mission actions" items={secondaryActions.map((a): MenuItem => ({ id: a.id, title: a.title, label: `${a.glyph}  ${a.short}`, onClick: a.onClick }))} />
           ) : null}
-          <Button id="btn-message" variant="soft" title="Send a message as the human — highest priority" onClick={() => openDrawer(<MessageDrawer />)}>✉ <span className="act-lbl">message</span></Button>
-          <Button id="btn-approval" variant="soft" title="Approve or reject something (release, design, quality…)" onClick={() => openDrawer(<ApprovalDrawer />)}>✓ <span className="act-lbl">approvals</span></Button>
-          <Button id="btn-decisions" variant={escOpen ? "primary" : "ghost"} title="Open the Needs you view" onClick={() => setView("escalations")}>Review decisions · {escOpen}</Button>
         </div>
       </header>
 
       {/* Focus mode is shell-owned state; the view tree reads it through this seam. */}
       <FocusCtx.Provider value={focusValue}>
         <main id="view" tabIndex={-1}>
+          {/* Every view renders its own <h2> title, so without this the document
+              outline started at h2 and had no root. There is no brand element in
+              the topbar to promote -- the bar is already at its width budget --
+              so the h1 is offscreen: it anchors the outline for a screen reader
+              without adding chrome nobody asked for. */}
+          <h1 className="sr-only">Agent Mesh console</h1>
           {serverDown ? (
             <div className="banner bad server-banner" role="alert">
               <b>Server not responding.</b> <span className="muted">Showing the last known state — it may be stale. Is the mesh process still running?</span>
               <Button variant="banner-act" onClick={() => void refreshStatus()}>Retry now</Button>
             </div>
           ) : null}
-          {viewNode}
+          {registryPending ? null : noProjects ? <HostEmptyState /> : viewNode}
         </main>
       </FocusCtx.Provider>
 
       {panel !== null && (
         <>
-          <div id="drawer" className="drawer" role="dialog" aria-modal="true" aria-label="Details panel" tabIndex={-1} ref={drawerRef}>
+          <div id="drawer" className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-label="Details panel" tabIndex={-1} ref={drawerRef}>
             {panelDepth > 1 ? <Button variant="ghost" extra="drawer-back" onClick={popPanel} title="Back to the previous panel (Esc)">← back</Button> : null}
             <div id="drawer-body">{panel}</div>
           </div>
@@ -569,7 +691,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       <ChatDock open={chatOpen} onOpen={() => setChatOpen(true)} onClose={() => setChatOpen(false)} />
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}><b>{t.title}</b>{t.msg}</div>
+          <div key={t.id} className={`toast ${t.kind}`}>
+            <b>{t.title}</b>
+            <span className="toast-msg">{t.msg}</span>
+            {t.action ? <button type="button" className="toast-act" onClick={t.action.run}>{t.action.label}</button> : null}
+          </div>
         ))}
       </div>
     </div>

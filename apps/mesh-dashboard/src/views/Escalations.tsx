@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ago, fmt, fmtBudget, roundNice } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, ErrorState, Input } from "../components";
-import { AgentDrawer } from "../drawers";
+import { AgentDrawer, ArtifactDrawer } from "../drawers";
 import { MeshMark } from "./Overview";
 import { isParkedStatus, useGoLive } from "../actions";
 
@@ -19,6 +19,35 @@ interface BudgetInfo {
   raisable: boolean;
   configCap?: "events" | "time";
 }
+
+/**
+ * A half-written answer to a blocking question is expensive to lose: the
+ * operator has usually gone off to read code or a log in order to write it, and
+ * coming back to an empty box means reconstructing the whole thought. The forms
+ * are otherwise uncontrolled (submit reads the DOM), so the draft rides
+ * alongside in localStorage rather than being lifted into React state — no
+ * re-render per keystroke, and it survives a reload, a tab switch or a stray
+ * close. Cleared only on a send the server accepted; a failed send keeps it.
+ */
+const DRAFT_KEY = "mesh-esc-draft:";
+const draftGet = (id: string): string => {
+  try {
+    return localStorage.getItem(DRAFT_KEY + id) || "";
+  } catch {
+    // Private mode / blocked storage: drafts are a convenience, never a
+    // precondition for answering.
+    return "";
+  }
+};
+const draftSet = (id: string, v: string): void => {
+  try {
+    if (v) localStorage.setItem(DRAFT_KEY + id, v);
+    else localStorage.removeItem(DRAFT_KEY + id);
+  } catch {
+    /* ignore */
+  }
+};
+const draftClear = (id: string): void => draftSet(id, "");
 
 function num(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -74,6 +103,49 @@ function requestLabelOf(m: any, fallbackType: string): string {
 function shortArt(uri: string): string {
   const m = /artifact:\/\/([^/]+)\/([^/]+)/.exec(uri);
   return m ? `${decodeURIComponent(m[2])}` : uri.slice(0, 40);
+}
+
+/* Evidence on an escalation arrives as `artifact://<type>/<name>/<version>`.
+ * That is enough to print a filename and it is what this screen printed: a
+ * dead comma-joined string naming the one file the answer depends on, with no
+ * way to read it. The drawer is keyed by artifact id, which the uri does not
+ * carry, so the view fetches the artifact list once and resolves refs against
+ * it — mirroring supervisor.findArtifactByUri's order (exact versioned uri
+ * first, then newest version of that type/name). Anything that still will not
+ * resolve stays plain text rather than becoming a button that does nothing. */
+const ArtIndexCtx = createContext<any[]>([]);
+
+function resolveArtifactId(list: any[], uri: string): string | null {
+  const m = /^artifact:\/\/([^/]+)\/([^/]+?)(?:\/(\d+))?$/.exec(uri);
+  if (!m) return null;
+  const type = m[1];
+  const name = decodeURIComponent(m[2]);
+  const version = m[3] ? Number(m[3]) : undefined;
+  let best: any = null;
+  for (const a of list) {
+    if (a?.type !== type || a?.name !== name) continue;
+    if (version !== undefined && a.version === version) return String(a.id);
+    if (!best || Number(a.version) > Number(best.version)) best = a;
+  }
+  return best ? String(best.id) : null;
+}
+
+function EvidenceRefs({ uris }: { uris: string[] }): React.JSX.Element | null {
+  const { openDrawer } = useMesh();
+  const list = useContext(ArtIndexCtx);
+  if (!uris.length) return null;
+  return (
+    <div className="muted evidence-refs">
+      <span>{uris.length > 1 ? "files" : "file"}:</span>
+      {uris.map((uri, i) => {
+        const id = resolveArtifactId(list, uri);
+        const label = shortArt(uri);
+        return id
+          ? <Button key={`${uri}-${i}`} variant="small" title={uri} onClick={() => openDrawer(<ArtifactDrawer id={id} />)}>{label}</Button>
+          : <code key={`${uri}-${i}`} title={uri}>{label}</code>;
+      })}
+    </div>
+  );
 }
 
 function ageOf(iso: unknown): string {
@@ -292,7 +364,7 @@ function capTarget(kind: "events" | "time", info: { budget?: BudgetInfo }, statu
 
 export default function Escalations(): React.JSX.Element {
   const mesh = useMesh();
-  const { status, setView, openDrawer, toast, refreshStatus, client } = mesh;
+  const { status, setView, openDrawer, toast, refreshStatus, client, confirm } = mesh;
   const [list, setList] = useState<any[]>([]);
   const { busy: bootBusy, goLive } = useGoLive();
   const [raiseBusy, setRaiseBusy] = useState<string | null>(null);
@@ -341,6 +413,46 @@ export default function Escalations(): React.JSX.Element {
     };
   }, [attempt, client, refreshStatus]);
 
+  // Staleness here is a correctness problem, not a nicety: an unanswered
+  // escalation is an agent stopped dead, and until now the list only refetched
+  // on mount — so a question raised while this tab was open showed an empty
+  // queue, which reads as "the mesh is converging on its own". The event stream
+  // already knows the moment it happens; follow it instead of asking the
+  // operator to reload. Refetching (rather than patching the list from the
+  // payload) keeps one source of truth for status, threads and budget deltas.
+  const escSeq = useMemo(() => {
+    let top = 0;
+    for (const e of mesh.events) if (e.type.startsWith("escalation.") && e.seq > top) top = e.seq;
+    return top;
+  }, [mesh.events]);
+  // `reload` is redefined every render; a ref keeps this effect keyed on the
+  // event sequence alone, so it fires once per new escalation event.
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    if (!escSeq || !loaded) return;
+    void reloadRef.current();
+  }, [escSeq, loaded]);
+
+  // The index behind EvidenceRefs. Refetched when an artifact event lands so a
+  // file written after this screen opened is still openable; a failure leaves
+  // the refs as plain names, which is what they were before.
+  const [artIndex, setArtIndex] = useState<any[]>([]);
+  const artSeq = useMemo(() => {
+    let top = 0;
+    for (const e of mesh.events) if (e.type.startsWith("artifact.") && e.seq > top) top = e.seq;
+    return top;
+  }, [mesh.events]);
+  useEffect(() => {
+    let dead = false;
+    client.api("GET", "/artifacts").then(({ json }) => {
+      if (!dead && Array.isArray(json)) setArtIndex(json);
+    }).catch(() => undefined);
+    return () => {
+      dead = true;
+    };
+  }, [attempt, artSeq, client]);
+
   const openList = list.filter((e) => e.status === "OPEN");
   const [msgs, setMsgs] = useState<Map<string, any>>(new Map());
 
@@ -388,8 +500,11 @@ export default function Escalations(): React.JSX.Element {
     try {
       const { status: st } = await client.post(`/escalations/${encodeURIComponent(escId)}/respond`, { response: text });
       if (st !== 200) toast("respond failed — try again", escId, "bad");
-      else if (parked) toast("recorded — press Continue to go live", escId, "ok");
-      else toast("responded — mission resumed", escId, "ok");
+      else {
+        draftClear(escId);
+        if (parked) toast("recorded — press Continue to go live", escId, "ok");
+        else toast("responded — mission resumed", escId, "ok");
+      }
     } catch {
       toast("respond failed", "the server did not answer", "bad");
     } finally {
@@ -407,6 +522,7 @@ export default function Escalations(): React.JSX.Element {
       if (st !== 200) {
         toast("answer failed — try again", json?.reason ?? escId, "bad");
       } else {
+        draftClear(escId);
         toast("answered — work resumed", escId, "ok");
         // Parked consoles used to need a second "Continue" click after every
         // answer. Fold it in: one click sends the answer AND restarts work.
@@ -422,7 +538,15 @@ export default function Escalations(): React.JSX.Element {
   };
 
   const doDrop = async (escId: string, label: string) => {
-    if (!window.confirm(`Skip this? The waiting agent moves on without it.\n\n${label}`)) return;
+    if (
+      (await confirm({
+        title: "Skip this question?",
+        body: [label, "The waiting agent moves on without an answer — it cannot ask again."],
+        danger: true,
+        confirmLabel: "Skip it",
+      })) === null
+    )
+      return;
     if (opBusy) return;
     setOpBusy(escId);
     try {
@@ -443,7 +567,15 @@ export default function Escalations(): React.JSX.Element {
   };
 
   const doRaise = async (escId: string, key: string, newLimit: number, needConfirm: boolean) => {
-    if (needConfirm && !window.confirm(`Add budget to ${fmt(newLimit)} and resume? This wakes agents and resumes spend.`)) return;
+    if (
+      needConfirm &&
+      (await confirm({
+        title: `Raise the budget to ${fmt(newLimit)}?`,
+        body: ["This wakes the blocked agents and resumes spend against the new limit."],
+        confirmLabel: "Raise and resume",
+      })) === null
+    )
+      return;
     const form = document.querySelector(`#respond-form-${CSS.escape(escId)} input`) as HTMLInputElement | null;
     const response = (form?.value || "").trim() || `raised budget to ${fmt(newLimit)} — continue with smaller steps`;
     setRaiseBusy(escId + key);
@@ -524,26 +656,38 @@ export default function Escalations(): React.JSX.Element {
     }
   };
 
+  // These are agents stopped dead waiting on an answer, so the queue is ordered
+  // by how long each has been stopped. Newest-first buried the longest-blocked
+  // question at the bottom of the list, where it kept accruing the most idle
+  // time — the exact inversion of what a triage queue is for. Each row already
+  // prints its age, so the ordering explains itself.
+  const waitedSince = (e: any): number => {
+    const d = e?.detail && typeof e.detail === "object" ? e.detail : {};
+    const t = Date.parse(d.awaitingSince || e?.createdAt || "");
+    // Undatable rows sort last rather than pretending to be the oldest.
+    return Number.isNaN(t) ? Infinity : t;
+  };
+  const byLongestWait = (x: any, y: any): number => waitedSince(x) - waitedSince(y);
   const openStuck = list.filter((x) => x.status === "OPEN" && x.reason === "stalemate:unanswered_request");
   const openOther = list.filter((x) => !(x.status === "OPEN" && (x.reason === "stalemate:unanswered_request" || x.reason === "stalemate")));
   const derived = list.filter((x) => x.status === "OPEN" && x.reason === "stalemate");
   const resolved = list.filter((x) => x.status !== "OPEN");
 
   return (
-    <>
+    <ArtIndexCtx.Provider value={artIndex}>
       {/* "all clear" is a verdict, so it may only be said once the queue has
           actually been read. Pre-fetch and post-failure it must not appear. */}
       <div className="view-title"><h2>Waiting on you{loaded ? ` (${openStuck.length})` : ""}</h2><span className="muted">{openStuck.length ? "answer one — work restarts by itself" : loadErr ? "queue unavailable" : !loaded ? "checking…" : "all clear"}</span></div>
       <div className="view-sub">Each card is one missing answer. Press Send — no second button, no Continue needed.</div>
-      {openStuck.length ? openStuck.slice().reverse().map((e) => (
+      {openStuck.length ? openStuck.slice().sort(byLongestWait).map((e) => (
         <EscCard
-          key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} msgs={msgs} list={list}
+          key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} opBusy={opBusy} msgs={msgs} list={list}
           onRespond={doRespond} onAnswer={doAnswer} onDrop={doDrop} onRaise={doRaise} onRaiseCustom={doRaiseCustom} onCapRaise={doCapRaise} onCopyId={copyId}
         />
       )) : null}
-      {derived.length ? derived.slice().reverse().map((e) => (
+      {derived.length ? derived.slice().sort(byLongestWait).map((e) => (
         <EscCard
-          key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} msgs={msgs} list={list}
+          key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} opBusy={opBusy} msgs={msgs} list={list}
           onRespond={doRespond} onAnswer={doAnswer} onDrop={doDrop} onRaise={doRaise} onRaiseCustom={doRaiseCustom} onCapRaise={doCapRaise} onCopyId={copyId}
         />
       )) : null}
@@ -552,7 +696,7 @@ export default function Escalations(): React.JSX.Element {
           <div className="group-h">Other decisions ({openOther.length})</div>
           {openOther.slice().reverse().map((e) => (
             <EscCard
-              key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} msgs={msgs} list={list}
+              key={e.id} e={e} status={status} parked={parked} raiseBusy={raiseBusy} opBusy={opBusy} msgs={msgs} list={list}
               onRespond={doRespond} onAnswer={doAnswer} onDrop={doDrop} onRaise={doRaise} onRaiseCustom={doRaiseCustom} onCapRaise={doCapRaise} onCopyId={copyId}
             />
           ))}
@@ -568,12 +712,12 @@ export default function Escalations(): React.JSX.Element {
           ))}
         </details>
       ) : null}
-    </>
+    </ArtIndexCtx.Provider>
   );
 }
 
 function EscCard(props: {
-  e: any; status: any; parked: boolean; raiseBusy: string | null; msgs?: Map<string, any>; list?: any[];
+  e: any; status: any; parked: boolean; raiseBusy: string | null; opBusy: string | null; msgs?: Map<string, any>; list?: any[];
   onRespond: (id: string, text: string) => void;
   onAnswer: (id: string, text: string) => void;
   onDrop: (id: string, label: string) => void;
@@ -582,7 +726,12 @@ function EscCard(props: {
   onCapRaise: (kind: "events" | "time", id: string) => void;
   onCopyId: (id: string) => void;
 }): React.JSX.Element {
-  const { e, status, parked, raiseBusy, msgs, list, onRespond, onAnswer, onDrop, onRaise, onRaiseCustom, onCapRaise, onCopyId } = props;
+  const { e, status, parked, raiseBusy, opBusy, msgs, list, onRespond, onAnswer, onDrop, onRaise, onRaiseCustom, onCapRaise, onCopyId } = props;
+  // The parent already refused a second submit while one was in flight, but it
+  // did so silently: the button stayed lit and the click vanished. `busy` is
+  // that same guard made visible.
+  const busy = opBusy === e.id;
+  const otherBusy = opBusy !== null && !busy;
   const { openDrawer, setView, setEvSearch, setEvFilter } = useMesh();
   const info = escPlain(e, status, msgs, parked);
   const agents = escAgents(e);
@@ -629,13 +778,13 @@ function EscCard(props: {
             {agents.map((a) => <Button key={a} variant="small" onClick={() => openDrawer(<AgentDrawer id={a} />)}>view {(a)}</Button>)}
             <Button variant="small" onClick={() => setView("cost")}>view cost</Button>
             <Button variant="small" onClick={() => { setEvSearch(e.id); setEvFilter(""); setView("events"); }}>related events</Button>
-            {disUri ? <span className="muted" style={{ fontSize: 11 }}>evidence: <code>{(String(disUri).slice(0, 60))}</code></span> : null}
+            {disUri ? <EvidenceRefs uris={[String(disUri)]} /> : null}
             <Button variant="small" title="Copy id" onClick={() => onCopyId(e.id)}>copy id</Button>
           </div>
           ) : null}
           {e.status === "OPEN" && isStuck && stuck ? (
             <StuckTaskCard
-              e={e} stuck={stuck} reqMsg={reqMsg} parked={parked}
+              e={e} stuck={stuck} reqMsg={reqMsg} parked={parked} busy={busy} otherBusy={otherBusy}
               placeholder={info.placeholder}
               onOpenThread={() => { if (reqMsg?.threadId) { setEvSearch(reqMsg.threadId); setEvFilter(""); setView("events"); } }}
               onAnswer={onAnswer} onDrop={onDrop}
@@ -651,15 +800,15 @@ function EscCard(props: {
               <DerivedStuckSummary e={e} list={list ?? []} msgs={msgs} />
               <form className="respond-form" data-id={e.id} id={`respond-form-${e.id}`} onSubmit={submitRespond}>
                 <div className="row" style={{ marginTop: 10 }}>
-                  <Input style={{ flex: 1 }} placeholder={info.placeholder || "e.g. decided: …"} required />
-                  <Button variant="primary" type="submit">Answer all &amp; resume</Button>
+                  <Input style={{ flex: 1 }} defaultValue={draftGet(e.id)} onChange={(ev) => draftSet(e.id, ev.currentTarget.value)} placeholder={info.placeholder || "e.g. decided: …"} required disabled={busy} aria-label="Your decision" />
+                  <Button variant="primary" type="submit" disabled={busy || otherBusy}>{busy ? "sending…" : "Answer all & resume"}</Button>
                 </div>
                 <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Sends this decision to every request listed above and resumes the mission.</div>
               </form>
             </>
           ) : e.status === "OPEN" ? (
             <form className="respond-form" data-id={e.id} id={`respond-form-${e.id}`} onSubmit={submitRespond}>
-              <div className="row" style={{ marginTop: 10 }}><Input style={{ flex: 1 }} placeholder={info.placeholder || "e.g. decided: …"} required /><Button variant="primary" type="submit">respond{parked ? " (stays parked)" : " + resume"}</Button></div>
+              <div className="row" style={{ marginTop: 10 }}><Input style={{ flex: 1 }} defaultValue={draftGet(e.id)} onChange={(ev) => draftSet(e.id, ev.currentTarget.value)} placeholder={info.placeholder || "e.g. decided: …"} required disabled={busy} aria-label="Your decision" /><Button variant="primary" type="submit" disabled={busy || otherBusy}>{busy ? "sending…" : parked ? "respond (stays parked)" : "respond + resume"}</Button></div>
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{info.budget?.raisable ? "Heads up: responding without adding budget just pauses again — the limit is still hit. " : ""}Your response is recorded as the <code>human</code> seat{parked ? <>. Nothing runs while parked — press <b>Continue</b> above to put it to work.</> : <>, unpauses the mission, and wakes {agents.length ? (agents.join(", ")) : "the affected agents"}.</>}</div>
             </form>
           ) : <div className="muted" style={{ marginTop: 8 }}>✔ {(e.response || "")} {e.respondedAt ? `· ${(ago(e.respondedAt))}` : ""}</div>}
@@ -671,15 +820,28 @@ function EscCard(props: {
 }
 
 function StuckTaskCard(props: {
-  e: any; stuck: StuckInfo; reqMsg?: any; parked: boolean; placeholder: string;
+  e: any; stuck: StuckInfo; reqMsg?: any; parked: boolean; placeholder: string; busy: boolean; otherBusy: boolean;
   onOpenThread: () => void; onAnswer: (id: string, text: string) => void; onDrop: (id: string, label: string) => void;
 }): React.JSX.Element {
-  const { e, stuck, reqMsg, placeholder, onOpenThread, onAnswer, onDrop } = props;
+  const { e, stuck, reqMsg, placeholder, busy, otherBusy, onOpenThread, onAnswer, onDrop } = props;
   const refs: any[] = Array.isArray(reqMsg?.artifactRefs) ? reqMsg.artifactRefs : [];
+  // This used to be an uncontrolled input with `defaultValue={placeholder}`: the
+  // suggested wording arrived pre-typed, and `required` was already satisfied by
+  // it. Pressing Send therefore recorded a machine-written sentence as the
+  // human seat's decision unless the operator noticed and overwrote it. The
+  // suggestion is worth keeping — but as something you choose, not something
+  // already in your mouth. Empty by default, one click to adopt it.
+  // Seeded from the saved draft, not from the suggestion — a restored draft is
+  // something the operator wrote, so `required` being satisfied is honest here.
+  const [text, setText] = useState(() => draftGet(e.id));
+  // Persisted outside React so a reload restores it; see draftGet's note.
+  const write = (v: string) => {
+    setText(v);
+    draftSet(e.id, v);
+  };
   const submit = (ev: React.FormEvent<HTMLFormElement>) => {
     ev.preventDefault();
-    const input = ev.currentTarget.querySelector("input");
-    onAnswer(e.id, input?.value || "");
+    onAnswer(e.id, text);
   };
   return (
     <div className="esc-next" style={{ marginTop: 8 }}>
@@ -688,17 +850,24 @@ function StuckTaskCard(props: {
         {stuck.age ? <span className="muted"> · waiting {(stuck.age)}</span> : null}
       </div>
       <div style={{ fontSize: 13, marginTop: 6 }}>Do this: {(stuck.requestLabel.slice(0, 280))}</div>
-      {refs.length > 0 ? <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>file: <code>{(refs.map((r: any) => shortArt(String(r?.uri || ""))).join(", "))}</code></div> : null}
+      <EvidenceRefs uris={refs.map((r: any) => String(r?.uri || "")).filter(Boolean)} />
       <form className="respond-form" data-id={e.id} id={`respond-form-${e.id}`} onSubmit={submit}>
         <div className="row" style={{ marginTop: 10 }}>
-          <Input style={{ flex: 1 }} defaultValue={placeholder} key={placeholder || "empty"} required />
-          <Button variant="primary" type="submit">Send + resume work</Button>
+          <Input
+            style={{ flex: 1 }} value={text} onChange={(ev) => write(ev.currentTarget.value)}
+            placeholder={placeholder || "your answer…"} required disabled={busy}
+            aria-label={`Your answer to ${stuck.askerId || "the agent"}`}
+          />
+          <Button variant="primary" type="submit" disabled={busy || otherBusy || !text.trim()}>{busy ? "sending…" : "Send + resume work"}</Button>
         </div>
-        <div className="row" style={{ marginTop: 6 }}>
+        <div className="row esc-stuck-acts" style={{ marginTop: 6 }}>
+          {placeholder && text !== placeholder ? (
+            <Button variant="small" title="Fill the box with the suggested answer — you can still edit it" onClick={() => write(placeholder)}>use suggested answer</Button>
+          ) : null}
           {reqMsg?.threadId ? <Button variant="small" onClick={onOpenThread}>see full thread</Button> : null}
-          <Button variant="small" onClick={() => onDrop(e.id, stuck.requestLabel)}>Skip — not needed</Button>
+          <Button variant="small" danger disabled={busy || otherBusy} title="Drop this request — the waiting agent continues without an answer" onClick={() => onDrop(e.id, stuck.requestLabel)}>Skip — not needed</Button>
         </div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>One click sends the answer and restarts work. Nothing else to press.</div>
+        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Sends the answer and restarts work. Nothing else to press.</div>
       </form>
     </div>
   );
@@ -762,7 +931,7 @@ function StuckRequestBox(props: { stuck: { agentId: string; askerId: string; req
         <span className="muted"> · {(stuck.requestType || "request")}{stuck.age ? ` · ${(stuck.age)}` : ""}</span>
       </div>
       <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>“{(stuck.requestLabel.slice(0, 280))}”</div>
-      {refs.length > 0 ? <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>file: <code>{(refs.map((r: any) => shortArt(String(r?.uri || ""))).join(", "))}</code></div> : null}
+      <EvidenceRefs uris={refs.map((r: any) => String(r?.uri || "")).filter(Boolean)} />
       <div className="row" style={{ marginTop: 6 }}>
         {reqMsg?.threadId ? <Button variant="small" onClick={onOpenThread}>open thread</Button> : null}
         {stuck.requestId ? <span className="muted mono" style={{ fontSize: 11 }}>{(stuck.requestId.slice(0, 24))}</span> : null}

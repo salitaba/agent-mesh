@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fmt, pillCls, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING } from "../format";
+import { fmt, goalTone, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING, mandatoryProgress } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
 import { ArtifactDrawer, EventDrawerBySeq, StepDrawer, CloseX } from "../drawers";
@@ -38,7 +38,7 @@ function artOfUri(arts: any[], uri: unknown): any | null {
 }
 
 /* cargo manifest: everything the team produced, clickable to read. */
-function Delivered({ goal, arts, artsLoaded, openArt }: { goal: any; arts: any[]; artsLoaded: boolean; openArt: (a: any) => void }): React.JSX.Element | null {
+function Delivered({ goal, arts, artsLoaded, artsErr, onRetryArts, openArt }: { goal: any; arts: any[]; artsLoaded: boolean; artsErr: boolean; onRetryArts: () => void; openArt: (a: any) => void }): React.JSX.Element | null {
   if (goal.status !== "COMPLETED") return null;
   const mandatory = (goal.acceptanceCriteria || []).filter((c: any) => c.mandatory);
   const ran = dur(Date.parse(goal.completedAt) - Date.parse(goal.createdAt));
@@ -85,7 +85,13 @@ function Delivered({ goal, arts, artsLoaded, openArt }: { goal: any; arts: any[]
             <span className="mono path">{shortRef(a.contentRef)}</span>
           </button>
         ))}
-        {!files.length ? <div className="muted">{artsLoaded ? "No files recorded for this goal." : "loading the manifest…"}</div> : null}
+        {!files.length ? (
+          <div className="muted">
+            {artsErr ? (
+              <>Could not load the manifest. <Button variant="linklike" onClick={onRetryArts}>try again</Button></>
+            ) : artsLoaded ? "No files recorded for this goal." : "loading the manifest…"}
+          </div>
+        ) : null}
       </div>
       {ws ? <div className="deliver-foot muted">Delivered into <span className="mono">{ws}</span></div> : null}
     </div>
@@ -97,6 +103,8 @@ export default function Overview(): React.JSX.Element {
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
   const [artsLoaded, setArtsLoaded] = useState(false);
+  const [artsErr, setArtsErr] = useState(false);
+  const [artsAttempt, setArtsAttempt] = useState(0);
   const { busy: bootBusy, goLive: doBoot } = useGoLive();
   const { busy: resetBusy, resetMission } = useResetMission();
   const { busy: reopenBusy, reopenMission } = useReopenMission();
@@ -112,17 +120,17 @@ export default function Overview(): React.JSX.Element {
       if (dead) return;
       setMetrics(m);
       if (Array.isArray((stepsRes as any).json)) setSteps((stepsRes as any).json);
-      if (Array.isArray((artsRes as any).json)) {
-        setArts((artsRes as any).json);
-        setArtsLoaded(true);
-      }
+      const artsOk = Array.isArray((artsRes as any).json);
+      if (artsOk) setArts((artsRes as any).json);
+      setArtsLoaded(true);
+      setArtsErr(!artsOk);
     })().catch(() => undefined);
     return () => {
       dead = true;
     };
     // goalId is in the deps so a Reset/reopen refetches the manifest instead of
     // showing the previous mission's artifacts.
-  }, [setSteps, client, goalId]);
+  }, [setSteps, client, goalId, artsAttempt]);
 
   // A permanent "loading overview" is what an operator saw when the server was
   // down, because nothing here ever distinguished slow from gone.
@@ -135,7 +143,7 @@ export default function Overview(): React.JSX.Element {
   const goal = st.goal || {};
   const crit = goal.acceptanceCriteria || [];
   const mandatory = crit.filter((c: any) => c.mandatory);
-  const done = mandatory.filter((c: any) => c.status !== "UNSATISFIED").length;
+  const { done } = mandatoryProgress(crit);
   const mission = (st.budgets || []).find((b: any) => b.key.startsWith("mission:") && b.limitKind === "tokens");
   const pct = mandatory.length ? Math.round((done / mandatory.length) * 100) : 0;
   const agents = (st.agents || []).filter((a: any) => a.id !== "human");
@@ -160,7 +168,7 @@ export default function Overview(): React.JSX.Element {
       const { json } = await client.api("GET", `/goals/${encodeURIComponent(goalId ?? "")}/replay`, undefined, { timeoutMs: 60000 });
       openDrawer(
         <>
-          <h2>Deterministic replay <CloseX /></h2>
+          <h2 id="drawer-title">Deterministic replay <CloseX /></h2>
           <p className="muted">rebuilt from {json?.eventCount ?? 0} events with zero model calls</p>
           <pre>{(JSON.stringify({ goal: json?.goal?.status, agents: json?.agents?.map((a: any) => [a.agentId, a.lifecycle]), artifacts: json?.artifacts?.length, budgets: json?.budgets }, null, 1))}</pre>
         </>,
@@ -172,7 +180,7 @@ export default function Overview(): React.JSX.Element {
 
   return (
     <div className={halted ? "is-halted" : ""}>
-      <div className="view-title"><h2>Overview</h2><span className={`pill ${pillCls(goal.status)}`}>{(plainGoal(goal.status))}</span><span className="page-actions"><Button variant="small" onClick={() => setView("steps")}>See what agents did</Button>{missionOver ? <Button variant="small" disabled={reopenBusy} title="Reject the result and put the agents back to work — nothing is deleted" onClick={reopenMission}>{reopenBusy ? "reopening…" : "Not good enough — reopen"}</Button> : null}<Button variant="small" danger disabled={resetBusy} title="Wipe all mission data and restart the goal from zero" onClick={resetMission}>{resetBusy ? "resetting…" : "Reset to zero"}</Button></span></div>
+      <div className="view-title"><h2>Overview</h2><span className={`pill ${goalTone(goal.status)}`}>{(plainGoal(goal.status))}</span><span className="page-actions"><Button variant="small" onClick={() => setView("steps")}>See what agents did</Button>{missionOver ? <Button variant="small" disabled={reopenBusy} title="Reject the result and put the agents back to work — nothing is deleted" onClick={reopenMission}>{reopenBusy ? "reopening…" : "Not good enough — reopen"}</Button> : null}<Button variant="small" danger disabled={resetBusy} title="Wipe all mission data and restart the goal from zero" onClick={resetMission}>{resetBusy ? "resetting…" : "Reset to zero"}</Button></span></div>
       <div className="view-sub">Is the mission healthy? Start here. Details live in Steps and Events.</div>
       {st.uiOnly ? (
         <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
@@ -188,7 +196,7 @@ export default function Overview(): React.JSX.Element {
       ) : active.length === 0 && waiting.length === 0 && goal.status === "ACTIVE" ? (
         <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>All quiet. Wake an agent or send a message to get going.</div></div>
       ) : null}
-      <Delivered goal={goal} arts={goalArts} artsLoaded={artsLoaded} openArt={openArt} />
+      <Delivered goal={goal} arts={goalArts} artsLoaded={artsLoaded} artsErr={artsErr} onRetryArts={() => setArtsAttempt((n) => n + 1)} openArt={openArt} />
       <div className="grid kpis">
         <Card variant="kpi"><small>Goal progress</small><b>{pct}%</b><div className="progress"><div style={{ transform: `scaleX(${pct / 100})` }} /></div><div className="delta">{done} of {mandatory.length} checks done</div></Card>
         <Card variant="kpi"><small>Working now</small><b>{active.length}</b><div className="delta">{waiting.length} waiting · {sched.pending ?? 0} queued</div></Card>

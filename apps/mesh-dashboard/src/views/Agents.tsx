@@ -14,11 +14,18 @@ import { useTick } from "../observability";
 function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWake: () => void; onOpen: () => void }): React.JSX.Element {
   const run = RUNNING.has(a.lifecycle);
   useTick(1000, run);
+  // Every lifecycle the kernel can report needs a branch here. BLOCKED,
+  // COMPLETED and STARTING used to fall through to "idle", so the subtitle
+  // contradicted the pill directly beneath it — a blocked agent read as idle
+  // next to a red "blocked" badge.
   const sub =
     a.lifecycle === "FAILED" ? "crashed — needs you"
+    : a.lifecycle === "BLOCKED" ? "blocked — cannot continue"
     : a.lifecycle === "WAITING" ? (a.mailbox ? `${a.mailbox} unread` : "waiting")
     : run ? "working now"
     : a.lifecycle === "SUSPENDED" ? "paused by you"
+    : a.lifecycle === "COMPLETED" ? "finished"
+    : a.lifecycle === "STARTING" ? "starting up"
     : "idle";
   const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, running: true, startedAt: step.startedAt }) : null;
   const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;

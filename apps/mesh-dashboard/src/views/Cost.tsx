@@ -64,7 +64,23 @@ export default function Cost(): React.JSX.Element {
     <>
       <div className="view-title"><h2>Cost</h2></div>
       <div className="view-sub">Token spend and remaining budget. Over-budget items appear first.</div>
-      {over.length ? <div className="status-strip bad" style={{ marginBottom: 12 }}><div><b>Over budget:</b> <span className="muted">{over.map((b: any) => (friendlyBudgetKey(b.key))).join(", ")}</span> <Button variant="banner-act" onClick={() => setView("escalations")}>Review decisions</Button></div></div> : null}
+      {over.length ? (
+        <div className="status-strip bad" style={{ marginBottom: 12 }}><div><b>Over budget:</b> <span className="muted">{over.map((b: any) => (friendlyBudgetKey(b.key))).join(", ")}</span> <Button variant="banner-act" onClick={() => setView("escalations")}>Review decisions</Button></div></div>
+      ) : pct >= 75 ? (
+        // `exceeded` only ever fires once the budget is already gone, which is
+        // too late to do anything about. The percentage was computed and shown
+        // in a KPI but never warned on — so the run went from "fine" to
+        // "halted" with no step in between.
+        <div className="status-strip warn" style={{ marginBottom: 12 }} role="status">
+          <div>
+            <b>{pct >= 90 ? "Budget almost gone:" : "Budget running low:"}</b>{" "}
+            <span className="muted">
+              {pct}% spent ({fmt(cost.missionTokens)} of {fmt(cost.missionBudget)}).
+              {pct >= 90 ? " Agents halt when it runs out — raise the budget or narrow the goal now." : " Worth checking which agent is spending it."}
+            </span>
+          </div>
+        </div>
+      ) : null}
       <div className="grid kpis" style={{ marginBottom: 12 }}>
         <Card variant="kpi"><small>Spent of budget</small><b>{fmt(cost.missionTokens)}<span className="muted" style={{ fontSize: 13 }}>/{fmt(cost.missionBudget)}</span></b><div className="progress"><div style={{ transform: `scaleX(${Math.min(1, pct / 100)})` }} /></div><div className="delta">{pct}% used</div></Card>
         <Card variant="kpi"><small>Biggest spender</small><b>{(ranked[0]?.agentId || "—")}</b><div className="delta">{fmt(ranked[0]?.tokens || 0)} tokens</div></Card>

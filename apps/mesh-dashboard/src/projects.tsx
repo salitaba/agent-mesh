@@ -91,6 +91,14 @@ interface ProjectsState {
   loaded: boolean;
   /** Set when the host itself is unreachable, as opposed to having no projects. */
   hostDown: boolean;
+  /**
+   * Whether this server has a project registry at all — `null` until the first
+   * answer lands. `mesh console` serves exactly one mesh and has no `/api/projects`
+   * route; `mesh host` does. Without this the two were indistinguishable (both
+   * "no projects"), so the console grew a tab strip it can never fill and a
+   * "+ Add a project" button whose POST 404s too.
+   */
+  hasRegistry: boolean | null;
 }
 
 const Ctx = createContext<ProjectsState | null>(null);
@@ -145,6 +153,14 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const [sseState, setSseState] = useState<SseState>("connecting");
   const [loaded, setLoaded] = useState(false);
   const [hostDown, setHostDown] = useState(false);
+  // Starts unknown rather than optimistic: showing the strip and then pulling
+  // it away is worse than letting it arrive a beat late in host mode.
+  const [hasRegistry, setHasRegistry] = useState<boolean | null>(null);
+  // Read from inside the 5s poll, which must not be rebuilt when the verdict
+  // lands. `mesh console` has no /api/projects route and never grows one, so
+  // once it has 404ed the poll was asking a question already answered — twelve
+  // console errors a minute that read like a bug to anyone opening devtools.
+  const noRegistryRef = useRef(false);
 
   const sinks = useRef(new Map<string, ProjectSink>());
   const esRef = useRef<EventSource | null>(null);
@@ -156,6 +172,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   if (eventTypes && eventTypes.length) typesRef.current = eventTypes;
 
   const refreshProjects = useCallback(async (): Promise<ProjectSummary[]> => {
+    if (noRegistryRef.current) return [];
     let res: Awaited<ReturnType<typeof api>>;
     try {
       res = await api("GET", "/api/projects");
@@ -172,6 +189,11 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
       return [];
     }
     setHostDown(false);
+    // A 404 is not "a registry holding no projects" — it is a server with no
+    // registry route. Only an actual answer settles the question; a transport
+    // failure above leaves the previous verdict alone.
+    noRegistryRef.current = status === 404;
+    setHasRegistry(status !== 404);
     const list: ProjectSummary[] = Array.isArray(json?.projects) ? json.projects : [];
     setProjects((prev) => (sameProjects(prev, list) ? prev : list));
     setLoaded(true);
@@ -401,6 +423,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
       }
     })();
     const iv = setInterval(() => {
+      if (noRegistryRef.current) return;
       void refreshProjects().catch(() => undefined);
     }, 5000);
     return () => {
@@ -426,9 +449,9 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const value = useMemo<ProjectsState>(
     () => ({
       projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject,
-      restartProject, removeProject, subscribe, sseState, loaded, hostDown,
+      restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry,
     }),
-    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, subscribe, sseState, loaded, hostDown],
+    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry],
   );
 
   return <Ctx.Provider value={value}>{children(activeId)}</Ctx.Provider>;

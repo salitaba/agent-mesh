@@ -68,12 +68,17 @@ export async function api(method: string, path: string, body?: unknown, opts: Ap
       signal: ctrl.signal,
     });
   } catch (err: any) {
-    if (err?.name === "AbortError") {
-      if (isLiveness(path)) {
-        setDown(true, path, notifier);
-      } else {
-        notifier("request timed out", `${path} took too long — the server may be busy; try again`, "warn");
-      }
+    const aborted = err?.name === "AbortError";
+    // A dead mesh process rejects with TypeError (connection refused) in
+    // milliseconds — it never reaches the abort timer. Keying "server not
+    // responding" off AbortError alone meant the hardest failure, the one the
+    // banner exists for, was the single case that stayed silent.
+    if (isLiveness(path)) {
+      setDown(true, path, notifier);
+      return { status: 0, json: null, timeout: aborted };
+    }
+    if (aborted) {
+      notifier("request timed out", `${path} took too long — the server may be busy; try again`, "warn");
       return { status: 0, json: null, timeout: true };
     }
     throw err;
