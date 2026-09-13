@@ -85,6 +85,8 @@
         "lease.acquired",
         "lease.released",
         "memory.updated",
+        "plan.updated",
+        "plan.gate_rejected",
         "budget.reserved",
         "budget.consumed",
         "budget.exceeded",

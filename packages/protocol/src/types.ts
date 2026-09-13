@@ -286,6 +286,8 @@ export type EventType =
   | "lease.acquired"
   | "lease.released"
   | "memory.updated"
+  | "plan.updated"
+  | "plan.gate_rejected"
   | "budget.reserved"
   | "budget.consumed"
   | "budget.exceeded"
@@ -432,6 +434,65 @@ export interface AgentDefinition {
   sessionPolicy: SessionPolicy;
   delegationPolicy: DelegationPolicy;
   budget: BudgetPolicy;
+  /**
+   * Absent means "off". Optional so that a hand-built AgentDefinition (tests,
+   * adapter fixtures, the synthetic worker seat) keeps compiling and keeps
+   * behaving exactly as it did before this feature existed.
+   */
+  hardActions?: HardActionsPolicy;
+}
+
+export type PlanStepStatus = "PENDING" | "DONE";
+
+/** One step as the model supplies it: ids and status are optional. */
+export interface PlanStepInput {
+  id?: string;
+  text: string;
+  status?: PlanStepStatus;
+  /** Hard-action capabilities this step intends to use (see HardActionsPolicy). */
+  capabilities?: string[];
+}
+
+/** One step after the supervisor has resolved its id and defaults. */
+export interface PlanStep {
+  id: string;
+  text: string;
+  status: PlanStepStatus;
+  capabilities: string[];
+}
+
+/**
+ * An agent's PRIVATE working breakdown of the one task it has claimed.
+ *
+ * Deliberately not a mesh Task: nobody else can claim, delegate or review a
+ * plan step. It exists so the agent can track its own sub-steps across turns,
+ * and so a hard action can be checked against a step that declared it.
+ *
+ * Scoped by `taskId`. Staleness is decided at READ time by comparing against
+ * AgentRuntimeState.activeTaskId — no reducer ever clears a plan, which keeps
+ * the projection a pure function of the log.
+ */
+export interface AgentPlan {
+  taskId?: TaskId;
+  steps: PlanStep[];
+  revision: number;
+  updatedAt: string;
+}
+
+/**
+ * Whether this agent must plan before acting.
+ *
+ * `off` (the default everywhere) is a complete no-op: no gate, no prompt
+ * section, no events — an existing mesh.yaml behaves bit-identically.
+ * `warn` records a `plan.gate_rejected` event but still runs the op.
+ * `enforce` rejects the op until some plan step declares the capability.
+ *
+ * `capabilities` lists which capability tokens are "hard". Only tokens that
+ * map to an op via HARD_OP_CAPABILITY can actually be enforced.
+ */
+export interface HardActionsPolicy {
+  mode: "off" | "warn" | "enforce";
+  capabilities: string[];
 }
 
 export interface AgentRuntimeState {
@@ -454,6 +515,8 @@ export interface AgentRuntimeState {
    * over a recoverable blip.
    */
   restartable?: boolean;
+  /** Private working breakdown of `activeTaskId`. See AgentPlan. */
+  plan?: AgentPlan;
 }
 
 export type TaskStatus =
@@ -805,6 +868,19 @@ export interface MeshOpRemember {
   value: string;
 }
 
+export interface MeshOpPlan {
+  op: "plan";
+  /** Defaults to the agent's activeTaskId when omitted. */
+  taskId?: TaskId;
+  steps: PlanStepInput[];
+}
+
+export interface MeshOpPlanStep {
+  op: "plan_step";
+  stepId: string;
+  status: PlanStepStatus;
+}
+
 export interface MeshOpAcquireLease {
   op: "acquire_lease";
   artifactId: ArtifactId;
@@ -874,6 +950,8 @@ export type MeshOp =
   | MeshOpWait
   | MeshOpDone
   | MeshOpRemember
+  | MeshOpPlan
+  | MeshOpPlanStep
   | MeshOpAcquireLease
   | MeshOpReleaseLease
   | MeshOpCommit
@@ -1028,6 +1106,12 @@ export interface AgentContextBundle {
    * usable.
    */
   delegationEnabled?: boolean;
+  /**
+   * Effective hard-action policy for this agent: `capabilities` is already
+   * intersected with what the agent actually holds AND with the tokens the op
+   * layer can enforce, so the prompt never threatens a rule that cannot fire.
+   */
+  hardActions?: HardActionsPolicy;
 }
 
 export interface CreateGoalInput {

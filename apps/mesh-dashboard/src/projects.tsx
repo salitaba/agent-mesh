@@ -121,7 +121,7 @@ const FALLBACK_TYPES = [
   "agent.failed", "message.sent", "message.delivered", "message.rejected", "artifact.created",
   "artifact.versioned", "artifact.transition", "task.created", "task.claimed", "task.completed",
   "review.requested", "review.approved", "review.rejected", "budget.consumed", "budget.exceeded",
-  "escalation.requested", "escalation.responded",
+  "escalation.requested", "escalation.responded", "plan.updated", "plan.gate_rejected",
 ];
 
 const RECONNECT_MS = 1500;

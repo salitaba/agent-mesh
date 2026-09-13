@@ -7,6 +7,9 @@ import {
   EVENT_TYPES,
   AUTHORITY_TOKENS,
   CAPABILITY_TOKENS,
+  DEFAULT_HARD_CAPABILITIES,
+  effectiveHardActions,
+  HARD_OP_CAPABILITY,
   normalizeCapability,
   PROJECT_ID_PATTERN,
   isProjectId,
@@ -36,6 +39,7 @@ export interface RawMeshFile {
     acceptance_criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
     workspace?: { path?: string };
     runtime?: { default?: string; model?: string; variant?: string };
+    defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
   };
   startup?: { activate?: string[] };
   agents: Record<string, RawAgent>;
@@ -152,6 +156,23 @@ export interface RawMeshFile {
   server?: { host?: string; port?: number; state_dir?: string; dashboard?: boolean };
 }
 
+export interface RawSessionPolicy {
+  persistent?: boolean;
+  max_context_tokens?: number;
+}
+
+export interface RawDelegationPolicy {
+  allow?: boolean;
+  max_depth?: number;
+  max_workers?: number;
+  worker_budget_tokens?: number;
+}
+
+export interface RawHardActions {
+  mode?: "off" | "warn" | "enforce";
+  capabilities?: string[];
+}
+
 export interface RawAgent {
   role: string;
   runtime?: string;
@@ -166,8 +187,9 @@ export interface RawAgent {
   capabilities?: string[];
   authority?: string[];
   interests?: string[];
-  session?: { persistent?: boolean; max_context_tokens?: number };
-  delegation?: { allow?: boolean; max_depth?: number; max_workers?: number; worker_budget_tokens?: number };
+  session?: RawSessionPolicy;
+  delegation?: RawDelegationPolicy;
+  hard_actions?: RawHardActions;
   budget?: { tokens?: number; wall_clock_minutes?: number; max_events?: number; max_activations?: number };
 }
 
@@ -363,6 +385,12 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   }
 
   const defaultRuntime = raw.mesh.runtime?.default ?? "opencode";
+  // mesh-wide defaults an agent inherits when it leaves the key out. Resolved with
+  // `??` everywhere below: an agent that explicitly sets `false` or `0` means it, and
+  // must win over the mesh default — only an absent key inherits.
+  const defSession = raw.mesh.defaults?.session;
+  const defDelegation = raw.mesh.defaults?.delegation;
+  const defHard = raw.mesh.defaults?.hard_actions;
   const defaultModel = raw.mesh.runtime?.model?.trim() || undefined;
   const defaultVariant = raw.mesh.runtime?.variant?.trim() || undefined;
   const workspacePath = path.resolve(dir, raw.mesh.workspace?.path ?? "./workspace");
@@ -392,14 +420,20 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       },
       interests: a.interests ?? [],
       sessionPolicy: {
-        persistent: a.session?.persistent ?? true,
-        maxContextTokens: a.session?.max_context_tokens,
+        persistent: a.session?.persistent ?? defSession?.persistent ?? true,
+        maxContextTokens: a.session?.max_context_tokens ?? defSession?.max_context_tokens,
       },
       delegationPolicy: {
-        allowDelegation: a.delegation?.allow ?? false,
-        maxDepth: a.delegation?.max_depth ?? 0,
-        maxWorkers: a.delegation?.max_workers ?? 0,
-        workerBudgetTokens: a.delegation?.worker_budget_tokens,
+        allowDelegation: a.delegation?.allow ?? defDelegation?.allow ?? false,
+        maxDepth: a.delegation?.max_depth ?? defDelegation?.max_depth ?? 0,
+        maxWorkers: a.delegation?.max_workers ?? defDelegation?.max_workers ?? 0,
+        workerBudgetTokens: a.delegation?.worker_budget_tokens ?? defDelegation?.worker_budget_tokens,
+      },
+      hardActions: {
+        mode: a.hard_actions?.mode ?? defHard?.mode ?? "off",
+        capabilities: (a.hard_actions?.capabilities ?? defHard?.capabilities ?? DEFAULT_HARD_CAPABILITIES).map(
+          normalizeCapability,
+        ),
       },
       budget: {
         tokens: raw.budgets?.agent?.[id] ?? a.budget?.tokens ?? 200000,
@@ -448,6 +482,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   // a role that a larger mesh adds later, and some fixtures assert on a
   // deliberately unsatisfiable gate. Surfacing beats silently deadlocking.
   for (const w of validateTransitionGateActors(Object.values(agents), raw.policies?.transitions ?? {})) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnenforceableHardActions(Object.values(agents))) {
     configWarnings.push(w);
   }
 
@@ -696,8 +733,47 @@ export function validateCapabilityTokens(agents: AgentDefinition[]): string[] {
         );
       }
     }
+    // Same failure mode, one layer over: a typo here loads and boots, and the
+    // plan gate then silently never fires for the capability the operator
+    // meant to protect.
+    for (const token of effectiveHardActions(agent.hardActions).capabilities) {
+      if (!known.has(token)) {
+        errors.push(
+          `agent '${agent.id}' declares unknown hard_actions capability '${token}' — the plan gate can never match it (known: ${CAPABILITY_TOKENS.join(", ")})`,
+        );
+      }
+    }
   }
   return errors;
+}
+
+/**
+ * Hard-action tokens the op layer cannot see.
+ *
+ * `shell.execute` and `network.request` are real capabilities, but they are
+ * spent through the coding agent's own tools rather than a MeshOp, so no
+ * `HARD_OP_CAPABILITY` entry exists and the gate can never fire for them. An
+ * operator who lists only those gets a policy that enforces nothing — a
+ * warning, not an error, because the tokens are legitimate elsewhere.
+ */
+export function warnUnenforceableHardActions(agents: AgentDefinition[]): string[] {
+  const warnings: string[] = [];
+  const enforceable = new Set(Object.values(HARD_OP_CAPABILITY));
+  for (const agent of agents) {
+    const hard = effectiveHardActions(agent.hardActions);
+    if (hard.mode === "off") continue;
+    const blind = hard.capabilities.filter((c) => !enforceable.has(c));
+    if (blind.length === hard.capabilities.length) {
+      warnings.push(
+        `agent '${agent.id}' has hard_actions.mode '${hard.mode}' but none of its capabilities (${blind.join(", ")}) map to a mesh op — the plan gate will never fire (enforceable: ${[...enforceable].join(", ")})`,
+      );
+    } else if (blind.length > 0) {
+      warnings.push(
+        `agent '${agent.id}' lists hard_actions capabilities the plan gate cannot see: ${blind.join(", ")} — they are used by the runtime's own tools, not a mesh op`,
+      );
+    }
+  }
+  return warnings;
 }
 
 /**

@@ -11,6 +11,7 @@ export function evClass(type: string): string {
       requirement: "t-artifact", architecture: "t-review", design: "t-message", dependency: "t-artifact",
       authentication: "t-artifact", authorization: "t-artifact", research: "t-artifact",
       implementation: "t-review", decision: "t-review", memory: "t-agent", human: "t-message",
+      plan: type === "plan.gate_rejected" ? "t-bad" : "t-task",
     }[p] || ""
   );
 }
@@ -23,6 +24,13 @@ export function evSummary(e: TimelineEvent): string {
       return `<b>${esc(p.message?.from)}</b> → ${(p.message?.to || []).map((x: string) => esc(x)).join(", ")} · ${esc(MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase())}`;
     case "message.rejected":
       return `Couldn't deliver — ${esc(String(p.reason || "").slice(0, 90))}`;
+    case "plan.updated": {
+      const steps = p.plan?.steps || [];
+      const done = steps.filter((s: any) => s.status === "DONE").length;
+      return `<b>${esc(p.agentId)}</b> planned ${steps.length} step${steps.length === 1 ? "" : "s"}${steps.length ? ` (${done} done)` : ""}`;
+    }
+    case "plan.gate_rejected":
+      return `<b>${esc(p.agentId)}</b> tried ${esc(p.op)} without a plan — ${esc(String(p.reason || "").slice(0, 80))}`;
     case "artifact.created":
       return `<b>${esc(p.artifact?.name)}</b> created by ${esc(p.artifact?.createdBy)}`;
     case "artifact.versioned":
@@ -70,7 +78,7 @@ export const EV_FILTER_GROUPS = [
   { id: "", label: "All" },
   { id: "message", label: "Messages", match: ["message"] },
   { id: "agent", label: "Agents", match: ["agent"] },
-  { id: "artifact", label: "Files & tasks", match: ["artifact", "task", "patch", "review", "release", "architecture", "implementation"] },
+  { id: "artifact", label: "Files & tasks", match: ["artifact", "task", "plan", "patch", "review", "release", "architecture", "implementation"] },
   { id: "system", label: "System", match: ["goal", "budget", "escalation", "lease", "memory", "human", "decision", "research", "requirements", "requirement", "dependency", "authentication", "authorization", "design", "thread"] },
 ];
 

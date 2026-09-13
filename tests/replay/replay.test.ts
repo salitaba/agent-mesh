@@ -18,6 +18,28 @@ async function buildTrail(m: Awaited<ReturnType<typeof makeMesh>>) {
   s.setScript("lead", async () => ({ operations: [{ op: "done" } as MeshOp] }));
   await m.supervisor.activateAgent("dev", { kind: "manual" });
   await waitFor("dev finished", () => m.kernel.state.agents.get("dev")?.state.lifecycle === "IDLE");
+
+  // A plan, a tick, and a re-plan — three plan.updated events whose reducer is
+  // a replace. If a step id or timestamp were ever minted inside the reducer
+  // instead of baked into the payload, replay would produce a different plan
+  // here and the serializable-views comparison below would catch it.
+  s.setScript("dev", async () => ({
+    operations: [{ op: "plan", steps: [{ text: "draft the design" }, { text: "review it" }] }, { op: "done" }] as MeshOp[],
+  }));
+  s.resetTurns("dev");
+  await m.supervisor.activateAgent("dev", { kind: "manual" });
+  await waitFor("dev planned", () => (m.kernel.state.agents.get("dev")?.state.plan?.steps.length ?? 0) === 2);
+  const firstStep = m.kernel.state.agents.get("dev")!.state.plan!.steps[0]!.id;
+  s.setScript("dev", async () => ({
+    operations: [
+      { op: "plan_step", stepId: firstStep, status: "DONE" },
+      { op: "plan", steps: [{ text: "draft the design" }, { text: "review it" }, { text: "publish" }] },
+      { op: "done" },
+    ] as MeshOp[],
+  }));
+  s.resetTurns("dev");
+  await m.supervisor.activateAgent("dev", { kind: "manual" });
+  await waitFor("dev re-planned", () => (m.kernel.state.agents.get("dev")?.state.plan?.steps.length ?? 0) === 3);
   await m.supervisor.recordDecision("lead", "approve", "architecture", undefined, "fine");
   await new Promise((r) => setTimeout(r, 50));
 }

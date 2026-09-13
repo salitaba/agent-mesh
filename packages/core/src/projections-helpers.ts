@@ -1,6 +1,9 @@
-﻿import type {
+﻿import { HARD_OP_CAPABILITY, effectiveHardActions } from "../../protocol/src/index";
+import type {
   AcceptanceCriterion,
   AgentDefinition,
+  AgentRuntimeState,
+  MeshOp,
   Artifact,
   ArtifactRef,
   ArtifactStatus,
@@ -478,4 +481,56 @@ export function gateSatisfiedWithConfig(
 
 export function isTerminalGoal(status: Goal["status"]): boolean {
   return status === "COMPLETED" || status === "FAILED";
+}
+
+/**
+ * Why an agent may not perform a hard op yet, or `null` when it may.
+ *
+ * Pure: no projections mutation, no events, no clock. The supervisor decides
+ * what to DO with a failure (warn vs refuse); this only decides whether the
+ * agent's current plan covers what it is about to do.
+ *
+ * The order of the early-outs is the whole design. Three of them return "fine"
+ * for reasons that look like bugs but are not:
+ *
+ *  - No `HARD_OP_CAPABILITY` entry: most ops are not hard actions. `send`,
+ *    `claim_task` and friends must never need a plan.
+ *  - The agent does not HOLD the capability: some other layer will refuse this
+ *    op anyway. Gating here would produce an unsatisfiable demand — "write a
+ *    plan step for repository.write" addressed to an agent that can never do
+ *    a repository.write — and the agent would loop re-planning until its
+ *    strike budget ran out.
+ *  - The operator did not list the capability as hard: opting `git.commit` in
+ *    must not drag `repository.write` along with it.
+ *
+ * A DONE step still counts. The gate asks "did you think about this before you
+ * started", not "is this step still open" — an agent that marks a step done
+ * and then retries the op after a transient failure is doing the right thing,
+ * and refusing it there would be a deadlock with no legal way out.
+ */
+export function planCoversHardOp(
+  op: MeshOp,
+  def: AgentDefinition,
+  st: AgentRuntimeState,
+): string | null {
+  const cap = HARD_OP_CAPABILITY[op.op];
+  if (!cap) return null;
+  if (!def.capabilities.includes(cap)) return null;
+  const hard = effectiveHardActions(def.hardActions);
+  if (!hard.capabilities.includes(cap)) return null;
+
+  const plan = st.plan;
+  if (!plan || plan.steps.length === 0) {
+    return `no plan — ${op.op} needs '${cap}', so emit {"op":"plan","steps":[{"text":"…","capabilities":["${cap}"]}]} first`;
+  }
+  // A plan written for the PREVIOUS task is not a plan for this one. Compared
+  // at read time rather than cleared by a reducer, so replay and snapshot
+  // restore always agree (see the plan.updated reducer).
+  if (plan.taskId && st.activeTaskId && plan.taskId !== st.activeTaskId) {
+    return `your plan is for task ${plan.taskId} but you are working ${st.activeTaskId} — re-emit {"op":"plan"} for the current task`;
+  }
+  if (!plan.steps.some((s) => s.capabilities.includes(cap))) {
+    return `no plan step declares '${cap}' — re-emit {"op":"plan"} with a step whose capabilities include "${cap}"`;
+  }
+  return null;
 }

@@ -469,3 +469,8 @@ function hasPeerReviewerFor(ctx: PolicyContext, actorId: string, artifact: Artif
   }
   return false;
 }
+
+// Lives in core/projections-helpers for the same layering reason holdsAuthority
+// does: the supervisor's op path must reach it, and core may not import this
+// package. Re-exported here so callers can still get it from the policy layer.
+export { planCoversHardOp } from "../../core/src/projections-helpers";

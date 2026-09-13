@@ -49,6 +49,24 @@ those payload fields the runtime itself branches on. Hashing the prose made
 `fingerprint_loop` defeatable by rewording — which is the one thing a language
 model does reliably and unprompted.
 
+### Private plans
+
+Beside the shared task board, each agent keeps its own ordered checklist for
+the single task it has claimed (`plan`, `plan_step`). It is private by design:
+the task board is the inter-agent contract, and a second claimable surface
+would give two agents two different answers about who owns what.
+
+A `plan.updated` event always carries the **whole** plan, never a delta, so the
+reducer is a replace and any replayed prefix of the log is a coherent
+checklist. Nothing ever clears a plan when the agent changes task — staleness
+is decided at read time by comparing `plan.taskId` against the agent's
+`activeTaskId`, which keeps replay and snapshot restore in agreement.
+
+Step ids are resolved in the supervisor (hashed from the step text when the
+model omits one), for the same reason every other id is: a reducer must be a
+pure function of the log. Hashing also makes a restated identical plan
+idempotent, so `plan_step` references from the previous turn keep resolving.
+
 ### Message types (kept deliberately small)
 
 `MISSION INFORM REQUEST REQUEST_INFO REQUEST_REVIEW REQUEST_ARTIFACT

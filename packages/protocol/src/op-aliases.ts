@@ -46,6 +46,20 @@ const NAME_ALIASES: Record<string, string> = {
   mesh_wait: "wait",
   mesh_done: "done",
   mesh_remember: "remember",
+  mesh_plan: "plan",
+  mesh_plan_step: "plan_step",
+  // Coding agents arrive with a house todo tool already in their habits
+  // (Claude Code's TodoWrite, Codex's update_plan). Mapping the names they
+  // already reach for costs one table entry and saves a rejected turn each.
+  todo: "plan",
+  todos: "plan",
+  todo_write: "plan",
+  TodoWrite: "plan",
+  update_plan: "plan",
+  plan_update: "plan",
+  complete_step: "plan_step",
+  step_complete: "plan_step",
+  todo_update: "plan_step",
   mesh_spawn_worker: "spawn_worker",
   mesh_submit_result: "submit_result",
 };
@@ -168,6 +182,39 @@ export function aliasTextOp(raw: unknown): Record<string, unknown> | null {
         if (o[k] !== undefined && meta[k] === undefined) meta[k] = o[k];
       }
       if (Object.keys(meta).length > 0) out.metadata = meta;
+      break;
+    }
+    case "plan": {
+      // Every shape a todo list arrives in: a list under any of three keys,
+      // and items that are either bare strings or objects whose text sits
+      // under any of four keys. Coercing here rather than rejecting is the
+      // difference between the op landing and the turn being wasted.
+      const raw = (o.steps ?? o.todos ?? o.items ?? o.plan ?? o.tasks) as unknown;
+      if (Array.isArray(raw)) {
+        out.steps = raw
+          .map((s) => {
+            if (typeof s === "string") return { text: s };
+            if (!s || typeof s !== "object") return null;
+            const e = s as Record<string, unknown>;
+            const text = str(e.text) ?? str(e.content) ?? str(e.title) ?? str(e.description) ?? str(e.step);
+            if (!text) return null;
+            const status = typeof e.status === "string" && /^(done|completed|complete|finished)$/i.test(e.status)
+              ? "DONE"
+              : "PENDING";
+            const caps = asArray(e.capabilities) ?? asArray(e.capability) ?? asArray(e.uses);
+            return { id: str(e.id), text, status, ...(caps ? { capabilities: caps } : {}) };
+          })
+          .filter(Boolean);
+      }
+      break;
+    }
+    case "plan_step": {
+      const id = str(o.stepId) ?? str(o.id) ?? str(o.step) ?? str(o.stepID);
+      if (id) out.stepId = id;
+      const s = str(o.status) ?? str(o.state);
+      // `plan_step` with no status at all means "I finished this one" — that is
+      // what every house todo tool's completion call looks like.
+      out.status = s && /^(pending|todo|open|in_progress)$/i.test(s) ? "PENDING" : "DONE";
       break;
     }
     case "request_review": {

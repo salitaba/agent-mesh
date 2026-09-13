@@ -56,6 +56,20 @@ export function applySystemEvent(state: Projections, event: MeshEvent, p: Record
       state.memory.set(agentId, m);
       break;
     }
+    // The whole plan rides on every event, so this reducer is a replace, not a
+    // merge — replaying a prefix of the log can never leave a half-applied
+    // checklist. An empty steps[] is how an agent retracts its plan.
+    //
+    // Nothing here ever CLEARS a plan on task change: staleness is decided at
+    // read time by comparing plan.taskId against state.activeTaskId. A reducer
+    // that cleared would make the projection depend on event order between two
+    // independent streams, and snapshot/restore would disagree with replay.
+    case "plan.updated": {
+      const { agentId, plan } = p as { agentId: string; plan: import("../../protocol/src/index").AgentPlan };
+      const rec = state.agents.get(agentId);
+      if (rec) rec.state.plan = plan.steps.length > 0 ? plan : undefined;
+      break;
+    }
     case "budget.reserved": {
       const b = ensureBudget(state, p.key, p.limitKind ?? "tokens", p.limit ?? null);
       b.reserved += p.amount ?? 0;

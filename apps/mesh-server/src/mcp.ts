@@ -187,6 +187,10 @@ export class McpToolset {
         return { op: "done", summary: a.summary };
       case "mesh_remember":
         return { op: "remember", key: a.key, value: a.value };
+      case "mesh_plan":
+        return { op: "plan", steps: a.steps, taskId: a.taskId };
+      case "mesh_plan_step":
+        return { op: "plan_step", stepId: a.stepId, status: a.status ?? "DONE" };
       case "mesh_spawn_worker":
         return { op: "spawn_worker", title: a.title, taskSpec: a.taskSpec, capabilities: a.capabilities, budgetTokens: a.budgetTokens };
       case "mesh_submit_result":
@@ -473,6 +477,12 @@ export class McpToolset {
       { name: "mesh_wait", description: "Declare that you are waiting for responses (runtime state becomes WAITING).", inputSchema: { type: "object", properties: { reason: str("what you await") }, additionalProperties: false } },
       { name: "mesh_done", description: "Finish your current activation turn.", inputSchema: { type: "object", properties: { summary: str("turn summary") }, additionalProperties: false } },
       { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
+      // This is the ONLY channel that lets an agent recover from a plan-gate
+      // rejection inside the SAME turn: a prose rejection rides endSummary into
+      // memory and is not read until the next activation, but an MCP caller
+      // sees the refusal in its tool result and can call mesh_plan immediately.
+      { name: "mesh_plan", description: "Record your PRIVATE ordered checklist for the task you have claimed (not visible to other agents, not claimable by them). Replaces any previous plan. Required before hard actions when your mesh enables the plan gate — list the capabilities each step will use.", inputSchema: { type: "object", required: ["steps"], properties: { steps: { type: "array", description: "ordered steps", items: { type: "object", required: ["text"], properties: { id: str("stable step id (generated if omitted)"), text: str("what this step does"), status: { type: "string", enum: ["PENDING", "DONE"], description: "defaults to PENDING" }, capabilities: strArr("capability tokens this step will use, e.g. repository.write, git.commit") }, additionalProperties: false } }, taskId: str("defaults to your currently claimed task") }, additionalProperties: false } },
+      { name: "mesh_plan_step", description: "Mark one step of your plan done (or reopen it).", inputSchema: { type: "object", required: ["stepId"], properties: { stepId: str("step id from your plan"), status: { type: "string", enum: ["PENDING", "DONE"], description: "defaults to DONE" } }, additionalProperties: false } },
       { name: "mesh_spawn_worker", description: "Spawn a depth-1 delegated worker (only if your delegation policy allows). Parent receives only the structured result contract.", inputSchema: { type: "object", required: ["title", "taskSpec"], properties: { title: str("worker task title"), taskSpec: str("precise task specification"), capabilities: strArr("required capabilities"), budgetTokens: { type: "number", description: "worker token budget" } }, additionalProperties: false } },
       { name: "mesh_submit_result", description: "Worker-only: submit the fractal result contract {status,summary,artifacts,findings,risks,recommendation}.", inputSchema: { type: "object", required: ["taskId", "result"], properties: { taskId: str("delegated task"), result: obj("SubAgentResult contract") }, additionalProperties: false } },
       { name: "mesh_run_status", description: "Read-only mission snapshot: goal status and criteria progress, event/message/task/token counters and rates, per-agent lifecycle/cost/last error, open escalations. Use to answer 'how is the run doing?'.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },

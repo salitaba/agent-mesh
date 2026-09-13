@@ -80,6 +80,14 @@ export interface AgentDetail {
   recentSteps: TurnStep[];
   currentTurnId?: string;
   activeTask?: unknown;
+  /**
+   * The agent's private checklist, or null when it has none.
+   *
+   * Detail-only. `status()` stays untouched: it is polled on a timer for every
+   * agent at once, and a plan is a per-agent drill-down concern — putting it
+   * there would put a growing array in the hottest payload in the system.
+   */
+  plan: unknown | null;
   tasksInvolved: unknown[];
   artifacts: unknown[];
   threads: AgentDetailThread[];
@@ -249,6 +257,7 @@ export function buildAgentDetail(
     recentSteps,
     currentTurnId: opts.currentTurnId,
     activeTask,
+    plan: rec.state.plan ?? null,
     tasksInvolved,
     artifacts,
     threads,

@@ -4,6 +4,8 @@ import type {
   ArtifactType,
   EventType,
   GoalStatus,
+  HardActionsPolicy,
+  MeshOp,
   LifecycleState,
   MessageType,
 } from "./types";
@@ -74,6 +76,8 @@ export const EVENT_TYPES: EventType[] = [
   "lease.acquired",
   "lease.released",
   "memory.updated",
+  "plan.updated",
+  "plan.gate_rejected",
   "budget.reserved",
   "budget.consumed",
   "budget.exceeded",
@@ -350,6 +354,62 @@ export const CAPABILITY_TOKENS: string[] = [
   // REQUEST_REVIEW / REQUEST_RESEARCH; repository.read also confers it.
   "request_review",
 ];
+
+/**
+ * Capability tokens treated as "hard actions" when an agent opts in and does
+ * not name its own list.
+ *
+ * `shell.execute` and `network.request` are included because they are what an
+ * operator means by "dangerous", but note they have no entry in
+ * HARD_OP_CAPABILITY below: they are exercised by the underlying coding
+ * agent's own tools, not by a MeshOp, so the op-layer gate cannot see them.
+ * Config load emits a warning saying so rather than silently doing nothing.
+ */
+export const DEFAULT_HARD_CAPABILITIES: string[] = [
+  "repository.write",
+  "git.commit",
+  "git.merge",
+  "shell.execute",
+  "network.request",
+];
+
+/**
+ * The ops the plan gate can actually enforce, and the capability each implies.
+ *
+ * Deliberately a small static table rather than a predicate: every entry must
+ * be a mesh op whose effect is externally visible and hard to undo. Ops that
+ * are already gated elsewhere are excluded on purpose — `transition_artifact`
+ * by the artifact state machine, `spawn_worker` by the delegation policy — so
+ * the plan gate never becomes a second, competing authority check.
+ */
+export const HARD_OP_CAPABILITY: Partial<Record<MeshOp["op"], string>> = {
+  publish_artifact: "repository.write",
+  commit: "git.commit",
+  merge: "git.merge",
+};
+
+/**
+ * Marks a rejection as coming from the plan gate. The supervisor's op loop
+ * matches on this to stop the rest of the turn (a turn that keeps going after
+ * a refused write announces artifacts that were never created).
+ */
+export const PLAN_GATE_PREFIX = "plan-gate:";
+
+/**
+ * Clamps on a plan. A checklist is re-rendered into every prompt this agent
+ * takes, so an unbounded one is a per-turn token leak, and a model that emits
+ * 200 steps is confused rather than thorough.
+ */
+export const MAX_PLAN_STEPS = 10;
+export const MAX_PLAN_STEP_CHARS = 160;
+
+/** The no-op policy an agent gets when it declares none. */
+export const HARD_ACTIONS_OFF: HardActionsPolicy = { mode: "off", capabilities: [] };
+
+/** Never returns undefined, so callers cannot forget the default. */
+export function effectiveHardActions(policy: HardActionsPolicy | undefined): HardActionsPolicy {
+  return policy ?? HARD_ACTIONS_OFF;
+}
 
 /**
  * Domain-flavored names seen in hand-written mesh.yaml files (api.write,

@@ -1,11 +1,12 @@
 import type {
   AgentContextBundle,
   Artifact,
+  HardActionsPolicy,
   MeshMessage,
   Task,
 } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
-import { MESSAGE_TYPES } from "../../protocol/src/catalog";
+import { MESSAGE_TYPES, HARD_OP_CAPABILITY, effectiveHardActions } from "../../protocol/src/catalog";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
@@ -155,9 +156,39 @@ export function buildAgentContext(
     },
     outstanding: { awaitingResponse: byAge(awaitingResponse), owedByYou: byAge(owedByYou) },
     goalCriteria,
+    /* Advertise delegation only on the terms opSpawnWorker actually grants: it
+     * also requires maxWorkers > 0, so a policy that allows delegation at depth
+     * but leaves the worker cap at 0 would offer a tool every call then denies.
+     * Easy to hit now that mesh.defaults sets these for every agent at once. */
     delegationEnabled: (config.agents[agentId]?.delegationPolicy.allowDelegation ?? false) &&
-      (config.agents[agentId]?.delegationPolicy.maxDepth ?? 0) > 0,
+      (config.agents[agentId]?.delegationPolicy.maxDepth ?? 0) > 0 &&
+      (config.agents[agentId]?.delegationPolicy.maxWorkers ?? 0) > 0,
+    /* Same "never advertise a rule that cannot fire" discipline as
+     * delegationEnabled above. The declared capability list is narrowed twice
+     * before it reaches the prompt:
+     *   - to tokens HARD_OP_CAPABILITY can actually see (shell.execute and
+     *     network.request are spent through the runtime's own tools, so the
+     *     gate never fires for them), and
+     *   - to tokens this agent actually holds, because planCoversHardOp waves
+     *     through an op whose capability the agent lacks — some other layer
+     *     refuses it, and demanding a plan step for it would be an order the
+     *     agent has no legal way to satisfy.
+     * What survives is exactly the set the gate can reject the agent for. */
+    hardActions: hardActionsFor(config, agentId),
   };
+}
+
+/** See AgentContextBundle.hardActions for why this narrows twice. */
+function hardActionsFor(config: ResolvedMeshConfig, agentId: string): HardActionsPolicy {
+  const def = config.agents[agentId];
+  const hard = effectiveHardActions(def?.hardActions);
+  if (hard.mode === "off" || !def) return { mode: "off", capabilities: [] };
+  const enforceable = new Set(Object.values(HARD_OP_CAPABILITY));
+  const capabilities = hard.capabilities.filter((c) => enforceable.has(c) && def.capabilities.includes(c));
+  // Nothing left to gate is the same thing as off, as far as the prompt is
+  // concerned — rendering a threat here would cost tokens every turn to
+  // describe a rule that can never fire.
+  return capabilities.length > 0 ? { mode: hard.mode, capabilities } : { mode: "off", capabilities: [] };
 }
 
 function isRelevantArtifact(a: Artifact, agentId: string, unread: MeshMessage[]): boolean {
@@ -261,6 +292,48 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push(bundle.currentTask.description);
     lines.push("");
   }
+  // The agent's own checklist for the task above. Rendered as checkboxes for
+  // the same reason the criteria list below is: a model reads "- [ ]" as work
+  // outstanding without needing a sentence to explain it.
+  //
+  // Deliberately rendered even when EMPTY whenever the plan gate is armed. An
+  // absent section reads as "no such feature"; an empty one with the reason
+  // spelled out is what actually makes the agent plan before it acts. This is
+  // the primary mechanism — a gate rejection only reaches the model on its
+  // NEXT turn (it rides endSummary into memory), so the contract has to do the
+  // work up front and the rejection is the fallback.
+  const hard = bundle.hardActions ?? { mode: "off" as const, capabilities: [] };
+  const planSteps = bundle.agentState?.plan?.steps ?? [];
+  const planTask = bundle.agentState?.plan?.taskId;
+  const stale = Boolean(planTask && bundle.currentTask && planTask !== bundle.currentTask.id);
+  if (planSteps.length > 0 && !stale) {
+    const openSteps = planSteps.filter((s) => s.status !== "DONE");
+    lines.push(`## Your plan${planTask ? ` for ${planTask}` : ""} (private — no other agent sees or can claim these)`);
+    for (const s of planSteps) {
+      const caps = s.capabilities.length > 0 ? ` [${s.capabilities.join(", ")}]` : "";
+      lines.push(`- [${s.status === "DONE" ? "x" : " "}] ${s.id}: ${s.text}${caps}`);
+    }
+    lines.push(
+      openSteps.length > 0
+        ? `Work the next unchecked step now, then mark it: {"op":"plan_step","stepId":"${openSteps[0]!.id}","status":"DONE"}. Re-emit {"op":"plan"} only when the breakdown itself changed.`
+        : 'Every step is done. Finish the task ({"op":"complete_task"}) or re-plan if more work surfaced.',
+    );
+    lines.push("");
+  } else if (hard.mode !== "off") {
+    lines.push("## Your plan (none yet)");
+    if (stale) {
+      lines.push(`Your recorded plan was for ${planTask}, not your current task — it no longer applies.`);
+    }
+    lines.push(
+      `Before you can ${hard.capabilities.join(" / ")} you must record a plan: {"op":"plan","steps":[{"text":"what you will do","capabilities":["${hard.capabilities[0]}"]}]}. List the capabilities each step will use — a step that does not name the capability does not unlock it.`,
+    );
+    lines.push(
+      hard.mode === "enforce"
+        ? "Ops needing those capabilities are REJECTED until a plan step declares them, and the rest of that turn is abandoned. Plan in the same turn, before the op that needs it."
+        : "This is currently advisory: the op still runs, but the missing plan is recorded against you.",
+    );
+    lines.push("");
+  }
   // THE authoritative to-do list. This section exists because agents were
   // going idle on a live mission: their L2 memory said "mission complete" (a
   // memory written under a previous goal), their open loops were empty, and
@@ -339,7 +412,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
   lines.push(' {"op":"wait","reason":"awaiting review"}]');
   lines.push("```");
-  lines.push("Common ops: send (type/to/payload), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary), wait (reason). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: send (type/to/payload), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such

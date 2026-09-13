@@ -7,6 +7,15 @@ import {
   INITIAL_ARTIFACT_STATUS,
   artifactMachineOf,
   validateMessage,
+  normalizeCapability,
+  effectiveHardActions,
+  PLAN_GATE_PREFIX,
+  MAX_PLAN_STEPS,
+  MAX_PLAN_STEP_CHARS,
+  type AgentPlan,
+  type PlanStep,
+  type PlanStepInput,
+  type PlanStepStatus,
   type AcceptanceCriterion,
   type AgentDefinition,
   type AgentInput,
@@ -42,6 +51,7 @@ import {
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
+import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
@@ -2868,6 +2878,14 @@ export class Supervisor {
         }
         if (process.env.MESH_OP_DEBUG) console.error(`[op] ${agentId} ${op.op} -> ${result.ok}${result.reason ? " " + result.reason : ""}${result.messageId ? " msg:" + result.messageId : ""}${result.artifactId ? " art:" + result.artifactId : ""}`);
         turn.results.push(result);
+        // A gate rejection means the agent skipped planning. The ops that
+        // follow were written on that same assumption, so running them just
+        // produces a cascade of rejections against a plan that still does not
+        // exist. Stop here and let the agent plan on its next turn.
+        if (!result.ok && result.reason?.startsWith(PLAN_GATE_PREFIX)) {
+          this.auditLine(`turn ${turnId} for ${agentId} stopped early: ${result.reason}`);
+          break;
+        }
       }
       this.markTurn(turnId, "opsDoneAt");
 
@@ -2958,6 +2976,24 @@ export class Supervisor {
           .slice(0, 300);
         endSummary = `⚠ all ${rejected.length} ops rejected (${why})${modelSummary ? ` — model said: ${modelSummary}` : ""}`;
         this.auditLine(`turn ${turnId} for ${agentId}: all ${rejected.length} ops rejected: ${why}`);
+      } else if (
+        // Planning is not doing. A plan is bookkeeping about future work, so a
+        // turn that only planned spent full tokens and moved nothing — exactly
+        // the shape `unproductive` exists to catch.
+        //
+        // This must NOT join the wait/done/remember arm below: that arm reports
+        // "ok" to the scheduler, which DELETES the agent's strikes. An agent
+        // stuck re-planning would reset the breaker on every turn and loop for
+        // the whole mission budget. One planning turn is free (the next real
+        // turn clears the strike); three in a row parks the agent, which is the
+        // right answer for an agent that cannot get past its own checklist.
+        turn.results.length > 0 &&
+        turn.results.some((r) => r.op === "plan" || r.op === "plan_step") &&
+        turn.results.every((r) => r.op === "plan" || r.op === "plan_step" || r.op === "wait" || r.op === "remember")
+      ) {
+        unproductive = true;
+        endSummary = `⚠ turn only recorded a plan — the checklist is saved, now CARRY OUT its steps in your next turn; planning again changes nothing${modelSummary ? ` (model said: ${modelSummary})` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId} only planned (${turn.results.map((r) => r.op).join(",")})`);
       } else if (
         // wait/done/remember are not work. A driver woken with nothing to act
         // on answers with one of these, the mesh ends empty, and the stall
@@ -3349,6 +3385,27 @@ export class Supervisor {
         }
       }
     }
+    // Plan gate. Off by default and for the human seat; see HardActionsPolicy.
+    // Deliberately placed after the halt guard and before every op handler, so
+    // one check covers the typed (MCP) bus and the prose path alike.
+    if (actorId !== HUMAN_AGENT_ID) {
+      const rec = this.state.agents.get(actorId);
+      const hard = rec ? effectiveHardActions(rec.definition.hardActions) : undefined;
+      if (rec && hard && hard.mode !== "off") {
+        const miss = planCoversHardOp(op, rec.definition, rec.state);
+        if (miss) {
+          // Emitted in BOTH modes: `warn` exists so an operator can see what
+          // `enforce` would have blocked before turning it on, which only
+          // works if the near-miss is on the log.
+          await this.deps.kernel.emit(
+            "plan.gate_rejected",
+            { agentId: actorId, op: op.op, taskId: rec.state.activeTaskId, mode: hard.mode, reason: miss },
+            { actorId },
+          );
+          if (hard.mode === "enforce") return { ok: false, op: op.op, reason: `${PLAN_GATE_PREFIX} ${miss}` };
+        }
+      }
+    }
     try {
       switch (op.op) {
         case "send": {
@@ -3581,6 +3638,12 @@ export class Supervisor {
         case "remember": {
           await this.rememberMemory(actorId, op.key, op.value);
           return { ok: true, op: op.op };
+        }
+        case "plan": {
+          return this.updatePlan(actorId, op.steps ?? [], op.taskId);
+        }
+        case "plan_step": {
+          return this.updatePlanStep(actorId, op.stepId, op.status);
         }
         case "acquire_lease": {
           return this.opAcquireLease(actorId, op.artifactId, op.files);
@@ -4014,6 +4077,88 @@ export class Supervisor {
       agentId,
       note: { agentId, key, value, updatedAt: this.deps.kernel.clock.iso(), eventId: "" },
     }, { actorId: agentId });
+  }
+
+  /**
+   * Replace an agent's private checklist for the task it currently holds.
+   *
+   * Ids are resolved HERE, not in the model's payload, for the same reason
+   * every other id is: a reducer must be a pure function of the log, so a step
+   * id may not depend on when the event is replayed. Omitted ids hash the
+   * step's own text, which makes a re-emitted identical plan idempotent —
+   * agents restate their whole plan constantly, and a fresh id every time
+   * would break `plan_step` references from the previous turn.
+   *
+   * Recorded progress survives a re-plan: a step whose text is unchanged keeps
+   * its DONE status unless the new payload explicitly says otherwise. Without
+   * this, an agent that adds one step to a 5-step plan silently un-completes
+   * the four it had finished.
+   */
+  async updatePlan(agentId: string, steps: PlanStepInput[], taskId?: string): Promise<OpResult> {
+    const rec = this.state.agents.get(agentId);
+    if (!rec) return { ok: false, op: "plan", reason: `unknown agent '${agentId}'` };
+    const prev = rec.state.plan;
+    const prevById = new Map((prev?.steps ?? []).map((s) => [s.id, s] as const));
+    const resolved: PlanStep[] = [];
+    const used = new Set<string>();
+    for (const raw of steps.slice(0, MAX_PLAN_STEPS)) {
+      const text = String(raw?.text ?? "").trim().slice(0, MAX_PLAN_STEP_CHARS);
+      if (!text) continue;
+      let id = String(raw?.id ?? "").trim() || shortHash(text);
+      // Two steps with the same text are legal ("run tests" twice). Suffix
+      // rather than drop, so plan_step can still address the second one.
+      if (used.has(id)) {
+        let n = 2;
+        while (used.has(`${id}-${n}`)) n += 1;
+        id = `${id}-${n}`;
+      }
+      used.add(id);
+      const carried = prevById.get(id);
+      const status: PlanStepStatus = raw?.status === "DONE" || raw?.status === "PENDING"
+        ? raw.status
+        : (carried?.status ?? "PENDING");
+      resolved.push({
+        id,
+        text,
+        status,
+        capabilities: Array.from(new Set((raw?.capabilities ?? []).map((c) => normalizeCapability(String(c))))),
+      });
+    }
+    const plan: AgentPlan = {
+      taskId: taskId ?? rec.state.activeTaskId,
+      steps: resolved,
+      revision: (prev?.revision ?? 0) + 1,
+      updatedAt: this.deps.kernel.clock.iso(),
+    };
+    await this.deps.kernel.emit("plan.updated", { agentId, plan }, { actorId: agentId });
+    return { ok: true, op: "plan", taskId: plan.taskId };
+  }
+
+  /**
+   * Flip one step. Re-emits the WHOLE plan rather than a delta, so the reducer
+   * stays a replace and a replayed prefix is always a coherent checklist.
+   */
+  async updatePlanStep(agentId: string, stepId: string, status: PlanStepStatus): Promise<OpResult> {
+    const rec = this.state.agents.get(agentId);
+    const prev = rec?.state.plan;
+    if (!rec || !prev) return { ok: false, op: "plan_step", reason: "no plan yet — emit {\"op\":\"plan\"} first" };
+    const idx = prev.steps.findIndex((s) => s.id === stepId);
+    if (idx < 0) {
+      return {
+        ok: false,
+        op: "plan_step",
+        reason: `unknown step '${stepId}' (have: ${prev.steps.map((s) => s.id).join(", ") || "none"})`,
+      };
+    }
+    if (prev.steps[idx]!.status === status) return { ok: true, op: "plan_step" };
+    const plan: AgentPlan = {
+      ...prev,
+      steps: prev.steps.map((s, i) => (i === idx ? { ...s, status } : s)),
+      revision: prev.revision + 1,
+      updatedAt: this.deps.kernel.clock.iso(),
+    };
+    await this.deps.kernel.emit("plan.updated", { agentId, plan }, { actorId: agentId });
+    return { ok: true, op: "plan_step" };
   }
 
   // ------------------------------------------------------ post-activity checks

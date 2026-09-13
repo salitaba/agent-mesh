@@ -14,6 +14,7 @@ export interface AgentSpec {
   tokens?: number;
   persistent?: boolean;
   delegation?: { allow: boolean; max_depth: number; max_workers: number; worker_budget_tokens?: number };
+  hardActions?: { mode: "off" | "warn" | "enforce"; capabilities?: string[] };
 }
 
 export interface TestMeshOptions {
@@ -74,6 +75,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.interests) lines.push(`    interests: [${a.interests.join(", ")}]`);
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
+      if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
       if (a.delegation) lines.push(`    delegation: { allow: ${a.delegation.allow}, max_depth: ${a.delegation.max_depth}, max_workers: ${a.delegation.max_workers}${a.delegation.worker_budget_tokens ? `, worker_budget_tokens: ${a.delegation.worker_budget_tokens}` : ""} }`);
       return lines.join("\n");
     })

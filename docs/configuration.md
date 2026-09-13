@@ -17,9 +17,27 @@ mesh:
     - { id: implementation-merged, description: "…", mandatory: true }   # can add more
   workspace: { path: ./workspace }
   runtime:   { default: opencode }  # + optional model: provider/model, variant: low|high|max for the whole mesh
+  defaults:                         # mesh-wide session/delegation defaults every agent inherits
+    session:    { persistent: true, max_context_tokens: 120000 }
+    delegation: { allow: false, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }
 startup:
   activate: [pm, architect]         # not every agent — config-selected
 ```
+
+`mesh.defaults.session` / `mesh.defaults.delegation` take the same keys as the
+per-agent blocks below and set them once for the whole mesh. Each of the six keys
+resolves as **per-agent value → `mesh.defaults` value → built-in fallback**
+(`persistent: true`, `allow: false`, `max_depth: 0`, `max_workers: 0`, both token
+caps unset). "Inherit" means the key is *absent*, so an agent that explicitly writes
+`allow: false` or `max_depth: 0` keeps it even when the mesh default is higher —
+`false` and `0` are opt-outs, never "unset". Every field is optional at both levels.
+
+> **`max_context_tokens` is accepted and resolved, but nothing enforces it yet.**
+> No runtime currently truncates or compacts a session on it, at either level —
+> setting it changes what the config reports, not how agents run. The other five
+> keys are enforced. Note that `delegation.allow` and `max_depth` only take effect
+> alongside `max_workers: ≥ 1`; the supervisor denies `spawn_worker` when the
+> worker cap is 0.
 
 ## agents
 
@@ -35,8 +53,8 @@ agents:
     capabilities: [repository.read, repository.write, git.commit, test.execute]
     authority:    []                 # e.g. architecture.approve, quality.block
     interests:    [architecture.approved, review.rejected]   # wake-on-interest
-    session:      { persistent: true, max_context_tokens: 120000 }
-    delegation:   { allow: true, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }
+    session:      { persistent: true, max_context_tokens: 120000 }  # omit a key to inherit mesh.defaults.session
+    delegation:   { allow: true, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }  # ditto mesh.defaults.delegation
     budget:       { tokens: 700000, wall_clock_minutes: 30, max_events: 2000, max_activations: 40 }
 ```
 
@@ -66,6 +84,42 @@ policies:
       when: { actor_role: explorer }
       deny: { capabilities: [repository.write, git.commit] }
 ```
+
+## hard actions (plan-before-acting)
+
+```yaml
+mesh:
+  defaults:
+    hard_actions:
+      mode: enforce                  # off (default) | warn | enforce
+      capabilities: [repository.write, git.commit, git.merge]
+agents:
+  explorer:
+    hard_actions: { mode: off }      # per-agent override wins over mesh.defaults
+```
+
+Each agent keeps a **private** checklist for the one task it has claimed
+(`plan` / `plan_step` ops, `plan.updated` events). It is observability, not a
+second task board: other agents cannot see or claim its steps.
+
+`mode` decides what happens when the agent attempts an op that spends one of
+the listed capabilities without a plan step declaring it:
+
+| mode | effect |
+| --- | --- |
+| `off` (default) | no gate; `plan` ops still work if the agent emits them |
+| `warn` | the op runs, and a `plan.gate_rejected` event records the near-miss |
+| `enforce` | the op is rejected and the rest of that turn is abandoned |
+
+`off` everywhere is the default so that existing meshes behave exactly as they
+did before this feature existed.
+
+Only capabilities that map to a mesh op can be gated — currently
+`repository.write` (publish), `git.commit` and `git.merge`. `shell.execute` and
+`network.request` are legal tokens but are spent through the coding agent's own
+tools, so listing only those produces a load-time warning that the gate will
+never fire. A capability the agent does not hold is never gated either: the
+demand would be one the agent has no legal way to satisfy.
 
 ## budgets & scheduling
 

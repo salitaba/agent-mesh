@@ -7,7 +7,7 @@ import { applyArtifactEvent } from "./projections-artifact";
 import { applyWorkEvent } from "./projections-work";
 import { applySystemEvent } from "./projections-system";
 
-export { ProjectionError } from "./projections-helpers";
+export { ProjectionError, planCoversHardOp } from "./projections-helpers";
 export {
   transitionLifecycle,
   assertArtifactTransition,

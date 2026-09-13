@@ -165,6 +165,14 @@ const agentConfigSchema = {
       },
       additionalProperties: false,
     },
+    hard_actions: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["off", "warn", "enforce"] },
+        capabilities: { type: "array", items: { type: "string" } },
+      },
+      additionalProperties: false,
+    },
     budget: {
       type: "object",
       properties: {
@@ -227,6 +235,35 @@ export const meshConfigSchema = {
         runtime: {
           type: "object",
           properties: { default: { type: "string" }, model: { type: "string" }, variant: { type: "string" } },
+          additionalProperties: false,
+        },
+        defaults: {
+          type: "object",
+          properties: {
+            session: {
+              type: "object",
+              properties: { persistent: { type: "boolean" }, max_context_tokens: { type: "integer" } },
+              additionalProperties: false,
+            },
+            delegation: {
+              type: "object",
+              properties: {
+                allow: { type: "boolean" },
+                max_depth: { type: "integer", minimum: 0 },
+                max_workers: { type: "integer", minimum: 0 },
+                worker_budget_tokens: { type: "integer" },
+              },
+              additionalProperties: false,
+            },
+            hard_actions: {
+              type: "object",
+              properties: {
+                mode: { type: "string", enum: ["off", "warn", "enforce"] },
+                capabilities: { type: "array", items: { type: "string" } },
+              },
+              additionalProperties: false,
+            },
+          },
           additionalProperties: false,
         },
       },

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
 import { evClass, evSummary } from "./events";
+import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, agentColor, type TabDef } from "./components";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, ToolCallGroups, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
@@ -237,6 +238,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   const steps: any[] = Array.isArray(json.recentSteps) ? json.recentSteps : [];
   const recentMsgs: any[] = Array.isArray(json.recentMessages) ? json.recentMessages : [];
   const tasks: any[] = Array.isArray(json.tasksInvolved) ? json.tasksInvolved : [];
+  const plan: any = json.plan ?? null;
   const arts: any[] = Array.isArray(json.artifacts) ? json.artifacts : [];
   const threads: any[] = Array.isArray(json.threads) ? json.threads : [];
   const mem: any[] = Array.isArray(json.memory) ? json.memory : [];
@@ -364,6 +366,24 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           {steps.length ? (
             <div className="steps-mini">{steps.slice(0, 12).map((st: any) => <StepMini key={st.turnId} s={st} onOpen={openStep} />)}</div>
           ) : <div className="muted">No steps yet — wake it to run once.</div>}
+          {plan && plan.steps?.length ? (
+            <>
+              <h4>
+                Its plan {planLabel(plan)}
+                {planStale(plan, json.activeTask?.id) ? <> <Chip>stale</Chip></> : null}
+              </h4>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                Private to this agent — other agents cannot see or claim these steps.
+              </div>
+              <div>{plan.steps.map((s: any) => (
+                <div key={s.id} style={{ fontSize: 13, margin: "4px 0" }}>
+                  <span className="mono muted">{s.status === "DONE" ? "☑" : "☐"}</span>{" "}
+                  <span style={{ opacity: s.status === "DONE" ? 0.55 : 1 }}>{String(s.text ?? "").slice(0, 120)}</span>
+                  {(s.capabilities ?? []).length ? <> <Chip>{s.capabilities.join(", ")}</Chip></> : null}
+                </div>
+              ))}</div>
+            </>
+          ) : null}
           {tasks.length || json.activeTask ? (
             <>
               <h4>Tasks {tasks.length ? `(${tasks.length})` : ""}</h4>
