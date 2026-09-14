@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { OpenCodeRuntimeAdapter } from "../../packages/runtime-opencode/src/index";
+import { OpenCodeRuntimeAdapter, isReparentedPid } from "../../packages/runtime-opencode/src/index";
 
 /**
  * Orphaned `opencode serve` children must be reclaimed — and nothing else may
@@ -91,5 +92,61 @@ test("orphan sweep: repeated sweeps are throttled, not run on every turn", async
     );
   } finally {
     fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("orphan sweep: reaps a mesh-managed serve whose supervisor died", async () => {
+  if (process.platform !== "linux") return; // /proc-based identity only
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-orphan-"));
+  const cfgDir = path.join(dir, ".mesh", "agents", "pm");
+  fs.mkdirSync(cfgDir, { recursive: true });
+  const cfg = path.join(cfgDir, "opencode.json");
+  fs.writeFileSync(cfg, "{}", "utf8");
+  let pid: number | undefined;
+  try {
+    // A stand-in `opencode serve`: argv spoofed via `exec -a`, launched by a
+    // short-lived shell so it reparents exactly like a real crash orphan.
+    pid = Number(
+      await new Promise<string>((resolve, reject) => {
+        const outer = spawn(
+          "/bin/bash",
+          ["-c", `bash -c 'exec -a "opencode serve --port 4999" sleep 300' >/dev/null 2>&1 & echo $!`],
+          { env: { ...process.env, OPENCODE_CONFIG: cfg } },
+        );
+        let out = "";
+        outer.stdout.on("data", (d: Buffer) => (out += String(d)));
+        outer.on("error", reject);
+        outer.on("close", () => resolve(out.trim()));
+      }),
+    );
+    assert.ok(Number.isFinite(pid) && pid > 0, "spawned a stand-in opencode serve");
+    const stood = pid as number;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && !isReparentedPid(stood)) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (!isReparentedPid(stood)) return; // no reaper on this host: nothing to assert
+    const rt = new OpenCodeRuntimeAdapter({}) as unknown as Sweeper;
+    await rt.sweepVanishedWorkspaceProcesses(new Set());
+    const killedBy = Date.now() + 3000;
+    let alive = true;
+    while (Date.now() < killedBy && alive) {
+      try {
+        process.kill(stood, 0);
+      } catch {
+        alive = false;
+      }
+      if (alive) await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(alive, false, "a reparented mesh-managed serve is reaped");
+  } finally {
+    if (typeof pid === "number") {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

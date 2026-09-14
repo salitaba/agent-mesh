@@ -219,18 +219,20 @@ export function buildUnboundedDispatcher(): DispatcherBuild {
 
 /**
  * Kill an OS pid with escalation: SIGTERM, wait out the grace period while
- * polling for exit, then SIGKILL if still alive. Always resolves — a process
- * we cannot kill is reported by leaving it alone, never by hanging the caller.
+ * polling for exit, then SIGKILL if still alive. Resolves `true` only once the
+ * pid is confirmed dead; `false` means even SIGKILL could not be delivered
+ * (e.g. a process wedged in uninterruptible sleep), so the caller must keep
+ * its pidfile for a later retry. Never hangs the caller.
  * (Previously the adapter sent a single SIGTERM and gave up after 2s, silently
  * orphaning `opencode serve` processes that ignore SIGTERM.)
  */
-function killPidWithEscalation(pid: number, graceMs = TERM_GRACE_MS): Promise<void> {
+function killPidWithEscalation(pid: number, graceMs = TERM_GRACE_MS): Promise<boolean> {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (): void => {
+    const finish = (dead: boolean): void => {
       if (!done) {
         done = true;
-        resolve();
+        resolve(dead);
       }
     };
     let alive = true;
@@ -240,13 +242,13 @@ function killPidWithEscalation(pid: number, graceMs = TERM_GRACE_MS): Promise<vo
       alive = false;
     }
     if (!alive) {
-      finish();
+      finish(true);
       return;
     }
     try {
       process.kill(pid, "SIGTERM");
     } catch {
-      finish();
+      finish(true);
       return;
     }
     const poll = setInterval(() => {
@@ -255,7 +257,7 @@ function killPidWithEscalation(pid: number, graceMs = TERM_GRACE_MS): Promise<vo
       } catch {
         clearInterval(poll);
         clearTimeout(escalate);
-        finish();
+        finish(true);
       }
     }, 100);
     const escalate = setTimeout(() => {
@@ -265,18 +267,27 @@ function killPidWithEscalation(pid: number, graceMs = TERM_GRACE_MS): Promise<vo
       } catch {
         stillAlive = false;
       }
-      if (stillAlive) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          /* already gone */
-        }
-        // Give SIGKILL a beat, then resolve regardless.
-        setTimeout(() => {
-          clearInterval(poll);
-          finish();
-        }, 500);
+      if (!stillAlive) {
+        clearInterval(poll);
+        finish(true);
+        return;
       }
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      // Give SIGKILL a beat, then report whether it landed.
+      setTimeout(() => {
+        clearInterval(poll);
+        let survived = true;
+        try {
+          process.kill(pid, 0);
+        } catch {
+          survived = false;
+        }
+        finish(!survived);
+      }, 500);
     }, graceMs);
   });
 }
@@ -296,6 +307,27 @@ function isOpencodeServePid(pid: number): boolean {
   try {
     const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(/\0/g, " ");
     return cmd.includes("opencode") && cmd.includes("serve");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when a pid has lost the process that was supervising it: it was
+ * reparented to pid 1 or to a `systemd`/`init` manager (systemd --user reaps
+ * orphans on desktops). A mesh-managed `opencode serve` in this state can no
+ * longer be driven by any adapter, so the orphan sweep may reclaim it even
+ * while its workspace (and config file) still exists.
+ */
+export function isReparentedPid(pid: number): boolean {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    // Fields after the parenthesised comm: state, then ppid.
+    const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/)[1]);
+    if (!Number.isFinite(ppid) || ppid <= 0) return false;
+    if (ppid === 1) return true;
+    const comm = fs.readFileSync(`/proc/${ppid}/comm`, "utf8").trim();
+    return comm === "systemd" || comm === "init";
   } catch {
     return false;
   }
@@ -614,7 +646,24 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     return Math.min(65530, Math.max(1024, base));
   }
 
+  private spawnQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Serialized on purpose: a mission start calls this for every activated
+   * agent at once, and each call forks a fresh `opencode serve` (~0.5GB RSS).
+   * Concurrent launches on an already-loaded host are what turn a start into a
+   * swap storm; one at a time keeps the peak flat at the cost of a slower ramp.
+   */
   private async ensureProcess(agent: AgentDefinition, context: RuntimeContext, configOpts: { mcp?: boolean } = {}): Promise<ProcessHandle> {
+    const run = this.spawnQueue.then(() => this.ensureProcessNow(agent, context, configOpts));
+    this.spawnQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async ensureProcessNow(agent: AgentDefinition, context: RuntimeContext, configOpts: { mcp?: boolean } = {}): Promise<ProcessHandle> {
   // Reclaim `opencode serve` children orphaned by a previous adapter lifetime
   // (crash/restart/kill -9): without this every reboot accumulates a fresh set
   // of ~300MB processes. Runs once per workspace, then periodically — agents
@@ -624,6 +673,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   const existing = this.processes.get(agent.id);
     if (existing && (!existing.proc || existing.proc.exitCode === null)) {
       if (await this.probe(existing.baseUrl)) return existing;
+      console.error(
+        `[opencode-runtime] probe failed, killing serve agent=${agent.id} url=${existing.baseUrl} pid=${existing.proc?.pid ?? "?"} exitCode=${existing.proc?.exitCode ?? "n/a"}`,
+      );
       await this.killProcess(agent.id, existing);
     }
     const configDir = this.agentConfigDir(agent, context, configOpts);
@@ -664,8 +716,20 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     const handle: ProcessHandle = { proc, baseUrl: `http://127.0.0.1:${port}`, configDir, port, pidFile: path.join(configDir, "serve.pid") };
     this.processes.set(agent.id, handle);
     if (typeof proc.pid === "number") this.writePidFile(handle, proc.pid, port);
-    proc.on("exit", () => {
+    let stdoutTail = "";
+    let stderrTail = "";
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdoutTail = `${stdoutTail}${chunk.toString("utf8")}`.slice(-4000);
+    });
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderrTail = `${stderrTail}${chunk.toString("utf8")}`.slice(-4000);
+    });
+    proc.on("exit", (code, signal) => {
       this.statuses.set(agent.id, "UNREACHABLE");
+      const output = [stderrTail.trim(), stdoutTail.trim()].filter(Boolean).join(" | ");
+      console.error(
+        `[opencode-runtime] serve exited agent=${agent.id} port=${port} pid=${proc.pid ?? "?"} code=${code} signal=${signal}${output ? ` output=${output.slice(-3000)}` : ""}`,
+      );
     });
     const deadline = Date.now() + this.startupTimeoutMs;
     while (Date.now() < deadline) {
@@ -822,14 +886,17 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   }
 
   private async killProcess(agentId: string, handle: ProcessHandle): Promise<void> {
-  const proc = handle.proc;
-  if (proc && proc.exitCode === null && typeof proc.pid === "number") {
-    await killPidWithEscalation(proc.pid);
-  } else if (proc && proc.exitCode === null) {
-    proc.kill();
-  }
-  this.processes.delete(agentId);
-  if (handle.pidFile) {
+    const proc = handle.proc;
+    let dead = true;
+    if (proc && proc.exitCode === null && typeof proc.pid === "number") {
+      dead = await killPidWithEscalation(proc.pid);
+    } else if (proc && proc.exitCode === null) {
+      proc.kill();
+    }
+    this.processes.delete(agentId);
+    // Keep the pidfile when the kill did not land: the next orphan sweep
+    // (which no longer sees this handle in `owned`) gets another shot.
+    if (handle.pidFile && dead) {
     try {
       fs.unlinkSync(handle.pidFile);
     } catch {
@@ -882,7 +949,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         }
         continue;
       }
-      await killPidWithEscalation(pid);
+      const killed = await killPidWithEscalation(pid);
+      if (!killed) continue; // keep the pidfile so the next sweep retries
       try {
         fs.unlinkSync(pidFile);
       } catch {
@@ -893,7 +961,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
   }
 
   /**
-   * Reap `opencode serve` children whose workspace no longer exists.
+   * Reap `opencode serve` children that nothing can be driving anymore: the
+   * workspace is gone, or the supervisor that spawned them died.
    *
    * The pidfile sweep above can only find processes it can still read a
    * pidfile for. Runs whose workspace was a temp dir (integration tests) or
@@ -906,8 +975,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
    * Identity is established from the process's own `OPENCODE_CONFIG`: we only
    * signal a process that (a) is verifiably `opencode serve`, (b) points at a
    * mesh-managed `.mesh/agents/<id>/opencode.json`, and (c) whose config file
-   * is gone — i.e. nothing can be driving it anymore. A process belonging to
-   * a live workspace, an unrelated opencode, or one we own is never touched.
+   * is gone OR whose parent is init/systemd — i.e. nothing can be driving it
+   * anymore. A process belonging to a live supervisor, an unrelated opencode,
+   * or one we own is never touched.
    */
   private async sweepVanishedWorkspaceProcesses(owned: Set<number>): Promise<void> {
     let pids: string[];
@@ -929,7 +999,11 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
       if (!configPath) continue;
       const normalized = configPath.split(path.sep).join("/");
       if (!normalized.includes("/.mesh/agents/")) continue; // not mesh-managed
-      if (fs.existsSync(configPath)) continue; // workspace still live
+      // A live config alone is not proof of a live owner: a crashed adapter
+      // leaves its server reparented and unreachable with the config intact.
+      // Only a live supervisor (parent is neither init nor systemd) earns the
+      // benefit of the doubt.
+      if (fs.existsSync(configPath) && !isReparentedPid(pid)) continue;
       await killPidWithEscalation(pid);
     }
   }

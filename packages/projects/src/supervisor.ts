@@ -28,6 +28,7 @@ export const CHILD_ERROR_PREFIX = "@@mesh-child-error@@";
 /** Liveness + RSS, emitted by the child on a timer for the tab indicator. */
 export const CHILD_BEAT_PREFIX = "@@mesh-child-beat@@";
 export const PIDFILE_NAME = "host-child.pid";
+export const CHILD_STDERR_LOG_NAME = "child-stderr.log";
 
 export interface ChildProcessSupervisorOptions {
   /** Per-child `--max-old-space-size`, from `host.project_memory_mb`. */
@@ -113,6 +114,10 @@ function pidfilePath(ref: ProjectRef): string {
   // Beside the project, not in a shared dir: a project moved or deleted takes
   // its own bookkeeping with it.
   return path.join(path.dirname(ref.configPath), ".mesh", PIDFILE_NAME);
+}
+
+function childStderrPath(ref: ProjectRef): string {
+  return path.join(path.dirname(ref.configPath), ".mesh", CHILD_STDERR_LOG_NAME);
 }
 
 function pidAlive(pid: number): boolean {
@@ -313,11 +318,22 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
     this.children.set(ref.id, child);
     this.writePidfile(child);
 
+    const stderrPath = childStderrPath(ref);
+    const prevStderrPath = `${stderrPath}.1`;
+    fs.rmSync(prevStderrPath, { force: true });
+    if (fs.existsSync(stderrPath)) fs.renameSync(stderrPath, prevStderrPath);
+    const stderrLog = fs.createWriteStream(stderrPath, { flags: "w" });
+    stderrLog.on("error", () => undefined);
+    stderrLog.write(`[mesh-supervisor] child started pid=${child.pid} port=${child.port} at=${child.startedAt}\n`);
+    proc.stderr?.on("data", (chunk: Buffer) => stderrLog.write(chunk));
+
     proc.once("exit", (code, signal) => {
       const expected = this.stopping.has(ref.id);
       this.children.delete(ref.id);
       this.stopping.delete(ref.id);
       fs.rmSync(pidFile, { force: true });
+      stderrLog.write(`[mesh-supervisor] child exited code=${code} signal=${signal} expected=${expected}\n`);
+      stderrLog.end();
       this.opts.onExit?.({ ref, code, signal, expected });
     });
 

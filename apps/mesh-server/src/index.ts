@@ -2117,7 +2117,14 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
     url: `http://${host}:${actualPort}`,
     async close() {
       await closeHttpServer(server);
-      await instance.close();
+      try {
+        await instance.close();
+      } finally {
+        // Runtime children (`opencode serve`) are ours, not the instance's:
+        // without this a SIGTERM shutdown leaves them reparented and holding
+        // ~0.5GB each until the next mission's orphan sweep.
+        await instance.opencodeRuntime.stopAll();
+      }
     },
   };
 }
