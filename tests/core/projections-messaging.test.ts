@@ -566,3 +566,45 @@ test("fingerprints: prose differences do not change message identity", () => {
     "only runtime-meaningful payload keys discriminate, so re-phrasing the same act is still a loop",
   );
 });
+
+test("fingerprints: differing free-form payloads are different acts, not a loop", () => {
+  const state = seed();
+  // Live agents carry meaning in keys the runtime never reads (`ack`, `ask`,
+  // `verdict`, `audit_note`, `credentials`, …), none of them whitelisted. Before
+  // the content fallback these payloads contributed "" and every such INFORM in
+  // a thread collapsed into one fingerprint, so `fingerprint_loop` fired at an
+  // agent that was progressing.
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload: { audit_note: "decision ratified" } }));
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload: { credentials: "escalated" } }));
+
+  assert.equal(
+    state.conflicts.get(`loop:ceo:${THREAD_ID}`)?.count,
+    undefined,
+    "distinct free-form payloads must not collide",
+  );
+});
+
+test("fingerprints: an identical free-form payload is still a loop", () => {
+  const state = seed();
+  const payload = { audit_note: "decision ratified" };
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload }));
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload }));
+
+  assert.equal(
+    state.conflicts.get(`loop:ceo:${THREAD_ID}`)?.count,
+    1,
+    "the content fallback still catches a verbatim resend",
+  );
+});
+
+test("fingerprints: key order is not identity, content is", () => {
+  const state = seed();
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload: { audit_note: "same", extra: "same" } }));
+  send(state, message({ from: "ceo", to: ["pm"], type: "INFORM", payload: { extra: "same", audit_note: "same" } }));
+
+  assert.equal(
+    state.conflicts.get(`loop:ceo:${THREAD_ID}`)?.count,
+    1,
+    "reordered keys describe the same act and must still collide",
+  );
+});

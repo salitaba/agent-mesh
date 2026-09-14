@@ -818,7 +818,10 @@ test("non-git merge with no materializable content stays truthful: no file, no e
   try {
     const artId = await patchAtMergeable(m, evidenceContent("prose only, no file sections"));
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: artId } as MeshOp, fakeTurn("lead"));
-    assert.equal(res.ok, true, res.reason);
+    // Without git, materialization IS the merge: an artifact with nothing to
+    // write merged nothing, so the op reports failure rather than handing the
+    // agent an optimistic `ok` for a no-op it cannot see.
+    assert.equal(res.ok, false, res.reason);
     assert.match(res.reason ?? "", /no file sections/);
     assert.notEqual(criterionStatus(m, "implementation-merged"), "EVIDENCED");
   } finally {

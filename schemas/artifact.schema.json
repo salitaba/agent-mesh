@@ -20,10 +20,13 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^art-"
+      "pattern": "^art-",
+      "maxLength": 200
     },
     "name": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
     },
     "type": {
       "type": "string",
@@ -46,10 +49,14 @@
       ]
     },
     "goalId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     },
     "owner": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     },
     "version": {
       "type": "integer",
@@ -76,14 +83,17 @@
       ]
     },
     "contentRef": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 1000
     },
     "digest": {
       "type": "string",
-      "pattern": "^sha256:"
+      "pattern": "^sha256:",
+      "maxLength": 100
     },
     "parent": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "metadata": {
       "type": "object"
@@ -120,7 +130,9 @@
       "format": "date-time"
     },
     "createdBy": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     }
   },
   "additionalProperties": false

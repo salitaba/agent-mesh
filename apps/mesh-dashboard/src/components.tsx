@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { ago, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
-import { evClass, evSummary } from "./events";
+import { evClass, evSeverity, EventSummary } from "./events";
 import type { TimelineEvent, TurnStep } from "./store";
 
 export const FOCUSABLE =
@@ -174,18 +174,39 @@ export function LifecyclePill({ lifecycle, pulse }: { lifecycle: string; pulse?:
   );
 }
 
+/* ------------------------------- clock --------------------------------- */
+
+/** One shared ticking clock per view, so live durations move in step instead
+    of each row running its own interval. Lives here rather than in a view
+    because both the step ledger and the events console need the same one. */
+export function useNow(ms: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(iv);
+  }, [ms]);
+  return now;
+}
+
+/**
+ * The compact event line used by the Overview mini-feed. The events console
+ * has its own row — it carries selection, folding and a seq gutter that would
+ * be noise here.
+ *
+ * Severity rides along anyway, because a feed of eight events that renders a
+ * crash identically to a budget reservation is the miniature version of the
+ * problem the console was rebuilt to fix.
+ */
 export function EventRow({ e, onOpen }: { e: TimelineEvent; onOpen: (seq: number) => void }): React.JSX.Element {
   const open = () => onOpen(e.seq);
   return (
-    <div className="ev" data-seq={e.seq} role="button" tabIndex={0} onClick={open} onKeyDown={rowKey(open)}>
+    <div className={`ev sev-${evSeverity(e)}`} data-seq={e.seq} role="button" tabIndex={0} onClick={open} onKeyDown={rowKey(open)}>
       <time title={e.timestamp}>{new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time>
       <span className={`type ${evClass(e.type)}`}>{plainEvent(e.type)}</span>
-      <span className="summary" dangerouslySetInnerHTML={{ __html: evSummary(e) }} />
+      <span className="summary"><EventSummary e={e} /></span>
     </div>
   );
 }
-
-// EventRow shows the human label; the raw type lives in the drawer.
 
 export function StepMini({ s, onOpen }: { s: TurnStep; onOpen: (turnId: string) => void }): React.JSX.Element {
   const open = () => onOpen(s.turnId);

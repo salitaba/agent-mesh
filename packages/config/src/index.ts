@@ -845,6 +845,17 @@ export function defaultEventEnvelopeBase(goalId: string): Pick<MeshEvent, "goalI
  * Is the `opencode` CLI on PATH? Picks the default runtime for a scaffolded
  * mesh: a machine without the CLI gets `stub`, which boots but does no work,
  * instead of an `opencode` mesh that fails on first activation.
+ *
+ * There is deliberately no `hasClaudeCli()` counterpart. The asymmetry is
+ * real, not an oversight: opencode is an external binary the user installs
+ * themselves, while the `claude` runtime rides on
+ * `@anthropic-ai/claude-agent-sdk`, a declared dependency that ships its own
+ * executable and is used whenever `pathToClaudeCodeExecutable` is unset. A
+ * PATH probe for `claude` would fail on a perfectly working install, and a
+ * credential probe would wrongly reject anyone authenticated by OAuth or an
+ * apiKeyHelper rather than ANTHROPIC_API_KEY. A claude backend that genuinely
+ * cannot start reports it at `start()` as a labeled BackendUnreachableError,
+ * which is the right place for it.
  */
 export function hasOpenCodeCli(): boolean {
   try {

@@ -3,6 +3,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
 import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
+import { verdictText, type VerdictText } from "./run-report";
 
 export interface DeadlockFinding {
   kind: "thread_depth" | "repeated_conflict" | "review_rounds" | "idle_stall" | "fingerprint_loop" | "wait_cycle";
@@ -100,8 +101,12 @@ export class DeadlockDetector {
         conflictKey: conflict.key,
         threadId: conflict.threadId,
         artifactId: conflict.artifactId,
+        // The loop counter is seeded by the first send and only bumped by the
+        // repeats that follow, so it lags the true send count by one: a message
+        // sent N times arrives here as N - 1. Report the number an operator can
+        // check against the log.
         description: isFingerprintLoop
-          ? `${conflict.lastActor} re-sent an identical message ${conflict.count} times in thread ${conflict.threadId ?? "?"} — it is looping, not progressing`
+          ? `${conflict.lastActor} re-sent an identical message ${conflict.count + 1} times in thread ${conflict.threadId ?? "?"} — it is looping, not progressing`
           : `Repeated conflict '${conflict.key}' reached threshold (${conflict.count} >= ${this.config.escalation.repeatedConflictThreshold})`,
         participants: [conflict.lastActor],
       });
@@ -266,6 +271,31 @@ export type TerminationVerdict =
    */
   | { kind: "escalate"; reason: string; detail: unknown; supports?: string[] }
   | { kind: "fail"; reason: string };
+
+/**
+ * Human-readable phrasing for a verdict.
+ *
+ * The `reason` fields above are code literals, and for a long time the only
+ * place that turned them into English was a switch inside the dashboard's
+ * escalation card — so the CLI printed nothing and a newly-added reason
+ * rendered as a raw snake_case token. The phrasing now lives in `run-report.ts`
+ * and every surface reads it from there; this wrapper exists so callers holding
+ * a verdict do not have to reach past it for the detail that sharpens the text.
+ *
+ * Returns null for `continue`: a mission that is still running has no verdict
+ * to describe.
+ */
+export function describeVerdict(verdict: TerminationVerdict): VerdictText | null {
+  if (verdict.kind === "continue") return null;
+  const detail = (verdict.kind === "escalate" && verdict.detail && typeof verdict.detail === "object"
+    ? verdict.detail
+    : {}) as Record<string, unknown>;
+  return verdictText(verdict.reason, {
+    agents: Array.isArray(detail.failedAgents) ? (detail.failedAgents as string[]) : undefined,
+    threads: typeof detail.exhaustedThreads === "number" ? detail.exhaustedThreads : undefined,
+    waiting: verdict.kind === "escalate" ? verdict.supports?.length : undefined,
+  });
+}
 
 export class TerminationManager {
   evaluate(input: TerminationInputs): TerminationVerdict {

@@ -7,6 +7,7 @@ import {
   INITIAL_ARTIFACT_STATUS,
   artifactMachineOf,
   validateMessage,
+  validateArtifact,
   normalizeCapability,
   effectiveHardActions,
   PLAN_GATE_PREFIX,
@@ -170,6 +171,17 @@ const MAX_TURN_INSTRUCTIONS_CHARS = 8000;
 const MAX_TURN_TOOLCALLS = 30;
 
 /**
+ * Clamps on model-authored task prose, for the same reason `MAX_PLAN_STEP_CHARS`
+ * clamps a plan step: a task's title rides every delegation subject line and its
+ * description is re-rendered into the assignee's prompt each turn, so an
+ * unbounded one is a per-turn token leak. A model that writes its whole design
+ * into a task title is confused rather than thorough.
+ */
+const MAX_TASK_TITLE_CHARS = 160;
+const MAX_TASK_DESCRIPTION_CHARS = 4000;
+const MAX_TASK_SUMMARY_CHARS = 2000;
+
+/**
  * Floor for artifact content cited as evidence for a MANDATORY criterion.
  *
  * Deliberately low: this is a stub detector, not a quality bar. It exists
@@ -196,6 +208,24 @@ const EVIDENCE_STUB_MARKERS = /^\s*(tbd|todo|n\/a|none|pending|placeholder|comin
  */
 function verificationToolCount(toolCalls: Array<{ name: string }> | undefined): number {
   return (toolCalls ?? []).filter((t) => !String(t.name ?? "").startsWith("mesh_")).length;
+}
+
+/**
+ * The turn summary an agent DECLARED, falling back to the one scraped out of
+ * its prose.
+ *
+ * `output.summary` is whatever the adapter's `extractSummary` could find in the
+ * reply text — a heuristic over prose, so it reports a heading, a first line, or
+ * nothing at all. A runtime that lets the agent state its own summary is
+ * authoritative and must win. Read defensively: the field is adapter-side and
+ * not every runtime declares it (or has it yet), so an absent or non-string
+ * value falls straight back to the scraped value rather than blanking the
+ * summary.
+ */
+function declaredTurnSummary(output: AgentOutput): string | undefined {
+  const declared = (output as { declaredSummary?: unknown }).declaredSummary;
+  if (typeof declared === "string" && declared.trim()) return declared.trim();
+  return output.summary;
 }
 
 
@@ -234,6 +264,18 @@ export class Supervisor {
    */
   private timeoutRetries = new Map<string, number>();
   private workerInfo = new Map<string, { parent: string; taskId: string; depth: number }>();
+  /**
+   * `<sender>:<ref it named>` for unresolvable PATCH_READY announcements the
+   * sender has already been woken about — one wake per distinct bad reference.
+   *
+   * Without the guard the wake is a feedback loop: the recovery turn re-runs
+   * the agent, an agent that announces the same unidentified patch again is
+   * refused again, and the refusal wakes it again, faster than the fingerprint
+   * loop detector can park it. Telling it once is the point; telling it on a
+   * cycle is the bug. In-memory on purpose — a nudge is scheduling, not state,
+   * and must not be replayed out of the log.
+   */
+  private patchRefusalNotified = new Set<string>();
   private startedAt = Date.now();
   private detector: DeadlockDetector;
   private termination = new TerminationManager();
@@ -1062,20 +1104,27 @@ export class Supervisor {
       // Recorded is not the same as delivered: `message.rejected` has no
       // projection and no mailbox (the case in projections-messaging is a
       // no-op), so the operator reads this on the dashboard and via
-      // `mesh_failures`, while the SENDER's context never carries it. An agent
-      // that keeps announcing an unidentified patch will therefore still walk
-      // into the loop detector. Telling it takes a wake-with-note —
-      // `activateAgent(from, { kind: "recovery", note })`, the way
-      // `dischargeCommitment` reports a closed ask — which is a deliberate
-      // follow-up, not part of this fix.
+      // `mesh_failures`, while the SENDER's context never carries it. Left
+      // there, an agent that keeps announcing an unidentified patch walks
+      // straight into the loop detector without ever being told why. So the
+      // refusal is also WOKEN back to the sender with the fix in the note —
+      // the same wake-with-note `dischargeCommitment` uses to report a closed
+      // ask. Best-effort: a sender that is suspended, completed, or the human
+      // seat simply cannot be woken, and the recorded denial still stands.
       const art = artifactForRef(this.state, (m.payload as any)?.artifactId, primary);
       if (!art) {
+        const why =
+          'PATCH_READY named no artifact the mesh can resolve, so no reviewer was asked and the patch did not move. Announce it by ref: artifactRefs: [{ uri: "artifact://<Type>/<name>/<version>" }], or payload.artifactId.';
         await this.denied(from, (m.payload as any)?.artifactId ?? primary, "announce patch", {
           decision: "DENY",
-          reason:
-            'PATCH_READY named no artifact the mesh can resolve, so no reviewer was asked and the patch did not move. Announce it by ref: artifactRefs: [{ uri: "artifact://<Type>/<name>/<version>" }], or payload.artifactId.',
+          reason: why,
           ruleId: "patch.ready.unresolved-artifact",
         });
+        const notifyKey = `${from}:${(m.payload as any)?.artifactId ?? primary ?? ""}`;
+        if (!this.patchRefusalNotified.has(notifyKey)) {
+          this.patchRefusalNotified.add(notifyKey);
+          await this.activateAgent(from, { kind: "recovery", note: `patch announcement refused: ${why}`, messageId: m.id }).catch(() => undefined);
+        }
       } else {
         await this.deps.kernel.emit(
           "patch.ready",
@@ -1364,6 +1413,14 @@ export class Supervisor {
     if (!(ARTIFACT_TYPES as readonly string[]).includes(input.type)) {
       return { error: `unknown artifact type '${input.type}' (expected one of: ${ARTIFACT_TYPES.join(", ")})` };
     }
+    // An empty body is a record of nothing, and the store cannot tell it from
+    // real work: it digests, versions and transitions exactly like a document,
+    // satisfies "an artifact exists" gates, and gets cited as evidence. A model
+    // that publishes "" (or a stray newline) meant to publish something.
+    const content = String(input.content ?? "");
+    if (content.trim().length === 0) {
+      return { error: `artifact ${input.type}:${input.name} has empty content — publish the body, not an empty string` };
+    }
     const machine = artifactMachineOf(input.type);
     const initial = INITIAL_ARTIFACT_STATUS[machine];
 
@@ -1417,8 +1474,19 @@ export class Supervisor {
         createdBy: input.actorId,
       };
     }
-    const contentRef = await this.deps.content.writeVersion(artifact.id, artifact.version, input.content);
-    artifact = { ...artifact, contentRef, digest: digestOf(input.content) };
+    const contentRef = await this.deps.content.writeVersion(artifact.id, artifact.version, content);
+    artifact = { ...artifact, contentRef, digest: digestOf(content) };
+    // The artifact schema is the protocol's written contract for this record,
+    // and until now nothing on the write path enforced it: `validateArtifact`
+    // was exported and never called, so a malformed artifact reached the log
+    // and only failed later, in whatever consumer happened to read it first.
+    // Validate the record we are about to emit, not the caller's input — the
+    // version branch inherits fields from the stored predecessor.
+    const shape = validateArtifact(artifact);
+    if (!shape.valid) {
+      const why = shape.errors.map((e) => `${e.path} ${e.message}`).join("; ");
+      return { error: `artifact ${input.type}:${input.name} fails the artifact schema: ${why}` };
+    }
     const uri = artifactUri(artifact.type, artifact.name, artifact.version);
     const correlationId = input.correlationId ?? this.turnCorrelation(input.actorId);
     const evt = await this.deps.kernel.emit(
@@ -1426,7 +1494,7 @@ export class Supervisor {
       { artifact },
       { actorId: input.actorId, goalId, correlationId },
     );
-    await this.deriveArtifactSemantic(artifact, input.content, evt.id, correlationId);
+    await this.deriveArtifactSemantic(artifact, content, evt.id, correlationId);
     if (isVersion) {
       // A new version supersedes review asks for older versions of the same
       // artifact: reviewers answer against the newest version, and the stale
@@ -1934,7 +2002,11 @@ export class Supervisor {
       const res = checkApprovals(this.state, gate, undefined);
       if (!res.ok) return { ok: false, reason: `implementation gate unsatisfied, missing: ${res.missing.join(", ")}` };
     }
-    await this.deps.kernel.emit("task.completed", { taskId, agentId: actorId, summary, artifacts }, { actorId });
+    // Bounded like the task prose it closes: this summary is replayed out of
+    // the log into every later prompt that recounts the task, so an unbounded
+    // one is charged again on every turn that reads it.
+    const bounded = String(summary ?? "").trim().slice(0, MAX_TASK_SUMMARY_CHARS);
+    await this.deps.kernel.emit("task.completed", { taskId, agentId: actorId, summary: bounded, artifacts }, { actorId });
     return { ok: true };
   }
 
@@ -2796,6 +2868,25 @@ export class Supervisor {
         }
       }
 
+      // A failed agent can still be woken deliberately. The human at the
+      // escalation seat answering "retry" is an override, not the automatic
+      // recovery loop — `restartable: false` stops the mesh retrying on its
+      // own, it does not overrule an operator. Reset FAILED -> STARTING the
+      // same way the recovery manager does (projections-agent handles the
+      // transition on `agent.restarted`), which lets the STARTING branch
+      // below carry it on to IDLE and makes the awakening legal.
+      //
+      // Without this the reducer throws `illegal lifecycle transition
+      // FAILED -> AWAKENED`, the turn dies in milliseconds having written
+      // nothing, and the watchdog re-raises the very escalation being
+      // answered — a loop the operator cannot break from the dashboard.
+      if (rec.state.lifecycle === "FAILED") {
+        await this.deps.kernel.emit(
+          "agent.restarted",
+          { agentId, attempt: (this.restartAttempts.get(agentId) ?? 0) + 1 },
+          { actorId: HUMAN_AGENT_ID },
+        );
+      }
       if (rec.state.lifecycle === "STARTING") {
         await this.deps.kernel.emit("agent.started", { agentId, sessionId: null, runtime: rec.definition.runtime }, { actorId: agentId });
       }
@@ -2998,7 +3089,7 @@ export class Supervisor {
       // summary into the dashboard AND the agent's own memory, so the next
       // turn sees what failed instead of confabulating success.
       const rejected = turn.results.filter((r) => !r.ok);
-      const modelSummary = output.summary?.slice(0, 500);
+      const modelSummary = declaredTurnSummary(output)?.slice(0, 500);
       let endSummary = modelSummary;
       /**
        * Did this turn move the mesh at all? A turn that parsed no ops, or
@@ -3210,7 +3301,7 @@ export class Supervisor {
       tokens: output.tokensUsed?.total ?? 0,
       tokensInput: output.tokensUsed?.input,
       tokensOutput: output.tokensUsed?.output,
-      summary: output.summary?.slice(0, 500),
+      summary: declaredTurnSummary(output)?.slice(0, 500),
       text: (output.text ?? "").slice(0, MAX_TURN_TEXT_CHARS),
       instructions: input.instructions?.slice(0, MAX_TURN_INSTRUCTIONS_CHARS),
     });
@@ -3624,10 +3715,11 @@ export class Supervisor {
           return this.opDelegate(actorId, op, turn);
         }
         case "create_task": {
+          if (!String(op.title ?? "").trim()) return { ok: false, op: op.op, reason: "create_task requires a non-empty title" };
           const task = this.newTask(actorId, op.title, op.description, op.requiredCapabilities, op.artifactRefs, undefined, op.budgetHint);
           await this.emitTaskCreated(task);
           if (op.assignedTo) {
-            await this.sendMessage({ from: actorId, to: [op.assignedTo], type: "DELEGATE", newThread: { subject: `task ${task.id}: ${op.title}` }, payload: { taskId: task.id }, taskId: task.id });
+            await this.sendMessage({ from: actorId, to: [op.assignedTo], type: "DELEGATE", newThread: { subject: `task ${task.id}: ${task.title}` }, payload: { taskId: task.id }, taskId: task.id });
             turn.sentOps++;
           }
           return { ok: true, op: op.op, taskId: task.id };
@@ -3753,8 +3845,12 @@ export class Supervisor {
     const task: Task = {
       id: newTaskId(),
       goalId,
-      title,
-      description,
+      // Bound the prose the same way a plan step is bounded, and bound it HERE
+      // rather than at each op: this is the single point every task passes
+      // through, so a caller cannot forget. Callers refuse an empty title
+      // outright — a task nobody can name is one nobody can pick up.
+      title: String(title ?? "").trim().slice(0, MAX_TASK_TITLE_CHARS),
+      description: String(description ?? "").trim().slice(0, MAX_TASK_DESCRIPTION_CHARS),
       createdBy,
       status: "OPEN",
       requiredCapabilities: requiredCapabilities ?? [],
@@ -3782,14 +3878,15 @@ export class Supervisor {
     if (missingCaps.length > 0) {
       return { ok: false, op: "delegate", reason: `${op.to} lacks required capabilities ${missingCaps.join(", ")}` };
     }
+    if (!String(op.title ?? "").trim()) return { ok: false, op: "delegate", reason: "delegate requires a non-empty title" };
     const task = this.newTask(actorId, op.title, op.description, op.requiredCapabilities, op.artifactRefs, this.state.agents.get(actorId)?.state.activeTaskId ?? undefined, op.budgetHint);
     await this.emitTaskCreated(task);
     const res = await this.sendMessage({
       from: actorId,
       to: [op.to],
       type: "DELEGATE",
-      newThread: { subject: `delegate: ${op.title}` },
-      payload: { taskId: task.id, title: op.title, description: op.description },
+      newThread: { subject: `delegate: ${task.title}` },
+      payload: { taskId: task.id, title: task.title, description: task.description },
       taskId: task.id,
       budgetHint: op.budgetHint,
     });
@@ -3805,6 +3902,7 @@ export class Supervisor {
       await this.denied(actorId, undefined, "spawn_worker", { decision: "DENY", reason: "delegation policy forbids worker spawning" });
       return { ok: false, op: "spawn_worker", reason: "delegation policy forbids worker spawning (v1 flat mesh: max_depth=0)" };
     }
+    if (!String(op.title ?? "").trim()) return { ok: false, op: "spawn_worker", reason: "spawn_worker requires a non-empty title" };
     const depth = this.workerDepthOf(actorId);
     if (depth >= dp.maxDepth) return { ok: false, op: "spawn_worker", reason: `max delegation depth ${dp.maxDepth} reached` };
     const activeWorkers = [...this.workerInfo.values()].filter((w) => w.parent === actorId).length;
@@ -3998,8 +4096,17 @@ export class Supervisor {
     }
     const materialized = await this.materializeProductFiles(artifact);
     if (!materialized.ok) {
-      this.auditLine(`merge of '${artifact.name}': ${materialized.reason} — implementation-merged stays UNEVIDENCED`);
-      return { ok: true, op: "merge", eventId: res.eventId, reason: materialized.reason };
+      // Without git, materialization IS the merge: nothing else puts the
+      // patch's files into the product. Reporting `ok: true` here let a run
+      // finish "successfully" having written not one byte — the artifact
+      // showed MERGED, `implementation-merged` stayed UNEVIDENCED, and the
+      // only trace was an audit line nobody reads. Fail the op so the result
+      // reaches the agent's turn (and counts toward the unproductive-turn
+      // detector) instead of being swallowed by an optimistic return.
+      const reason = `merge recorded but no product files were written: ${materialized.reason} — implementation-merged stays UNEVIDENCED`;
+      this.auditLine(`merge of '${artifact.name}': ${reason}`);
+      await this.denied(actorId, artifactId, "merge (materialize)", { decision: "DENY", reason, ruleId: "merge.materialize-failed" });
+      return { ok: false, op: "merge", eventId: res.eventId, reason };
     }
     this.auditLine(`merge of '${artifact.name}': materialized ${materialized.reason}`);
     await this.markMergeEvidence(artifact);

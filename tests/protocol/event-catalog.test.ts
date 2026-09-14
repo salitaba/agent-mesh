@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EVENT_TYPES, validateEvent, type EventType } from "../../packages/protocol/src/index";
+import { EVENT_SEVERITY, EVENT_TYPES, validateEvent, type EventType } from "../../packages/protocol/src/index";
 
 /**
  * `EventType` (a TS union) and `EVENT_TYPES` (the array that feeds the AJV
@@ -97,6 +97,33 @@ test("event catalog: EVENT_TYPES and the EventType union are the same set", () =
     [...inArray].filter((t) => !inUnion.has(t)).sort(),
     [],
     "listed in EVENT_TYPES but absent from the EventType union — its payload is untyped everywhere",
+  );
+});
+
+/**
+ * `EVENT_SEVERITY` is a `Record<EventType, Severity>`, so the compiler already
+ * forces a decision for every union member. What it cannot see is someone
+ * widening that annotation — to `Partial<...>` or `Record<string, Severity>` —
+ * to silence an error while adding a type.
+ *
+ * The failure that follows is quiet rather than loud. `evSeverity` falls back to
+ * `notice` for an unranked type, which is the safe direction — a new event shows
+ * up too loudly rather than hiding — but it also means a genuine failure event
+ * added to the union and forgotten here never reaches the `alert` facet, and an
+ * operator filtered down to alerts during an incident would not see it at all.
+ */
+test("event catalog: every event type has a severity", () => {
+  const ranked = new Set<string>(Object.keys(EVENT_SEVERITY));
+  const known = new Set<string>(EVENT_TYPES);
+  assert.deepEqual(
+    EVENT_TYPES.filter((t) => !ranked.has(t)).sort(),
+    [],
+    "in EVENT_TYPES but absent from EVENT_SEVERITY — it would fold away as routine in the events console",
+  );
+  assert.deepEqual(
+    [...ranked].filter((t) => !known.has(t)).sort(),
+    [],
+    "ranked in EVENT_SEVERITY but not a real event type — a stale key nothing will ever match",
   );
 });
 

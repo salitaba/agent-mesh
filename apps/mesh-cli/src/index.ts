@@ -2,7 +2,8 @@
 import * as path from "path";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
 import { writeDefaultMeshYaml, hasOpenCodeCli } from "../../../packages/config/src/index";
-import { SCHEMAS } from "../../../packages/protocol/src/index";
+import { SCHEMAS, isSettledArtifactStatus } from "../../../packages/protocol/src/index";
+import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
@@ -226,7 +227,7 @@ usage:
   mesh approve --subject s [--artifact id] [--by agentId]
   mesh reject --subject s [--artifact id] [--comment text]
   mesh respond <escalationId> <text>       human escalation response
-  mesh artifacts [--bus url]               artifact ledger
+  mesh artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
   mesh host [--port n] [--home dir] [--memory mb] [--live]
     multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
   mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
@@ -284,13 +285,15 @@ async function launchMesh(opts: {
       console.error(
         "error: this mesh uses runtime 'opencode' but the 'opencode' CLI was not found on PATH.\n" +
           "  - install OpenCode:  npm i -g opencode-ai   (https://opencode.ai)\n" +
+          "  - or switch to Claude Code, which needs no separate install:\n" +
+          "      edit " + file + " and set mesh.runtime.default: claude\n" +
           "  - or run a model-free version:  npm run mesh -- init <dir>  (falls back to runtime: stub)\n" +
           "  - or edit " + file + " and set mesh.runtime.default: stub\n" +
           "  - or open the panel without running agents:  npm run mesh -- console " + file,
       );
       return 2;
     }
-    console.warn("warn: 'opencode' CLI not found — console will load, but wake/start will fail until it is installed (or switch runtime to stub).");
+    console.warn("warn: 'opencode' CLI not found — console will load, but wake/start will fail until it is installed (or switch runtime to claude or stub).");
   }
   const useDemo = !opts.noDemo && preflight.meshId === "demo-stub";
   // A scripted demo always starts clean (its team is re-attached each
@@ -344,7 +347,18 @@ async function launchMesh(opts: {
             const { body } = await httpJson("GET", `${handle.url}/status`);
             if (body?.goal && ["COMPLETED", "FAILED", "ESCALATED"].includes(body.goal.status)) {
               clearInterval(goalWatch);
-              console.log(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
+              // The run is over: say what it produced. Projections are read
+              // in-process from the kernel rather than over HTTP, so the
+              // report is composed from the same state the supervisor just
+              // finished writing — no extra round trip, no chance of racing
+              // the server into shutdown.
+              try {
+                console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
+              } catch (err) {
+                // A report that throws must not swallow the run's outcome.
+                console.log(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
+                console.error(`  (run report unavailable: ${(err as Error).message})`);
+              }
               stop();
             }
           } catch {
@@ -595,7 +609,33 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "artifacts": {
         const { body } = await httpJson("GET", `${bus}/artifacts`);
-        for (const a of body) console.log(`  ${a.id}  ${a.type.padEnd(20)} ${a.name.padEnd(28)} v${a.version} ${a.status.padEnd(16)} owner:${a.owner}`);
+        // Status is the whole point: a REJECTED draft and a FINAL deliverable
+        // printed in one flat list look identical, which is how a failed run
+        // gets read as a shipping manifest. Group by settlement, deliverables
+        // first, and let `--status` / `--settled` narrow it further.
+        const want = args.flags.status ? String(args.flags.status).toUpperCase() : null;
+        const rows = (body as any[]).filter((a) => !want || a.status.toUpperCase() === want);
+        const line = (a: any) => `  ${a.id}  ${a.type.padEnd(20)} ${a.name.padEnd(28)} v${a.version} ${a.status.padEnd(16)} owner:${a.owner}`;
+        const settled = rows.filter((a) => isSettledArtifactStatus(a.status));
+        const rejected = rows.filter((a) => a.status === "REJECTED");
+        const drafts = rows.filter((a) => !isSettledArtifactStatus(a.status) && a.status !== "REJECTED");
+        if (rows.length === 0) {
+          console.log(want ? `  (no artifacts with status ${want})` : "  (no artifacts)");
+          return 0;
+        }
+        if (args.flags.settled) {
+          for (const a of settled) console.log(line(a));
+          return 0;
+        }
+        const group = (label: string, items: any[]) => {
+          if (items.length === 0) return;
+          console.log(`\n  ${label} (${items.length})`);
+          for (const a of items) console.log(line(a));
+        };
+        group("DELIVERED", settled);
+        group("IN PROGRESS", drafts);
+        group("REJECTED", rejected);
+        console.log("");
         return 0;
       }
       case "budgets": {

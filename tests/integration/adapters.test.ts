@@ -420,7 +420,7 @@ test("opencode adapter: our own request timeout stays unlabeled (slow, not dead)
 
 test("opencode adapter: mesh bootstrap derives requestTimeoutMs from scheduling.turnTimeoutMs", async () => {
   const m = await makeMesh({ agents: [{ id: "dev", role: "developer", interests: [] }], mayContact: { dev: [] }, turnTimeoutMs: 123000 });
-  const adapter = m.opencodeRuntime as unknown as { requestTimeoutMs: number };
+  const adapter = m.designerRuntime as unknown as { requestTimeoutMs: number };
   assert.ok(adapter.requestTimeoutMs > 123000, `adapter deadline ${adapter.requestTimeoutMs} must outlive the supervisor's 123000ms turn timeout`);
   await m.cleanup();
 });

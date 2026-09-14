@@ -10,6 +10,11 @@ import { useModelCatalogue, variantsFor } from "../modelCatalogue";
 import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
+/* Runtime adapters the server's composition root registers. Kept in sync by
+ * hand: the config layer accepts any string, so a name missing here is not a
+ * validation failure — it just becomes unreachable from the designer. */
+const RUNTIMES = ["opencode", "claude", "stub", "http"];
+
 export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const { m, touch, ids } = ctx;
   const { client } = useMesh();
@@ -29,6 +34,11 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const crit = (m.mesh.acceptance_criteria ||= []);
   const triage = m.scheduling.triage || { mode: "off" };
   const rules: any[] = (triage.rules ||= []);
+  /* A mesh.yaml naming a runtime outside RUNTIMES (a custom adapter) still
+   * belongs in the list — dropping it would leave the control with nothing
+   * selected and rewrite the config on the next edit. */
+  const savedRuntime = typeof m.mesh.runtime?.default === "string" ? m.mesh.runtime.default.trim() : "";
+  const runtimeOptions = savedRuntime && !RUNTIMES.includes(savedRuntime) ? [savedRuntime, ...RUNTIMES] : RUNTIMES;
   const knownModels = new Set<string>(catalogue.phase === "ready" ? catalogue.catalogue.models : []);
   const savedModel = typeof m.mesh.runtime?.model === "string" ? m.mesh.runtime.model.trim() : "";
   const modelOptions = savedModel && !knownModels.has(savedModel) ? [savedModel, ...knownModels] : [...knownModels];
@@ -53,8 +63,8 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       <Field label="workspace path" span><Input value={m.mesh.workspace?.path || "./workspace"} onChange={(e) => { setPath(m, "mesh.workspace.path", e.target.value); touch(); }} /></Field>
       <div className="grid2">
         <Field label="default runtime">
-          <Select value={m.mesh.runtime?.default || "stub"} onChange={(e) => { setPath(m, "mesh.runtime.default", e.target.value); touch(); }}>
-            <option>opencode</option><option>stub</option><option>http</option>
+          <Select value={savedRuntime || "stub"} onChange={(e) => { setPath(m, "mesh.runtime.default", e.target.value); touch(); }}>
+            {runtimeOptions.map((r) => <option key={r} value={r}>{r}</option>)}
           </Select>
         </Field>
         <Field label="default model" hint="used by agents with no model of their own">

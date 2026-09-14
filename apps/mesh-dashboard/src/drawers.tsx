@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
-import { evClass, evSummary } from "./events";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, Tabs, TextArea, agentColor } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, Tabs, TextArea, agentColor } from "./components";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, parsePartialOps, vitalsOf, type TurnPhases } from "./vitals";
@@ -181,8 +180,17 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; hint: string }> = [
 ];
 
 export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
-  const { toast, closeDrawer, openDrawer, steps: allSteps, lastSeq, client } = useMesh();
+  const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client } = useMesh();
   const { streams } = useMeshStreams();
+  // The events console is where an event can be read properly now, so this feed
+  // hands off to it rather than stacking a third drawer on top of this one.
+  // `closeDrawer` is a no-op when this drawer came from the route instead of the
+  // stack — `slice(0, -1)` of an empty stack is an empty stack — and the
+  // `openDetail` below replaces the routed agent detail in that case anyway.
+  const seeEvent = (seq: number): void => {
+    closeDrawer();
+    openDetail("event", String(seq), "events");
+  };
   const [json, setJson] = useState<any>(null);
   const [tab, setTab] = useState<AgentTab>("now");
   // The old drawer fetched once and then lied for the rest of its life: open
@@ -360,7 +368,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             <>
               <h4>Just happened</h4>
               <div className="ev-list">{evs.slice(0, 6).map((e: any) => (
-                <div className="ev" key={e.seq} data-seq={e.seq} role="button" tabIndex={0} onClick={() => openDrawer(<EventDrawerBySeq seq={e.seq} />)} onKeyDown={rowKey(() => openDrawer(<EventDrawerBySeq seq={e.seq} />))}>
+                <div className="ev" key={e.seq} data-seq={e.seq} role="button" tabIndex={0} onClick={() => seeEvent(e.seq)} onKeyDown={rowKey(() => seeEvent(e.seq))}>
                   <time>{hhmmss(e.at)}</time><span className="type">{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
                 </div>
               ))}</div>
@@ -991,33 +999,6 @@ function LiveStream({ text, hasInstructions, copyOutput, copied }: {
 function StatusPillOf({ status, ops, landed }: { status: string; ops?: TurnStep["ops"]; landed?: number }): React.JSX.Element {
   const resolved = ops ?? (landed === undefined ? undefined : { messages: landed, artifacts: 0, tasks: 0, decisions: 0 });
   return <OutcomePill step={{ status, ops: resolved }} />;
-}
-
-export function EventDrawerBySeq({ seq }: { seq: number }): React.JSX.Element {
-  const { events, openDrawer } = useMesh();
-  const e: TimelineEvent | undefined = events.find((x) => x.seq === seq);
-  if (!e) return <div className="muted">event #{seq} is no longer in the live window</div>;
-  const parent = e.causationId ? events.find((x) => x.id === e.causationId) : undefined;
-  const sameTurn = e.correlationId ? events.filter((x) => x.correlationId === e.correlationId && x.seq !== e.seq).slice(-6) : [];
-  const isTurn = e.correlationId && String(e.correlationId).startsWith("turn-");
-  return (
-    <>
-      <h2 id="drawer-title">{(plainEvent(e.type))} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>{(e.type)} · #{e.seq}</span><CloseX /></h2>
-      <p className="muted" style={{ margin: "4px 0" }}>{(hhmmss(e.timestamp))} · by {(e.actorId ?? "system")}</p>
-      <p dangerouslySetInnerHTML={{ __html: evSummary(e) }} />
-      {isTurn ? <div className="row" style={{ margin: "8px 0" }}><StepOpener turnId={e.correlationId as string} /></div> : null}
-      {parent ? <><h4>Why it happened</h4><div className="ev" data-seq={parent.seq} role="button" tabIndex={0} onClick={() => openDrawer(<EventDrawerBySeq seq={parent.seq} />)} onKeyDown={rowKey(() => openDrawer(<EventDrawerBySeq seq={parent.seq} />))}><time>{hhmmss(parent.timestamp)}</time><span className={`type ${evClass(parent.type)}`}>{(plainEvent(parent.type))}</span><span className="summary" dangerouslySetInnerHTML={{ __html: evSummary(parent) }} /></div></> : null}
-      {sameTurn.length ? <><h4>Same step</h4><div className="ev-list">{sameTurn.map((c) => (
-        <div className="ev" key={c.seq} data-seq={c.seq} role="button" tabIndex={0} onClick={() => openDrawer(<EventDrawerBySeq seq={c.seq} />)} onKeyDown={rowKey(() => openDrawer(<EventDrawerBySeq seq={c.seq} />))}><time>{hhmmss(c.timestamp)}</time><span className={`type ${evClass(c.type)}`}>{(plainEvent(c.type))}</span><span className="summary" dangerouslySetInnerHTML={{ __html: evSummary(c) }} /></div>
-      ))}</div></> : null}
-      <details className="esc-raw"><summary>technical details</summary><pre>{(JSON.stringify(e, null, 2).slice(0, 3000))}</pre></details>
-    </>
-  );
-}
-
-function StepOpener({ turnId }: { turnId: string }): React.JSX.Element {
-  const { openDrawer, steps } = useMesh();
-  return <Button variant="small" onClick={() => openDrawer(<StepDrawer turnId={turnId} steps={steps} />)}>See the full step →</Button>;
 }
 
 export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {

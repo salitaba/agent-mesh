@@ -32,8 +32,8 @@ COLLABORATION BUS      packages/protocol + packages/policy-engine +
       ▼                         ▼
 AGENT RUNTIMES         ARTIFACT PLANE
 packages/agent-runtime packages/artifact-store
-  opencode / http /    git worktrees +
-  stub                 immutable versions
+  opencode / claude /  git worktrees +
+  http / stub          immutable versions
       │                         │
       └───────────┬─────────────┘
                   ▼

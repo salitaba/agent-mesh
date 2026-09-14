@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { URL } from "url";
-import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact } from "../../../packages/protocol/src/index";
+import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime } from "../../../packages/protocol/src/index";
 import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
@@ -34,6 +34,7 @@ import { createMcpToolset } from "./mcp";
 import { mergeTurnSteps } from "./steps-view";
 import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
+import { ClaudeRuntimeAdapter, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
@@ -77,10 +78,14 @@ export interface MeshInstance {
   scheduler: Scheduler;
   stubRuntimes: Map<string, StubRuntime>;
   /**
-   * The registered OpenCode adapter, exposed so the HTTP layer can serve the
-   * designer's model catalogue from the same installation that will run turns.
+   * Backend for the designer's own conversation, exposed so the HTTP layer can
+   * serve its model catalogue from the same installation that will run turns.
+   *
+   * Typed as the port, not the adapter: these five calls are the only reason
+   * this file used to depend on a concrete runtime, which made the designer
+   * unreachable on any mesh not backed by opencode.
    */
-  opencodeRuntime: OpenCodeRuntimeAdapter;
+  designerRuntime: DesignerRuntime;
   startedAt: number;
   /** Legacy mirror of `mode === "parked"`. Prefer `mode`. */
   readonly uiOnly: boolean;
@@ -204,6 +209,35 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
   });
   resolver.register("opencode", opencodeAdapter);
+  const meshDefaultModel = toClaudeModelId(config.defaultModel);
+  const claudeDefaultModel = meshDefaultModel?.startsWith("claude") ? meshDefaultModel : undefined;
+  // Claude Code as an alternative agent backend. Registered unconditionally
+  // like opencode: the adapter spawns nothing until an agent whose mesh.yaml
+  // says `runtime: claude` is actually started, so an installation that never
+  // names it pays nothing for its presence.
+  const claudeAdapter = new ClaudeRuntimeAdapter({
+      // Same rule as the opencode adapter: the runtime's own deadline must
+      // outlive the supervisor's turn timeout, which fires first and
+      // interrupts the turn.
+      turnTimeoutMs: config.scheduling.turnTimeoutMs + 30000,
+      // Only inherit the mesh-wide default when it actually names a Claude
+      // model. `mesh.runtime.model` is usually written for opencode
+      // ("openrouter/anthropic/..."), and forwarding one of those would hand
+      // the SDK an id it cannot resolve — a confusing hard failure on turn 1
+      // rather than the CLI's own default. Per-agent `model` still wins and
+      // is passed through verbatim.
+      model: claudeDefaultModel,
+      mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
+    });
+  resolver.register("claude", claudeAdapter);
+  // Which backend answers the designer's own chat. Explicitly opt-in rather
+  // than inferred from `mesh.runtime.model`: a default model of
+  // "anthropic/claude-..." is a statement about agent turns, and flipping the
+  // designer off the installation the user already has working on that basis
+  // would be a surprise. Agent seats are unaffected either way — they follow
+  // each agent's own `runtime`.
+  const designerAdapter: DesignerRuntime =
+    process.env.MESH_DESIGNER_RUNTIME === "claude" ? claudeAdapter : opencodeAdapter;
   if (options.httpRuntimeUrl) {
     resolver.register("http", new HttpRuntimeAdapter({ baseUrl: options.httpRuntimeUrl }));
   }
@@ -294,7 +328,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     store,
     scheduler,
     stubRuntimes,
-    opencodeRuntime: opencodeAdapter,
+    designerRuntime: designerAdapter,
     startedAt: Date.now(),
     // Both derived: see the MeshInstance declaration. `scheduler.isRunning()`
     // is the single source of truth for "can this mesh do work".
@@ -702,7 +736,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
    * `opencode` CLI (~1s), and the designer refetches whenever the crew panel
    * mounts; the set of installed providers changes on the order of never.
    */
-  let modelCatalogue: { at: number; value: Awaited<ReturnType<typeof instance.opencodeRuntime.listModels>> } | undefined;
+  let modelCatalogue: { at: number; value: Awaited<ReturnType<typeof instance.designerRuntime.listModels>> } | undefined;
   const MODEL_CATALOGUE_TTL_MS = 5 * 60 * 1000;
 
   // Event-loop lag radar: a 1s interval measures how late it actually fires.
@@ -814,6 +848,22 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const upTo = u.searchParams.get("upToSeq");
           const state = await supervisor.replay(goalId, upTo ? Number(upTo) : undefined);
           return json(200, state);
+        }
+        // End-of-run summary: goal, verdict, accepted artifacts, evidence,
+        // escalations and unfinished work, composed by core's run-report
+        // module from the same projections every other read view uses.
+        if (parts[2] === "run-report" && req.method === "GET") {
+          if (!goal) return json(404, { error: "goal not found" });
+          const buildRunReport = loadRunReportBuilder();
+          if (!buildRunReport) {
+            return json(501, {
+              error: "run report is unavailable in this build (packages/core/src/run-report.ts is missing or exports no builder)",
+              code: "run_report_unavailable",
+            });
+          }
+          const report = await buildRunReport(kernel.state, goalId);
+          if (report == null) return json(404, { error: `no run report for goal ${goalId}` });
+          return json(200, report);
         }
         if (req.method === "GET") {
           if (!goal) return json(404, { error: "goal not found" });
@@ -932,13 +982,25 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const want = u.searchParams.get("version");
           const target = want ? artifactVersion(instance, id, Number(want)) : a;
           if (!target) return json(404, { error: `no version ${want} of this artifact` });
-          const text = await readContent(instance, target.contentRef).catch(() => "");
+          const read = await readContentResult(instance, target.contentRef);
+          if (!read.ok) {
+            // 503, not an empty 200: the artifact EXISTS in the manifest but
+            // its bytes do not resolve, which is a storage fault to surface.
+            return json(503, {
+              error: `artifact content is unreadable: ${read.error}`,
+              code: "artifact_content_unreadable",
+              artifactId: id,
+              version: target.version,
+              contentRef: target.contentRef,
+              retryable: true,
+            });
+          }
           res.writeHead(200, {
             "content-type": "text/plain; charset=utf-8",
             "x-artifact-version": String(target.version),
             "x-artifact-digest": String(target.digest ?? ""),
           });
-          res.end(text);
+          res.end(read.text);
           return;
         }
         // Diff two versions of the same artifact. Defaults to "previous
@@ -953,9 +1015,22 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const from = artifactVersion(instance, id, fromN);
           const to = artifactVersion(instance, id, toN);
           if (!to) return json(404, { error: `no version ${toN} of this artifact` });
-          const beforeText = from && fromN !== toN ? await readContent(instance, from.contentRef).catch(() => "") : "";
-          const afterText = await readContent(instance, to.contentRef).catch(() => "");
-          const d = diffText(beforeText, afterText);
+          // Same rule as /content, and it matters more here: a failed read
+          // coerced to "" makes diffText report the entire file as added or
+          // removed, i.e. a whole-file rewrite that never happened.
+          const beforeRead: ContentRead = from && fromN !== toN ? await readContentResult(instance, from.contentRef) : { ok: true, text: "" };
+          const afterRead: ContentRead = await readContentResult(instance, to.contentRef);
+          const unreadable = (reason: string, version: number): void =>
+            json(503, {
+              error: `artifact content is unreadable: ${reason}`,
+              code: "artifact_content_unreadable",
+              artifactId: id,
+              version,
+              retryable: true,
+            });
+          if (!beforeRead.ok) return unreadable(beforeRead.error, from ? from.version : to.version);
+          if (!afterRead.ok) return unreadable(afterRead.error, to.version);
+          const d = diffText(beforeRead.text, afterRead.text);
           return json(200, {
             artifactId: id,
             from: from && fromN !== toN ? from.version : null,
@@ -1451,7 +1526,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "designer" && parts[1] === "chat" && req.method === "POST" && parts.length === 2) {
         const built = buildDesignerPrompt(await body());
         if ("error" in built) return json(400, { error: built.error });
-        const reply = await instance.opencodeRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT });
+        const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT });
         const { proposedConfig, problems } = analyzeDesignerReply(reply, built.currentConfig);
         return json(200, { reply, proposedConfig, problems: [...new Set(problems)] });
       }
@@ -1477,7 +1552,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           if (!closed) res.write(`data: ${JSON.stringify(frame)}\n\n`);
         };
         try {
-          const { reply, thinking } = await instance.opencodeRuntime.promptStream(
+          const { reply, thinking } = await instance.designerRuntime.promptStream(
             built.promptText,
             { system: DESIGNER_SYSTEM_PROMPT },
             (delta) => send({ type: delta.kind, delta: delta.delta }),
@@ -1505,7 +1580,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const fresh = u.searchParams.get("refresh") === "1";
         const now = Date.now();
         if (fresh || !modelCatalogue || now - modelCatalogue.at > MODEL_CATALOGUE_TTL_MS) {
-          const listed = await instance.opencodeRuntime.listModels();
+          const listed = await instance.designerRuntime.listModels();
           modelCatalogue = { at: now, value: listed };
         }
         const { models, default: fallback, error, variants } = modelCatalogue.value;
@@ -1718,7 +1793,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // actually listens on, which is unknown until `listen()` runs. Bind the
   // locator lazily so a server that never listens (tests, embedded use) costs
   // nothing and the designer falls back to config-only tools.
-  instance.opencodeRuntime.setDesignerObserve(() => {
+  instance.designerRuntime.setDesignerObserve(() => {
     const addr = server.address();
     if (!addr || typeof addr === "string") return undefined;
     return { busUrl: `http://127.0.0.1:${addr.port}`, token: "human-local" };
@@ -1778,6 +1853,21 @@ async function readContent(instance: MeshInstance, contentRef: string): Promise<
   return instance.supervisor.deps.content.read(contentRef);
 }
 
+/** A content read that reports WHY it failed. The content store rejects for
+ * I/O faults (blob pruned, unreadable, a state dir that moved), and those are
+ * NOT empty files: `.catch(() => "")` handed the console a blank body it could
+ * not tell apart from a genuinely empty deliverable — the one case an operator
+ * has to see, since an unreadable artifact looks accepted otherwise. */
+type ContentRead = { ok: true; text: string } | { ok: false; error: string };
+
+async function readContentResult(instance: MeshInstance, contentRef: string): Promise<ContentRead> {
+  try {
+    return { ok: true, text: await readContent(instance, contentRef) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Full version chain of an artifact, oldest first. Falls back to the single
  * current record when no history was recorded (in-memory runs, imports). */
 function artifactVersions(instance: MeshInstance, id: string): Artifact[] {
@@ -1791,6 +1881,27 @@ function artifactVersions(instance: MeshInstance, id: string): Artifact[] {
 function artifactVersion(instance: MeshInstance, id: string, version: number): Artifact | undefined {
   if (!Number.isFinite(version)) return undefined;
   return artifactVersions(instance, id).find((v) => v.version === version);
+}
+
+/** Composer for the end-of-run report, shaped like the other state-derived
+ * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next. */
+type RunReportBuilder = (state: unknown, goalId: string) => unknown | Promise<unknown>;
+
+/**
+ * Resolve core's run-report composer lazily. `packages/core/src/run-report.ts`
+ * is authored by a parallel change, so it is `require`d rather than statically
+ * imported: a checkout without it must still typecheck and boot, and the one
+ * /goals/:id/run-report route answers 501 instead of the whole server failing
+ * to load. Returns null when the module or its export is absent.
+ */
+function loadRunReportBuilder(): RunReportBuilder | null {
+  try {
+    const mod = require("../../../packages/core/src/run-report") as Record<string, unknown>;
+    const fn = mod.buildRunReport ?? mod.composeRunReport ?? mod.default;
+    return typeof fn === "function" ? (fn as RunReportBuilder) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -2123,7 +2234,7 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
         // Runtime children (`opencode serve`) are ours, not the instance's:
         // without this a SIGTERM shutdown leaves them reparented and holding
         // ~0.5GB each until the next mission's orphan sweep.
-        await instance.opencodeRuntime.stopAll();
+        await instance.designerRuntime.stopAll();
       }
     },
   };

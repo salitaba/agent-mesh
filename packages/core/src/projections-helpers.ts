@@ -101,7 +101,41 @@ function payloadDiscriminator(payload: unknown): string {
     if (v === undefined || v === null) continue;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out.push(`${key}=${String(v)}`);
   }
-  return out.join("&");
+  if (out.length > 0) return out.join("&");
+  if (Object.keys(p).length === 0) return "";
+
+  // Nothing above discriminates, so content decides.
+  //
+  // Falling through to "" here is what made this detector fire on agents that
+  // were working. The whitelist cannot enumerate how agents actually write
+  // (`ack`, `ask`, `verdict`, `audit_note`, `criterion_note`, `artifact`,
+  // `freeze_confirmed`, … are all real and none are listed), and the envelope
+  // cannot stand in for content: two messages can share sender, recipient,
+  // type, thread AND `replyTo` and still be different work — one live mission
+  // sent three PATCH_READY messages for successive revisions (/2, /4, /6) of
+  // the same artifact in reply to the same request.
+  //
+  // Across 441 `message.sent` events in that mission the detector raised 17
+  // `fingerprint_loop` escalations and killed a mission that was progressing.
+  // Every one of the 18 collision groups held materially different payloads;
+  // not one was a genuine resend. Identity therefore includes content, and the
+  // detector now catches verbatim repeats rather than paraphrases — a reworded
+  // loop is missed, but the alternative was escalating every agent that
+  // reported twice.
+  return canonicalJson(p);
+}
+
+/**
+ * Deterministic JSON: object keys sorted at every depth, so key order is not
+ * identity and the same content always yields the same string.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 
 export function bumpConflict(

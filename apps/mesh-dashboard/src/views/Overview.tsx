@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fmt, goalTone, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING, mandatoryProgress } from "../format";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
-import { ArtifactDrawer, EventDrawerBySeq, StepDrawer, CloseX } from "../drawers";
+import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
 
 export function MeshMark(): React.JSX.Element {
@@ -99,7 +99,7 @@ function Delivered({ goal, arts, artsLoaded, artsErr, onRetryArts, openArt }: { 
 }
 
 export default function Overview(): React.JSX.Element {
-  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, goalId, serverDown, refreshStatus, toast, client } = useMesh();
+  const { status, events, steps, stepsLoaded, setSteps, setView, openDrawer, openDetail, goalId, serverDown, refreshStatus, toast, client } = useMesh();
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
   const [artsLoaded, setArtsLoaded] = useState(false);
@@ -220,7 +220,10 @@ export default function Overview(): React.JSX.Element {
           )) : <div className="muted">no checks declared</div>}</div>
         </Card>
         <Card title="Just happened" actions={<Button variant="small" onClick={() => setView("events")}>All events</Button>}>
-          <div className="ev-list">{events.length ? events.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDrawer(<EventDrawerBySeq seq={s} />)} />) : <div className="muted">Waiting for events…</div>}</div>
+          {/* The mini-feed hands off to the console rather than opening a drawer
+              over the Overview: the events page is where an event can actually be
+              read, and arriving there with it selected keeps the stream in view. */}
+          <div className="ev-list">{events.length ? events.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDetail("event", String(s), "events")} />) : <div className="muted">Waiting for events…</div>}</div>
         </Card>
       </div>
     </div>

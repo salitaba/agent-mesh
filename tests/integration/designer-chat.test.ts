@@ -16,12 +16,12 @@ async function chatHarness() {
   });
   const seen: { text: string; system?: string } = { text: "" };
   let replyText = "";
-  m.opencodeRuntime.prompt = async (text, opts) => {
+  m.designerRuntime.prompt = async (text, opts) => {
     seen.text = text;
     seen.system = opts?.system;
     return replyText;
   };
-  m.opencodeRuntime.promptStream = async (text, opts, onDelta) => {
+  m.designerRuntime.promptStream = async (text, opts, onDelta) => {
     seen.text = text;
     seen.system = opts?.system;
     onDelta?.({ kind: "thinking", delta: "weighing options " });

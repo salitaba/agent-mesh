@@ -18,10 +18,12 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^msg-"
+      "pattern": "^msg-",
+      "maxLength": 200
     },
     "protocolVersion": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 100
     },
     "type": {
       "type": "string",
@@ -57,29 +59,40 @@
       "format": "date-time"
     },
     "goalId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     },
     "from": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     },
     "to": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
       },
       "minItems": 1
     },
     "threadId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
     },
     "replyTo": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "causationId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "taskId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "artifactRefs": {
       "type": "array",
@@ -91,14 +104,16 @@
         "properties": {
           "uri": {
             "type": "string",
-            "pattern": "^artifact://"
+            "pattern": "^artifact://",
+            "maxLength": 500
           },
           "version": {
             "type": "integer",
             "minimum": 1
           },
           "digest": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           }
         },
         "additionalProperties": false
@@ -137,10 +152,14 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           },
           "text": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
           }
         },
         "additionalProperties": false

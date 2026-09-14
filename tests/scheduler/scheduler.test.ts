@@ -3,6 +3,35 @@ import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor } from "../helpers";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
+function fakeTurn(agentId: string) {
+  return {
+    turnId: `t-${agentId}-${Math.random().toString(36).slice(2, 8)}`,
+    agentId,
+    reason: { kind: "manual" },
+    sentOps: 0,
+    publishedOps: 0,
+    waitRequested: false,
+    escalated: false,
+    results: [],
+  } as never;
+}
+
+/**
+ * These tests drive the scheduler by hand-emitting `patch.ready`. The event
+ * must name an artifact that actually exists: the projection refuses an
+ * announcement for an unknown id, since the supervisor resolves the ref
+ * before emitting and a mismatch there means state and log disagree.
+ */
+async function publishDraftPatch(m: Awaited<ReturnType<typeof makeMesh>>, actorId: string): Promise<string> {
+  const res = await m.supervisor.executeOp(
+    actorId,
+    { op: "publish_artifact", name: "playground", type: "CodePatch", content: "scheduler fixture patch" } as MeshOp,
+    fakeTurn(actorId),
+  );
+  assert.equal(res.ok, true, `publish fixture patch: ${res.reason}`);
+  return res.artifactId!;
+}
+
 test("scheduler: only interest-matched agents wake (no broadcast-all)", async () => {
   const m = await makeMesh({
     agents: [
@@ -17,7 +46,8 @@ test("scheduler: only interest-matched agents wake (no broadcast-all)", async ()
   const s = stub(m);
   for (const a of ["dev", "lead", "qa", "sec", "pm"]) s.setScript(a, async () => ({ operations: [{ op: "done" } as MeshOp] }));
 
-  await m.kernel.emit("patch.ready", { artifactId: "art-1" }, { actorId: "dev" });
+  const artId = await publishDraftPatch(m, "dev");
+  await m.kernel.emit("patch.ready", { artifactId: artId }, { actorId: "dev" });
   await new Promise((r) => setTimeout(r, 700));
   const acts = (id: string) => m.kernel.state.agents.get(id)?.state.activations ?? 0;
   assert.equal(acts("lead"), 1);
@@ -282,7 +312,8 @@ test("scheduler: interest wakeups still fire for events that carry work", async 
   });
   const s = stub(m);
   for (const a of ["qa", "dev"]) s.setScript(a, async () => ({ operations: [{ op: "done" } as MeshOp] }));
-  await m.kernel.emit("patch.ready", { artifactId: "art-1" }, { actorId: "dev" });
+  const artId = await publishDraftPatch(m, "dev");
+  await m.kernel.emit("patch.ready", { artifactId: artId }, { actorId: "dev" });
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(m.kernel.state.agents.get("qa")?.state.activations, 1, "work-carrying events must still wake subscribers");
   await m.cleanup();

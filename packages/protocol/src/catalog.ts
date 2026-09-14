@@ -8,6 +8,7 @@ import type {
   MeshOp,
   LifecycleState,
   MessageType,
+  Severity,
 } from "./types";
 
 export const EVENT_TYPES: EventType[] = [
@@ -84,6 +85,126 @@ export const EVENT_TYPES: EventType[] = [
   "budget.released",
   "budget.limit_raised",
 ];
+
+/**
+ * How loudly each event type should read in an operator-facing view.
+ *
+ * Unlike `EVENT_TYPES`, this cannot silently drift: `Record<EventType, Severity>`
+ * makes a missing member a compile error, so adding to the union forces a
+ * decision here. Kept in `EVENT_TYPES` order so the two lists diff by eye.
+ *
+ * Three levels, not five. A scale with more rungs than an operator can hold in
+ * their head is a scale they stop reading.
+ *   - `alert`   — it went wrong, or a human is needed. Never folded away.
+ *   - `notice`  — real progress worth seeing.
+ *   - `routine` — bookkeeping. Folded by default; the log is mostly this.
+ *
+ * Type alone is a floor, not the last word: an `agent.state_changed` into FAILED
+ * matters far more than one into THINKING, and the same is true of any type
+ * whose payload carries an outcome. Consumers refine from the payload on top of
+ * this baseline rather than encoding payload knowledge here, which would drag
+ * every payload shape into the protocol package.
+ */
+export const EVENT_SEVERITY: Record<EventType, Severity> = {
+  "goal.created": "notice",
+  "goal.budget_changed": "notice",
+  "goal.status_changed": "notice",
+  "goal.paused": "notice",
+  "goal.resumed": "notice",
+  // Progress pings are frequent and individually uninformative; the mission
+  // moving is the story, not each increment of it.
+  "goal.progress": "routine",
+  "goal.completed": "notice",
+  "goal.reopened": "notice",
+  "goal.escalated": "alert",
+  "goal.failed": "alert",
+
+  "requirements.created": "notice",
+  "requirement.blocked": "alert",
+  "requirement.satisfied": "notice",
+
+  "agent.created": "notice",
+  "agent.started": "notice",
+  "agent.awakened": "notice",
+  // The single noisiest type in the log: every agent churns through a dozen of
+  // these per turn. Refined upward from the payload when the target state is a
+  // failure — see the consumer-side override.
+  "agent.state_changed": "routine",
+  "agent.suspended": "notice",
+  "agent.resumed": "notice",
+  "agent.completed": "notice",
+  "agent.failed": "alert",
+  // Not a routine restart: the scheduler re-activates an agent only after it
+  // timed out or died, so this is a crash by another name.
+  "agent.restarted": "alert",
+  "agent.replaced": "alert",
+
+  "thread.created": "notice",
+
+  "message.sent": "notice",
+  // Paired one-to-one with message.sent and carries nothing the send did not.
+  // Keeping both at notice doubles the visible traffic for no added signal.
+  "message.delivered": "routine",
+  "message.rejected": "alert",
+
+  "artifact.created": "notice",
+  "artifact.versioned": "notice",
+  "artifact.transition": "notice",
+
+  "task.created": "notice",
+  "task.claimed": "notice",
+  "task.completed": "notice",
+
+  "review.requested": "notice",
+  "review.approved": "notice",
+  "review.rejected": "alert",
+
+  "patch.created": "notice",
+  "patch.ready": "notice",
+  "patch.merged": "notice",
+
+  "architecture.approved": "notice",
+  "design.question": "notice",
+  "dependency.changed": "notice",
+  "authentication.changed": "notice",
+  "authorization.changed": "notice",
+
+  "release.candidate": "notice",
+  "release.transition": "notice",
+  "release.accepted": "notice",
+
+  "research.requested": "notice",
+  "research.completed": "notice",
+
+  "implementation.completed": "notice",
+
+  "decision.proposed": "notice",
+  "decision.ratified": "notice",
+
+  "escalation.requested": "alert",
+  "escalation.responded": "notice",
+  "escalation.auto_resolved": "notice",
+  // Auto-resolved, so nothing is frozen — but a deadlock happened, and an
+  // operator debugging a run wants to know the runtime had to break a cycle.
+  "deadlock.auto_resolved": "alert",
+  "commitment.discharged": "notice",
+
+  "human.input": "notice",
+
+  "lease.acquired": "routine",
+  "lease.released": "routine",
+
+  "memory.updated": "routine",
+
+  "plan.updated": "notice",
+  "plan.gate_rejected": "alert",
+
+  "budget.reserved": "routine",
+  "budget.consumed": "routine",
+  "budget.exceeded": "alert",
+  "budget.released": "routine",
+  "budget.limit_raised": "notice",
+};
 
 export const MESSAGE_TYPES: MessageType[] = [
   "MISSION",

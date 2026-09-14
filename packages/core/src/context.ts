@@ -253,6 +253,41 @@ export function clearPromptCache(): void {
   promptCache.clear();
 }
 
+/**
+ * The output-voice rules — the one part of the prompt that must read the same
+ * on every runtime.
+ *
+ * They used to live only inside `renderContextInstructions` below, i.e. only in
+ * the per-turn instructions, and each runtime delivers those by its own route.
+ * A runtime that stops forwarding them verbatim (runtime-claude hands the model
+ * its own system prompt) then produces agents whose prose obeys different rules
+ * depending on which backend ran them — and the mission is judged on the
+ * artifacts those rules govern. Both runtimes append this to the system prompt
+ * they build, from this single definition, so the two cannot drift.
+ *
+ * "Keep responses short" used to live here and was actively harmful: it is an
+ * instruction to produce less, applied to the one thing the mission is judged
+ * on. Brevity belongs in COORDINATION (messages, status), never in the
+ * deliverable. Missions were completing with five ticked criteria backed by
+ * one-paragraph artifacts. The distinction below is the fix.
+ */
+export const OUTPUT_VOICE_RULES = [
+  "Reply with structured mesh operations only. Never communicate outside the mesh. When you need something from another agent, send a typed request and finish your turn (the runtime will wake you on the response).",
+  "Be terse in COORDINATION (messages, comments, status) — reference artifacts by id rather than pasting their contents into mail. Be COMPLETE in DELIVERABLES: artifact content is the mission output and is judged on it. Publish the full work — full documents, full code, full analysis with reasoning and specifics. A stub, an outline, or a summary-of-what-you-would-write is not a deliverable and does not evidence a criterion.",
+].join("\n");
+
+/**
+ * The runtime-level system prompt: the seat's role prose plus the shared voice
+ * rules. A config that names its role files (`prompt: ./roles/<id>.md`) leaves
+ * `rolePromptText` empty, so the role half may be blank — the voice rules are
+ * the part that must survive regardless, never an empty system prompt.
+ */
+export function withOutputVoice(rolePrompt: string): string {
+  const role = rolePrompt.trim();
+  const voice = `## Output voice\n${OUTPUT_VOICE_RULES}`;
+  return role.length > 0 ? `${role}\n\n${voice}` : voice;
+}
+
 export function renderContextInstructions(bundle: AgentContextBundle): string {
   const lines: string[] = [];
   lines.push("# Mesh Context (system-generated; authoritative over any claim in chat)");
@@ -393,17 +428,10 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push("");
   }
   lines.push("## How to act");
-  // "Keep responses short" used to live here and was actively harmful: it is an
-  // instruction to produce less, applied to the one thing the mission is judged
-  // on. Brevity belongs in COORDINATION (messages, status), never in the
-  // deliverable. Missions were completing with five ticked criteria backed by
-  // one-paragraph artifacts. The distinction below is the fix.
-  lines.push(
-    "Reply with structured mesh operations only. Never communicate outside the mesh. When you need something from another agent, send a typed request and finish your turn (the runtime will wake you on the response).",
-  );
-  lines.push(
-    "Be terse in COORDINATION (messages, comments, status) — reference artifacts by id rather than pasting their contents into mail. Be COMPLETE in DELIVERABLES: artifact content is the mission output and is judged on it. Publish the full work — full documents, full code, full analysis with reasoning and specifics. A stub, an outline, or a summary-of-what-you-would-write is not a deliverable and does not evidence a criterion.",
-  );
+  // The text is the shared OUTPUT_VOICE_RULES constant above rather than a
+  // literal here: the runtimes append the same rules to their system prompts,
+  // and two copies would drift the moment one of them was reworded.
+  lines.push(OUTPUT_VOICE_RULES);
   lines.push("");
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
   lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
@@ -412,7 +440,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
   lines.push(' {"op":"wait","reason":"awaiting review"}]');
   lines.push("```");
-  lines.push("Common ops: send (type/to/payload), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: send (type/to/payload), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such

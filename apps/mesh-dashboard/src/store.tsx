@@ -6,6 +6,9 @@ import { useProjectsOptional, type ProjectSink } from "./projects";
 import { retainCap, trimRetained } from "./tabmodel";
 import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
 
+/** Derived from the route rather than restated, so the two cannot drift apart. */
+export type DetailKind = NonNullable<HashRoute["detail"]>["kind"];
+
 export interface TimelineEvent {
   seq: number;
   id: string;
@@ -147,9 +150,14 @@ interface MeshState {
   drawerDepth: number;
   openDrawer: (node: ReactNode) => void;
   closeDrawer: () => void;
-  /** Deep-linked detail (step/agent) reflected in the URL hash. */
+  /** Deep-linked detail (step/agent/event) reflected in the URL hash. */
   detail: HashRoute["detail"] | null;
-  openDetail: (kind: "step" | "agent", id: string) => void;
+  /**
+   * `view` opens a detail that lives on a different page — the Overview
+   * mini-feed sending an event to the console. Writing the hash is the whole
+   * navigation: the `hashchange` listener syncs the view back out of it.
+   */
+  openDetail: (kind: DetailKind, id: string, view?: View) => void;
   closeDetail: () => void;
   primeEvents: (list: unknown[]) => void;
   refreshStatus: () => Promise<void>;
@@ -293,13 +301,17 @@ export function MeshProvider({ children, projectId = null, background = false }:
     setDetail(null);
   }, []);
 
-  // Detail lives in the URL so a step or agent can be refreshed, shared and
-  // reached with the browser Back button. The drawer stack stays for the
-  // deeper drill-downs (event → artifact) that have no stable identity worth
-  // a URL of their own.
-  const openDetail = useCallback((kind: "step" | "agent", id: string) => {
+  // Detail lives in the URL so a step, agent or event can be refreshed, shared
+  // and reached with the browser Back button. The drawer stack stays for the
+  // deeper drill-downs (artifact bodies, token streams) that have no stable
+  // identity worth a URL of their own.
+  //
+  // `setDetail` runs even though the hash write below will fire `hashchange`
+  // and set it again: the listener is async relative to the click, and the
+  // extra pass is a no-op because it compares kind+id before replacing.
+  const openDetail = useCallback((kind: DetailKind, id: string, view?: View) => {
     setDetail({ kind, id });
-    window.location.hash = hashFor(projectIdRef.current, viewRef.current, { kind, id });
+    window.location.hash = hashFor(projectIdRef.current, view ?? viewRef.current, { kind, id });
   }, []);
 
   const closeDetail = useCallback(() => {

@@ -12,14 +12,16 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^evt-"
+      "pattern": "^evt-",
+      "maxLength": 200
     },
     "seq": {
       "type": "integer",
       "minimum": 0
     },
     "protocolVersion": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 100
     },
     "type": {
       "type": "string",
@@ -99,16 +101,20 @@
       "format": "date-time"
     },
     "goalId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "actorId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "causationId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "correlationId": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 200
     },
     "payload": {
       "type": "object"

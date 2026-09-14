@@ -24,7 +24,8 @@
           "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 200
         }
       },
       "additionalProperties": false
@@ -37,13 +38,18 @@
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 200
         },
         "goal": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
         },
         "acceptance_criteria": {
           "type": "array",
@@ -55,10 +61,14 @@
             ],
             "properties": {
               "id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
               },
               "description": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
               },
               "mandatory": {
                 "type": "boolean"
@@ -80,13 +90,16 @@
           "type": "object",
           "properties": {
             "default": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             },
             "model": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             },
             "variant": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             }
           },
           "additionalProperties": false
@@ -158,7 +171,8 @@
         "activate": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 200
           }
         }
       },
@@ -174,16 +188,21 @@
         ],
         "properties": {
           "role": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           },
           "runtime": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 200
           },
           "model": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 200
           },
           "variant": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 200
           },
           "mode": {
             "type": "string",
@@ -193,24 +212,28 @@
             ]
           },
           "prompt": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "capabilities": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             }
           },
           "authority": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             }
           },
           "interests": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             }
           },
           "session": {
@@ -298,13 +321,15 @@
               "may_contact": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 200
                 }
               },
               "may_be_contacted_by": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 200
                 }
               }
             },
@@ -319,7 +344,8 @@
               "requires": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 200
                 }
               }
             },
@@ -506,21 +532,28 @@
                 ],
                 "properties": {
                   "agent": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   },
                   "event": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                   },
                   "ignore_if_text_matches": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
                     }
                   },
                   "act_if_text_matches": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
                     }
                   }
                 },

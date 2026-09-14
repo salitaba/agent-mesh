@@ -45,7 +45,7 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 agents:
   developer:
     role: developer
-    runtime: opencode                # opencode | http | stub | custom
+    runtime: opencode                # opencode | claude | http | stub | custom
     model: provider/model            # optional; blank = mesh.runtime.model, then backend default
     variant: high                    # optional thinking variant (opencode: low|high|max); blank = mesh.runtime.variant
     mode: peer                       # peer | service

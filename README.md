@@ -116,9 +116,16 @@ npm run mesh -- send --to architect --type MISSION --payload "{\"note\":\"go\"}"
 npm run mesh -- respond <escalationId> "approved, proceed"
 ```
 
-Real LLM collaboration needs the OpenCode CLI (`npm i -g opencode-ai` + provider
-keys); `mesh run` preflights this and prints guidance instead of crashing if it
-is missing. Add `--git` to give writing agents real git worktrees.
+Real LLM collaboration needs a model backend. Two are built in:
+
+- `runtime: claude` — Claude Code via `@anthropic-ai/claude-agent-sdk`. Nothing
+  to install: the SDK is a declared dependency and ships its own executable.
+- `runtime: opencode` — needs the OpenCode CLI (`npm i -g opencode-ai` +
+  provider keys). `mesh run` preflights this one and prints guidance instead of
+  crashing if it is missing.
+
+Set it per agent, or mesh-wide via `mesh.runtime.default`. Add `--git` to give
+writing agents real git worktrees.
 
 Other helpers: `emit-schemas schemas` (regenerate canonical JSON schemas),
 `mesh mcp` (internal stdio↔HTTP bridge spawned by OpenCode).
@@ -139,6 +146,7 @@ packages/
   agent-runtime   adapter interface + deterministic StubRuntime (tests/sim)
   artifact-store  immutable content store + git worktree manager
   runtime-opencode  OpenCode server adapter (sessions, turns, tokens, restore)
+  runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub
 apps/

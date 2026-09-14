@@ -1,6 +1,7 @@
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import type { ValidateFunction } from "ajv";
+import { ARTIFACT_TYPES } from "./catalog";
 import { SCHEMAS, type SchemaName } from "./schemas";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -19,6 +20,18 @@ export interface ValidationError {
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
+}
+
+const ARTIFACT_TYPE_SET: ReadonlySet<string> = new Set(ARTIFACT_TYPES);
+
+/** The fields that carry an artifact's own content (its name, or the prose it holds). */
+const ARTIFACT_CONTENT_FIELDS: readonly string[] = ["name", "content", "contentRef"];
+
+/** The publish input an agent sends, shape of MeshOpPublishArtifact. */
+const ARTIFACT_PUBLISH_FIELDS: readonly string[] = ["name", "type", "content"];
+
+function isBlank(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length === 0;
 }
 
 function fmt(err: { instancePath?: string; message?: string }): ValidationError {
@@ -43,8 +56,54 @@ export function validateEvent(event: unknown): ValidationResult {
   return validateSchema("event", event);
 }
 
+/**
+ * Validate an artifact at the protocol edge.
+ *
+ * Two shapes reach the kernel: the stored record (the `Artifact` type, and
+ * `artifactSchema` with it) and the publish input an agent sends
+ * (`MeshOpPublishArtifact`: name, type, content). Both are model-written, and
+ * an artifact holding nothing is one no reviewer can review and no store can
+ * version — an empty string passes a `type: "string"` check and only turns
+ * into an empty card on the operator's screen, so blank values are rejected
+ * here instead.
+ */
 export function validateArtifact(artifact: unknown): ValidationResult {
-  return validateSchema("artifact", artifact);
+  if (artifact === null || typeof artifact !== "object" || Array.isArray(artifact)) {
+    return { valid: false, errors: [{ path: "(root)", message: "artifact must be an object" }] };
+  }
+  const record = artifact as Record<string, unknown>;
+  const isStoredRecord = "id" in record || "version" in record || "createdAt" in record;
+  const errors: ValidationError[] = isStoredRecord
+    ? [...validateSchema("artifact", artifact).errors]
+    : ARTIFACT_PUBLISH_FIELDS.filter((field) => !(field in record)).map((field) => ({
+        path: `/${field}`,
+        message: "missing required field",
+      }));
+  const flagged = new Set(errors.map((e) => e.path));
+  for (const field of ARTIFACT_CONTENT_FIELDS) {
+    if (isBlank(record[field]) && !flagged.has(`/${field}`)) {
+      errors.push({ path: `/${field}`, message: "must not be empty or whitespace-only" });
+    }
+  }
+  if ("type" in record) {
+    const typeError =
+      typeof record.type !== "string"
+        ? { path: "/type", message: "must be a string" }
+        : ARTIFACT_TYPE_SET.has(record.type)
+          ? undefined
+          : {
+              path: "/type",
+              message: `unknown artifact type '${record.type}' (expected one of: ${ARTIFACT_TYPES.join(", ")})`,
+            };
+    if (typeError) {
+      // Replace the schema's generic enum complaint with the same message the
+      // supervisor's publish gate gives, so both name the offending type.
+      const at = errors.findIndex((e) => e.path === "/type");
+      if (at === -1) errors.push(typeError);
+      else errors[at] = typeError;
+    }
+  }
+  return { valid: errors.length === 0, errors };
 }
 
 export function validateMeshConfig(config: unknown): ValidationResult {

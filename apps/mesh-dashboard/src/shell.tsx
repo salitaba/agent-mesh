@@ -17,11 +17,11 @@ import ChatDock from "./designer/ChatDock";
 const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string; title?: string }> = [
   { section: "Run" },
   { view: "overview", icon: "◧", label: "Overview", title: "Is the mission healthy? What needs you right now?" },
-  { view: "steps", icon: "▶", label: "Steps", title: "Every agent turn, newest first. Start here to see what agents actually did." },
+  { view: "events", icon: "≋", label: "Events", title: "The live console. Everything the mesh is doing, as it happens — watch here while a run is going." },
+  { view: "steps", icon: "▶", label: "Steps", title: "Every agent turn, newest first. The rollup: what each turn did, rather than each event it emitted." },
   { view: "agents", icon: "◉", label: "Agents", title: "Who is working, stuck, or idle. Wake, suspend, or inspect one." },
   { view: "escalations", icon: "⚑", label: "Needs you", title: "Only when the mesh is paused and needs your decision." },
   { section: "Inspect" },
-  { view: "events", icon: "≋", label: "Events", title: "Append-only log of everything. Use search when Steps isn't enough." },
   { view: "graph", icon: "◈", label: "Graph", title: "Who talks to whom." },
   { view: "artifacts", icon: "▤", label: "Files", title: "Files and documents agents produced, with versions." },
   { view: "product", icon: "◫", label: "Product", title: "The delivered codebase — browse files, build, test, run scenarios, open the playground." },
@@ -30,7 +30,11 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
   { view: "designer", icon: "⚒", label: "Designer", title: "Create or edit a mesh, then run it." },
 ];
 
-const KEY_VIEWS: View[] = ["overview", "steps", "agents", "escalations", "events", "graph", "artifacts", "product", "cost", "designer"];
+// Order matters twice over: it is the digit each view answers to, and the digit
+// is printed next to the view in the sidebar. It must therefore track NAV's
+// order exactly — Events moving up to 2 costs some muscle memory, but a sidebar
+// numbered 1, 5, 2, 3, 4 costs more.
+const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "graph", "artifacts", "product", "cost", "designer"];
 const viewKey = (v: View): string => String(KEY_VIEWS.indexOf(v) + 1);
 
 // Mirrors the `@media (max-width: 800px)` rule in styles.css that turns the
@@ -349,7 +353,15 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     // This sits BELOW the text-input guard on purpose: above it, Esc inside the
     // drawer's own fields (send-to, send-note, appr-comment) would tear down
     // the drawer and discard a half-typed message instead of blurring.
-    if (drawerDepth > 0 || detail) {
+    //
+    // An `event` detail is deliberately excluded: it is not modal. The events
+    // console renders it in a pane beside a list that keeps scrolling, with
+    // nothing over the page. Swallowing every key here for as long as an event
+    // stayed selected would be exactly the wrong trade on the one page an
+    // operator keeps open while a run is live -- `/` and the view keys have to
+    // keep working with a selection up.
+    const modalDetail = !!detail && detail.kind !== "event";
+    if (drawerDepth > 0 || modalDetail) {
       if (ev.key === "Escape") {
         ev.preventDefault();
         if (drawerDepth > 0) closeDrawer();
@@ -360,14 +372,17 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     const map: Record<string, View> = Object.fromEntries(KEY_VIEWS.map((v, i) => [String(i + 1), v]));
     if (map[ev.key]) return setView(map[ev.key]);
     // Esc unwinds exactly one layer. A modal panel is innermost and claims it
-    // in the guard above; below that the order is focus mode, then the
-    // off-canvas menu. Local handlers (Designer menu/inspector, wire cancel)
-    // run only when none of those claimed the key.
+    // in the guard above; below that the order is the non-modal event pane,
+    // then focus mode, then the off-canvas menu. Local handlers (Designer
+    // menu/inspector, wire cancel) run only when none of those claimed the key.
     if (ev.key === "Escape") {
+      // Only an event detail can still be open here -- the modal kinds returned
+      // above -- and closing it is what Esc should mean on the console.
+      if (detail) { ev.preventDefault(); closeDetail(); return; }
       if (focusOn) { ev.preventDefault(); setFocusMode(false); return; }
       if (menuOpen) { ev.preventDefault(); setMenuOpen(false); return; }
-      // drawer/detail are handled by the modal guard above, which returns
-      // before this branch whenever either is open.
+      // A modal drawer/detail is handled by the guard above, which returns
+      // before this branch whenever one is open.
       return;
     }
     if (ev.key === "?") return openHelp();
@@ -430,11 +445,18 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
   // The deep-linked detail is the bottom panel layer; anything the user drills
   // into from there stacks on top of it.
-  const detailNode = detail
-    ? detail.kind === "step"
+  //
+  // Spelled out per kind rather than as a two-branch ternary, because `event`
+  // is a detail kind with no drawer at all: the events console reads `detail`
+  // itself and renders the event in its own right-hand pane. A trailing `else`
+  // here would hand an event seq to <AgentDrawer> and float it over the console.
+  const detailNode = !detail
+    ? null
+    : detail.kind === "step"
       ? <StepDrawer turnId={detail.id} steps={steps || []} />
-      : <AgentDrawer id={detail.id} />
-    : null;
+      : detail.kind === "agent"
+        ? <AgentDrawer id={detail.id} />
+        : null;
   const panel = drawer ?? detailNode;
   const panelDepth = drawerDepth + (detailNode ? 1 : 0);
   const popPanel = (): void => {

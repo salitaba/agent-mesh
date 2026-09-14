@@ -64,9 +64,44 @@ Note: OpenCode registers MCP tools with the server name as a prefix, so the bus
 tools surface to the model as `mesh_mesh_send`, `mesh_mesh_approve`, … (server
 `mesh`). Agents are told to look for `mesh_*`.
 
+### `runtime-claude`
+- Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that
+  drives the Claude Code binary as a child process. **There is no `claude serve`**
+  — no local HTTP API, no SSE, nothing to health-probe — so none of the opencode
+  transport applies. The SDK ships its own executable, so unlike opencode there
+  is nothing for the user to install and nothing to preflight
+- one **long-lived streaming `query()` per agent**, held for the agent's
+  lifetime. Streaming input is not a preference: SDK control requests
+  (`interrupt()`, `supportedModels()`) are only supported on a streaming query,
+  so a per-turn one-shot could not implement `AgentRuntime.interrupt` at all
+- each mesh turn is one `SDKUserMessage` pushed into that query's inbox; a
+  single pump loop demultiplexes the `SDKMessage` frames back into per-turn
+  state (`assistant` → tool calls, `stream_event` → live token deltas,
+  `result` → turn settled)
+- liveness is the CLI's `system`/`init` frame rather than a health endpoint.
+  `query()` is lazy — nothing spawns until the generator is pulled — so `start`
+  and `restoreSession` wait for that handshake (`startupProbeMs`, default 10s)
+  before reporting success. A backend that fails to spawn surfaces as a labeled
+  `BackendUnreachableError`; one that is merely quiet is given the benefit of
+  the doubt
+- capabilities become a `canUseTool` callback rather than a static permission
+  block: the same capability set, but an unmapped tool **fails closed** instead
+  of falling through whatever the config happened not to mention. Capability
+  aliases are resolved, so `code.write` grants edit tools
+- token accounting reads the per-turn `usage` only —
+  `input + output + cache_creation`, with `cache_read` **excluded**.
+  `total_cost_usd` and `modelUsage` are cumulative across a streaming session,
+  so billing a turn off them would re-charge the whole conversation every turn
+- the mesh MCP bridge is wired through the SDK's `mcpServers` option, the same
+  `mesh mcp` stdio bridge opencode spawns
+- no `reasoning` token field (Claude's usage has none), and the system prompt is
+  snapshotted at a session's first request, so mid-run `ROLE.md` edits land only
+  after compaction
+
 ### `runtime-http`
 - generic custom/remote agents over `POST /sessions`, `/turn`, `/interrupt`, …
-- used to attach Claude/Codex/A2A behind an HTTP shim
+- used to attach Codex/A2A, or any agent, behind an HTTP shim (Claude Code no
+  longer needs one — see `runtime-claude` above)
 
 ### `agent-runtime` `StubRuntime`
 - deterministic scripted agents; powers the unit/integration tests, the
@@ -114,7 +149,9 @@ changing the protocol.
   talk to `/api`.
 - `mesh init` detects whether the `opencode` CLI is on PATH and templates
   `runtime: default: stub` when it is not; `mesh run` preflights opencode-based
-  configs and prints guidance instead of crashing.
+  configs and prints guidance instead of crashing. There is no equivalent probe
+  for `claude` and there should not be: its executable ships with the SDK, so a
+  PATH check would fail on a working install.
 - `mesh emit-schemas` regenerates `schemas/*.json` from the code (single source).
 - `mesh bench` runs the mesh-vs-single comparison across the A–F corpus.
 - `mesh mcp` is the internal stdio↔HTTP bridge spawned by OpenCode.

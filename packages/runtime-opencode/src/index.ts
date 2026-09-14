@@ -15,9 +15,14 @@ import {
   type AgentRuntime,
   type AgentRuntimeStatus,
   type AgentSession,
+  type DesignerRuntime,
   type MeshOp,
   type RuntimeContext,
 } from "../../protocol/src/index";
+// The output-voice rules belong to the prompt layer, not to this adapter:
+// importing them from there is what keeps opencode and runtime-claude
+// byte-identical on the part of the prompt that must not vary by backend.
+import { withOutputVoice } from "../../core/src/context";
 
 export interface OpenCodeModelRef {
   providerID: string;
@@ -386,7 +391,7 @@ function parseCliModels(out: string): { models: string[]; variants: Record<strin
   return { models, variants };
 }
 
-export class OpenCodeRuntimeAdapter implements AgentRuntime {
+export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   readonly name = "opencode";
   private processes = new Map<string, ProcessHandle>();
   private sessionIds = new Map<string, string>();
@@ -1069,7 +1074,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     this.statuses.set(session.agentId, "RUNNING");
     const body: Record<string, unknown> = {
       parts: [{ type: "text", text: input.instructions }],
-      system: input.context.rolePrompt,
+      // Role prose and the shared voice rules, composed in one place so this
+      // runtime and runtime-claude hand the model the same output-voice text.
+      system: withOutputVoice(input.context.rolePrompt),
     };
     if (model) body.model = model;
     if (variant) body.variant = variant;
@@ -1114,7 +1121,14 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
     const cacheRead = tokens.cache?.read ?? 0;
     const cacheWrite = tokens.cache?.write ?? 0;
     const total = (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0) + cacheWrite;
-    return {
+    const declared = extractDeclaredSummary(operations);
+    // `declaredSummary` rides ALONGSIDE `summary` and never replaces it: every
+    // consumer already reads `summary`, so its value stays exactly the scrape
+    // it has always been. The declared field is populated only when the turn
+    // actually declared one, and it is not yet a field on `AgentOutput`
+    // (packages/protocol/src/types.ts) — hence the widening on the literal
+    // below, which goes away once the protocol declares it.
+    const output: AgentOutput & { declaredSummary?: string } = {
       text,
       operations,
       tokensUsed: { input: tokens.input ?? 0, output: tokens.output ?? 0, total, cacheRead },
@@ -1124,7 +1138,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime {
         .filter((p) => p.type === "tool")
         .map((p) => ({ name: String(p.tool ?? "tool"), args: p.state?.input ?? {}, resultDigest: shortDigest(JSON.stringify(p.state?.output ?? "")) })),
       summary: extractSummary(text),
+      ...(declared ? { declaredSummary: declared } : {}),
     };
+    return output;
   }
 
   /**
@@ -1565,7 +1581,7 @@ function normalizeOps(parsed: unknown): MeshOp[] | null {
   return null;
 }
 
-function extractSummary(text: string): string | undefined {
+export function extractSummary(text: string): string | undefined {
   // Skip fenced op blocks AND bare JSON op lines: previously the first line
   // of a ```mesh-json array ("[") became the turn summary, which then rode
   // into agent memory as `turn:<id>: [` — the agent "remembered" success
@@ -1582,7 +1598,21 @@ function extractSummary(text: string): string | undefined {
   return line?.slice(0, 200);
 }
 
-function shortDigest(s: string): string {
+export function extractDeclaredSummary(operations: MeshOp[]): string | undefined {
+  // The agent's OWN account of the turn, taken from the `done` op it emitted.
+  // `extractSummary` guesses this from the first prose line that is not an op
+  // block, which drifts with the model's formatting; a declared summary is
+  // what the seat meant to say. Absent when no `done` op carried one, which is
+  // the signal to fall back to the scrape.
+  for (const op of operations) {
+    if (op.op !== "done") continue;
+    const summary = op.summary;
+    if (typeof summary === "string" && summary.trim().length > 0) return summary.trim().slice(0, 200);
+  }
+  return undefined;
+}
+
+export function shortDigest(s: string): string {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return `dgx-${(h >>> 0).toString(16)}`;

@@ -118,6 +118,18 @@ export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Reco
       break;
     }
     case "patch.ready": {
+      // A ready announcement naming an artifact the log does not hold is a
+      // divergence, not a no-op. The supervisor resolves the ref BEFORE it
+      // emits (an unresolvable one is refused as
+      // `patch.ready.unresolved-artifact` and never reaches here), so an
+      // unknown id at this point means state and log disagree. Swallowing it
+      // left the patch in DRAFT while the sender believed review had been
+      // asked for — refuse it the way every other artifact-bearing case does.
+      // An announcement carrying no id at all is left alone: older logs
+      // predate the resolution fix and must still replay.
+      if (p.artifactId && !state.artifacts.get(p.artifactId)) {
+        throw new ProjectionError(`unknown artifact ${p.artifactId}`, event.type);
+      }
       const a = p.artifactId ? state.artifacts.get(p.artifactId) : undefined;
       if (a && a.status === "DRAFT") {
         doTransition(state, event, a.id, "READY_FOR_REVIEW", true, config);

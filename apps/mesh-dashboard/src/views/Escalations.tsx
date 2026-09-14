@@ -5,6 +5,14 @@ import { Button, Card, ErrorState, Input } from "../components";
 import { AgentDrawer, ArtifactDrawer } from "../drawers";
 import { MeshMark } from "./Overview";
 import { isParkedStatus, useGoLive } from "../actions";
+// Deep import, not the package barrel: `run-report.ts` value-imports only
+// `protocol/src/catalog` (a const table), so this pulls in the verdict phrasing
+// and nothing else — same arrangement events.tsx uses for EVENT_SEVERITY.
+// Card titles used to be a second copy of the termination vocabulary that
+// drifted from the reasons in `packages/core/src/termination.ts`; the headline
+// now comes from there, while the `what` / `next` / placeholder copy below
+// stays local because it talks about clicking and answering *below*.
+import { verdictText } from "../../../../packages/core/src/run-report";
 
 interface BudgetInfo {
   title: string;
@@ -186,7 +194,7 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
   switch (e.reason) {
     case "runtime_failure":
       return {
-        title: failed.length ? `Agent crashed: ${failed.join(", ")}` : "An agent crashed",
+        title: verdictText("runtime_failure", { agents: failed }).title,
         what: `${who} detected a runtime failure${failed.length ? ` in ${failed.join(", ")}` : ""}${err ? ` — ${err}` : ""}. The mission is paused; nothing else will run until you decide.`,
         next: "Check the agent's last step for the error, then tell the mesh how to proceed (retry, skip, or reassign). Responding resumes the mission and wakes the affected agents.",
         placeholder: failed.length ? `e.g. retry ${failed[0]} once, else skip and continue` : "e.g. retry once, else skip and continue",
@@ -207,7 +215,7 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
     case "thread_budgets_exhausted": {
       const n = typeof d.exhaustedThreads === "number" ? d.exhaustedThreads : (Array.isArray(d.threads) ? d.threads.length : 0);
       return {
-        title: "Every open conversation is out of tokens",
+        title: verdictText("thread_budgets_exhausted", { threads: n }).title,
         what: `${n} conversation thread${n === 1 ? " has" : "s have"} spent their token budget, and no thread is left that agents can talk in. Work stopped silently — nobody is running.`,
         next: "Raise the per-thread budget in mesh.yaml (budgets.thread_tokens), or respond to have the agents start a fresh thread with a tighter question.",
         placeholder: "e.g. start a fresh thread and keep it short",
@@ -228,7 +236,7 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
       if (e.reason === "stalemate") {
         const n = stuck.underlying.length;
         return {
-          title: n > 0 ? `Stalemate (${n} waiting)` : "Stalemate (clearing)",
+          title: verdictText("stalemate", { waiting: n }).title,
           what: n > 0
             ? `Mission paused — ${n} answer${n === 1 ? "" : "s"} still missing. Answer them below, or answer all at once.`
             : `Mission paused on a stalemate whose underlying requests are already resolved. The mesh retires this automatically; answer below to clear it now.`,

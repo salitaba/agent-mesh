@@ -43,6 +43,38 @@ test("recovery: after max restart attempts the mesh escalates a runtime_failure"
   await m.cleanup();
 });
 
+test("recovery: answering an escalation wakes a FAILED agent instead of throwing an illegal transition", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: [], persistent: true }],
+    mayContact: { dev: [] },
+  });
+  const s = stub(m);
+  let turns = 0;
+  s.setScript("dev", async () => {
+    turns++;
+    return { operations: [{ op: "done" } as MeshOp] };
+  });
+  // The shape a turn-silence timeout reports: no session left, and not
+  // restartable by the automatic recovery loop — so the agent sits in FAILED
+  // with a runtime_failure card waiting on the operator.
+  await m.kernel.emit(
+    "agent.failed",
+    { agentId: "dev", error: "turn silence exceeded 120000ms", sessionId: null, restartable: false },
+    { actorId: "system" },
+  );
+  assert.equal(m.kernel.state.agents.get("dev")?.state.lifecycle, "FAILED", "precondition: the agent is stuck in FAILED");
+  // What respondEscalation does for every recovery candidate. Before the
+  // FAILED -> STARTING reset in runTurn this threw `illegal lifecycle
+  // transition FAILED -> AWAKENED`, so the operator's answer could never
+  // resume the mission — it just re-raised the same escalation.
+  await m.supervisor.activateAgent("dev", { kind: "recovery", note: "escalation responded" });
+  await waitFor("the woken agent actually ran a turn", () => turns > 0, 8000);
+  const t = (await m.store.read()).map((e) => e.type);
+  assert.ok(t.includes("agent.restarted"), "the wake reset FAILED -> STARTING via agent.restarted");
+  assert.equal(m.kernel.state.agents.get("dev")?.state.lastError, undefined, "the restart cleared the recorded failure");
+  await m.cleanup();
+});
+
 test("delegation: agent-to-agent delegate creates a task and a DELEGATE message (v1 depth 0)", async () => {
   const m = await makeMesh({
     agents: [

@@ -130,17 +130,30 @@ test("envelope: a cache-served message is still suppressed — via the envelope"
   );
 });
 
-test("loop detection: a paraphrased repeat is still recognised as a repeat", () => {
-  // Identical act, identical subject, different words. This is what an LLM
-  // actually does when it loops, and it used to slip past the detector.
+test("loop detection: an unanchored paraphrase is not treated as a repeat", () => {
+  // This test previously asserted the opposite: that re-wording a payload with
+  // no `replyTo` still collides. A live mission falsified that assumption.
+  // Across 441 `message.sent` events the detector raised 17 `fingerprint_loop`
+  // escalations against agents that were working; all 15 collision groups held
+  // materially different payloads (`audit_note`, `credentials`,
+  // `criterion_note`, … — none whitelisted) and not one was a genuine resend.
+  //
+  // Without a `replyTo` anchoring the act, an agent that re-words its payload
+  // is indistinguishable from one doing new work. Killing a progressing mission
+  // costs far more than missing a paraphrased loop. When `replyTo` IS set the
+  // envelope still decides identity — see "answering a different request is not
+  // a repeat" below.
   const first = msg({ payload: { question: "Is the idempotency design acceptable?" } });
   const reworded = msg({ payload: { question: "Would you say this idempotency approach is OK?" } });
 
-  assert.equal(
+  assert.notEqual(
     fingerprintOf(first),
     fingerprintOf(reworded),
-    "message identity is who-asked-whom-about-what, not which words were used",
+    "without a replyTo anchor, content decides identity",
   );
+
+  const verbatim = msg({ payload: { question: "Is the idempotency design acceptable?" } });
+  assert.equal(fingerprintOf(first), fingerprintOf(verbatim), "a verbatim re-send is still a repeat");
 });
 
 test("loop detection: genuinely different work is not collapsed into a loop", () => {
@@ -172,12 +185,14 @@ test("loop detection: genuinely different work is not collapsed into a loop", ()
   );
 });
 
-test("loop detection: a paraphrasing agent now actually trips the conflict counter", () => {
+test("loop detection: a repeating agent still trips the conflict counter", () => {
   const state = createInitialState();
+  // Verbatim repeats: the counter must still see a real loop. (Paraphrases are
+  // deliberately not counted here — see the test above for why.)
   const wordings = [
     "Is the idempotency design acceptable?",
-    "Can you confirm the idempotency design is fine?",
-    "Just checking — is that idempotency approach OK with you?",
+    "Is the idempotency design acceptable?",
+    "Is the idempotency design acceptable?",
   ];
 
   let bumped = 0;
@@ -208,10 +223,14 @@ test("loop detection: answering a different request is not a repeat", () => {
     "a reply to a new request is new work even when the status narration rhymes",
   );
 
-  const rephrased = msg({ type: "INFORM", replyTo: "msg-request-A", payload: { status: "READY, still waiting" } });
-  assert.equal(
+  // `replyTo` alone does NOT make two messages the same act. One live mission
+  // sent three PATCH_READY messages anchoring the SAME request, carrying
+  // successive revisions (/2, /4, /6) of the same artifact — each superseding
+  // the last. Treating those as one repeat is what killed the mission.
+  const revised = msg({ type: "INFORM", replyTo: "msg-request-A", payload: { status: "READY, still waiting" } });
+  assert.notEqual(
     fingerprintOf(ready),
-    fingerprintOf(rephrased),
-    "re-answering the same request is still a repeat, however it is reworded",
+    fingerprintOf(revised),
+    "same request re-answered with different content is new information, not a repeat",
   );
 });

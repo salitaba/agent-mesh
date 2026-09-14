@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ago, dur, fmt, opsSummary, outcomeOf, plainReason, refusalSummary, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { rowKey, agentColor, AgentAvatar, Button, ErrorState } from "../components";
+import { rowKey, agentColor, AgentAvatar, Button, ErrorState, useNow } from "../components";
 
 /* The page is a ledger: one console strip on top (who is working, what the
    run has cost, who was busy when), one sticky toolbar (the outcome legend is
@@ -20,18 +20,8 @@ const FILTERS: { id: string; label: string }[] = [
   { id: "crashed", label: "Crashed" },
 ];
 
-/* ------------------------------ clock -------------------------------- */
-
-/** One shared ticking clock so live durations on the strip and in the ledger
-    move in step instead of each row running its own interval. */
-function useNow(ms: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(iv);
-  }, [ms]);
-  return now;
-}
+/* The shared ticking clock now lives in components.tsx — the events console
+   needs the same one, and two copies would drift on the interval. */
 
 /* ------------------------------ icons -------------------------------- */
 /* Drawn once, 12px, 1.5 stroke, currentColor — the ops a turn left behind. */

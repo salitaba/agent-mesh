@@ -485,7 +485,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .legend b { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
 
 /* ---------- events ---------- */
-.ev-filters { display: flex; gap: var(--s1-5); flex-wrap: wrap; margin-bottom: var(--s2-5); align-items: center; }
 .fchip { font: 11px var(--mono); border-radius: 14px; padding: var(--s0) var(--s2-5); cursor: pointer; }
 .fchip.on { color: var(--accent-2); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 /* --line is a 1.17:1 hairline against --bg-2. That is fine for dividing two
@@ -933,18 +932,6 @@ input.search { min-width: 220px; }
 .tcg-arg { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcg-res { grid-column: 3; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcg-more { padding: 5px 10px; font-size: 11px; }
-
-/* Event rail inside the step trace: a dot per row carries the event class so
-   the column reads as a timeline, not a table. */
-.ev-rail .ev time { display: inline-flex; align-items: center; gap: var(--s1-5); }
-.ev-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: 0 0 0 2px var(--drawer); }
-.ev-rail .ev.t-goal .ev-dot, .ev-rail .ev.t-lease .ev-dot { background: var(--info); }
-.ev-rail .ev.t-message .ev-dot { background: var(--accent-2); }
-.ev-rail .ev.t-artifact .ev-dot { background: var(--warn); }
-.ev-rail .ev.t-review .ev-dot, .ev-rail .ev.t-agent .ev-dot { background: var(--ok); }
-.ev-rail .ev.t-task .ev-dot { background: var(--text-dim); }
-.ev-rail .ev.t-budget .ev-dot { background: var(--muted); }
-.ev-rail .ev.t-bad .ev-dot, .ev-rail .ev.t-escalation .ev-dot { background: var(--bad); }
 
 /* ---------- live token stream (running step) ---------- */
 .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); flex: none; animation: blink 1.1s infinite; }
@@ -1740,4 +1727,223 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   .sv-tool-a, .sv-ev-q { display: none; }
   .sv-ev { grid-template-columns: 52px minmax(0, 1fr); }
   .sv-ev-t { display: none; }
+}
+
+/* ---------- events console ----------
+   Severity is the organising idea: one glyph, one stripe, one colour, used
+   identically in the stream, the thread list, the facet chips and the detail
+   header, so an alert looks like an alert wherever it turns up. Everything
+   else here is deliberately quiet — this page is read while something is going
+   wrong, and busy chrome competes with the thing you are trying to see. */
+
+.evc-filters { display: flex; gap: var(--s1-5); flex-wrap: wrap; align-items: center; margin-bottom: var(--s2-5); }
+.evc-facets { display: flex; gap: var(--s1); flex-wrap: wrap; align-items: center; }
+.evc-facets.evc-right { margin-left: auto; }
+.evc-actor-sel {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-control);
+  border-radius: 14px; padding: var(--s0) var(--s2); font: 11px var(--mono); cursor: pointer;
+}
+.evc-actor-sel:hover { border-color: var(--accent); }
+/* Tabular, so a count ticking 9 → 10 does not resize the chip mid-run. */
+.evc-n { margin-left: var(--s1); font-variant-numeric: tabular-nums; opacity: .75; }
+.evc-clear { color: var(--text-dim); }
+
+/* The severity facets read as their own severity even when off, so the row of
+   chips doubles as the legend for the stripes in the list below it. */
+.fchip.sev-alert { color: var(--bad); }
+.fchip.sev-alert.on { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.fchip.sev-notice.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.fchip.sev-routine { color: var(--muted); }
+.fchip.sev-routine.on { color: var(--text-dim); border-color: var(--line-strong); background: var(--panel-2); }
+
+.evc-thread-bar {
+  display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--r-sm); padding: var(--s1-5) var(--s2-5);
+  font-size: 12px; color: var(--text-dim); margin-bottom: var(--s2-5);
+}
+.evc-thread-bar code { font: 11px var(--mono); color: var(--accent-2); }
+
+/* ---- the split ---- */
+
+.evc { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.evc.split { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+.evc-stream, .evc-detail {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+/* Each pane scrolls on its own: reading a payload must not scroll the stream
+   away, and an arriving event must not drag the payload out from under you. */
+.evc-list { overflow-y: auto; max-height: calc(100vh - 300px); min-height: 220px; }
+.evc-detail { position: sticky; top: var(--s3); max-height: calc(100vh - 180px); overflow-y: auto; }
+
+.evc-new {
+  display: block; width: 100%; text-align: center; cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  border: 0; border-bottom: 1px solid var(--line);
+  color: var(--accent-2); font: 600 12px var(--sans); padding: var(--s2);
+}
+.evc-new:hover { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
+
+/* ---- rows ---- */
+
+.evc-bucket {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+  padding: var(--s1-5) var(--s2-5); font: 600 10px var(--mono);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+
+.evc-row {
+  display: grid; grid-template-columns: 14px 58px 104px minmax(0, 1fr) auto;
+  gap: var(--s2); align-items: baseline; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent; padding: 6px var(--s2-5) 6px var(--s2);
+  color: var(--text); font: 13px var(--sans);
+}
+.evc-row:hover { background: var(--panel-2); }
+.evc-row.on { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); border-left-color: var(--accent); }
+.evc-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.evc-row time { font: 11px var(--mono); color: var(--muted); }
+.evc-row .type { font: 600 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evc-row .summary { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evc-actor { font: 11px var(--mono); color: var(--muted); }
+.evc-glyph { font-size: 10px; line-height: 1.6; }
+
+/* The stripe carries severity at a glance; the glyph carries it for anyone the
+   colour does not reach. Neither is load-bearing alone. */
+.evc-row.sev-alert .evc-glyph, .evd-tr.sev-alert .evc-glyph { color: var(--bad); }
+.evc-row.sev-notice .evc-glyph { color: var(--accent-2); }
+.evc-row.sev-routine .evc-glyph { color: var(--muted); }
+.evc-row.sev-alert { border-left-color: var(--bad); background: color-mix(in srgb, var(--bad) 7%, transparent); }
+.evc-row.sev-alert:hover { background: color-mix(in srgb, var(--bad) 13%, transparent); }
+.evc-row.sev-alert .type { color: var(--bad); }
+.evc-row.sev-routine .type, .evc-row.sev-routine .summary { color: var(--muted); }
+.ev.sev-alert { border-left: 2px solid var(--bad); padding-left: 6px; }
+
+/* ---- folded runs of routine events ---- */
+
+.evc-fold { border-bottom: 1px solid var(--line); }
+.evc-foldbar {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-2); border: 0; padding: var(--s1-5) var(--s2-5);
+  font: 11px var(--mono); color: var(--text-dim);
+}
+.evc-foldbar:hover { background: var(--panel-2); color: var(--text); }
+.evc-foldbar .muted { margin-left: auto; }
+/* Expanded children sit inside the fold, so the indent says where they came from. */
+.evc-fold .evc-row { padding-left: var(--s5); }
+
+.linky { background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent-2); font: inherit; text-decoration: underline; }
+
+/* ---------- event detail pane ---------- */
+
+.evd { padding: var(--s3); }
+.evd-head { border-bottom: 1px solid var(--line); padding-bottom: var(--s2-5); margin-bottom: var(--s3); }
+.evd-title { display: flex; align-items: center; gap: var(--s2); }
+.evd-title h3 { margin: 0; font-size: 15px; }
+.evd-sev { font-size: 13px; }
+.evd-sev.sev-alert { color: var(--bad); }
+.evd-sev.sev-notice { color: var(--accent-2); }
+.evd-sev.sev-routine { color: var(--muted); }
+.evd-x { margin-left: auto; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: var(--s0) var(--s1); }
+.evd-x:hover { color: var(--text); }
+.evd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin-top: var(--s1-5); font-size: 12px; color: var(--muted); }
+.evd-seq, .evd-raw { font: 11px var(--mono); color: var(--text-dim); }
+.evd-sum { margin: var(--s2-5) 0 0; font-size: 13px; color: var(--text); }
+
+.evd-sec { margin-bottom: var(--s4); }
+.evd-sec h4, .jt-head h4 {
+  margin: 0 0 var(--s1-5); font: 600 10px var(--mono);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.evd-sec-head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s1-5); }
+.evd-sec-head h4 { margin-bottom: 0; margin-right: auto; }
+.evd-n { margin-left: var(--s1); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* An absent causation id is a fact about the emitter, not a failure of this
+   pane, and the copy says so — so it reads as prose, not as an error. */
+.evd-note { font-size: 12px; line-height: 1.5; margin: var(--s1) 0 0; }
+
+.evd-thread { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.evd-tr {
+  display: grid; grid-template-columns: 56px 96px minmax(0, 1fr); gap: var(--s2);
+  align-items: baseline; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-bottom: 1px solid var(--line);
+  padding: 5px var(--s2); color: var(--text); font: 13px var(--sans);
+}
+.evd-tr:last-child { border-bottom: 0; }
+.evd-tr:hover { background: var(--panel-2); }
+.evd-tr.on { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
+.evd-tr.sev-alert .type { color: var(--bad); }
+.evd-tr.sev-routine .type, .evd-tr.sev-routine .summary { color: var(--muted); }
+.evd-tr time { font: 11px var(--mono); color: var(--muted); }
+.evd-tr .type { font: 600 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evd-tr .summary { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.evd-ids { display: flex; flex-direction: column; gap: var(--s1); border-top: 1px solid var(--line); padding-top: var(--s2-5); }
+.evd-id { display: flex; align-items: center; gap: var(--s2); font-size: 12px; min-width: 0; }
+.evd-id .k { color: var(--muted); min-width: 84px; flex: none; font: 11px var(--mono); }
+.evd-id code { font: 11px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The copy button, whatever class the shared Button gives it. */
+.evd-id > :last-child { margin-left: auto; flex: none; }
+
+.evd-gone { display: flex; align-items: center; justify-content: center; min-height: 260px; }
+.evd-gone-body { text-align: center; max-width: 320px; padding: var(--s4); }
+.evd-gone-body .big { font: 600 22px var(--mono); color: var(--text-dim); margin-bottom: var(--s2); }
+.evd-gone-body p { margin: var(--s1-5) 0; font-size: 13px; }
+.evd-gone-body .muted { font-size: 12px; line-height: 1.5; }
+
+/* ---------- json tree ---------- */
+
+.jt { margin-bottom: var(--s4); }
+.jt-head { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s1-5); }
+.jt-head h4 { margin: 0; margin-right: auto; }
+.jt-actions { display: flex; align-items: center; gap: var(--s1); }
+.jt-body { border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s1-5) var(--s2); background: var(--bg-2); }
+
+/* Depth indent is applied inline per row, so the node is only a wrapper. */
+.jt-node { min-width: 0; }
+.jt-row { display: flex; align-items: baseline; gap: var(--s2); font: 12px var(--mono); padding: 1px 0; min-width: 0; }
+.jt-toggle { width: 100%; text-align: left; background: none; border: 0; cursor: pointer; color: inherit; border-radius: 3px; }
+.jt-toggle:hover { background: var(--panel-2); }
+.jt-caret { color: var(--muted); width: 9px; flex: none; }
+.jt-key { color: var(--text-dim); flex: none; }
+.jt-count { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jt-empty { color: var(--muted); font-style: italic; }
+.jt-none { padding: var(--s2-5); border: 1px dashed var(--line); border-radius: var(--r-sm); font: 12px var(--mono); color: var(--muted); }
+
+.jt-str { color: var(--ok); overflow-wrap: anywhere; }
+.jt-num { color: var(--warn); }
+.jt-bool { color: var(--accent-2); }
+.jt-null { color: var(--muted); }
+
+.jt-peek { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; color: inherit; min-width: 0; }
+.jt-peek:hover .jt-count { color: var(--accent-2); }
+.jt-full { display: block; min-width: 0; }
+.jt-block {
+  margin: var(--s1) 0; padding: var(--s2); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  font: 11px/1.5 var(--mono); color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto;
+}
+.jt-raw { max-height: 420px; }
+
+/* ---------- events console, narrow ---------- */
+
+@media (max-width: 860px) {
+  /* Below this width a split gives each half too little to read, so the detail
+     stops being a column and becomes a sheet over the stream. */
+  .evc.split { grid-template-columns: minmax(0, 1fr); }
+  .evc-detail {
+    position: fixed; inset: auto 0 0 0; z-index: 40;
+    max-height: 78vh; border-radius: var(--r) var(--r) 0 0;
+    box-shadow: 0 -12px 32px -16px rgba(0, 0, 0, .6);
+  }
+  .evc-list { max-height: calc(100vh - 260px); }
+  .evc-row { grid-template-columns: 12px 50px minmax(0, 1fr); row-gap: 0; }
+  .evc-row .type, .evc-row .summary { grid-column: 2 / -1; }
+  .evc-actor { display: none; }
+  .evd-tr { grid-template-columns: 50px minmax(0, 1fr); }
+  .evd-tr .type { grid-column: 1 / -1; }
+  .evc-facets.evc-right { margin-left: 0; }
 }

@@ -222,19 +222,36 @@ export function ToolCallGroups({ calls, perms }: { calls: ToolCall[]; perms?: Sa
 /* ---------- small shared bits ---------- */
 
 /** Copy button with its own two-second "copied" state. */
+/**
+ * `navigator.clipboard` is undefined on an http:// origin that is not
+ * localhost — precisely how this dashboard gets opened when the mesh runs on
+ * another box. Swallowing that made the button look merely broken, so the
+ * failure now says so and the title explains why.
+ */
 export function CopyBtn({ text }: { text: string }): React.JSX.Element {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<"idle" | "done" | "fail">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const go = async (): Promise<void> => {
+    let next: "done" | "fail" = "done";
     try {
       await navigator.clipboard.writeText(text);
-      setDone(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setDone(false), 2000);
-    } catch { /* clipboard unavailable */ }
+    } catch {
+      next = "fail";
+    }
+    setState(next);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 2000);
   };
-  return <Button variant="small" onClick={() => void go()}>{done ? "copied ✓" : "copy"}</Button>;
+  return (
+    <Button
+      variant="small"
+      onClick={() => void go()}
+      title={state === "fail" ? "The browser blocked clipboard access on this origin" : undefined}
+    >
+      {state === "done" ? "copied ✓" : state === "fail" ? "can't copy" : "copy"}
+    </Button>
+  );
 }
 
 export function textStats(s: string): string {

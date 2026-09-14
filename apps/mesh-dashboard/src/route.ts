@@ -13,7 +13,14 @@ export type View = (typeof VIEWS)[number];
 export const DEFAULT_VIEW: View = "overview";
 
 export interface RouteDetail {
-  kind: "step" | "agent";
+  /**
+   * `event` differs from the other two: it is not a drawer. The events console
+   * renders the selected event in its own right-hand pane, so the shell must
+   * leave it alone (see the detail switch in shell.tsx). It is in the URL for
+   * the same reason the others are — a specific event is the thing an operator
+   * wants to link someone to.
+   */
+  kind: "step" | "agent" | "event";
   id: string;
 }
 
@@ -37,7 +44,7 @@ function parseTail(segments: string[]): { view: View; detail?: RouteDetail } {
   const [v, kind, ...rest] = segments;
   const view = isView(v) ? v : DEFAULT_VIEW;
   const id = rest.join("/");
-  if ((kind === "step" || kind === "agent") && id) {
+  if ((kind === "step" || kind === "agent" || kind === "event") && id) {
     return { view, detail: { kind, id: safeDecode(id) } };
   }
   return { view };

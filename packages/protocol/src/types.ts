@@ -15,6 +15,17 @@ export type RuntimeTypeName = string;
 
 export type AgentMode = "peer" | "service";
 
+/**
+ * How much attention an event deserves in an operator-facing view.
+ *
+ * Derived from `EventType` through `EVENT_SEVERITY` rather than carried on the
+ * wire, for two reasons: `eventSchema` sets `additionalProperties: false`, so a
+ * new field on `MeshEvent` makes `JsonlEventStore.append` throw; and deriving it
+ * means every event already on disk gets a severity retroactively instead of
+ * only those emitted after the change.
+ */
+export type Severity = "alert" | "notice" | "routine";
+
 export type LifecycleState =
   | "STARTING"
   | "IDLE"
@@ -1018,6 +1029,12 @@ export interface AgentOutput {
   temperature?: number;
   toolCalls?: Array<{ name: string; args: unknown; resultDigest: string }>;
   summary?: string;
+  /**
+   * Turn summary the agent declared explicitly via the `done` op, as opposed to
+   * `summary`, which is scraped heuristically from the model's prose. Prefer this
+   * when present; scraping drifts per model.
+   */
+  declaredSummary?: string;
   turnId?: string;
   error?: string;
 }
@@ -1058,6 +1075,60 @@ export interface AgentRuntime {
   stop(session: AgentSession): Promise<void>;
   getStatus(session: AgentSession): Promise<AgentRuntimeStatus>;
   restoreSession?(agent: AgentDefinition, sessionId: string, context: RuntimeContext): Promise<AgentSession | null>;
+}
+
+/** One turn of designer conversation: persona and model, no mesh session. */
+export interface DesignerPromptOptions {
+  /** System prompt for this turn (persona/instructions). */
+  system?: string;
+  /** Per-call model override. Falls back to the runtime's default. */
+  model?: string;
+}
+
+export interface DesignerStreamDelta {
+  kind: "text" | "thinking";
+  delta: string;
+}
+
+export interface DesignerStreamResult {
+  reply: string;
+  thinking: string;
+}
+
+export interface ModelCatalogue {
+  models: string[];
+  default?: string;
+  error?: string;
+  variants?: Record<string, string[]>;
+}
+
+/**
+ * The designer's backend, kept deliberately separate from `AgentRuntime`.
+ *
+ * These are one-shot prompts with no mesh session, no capability grants and no
+ * bus identity — the designer is a human's chat partner while they build a
+ * mesh, not a seat inside one. Folding them into `AgentRuntime` would oblige
+ * every agent backend to answer questions it has no business answering, so
+ * they live here and a runtime opts in by implementing this as well.
+ *
+ * It exists as a port because `apps/mesh-server` previously held the concrete
+ * opencode adapter for exactly these five calls, which made the designer
+ * unreachable on any other backend.
+ */
+export interface DesignerRuntime {
+  prompt(text: string, opts?: DesignerPromptOptions): Promise<string>;
+  promptStream(
+    text: string,
+    opts?: DesignerPromptOptions,
+    onDelta?: (delta: DesignerStreamDelta) => void,
+  ): Promise<DesignerStreamResult>;
+  listModels(): Promise<ModelCatalogue>;
+  /**
+   * Late-bind the bus locator. The HTTP server only learns its port at listen
+   * time, which is after the designer backend is constructed.
+   */
+  setDesignerObserve(provider: () => { busUrl: string; token: string } | undefined): void;
+  stopAll(): Promise<void>;
 }
 
 export interface AgentContextBundle {
