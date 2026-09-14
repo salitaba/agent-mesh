@@ -4,16 +4,25 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, p
 import { evClass, evSummary } from "./events";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, agentColor, type TabDef } from "./components";
-import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, ToolCallGroups, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
+import { EventRow, StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, Tabs, TextArea, agentColor } from "./components";
+import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, parsePartialOps, vitalsOf, type TurnPhases } from "./vitals";
-import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks, useTick } from "./observability";
+import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks } from "./observability";
+import { EventRows, Inspector, OpLedger, Prose, StepJump, ToolRows, type Section, type Sel } from "./stepview";
 
 export function CloseX({ extra }: { extra?: string } = {}): React.JSX.Element {
-  const { closeDrawer } = useMesh();
+  const { closeDrawer, closeDetail, drawerDepth } = useMesh();
+  // A deep-linked step or agent lives in `detail`, not in the drawer stack, so
+  // popping the stack was a no-op and the × did nothing on exactly the URLs
+  // people share. Mirror the shell's own Esc/scrim handler: pop a stacked
+  // panel if there is one, otherwise close the URL-backed detail.
+  const close = (): void => {
+    if (drawerDepth > 0) closeDrawer();
+    else closeDetail();
+  };
   return (
-    <button type="button" className={`close-x${extra ? ` ${extra}` : ""}`} aria-label="Close panel" title="Close (Esc)" onClick={closeDrawer}>
+    <button type="button" className={`close-x${extra ? ` ${extra}` : ""}`} aria-label="Close panel" title="Close (Esc)" onClick={close}>
       <span aria-hidden="true">×</span>
     </button>
   );
@@ -599,15 +608,18 @@ export function matchOpEffects(ops: any[], timeline: any[]): OpRow[] {
 }
 
 export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }): React.JSX.Element {
-  const { toast, openDrawer, events, client } = useMesh();
+  const { toast, openDrawer, openDetail, events, client } = useMesh();
   const { streams } = useMeshStreams();
   const [json, setJson] = useState<any>(null);
   const [copied, setCopied] = useState(false);
+  const [sel, setSel] = useState<Sel>(null);
+  // The drawer, not the window, is the scroll container the jump nav observes.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
-  // Empty means "whatever the turn's own state says is most useful" — see the
-  // tab resolver below. Set only when the reader picks a section themselves.
-  const [section, setSection] = useState("");
+  useEffect(() => { setScroller(document.getElementById("drawer")); }, []);
+  // A different turn is a different subject: keep no stale selection across it.
+  useEffect(() => { setSel(null); }, [turnId]);
   useEffect(() => {
     let dead = false;
     const load = async (): Promise<boolean> => {
@@ -689,8 +701,6 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const summaryIsOps = typeof t.summary === "string" && /^\s*[\[{]/.test(t.summary) && t.summary.includes('"op"');
   const opRows = ops ? matchOpEffects(ops, timeline) : null;
   const landedCount = opRows ? opRows.filter((r) => r.fx).length : 0;
-  // The Steps list already carries exact op counters; prefer them over the
-  // drawer's "how many ops landed" heuristic when the turn is in that list.
   const showSplit = typeof t.tokensInput === "number" && typeof t.tokensOutput === "number"
     && t.tokensInput >= 100 && (t.tokensInput + t.tokensOutput) >= (t.tokens ?? 0) * 0.3;
   // Phase marks are live-only; a turn evicted from the server's ring has none,
@@ -707,27 +717,11 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const base = baselineOf(steps || [], t.agentId);
   const links = causalLinks(turnId, events || [], steps || []);
   const partial = isRunning ? parsePartialOps(liveText) : null;
-  const openStepDrawer = (id: string): void => openDrawer(<StepDrawer turnId={id} steps={steps} />);
-  const openEvent = (seq: number): void => openDrawer(<EventDrawerBySeq seq={seq} />);
   const toolCalls: any[] = Array.isArray(t.toolCallsDetail) ? t.toolCallsDetail : [];
-
-  // One section is open at a time. The running turn owns "now"; when it ends
-  // that tab disappears and the resolver falls through to "result", so a
-  // drawer left open across the finish line lands on the outcome by itself.
-  const tabs: TabDef[] = [
-    isRunning
-      ? { id: "now", label: "Now", hint: "what the model is producing this second" }
-      : { id: "result", label: "Result", hint: "the operations this step committed, and whether they landed", badge: opRows ? `${landedCount}/${opRows.length}` : undefined },
-    ...(t.instructions ? [{ id: "brief", label: "Brief", hint: "the exact instructions this agent was handed" } as TabDef] : []),
-    { id: "trace", label: "Trace", hint: "where the time went, and every event this step produced", badge: timeline.length || undefined },
-    { id: "raw", label: "Raw", hint: "unparsed model output and the turn record" },
-  ];
-  const tab = tabs.some((x) => x.id === section) ? section : tabs[0].id;
 
   const attempt = t.attempt ?? listStep?.attempt;
   const inShare = showSplit ? Math.round((t.tokensInput / Math.max(1, t.tokensInput + t.tokensOutput)) * 100) : null;
   const durText = isRunning ? (elapsed !== null ? `${elapsed}s` : "—") : (t.durationMs != null ? dur(t.durationMs) : "—");
-  const hasKpis = t.tokens != null || t.durationMs != null || isRunning || t.toolCalls || opRows;
   // Outcome-shaped state: raw "waiting" reads like "stuck", so the status
   // block classifies the turn and always answers why and what happens next.
   const outcomeInput: OutcomeInput = {
@@ -742,238 +736,182 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
     ? t.reason.note.trim()
     : (summaryIsOps ? "" : (typeof t.summary === "string" ? t.summary.trim() : ""))
       || (outcome === "crashed" ? String(t.error ?? t.errorDetail ?? "") : "");
-  const stepRow = (e: any): React.JSX.Element => (
-    <div className={`ev ${evClass(e.type)}`} key={e.seq ?? e.id} data-seq={e.seq} role={e.seq != null ? "button" : undefined} tabIndex={e.seq != null ? 0 : undefined} onClick={() => e.seq != null && openEvent(e.seq)} onKeyDown={rowKey(() => { if (e.seq != null) openEvent(e.seq); })}>
-      <time><i className="ev-dot" aria-hidden="true" />{hhmmss(e.at)}</time><span className={`type ${evClass(e.type)}`}>{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
-    </div>
-  );
+
+  // Prev/next walk the same list the Steps view shows, and move the URL rather
+  // than stacking a panel, so Back and a shared link both stay honest.
+  const idx = (steps || []).findIndex((s: any) => s.turnId === turnId);
+  const goStep = (d: number): void => {
+    const n = (steps || [])[idx + d];
+    if (n) openDetail("step", n.turnId);
+  };
+
+  // Only offer a jump target for a section that actually rendered.
+  const sections: Section[] = [
+    ...(isRunning || t.text || t.summary ? [{ id: "sv-reasoning", label: "Reasoning" }] : []),
+    { id: "sv-outcome", label: "Outcome", n: opRows ? opRows.length : undefined },
+    ...(toolCalls.length ? [{ id: "sv-tools", label: "Tools", n: toolCalls.length }] : []),
+    { id: "sv-events", label: "Events", n: timeline.length || undefined },
+    ...(t.instructions ? [{ id: "sv-brief", label: "Brief" }] : []),
+    { id: "sv-raw", label: "Raw" },
+  ];
 
   return (
-    <>
-      <header className="stepd-head">
-        <div className="stepd-title">
-          <AgentAvatar id={t.agentId || "?"} color={agentColor(t.agentId || "?")} />
-          <div className="stepd-who">
-            <b>{(t.agentId || "step")}</b>
-            <span className="stepd-id mono" title={turnId}>turn-{shortTurn(turnId)} · {ago(t.startedAt || "")}{elapsed !== null ? ` · ${elapsed}s` : ""}</span>
+    <div className="stepv">
+      <header className="sv-head">
+        <div className="sv-topbar">
+          <div className="sv-walk">
+            <Button variant="ghost" disabled={idx < 1} onClick={() => goStep(-1)} title="Newer step in this list">‹</Button>
+            <span className="sv-walk-n mono">{idx >= 0 ? `${idx + 1} of ${(steps || []).length}` : "—"}</span>
+            <Button variant="ghost" disabled={idx < 0 || idx >= (steps || []).length - 1} onClick={() => goStep(1)} title="Older step in this list">›</Button>
           </div>
-          <span className={`sstat-badge sstat-${state.tone}`} title={state.headline}>{state.label}</span>
           <CloseX />
         </div>
-        <p className="stepd-ctx muted">{(plainReason(t.reason?.kind))}{attempt != null && attempt > 1 ? ` · attempt ${attempt}` : ""}</p>
-        <Tabs idPrefix="step" label="step sections" tabs={tabs} value={tab} onChange={setSection} />
+        <div className="sv-ident">
+          <AgentAvatar id={t.agentId || "?"} color={agentColor(t.agentId || "?")} />
+          <div className="sv-who">
+            {/* The dialog's aria-labelledby points here; without this id the
+                loaded step announced only the generic "Details panel". */}
+            <b id="drawer-title">{(t.agentId || "step")}</b>
+            <span className="sv-id mono" title={turnId}>turn-{shortTurn(turnId)} · {ago(t.startedAt || "")}</span>
+          </div>
+          <span className={`sstat-badge sstat-${state.tone}`} title={state.headline}>{state.label}</span>
+        </div>
+        <p className="sv-why">
+          <span className="sv-why-k">{(plainReason(t.reason?.kind))}</span>
+          {t.reason?.eventType ? <span className="sv-why-x mono">{t.reason.eventType}</span> : null}
+          {attempt != null && attempt > 1 ? <span className="sv-why-a">attempt {attempt}</span> : null}
+        </p>
+        <div className="sv-metrics">
+          <span title="wall clock for this turn">{durText}</span>
+          <span title={showSplit ? `in ${fmt(t.tokensInput)} · out ${fmt(t.tokensOutput)}` : "total tokens"}>
+            {t.tokens != null ? `${fmt(t.tokens)} tok` : "— tok"}
+            {inShare !== null ? <i className="sv-split" aria-hidden="true"><b style={{ width: `${inShare}%` }} /></i> : null}
+          </span>
+          <span title="tool calls made">{t.toolCalls ?? toolCalls.length ?? 0} tools</span>
+          <span className={opRows && landedCount < opRows.length ? "part" : undefined} title="actions recorded in the event log">
+            {opRows ? `${landedCount}/${opRows.length} landed` : "— landed"}
+          </span>
+          {t.model ? <span className="mono sv-model" title={t.model}>{t.model}</span> : null}
+        </div>
+        <StepJump sections={sections} scroller={scroller} />
       </header>
 
-      {/* Above the fold on every tab: did it crash. Outcome, environment and
-          cost live with their tabs — Result answers what happened, Trace how. */}
-      <ErrorPanel err={t.errorDetail ?? listStep?.errorDetail} fallback={t.error} />
+      <div className="sv-body">
+        <div className="sv-main">
+          {/* Loudest thing on the page when it exists, absent otherwise. */}
+          <ErrorPanel err={t.errorDetail ?? listStep?.errorDetail} fallback={t.error} />
 
-      <TabPanel idPrefix="step" id={tab}>
-        {tab === "now" ? (
-          <>
-            <VitalsStrip v={vitals} model={t.model} attempt={t.attempt ?? listStep?.attempt} />
-            <PhaseRail phases={phases} running />
-            {partial ? <LiveOps ops={partial.ops} writing={partial.writing} heads={opHead} /> : null}
-            {partial?.prose ? (
-              <section className="step-sec">
-                <h4>Its reasoning</h4>
-                <p className="live-prose">{partial.prose.slice(-1200)}</p>
-              </section>
-            ) : null}
-            <LiveStream text={liveText} hasInstructions={Boolean(t.instructions)} copyOutput={copyOutput} copied={copied} />
-          </>
-        ) : null}
-
-        {tab === "result" ? (
-          <>
-            <StepStatusBlock outcome={outcome} status={t.status || "running"} produced={produced} why={why} attempt={attempt} />
-            {t.summary && !summaryIsOps ? (
-              <section className="step-sec">
-                <div className="sec-head">
-                  <h4>Reported by agent</h4>
-                  <span className="sec-stat">narration · not verified</span>
-                </div>
-                <p className="step-say">{(t.summary)}</p>
-              </section>
-            ) : null}
-            <section className="step-sec">
-              <div className="sec-head">
-                <h4>Verified by system</h4>
-                {opRows ? (
-                  <span className={`sec-tally${landedCount < opRows.length ? " part" : ""}`}>
-                    {landedCount} of {opRows.length} recorded
-                  </span>
-                ) : null}
-              </div>
-              {opRows ? (
-                <div className="op-list">{opRows.map((r, i) => (
-                  <div className={`op ${r.fx === undefined ? "op-na" : r.fx ? "op-landed" : "op-nofx"}`} key={i}>
-                    <span className="op-idx mono" aria-hidden="true">{i + 1}</span>
-                    <div className="op-body">
-                      <div className="op-head">
-                        <span className="op-name">{r.head.title}</span>
-                        {r.fx === undefined ? null : r.fx ? <span className="op-ok" title="effect recorded in the event log">recorded</span> : <span className="op-miss" title="no matching effect in the event log">not recorded</span>}
-                      </div>
-                      {r.head.detail ? <div className="op-detail">{r.head.detail}</div> : null}
-                      {r.fx ? (
-                        <div className="op-fx">
-                          {(r.fx.type === "artifact.created" || r.fx.type === "artifact.versioned") && (r.fx.payload as any)?.artifact?.id ? (
-                            <Button variant="linklike" onClick={() => openDrawer(<ArtifactDrawer id={(r.fx.payload as any).artifact.id} />)}>
-                              open {(r.fx.payload as any).artifact.name} v{(r.fx.payload as any).artifact.version} →
-                            </Button>
-                          ) : (
-                            <Button variant="linklike" onClick={() => r.fx.seq != null && openEvent(r.fx.seq)}>
-                              see the recorded {plainEvent(r.fx.type)} #{r.fx.seq} →
-                            </Button>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}</div>
-              ) : (
-                <div className="step-empty">
-                  {t.text ? (
-                    <>
-                      <b>This output isn't an ops block.</b>
-                      <span>The model wrote prose instead of operations, so nothing could be applied. Read it under <b>Raw</b>.</span>
-                      <Button variant="small" onClick={() => setSection("raw")}>open raw output →</Button>
-                    </>
-                  ) : (
-                    <>
-                      <b>No operations were recorded.</b>
-                      <span>This step ended without attempting anything, or it left the recent-turn window — a server restart, or over 200 turns ago.</span>
-                    </>
-                  )}
-                </div>
-              )}
+          {isRunning ? (
+            <section className="sv-sec sv-live">
+              <VitalsStrip v={vitals} model={t.model} attempt={attempt} />
+              {partial ? <LiveOps ops={partial.ops} writing={partial.writing} heads={opHead} /> : null}
+              <LiveStream text={liveText} hasInstructions={Boolean(t.instructions)} copyOutput={copyOutput} copied={copied} />
             </section>
-            <section className="step-sec">
-              <div className="sec-head">
-                <h4>Execution timeline</h4>
-                <span className="sec-stat mono">{timeline.length} events</span>
-              </div>
-              {timeline.length ? (
-                <>
-                  <div className="ev-list ev-rail">{timeline.slice(0, 8).map(stepRow)}</div>
-                  {timeline.length > 8 ? <Button variant="linklike" onClick={() => setSection("trace")}>all {timeline.length} events in Trace →</Button> : null}
-                </>
-              ) : (
-                <div className="step-empty">
-                  <b>No linked events.</b>
-                  <span>Either this step changed nothing, or it is older than the live log window.</span>
-                </div>
-              )}
-            </section>
-            {hasKpis ? (
-              <div className="exec-foot">
-                <span className="sec-stat mono">
-                  {t.tokens != null ? `${fmt(t.tokens)} tokens` : "no tokens"} · {durText} · {toolCalls.length} tools · {opRows ? `${landedCount}/${opRows.length}` : "—"} actions
-                </span>
-              </div>
-            ) : null}
-          </>
-        ) : null}
+          ) : null}
 
-        {tab === "brief" ? (
-          <section className="step-sec">
-            <div className="sec-head">
-              <h4>What it was asked to do</h4>
-              <span className="sec-tools"><span className="sec-stat mono">{textStats(String(t.instructions))}</span><CopyBtn text={String(t.instructions)} /></span>
+          {sections.some((s) => s.id === "sv-reasoning") ? (
+            <section className="sv-sec" id="sv-reasoning">
+              <div className="sv-sec-h"><h4>Reasoning</h4><span className="sv-sec-n">narration · not verified</span></div>
+              {partial?.prose ? <Prose>{partial.prose.slice(-2000)}</Prose> : null}
+              {t.summary && !summaryIsOps ? <Prose>{t.summary}</Prose> : null}
+              {!partial?.prose && (!t.summary || summaryIsOps) ? <Prose dim>The model wrote no prose for this turn — only operations. Its output is under Raw.</Prose> : null}
+            </section>
+          ) : null}
+
+          <section className="sv-sec" id="sv-outcome">
+            <div className="sv-sec-h">
+              <h4>Outcome</h4>
+              {opRows ? <span className={`sv-sec-n${landedCount < opRows.length ? " part" : ""}`}>{landedCount} of {opRows.length} recorded</span> : null}
             </div>
-            <p className="sec-note muted">The prompt the runtime assembled for this turn, inbox and all.</p>
-            <pre className="token-stream">{(String(t.instructions).slice(0, 8000))}{String(t.instructions).length > 8000 ? "\n… [truncated at 8k chars — copy for the full text]" : ""}</pre>
-          </section>
-        ) : null}
-
-        {tab === "trace" ? (
-          <>
-            <CausalRail links={links} onTurn={openStepDrawer} onEvent={openEvent} />
-            <PhaseRail phases={phases} running={isRunning} />
-            <OpLatency timings={t.opTimings ?? listStep?.opTimings} />
-            <details className="stepd-env">
-              <summary>
-                <span className="sec-label">Environment &amp; execution</span>
-                <span className="stepd-env-line">{(envLine(sbx.perms) ?? (sbx.perms === null ? "loading…" : "not available"))}</span>
-              </summary>
-              <div className="stepd-env-body">
-                <SandboxStrip perms={sbx.perms ?? undefined} runtime={sbx.runtime} loading={sbx.perms === null} />
-                {hasKpis ? (
-                  <div className="stepd-kpis">
-                    <div className="kpi">
-                      <span className="kpi-l">tokens</span>
-                      <span className="kpi-v">{t.tokens != null ? fmt(t.tokens) : "—"}{t.tokens ? <BaselineChip value={t.tokens} base={base} kind="tokens" /> : null}</span>
-                      {showSplit && inShare !== null ? (
-                        <>
-                          <span className="kpi-bar" aria-hidden="true"><i style={{ width: `${inShare}%` }} /></span>
-                          <span className="kpi-s">in {fmt(t.tokensInput)} · out {fmt(t.tokensOutput)}</span>
-                        </>
-                      ) : <span className="kpi-s">{t.tokensInput != null ? "incl. reasoning" : "\u00a0"}</span>}
-                    </div>
-                    <div className="kpi">
-                      <span className="kpi-l">{isRunning ? "elapsed" : "duration"}</span>
-                      <span className="kpi-v">{durText}{!isRunning && t.durationMs != null ? <BaselineChip value={t.durationMs} base={base} kind="duration" /> : null}</span>
-                      <span className="kpi-s">{base.n ? `vs ${dur(base.medianDurationMs)} typical (n=${base.n})` : "\u00a0"}</span>
-                    </div>
-                    <div className="kpi">
-                      <span className="kpi-l">tool calls</span>
-                      <span className="kpi-v">{t.toolCalls ?? toolCalls.length ?? 0}</span>
-                      <span className="kpi-s">{toolCalls.length ? `${new Set(toolCalls.map((c: any) => String(c.name ?? ""))).size} distinct` : "\u00a0"}</span>
-                    </div>
-                    <div className={`kpi${opRows && landedCount < opRows.length ? " kpi-part" : ""}`}>
-                      <span className="kpi-l">actions completed</span>
-                      <span className="kpi-v">{opRows ? `${landedCount}/${opRows.length}` : isRunning && partial ? `${partial.ops.length}…` : "—"}</span>
-                      <span className="kpi-s stepd-model mono" title={t.model}>{t.model || "\u00a0"}</span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </details>
-            {toolCalls.length ? (
-              <section className="step-sec">
-                <div className="sec-head">
-                  <h4>Tool calls</h4>
-                  <span className="sec-stat mono">{toolCalls.length}</span>
-                </div>
-                <ToolCallGroups calls={toolCalls} perms={sbx.perms ?? undefined} />
-              </section>
-            ) : null}
-            <section className="step-sec">
-              <div className="sec-head">
-                <h4>What happened</h4>
-                <span className="sec-stat mono">{timeline.length}</span>
-              </div>
-              {timeline.length ? (
-                <div className="ev-list ev-rail">{timeline.map(stepRow)}</div>
-              ) : (
+            <StepStatusBlock outcome={outcome} status={t.status || "running"} produced={produced} why={why} attempt={attempt} />
+            {opRows
+              ? <OpLedger rows={opRows} sel={sel} onSelect={setSel} />
+              : (
                 <div className="step-empty">
-                  <b>No linked events.</b>
-                  <span>Either this step changed nothing, or it is older than the live log window.</span>
+                  {t.text
+                    ? <><b>This output isn't an ops block.</b><span>The model wrote prose instead of operations, so nothing could be applied.</span></>
+                    : <><b>No operations were recorded.</b><span>This step ended without attempting anything, or it left the recent-turn window.</span></>}
                 </div>
               )}
-            </section>
-          </>
-        ) : null}
+            <OpLatency timings={t.opTimings ?? listStep?.opTimings} />
+          </section>
 
-        {tab === "raw" ? (
-          <>
-            <section className="step-sec">
-              <div className="sec-head">
-                <h4>Model output</h4>
-                {t.text || liveText ? <span className="sec-tools"><span className="sec-stat mono">{textStats(String(t.text || liveText))}</span><Button variant="small" onClick={() => void copyOutput()}>{copied ? "copied ✓" : "copy"}</Button></span> : null}
+          {toolCalls.length ? (
+            <section className="sv-sec" id="sv-tools">
+              <div className="sv-sec-h">
+                <h4>Tools</h4>
+                <span className="sv-sec-n mono">{new Set(toolCalls.map((c: any) => String(c.name ?? ""))).size} distinct</span>
               </div>
+              <ToolRows calls={toolCalls} perms={sbx.perms ?? undefined} sel={sel} onSelect={setSel} />
+            </section>
+          ) : null}
+
+          <section className="sv-sec" id="sv-events">
+            <div className="sv-sec-h"><h4>Events</h4><span className="sv-sec-n mono">{timeline.length}</span></div>
+            {timeline.length
+              ? <EventRows rows={timeline} sel={sel} onSelect={setSel} t0={t.startedAt} />
+              : <div className="step-empty"><b>No linked events.</b><span>Either this step changed nothing, or it is older than the live log window.</span></div>}
+            <CausalRail links={links} onTurn={(id: string) => openDetail("step", id)} onEvent={(seq: number) => setSel({ kind: "event", seq })} />
+          </section>
+
+          {t.instructions ? (
+            <section className="sv-sec" id="sv-brief">
+              <div className="sv-sec-h">
+                <h4>Brief</h4>
+                <span className="sec-tools"><span className="sv-sec-n mono">{textStats(String(t.instructions))}</span><CopyBtn text={String(t.instructions)} /></span>
+              </div>
+              <details className="sv-fold">
+                <summary>the prompt the runtime assembled for this turn, inbox and all</summary>
+                <pre className="token-stream">{(String(t.instructions).slice(0, 8000))}{String(t.instructions).length > 8000 ? "\n… [truncated at 8k chars — copy for the full text]" : ""}</pre>
+              </details>
+            </section>
+          ) : null}
+
+          <section className="sv-sec" id="sv-raw">
+            <div className="sv-sec-h">
+              <h4>Raw</h4>
+              {t.text || liveText ? <span className="sec-tools"><span className="sv-sec-n mono">{textStats(String(t.text || liveText))}</span><Button variant="small" onClick={() => void copyOutput()}>{copied ? "copied ✓" : "copy"}</Button></span> : null}
+            </div>
+            <details className="sv-fold">
+              <summary>model output</summary>
               {t.text || liveText
                 ? <pre className="token-stream">{(t.text || liveText)}</pre>
                 : <div className="step-empty"><b>Nothing captured.</b><span>No text was stored for this turn.</span></div>}
-            </section>
-            <details className="esc-raw">
+            </details>
+            <details className="sv-fold">
               <summary>turn record (JSON)</summary>
               <pre>{(JSON.stringify({ turn: { ...t, text: t.text ? `${String(t.text).slice(0, 500)}… [truncated in details]` : t.text } }, null, 2).slice(0, 4000))}</pre>
             </details>
-          </>
-        ) : null}
-      </TabPanel>
-    </>
+            <details className="sv-fold">
+              <summary>environment &amp; execution</summary>
+              <div className="stepd-env-body">
+                <SandboxStrip perms={sbx.perms ?? undefined} runtime={sbx.runtime} loading={sbx.perms === null} />
+                <p className="sv-sec-n">{(envLine(sbx.perms) ?? (sbx.perms === null ? "loading…" : "not available"))}</p>
+                {t.tokens != null || t.durationMs != null ? (
+                  <div className="sv-base">
+                    {t.tokens ? <span>tokens <BaselineChip value={t.tokens} base={base} kind="tokens" /></span> : null}
+                    {!isRunning && t.durationMs != null ? <span>duration <BaselineChip value={t.durationMs} base={base} kind="duration" /></span> : null}
+                    {base.n ? <span className="muted">vs {dur(base.medianDurationMs)} typical (n={base.n})</span> : null}
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          </section>
+        </div>
+
+        <aside className="sv-side">
+          <PhaseRail phases={phases} running={isRunning} />
+          <Inspector
+            sel={sel}
+            toolCalls={toolCalls}
+            opRows={opRows}
+            timeline={timeline}
+            onClose={() => setSel(null)}
+            onArtifact={(id: string) => openDrawer(<ArtifactDrawer id={id} />)}
+          />
+        </aside>
+      </div>
+    </div>
   );
 }
 

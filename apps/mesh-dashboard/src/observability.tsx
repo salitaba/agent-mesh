@@ -85,36 +85,36 @@ function Vital({ label, value, hint, warn, bad, lead }: { label: string; value: 
 const LEG_CLS: Record<string, string> = { prep: "lg-prep", wait: "lg-wait", stream: "lg-stream", ops: "lg-ops" };
 
 /**
- * Proportional breakdown of one turn. "12s" tells you nothing; "11s waiting on
- * the model, 0.4s applying changes" tells you where to look.
+ * A trace of one turn. Each leg is a row whose track begins where that leg
+ * actually began, so horizontal position reads as sequence and length as
+ * duration. "12s" tells you nothing; seeing that eleven of them were one
+ * unbroken bar tells you where to look.
  */
 export function PhaseRail({ phases, running }: { phases?: TurnPhases; running: boolean }): React.JSX.Element | null {
   useTick(500, running);
   const legs = phaseLegs(phases, running);
   if (legs.length < 2) return null;
-  const total = legs.reduce((a, l) => a + l.ms, 0) || 1;
+  const span = Math.max(...legs.map((l) => l.offset + l.ms)) || 1;
   const worst = slowestLeg(legs);
   return (
     <div className="prail">
-      <div className="prail-bar">
-        {legs.map((l: PhaseLeg) => (
-          <div
-            key={l.key}
-            className={`prail-seg ${LEG_CLS[l.key] ?? ""}${l.open ? " open" : ""}`}
-            style={{ width: `${(l.ms / total) * 100}%` }}
-            title={`${l.label} — ${dur(l.ms)} · ${l.hint}`}
-          />
-        ))}
-      </div>
-      <div className="prail-keys">
-        {legs.map((l) => (
-          <span key={l.key} className={`prail-key ${LEG_CLS[l.key] ?? ""}`}>
-            <i />
-            {l.label} <b>{dur(l.ms)}</b>
+      {legs.map((l: PhaseLeg) => (
+        <div
+          key={l.key}
+          className={`prail-row ${LEG_CLS[l.key] ?? ""}${l === worst ? " top" : ""}`}
+          title={`${l.label} — ${dur(l.ms)} · ${l.hint}`}
+        >
+          <span className="prail-name">{l.label}</span>
+          <span className="prail-track">
+            <span
+              className={`prail-fill${l.open ? " open" : ""}`}
+              style={{ left: `${(l.offset / span) * 100}%`, width: `${(l.ms / span) * 100}%` }}
+            />
           </span>
-        ))}
-      </div>
-      {worst && worst.ms / total > 0.6 ? (
+          <b className="prail-ms">{dur(l.ms)}</b>
+        </div>
+      ))}
+      {worst && worst.ms / span > 0.6 ? (
         <div className="prail-verdict muted">
           Most of this turn was <b>{worst.label}</b> — {worst.hint}.
         </div>

@@ -1170,22 +1170,28 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .vital.bad b { color: var(--bad); }
 .vitals-detail { font-size: 12px; color: var(--text-dim); flex: 1 1 100%; }
 
+/* One chart, not a chart plus a legend. Each leg is a row whose track starts
+   where the leg actually started, so horizontal position reads as sequence and
+   length as duration — the two facts the old bar/legend split made you
+   reconstruct from hue alone, which failed for prep vs wait (both neutral greys
+   a few percent apart). Colour now carries identity only; emphasis carries
+   size, and the swatch dot is gone because the row's own fill is the swatch. */
 .prail { margin: 0 0 var(--s5); }
-.prail-bar { display: flex; height: 8px; border-radius: 20px; overflow: hidden; background: var(--sunken); }
-.prail-seg { min-width: 2px; transition: width .3s ease; }
-.prail-seg.open { animation: pulse-soft 1.6s ease-in-out infinite; }
-.lg-prep   { background: var(--phase-prep); }
-.lg-wait   { background: var(--phase-wait); }
-.lg-stream { background: var(--accent); }
-.lg-ops    { background: var(--ok); }
-.prail-keys { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 7px; }
-.prail-key { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
-.prail-key i { width: 8px; height: 8px; border-radius: 3px; background: currentColor; }
-.prail-key.lg-prep i { background: var(--phase-prep); }
-.prail-key.lg-wait i { background: var(--phase-wait); }
-.prail-key.lg-stream i { background: var(--accent); }
-.prail-key.lg-ops i { background: var(--ok); }
-.prail-key b { color: var(--text); font: 600 11px var(--mono); }
+.prail-row { display: grid; grid-template-columns: 116px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 1px 0; }
+.prail-name { font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prail-track { position: relative; height: 10px; border-radius: 3px; background: var(--sunken); }
+.prail-fill { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 3px; background: var(--leg, var(--text-dim)); transition: left .3s ease, width .3s ease; }
+.prail-fill.open { animation: pulse-soft 1.6s ease-in-out infinite; }
+.prail-ms { font: 600 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-dim); text-align: right; white-space: nowrap; }
+/* The longest leg is the answer to "why was this slow", so it is the only row
+   that runs at full strength; the others recede instead of competing with it.
+   tabular-nums above is load-bearing: useTick(500) rewrites these digits twice
+   a second, and proportional numerals reflow the column as they change. */
+.prail-row.top .prail-name, .prail-row.top .prail-ms { color: var(--text); }
+.lg-prep   { --leg: var(--phase-prep); }
+.lg-wait   { --leg: var(--phase-wait); }
+.lg-stream { --leg: var(--accent); }
+.lg-ops    { --leg: var(--ok); }
 .prail-verdict { font-size: 11.5px; margin-top: var(--s1-5); color: var(--text-dim); }
 @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
 
@@ -1556,3 +1562,176 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .host-empty code { font: 500 12.5px var(--mono); padding: 1px 5px; border-radius: var(--r-sm);
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
 .host-empty .host-empty-alt { font-size: 12.5px; }
+
+
+/* ---------- step view: wide, single-scroll, inspector ----------
+   Replaces the five-tab step drawer. The reader's four jobs — follow the
+   reasoning, debug the failure, audit the tool calls, move between turns —
+   were mutually exclusive under tabs; here they share one scroll and a sticky
+   inspector column. `sv-` prefix: `stepd-` still dresses the skeleton and the
+   two not-found branches, and `step-` belongs to the Steps list cards. */
+
+/* Only a step earns the wide drawer; message/decide/artifact panels keep the
+   reading width they were designed for. */
+.drawer:has(.stepv) { width: min(1180px, 96vw); }
+
+.stepv { display: flex; flex-direction: column; min-height: 0; }
+
+/* --- header --- */
+.sv-head {
+  position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-sticky);
+  margin: calc(var(--s5) * -1) -22px 0; padding: var(--s4) 22px var(--s2);
+  background: color-mix(in srgb, var(--drawer) 93%, transparent); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.sv-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.sv-walk { display: flex; align-items: center; gap: var(--s1); }
+.sv-walk-n { font-size: 11px; color: var(--muted); min-width: 78px; text-align: center; }
+.sv-ident { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; margin-top: var(--s1); }
+.sv-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.15; }
+.sv-who b { font-size: 18px; letter-spacing: -.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-id { font-size: 10.5px; color: var(--muted); letter-spacing: .02em; }
+
+.sv-why { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 0 38px; font-size: 12px; color: var(--text-dim); }
+.sv-why-k { color: var(--text-dim); }
+.sv-why-x { font-size: 10.5px; color: var(--muted); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 6px; }
+.sv-why-a { font-size: 10.5px; color: var(--warn); }
+
+.sv-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s4); margin: var(--s2-5) 0 0 38px; font-size: 12px; color: var(--text); }
+.sv-metrics > span { display: inline-flex; align-items: center; gap: var(--s1-5); white-space: nowrap; }
+.sv-metrics .part { color: var(--warn); }
+.sv-model { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+/* Input/output share as a hairline meter — the number pair is in the title. */
+.sv-split { display: inline-block; width: 34px; height: 3px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
+.sv-split b { display: block; height: 100%; background: var(--accent); }
+
+.sv-jump { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: var(--s3); }
+.sv-jump-b {
+  display: inline-flex; align-items: center; gap: var(--s1-5); cursor: pointer;
+  background: none; border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 4px 9px; font: 600 11px var(--sans); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.sv-jump-b:hover { color: var(--text); background: var(--raised); }
+.sv-jump-b.on { color: var(--text); background: var(--raised); border-color: var(--line-strong); }
+.sv-jump-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sv-jump-n { font-size: 10px; color: var(--muted); }
+
+/* --- two columns --- */
+.sv-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s5); align-items: start; padding-top: var(--s4); }
+.sv-main { min-width: 0; display: flex; flex-direction: column; gap: var(--s6); }
+.sv-side { position: sticky; top: 132px; display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+
+.sv-sec { scroll-margin-top: 148px; }
+.sv-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2-5); margin-bottom: var(--s2-5); border-bottom: 1px solid var(--line); padding-bottom: var(--s1-5); }
+.sv-sec-h h4 { margin: 0; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.sv-sec-n { font-size: 11px; color: var(--muted); }
+.sv-sec-n.part { color: var(--warn); }
+
+/* --- prose: the one thing on this page that is not a payload --- */
+.sv-prose {
+  max-width: 68ch; margin: 0 0 var(--s3); font: 13.5px/1.65 var(--sans);
+  color: var(--text); white-space: pre-wrap; word-break: break-word;
+}
+.sv-prose.dim { color: var(--text-dim); font-size: 12.5px; }
+
+/* --- op ledger --- */
+.sv-ops { display: flex; flex-direction: column; gap: var(--s1-5); margin-bottom: var(--s3); }
+.sv-op {
+  display: grid; grid-template-columns: 20px minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: baseline; gap: var(--s2-5); cursor: pointer;
+  padding: 8px var(--s2-5); border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: var(--r-sm); background: var(--bg-2);
+}
+.sv-op:hover { background: var(--raised); }
+.sv-op.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
+.sv-op:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sv-op-ok { border-left-color: var(--ok); }
+.sv-op-miss { border-left-color: var(--warn); }
+.sv-op-na { border-left-color: var(--line-strong); }
+.sv-op-i { font-size: 10.5px; color: var(--muted); }
+.sv-op-t { font: 600 13px var(--sans); letter-spacing: -.005em; }
+.sv-op-d { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-op-fx { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: var(--r-sm); white-space: nowrap; }
+.sv-op-fx-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.sv-op-fx-miss { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.sv-op-fx-na { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+
+/* --- tool calls: flat and in execution order --- */
+.sv-tools { display: flex; flex-direction: column; }
+.sv-tool {
+  display: grid; grid-template-columns: 22px 52px minmax(80px, auto) minmax(0, 1fr) auto;
+  align-items: baseline; gap: var(--s2-5); cursor: pointer;
+  padding: 6px var(--s2-5); border-bottom: 1px solid var(--line); border-left: 2px solid transparent;
+}
+.sv-tool:hover { background: var(--raised); }
+.sv-tool.on { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
+.sv-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sv-tool.blocked { border-left-color: var(--bad); }
+.sv-tool-i { font-size: 10px; color: var(--muted); }
+.sv-tool-fam { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.sv-fam-edit { color: var(--warn); }
+.sv-fam-bash { color: var(--rej); }
+.sv-fam-webfetch { color: var(--info); }
+.sv-fam-mesh { color: var(--accent-2); }
+.sv-tool-n { font-size: 11.5px; color: var(--text); }
+.sv-tool-a { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-tool-blk { font: 600 9.5px var(--sans); text-transform: uppercase; color: var(--bad); }
+
+/* --- events --- */
+.sv-evs { display: flex; flex-direction: column; margin-bottom: var(--s3); }
+.sv-ev {
+  display: grid; grid-template-columns: 58px minmax(90px, auto) minmax(0, 1fr) auto;
+  align-items: baseline; gap: var(--s2-5); cursor: pointer;
+  padding: 5px var(--s2-5); border-bottom: 1px solid var(--line); border-left: 2px solid transparent;
+}
+.sv-ev:hover { background: var(--raised); }
+.sv-ev.on { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
+.sv-ev:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sv-ev-off { font-size: 10.5px; color: var(--muted); text-align: right; }
+.sv-ev-t { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .04em; }
+.sv-ev-s { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-ev-q { font-size: 10px; color: var(--muted); }
+
+/* --- inspector --- */
+.sv-insp { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
+.sv-insp-empty { padding: var(--s4); }
+.sv-insp-empty p { margin: 0; font-size: 12px; line-height: 1.5; }
+.sv-insp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2-5) var(--s3); border-bottom: 1px solid var(--line); background: var(--raised); }
+.sv-insp-head h4 { margin: 0; font: 600 12px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-insp-body { padding: var(--s3); max-height: min(58vh, 560px); overflow: auto; }
+.sv-insp-body h5 { margin: var(--s3) 0 var(--s1-5); font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sv-insp-body h5:first-child { margin-top: 0; }
+.sv-insp-body p { font-size: 12px; line-height: 1.5; }
+.sv-insp-meta { font-size: 10.5px; color: var(--muted); margin-bottom: var(--s2); }
+.sv-json {
+  margin: 0; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: var(--s2-5); font: 11px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word;
+  max-height: 300px; overflow: auto; color: var(--text-dim);
+}
+
+/* --- folds --- */
+.sv-fold { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); margin-bottom: var(--s2); }
+.sv-fold > summary { cursor: pointer; padding: 8px var(--s3); font-size: 12px; color: var(--text-dim); list-style: none; }
+.sv-fold > summary::-webkit-details-marker { display: none; }
+.sv-fold > summary::before { content: "\25B8"; color: var(--muted); font-size: 11px; margin-right: var(--s1-5); }
+.sv-fold[open] > summary::before { content: "\25BE"; }
+.sv-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sv-fold > *:not(summary) { margin: 0 var(--s3) var(--s3); }
+.sv-base { display: flex; flex-wrap: wrap; gap: var(--s3); font-size: 11.5px; color: var(--text-dim); margin-top: var(--s2); }
+
+/* Narrow: the inspector stops being a column and becomes the last block, so
+   nothing needs a horizontal scrollbar to be reachable. */
+@media (max-width: 1100px) {
+  .drawer:has(.stepv) { width: min(760px, 96vw); }
+  .sv-body { grid-template-columns: minmax(0, 1fr); }
+  .sv-side { position: static; }
+  .sv-insp-body { max-height: 420px; }
+}
+@media (max-width: 640px) {
+  .sv-metrics, .sv-why { margin-left: 0; }
+  .sv-tool { grid-template-columns: 22px 52px minmax(0, 1fr); }
+  .sv-tool-a, .sv-ev-q { display: none; }
+  .sv-ev { grid-template-columns: 52px minmax(0, 1fr); }
+  .sv-ev-t { display: none; }
+}

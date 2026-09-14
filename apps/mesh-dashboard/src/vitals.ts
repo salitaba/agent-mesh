@@ -151,6 +151,8 @@ export interface PhaseLeg {
   key: string;
   label: string;
   ms: number;
+  /** Milliseconds from the first surviving leg to the start of this one. */
+  offset: number;
   /** True while this leg is still accruing. */
   open: boolean;
   hint: string;
@@ -163,19 +165,24 @@ export interface PhaseLeg {
  */
 export function phaseLegs(p: TurnPhases | undefined, running: boolean, now = Date.now()): PhaseLeg[] {
   if (!p) return [];
-  const legs: PhaseLeg[] = [];
+  const legs: (Omit<PhaseLeg, "offset"> & { start: number })[] = [];
   const add = (key: string, label: string, from: number | undefined, to: number | undefined, hint: string): void => {
     if (from === undefined) return;
     const end = to ?? (running ? now : undefined);
     if (end === undefined) return;
     const ms = Math.max(0, end - from);
-    legs.push({ key, label, ms, open: to === undefined, hint });
+    legs.push({ key, label, ms, start: from, open: to === undefined, hint });
   };
   add("prep", "gathering context", p.startedAt, p.contextAt ?? p.llmCallAt, "reading its inbox and building the prompt");
   add("wait", "waiting on model", p.llmCallAt ?? p.contextAt, p.firstTokenAt ?? p.llmDoneAt, "prompt sent, no tokens back yet");
   add("stream", "writing answer", p.firstTokenAt, p.llmDoneAt ?? p.lastTokenAt, "streaming its reply");
   add("ops", "applying changes", p.opsStartAt ?? p.llmDoneAt, p.opsDoneAt ?? p.endedAt, "sending messages, publishing files, moving tasks");
-  return legs.filter((l) => l.ms > 0 || l.open);
+  const kept = legs.filter((l) => l.ms > 0 || l.open);
+  // Offsets run from the first leg that survived the filter, not from turn
+  // start: a turn whose prep leg was never instrumented would otherwise open
+  // with dead track that reads as a phase of its own.
+  const origin = kept.length ? Math.min(...kept.map((l) => l.start)) : 0;
+  return kept.map(({ start, ...l }) => ({ ...l, offset: start - origin }));
 }
 
 /** Biggest leg — the honest one-line answer to "why was this slow". */
