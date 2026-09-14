@@ -43,6 +43,30 @@ test("plan ops: a plan lands on the agent's own state and nowhere else", async (
   await m.cleanup();
 });
 
+test("plan ops: the agent list carries a scalar projection, never the steps", async () => {
+  const m = await makeMesh({ agents: [DEV, LEAD] });
+  const rowOf = async (id: string) => (await m.supervisor.status()).agents.find((a: any) => a.id === id) as any;
+
+  assert.equal((await rowOf("dev"))?.planDone, null, "no plan reads as null, so a card can tell 'none' from '0 of 0'");
+  assert.equal((await rowOf("dev"))?.planTotal, 0);
+
+  await runDev(m, [
+    { op: "plan", steps: [{ text: "read the spec" }, { text: "write the patch" }] },
+    { op: "done" },
+  ] as MeshOp[]);
+  const plan = planOf(m)!;
+  assert.equal((await rowOf("dev"))?.planTotal, 2);
+  assert.equal((await rowOf("dev"))?.planDone, 0);
+  assert.equal((await rowOf("dev"))?.planTaskId, plan.taskId ?? null);
+  // The whole point of the projection: this payload is polled for every agent
+  // at once, so the growing array must stay on the per-agent detail fetch.
+  assert.equal((await rowOf("dev"))?.plan, undefined, "status() must not ship the steps");
+
+  await runDev(m, [{ op: "plan_step", stepId: plan.steps[0]!.id, status: "DONE" }, { op: "done" }] as MeshOp[]);
+  assert.equal((await rowOf("dev"))?.planDone, 1, "progress is recomputed per call, not cached on the row");
+  await m.cleanup();
+});
+
 test("plan ops: ids are stable across a restated plan, so plan_step keeps resolving", async () => {
   const m = await makeMesh({ agents: [DEV, LEAD] });
   await runDev(m, [{ op: "plan", steps: [{ text: "write the patch" }] }, { op: "done" }] as MeshOp[]);

@@ -379,7 +379,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             <>
               <h4>
                 Its plan {planLabel(plan)}
-                {planStale(plan, json.activeTask?.id) ? <> <Chip>stale</Chip></> : null}
+                {planStale(plan, json.activeTask?.id) ? <> <Chip warn>stale</Chip></> : null}
               </h4>
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
                 Private to this agent — other agents cannot see or claim these steps.
@@ -459,6 +459,17 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           <h4>Setup</h4>
           <table className="tbl"><tbody>
             <tr><td>runtime</td><td className="mono">{(d.runtime)}{d.model ? ` · ${(d.model)}` : ""}</td></tr>
+            {/* Off is the default everywhere, so it is the common case and worth
+                stating outright rather than leaving the operator to infer it
+                from an absent row. */}
+            <tr><td>plan gate</td><td>
+              {d.hardActions && d.hardActions.mode !== "off" ? (
+                <>
+                  <Chip hot>{(d.hardActions.mode)}</Chip>
+                  {(d.hardActions.capabilities || []).map((c: string) => <Chip key={c}>{(c)}</Chip>)}
+                </>
+              ) : <span className="muted">off — it may act without a plan</span>}
+            </td></tr>
             <tr><td>listens for</td><td>{(d.interests || []).length ? (d.interests || []).slice(0, 12).map((c: string) => <Chip key={c}>{(c)}</Chip>) : <span className="muted">—</span>}</td></tr>
             <tr><td>budget</td><td className="mono">{fmt(d.budget?.tokens ?? 0)} tokens{json.budgets?.mission ? ` · mission ${fmt(json.budgets.mission.consumed)} / ${json.budgets.mission.limit ?? "?"}` : ""}</td></tr>
             {json.communication ? <tr><td>contacts</td><td style={{ fontSize: 12 }}>→ {((json.communication.mayContact || []).join(", ") || "nobody new")}<br />← {((json.communication.mayBeContactedBy || []).join(", ") || "restricted")}</td></tr> : null}

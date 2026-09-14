@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planProgress, planLabel, planStale } from "../../apps/mesh-dashboard/src/plan";
+import { planProgress, planLabel, planStale, planSummary, planSummaryStale } from "../../apps/mesh-dashboard/src/plan";
 
 const steps = (...st: string[]) => st.map((s, i) => ({ id: `s${i}`, text: `step ${i}`, status: s }));
 
@@ -28,4 +28,26 @@ test("dashboard plan: staleness matches the gate's read-time rule", () => {
   assert.equal(planStale({ steps: [] }, "t1"), false);
   assert.equal(planStale({ taskId: "t1", steps: [] }, null), false);
   assert.equal(planStale(null, "t1"), false);
+});
+
+test("dashboard plan: the list projection is null when there is nothing to badge", () => {
+  assert.equal(planSummary(null), null);
+  assert.equal(planSummary(undefined), null);
+  // A row from a mesh with no plan at all, and a plan that was retracted.
+  assert.equal(planSummary({ planDone: null, planTotal: 0, planTaskId: null }), null);
+  assert.equal(planSummary({ planDone: 0, planTotal: 0, planTaskId: "t1" }), null);
+});
+
+test("dashboard plan: the list projection mirrors progress and task scope", () => {
+  assert.deepEqual(planSummary({ planDone: 2, planTotal: 3, planTaskId: "t1" }), { done: 2, total: 3, taskId: "t1" });
+  // A plan whose task is unknown still badges its progress; only staleness
+  // needs both sides, exactly as in the drawer.
+  assert.deepEqual(planSummary({ planDone: 0, planTotal: 4, planTaskId: null }), { done: 0, total: 4, taskId: null });
+});
+
+test("dashboard plan: the list projection uses the gate's staleness rule, not its own", () => {
+  assert.equal(planSummaryStale({ done: 1, total: 2, taskId: "t1" }, "t2"), true);
+  assert.equal(planSummaryStale({ done: 1, total: 2, taskId: "t1" }, "t1"), false);
+  assert.equal(planSummaryStale({ done: 1, total: 2, taskId: null }, "t1"), false);
+  assert.equal(planSummaryStale(null, "t1"), false);
 });

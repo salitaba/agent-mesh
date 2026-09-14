@@ -355,13 +355,13 @@ export function Pill({ tone, pulse, children }: { tone: PillTone; pulse?: boolea
   return <span className={`pill ${tone}${pulse ? " running-pulse" : ""}`}>{children}</span>;
 }
 
-/** .chip (styles.css:183) + .chip.hot (184) / .chip.mono (288). Renders a
- *  <button> when clickable so keyboard users get it for free. */
-export function Chip({ hot, mono, onClick, title, style, children }: {
-  hot?: boolean; mono?: boolean; onClick?: () => void; title?: string;
+/** .chip (styles.css:183) + .chip.hot (184) / .chip.mono (288) / .chip.warn.
+ *  Renders a <button> when clickable so keyboard users get it for free. */
+export function Chip({ hot, mono, warn, onClick, title, style, children }: {
+  hot?: boolean; mono?: boolean; warn?: boolean; onClick?: () => void; title?: string;
   style?: React.CSSProperties; children: ReactNode;
 }): React.JSX.Element {
-  const cls = `chip${hot ? " hot" : ""}${mono ? " mono" : ""}`;
+  const cls = `chip${hot ? " hot" : ""}${mono ? " mono" : ""}${warn ? " warn" : ""}`;
   if (onClick) return <button type="button" className={cls} title={title} style={style} onClick={onClick}>{children}</button>;
   return <span className={cls} title={title} style={style}>{children}</span>;
 }

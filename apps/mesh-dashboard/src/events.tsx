@@ -29,8 +29,11 @@ export function evSummary(e: TimelineEvent): string {
       const done = steps.filter((s: any) => s.status === "DONE").length;
       return `<b>${esc(p.agentId)}</b> planned ${steps.length} step${steps.length === 1 ? "" : "s"}${steps.length ? ` (${done} done)` : ""}`;
     }
+    // `reason` already names the actual cause — no plan, a stale plan, or no
+    // step declaring the capability. This used to hardcode "without a plan",
+    // which was wrong for the latter two and sent the operator to the wrong fix.
     case "plan.gate_rejected":
-      return `<b>${esc(p.agentId)}</b> tried ${esc(p.op)} without a plan — ${esc(String(p.reason || "").slice(0, 80))}`;
+      return `<b>${esc(p.agentId)}</b> — the plan gate ${p.mode === "enforce" ? "blocked" : "flagged"} ${esc(p.op)}: ${esc(String(p.reason || "").slice(0, 80))}`;
     case "artifact.created":
       return `<b>${esc(p.artifact?.name)}</b> created by ${esc(p.artifact?.createdBy)}`;
     case "artifact.versioned":

@@ -111,6 +111,7 @@ const EVENT_PLAIN: Record<string, string> = {
   "task.created": "task", "task.claimed": "started task", "task.completed": "finished task",
   "budget.consumed": "spent", "budget.exceeded": "over budget", "escalation.requested": "needs you",
   "goal.completed": "done", "goal.escalated": "paused",
+  "plan.updated": "plan", "plan.gate_rejected": "plan gate",
 };
 export const plainEvent = (t: unknown): string => EVENT_PLAIN[String(t || "")] || String(t || "");
 

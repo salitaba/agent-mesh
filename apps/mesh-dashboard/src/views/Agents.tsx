@@ -5,6 +5,7 @@ import { agentColor, AgentAvatar, Card, ErrorState } from "../components";
 import { agentAction } from "../drawers";
 import { vitalsOf } from "../vitals";
 import { useTick } from "../observability";
+import { planSummary, planSummaryStale } from "../plan";
 
 /**
  * A card that says what the agent is doing, not merely that it exists. The
@@ -29,6 +30,10 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
     : "idle";
   const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, running: true, startedAt: step.startedAt }) : null;
   const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;
+  // The list payload carries a scalar projection of the plan, not the steps —
+  // enough to say how far along it is, which is the one fact a card can act on.
+  const plan = planSummary(a);
+  const stalePlan = planSummaryStale(plan, a.taskId);
   return (
     // The card used to be role="button" tabIndex={0} with a real <button> for
     // wake inside it — nested interactive content, which is invalid HTML and
@@ -49,6 +54,16 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
             {v.label}
             {elapsed !== null ? <span className="muted"> · {dur(elapsed)}</span> : null}
             {v.chars ? <span className="muted"> · {fmt(v.chars)} chars</span> : null}
+          </span>
+        ) : null}
+        {plan ? (
+          <span
+            className={`chip plan-chip${stalePlan ? " warn" : ""}`}
+            title={stalePlan
+              ? "Its plan was written for a task it has since moved on from — the steps no longer describe what it is doing."
+              : "Its private plan for the task it is on. Other agents cannot see or claim these steps."}
+          >
+            {plan.done}/{plan.total}{plan.done === plan.total ? " ✓" : ""}{stalePlan ? " · stale" : ""}
           </span>
         ) : null}
       </div>

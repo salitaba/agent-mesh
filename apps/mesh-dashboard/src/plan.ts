@@ -34,9 +34,39 @@ export function planProgress(plan: PlanView | null | undefined): { done: number;
  * exactly as it is in the policy gate. Unknown on either side means "not
  * stale" — we do not grey out a plan on missing data.
  */
+function staleById(planTaskId: string | null | undefined, activeTaskId: string | null | undefined): boolean {
+  if (!planTaskId || !activeTaskId) return false;
+  return planTaskId !== activeTaskId;
+}
+
 export function planStale(plan: PlanView | null | undefined, activeTaskId: string | null | undefined): boolean {
-  if (!plan?.taskId || !activeTaskId) return false;
-  return plan.taskId !== activeTaskId;
+  return staleById(plan?.taskId, activeTaskId);
+}
+
+/**
+ * The plan as it travels in the agent LIST payload: three scalars, no steps.
+ *
+ * The list is polled for every agent at once, so it carries a projection rather
+ * than the array; the drawer still fetches the real plan for the checklist.
+ */
+export interface PlanSummary {
+  done: number;
+  total: number;
+  taskId: string | null;
+}
+
+/** Null when there is nothing to badge — a missing plan, or an empty one. */
+export function planSummary(
+  row: { planDone?: number | null; planTotal?: number; planTaskId?: string | null } | null | undefined,
+): PlanSummary | null {
+  const total = row?.planTotal ?? 0;
+  if (!total) return null;
+  return { done: row?.planDone ?? 0, total, taskId: row?.planTaskId ?? null };
+}
+
+/** The same read-time staleness rule, applied to the list projection. */
+export function planSummaryStale(s: PlanSummary | null | undefined, activeTaskId: string | null | undefined): boolean {
+  return staleById(s?.taskId, activeTaskId);
 }
 
 export function planLabel(plan: PlanView | null | undefined): string {

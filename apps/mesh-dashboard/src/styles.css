@@ -415,6 +415,12 @@ button.chip, .fchip, button.st-chip, .row-actions button {
 
 .chip { display: inline-block; font: 11px var(--mono); background: var(--panel-2); border-radius: var(--r-sm); padding: 1px 7px; margin: 2px 3px 2px 0; }
 .chip.hot { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+/* The plan gate's warn tone, shared by the drawer's stale badge and the card's
+   stale chip. 11% stays under the 14% ceiling above. */
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 11%, transparent); }
+/* The card's progress chip: the digits move as the agent works, and proportional
+   numerals would reflow the foot one digit at a time. */
+.chip.plan-chip { font-variant-numeric: tabular-nums; }
 
 table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th { text-align: left; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: var(--s1-5) var(--s2-5); border-bottom: 1px solid var(--line); }

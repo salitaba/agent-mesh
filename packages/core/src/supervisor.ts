@@ -4914,7 +4914,17 @@ export class Supervisor {
 
   async status(): Promise<{
     goal?: Goal;
-    agents: Array<{ id: string; role: string; lifecycle: LifecycleState; mailbox: number; tokens: number }>;
+    agents: Array<{
+      id: string; role: string; lifecycle: LifecycleState; mailbox: number; tokens: number;
+      taskId: string | null; activations: number;
+      /**
+       * Scalar projection of the agent's private plan, for the dashboard's card
+       * badge. Deliberately NOT the plan itself: this payload is polled for
+       * every agent at once, so a growing array does not belong here. The full
+       * steps stay on the per-agent detail fetch.
+       */
+      planDone: number | null; planTotal: number; planTaskId: string | null;
+    }>;
     budgets: ReturnType<BudgetManager["snapshot"]>;
     progress: { completed: number; total: number; ratio: number } | null;
     openEscalations: Escalation[];
@@ -4933,6 +4943,9 @@ export class Supervisor {
         tokens: r.state.tokensConsumed,
         taskId: r.state.activeTaskId ?? null,
         activations: r.state.activations,
+        planDone: r.state.plan ? r.state.plan.steps.filter((s) => s.status === "DONE").length : null,
+        planTotal: r.state.plan?.steps.length ?? 0,
+        planTaskId: r.state.plan?.taskId ?? null,
       })),
       budgets: this.deps.budget.snapshot(),
       progress: progress ? { completed: progress.completed, total: progress.total, ratio: progress.ratio } : null,
