@@ -474,6 +474,97 @@ test("transition gate e2e: a BLOCK message stalls the merge only if the sender h
   }
 });
 
+test("announce path e2e: a PATCH_READY that names no resolvable artifact is refused, not silently swallowed", async () => {
+  // The failure this reproduces: the patch is announced in PROSE only, so
+  // `artifactRefs` is empty and there is no `payload.artifactId` either. The
+  // resolver had only `m.artifactRefs[0]` to go on, so `patch.ready` went out
+  // with `artifactId: undefined`, the artifact never left DRAFT, and the sender
+  // — seeing no result — announced it again and again. Empty `artifactRefs` is
+  // also invisible to the message fingerprint, so announcements about different
+  // revisions collided and the loop detector froze the mission over an artifact
+  // that had never moved. Silence about every one of those announcements is
+  // what let the retries accumulate, and this asserts the silence is gone: the
+  // patch stays put AND the refusal is on the record with a ruleId naming it.
+  // (The sender's own context still does not carry denials — see the note in
+  // supervisor.deriveSemantic; this test claims the record, not the feedback.)
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, transitions: GATES, mode: "parked" });
+  try {
+    const created = await m.supervisor.createArtifact({
+      actorId: "dev",
+      name: "checkout-patch",
+      type: "CodePatch",
+      content: evidenceContent("checkout patch"),
+    });
+    if (!("artifact" in created)) throw new Error(`artifact failed: ${created.error}`);
+    assert.equal(statusOf(m, created.artifact.id), "DRAFT");
+
+    const sent = await m.supervisor.sendMessage({
+      from: "dev",
+      to: ["tech-lead"],
+      type: "PATCH_READY",
+      newThread: { subject: "checkout patch" },
+      payload: { artifact: "artifact://CodePatch/checkout-patch/1 — head, apply v1" },
+    });
+
+    assert.equal(sent.accepted, true, "the announcement is still delivered — a report, not a verdict");
+    assert.equal(statusOf(m, created.artifact.id), "DRAFT", "a patch nobody can identify must not move");
+
+    const events = await collectEvents(m);
+    assert.equal(
+      events.filter((e) => e.type === "patch.ready").length,
+      0,
+      "no patch.ready may be emitted for an artifact that could not be resolved",
+    );
+    const denials = events.filter(
+      (e) => e.type === "message.rejected" && (e.payload as Record<string, unknown>)?.ruleId === "patch.ready.unresolved-artifact",
+    );
+    assert.equal(denials.length, 1, "the refusal is event-sourced, so a stalled patch is diagnosable instead of invisible");
+    assert.equal((denials[0]!.payload as Record<string, unknown>).from, "dev", "and it names the sender whose announcement it was");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("announce path e2e: the same announcement carrying the ref moves the patch", async () => {
+  // The other half: the announcement is not being screened for its wording, only
+  // for whether the mesh can tell which artifact it is about. One structured ref
+  // is enough to reach the reviewer — and it is also what keeps successive
+  // revisions of the same patch from fingerprinting as one repeated message.
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, transitions: GATES, mode: "parked" });
+  try {
+    const created = await m.supervisor.createArtifact({
+      actorId: "dev",
+      name: "checkout-patch",
+      type: "CodePatch",
+      content: evidenceContent("checkout patch"),
+    });
+    if (!("artifact" in created)) throw new Error(`artifact failed: ${created.error}`);
+    const id = created.artifact.id;
+
+    await m.supervisor.sendMessage({
+      from: "dev",
+      to: ["tech-lead"],
+      type: "PATCH_READY",
+      newThread: { subject: "checkout patch" },
+      artifactRefs: [{ uri: "artifact://CodePatch/checkout-patch/1" }],
+      payload: { summary: "ready for review" },
+    });
+
+    assert.equal(statusOf(m, id), "READY_FOR_REVIEW", "a resolvable announcement puts the patch in front of the reviewer");
+    const events = await collectEvents(m);
+    const ready = events.filter((e) => e.type === "patch.ready");
+    assert.equal(ready.length, 1, "exactly one patch.ready is emitted");
+    assert.equal((ready[0]!.payload as Record<string, unknown>).artifactId, id, "and it carries the artifact the sender meant");
+    assert.equal(
+      events.filter((e) => e.type === "message.rejected").length,
+      0,
+      "nothing is refused when the sender identifies its artifact",
+    );
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("transition gate e2e: an entitled BLOCK message does stall the merge", async () => {
   // The other half: gating must not break the legitimate path. qa holds
   // `quality.block`, so its message-path block outranks the satisfied gate

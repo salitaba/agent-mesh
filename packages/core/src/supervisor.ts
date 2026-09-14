@@ -1036,9 +1036,54 @@ export class Supervisor {
       await this.deps.kernel.emit("research.requested", { question: (m.payload as any)?.question ?? m.payload, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
     }
     if (m.type === "PATCH_READY") {
-      const art = primary ? this.findArtifactByUri(primary) : undefined;
-      await this.deps.kernel.emit("patch.ready", { artifactId: art?.id, artifactRef: primary, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
-      await this.auditTransition(art?.id, m.id, goalId, corr);
+      // Resolve the way every other artifact-bearing message here does:
+      // `payload.artifactId` first, then the structured ref. Resolving
+      // `m.artifactRefs[0]` alone made a patch announced in prose a SILENT
+      // no-op — `patch.ready` went out with `artifactId: undefined`, nothing
+      // transitioned, and the sender, seeing no result, announced the same
+      // patch again turn after turn. One mission lost six announcements over
+      // twelve hours this way.
+      //
+      // The repeats are not the sender's only problem: an empty `artifactRefs`
+      // is also absent from the message fingerprint (see `fingerprintOf`), so
+      // announcements about *different* patch revisions collide, the loop
+      // counter over shared asks crests its threshold, and the mission freezes
+      // on a `fingerprint_loop` that reports a looping agent where in fact only
+      // an unidentified artifact was going nowhere. Fix the resolution and both
+      // symptoms go: each revision refs differently and stops colliding.
+      //
+      // An unresolvable announcement is therefore refused and recorded, for the
+      // same reason a refused BLOCK is: the artifact cannot move from here (the
+      // transition this would have triggered needs an id this message does not
+      // have), and a `patch.ready` naming no patch is indistinguishable in the
+      // log from one that deliberately named none. The message itself is still
+      // logged and delivered — it is a report, not a verdict.
+      //
+      // Recorded is not the same as delivered: `message.rejected` has no
+      // projection and no mailbox (the case in projections-messaging is a
+      // no-op), so the operator reads this on the dashboard and via
+      // `mesh_failures`, while the SENDER's context never carries it. An agent
+      // that keeps announcing an unidentified patch will therefore still walk
+      // into the loop detector. Telling it takes a wake-with-note —
+      // `activateAgent(from, { kind: "recovery", note })`, the way
+      // `dischargeCommitment` reports a closed ask — which is a deliberate
+      // follow-up, not part of this fix.
+      const art = artifactForRef(this.state, (m.payload as any)?.artifactId, primary);
+      if (!art) {
+        await this.denied(from, (m.payload as any)?.artifactId ?? primary, "announce patch", {
+          decision: "DENY",
+          reason:
+            'PATCH_READY named no artifact the mesh can resolve, so no reviewer was asked and the patch did not move. Announce it by ref: artifactRefs: [{ uri: "artifact://<Type>/<name>/<version>" }], or payload.artifactId.',
+          ruleId: "patch.ready.unresolved-artifact",
+        });
+      } else {
+        await this.deps.kernel.emit(
+          "patch.ready",
+          { artifactId: art.id, artifactRef: primary ?? artifactUri(art.type, art.name, art.version), messageId: m.id },
+          { actorId: from, goalId, causationId, correlationId: corr },
+        );
+        await this.auditTransition(art.id, m.id, goalId, corr);
+      }
     }
     if (m.type === "BLOCK") {
       // The reducer refuses to record a block from a seat without
