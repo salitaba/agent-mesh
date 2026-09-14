@@ -92,6 +92,18 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
   const variantHint = models.phase === "ready" && effectiveModel && modelVariants.length === 0
     ? "this model has no thinking variants"
     : "blank = mesh default";
+  /* Mesh-wide defaults this agent inherits when its own key is absent. The
+   * chain is per-agent ?? mesh.defaults ?? the runtime's hardcoded fallback,
+   * so an absent key — not 0 or false — is what "inherit" looks like. */
+  const meshSession = m.mesh?.defaults?.session || {};
+  const meshDelegation = m.mesh?.defaults?.delegation || {};
+  const inheritedPersistent = meshSession.persistent ?? true;
+  const inheritedAllow = meshDelegation.allow ?? false;
+  /* A number the mesh supplies is worth naming; otherwise the old hint, which
+   * describes what the runtime does with nothing set. */
+  const numHint = (v: unknown, fallback: string) => (typeof v === "number" ? `mesh default (${v})` : fallback);
+  const triValue = (v: unknown) => (v === undefined ? "" : v ? "yes" : "no");
+
   const renameClean = renameValue.trim();
   const renameOk = !!renameClean && renameClean !== cur && !m.agents[renameClean];
 
@@ -241,23 +253,51 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
       </Group>
 
       <Group id="advanced" summary="Advanced">
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <label className="chk"><input type="checkbox" checked={a.session?.persistent !== false} onChange={(e) => { a.session = { ...(a.session || {}), persistent: e.target.checked }; touch(); }} /> remembers between turns</label>
-          <label className="chk"><input type="checkbox" checked={!!a.delegation?.allow} onChange={(e) => { a.delegation = { ...(a.delegation || {}), allow: e.target.checked }; touch(); }} /> may spawn helpers</label>
-        </div>
         <div className="grid2">
+          <Field label="remembers between turns">
+            <Select value={triValue(a.session?.persistent)} onChange={(e) => {
+              a.session ||= {};
+              if (e.target.value === "") delete a.session.persistent;
+              else a.session.persistent = e.target.value === "yes";
+              touch();
+            }}>
+              <option value="">inherit — {inheritedPersistent ? "yes" : "no"}</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </Select>
+          </Field>
+          <Field label="may spawn helpers">
+            <Select value={triValue(a.delegation?.allow)} onChange={(e) => {
+              a.delegation ||= {};
+              if (e.target.value === "") delete a.delegation.allow;
+              else a.delegation.allow = e.target.value === "yes";
+              touch();
+            }}>
+              <option value="">inherit — {inheritedAllow ? "yes" : "no"}</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </Select>
+          </Field>
           <Num label="session max context tokens" value={a.session?.max_context_tokens} onSet={(v) => {
             a.session ||= {};
             if (v === null) delete a.session.max_context_tokens; else a.session.max_context_tokens = Math.round(v);
             touch();
-          }} step={1000} hint="runtime default" />
-          <Num label="helper workers ≤" value={a.delegation?.max_workers ?? 0} onSet={(v) => { a.delegation = { ...(a.delegation || {}), max_workers: v ?? 0 }; touch(); }} />
-          <Num label="helper depth ≤" value={a.delegation?.max_depth ?? 0} onSet={(v) => { a.delegation = { ...(a.delegation || {}), max_depth: v ?? 0 }; touch(); }} />
+          }} step={1000} hint={numHint(meshSession.max_context_tokens, "not enforced yet")} />
+          <Num label="helper workers ≤" value={a.delegation?.max_workers} onSet={(v) => {
+            a.delegation ||= {};
+            if (v === null) delete a.delegation.max_workers; else a.delegation.max_workers = Math.round(v);
+            touch();
+          }} hint={numHint(meshDelegation.max_workers, "0")} />
+          <Num label="helper depth ≤" value={a.delegation?.max_depth} onSet={(v) => {
+            a.delegation ||= {};
+            if (v === null) delete a.delegation.max_depth; else a.delegation.max_depth = Math.round(v);
+            touch();
+          }} hint={numHint(meshDelegation.max_depth, "0")} />
           <Num label="helper budget tokens" value={a.delegation?.worker_budget_tokens} onSet={(v) => {
             a.delegation ||= {};
             if (v === null) delete a.delegation.worker_budget_tokens; else a.delegation.worker_budget_tokens = Math.round(v);
             touch();
-          }} step={10000} hint="same as parent" />
+          }} step={10000} hint={numHint(meshDelegation.worker_budget_tokens, "same as parent")} />
         </div>
       </Group>
     </div>

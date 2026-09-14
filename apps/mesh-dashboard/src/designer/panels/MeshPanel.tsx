@@ -1,5 +1,6 @@
 /* Mesh inspector: whole-mesh settings — identity, goal, workspace, wake-up
- * strategy, done-when checklist, concurrency, triage, timeouts, server. */
+ * strategy, done-when checklist, agent defaults, concurrency, triage,
+ * timeouts, server. */
 
 import { useRef } from "react";
 import { Num, Field } from "../ui";
@@ -127,6 +128,34 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         <Button variant="small" onClick={() => { crit.push({ id: `criterion-${crit.length + 1}`, description: "", mandatory: true }); touch(); }}>+ check</Button>
       </div>
 
+      <div className="ms-h">Agent defaults — every agent inherits these unless it sets its own</div>
+      <div className="grid2">
+        <Field label="agents remember between turns">
+          <Select value={triState(m.mesh.defaults?.session?.persistent)} onChange={(e) => setDefault(m, "session", "persistent", triParse(e.target.value), touch)}>
+            <option value="">runtime default (yes)</option>
+            <option value="yes">yes</option>
+            <option value="no">no</option>
+          </Select>
+        </Field>
+        <Field label="agents may spawn helpers">
+          <Select value={triState(m.mesh.defaults?.delegation?.allow)} onChange={(e) => setDefault(m, "delegation", "allow", triParse(e.target.value), touch)}>
+            <option value="">runtime default (no)</option>
+            <option value="yes">yes</option>
+            <option value="no">no</option>
+          </Select>
+        </Field>
+      </div>
+      <div className="grid2">
+        <Num label="session max context tokens" value={m.mesh.defaults?.session?.max_context_tokens} step={1000} hint="not enforced yet"
+          onSet={(v) => setDefault(m, "session", "max_context_tokens", v === null ? undefined : Math.round(v), touch)} />
+        <Num label="helper workers ≤" value={m.mesh.defaults?.delegation?.max_workers} hint="0"
+          onSet={(v) => setDefault(m, "delegation", "max_workers", v === null ? undefined : Math.round(v), touch)} />
+        <Num label="helper depth ≤" value={m.mesh.defaults?.delegation?.max_depth} hint="0"
+          onSet={(v) => setDefault(m, "delegation", "max_depth", v === null ? undefined : Math.round(v), touch)} />
+        <Num label="helper budget tokens" value={m.mesh.defaults?.delegation?.worker_budget_tokens} step={10000} hint="same as parent"
+          onSet={(v) => setDefault(m, "delegation", "worker_budget_tokens", v === null ? undefined : Math.round(v), touch)} />
+      </div>
+
       <div className="ms-h">Concurrency</div>
       <div className="grid3">
         <Num label="peers at once" value={m.scheduling?.concurrency?.max_active_agents ?? 4} onSet={(v) => setPath(m, "scheduling.concurrency.max_active_agents", v ?? 1)} />
@@ -199,3 +228,21 @@ function setTimeoutVal(m: any, key: string, v: number | null, touch: () => void)
   else m.scheduling.timeouts[key] = v;
   touch();
 }
+
+/* mesh.defaults is only written while it still holds something: clearing the
+ * last key has to take the empty containers with it, or a mesh that sets no
+ * defaults would start saving a block it never had. */
+function setDefault(m: any, group: "session" | "delegation", key: string, v: number | boolean | undefined, touch: () => void): void {
+  const d = (m.mesh.defaults ||= {});
+  const g = (d[group] ||= {});
+  if (v === undefined) delete g[key];
+  else g[key] = v;
+  if (!Object.keys(g).length) delete d[group];
+  if (!Object.keys(d).length) delete m.mesh.defaults;
+  touch();
+}
+
+/* A mesh default is inherited by being ABSENT, so the booleans need a third
+ * state the checkbox they replace could not express. */
+const triState = (v: unknown): string => (v === true ? "yes" : v === false ? "no" : "");
+const triParse = (s: string): boolean | undefined => (s === "yes" ? true : s === "no" ? false : undefined);

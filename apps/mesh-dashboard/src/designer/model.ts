@@ -257,6 +257,7 @@ export function summarizeDiff(cur: any, base: any | null): string[] {
   const out: string[] = [];
   if (cur?.mesh?.id !== base?.mesh?.id) out.push(`mesh id “${base?.mesh?.id}” → “${cur?.mesh?.id}”`);
   if ((cur?.mesh?.goal || "") !== (base?.mesh?.goal || "")) out.push("goal text changed");
+  if (JSON.stringify(cur?.mesh?.defaults || {}) !== JSON.stringify(base?.mesh?.defaults || {})) out.push("agent defaults changed");
   const ca = Object.keys(cur?.agents || {});
   const ba = Object.keys(base?.agents || {});
   for (const id of ca.filter((x) => !ba.includes(x))) out.push(`agent +${id}`);

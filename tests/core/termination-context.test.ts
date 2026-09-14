@@ -179,3 +179,26 @@ test("buildAgentContext: an unknown agent is refused rather than given an empty 
     await m.cleanup();
   }
 });
+
+/* The prompt's delegation offer and the supervisor's spawn_worker gate have to
+ * agree. opSpawnWorker also requires maxWorkers >= 1, so a policy allowing
+ * delegation at depth with the worker cap left at 0 used to advertise a tool
+ * that was denied on every call — cheap to hit now that mesh.defaults can set
+ * allow/max_depth for the whole mesh and leave max_workers inheriting 0. */
+test("context: delegation is advertised only on the terms spawn_worker actually grants", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "capped", role: "developer", interests: [], delegation: { allow: true, max_depth: 2, max_workers: 0 } },
+      { id: "armed", role: "developer", interests: [], delegation: { allow: true, max_depth: 2, max_workers: 1 } },
+    ],
+    mode: "parked",
+  });
+  try {
+    const ctx = (id: string) => buildAgentContext({ config: m.config, kernel: m.kernel }, id);
+    assert.equal(ctx("capped").delegationEnabled, false, "max_workers 0 must not offer a tool the supervisor always denies");
+    assert.equal(ctx("armed").delegationEnabled, true, "a fully-armed delegation policy must still advertise");
+    assert.equal(renderContextInstructions(ctx("capped")).includes("spawn_worker"), false);
+  } finally {
+    await m.cleanup();
+  }
+});
