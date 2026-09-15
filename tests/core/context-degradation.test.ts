@@ -214,6 +214,32 @@ test("evicted memory and merely-unshown memory read as different things", () => 
   assert.doesNotMatch(evictedOnly, /not shown/);
 });
 
+/**
+ * The warning has to survive the case that produces it.
+ *
+ * `elidedMemory` counts notes gone from state for good, so by construction it is
+ * most likely to be non-zero on the exact turn an agent has no notes left to
+ * show — the marker is filtered out of `agentMemory` during assembly. Keying the
+ * section on `agentMemory.length > 0` therefore hid the warning from the one
+ * agent that had lost its history, and told it nothing instead. The test above
+ * always passed a note alongside the count, which is why the gap went unseen.
+ */
+test("an agent whose notes were all evicted is still told, with none left to show", () => {
+  const text = renderContextInstructions(bundle({ agentMemory: [], elidedMemory: 4 }));
+
+  assert.match(text, /## Your memory \(L2\)/, "the section has to exist for the warning to live in");
+  assert.match(text, /4 older notes dropped/);
+  assert.match(text, /worked longer than this list shows/);
+});
+
+test("no memory and nothing evicted still renders no memory section", () => {
+  // The counterweight to the test above: keeping the section alive for the
+  // warning must not make an empty "## Your memory" header a permanent fixture,
+  // which is the noise the original guard was right to prevent.
+  const text = renderContextInstructions(bundle({ agentMemory: [] }));
+  assert.doesNotMatch(text, /## Your memory/);
+});
+
 test("a section with nothing withheld gets no note", () => {
   const text = renderContextInstructions(
     bundle({

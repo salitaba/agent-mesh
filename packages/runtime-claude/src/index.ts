@@ -580,7 +580,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     opts: DesignerPromptOptions = {},
     onDelta?: (delta: DesignerStreamDelta) => void,
   ): Promise<DesignerStreamResult> {
-    const q = query({
+    const q = (this.options.queryFn ?? query)({
       prompt: text,
       options: {
         cwd: this.designerWorkspaceDir(),
@@ -588,6 +588,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
         canUseTool: buildPermissionGate([]),
         permissionMode: "default",
         includePartialMessages: true,
+        ...(() => {
+          const staging = opts.mcp ? this.designerStagingMcpServer(opts.mcp) : undefined;
+          return staging ? { mcpServers: { mesh_staging: staging } } : {};
+        })(),
         ...(toClaudeModelId(opts.model) ?? this.options.model
           ? { model: toClaudeModelId(opts.model) ?? this.options.model }
           : {}),
@@ -764,7 +768,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private writeAgentFiles(agent: AgentDefinition, context: RuntimeContext): string {
     const dir = path.join(context.workspacePath, ".mesh", "agents", agent.id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "ROLE.md"), context.rolePromptText, "utf8");
+    // Composed through `withOutputVoice` for the same reason the system prompt
+    // below is: ROLE.md is meant to be the file a human reads to see what this
+    // seat was told, and the raw role prose is not that — it is missing the
+    // shared OUTPUT_VOICE_RULES that go out with every turn.
+    fs.writeFileSync(path.join(dir, "ROLE.md"), withOutputVoice(context.rolePromptText), "utf8");
     fs.writeFileSync(
       path.join(dir, "MESH_CONTEXT.md"),
       `Goal: ${context.goalId}\nMesh: ${context.meshId}\nWorkspace: ${context.workspacePath}\n`,
@@ -936,6 +944,50 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     if (s.settledReady) return;
     s.settledReady = true;
     s.markDead(err);
+  }
+
+  /**
+   * The designer's staging bridge for ONE turn.
+   *
+   * `query()` takes its options per call, so unlike opencode's shared backend
+   * this runtime can spawn a bridge that knows exactly which turn it writes
+   * into — the turn id rides `--turn` into an `x-mesh-designer-turn` header and
+   * the bus never has to resolve it by guessing. The bus URL is the origin of
+   * the endpoint the server named; the path and headers are the bridge's job.
+   *
+   * Read-and-propose only: every tool it exposes either reads the run or writes
+   * to a turn buffer the operator must apply. It grants no native tools, which
+   * is why it can sit behind the same `buildPermissionGate([])` as the rest of
+   * the designer (MESH_MCP_PREFIX is already allowed there).
+   */
+  private designerStagingMcpServer(mcp: NonNullable<DesignerPromptOptions["mcp"]>) {
+    const meshCliBin = path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs");
+    const turn = mcp.headers?.["x-mesh-designer-turn"];
+    const token = mcp.headers?.["x-mesh-token"] ?? "human-local";
+    let bus: string;
+    try {
+      bus = new URL(mcp.url).origin;
+    } catch {
+      return undefined;
+    }
+    return {
+      type: "stdio" as const,
+      command: process.execPath,
+      args: [
+        meshCliBin,
+        "mcp",
+        "--agent",
+        "human",
+        "--token",
+        token,
+        "--staging",
+        "--bus",
+        bus,
+        ...(turn ? ["--turn", turn] : []),
+      ],
+      timeout: 15000,
+      alwaysLoad: true,
+    };
   }
 
   private meshMcpServer(agent: AgentDefinition, context: RuntimeContext) {

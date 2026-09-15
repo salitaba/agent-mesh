@@ -32,6 +32,10 @@ const proxyTarget =
 export default defineConfig({
   root,
   plugins: [react()],
+  // The designer's staged-mutation table imports protocol types only, and
+  // `import type` is erased before bundling — this alias exists so a future
+  // runtime import resolves here instead of failing as a bare specifier.
+  resolve: { alias: { "@mesh/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)) } },
   // No public/ copying: the legacy static dir is gone; everything ships from src.
   publicDir: false,
   build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1200 },

@@ -9,6 +9,7 @@ import {
   toClaudeModelId,
   usageToTokens,
 } from "../../packages/runtime-claude/src/index";
+import type { ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
 import { BackendUnreachableError } from "../../packages/protocol/src/index";
 import type {
   AgentDefinition,
@@ -221,4 +222,57 @@ test("restoreSession returns null when the backend cannot be reopened", async ()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/**
+ * Captures the SDK options a designer turn opens with.
+ *
+ * The designer path takes a plain string prompt, not a push queue, so this
+ * fake yields a single result and closes rather than draining an inbox the
+ * way `session-rotation`'s factory does.
+ */
+function captureDesignerQuery() {
+  const seen: Record<string, unknown>[] = [];
+  const queryFn = (({ options }: { prompt: unknown; options: Record<string, unknown> }) => {
+    seen.push(options);
+    const gen = (async function* () {
+      yield { type: "result", subtype: "success", result: "staged", session_id: "designer-fake", num_turns: 1 };
+    })();
+    return Object.assign(gen, { interrupt: async () => undefined });
+  }) as unknown as ClaudeAdapterOptions["queryFn"];
+  return { queryFn, seen };
+}
+
+test("a designer turn with opts.mcp wires a staging bridge carrying the turn id", async () => {
+  const { queryFn, seen } = captureDesignerQuery();
+  const adapter = new ClaudeRuntimeAdapter({ queryFn });
+  await adapter.prompt("stage a rename", {
+    system: "you are a designer",
+    mcp: {
+      url: "http://127.0.0.1:7421/designer/mcp?staging=1",
+      headers: { "x-mesh-designer-turn": "turn-abc", "x-mesh-token": "human-local" },
+    },
+  });
+  assert.equal(seen.length, 1);
+  const servers = seen[0].mcpServers as Record<string, { type: string; command: string; args: string[] }>;
+  const staging = servers.mesh_staging;
+  assert.ok(staging, "opts.mcp must produce a mesh_staging server");
+  assert.equal(staging.type, "stdio", "the bridge is stdio: this repo has no remote MCP transport");
+  assert.equal(staging.command, process.execPath);
+  assert.ok(staging.args.includes("--staging"));
+  // The turn id is what lets the bus file staged mutations against the right
+  // open turn; without it the bridge would write into nothing.
+  assert.equal(staging.args[staging.args.indexOf("--turn") + 1], "turn-abc");
+  assert.equal(staging.args[staging.args.indexOf("--token") + 1], "human-local");
+  // Origin only — the path and the ?staging=1 query are the bridge's business.
+  assert.equal(staging.args[staging.args.indexOf("--bus") + 1], "http://127.0.0.1:7421");
+  await adapter.stopAll();
+});
+
+test("a designer turn without opts.mcp opens no MCP servers at all", async () => {
+  const { queryFn, seen } = captureDesignerQuery();
+  const adapter = new ClaudeRuntimeAdapter({ queryFn });
+  await adapter.prompt("just talk to me", { system: "you are a designer" });
+  assert.equal(seen[0].mcpServers, undefined, "no bus named, no bridge");
+  await adapter.stopAll();
 });

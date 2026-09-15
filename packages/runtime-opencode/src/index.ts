@@ -529,7 +529,14 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     const dir = path.join(context.workspacePath, ".mesh", "agents", agent.id);
     fs.mkdirSync(dir, { recursive: true });
     const promptFile = path.join(dir, "ROLE.md");
-    fs.writeFileSync(promptFile, context.rolePromptText, "utf8");
+    // Written through `withOutputVoice` so this file and the request's `system`
+    // field (see `send` below) carry identical text. This file is registered as
+    // an opencode `instructions` entry, and the role prompt is ALSO sent as
+    // `system` on every turn — two routes. Composing only one of them left the
+    // outcome depending on precedence: whichever the backend honours, it now
+    // reads the same prose with the same OUTPUT_VOICE_RULES, instead of the
+    // instructions route silently supplying a version without them.
+    fs.writeFileSync(promptFile, withOutputVoice(context.rolePromptText), "utf8");
     const meshCliBin = path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs");
     const mcpCmd =
       this.options.mcpCommand ?? [
@@ -580,6 +587,29 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
                         "--token",
                         designerObserve.token,
                         "--read-only",
+                        "--bus",
+                        designerObserve.busUrl,
+                      ],
+                      enabled: true,
+                      timeout: 15000,
+                    },
+                    // Staging: the same bus, answered with `mesh_stage_*` plus
+                    // the observability tools. It proposes only — every tool
+                    // here writes to a turn buffer the operator has to apply —
+                    // so it is additive to mesh_observe rather than a wider
+                    // grant, and DESIGNER_DENIED_TOOLS still denies every
+                    // NATIVE tool (file, shell, edit) exactly as before.
+                    mesh_staging: {
+                      type: "local",
+                      command: [
+                        process.execPath,
+                        meshCliBin,
+                        "mcp",
+                        "--agent",
+                        "human",
+                        "--token",
+                        designerObserve.token,
+                        "--staging",
                         "--bus",
                         designerObserve.busUrl,
                       ],

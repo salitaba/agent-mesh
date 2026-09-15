@@ -23,9 +23,12 @@ export const EVENT_TYPES: EventType[] = [
   "goal.reopened",
   "goal.escalated",
   "goal.failed",
+  "goal.description_revised",
   "requirements.created",
   "requirement.blocked",
   "requirement.satisfied",
+  "requirement.revised",
+  "requirement.removed",
   "agent.created",
   "agent.started",
   "agent.awakened",
@@ -36,6 +39,7 @@ export const EVENT_TYPES: EventType[] = [
   "agent.failed",
   "agent.restarted",
   "agent.replaced",
+  "agent.retired",
   "thread.created",
   "message.sent",
   "message.delivered",
@@ -119,10 +123,20 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   "goal.reopened": "notice",
   "goal.escalated": "alert",
   "goal.failed": "alert",
+  // The mission statement changed under a running mesh. Nothing went wrong,
+  // but every acceptance judgement before and after this line was measured
+  // against a different target, and an operator reading the log needs to see
+  // exactly where that happened.
+  "goal.description_revised": "notice",
 
   "requirements.created": "notice",
   "requirement.blocked": "alert",
   "requirement.satisfied": "notice",
+  "requirement.revised": "notice",
+  // Louder than a revision on purpose: removal shrinks the denominator that
+  // completion is measured over, so it is the one criteria edit that can move
+  // a mission toward done without any work being finished.
+  "requirement.removed": "alert",
 
   "agent.created": "notice",
   "agent.started": "notice",
@@ -139,6 +153,10 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   // timed out or died, so this is a crash by another name.
   "agent.restarted": "alert",
   "agent.replaced": "alert",
+  // Capacity permanently left the mesh. Reversible states (suspended) are a
+  // notice; this one is why the seat never speaks again, which is the first
+  // thing an operator debugging a stalled mission needs to find.
+  "agent.retired": "alert",
 
   "thread.created": "notice",
 
@@ -272,26 +290,34 @@ export const LIFECYCLE_STATES: LifecycleState[] = [
   "SUSPENDED",
   "FAILED",
   "COMPLETED",
+  "RETIRED",
 ];
 
+/**
+ * RETIRED is reachable from every other state and leaves none: an operator
+ * retires a seat whatever it happens to be doing, and a retired seat never
+ * runs again. Contrast COMPLETED, which keeps an edge back to IDLE so a
+ * finished agent can be woken for follow-up.
+ */
 export const LIFECYCLE_TRANSITIONS: Record<LifecycleState, LifecycleState[]> = {
-  STARTING: ["IDLE", "SUSPENDED", "FAILED"],
-  IDLE: ["AWAKENED", "SUSPENDED", "COMPLETED", "FAILED"],
-  AWAKENED: ["OBSERVING", "IDLE", "SUSPENDED", "FAILED"],
-  OBSERVING: ["THINKING", "IDLE", "SUSPENDED", "FAILED"],
-  THINKING: ["REQUESTING", "WORKING", "WAITING", "REVIEWING", "IDLE", "BLOCKED", "SUSPENDED", "FAILED"],
-  REQUESTING: ["WAITING", "REVIEWING", "IDLE", "THINKING", "SUSPENDED", "FAILED"],
-  WORKING: ["REVIEWING", "WAITING", "IDLE", "THINKING", "BLOCKED", "SUSPENDED", "FAILED"],
+  STARTING: ["IDLE", "SUSPENDED", "FAILED", "RETIRED"],
+  IDLE: ["AWAKENED", "SUSPENDED", "COMPLETED", "FAILED", "RETIRED"],
+  AWAKENED: ["OBSERVING", "IDLE", "SUSPENDED", "FAILED", "RETIRED"],
+  OBSERVING: ["THINKING", "IDLE", "SUSPENDED", "FAILED", "RETIRED"],
+  THINKING: ["REQUESTING", "WORKING", "WAITING", "REVIEWING", "IDLE", "BLOCKED", "SUSPENDED", "FAILED", "RETIRED"],
+  REQUESTING: ["WAITING", "REVIEWING", "IDLE", "THINKING", "SUSPENDED", "FAILED", "RETIRED"],
+  WORKING: ["REVIEWING", "WAITING", "IDLE", "THINKING", "BLOCKED", "SUSPENDED", "FAILED", "RETIRED"],
   // COMPLETED is reachable from WAITING because a parked agent is idle-with-a-debt,
   // not busy: when the mission ends the completion sweep must be able to retire it.
   // Without this edge the sweep's `agent.completed` is rejected by the projection and
   // the agent is left in WAITING for the life of a finished mesh.
-  WAITING: ["AWAKENED", "IDLE", "BLOCKED", "SUSPENDED", "COMPLETED", "FAILED"],
-  REVIEWING: ["IDLE", "BLOCKED", "THINKING", "SUSPENDED", "FAILED"],
-  BLOCKED: ["THINKING", "IDLE", "AWAKENED", "SUSPENDED", "FAILED"],
-  SUSPENDED: ["IDLE", "FAILED"],
-  FAILED: ["STARTING", "SUSPENDED"],
-  COMPLETED: ["IDLE"],
+  WAITING: ["AWAKENED", "IDLE", "BLOCKED", "SUSPENDED", "COMPLETED", "FAILED", "RETIRED"],
+  REVIEWING: ["IDLE", "BLOCKED", "THINKING", "SUSPENDED", "FAILED", "RETIRED"],
+  BLOCKED: ["THINKING", "IDLE", "AWAKENED", "SUSPENDED", "FAILED", "RETIRED"],
+  SUSPENDED: ["IDLE", "FAILED", "RETIRED"],
+  FAILED: ["STARTING", "SUSPENDED", "RETIRED"],
+  COMPLETED: ["IDLE", "RETIRED"],
+  RETIRED: [],
 };
 
 export const GOAL_STATUSES: GoalStatus[] = [

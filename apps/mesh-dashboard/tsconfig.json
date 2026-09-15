@@ -12,7 +12,15 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    // Type-only reach into the protocol package, for the designer's staged
+    // mutation handler table: it is a Record over StagedMutation["kind"], so a
+    // kind added upstream fails this typecheck rather than silently losing its
+    // review card. `import type` is erased, so nothing lands in the bundle.
+    "baseUrl": "../..",
+    "paths": {
+      "@mesh/protocol": ["packages/protocol/src/index.ts"]
+    }
   },
   "include": ["src", "vite.config.mts", "index.html"]
 }

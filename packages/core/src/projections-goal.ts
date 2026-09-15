@@ -209,6 +209,46 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       }
       break;
     }
+    // The mission statement itself was rewritten mid-run. The event carries
+    // `previous` so the log — not the goal record, which only ever holds the
+    // latest text — is where "what were we aiming at when round 1 was
+    // accepted" can still be answered.
+    case "goal.description_revised": {
+      const goal = state.goals.get(p.goalId ?? event.goalId ?? state.activeGoalId ?? "");
+      if (goal && typeof p.description === "string" && p.description.trim()) {
+        goal.description = p.description;
+      }
+      break;
+    }
+    case "requirement.revised": {
+      const goal = state.goals.get(event.goalId ?? state.activeGoalId ?? "");
+      if (goal && p.criterionId) {
+        const c = goal.acceptanceCriteria.find((x) => x.id === p.criterionId);
+        if (c) {
+          if (typeof p.description === "string" && p.description.trim()) c.description = p.description;
+          if (typeof p.mandatory === "boolean") c.mandatory = p.mandatory;
+        }
+        // Not just cosmetic: flipping `mandatory` moves the denominator
+        // progress is measured over even though no criterion changed status.
+        recomputeGoalProgress(state, goal, event.timestamp);
+      }
+      break;
+    }
+    case "requirement.removed": {
+      const goal = state.goals.get(event.goalId ?? state.activeGoalId ?? "");
+      if (goal && p.criterionId) {
+        const i = goal.acceptanceCriteria.findIndex((x) => x.id === p.criterionId);
+        if (i >= 0) goal.acceptanceCriteria.splice(i, 1);
+        // Intended, and the most dangerous line in this file: the mission is
+        // now judged against fewer criteria than it was a moment ago, so a
+        // removal can move a run toward done with no work finished. The
+        // refusal lives in `Supervisor.removeCriterion`, not here — a reducer
+        // that dropped events would make replay disagree with the log. Any
+        // `requirement.removed` that reached the log was legal when written.
+        recomputeGoalProgress(state, goal, event.timestamp);
+      }
+      break;
+    }
     default:
       return false;
   }

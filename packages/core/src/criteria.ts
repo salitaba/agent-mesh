@@ -48,9 +48,11 @@ Rules:
   and its report is published as an artifact" is.
 - Where the evidence that would satisfy a criterion is not obvious, name it in
   the description.
-- Set "mandatory": true only for criteria without which the goal is not met.
-  Prefer fewer mandatory criteria; the mission cannot complete until every
-  mandatory one is evidenced.
+- Write "mandatory" as a literal true or false on EVERY element. Set it true
+  only for criteria without which the goal is not met; prefer fewer mandatory
+  criteria, and the mission cannot complete until every mandatory one is
+  evidenced. To mark a criterion optional, write false — an omitted "mandatory"
+  is read as true, so leaving the key out makes it mandatory.
 - Do not invent requirements the goal does not imply. A goal that asks for a
   script does not imply a security review.
 - "id" must be unique within the list.`;

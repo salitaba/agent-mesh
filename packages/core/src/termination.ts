@@ -1,9 +1,50 @@
-import { isSettledArtifactStatus, type GoalId } from "../../protocol/src/index";
+import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type GoalId } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
 import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
+
+/**
+ * Does this criterion count toward completion, right now, for this goal?
+ *
+ * Exported because it is the ONE definition of "satisfied" in the system and
+ * two places need it: the termination verdict below, and the removal guard in
+ * `Supervisor.removeCriterion`, which has to answer the hypothetical "would
+ * the mission be complete if this criterion were gone?" before it emits.
+ * A second copy of this rule would drift, and the drift would be silent —
+ * a guard that disagrees with the verdict it is guarding against is no guard.
+ *
+ * Evidence must belong to the CURRENT round. A reopen resets criteria to
+ * UNSATISFIED but keeps the evidence trail, so an agent re-approving on the
+ * strength of the rejected round (ref-less `approval` / `*-pass` evidence
+ * carries no artifact URI, so the identity gate in `markCriterionEvidence`
+ * cannot see it) would re-complete the mission unchanged. One live mission
+ * ran 6 completes / 5 reopens this way, re-approving the same architecture
+ * six times and delivering nothing new.
+ */
+export function criterionSatisfied(goal: Goal, c: AcceptanceCriterion): boolean {
+  if (c.status === "WAIVED") return true;
+  // ASSERTED falls through here deliberately: an agent claiming a criterion
+  // from a turn that invoked no verification tool has not proven it, and an
+  // unproven mission must stay open. See CriterionStatus in the protocol types.
+  if (c.status !== "EVIDENCED") return false;
+  if (!goal.reopenedAt) return true;
+  return c.evidence.some((e) => e.recordedAt > goal.reopenedAt!);
+}
+
+/**
+ * Would a goal holding exactly `criteria` be judged complete on criteria alone?
+ *
+ * Deliberately ignores the open-escalation and owned-task conditions that the
+ * full verdict also requires: those clear on their own within a tick or two,
+ * so treating them as protection would make the guard pass at 10:00:01 and
+ * fail at 10:00:02 for the same edit.
+ */
+export function criteriaWouldComplete(goal: Goal, criteria: AcceptanceCriterion[]): boolean {
+  const mandatory = criteria.filter((c) => c.mandatory);
+  return mandatory.length > 0 && mandatory.every((c) => criterionSatisfied(goal, c));
+}
 
 export interface DeadlockFinding {
   kind: "thread_depth" | "repeated_conflict" | "review_rounds" | "idle_stall" | "fingerprint_loop" | "wait_cycle";
@@ -334,7 +375,7 @@ export class TerminationManager {
         const ledger = state.budgets.get(threadKey(goalId, t.id));
         return !ledger || !ledger.exceeded;
       });
-      const busy = [...state.agents.values()].some((a) => !["IDLE", "WAITING", "DONE", "FAILED"].includes(a.state.lifecycle));
+      const busy = [...state.agents.values()].some((a) => !["IDLE", "WAITING", "DONE", "FAILED", "RETIRED"].includes(a.state.lifecycle));
       if (!liveThread && !busy) {
         return {
           kind: "escalate",
@@ -373,16 +414,7 @@ export class TerminationManager {
     // cannot see it) would re-complete the mission unchanged. One live mission
     // ran 6 completes / 5 reopens this way, re-approving the same architecture
     // six times and delivering nothing new.
-    const satisfied = (c: (typeof mandatory)[number]): boolean => {
-      if (c.status === "WAIVED") return true;
-      // ASSERTED falls through here deliberately: an agent claiming a
-      // criterion from a turn that invoked no verification tool has not
-      // proven it, and an unproven mission must stay open. See
-      // CriterionStatus in the protocol types.
-      if (c.status !== "EVIDENCED") return false;
-      if (!goal.reopenedAt) return true;
-      return c.evidence.some((e) => e.recordedAt > goal.reopenedAt!);
-    };
+    const satisfied = (c: (typeof mandatory)[number]): boolean => criterionSatisfied(goal, c);
     if (mandatory.length > 0 && mandatory.every(satisfied)) {
       const openEscalations = [...state.escalations.values()].filter((e) => e.status === "OPEN");
       // Only work SOMEONE OWNS can hold a finished mission open.

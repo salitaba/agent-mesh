@@ -113,7 +113,11 @@ test("protocol: lifecycle machine has no orphan states", () => {
     }
   }
   for (const s of states) {
-    if (s === "COMPLETED" || s === "FAILED") continue;
+    // Terminal states are exempt: the invariant is that a state an agent can
+    // still be RUNNING in must have an escape hatch to FAILED. RETIRED is the
+    // strictest of the three — it has no outgoing edges at all, which is what
+    // makes retirement final rather than another kind of pause.
+    if (s === "COMPLETED" || s === "FAILED" || s === "RETIRED") continue;
     assert.ok(s === "STARTING" || LIFECYCLE_TRANSITIONS[s as keyof typeof LIFECYCLE_TRANSITIONS].includes("FAILED" as never), `${s} must be able to fail`);
   }
 });

@@ -473,6 +473,8 @@ export async function main(argv: string[]): Promise<number> {
           bus: String(args.flags.bus ?? DEFAULT_BUS),
           token: String(args.flags.token ?? ""),
           readOnly: Boolean(args.flags["read-only"]),
+          staging: Boolean(args.flags.staging),
+          turn: args.flags.turn ? String(args.flags.turn) : undefined,
         });
         return 0;
       }

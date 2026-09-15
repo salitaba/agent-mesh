@@ -80,7 +80,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, renderContextInstructions } from "./context";
 import type { ContextLimits } from "./context";
-import { DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
+import { criteriaWouldComplete, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri } from "../../protocol/src/uri";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
 import {
@@ -1646,6 +1646,10 @@ export class Supervisor {
     if (agentId === HUMAN_AGENT_ID) return { queued: false, blocked: "the human seat has no runtime" };
     if (rec.state.lifecycle === "SUSPENDED") return { queued: false, blocked: "agent is suspended — resume it first" };
     if (rec.state.lifecycle === "COMPLETED") return { queued: false, blocked: "agent completed with the mission" };
+    // No `resume` counterpart, unlike SUSPENDED: retirement is terminal, so
+    // this is the end of the line for every activation path — operator wake,
+    // interest match and recovery restart alike.
+    if (rec.state.lifecycle === "RETIRED") return { queued: false, blocked: "agent was retired" };
     const req: SchedulerActivationRequest = {
       agentId,
       reason,
@@ -1659,12 +1663,19 @@ export class Supervisor {
   async suspendAgent(agentId: string): Promise<void> {
     const rec = this.state.agents.get(agentId);
     if (!rec) return;
+    // RETIRED has no outgoing edges, so the reducer would throw on this event
+    // — AFTER it was written. A rejected transition is not a caught mistake at
+    // that point: the event is in the log, and every replay from now on throws
+    // at the same offset. Refusing before the emit is what keeps the log
+    // replayable. Same reason in `resumeAgent`.
+    if (rec.state.lifecycle === "RETIRED") return;
     const sess = this.sessions.get(agentId);
     if (sess) await sess.runtime.suspend(sess.session).catch(() => undefined);
     await this.deps.kernel.emit("agent.suspended", { agentId }, { actorId: HUMAN_AGENT_ID });
   }
 
   async resumeAgent(agentId: string): Promise<void> {
+    if (this.state.agents.get(agentId)?.state.lifecycle === "RETIRED") return;
     const sess = this.sessions.get(agentId);
     if (sess) await sess.runtime.resume(sess.session).catch(() => undefined);
     await this.deps.kernel.emit("agent.resumed", { agentId }, { actorId: HUMAN_AGENT_ID });
@@ -2607,6 +2618,251 @@ export class Supervisor {
   }
 
   /**
+   * Rewrite the mission statement of a running goal.
+   *
+   * The goal is the only state no agent can write, and it is the reference
+   * every acceptance judgement is measured against — so a replacement lands as
+   * an event carrying the text it replaced, never a silent field assignment.
+   * Without the `previous` in the payload, a log where a mission completed
+   * against criteria written for a different target is indistinguishable from
+   * one where it did not.
+   */
+  async reviseGoalDescription(
+    description: string,
+    opts: { by?: string; reason?: string; goalId?: GoalId } = {},
+  ): Promise<{ ok: boolean; reason?: string; previous?: string }> {
+    const gid = opts.goalId ?? this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    const next = description?.trim();
+    if (!next) return { ok: false, reason: "description must be a non-empty string" };
+    if (next === goal.description) return { ok: false, reason: "description is unchanged" };
+    const actorId = opts.by ?? HUMAN_AGENT_ID;
+    const ctx = { config: this.config, projections: this.state, goal };
+    const check = this.deps.policy.evaluateAuthority(actorId, "requirements", "revise", ctx);
+    if (check.decision !== "ALLOW") {
+      await this.denied(actorId, gid, "revise goal description", check);
+      return { ok: false, reason: check.reason };
+    }
+    const previous = goal.description;
+    await this.deps.kernel.emit(
+      "goal.description_revised",
+      { goalId: gid, description: next, previous, reason: opts.reason },
+      { actorId, goalId: gid },
+    );
+    return { ok: true, previous };
+  }
+
+  /**
+   * Edit a criterion's text, or its mandatory flag, in place.
+   *
+   * Demotion (`mandatory: false`) runs the same completion guard as removal:
+   * dropping an unsatisfied criterion out of the mandatory set moves the
+   * denominator exactly as deleting it would, so the two paths cannot have
+   * different rules without the weaker one becoming the way around the
+   * stronger one.
+   */
+  async reviseCriterion(
+    criterionId: string,
+    patch: { description?: string; mandatory?: boolean },
+    opts: { by?: string; reason?: string; goalId?: GoalId } = {},
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const gid = opts.goalId ?? this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    const c = goal.acceptanceCriteria.find((x) => x.id === criterionId);
+    if (!c) return { ok: false, reason: `unknown criterion '${criterionId}'` };
+    const clean: { description?: string; mandatory?: boolean } = {};
+    const nextDescription = patch.description?.trim();
+    if (nextDescription) clean.description = nextDescription;
+    if (typeof patch.mandatory === "boolean" && patch.mandatory !== c.mandatory) clean.mandatory = patch.mandatory;
+    if (Object.keys(clean).length === 0) return { ok: false, reason: "provide a new description and/or a changed mandatory flag" };
+    if (clean.mandatory === false) {
+      const remaining = goal.acceptanceCriteria.map((x) => (x.id === criterionId ? { ...x, mandatory: false } : x));
+      if (criteriaWouldComplete(goal, remaining) && !criteriaWouldComplete(goal, goal.acceptanceCriteria)) {
+        return {
+          ok: false,
+          reason:
+            `refusing to demote '${criterionId}': it is the only mandatory criterion still unproven, so dropping it from the ` +
+            `mandatory set would complete the mission without the work being done. Satisfy or waive it instead.`,
+        };
+      }
+    }
+    const actorId = opts.by ?? HUMAN_AGENT_ID;
+    const ctx = { config: this.config, projections: this.state, goal };
+    const check = this.deps.policy.evaluateAuthority(actorId, "requirements", "revise", ctx);
+    if (check.decision !== "ALLOW") {
+      await this.denied(actorId, criterionId, "revise criterion", check);
+      return { ok: false, reason: check.reason };
+    }
+    await this.deps.kernel.emit(
+      "requirement.revised",
+      {
+        goalId: gid,
+        criterionId,
+        ...clean,
+        previous: { description: c.description, mandatory: c.mandatory },
+        reason: opts.reason,
+      },
+      { actorId, goalId: gid },
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Drop a criterion from the goal entirely.
+   *
+   * The dangerous one. Completion is measured as "every mandatory criterion is
+   * satisfied", so removing the last UNSATISFIED criterion does not merely
+   * shrink the checklist — it makes the remaining set vacuously complete, and
+   * the very next watchdog tick emits `goal.completed` on a mission where
+   * nothing was finished. Two refusals stop that:
+   *
+   *   1. never empty the mandatory set — a mission with nothing to prove
+   *      cannot be judged at all;
+   *   2. never let the removal itself be what completes the goal. The second
+   *      `criteriaWouldComplete` call is what makes this precise: if the goal
+   *      was ALREADY completable before the edit, this removal is not the
+   *      cause and there is nothing to protect against.
+   *
+   * The guard uses the termination manager's own `criterionSatisfied` rule
+   * rather than a local copy, so it cannot drift out of agreement with the
+   * verdict it exists to prevent.
+   */
+  async removeCriterion(
+    criterionId: string,
+    opts: { by?: string; reason: string; goalId?: GoalId },
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const gid = opts.goalId ?? this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    const why = opts.reason?.trim();
+    if (!why) return { ok: false, reason: "removing a criterion requires an explicit reason" };
+    const removed = goal.acceptanceCriteria.find((x) => x.id === criterionId);
+    if (!removed) return { ok: false, reason: `unknown criterion '${criterionId}'` };
+    const remaining = goal.acceptanceCriteria.filter((x) => x.id !== criterionId);
+    if (removed.mandatory && remaining.every((x) => !x.mandatory)) {
+      return {
+        ok: false,
+        reason:
+          `refusing to remove '${criterionId}': it is the last mandatory criterion, and a mission with nothing left to ` +
+          `prove can never be judged complete or incomplete.`,
+      };
+    }
+    if (criteriaWouldComplete(goal, remaining) && !criteriaWouldComplete(goal, goal.acceptanceCriteria)) {
+      return {
+        ok: false,
+        reason:
+          `refusing to remove '${criterionId}': every other mandatory criterion is already satisfied, so removing this one ` +
+          `would complete the mission without the work being done. Satisfy it, waive it, or remove a different criterion.`,
+      };
+    }
+    const actorId = opts.by ?? HUMAN_AGENT_ID;
+    const ctx = { config: this.config, projections: this.state, goal };
+    const check = this.deps.policy.evaluateAuthority(actorId, "requirements", "remove", ctx);
+    if (check.decision !== "ALLOW") {
+      await this.denied(actorId, criterionId, "remove criterion", check);
+      return { ok: false, reason: check.reason };
+    }
+    await this.deps.kernel.emit(
+      "requirement.removed",
+      {
+        goalId: gid,
+        criterionId,
+        reason: why,
+        // The whole criterion, not just its id: after the splice this event is
+        // the only record that it ever existed, and an operator reviewing the
+        // decision needs to see what was dropped, not a bare identifier.
+        removed: { description: removed.description, mandatory: removed.mandatory, status: removed.status },
+      },
+      { actorId, goalId: gid },
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Append acceptance criteria to the live goal.
+   *
+   * Reuses `requirements.created` rather than minting a fifth event type: that
+   * reducer already appends and dedupes by id, and a second "criteria were
+   * added" event would give replay two ways to say one thing.
+   *
+   * Adding is the safe direction — widening the mandatory set can only move a
+   * goal further from complete — so unlike removal this needs no completion
+   * guard. It carries the same authority anyway, because whoever can widen the
+   * definition of done can also stall a mission indefinitely.
+   *
+   * A duplicate id is refused rather than passed through: the reducer skips
+   * ids it already holds, so emitting one would report success and change
+   * nothing, which is the partial silence this surface exists to avoid.
+   */
+  async addCriteria(
+    criteria: AcceptanceCriterion[],
+    opts: { by?: string; reason?: string; goalId?: GoalId } = {},
+  ): Promise<{ ok: boolean; reason?: string; added?: string[] }> {
+    const gid = opts.goalId ?? this.state.activeGoalId;
+    if (!gid) return { ok: false, reason: "no active goal" };
+    const goal = this.state.goals.get(gid);
+    if (!goal) return { ok: false, reason: "unknown goal" };
+    if (!Array.isArray(criteria) || criteria.length === 0) return { ok: false, reason: "provide at least one criterion" };
+    const minted: AcceptanceCriterion[] = [];
+    for (const c of criteria) {
+      const description = typeof c?.description === "string" ? c.description.trim() : "";
+      if (!description) return { ok: false, reason: "every criterion needs a description" };
+      const id = typeof c?.id === "string" && c.id.trim() ? c.id.trim() : shortHash(description);
+      if (goal.acceptanceCriteria.some((x) => x.id === id) || minted.some((x) => x.id === id)) {
+        return { ok: false, reason: `criterion '${id}' already exists — revise it instead of adding it twice` };
+      }
+      minted.push({ id, description, mandatory: c?.mandatory !== false, status: "UNSATISFIED", evidence: [] });
+    }
+    const actorId = opts.by ?? HUMAN_AGENT_ID;
+    const ctx = { config: this.config, projections: this.state, goal };
+    const check = this.deps.policy.evaluateAuthority(actorId, "requirements", "revise", ctx);
+    if (check.decision !== "ALLOW") {
+      await this.denied(actorId, gid, "add criteria", check);
+      return { ok: false, reason: check.reason };
+    }
+    await this.deps.kernel.emit(
+      "requirements.created",
+      { goalId: gid, criteria: minted, reason: opts.reason },
+      { actorId, goalId: gid },
+    );
+    return { ok: true, added: minted.map((c) => c.id) };
+  }
+
+  /**
+   * Retire a seat: terminal, with no way back — contrast `suspendAgent`.
+   *
+   * Tears the live session down BEFORE emitting, for the same reason
+   * `suspendAgent` does. The event flips the projection to RETIRED, and a
+   * runtime session still streaming a turn into a seat the projection calls
+   * dead is exactly how a retired agent goes on writing to the log.
+   */
+  async retireAgent(agentId: string, opts: { by?: string; reason: string }): Promise<{ ok: boolean; reason?: string }> {
+    const rec = this.state.agents.get(agentId);
+    if (!rec) return { ok: false, reason: `unknown agent '${agentId}'` };
+    if (agentId === HUMAN_AGENT_ID) return { ok: false, reason: "the human seat cannot be retired" };
+    if (rec.state.lifecycle === "RETIRED") return { ok: false, reason: `agent '${agentId}' is already retired` };
+    const why = opts.reason?.trim();
+    if (!why) return { ok: false, reason: "retiring a seat requires an explicit reason" };
+    const actorId = opts.by ?? HUMAN_AGENT_ID;
+    const goalId = this.state.activeGoalId ?? undefined;
+    const ctx = { config: this.config, projections: this.state, goal: goalId ? this.state.goals.get(goalId) : undefined };
+    const check = this.deps.policy.evaluateAuthority(actorId, "agents", "retire", ctx);
+    if (check.decision !== "ALLOW") {
+      await this.denied(actorId, agentId, "retire agent", check);
+      return { ok: false, reason: check.reason };
+    }
+    const sess = this.sessions.get(agentId);
+    if (sess) await sess.runtime.suspend(sess.session).catch(() => undefined);
+    await this.deps.kernel.emit("agent.retired", { agentId, reason: why }, { actorId, goalId });
+    return { ok: true };
+  }
+
+  /**
    * Raise an exhausted agent/thread budget WITHOUT asking a human, up to a
    * ceiling expressed as a multiple of the budget's original limit.
    *
@@ -3025,7 +3281,7 @@ export class Supervisor {
       return;
     }
     if (agentId === HUMAN_AGENT_ID) return;
-    if (rec.state.lifecycle === "SUSPENDED" || rec.state.lifecycle === "COMPLETED") {
+    if (rec.state.lifecycle === "SUSPENDED" || rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "RETIRED") {
       if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: lifecycle ${rec.state.lifecycle}`);
       return;
     }
@@ -4280,8 +4536,13 @@ export class Supervisor {
       return { ok: false, op: "delegate", reason: `${op.to} lacks required capabilities ${missingCaps.join(", ")}` };
     }
     if (!String(op.title ?? "").trim()) return { ok: false, op: "delegate", reason: "delegate requires a non-empty title" };
+    // Construct the task first, but EMIT it only once the message is accepted.
+    // `newTask` just builds the record — the projection registers it off the
+    // `task.created` event — so a refusal here leaves nothing behind. Emitting
+    // first put a claimable task on the board for a delegation the runtime then
+    // reported as failed: the board kept work the log said had never been
+    // handed out, and no one was ever woken to do it.
     const task = this.newTask(actorId, op.title, op.description, op.requiredCapabilities, op.artifactRefs, this.state.agents.get(actorId)?.state.activeTaskId ?? undefined, op.budgetHint);
-    await this.emitTaskCreated(task);
     const res = await this.sendMessage({
       from: actorId,
       to: [op.to],
@@ -4291,8 +4552,10 @@ export class Supervisor {
       taskId: task.id,
       budgetHint: op.budgetHint,
     });
+    if (!res.accepted) return { ok: false, op: "delegate", reason: res.reason };
+    await this.emitTaskCreated(task);
     turn.sentOps++;
-    return res.accepted ? { ok: true, op: "delegate", taskId: task.id, messageId: res.messageId } : { ok: false, op: "delegate", reason: res.reason };
+    return { ok: true, op: "delegate", taskId: task.id, messageId: res.messageId };
   }
 
   private async opSpawnWorker(actorId: string, op: Extract<MeshOp, { op: "spawn_worker" }>): Promise<OpResult> {
@@ -5260,7 +5523,7 @@ export class Supervisor {
     const eligible = (id: string): boolean => {
       const rec = this.state.agents.get(id);
       if (!rec || id === HUMAN_AGENT_ID) return false;
-      if (["SUSPENDED", "COMPLETED", "FAILED"].includes(rec.state.lifecycle)) return false;
+      if (["SUSPENDED", "COMPLETED", "FAILED", "RETIRED"].includes(rec.state.lifecycle)) return false;
       // A parked agent is exactly the one that cannot make progress; nudging
       // it is how the mission stayed stuck.
       return !this.deps.scheduler.isParkedForBackoff?.(id);

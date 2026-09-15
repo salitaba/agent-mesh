@@ -56,6 +56,14 @@ export function applyAgentEvent(state: Projections, event: MeshEvent, p: Record<
       if (rec) transitionLifecycle(state, rec.state, "COMPLETED", event);
       break;
     }
+    // Terminal, unlike COMPLETED: the seat is out of the mesh for good. The
+    // record is kept rather than deleted so the agent's authored artifacts,
+    // messages and events still resolve to an author after retirement.
+    case "agent.retired": {
+      const rec = state.agents.get(p.agentId);
+      if (rec) transitionLifecycle(state, rec.state, "RETIRED", event);
+      break;
+    }
     case "agent.failed": {
       const rec = state.agents.get(p.agentId);
       if (rec) {

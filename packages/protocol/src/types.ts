@@ -39,7 +39,14 @@ export type LifecycleState =
   | "BLOCKED"
   | "SUSPENDED"
   | "FAILED"
-  | "COMPLETED";
+  | "COMPLETED"
+  /**
+   * Operator retired the seat. Terminal in a way COMPLETED is not: a completed
+   * agent can be woken again for follow-up (`COMPLETED: ["IDLE"]`), a retired
+   * one never runs again. Retirement is how capacity leaves a live mesh
+   * without editing mesh.yaml and restarting it.
+   */
+  | "RETIRED";
 
 export type MessageType =
   | "MISSION"
@@ -263,9 +270,18 @@ export type EventType =
   | "goal.reopened"
   | "goal.escalated"
   | "goal.failed"
+  /**
+   * The mission statement itself was rewritten. The goal is the reference every
+   * acceptance judgement is measured against, so a replacement lands as an
+   * auditable event carrying the previous text rather than a silent field
+   * assignment nobody can diff after the fact.
+   */
+  | "goal.description_revised"
   | "requirements.created"
   | "requirement.blocked"
   | "requirement.satisfied"
+  | "requirement.revised"
+  | "requirement.removed"
   | "agent.created"
   | "agent.started"
   | "agent.awakened"
@@ -276,6 +292,7 @@ export type EventType =
   | "agent.failed"
   | "agent.restarted"
   | "agent.replaced"
+  | "agent.retired"
   | "thread.created"
   | "message.sent"
   | "message.delivered"
@@ -1116,6 +1133,16 @@ export interface DesignerPromptOptions {
   system?: string;
   /** Per-call model override. Falls back to the runtime's default. */
   model?: string;
+  /**
+   * Remote MCP endpoint the designer may call for this turn, carrying the
+   * staging tools plus read-only observability.
+   *
+   * The turn is correlated by `headers`, not by anything the model says: a
+   * staged mutation has to land in the buffer for THIS turn, and a model that
+   * echoes an id can echo the wrong one. The runtime's only job is to pass
+   * both through to its MCP client config verbatim.
+   */
+  mcp?: { url: string; headers?: Record<string, string> };
 }
 
 export interface DesignerStreamDelta {
@@ -1162,6 +1189,76 @@ export interface DesignerRuntime {
    */
   setDesignerObserve(provider: () => { busUrl: string; token: string } | undefined): void;
   stopAll(): Promise<void>;
+}
+
+/**
+ * One change the dashboard assistant wants made, described but NOT performed.
+ *
+ * The assistant never executes: it stages, the operator commits. That split is
+ * the whole design, and it is why this is a data shape rather than a method
+ * call — a staged mutation can be shown, diffed, refused, or applied hours
+ * later by someone who was not in the conversation that produced it.
+ *
+ * Two apply targets, and they are not interchangeable:
+ *   - `config.replace` rewrites the operator's CLIENT-SIDE draft and still
+ *     needs a separate Save. Nothing in the running mesh moves.
+ *   - every other kind applies SERVER-SIDE to the live run, immediately.
+ * The UI must keep these visibly distinct; see `DESTRUCTIVE_KINDS` for the
+ * subset that additionally warrants a typed confirmation.
+ */
+export type StagedMutation =
+  | { kind: "config.replace"; yaml: string; reason?: string }
+  | { kind: "goal.description"; description: string; reason?: string }
+  | { kind: "criteria.add"; criteria: AcceptanceCriterion[]; reason?: string }
+  | { kind: "criteria.edit"; criterionId: string; description?: string; mandatory?: boolean; reason?: string }
+  /**
+   * `reason` is required here alone. Removing a criterion shrinks the
+   * denominator completion is measured over, which can flip a live run to
+   * COMPLETED — so the operator gets told why, in words, before they press it.
+   */
+  | { kind: "criteria.delete"; criterionId: string; reason: string }
+  | { kind: "seat.spawn"; agent: AgentDefinition; reason?: string }
+  | { kind: "seat.retire"; agentId: AgentId; reason: string }
+  | { kind: "seat.suspend"; agentId: AgentId; reason?: string }
+  | { kind: "seat.resume"; agentId: AgentId; reason?: string }
+  | { kind: "seat.wake"; agentId: AgentId; reason?: string }
+  | { kind: "run.pause"; reason?: string }
+  | { kind: "run.resume"; reason?: string }
+  /**
+   * Inline rather than `GoalBudget`: that interface requires `tokens`, and the
+   * executor (`Supervisor.adjustGoalBudget`) accepts only these two caps.
+   */
+  | { kind: "run.budget"; budget: { maxEvents?: number; wallClockMinutes?: number }; reason?: string }
+  | { kind: "run.reopen"; criteria?: string[]; reason?: string }
+  | { kind: "mission.reset"; reason?: string };
+
+/**
+ * Kinds that destroy state a run cannot get back by itself, and so earn an
+ * extra confirmation step in the dashboard before they are applied.
+ *
+ * `run.reopen` is here because it invalidates accepted evidence; `config.replace`
+ * because it overwrites the operator's whole working draft.
+ */
+export const DESTRUCTIVE_KINDS: readonly StagedMutation["kind"][] = [
+  "config.replace",
+  "criteria.delete",
+  "seat.retire",
+  "run.reopen",
+  "mission.reset",
+];
+
+/** A turn's worth of staged mutations, applied in array order. */
+export interface StagedProposal {
+  id: string;
+  createdAt: string;
+  mutations: StagedMutation[];
+  /**
+   * Things the assistant could not stage cleanly (an agent id it could not
+   * find, a criterion it was asked to edit that no longer exists). Surfaced to
+   * the operator alongside what DID stage, so a partial proposal never reads
+   * as a complete one.
+   */
+  problems: string[];
 }
 
 export interface AgentContextBundle {

@@ -103,7 +103,13 @@ export function extractPatchFiles(content: string, metadataPath?: string): Patch
   const wanted = normalizePath(metadataPath);
   const match = files.find((f) => normalizePath(f.path) === wanted);
   if (match) return [match];
-  if (files.length === 0) return [{ path: metadataPath, content }];
+  // `wanted`, not the raw `metadataPath`: every other branch here compares
+  // normalized paths, so echoing the caller's spelling back made the same input
+  // mean two different files depending on which branch it took. A
+  // Windows-separator path is the case that bites — `a\\b.ts` matched as
+  // `a/b.ts` in one branch and then materialized as a literal one-segment
+  // filename containing a backslash in the other.
+  if (files.length === 0) return [{ path: wanted, content }];
   return [];
 }
 

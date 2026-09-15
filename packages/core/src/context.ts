@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import type {
   AgentContextBundle,
   Artifact,
@@ -149,6 +151,17 @@ export function buildAgentContext(
   if (!record) throw new Error(`unknown agent ${agentId}`);
   const goalId = state.activeGoalId ?? "";
   const goal = state.goals.get(goalId);
+  /**
+   * The mission text, goal record first and config as the fallback.
+   *
+   * `??` alone was not enough. A goal whose description is present but EMPTY —
+   * what a blank `goal: |` block in mesh.yaml produces, and what the generated
+   * config template ships — is not nullish, so it won the fallback and the agent
+   * got a blank `## Mission` section plus a focus set that matched nothing, which
+   * silently collapsed artifact/decision ranking to pure recency. Blank is the
+   * same problem as absent here and takes the same branch.
+   */
+  const missionText = goal?.description?.trim() || config.goalText;
 
   const unreadIds = state.unread.get(agentId) ?? [];
   const unread: MeshMessage[] = unreadIds.slice(0, maxUnread).map((id) => state.messages.get(id)!).filter(Boolean);
@@ -173,11 +186,11 @@ export function buildAgentContext(
   const currentTask = taskHint ?? (record.state.activeTaskId ? state.tasks.get(record.state.activeTaskId) : undefined);
   // JSON rather than named fields: whatever a Task carries, its words are the
   // signal, and stringifying cannot go stale against a shape change.
-  const focus = focusTerms(`${goal?.description ?? config.goalText} ${JSON.stringify(currentTask ?? {})}`);
+  const focus = focusTerms(`${missionText} ${JSON.stringify(currentTask ?? {})}`);
 
   const decisionPool = [...state.decisions.values()]
     .filter((d) => d.goalId === goalId && d.status === "RATIFIED")
-    .sort((a, b) => b.ratifiedAt!.localeCompare(a.ratifiedAt ?? a.createdAt));
+    .sort((a, b) => (b.ratifiedAt ?? b.createdAt).localeCompare(a.ratifiedAt ?? a.createdAt));
   const decisions = rankByRelevance(
     decisionPool,
     maxDecisions,
@@ -299,7 +312,7 @@ export function buildAgentContext(
 
   return {
     rolePrompt: cachedRolePrompt(deps, agentId),
-    mission: goal ? goal.description : config.goalText,
+    mission: missionText,
     relevantPolicies,
     agentState: { ...record.state },
     currentTask,
@@ -416,12 +429,55 @@ function describePoliciesFor(config: ResolvedMeshConfig, agentId: string): strin
 
 const promptCache = new Map<string, string>();
 
+/** Poor man's LRU: the entries are tiny and edits are rare, so a hard reset on
+ * overflow beats tracking recency. Without a bound this Map only ever grew —
+ * one entry per (path, agent, revision) in a host process that serves many
+ * projects. */
+const PROMPT_CACHE_MAX = 256;
+
+/**
+ * The prompt FILE's current revision, as cheaply as it can be established.
+ *
+ * The cache key used to be the config path plus the agent id, so the text read
+ * at first use was served for the life of the process: editing `roles/qa.md` in
+ * place — or re-opening a project whose `mesh.yaml` changed while the prompt ref
+ * stayed the same — kept handing every seat the prompt from before the edit.
+ * `clearPromptCache()` exists for exactly that, but nothing in the runtime ever
+ * called it (only a test did), so the stale entry was never dropped.
+ *
+ * mtime and size are folded into the key instead, so the entry dies with the
+ * edit that actually changes the prompt. A stat per turn is a rounding error
+ * next to the read-and-decode it replaces.
+ */
+function promptFileKey(absPath: string): string {
+  try {
+    const stat = fs.statSync(absPath);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    // Unreadable. Returning a constant here cannot poison the cache: the only
+    // way to reach `set` below is for `loadRolePrompt` to return, and that
+    // throws ConfigError for a file it cannot read.
+    return "unreadable";
+  }
+}
+
 function cachedRolePrompt(deps: ContextBuilderDeps, agentId: string): string {
   const definition = deps.kernel.state.agents.get(agentId)?.definition;
-  const cacheKey = `${deps.config.filePath}:${agentId}:${definition?.prompt.file ?? definition?.prompt.text?.slice(0, 24) ?? "default"}`;
+  const ref = deps.config.agents[agentId]?.prompt ?? definition?.prompt;
+  // Inline text and the generated one-liner never touch the disk, and the
+  // config object is already in hand — caching a string we are holding spends
+  // memory to save nothing.
+  //
+  // This also retires the old `prompt.text?.slice(0, 24)` discriminator, which
+  // made two seats whose inline prompts shared their first 24 characters collide
+  // and handed the second seat the first one's prompt.
+  if (!ref?.file) return loadRolePrompt(deps.config, agentId, definition);
+  const abs = path.isAbsolute(ref.file) ? ref.file : path.resolve(deps.config.dir, ref.file);
+  const cacheKey = `${abs}:${agentId}:${promptFileKey(abs)}`;
   const hit = promptCache.get(cacheKey);
-  if (hit) return hit;
+  if (hit !== undefined) return hit;
   const text = loadRolePrompt(deps.config, agentId, definition);
+  if (promptCache.size >= PROMPT_CACHE_MAX) promptCache.clear();
   promptCache.set(cacheKey, text);
   return text;
 }
@@ -494,7 +550,12 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("## Relevant policy");
   for (const p of bundle.relevantPolicies) lines.push(`- ${p}`);
   lines.push("");
-  if (bundle.agentMemory.length > 0) {
+  // The `elidedMemory` warning below has to render even when `agentMemory` is
+  // EMPTY — that is the case it was written for. A seat whose notes were all
+  // evicted is left holding only the marker, and the marker is filtered out of
+  // `agentMemory` during assembly, so the old `length > 0` guard hid the warning
+  // from precisely the agent that lost its history and needed to be told.
+  if (bundle.agentMemory.length > 0 || (bundle.elidedMemory ?? 0) > 0) {
     lines.push("## Your memory (L2)");
     for (const m of bundle.agentMemory) lines.push(`- ${m.key}: ${m.value}`);
     partial(bundle.omitted?.memory, "note(s) you wrote", "held back to fit this turn; still in your memory");
@@ -642,7 +703,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // duplicating an instruction doesn't make it more likely to be followed,
   // just more expensive to say.
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
-  lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
+  lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
   lines.push("```mesh-json");
   lines.push('[{"op":"send","type":"REQUEST","to":["tech-lead"],"newThread":{"subject":"review X"},"payload":{"question":"please review"}},');
   lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');

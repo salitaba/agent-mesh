@@ -6,13 +6,25 @@
 
 import { useSyncExternalStore } from "react";
 import type { ProjectClient } from "../api";
+import type { StagedProposal } from "@mesh/protocol";
+
+/* The stream is untrusted shape-wise; a half-built proposal must not reach the
+ * review card as though it were complete. */
+function isStagedProposal(v: any): v is StagedProposal {
+  return !!v && typeof v === "object" && Array.isArray(v.mutations);
+}
 
 export interface ChatEntry {
   id: string;
   role: "user" | "assistant";
   content: string;
   thinking?: string;
+  /* Two proposal formats coexist for one release. `proposed` is the older
+   * text-extracted whole config; `proposal` is the staged buffer the assistant
+   * built with its tools. Both are kept because the server still sends both —
+   * see showsTextProposal() for which one a turn actually renders. */
   proposed?: any;
+  proposal?: StagedProposal;
   problems?: string[];
 }
 
@@ -181,6 +193,7 @@ export async function sendMessage(client: ProjectClient, text: string, currentCo
             // final message's reasoning parts are the authoritative fallback.
             thinking: typeof evt.thinking === "string" && evt.thinking ? evt.thinking : (live.thinking || undefined),
             proposed: evt.proposedConfig,
+            proposal: isStagedProposal(evt.proposal) ? evt.proposal : undefined,
             problems: Array.isArray(evt.problems) ? evt.problems : [],
           }],
         });

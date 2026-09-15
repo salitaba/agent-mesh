@@ -5,8 +5,11 @@
  * (localStorage-backed), so switching views or refreshing never loses it. */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { parse as parseYaml } from "yaml";
+import type { StagedMutation } from "@mesh/protocol";
 import { summarizeDiff } from "../model";
-import { Button, TextArea } from "../../components";
+import { CONFIRM_WORD, destructiveKindsIn, showsTextProposal, splitByTarget, summarizeMutation } from "../mutations";
+import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
 import { getDraftSnapshot, type DraftState } from "../storage";
@@ -28,6 +31,12 @@ export default function ChatPanel(): React.JSX.Element {
   const { client, toast, setView } = useMesh();
   const { entries, busy, failed, review, applied, live, showThinking } = useSyncExternalStore(subscribe, getSnapshot);
   const [input, setInput] = useState("");
+  /* Per-entry state for the live-run card: the typed confirmation, and the
+   * server's own report. Local rather than in chatStore on purpose — applying
+   * to a running mesh is an action taken now, not part of the transcript that
+   * gets replayed from localStorage on the next load. */
+  const [confirmText, setConfirmText] = useState<Record<number, string>>({});
+  const [runApply, setRunApply] = useState<Record<number, { busy: boolean; ok?: boolean; msg: string }>>({});
   const logRef = useRef<HTMLDivElement | null>(null);
   /* Follow the latest turn while the reader is already at the bottom; the
    * closing panel unmounts, so reopening lands at the end instead of the top. */
@@ -51,6 +60,43 @@ export default function ChatPanel(): React.JSX.Element {
     toast("designer chat", "proposal applied to the draft — review and save", "ok");
   };
 
+  /* A staged config.replace carries YAML; the Designer's draft path wants a
+   * parsed model. Translating here is what keeps `applyChatProposal`'s
+   * next.agents / mesh.id assumptions in the one branch that already had them. */
+  const applyStagedDraft = (i: number, mutations: StagedMutation[]) => {
+    const rep = mutations.find((m) => m.kind === "config.replace");
+    if (!rep || rep.kind !== "config.replace") return;
+    let model: any;
+    try {
+      model = parseYaml(rep.yaml);
+    } catch (err) {
+      toast("designer chat", `the proposed YAML does not parse — nothing applied (${err instanceof Error ? err.message : String(err)})`, "bad");
+      return;
+    }
+    apply(i, model);
+  };
+
+  /* The other target, and the one that must never reach commitDraft: these go
+   * to the server, which re-checks every refusal in front of the operator. */
+  const applyToRun = async (i: number, mutations: StagedMutation[]) => {
+    setRunApply((s) => ({ ...s, [i]: { busy: true, msg: "" } }));
+    const res = await client.post("/designer/staged/apply", { mutations });
+    const report = res.json;
+    const ok = res.status === 200 && report?.ok === true;
+    /* Report the server's own sentences, not an HTTP code: a refusal here is a
+     * deliberate policy answer and the operator needs to read why. */
+    const details: string[] = Array.isArray(report?.results)
+      ? report.results.filter((r: any) => r && r.ok === false).map((r: any) => `${r.kind}: ${r.detail}`)
+      : [];
+    const msg = ok
+      ? `applied ${report?.applied ?? mutations.length} change${(report?.applied ?? mutations.length) === 1 ? "" : "s"} to the running mesh`
+      : details.length
+        ? `${report?.applied ?? 0} of ${mutations.length} applied — ${details.join("; ")}`
+        : `the server refused this apply (HTTP ${res.status})`;
+    setRunApply((s) => ({ ...s, [i]: { busy: false, ok, msg } }));
+    toast("designer chat", msg, ok ? "ok" : "bad");
+  };
+
   return (
     <div className="ms-panel ms-chat">
       <p className="ms-hint">
@@ -70,7 +116,21 @@ export default function ChatPanel(): React.JSX.Element {
       >
         {entries.length === 0 ? <div className="muted">No messages yet.</div> : null}
         {entries.map((e, i) => {
-          const diff = e.proposed !== undefined ? proposalDiff(e.proposed, getDraftSnapshot()) : [];
+          const staged = e.proposal ?? null;
+          const split = staged ? splitByTarget(staged.mutations) : { draft: [] as StagedMutation[], server: [] as StagedMutation[] };
+          const ctx = { model: getDraftSnapshot().model };
+          /* Both proposal formats ride the same reply for one release. The text
+           * one is surfaced only when the staged buffer carries no
+           * config.replace, so a turn never shows two whole-config proposals. */
+          const showText = e.proposed !== undefined && showsTextProposal(staged);
+          const diff = showText ? proposalDiff(e.proposed, getDraftSnapshot()) : [];
+          const draftLines = split.draft.flatMap((m) => summarizeMutation(m, ctx));
+          const runLines = split.server.flatMap((m) => summarizeMutation(m, ctx));
+          const runDestructive = destructiveKindsIn(split.server);
+          const confirmed = !runDestructive.length || (confirmText[i] ?? "").trim().toLowerCase() === CONFIRM_WORD;
+          const changes = diff.length + draftLines.length + runLines.length;
+          const cards = (showText ? 1 : 0) + (split.draft.length ? 1 : 0) + (split.server.length ? 1 : 0);
+          const run = runApply[i];
           return (
             <div key={e.id} className={`ms-chat-msg ${e.role}`}>
               <span className="ms-chat-who">{e.role === "user" ? "You" : "Designer"}</span>
@@ -86,22 +146,68 @@ export default function ChatPanel(): React.JSX.Element {
                   {e.problems.map((p) => <li key={p}>{p}</li>)}
                 </ul>
               ) : null}
-              {e.role === "assistant" && e.proposed !== undefined ? (
+              {e.role === "assistant" && cards > 0 ? (
                 <div className="ms-chat-review">
                   <div className="ms-chat-actions">
                     <Button variant="small" aria-expanded={review === i} onClick={() => setReview(review === i ? null : i)}>
-                      {review === i ? "hide diff" : `review proposal (${diff.length} change${diff.length === 1 ? "" : "s"})`}
+                      {review === i ? "hide review" : `review proposal (${changes} change${changes === 1 ? "" : "s"})`}
                     </Button>
                     {applied === i ? <span className="muted">applied to draft</span> : null}
                   </div>
                   {review === i ? (
                     <>
-                      {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
                       {e.problems?.length ? <div className="verdict warn">the server flagged this proposal — applying it puts those problems in your draft.</div> : null}
+                      {staged?.problems?.length ? (
+                        <div className="verdict warn">the assistant could not stage everything: {staged.problems.join("; ")}</div>
+                      ) : null}
+
+                      {showText ? (
+                        <div className="ms-chat-card draft">
+                          <div className="tx-meta">Draft change — local, still needs Save</div>
+                          {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
+                          <div className="ms-chat-actions">
+                            <Button variant="primary" disabled={applied === i} onClick={() => apply(i, e.proposed)}>
+                              {e.problems?.length ? "apply anyway" : "apply to draft"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {split.draft.length ? (
+                        <div className="ms-chat-card draft">
+                          <div className="tx-meta">Draft change — local, still needs Save</div>
+                          <ul className="diff-list">{draftLines.map((d, k) => <li key={`d${k}-${d}`}>{d}</li>)}</ul>
+                          <div className="ms-chat-actions">
+                            <Button variant="primary" disabled={applied === i} onClick={() => applyStagedDraft(i, split.draft)}>apply to draft</Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {split.server.length ? (
+                        <div className="ms-chat-card server">
+                          <div className="verdict warn">Live run change — applies to the running mesh now, with no Save step.</div>
+                          <ul className="diff-list">{runLines.map((d, k) => <li key={`s${k}-${d}`}>{d}</li>)}</ul>
+                          {runDestructive.length ? (
+                            <div className="ms-chat-confirm">
+                              <div className="verdict bad">destructive: {runDestructive.join(", ")}. type “{CONFIRM_WORD}” to confirm.</div>
+                              <Input
+                                value={confirmText[i] ?? ""}
+                                onChange={(ev) => setConfirmText((c) => ({ ...c, [i]: ev.target.value }))}
+                                placeholder={CONFIRM_WORD}
+                                aria-label={`type ${CONFIRM_WORD} to confirm a destructive change`}
+                              />
+                            </div>
+                          ) : null}
+                          <div className="ms-chat-actions">
+                            <Button variant="primary" disabled={run?.busy === true || run?.ok === true || !confirmed} onClick={() => void applyToRun(i, split.server)}>
+                              {run?.busy ? "applying…" : "apply to the running mesh"}
+                            </Button>
+                          </div>
+                          {run && !run.busy && run.msg ? <div className={`verdict ${run.ok ? "ok" : "bad"}`}>{run.msg}</div> : null}
+                        </div>
+                      ) : null}
+
                       <div className="ms-chat-actions">
-                        <Button variant="primary" disabled={applied === i} onClick={() => apply(i, e.proposed)}>
-                          {e.problems?.length ? "apply anyway" : "apply to draft"}
-                        </Button>
                         <Button variant="ghost" onClick={() => setReview(null)}>cancel</Button>
                       </div>
                     </>

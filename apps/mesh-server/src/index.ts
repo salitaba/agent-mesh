@@ -2,8 +2,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { randomUUID } from "crypto";
 import { URL } from "url";
-import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime } from "../../../packages/protocol/src/index";
+import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal } from "../../../packages/protocol/src/index";
 import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
@@ -31,6 +32,8 @@ import {
   SseHub,
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
+import { applyStagedProposal } from "./staging";
+import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { mergeTurnSteps } from "./steps-view";
 import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
@@ -530,6 +533,16 @@ const DESIGNER_SYSTEM_PROMPT = [
   "- Set a mission token budget in budgets.mission.tokens that fits the goal, and let the crew size follow the budget — not the other way around.",
   "- Prefer a clear pipeline (produce, review, approve) over a swarm of peers. When the operator does not specify governance, propose the simplest correct arrangement and say what you chose.",
   "- Validate before replying: call mesh_designer_validate on the complete proposal. If it reports problems, fix them in your next whole-config block instead of explaining them away.",
+  "",
+  "Staging changes to the live run:",
+  "- When the mesh_stage_* tools are available you can also PROPOSE changes to the running mission: the mission statement (mesh_stage_goal_description), acceptance criteria (mesh_stage_criteria_add / _edit / _delete), seats (mesh_stage_seat_spawn / _retire / _suspend / _resume / _wake), and run control (mesh_stage_run_pause / _resume / _budget / _reopen, mesh_stage_mission_reset).",
+  "- You NEVER execute any of these. Staging shows the operator a review card; they press Apply. Say what you staged and why — never say a change has been made, is now in effect, or has taken effect.",
+  "- Look before you stage. Call mesh_run_status or mesh_agent_activity first so a retirement lands on a seat that is actually idle and an edit names a criterion that actually exists. A tool that refuses tells you why — fix the call, do not argue with it in prose.",
+  "- Destructive proposals (mesh_stage_criteria_delete, _seat_retire, _run_reopen, _mission_reset) require a `reason`, and the operator sees it. Retirement is TERMINAL: a retired seat can never be resumed or woken, so propose mesh_stage_seat_suspend unless the seat should be gone for good.",
+  "- Removing a criterion shrinks what completion is measured over and can end the run. Propose it only when the operator asked for it, and say so plainly.",
+  "- Config and live-run changes are different things: mesh_stage_config_replace edits the operator's local mesh.yaml draft (they still have to Save), every other kind applies to the running mesh. Do not describe them as one change.",
+  "- The one-block rule still holds for config. When you stage config with mesh_stage_config_replace, do NOT also emit a fenced config block — the tool call is the proposal. Use the fenced block only when you are not using the staging tools.",
+  "- Call mesh_staged_list before writing your summary so your prose matches the cards the operator will see, and mesh_staged_discard to drop anything you staged and then thought better of.",
   "- If the goal is ambiguous about scope, deliverables, or who may approve, ask 1-3 focused questions before proposing. Otherwise propose a complete draft rather than interrogating the operator.",
 ].join("\n");
 
@@ -742,7 +755,94 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // Served to local observers (the designer's mesh_observe MCP) via
   // `/internal/mcp/:agent?readOnly=1`: observability tools only.
   const mcpReadOnly = createMcpToolset(supervisor, { readOnly: true });
+  // Staging surface for the dashboard assistant: the same six observability
+  // tools plus `mesh_stage_*`, reached on the same bridge route with an
+  // `x-mesh-designer-turn` header. Writes land in `designerTurns`, never in the
+  // mesh — the operator applies them through POST /designer/staged/apply.
+  const designerTurns = new DesignerTurnBuffer();
+  const mcpStaging = createDesignerStagingToolset(supervisor, designerTurns);
   const startedAt = instance.startedAt;
+
+  /**
+   * Where a designer turn's MCP bridge should point. Unknown until `listen()`
+   * runs, so it is resolved per call rather than captured — a server that never
+   * listens (tests, embedded use) simply gets no staging tools.
+   */
+  const designerBus = (): { busUrl: string; token: string } | undefined => {
+    const addr = server.address();
+    if (!addr || typeof addr === "string") return undefined;
+    return { busUrl: `http://127.0.0.1:${addr.port}`, token: "human-local" };
+  };
+
+  /**
+   * Open a staging turn and describe the bridge the runtime should hand the
+   * model. The turn id travels in the header, so two concurrent turns cannot
+   * see or overwrite each other's buffer even though they share the route.
+   */
+  const openDesignerTurn = (): { turnId: string; mcp?: DesignerPromptOptions["mcp"] } => {
+    const turnId = randomUUID();
+    designerTurns.open(turnId);
+    const bus = designerBus();
+    if (!bus) return { turnId };
+    return {
+      turnId,
+      mcp: {
+        // `?staging=1` is carried by the URL itself so that a client which
+        // only reproduces the URL still reaches the staging toolset: the
+        // header is exact correlation, not the thing that selects the tools.
+        // o‍pencode's bridge is spawned once per designer process and cannot
+        // carry a per-turn header at all, so it arrives with the query alone.
+        url: `${bus.busUrl}/internal/mcp/${encodeURIComponent(HUMAN_AGENT_ID)}?staging=1`,
+        headers: { "x-mesh-token": bus.token, "x-mesh-designer-turn": turnId },
+      },
+    };
+  };
+
+  /**
+   * Close a staging turn and fold everything the model produced — tool calls
+   * and the fenced config block alike — into one `StagedProposal`.
+   *
+   * The two authoring paths can describe the same change, so staged tools win:
+   * a `config.replace` in the buffer suppresses the text-extracted one rather
+   * than offering the operator two config cards that differ in some subtle way.
+   * `proposedConfig` still ships beside the proposal for one release, because
+   * the dashboard's existing apply path reads it.
+   */
+  const closeDesignerTurn = (
+    turnId: string,
+    reply: string,
+    currentConfig?: unknown,
+  ): { proposedConfig: unknown; problems: string[]; proposal: StagedProposal } => {
+    const drained = designerTurns.drain(turnId);
+    const analyzed = analyzeDesignerReply(reply, currentConfig);
+    const mutations = [...drained.mutations];
+    const problems = [...drained.problems];
+    const stagedConfig = mutations.some((m) => m.kind === "config.replace");
+    let proposedConfig = analyzed.proposedConfig;
+
+    if (stagedConfig) {
+      // Risk 5: two proposal formats in one reply. The buffer is authoritative.
+      proposedConfig = undefined;
+    } else if (analyzed.proposedConfig !== undefined) {
+      problems.push(...analyzed.problems);
+      try {
+        mutations.unshift({ kind: "config.replace", yaml: stringifyMesh(analyzed.proposedConfig), reason: "config block from the assistant's reply" });
+      } catch (err) {
+        problems.push(`the proposed config could not be serialised: ${(err as Error).message}`);
+      }
+    } else {
+      // No config block and no staged config. The "reply contained no parseable
+      // block" complaint is only a problem when the model staged nothing at
+      // all; a tools-only turn is a complete answer, not a malformed one.
+      if (mutations.length === 0) problems.push(...analyzed.problems);
+    }
+
+    return {
+      proposedConfig,
+      problems: [...new Set(problems)],
+      proposal: { id: turnId, createdAt: new Date().toISOString(), mutations, problems: [...new Set(problems)] },
+    };
+  };
 
   /**
    * Memoised model catalogue for GET /models. Resolving it can shell out to the
@@ -811,6 +911,18 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const agentId = decodeURIComponent(parts[2] ?? "");
         const token = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
         const payload = await body();
+        // A designer turn identifies itself with a header the SERVER minted and
+        // handed to the runtime; the model never sees it and cannot name a
+        // different turn. Without the header this is the ordinary bridge.
+        // `?staging=1` is baked into the bridge's URL at spawn time and says
+        // "this caller is a designer chat"; the header, when a runtime can send
+        // one, says WHICH turn. A bridge that can only manage the former still
+        // works — the toolset resolves the turn and refuses if it is ambiguous.
+        const turnId = req.headers["x-mesh-designer-turn"] ?? u.searchParams.get("turn");
+        if (turnId || u.searchParams.get("staging") === "1") {
+          const staged = await mcpStaging.handle(agentId, String(token ?? ""), turnId ? String(turnId) : undefined, payload);
+          return json(200, staged);
+        }
         const toolset = u.searchParams.get("readOnly") === "1" ? mcpReadOnly : mcp;
         const result = await toolset.handle(agentId, String(token ?? ""), payload);
         return json(200, result);
@@ -1529,6 +1641,30 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
       }
 
+      // ----------------------------------------------- staged mutation apply
+      // The operator's commit. The designer assistant only ever *stages*
+      // mutations; nothing it authors executes until this route is hit, and
+      // this route is hit by a button press.
+      //
+      // Actor is HUMAN_AGENT_ID, which short-circuits every authority check to
+      // ALLOW. That is correct here and only here — the operator is the
+      // authority. The guards that actually matter are refusals inside the
+      // Supervisor (a criterion removal that would complete the goal, a
+      // retirement that is terminal), and no actor can override those.
+      if (parts[0] === "designer" && parts[1] === "staged" && parts[2] === "apply" && req.method === "POST" && parts.length === 3) {
+        const b = await body();
+        const mutations = Array.isArray(b?.mutations) ? b.mutations : Array.isArray(b) ? b : null;
+        if (!mutations) return json(400, { ok: false, error: "expected a StagedProposal with a `mutations` array" });
+        if (mutations.length === 0) return json(400, { ok: false, error: "proposal contains no mutations" });
+        const report = await applyStagedProposal(mutations as StagedMutation[], instance);
+        // 409, not 400: the proposal was well-formed and the mesh refused it.
+        // And not 500 — a refusal is the guard working, not the server failing.
+        // `results` is shorter than `mutations` when one failed; `applied` is
+        // how much of the proposal actually landed, which the operator needs to
+        // see because events are not a transaction and do not roll back.
+        return json(report.ok ? 200 : 409, { ...report, id: typeof b?.id === "string" ? b.id : undefined, mode: instance.mode });
+      }
+
       // ------------------------------------------------------ designer chat
       // Conversational front end for the config designer. The model sees the
       // whole transcript plus the current draft and must answer with the
@@ -1539,9 +1675,16 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "designer" && parts[1] === "chat" && req.method === "POST" && parts.length === 2) {
         const built = buildDesignerPrompt(await body());
         if ("error" in built) return json(400, { error: built.error });
-        const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT });
-        const { proposedConfig, problems } = analyzeDesignerReply(reply, built.currentConfig);
-        return json(200, { reply, proposedConfig, problems: [...new Set(problems)] });
+        const { turnId, mcp: mcpOpts } = openDesignerTurn();
+        try {
+          const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts });
+          const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
+          return json(200, { reply, proposedConfig, problems, proposal });
+        } finally {
+          // `closeDesignerTurn` drains on the happy path; this is the abort
+          // path, where the runtime threw and nothing drained the buffer.
+          designerTurns.close(turnId);
+        }
       }
 
       // Same turn, streamed as SSE for the "show thinking" view: `thinking`
@@ -1564,17 +1707,22 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const send = (frame: unknown): void => {
           if (!closed) res.write(`data: ${JSON.stringify(frame)}\n\n`);
         };
+        const { turnId, mcp: mcpOpts } = openDesignerTurn();
         try {
           const { reply, thinking } = await instance.designerRuntime.promptStream(
             built.promptText,
-            { system: DESIGNER_SYSTEM_PROMPT },
+            { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts },
             (delta) => send({ type: delta.kind, delta: delta.delta }),
           );
-          const { proposedConfig, problems } = analyzeDesignerReply(reply, built.currentConfig);
-          send({ type: "final", reply, thinking, proposedConfig, problems: [...new Set(problems)] });
+          const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
+          send({ type: "final", reply, thinking, proposedConfig, problems, proposal });
         } catch (err) {
           send({ type: "error", error: err instanceof Error ? err.message : String(err) });
         } finally {
+          // A client that navigated away mid-turn never reaches the drain, and
+          // an abandoned buffer that outlived its turn is exactly the
+          // cross-turn write this design must not have.
+          designerTurns.close(turnId);
           closed = true;
           res.end();
         }
@@ -1806,11 +1954,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // actually listens on, which is unknown until `listen()` runs. Bind the
   // locator lazily so a server that never listens (tests, embedded use) costs
   // nothing and the designer falls back to config-only tools.
-  instance.designerRuntime.setDesignerObserve(() => {
-    const addr = server.address();
-    if (!addr || typeof addr === "string") return undefined;
-    return { busUrl: `http://127.0.0.1:${addr.port}`, token: "human-local" };
-  });
+  instance.designerRuntime.setDesignerObserve(designerBus);
   return server;
 }
 

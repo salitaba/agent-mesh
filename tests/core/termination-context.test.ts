@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 import { TerminationManager } from "../../packages/core/src/termination";
 import { buildAgentContext, clearPromptCache, renderContextInstructions } from "../../packages/core/src/context";
 import { makeMesh } from "../helpers";
@@ -166,6 +168,43 @@ test("prompt cache: repeated builds reuse the same prompt string, and clearing f
     clearPromptCache();
     const third = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev").rolePrompt;
     assert.equal(third, first, "a cleared cache must reload the SAME prompt, not a different one");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+/**
+ * The cache above is only safe if it cannot outlive the file it caches.
+ *
+ * The key used to be the config path plus the agent id, so the text read at
+ * first use was served for the life of the process — editing a role file in
+ * place, or re-opening a project whose `mesh.yaml` had changed, kept handing
+ * every seat the prompt from before the edit. `clearPromptCache` was the
+ * intended escape hatch and nothing in the runtime ever called it, which is why
+ * the sibling test above (which calls it by hand) stayed green while the runtime
+ * stayed stale.
+ */
+test("prompt cache: a role file edited in place is picked up, not served stale", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", prompt: "# Dev\n\nORIGINAL role text.\n", interests: [] }],
+    mode: "parked",
+  });
+  try {
+    const deps = { config: m.config, kernel: m.kernel };
+    assert.match(buildAgentContext(deps, "dev").rolePrompt, /ORIGINAL role text/);
+
+    // Rewrite the file the seat's prompt ref points at. The mtime is forced
+    // forward deliberately: two writes inside the same millisecond are not a
+    // distinguishable event, and an incidental collision would make this test
+    // pass for the wrong reason.
+    const file = path.join(m.config.dir, "roles", "dev.md");
+    fs.writeFileSync(file, "# Dev\n\nREVISED role text.\n", "utf8");
+    const future = new Date(Date.now() + 2000);
+    fs.utimesSync(file, future, future);
+
+    const after = buildAgentContext(deps, "dev").rolePrompt;
+    assert.match(after, /REVISED role text/, "the edit must reach the prompt");
+    assert.doesNotMatch(after, /ORIGINAL role text/, "the pre-edit text must not survive");
   } finally {
     await m.cleanup();
   }

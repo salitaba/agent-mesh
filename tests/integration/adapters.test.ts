@@ -358,6 +358,36 @@ test("opencode adapter: a known bus URL adds the designer's read-only observatio
   }
 });
 
+test("opencode adapter: the staging bridge lands beside observation without unlocking the designer's tools", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-staging-"));
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({
+      baseUrl: mock.url,
+      spawnProcesses: false,
+      designerWorkspace: dir,
+      designerObserve: () => ({ busUrl: "http://127.0.0.1:7421", token: "human-local" }),
+    });
+    await adapter.prompt("stage a rename", { system: "you are a designer" });
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".mesh", "agents", "__mesh_designer", "opencode.json"), "utf8"));
+    assert.equal(cfg.mcp.mesh_staging.enabled, true, "designer gets the staging bridge");
+    assert.ok(cfg.mcp.mesh_staging.command.includes("--staging"));
+    assert.ok(!cfg.mcp.mesh_staging.command.includes("--read-only"), "staging is not a second observation bridge");
+    // The designer branch is reached by `mcp: false`; a third bridge must not
+    // flip that gate and pull in the mission bridge alongside it.
+    assert.equal(cfg.mcp.mesh, undefined, "designer must not get the mission MCP bridge");
+    assert.deepEqual(Object.keys(cfg.mcp).sort(), ["mesh_designer", "mesh_observe", "mesh_staging"]);
+    // Risk 3: a third bridge is a third chance to hand the designer a file
+    // system. The deny map has to survive every one of them.
+    for (const tool of ["read", "glob", "grep", "edit", "write", "bash", "task", "webfetch", "todowrite", "skill", "question"]) {
+      assert.equal(cfg.tools[tool], false, `${tool} must stay disabled once staging is wired`);
+    }
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("opencode adapter: missing CLI rejects with a clear error instead of crashing the process", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-missing-"));
   // Refusing fetch makes the readiness probe hermetic: on a crowded box a
@@ -475,4 +505,35 @@ test("http runtime adapter: full session lifecycle against a mock endpoint", asy
   await adapter.stop(session);
   assert.ok(calls.some((c) => c.includes("/turn")));
   server.close();
+});
+
+/**
+ * Two channels carry the role prompt, and they used to carry different things.
+ *
+ * `ROLE.md` is written at process spawn from `context.rolePromptText` and handed
+ * to opencode as a config `instructions` file; the per-turn `system` body is
+ * built from `bundle.rolePrompt`. The spawn channel was written from the raw
+ * role prose while the turn channel composed `withOutputVoice` over it — so a
+ * seat could be governed by the deliverable rules on one channel and not on the
+ * other, and which one won was a question about opencode's precedence rather
+ * than about this repo's intent. Both now compose from the same helper, and this
+ * pins the spawn channel so it cannot silently regress to raw prose again.
+ */
+test("opencode adapter: ROLE.md carries the role prose and the shared output-voice rules", async () => {
+  const mock = await startMockOpenCode();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-oc-role-"));
+  try {
+    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, spawnProcesses: false });
+    await adapter.start(devDef, runtimeCtx(dir));
+
+    const file = path.join(dir, ".mesh", "agents", "developer", "ROLE.md");
+    assert.ok(fs.existsSync(file), "spawning a seat must write its ROLE.md");
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text, /you build things/, "the seat's own role prose must survive");
+    assert.match(text, /## Output voice/, "the voice rules must be composed in, not left to the other channel");
+    assert.match(text, /Be COMPLETE in DELIVERABLES/, "and it must be the real rules, not just the heading");
+  } finally {
+    mock.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -72,6 +72,11 @@ export function takePendingAgent(): string | null {
  * Chat-proposal hand-off: the global assistant records one whole-config
  * proposal and opens the Designer, which applies it through the same
  * undo/touch path as a template. One-shot, module-level, same as the agent id.
+ *
+ * This deliberately carries a parsed CONFIG MODEL, not a StagedProposal. A
+ * staged `config.replace` is translated to a model at the review card, so the
+ * Designer's `next.agents` / `mesh.id` assumptions stay confined to the one
+ * branch that already had them instead of spreading into a second format.
  */
 let pendingProposal: any | null = null;
 export function setPendingProposal(model: any): void {

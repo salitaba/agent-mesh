@@ -307,7 +307,7 @@ export function hasPeerReviewerFor(
   for (const rec of state.agents.values()) {
     const id = rec.definition.id;
     if (id === actorId || id === humanAgentId) continue;
-    if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED") continue;
+    if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED" || rec.state.lifecycle === "RETIRED") continue;
     const auth = rec.definition.authority;
     if (auth.includes(`${subject}.approve`) || auth.includes(`${subject}.*`) || auth.includes("*")) return true;
     if (reviewCap && rec.definition.capabilities.includes(reviewCap)) return true;

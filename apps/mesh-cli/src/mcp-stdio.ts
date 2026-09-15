@@ -10,6 +10,22 @@ export interface McpBridgeOptions {
    * capability reduction the caller cannot use to gain access.
    */
   readOnly?: boolean;
+  /**
+   * Identify this bridge as a designer chat, which the bus answers with the
+   * staging toolset (`mesh_stage_*` plus the read-only observability tools).
+   *
+   * Spawn-time rather than per-call because the runtimes that use it keep one
+   * designer backend process across turns; the bus resolves which turn a
+   * staging call belongs to, and refuses when that is ambiguous.
+   */
+  staging?: boolean;
+  /**
+   * The designer turn this bridge writes into, when the runtime can spawn one
+   * bridge per turn (claude's `query()` takes options per call; opencode's
+   * shared backend does not). Sent as `x-mesh-designer-turn`, which is exact —
+   * the bus never has to guess which turn a staging call belongs to.
+   */
+  turn?: string;
 }
 
 export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void> {
@@ -54,10 +70,15 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
   async function handle(request: Record<string, unknown>): Promise<void> {
     const isNotification = !("id" in request) || request.id === null || request.id === undefined;
     try {
-      const url = `${bus}/internal/mcp/${encodeURIComponent(agent)}${options.readOnly ? "?readOnly=1" : ""}`;
+      const query = [options.readOnly ? "readOnly=1" : "", options.staging ? "staging=1" : ""].filter(Boolean).join("&");
+      const url = `${bus}/internal/mcp/${encodeURIComponent(agent)}${query ? `?${query}` : ""}`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-mesh-token": token },
+        headers: {
+          "content-type": "application/json",
+          "x-mesh-token": token,
+          ...(options.turn ? { "x-mesh-designer-turn": options.turn } : {}),
+        },
         body: JSON.stringify(request),
       });
       const json = (await res.json()) as Record<string, unknown>;
