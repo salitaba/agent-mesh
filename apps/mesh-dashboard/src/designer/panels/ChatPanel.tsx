@@ -4,11 +4,11 @@
  * validation all stay owned by one place. The transcript lives in chatStore
  * (localStorage-backed), so switching views or refreshing never loses it. */
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { parse as parseYaml } from "yaml";
 import type { StagedMutation } from "@mesh/protocol";
 import { summarizeDiff } from "../model";
-import { CONFIRM_WORD, destructiveKindsIn, showsTextProposal, splitByTarget, summarizeMutation } from "../mutations";
+import { CONFIRM_WORD, destructiveKindsIn, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
@@ -28,8 +28,20 @@ function proposalDiff(proposed: any, snapshot: DraftState): string[] {
 }
 
 export default function ChatPanel(): React.JSX.Element {
-  const { client, toast, setView } = useMesh();
+  const { client, toast, setView, status } = useMesh();
   const { entries, busy, failed, review, applied, live, showThinking } = useSyncExternalStore(subscribe, getSnapshot);
+  /* The mission as it is actually RUNNING, for the draft card's drift warning.
+   * Note `live` above is the streaming reply, not the live mesh. Memoized on
+   * the goal identity because /status re-polls every few seconds and this maps
+   * an array, while streamed tokens re-render the panel on every delta. */
+  const mission: LiveMission | null = useMemo(() => {
+    const g = status?.goal;
+    if (!g) return null;
+    return {
+      description: String(g.description ?? ""),
+      criteria: (g.acceptanceCriteria ?? []).map((c: any) => ({ id: String(c?.id ?? ""), description: String(c?.description ?? "") })),
+    };
+  }, [status?.goal]);
   const [input, setInput] = useState("");
   /* Per-entry state for the live-run card: the typed confirmation, and the
    * server's own report. Local rather than in chatStore on purpose — applying
@@ -119,6 +131,7 @@ export default function ChatPanel(): React.JSX.Element {
           const staged = e.proposal ?? null;
           const split = staged ? splitByTarget(staged.mutations) : { draft: [] as StagedMutation[], server: [] as StagedMutation[] };
           const ctx = { model: getDraftSnapshot().model };
+          const drift = goalDriftWarning(split.draft, mission);
           /* Both proposal formats ride the same reply for one release. The text
            * one is surfaced only when the staged buffer carries no
            * config.replace, so a turn never shows two whole-config proposals. */
@@ -164,6 +177,7 @@ export default function ChatPanel(): React.JSX.Element {
                       {showText ? (
                         <div className="ms-chat-card draft">
                           <div className="tx-meta">Draft change — local, still needs Save</div>
+                          <div className="muted tx-meta">Edits the file only — the running mesh keeps what it booted with until it restarts.</div>
                           {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
                           <div className="ms-chat-actions">
                             <Button variant="primary" disabled={applied === i} onClick={() => apply(i, e.proposed)}>
@@ -176,6 +190,8 @@ export default function ChatPanel(): React.JSX.Element {
                       {split.draft.length ? (
                         <div className="ms-chat-card draft">
                           <div className="tx-meta">Draft change — local, still needs Save</div>
+                          <div className="muted tx-meta">Edits the file only — the running mesh keeps what it booted with until it restarts.</div>
+                          {drift ? <div className="verdict warn">{drift}</div> : null}
                           <ul className="diff-list">{draftLines.map((d, k) => <li key={`d${k}-${d}`}>{d}</li>)}</ul>
                           <div className="ms-chat-actions">
                             <Button variant="primary" disabled={applied === i} onClick={() => applyStagedDraft(i, split.draft)}>apply to draft</Button>

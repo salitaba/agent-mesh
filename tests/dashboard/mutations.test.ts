@@ -5,6 +5,7 @@ import {
   CONFIRM_WORD,
   MUTATION_HANDLERS,
   destructiveKindsIn,
+  goalDriftWarning,
   isDestructive,
   showsTextProposal,
   splitByTarget,
@@ -116,4 +117,68 @@ test("the text proposal is hidden exactly when the buffer carries a config.repla
 test("the confirm word is a stable literal the card can prompt for", () => {
   assert.equal(typeof CONFIRM_WORD, "string");
   assert.ok(CONFIRM_WORD.length > 0);
+});
+
+/* ---------------------------------------------------------- goal drift
+ * mesh.yaml seeds the goal once at boot, so a config.replace that rewords it
+ * moves the file and the Config view while the running mission keeps what it
+ * started with. The card is the only place that gap can be named. */
+
+const MISSION = {
+  description: "ship the billing export",
+  criteria: [
+    { id: "c1", description: "export runs nightly" },
+    { id: "c2", description: "totals reconcile" },
+  ],
+};
+const yamlFor = (goal: string, criteria?: string) =>
+  `mesh:\n  id: alpha\n  goal: ${goal}\n${criteria ?? ""}`;
+const replace = (yaml: string): StagedMutation => ({ kind: "config.replace", yaml });
+
+test("a config.replace that rewords the goal warns that the running mission will not move", () => {
+  const w = goalDriftWarning([replace(yamlFor("ship the billing export AND the audit log"))], MISSION);
+  assert.ok(w, "expected a warning");
+  assert.match(w!, /running mission keeps what it booted with/);
+  assert.match(w!, /Reword the goal/);
+});
+
+test("no warning when the proposed goal already matches the running mission", () => {
+  assert.equal(goalDriftWarning([replace(yamlFor("ship the billing export"))], MISSION), null);
+});
+
+test("whitespace and line wrapping alone are not drift", () => {
+  assert.equal(goalDriftWarning([replace(yamlFor(">-\n    ship the billing\n    export"))], MISSION), null);
+});
+
+test("no live mission to compare against means no warning", () => {
+  assert.equal(goalDriftWarning([replace(yamlFor("something else entirely"))], null), null);
+});
+
+test("a proposal with no config.replace never warns", () => {
+  assert.equal(goalDriftWarning([{ kind: "run.pause" }, { kind: "goal.description", description: "x" }], MISSION), null);
+});
+
+test("criteria drift warns even when the goal text is unchanged", () => {
+  const yaml = yamlFor("ship the billing export", "  acceptance_criteria:\n    - id: c1\n      description: export runs hourly\n    - id: c2\n      description: totals reconcile\n");
+  const w = goalDriftWarning([replace(yaml)], MISSION);
+  assert.ok(w, "expected a warning");
+  assert.match(w!, /acceptance criteria/);
+});
+
+test("a file with no acceptance_criteria is not read as clearing derived ones", () => {
+  assert.equal(goalDriftWarning([replace(yamlFor("ship the billing export"))], MISSION), null);
+});
+
+test("unparseable YAML is left to the itemized summary rather than double-reported", () => {
+  assert.equal(goalDriftWarning([replace("mesh:\n  goal: [unclosed")], MISSION), null);
+});
+
+/* boot() mints a goal only when it is NOT resuming, so "just restart it" is
+ * wrong for the goal even though it is right for seats and budgets. The warning
+ * must not send an operator down that path. */
+test("the warning does not offer a restart as the fix — a resumed mesh keeps its goal", () => {
+  const w = goalDriftWarning([replace(yamlFor("a different mission entirely"))], MISSION);
+  assert.ok(w, "expected a warning");
+  assert.match(w!, /resumed mesh keeps its existing goal/);
+  assert.doesNotMatch(w!, /the next boot/);
 });

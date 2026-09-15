@@ -222,3 +222,68 @@ export function showsTextProposal(proposal: StagedProposal | null | undefined): 
   if (!proposal) return true;
   return !proposal.mutations.some((m) => m.kind === "config.replace");
 }
+
+/** The running mission, as `/status` reports its goal. Structural for the same
+ *  reason as MutationContext: this module must not reach for a browser global. */
+export interface LiveMission {
+  description: string;
+  criteria: Array<{ id: string; description: string }>;
+}
+
+function norm(s: unknown): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim();
+}
+
+function criteriaDiffer(proposed: any[], live: LiveMission["criteria"]): boolean {
+  if (proposed.length !== live.length) return true;
+  const byId = new Map(live.map((c) => [String(c.id), norm(c.description)]));
+  return proposed.some((c) => {
+    const id = String(c?.id ?? "");
+    return !byId.has(id) || byId.get(id) !== norm(c?.description);
+  });
+}
+
+/**
+ * mesh.yaml seeds the goal and its criteria exactly ONCE, in `supervisor.boot`.
+ * A mission that is already running keeps what it booted with no matter what
+ * the file says afterwards — while `GET /config` deliberately re-reads the file
+ * on every poll. So a `config.replace` that reworded the goal moves the Config
+ * view and leaves the Overview showing the pre-edit mission, and the operator
+ * is told the change was saved, because it was: into the file. Nothing
+ * downstream can detect this, so say it on the card, and name the kinds that do
+ * reach the running mesh.
+ *
+ * A restart is NOT a dependable fallback for the goal specifically: boot mints a
+ * goal only when it is not resuming (`supervisor.boot`), so a resumed mesh keeps
+ * the goal it already has and the file is read past. Seats and budgets differ —
+ * boot reconciles those from the file every time (`:795-817`) — which is why the
+ * generic "restart to apply" line the Designer shows is true of them and not of
+ * this.
+ *
+ * Returns null when there is nothing to warn about: no live mission to compare
+ * against, no staged `config.replace`, YAML that does not parse (the itemized
+ * summary already reports that), or a proposal that leaves both untouched.
+ */
+export function goalDriftWarning(mutations: StagedMutation[], mission: LiveMission | null | undefined): string | null {
+  if (!mission) return null;
+  const replace = mutations.find((m): m is Extract<StagedMutation, { kind: "config.replace" }> => m.kind === "config.replace");
+  if (!replace) return null;
+  let parsed: any;
+  try {
+    parsed = parseYaml(replace.yaml);
+  } catch {
+    return null;
+  }
+  const goal = norm(parsed?.mesh?.goal);
+  const goalMoved = goal.length > 0 && goal !== norm(mission.description);
+  /* A file with no `acceptance_criteria` is not a proposal to clear them: it is
+   * the ordinary shape of a mesh whose criteria were derived at boot. */
+  const proposed = Array.isArray(parsed?.mesh?.acceptance_criteria) ? parsed.mesh.acceptance_criteria : null;
+  const criteriaMoved = proposed !== null && criteriaDiffer(proposed, mission.criteria);
+  if (!goalMoved && !criteriaMoved) return null;
+  const what = goalMoved && criteriaMoved ? "goal and the acceptance criteria" : goalMoved ? "goal" : "acceptance criteria";
+  const instead = goalMoved && criteriaMoved
+    ? "“Reword the goal” and the criteria edits"
+    : goalMoved ? "“Reword the goal”" : "the criteria edits";
+  return `This rewrites the ${what} in mesh.yaml, but the running mission keeps what it booted with — saving moves the file and the Config view, not the Overview. Restarting is not a reliable fallback either: a resumed mesh keeps its existing goal. Ask for ${instead} as a live-run change to move the mission that is actually running.`;
+}

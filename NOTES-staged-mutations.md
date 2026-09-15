@@ -1,7 +1,8 @@
-# Staged mutations — Phases 1 and 2 COMPLETE, Phase 3 not started
+# Staged mutations — Phases 1, 2 and 3 COMPLETE (Phase 3 bar the manual end-to-end pass)
 
 Plan: `~/.claude/plans/humble-conjuring-quill.md`. Branch `feat/plan-visibility`.
-Full suite green: 1067/1067. Both phases complete.
+Full suite green. The header above used to read "Phase 3 not started" while the Phase 3
+section below reported it complete; the section was right.
 
 ## Done (protocol + core, full suite green 1047/1047)
 
@@ -207,3 +208,51 @@ instead, matching `tests/event-store/store.test.ts:7`. This is the same trap the
   automated covers the `/designer/staged/apply` round trip from the browser.
 - Plan Risk 5 is **closed in code**: `showsTextProposal` suppresses the text `proposedConfig`
   whenever the staged buffer carries a `config.replace`, and it is covered by a test.
+
+## Follow-up fix — the goal-drift gap (COMPLETE, suite 1087/1087)
+
+**The bug.** `config.replace` + Save rewrites mesh.yaml and the Config view updates, because
+`GET /config` re-reads the file on every poll (`apps/mesh-server/src/index.ts:1541-1552`, and the
+comment there says so deliberately). But the running goal is seeded exactly ONCE, in
+`supervisor.boot` (`packages/core/src/supervisor.ts:763-771`), from `config.goalText` /
+`config.goalCriteria`; nothing re-reads it afterwards, and `status()` serves the in-memory goal
+(`:5687,5704-5708`). So an operator who reworded the goal through the designer was told it saved —
+it did, into the file — while the Overview kept showing the pre-edit mission. Neither half was
+wrong on its own, which is why nothing downstream could detect it.
+
+**The fix is a warning, not a reconcile.** Re-seeding a live goal from the file would silently
+rewrite a running mission's definition of done, which is the unreviewed config change that
+`staging.ts:66-68` already refuses `config.replace` for. The divergence is legitimate; being
+unable to SEE it was the defect.
+
+- `apps/mesh-dashboard/src/designer/mutations.ts` — `goalDriftWarning(mutations, mission)` +
+  `LiveMission`. Pure, DOM-free like the rest of the module. Parses a staged `config.replace` and
+  compares `mesh.goal` / `mesh.acceptance_criteria` against the running mission. Deliberately
+  silent on: no live mission, no `config.replace`, unparseable YAML (the itemized summary already
+  reports it), and a file with NO `acceptance_criteria` — that is the ordinary shape of a mesh
+  whose criteria were derived at boot, not a proposal to clear them.
+  `MutationContext` was NOT extended: passing the mission explicitly left every handler signature
+  and every existing test untouched.
+- `apps/mesh-dashboard/src/designer/panels/ChatPanel.tsx` — renders it in the draft card. Watch the
+  name collision: `live` in that file is the STREAMING reply, not the live mesh; the new value is
+  `mission`, memoized on `status?.goal` because /status re-polls under every streamed token.
+- `apps/mesh-server/src/index.ts:544` — persona. The old line said config and live-run changes "are
+  different things" but never that a config goal edit does not move a RUNNING mission, so the
+  assistant kept wrapping goal rewordings in `config.replace`. It now names
+  `mesh_stage_goal_description` / `mesh_stage_criteria_*` as the live path.
+- `tests/dashboard/mutations.test.ts` — 9 tests, including the whitespace/block-scalar case (a
+  rewrapped goal is not drift).
+
+**"Just restart it" is the wrong advice for the goal, and only for the goal.** `boot()` mints a
+goal only when it is NOT resuming (`supervisor.ts:754`), so a resumed mesh keeps its existing goal
+and reads past the file — a restart does not dependably apply a goal edit. Seats and budgets are
+the opposite: boot reconciles agents from the file on every boot (`:795-812`, `agent.replaced` when
+a definition differs) and re-declares budgets (`:814-818`). That asymmetry is why the warning names
+the live-run kinds instead of telling the operator to restart, and why the generic
+"restart the mesh to apply" line in `chrome.tsx:181` is true of seats and budgets but not of this.
+
+**The chat draft cards never carried that generic line at all.** The Designer's ReviewCard says
+"the live mesh keeps working; restart the mesh to apply"; the chat cards said only "Draft change —
+local, still needs Save", so a config change made through chat read as though Save were the whole
+story. Both chat draft cards now carry the same standing note. The goal/criteria warning sits on
+top of it for the case where restarting is not the fallback either.
