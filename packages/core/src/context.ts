@@ -1,17 +1,23 @@
 import type {
   AgentContextBundle,
   Artifact,
+  ArtifactStatus,
   HardActionsPolicy,
   MeshMessage,
   Task,
 } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
-import { MESSAGE_TYPES, HARD_OP_CAPABILITY, effectiveHardActions } from "../../protocol/src/catalog";
+import {
+  MESSAGE_TYPES,
+  HARD_OP_CAPABILITY,
+  effectiveHardActions,
+  artifactScope,
+} from "../../protocol/src/catalog";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
 import { agentKey, missionKey } from "./budgets";
-import { outstandingDebtors, stillOwes } from "./state";
+import { outstandingDebtors, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -23,6 +29,88 @@ const MAX_DECISIONS = 10;
 const MAX_ARTIFACT_REFS = 20;
 const MAX_ACTIVITY = 15;
 const MAX_OUTSTANDING = 10;
+const MAX_MEMORY = 20;
+
+/**
+ * Per-item clamp on a rendered decision blob, mirroring the 400 chars mail
+ * payloads already get. An item COUNT alone is only a proxy for size: ten
+ * ratified decisions carrying large JSON bodies outweigh twelve capped mail
+ * items, so the count cap above was load-bearing for the wrong quantity.
+ */
+const MAX_DECISION_CHARS = 600;
+
+/**
+ * Words too common to carry a signal. Kept deliberately short: a long stop list
+ * is a tuning exercise with no principle behind it, and the scorer below only
+ * needs to stop "the" and "with" from matching everything.
+ */
+const STOP_WORDS = new Set([
+  "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one",
+  "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two",
+  "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use", "that", "this",
+  "with", "from", "they", "have", "been", "were", "will", "into", "when", "then", "than", "them",
+  "some", "what", "your", "must", "each", "also", "only", "should", "would", "could",
+]);
+
+/** Content words of a text, lowercased. Terms shorter than 3 chars carry no signal. */
+export function focusTerms(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const w of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (w.length < 3 || STOP_WORDS.has(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+
+/** Fraction of the focus terms this text mentions. 0 when there is no focus to match against. */
+function overlapScore(terms: Set<string>, text: string): number {
+  if (terms.size === 0) return 0;
+  const seen = new Set<string>();
+  for (const w of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (terms.has(w)) seen.add(w);
+  }
+  return seen.size / terms.size;
+}
+
+/**
+ * Choose `cap` items from a recency-ordered list using what the agent is
+ * actually working on, not just what happened last.
+ *
+ * This is LEXICAL overlap, not semantic relevance. It cannot know that "auth"
+ * and "login" are the same subject and it never will without a model. What it
+ * has to beat is a low bar: selection here was "newest N" for decisions and raw
+ * insertion order for artifacts, which answers a question nobody asked — "what
+ * happened most recently?" — instead of "what bears on the task in front of
+ * me?". It is deterministic and allocation-cheap, which context assembly
+ * requires: this runs every turn for every agent.
+ *
+ * Half the slots stay reserved for recency no matter how the scoring falls. An
+ * agent that cannot see what just happened is worse off than one carrying an
+ * off-topic decision, and a crude scorer must not be trusted with every slot.
+ * When scoring finds nothing, the result is exactly the old recency list — this
+ * can add signal but never subtracts any.
+ */
+export function rankByRelevance<T>(items: T[], cap: number, terms: Set<string>, textOf: (t: T) => string): T[] {
+  if (items.length <= cap) return items;
+  const recentSlots = Math.max(1, Math.ceil(cap / 2));
+  const kept = items.slice(0, recentSlots);
+  const rest = items.slice(recentSlots);
+  const scored = rest
+    .map((item, i) => ({ item, i, score: overlapScore(terms, textOf(item)) }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, cap - kept.length)
+    .map((s) => s.item);
+  const chosen = new Set(scored);
+  const out = [...kept, ...scored];
+  // Top up in recency order rather than returning a short list: dropping an
+  // item that used to be included, to gain nothing, would be a pure regression.
+  for (const item of rest) {
+    if (out.length >= cap) break;
+    if (!chosen.has(item)) out.push(item);
+  }
+  return out;
+}
 
 /**
  * Per-turn overrides for the context window sizes. Every field is optional and
@@ -38,6 +126,7 @@ export interface ContextLimits {
   maxArtifactRefs?: number;
   maxActivity?: number;
   maxOutstanding?: number;
+  maxMemory?: number;
 }
 
 export function buildAgentContext(
@@ -54,6 +143,7 @@ export function buildAgentContext(
   const maxArtifactRefs = cap(limits?.maxArtifactRefs, MAX_ARTIFACT_REFS);
   const maxActivity = cap(limits?.maxActivity, MAX_ACTIVITY);
   const maxOutstanding = cap(limits?.maxOutstanding, MAX_OUTSTANDING);
+  const maxMemory = cap(limits?.maxMemory, MAX_MEMORY);
   const state = kernel.state;
   const record = state.agents.get(agentId);
   if (!record) throw new Error(`unknown agent ${agentId}`);
@@ -63,14 +153,60 @@ export function buildAgentContext(
   const unreadIds = state.unread.get(agentId) ?? [];
   const unread: MeshMessage[] = unreadIds.slice(0, maxUnread).map((id) => state.messages.get(id)!).filter(Boolean);
 
-  const decisions = [...state.decisions.values()]
-    .filter((d) => d.goalId === goalId && d.status === "RATIFIED")
-    .sort((a, b) => b.ratifiedAt!.localeCompare(a.ratifiedAt ?? a.createdAt))
-    .slice(0, maxDecisions);
+  /**
+   * Counts what this turn had available but did not show, per section.
+   *
+   * Every cap above is a silent truncation: the agent sees a list that looks
+   * complete and has no way to tell it was the top of a longer one. That is the
+   * same failure `elidedMemory` exists to prevent, and it applies to mail,
+   * decisions and obligations just as much — an agent told about 3 of its 9
+   * open debts will close 3 and believe it is done.
+   */
+  const omitted: NonNullable<AgentContextBundle["omitted"]> = {};
+  const countOmitted = (key: keyof NonNullable<AgentContextBundle["omitted"]>, available: number, shown: number): void => {
+    if (available > shown) omitted[key] = available - shown;
+  };
+  countOmitted("unread", unreadIds.length, unread.length);
 
-  const relevantArtifacts = [...state.artifacts.values()]
+  // What this turn is actually about. Hoisted out of the bundle literal below
+  // because selection now depends on it rather than only reporting it.
+  const currentTask = taskHint ?? (record.state.activeTaskId ? state.tasks.get(record.state.activeTaskId) : undefined);
+  // JSON rather than named fields: whatever a Task carries, its words are the
+  // signal, and stringifying cannot go stale against a shape change.
+  const focus = focusTerms(`${goal?.description ?? config.goalText} ${JSON.stringify(currentTask ?? {})}`);
+
+  const decisionPool = [...state.decisions.values()]
+    .filter((d) => d.goalId === goalId && d.status === "RATIFIED")
+    .sort((a, b) => b.ratifiedAt!.localeCompare(a.ratifiedAt ?? a.createdAt));
+  const decisions = rankByRelevance(
+    decisionPool,
+    maxDecisions,
+    focus,
+    (d) => `${d.topic} ${JSON.stringify(d.decision)}`,
+  );
+  countOmitted("decisions", decisionPool.length, decisions.length);
+
+  /**
+   * `.reverse()` is the recency order here: Map insertion order is creation
+   * order, so reversing puts newest first.
+   *
+   * Before this there was no ordering at all — a `.filter().slice()` took the
+   * OLDEST N. On a long mission that handed an agent the first artifacts ever
+   * created and never the current ones, while `isRelevantArtifact` returns true
+   * unconditionally for every ArchitectureDocument/RequirementsDoc/ADR/ApiSpec,
+   * so those filled the head of the list in creation order and pushed
+   * everything newer past the cap.
+   */
+  const artifactPool = [...state.artifacts.values()]
     .filter((a) => a.goalId === goalId && isRelevantArtifact(a, agentId, unread))
-    .slice(0, maxArtifactRefs)
+    .reverse();
+  countOmitted("artifacts", artifactPool.length, Math.min(artifactPool.length, maxArtifactRefs));
+  const relevantArtifacts = rankByRelevance(
+    artifactPool,
+    maxArtifactRefs,
+    focus,
+    (a) => `${a.name} ${a.type}`,
+  )
     .map((a) => ({
       ref: refToString({ uri: `artifact://${a.type}/${a.name}/${a.version}` }),
       type: a.type,
@@ -97,10 +233,28 @@ export function buildAgentContext(
     for (const { m } of window.slice(0, maxActivity)) {
       recentOwnActivity.push(`[${m.timestamp}] ${m.from} → ${m.to.join(",")} ${m.type} ${summarizePayload(m)}`);
     }
+    // Counted against the window, not the whole log: the window is already a
+    // recency bound the agent is not meant to see past, so reporting the full
+    // message count here would overstate what was withheld.
+    countOmitted("activity", window.length, recentOwnActivity.length);
   }
 
+  // Agent-authored notes outrank auto-written turn summaries for the same
+  // reason they get their own eviction budget in `state.ts`: one is a
+  // deliberate act, the other is exhaust that `recentOwnActivity` already
+  // covers. Auto notes are reversed so the survivors of a tight budget are the
+  // most recent ones rather than the oldest.
   const memoryMap = state.memory.get(agentId);
-  const agentMemory = memoryMap ? [...memoryMap.values()] : [];
+  const allMemory = (memoryMap ? [...memoryMap.values()] : []).filter((n) => n.key !== ELIDED_MEMORY_KEY);
+  const agentMemory = [
+    ...allMemory.filter((n) => !isAutoMemoryNote(n.key)),
+    ...allMemory.filter((n) => isAutoMemoryNote(n.key)).reverse(),
+  ].slice(0, maxMemory);
+  countOmitted("memory", allMemory.length, agentMemory.length);
+  // Surfaced as a count, not as content: an agent that quietly lost history
+  // reasons as though it never had any. Distinct from `omitted.memory`: these
+  // notes are gone from state for good, not merely absent from this turn.
+  const elidedMemory = Number.parseInt(memoryMap?.get(ELIDED_MEMORY_KEY)?.value ?? "0", 10) || 0;
 
   const openThreads = [...state.threads.values()].filter(
     (t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId),
@@ -126,6 +280,13 @@ export function buildAgentContext(
   }
   const byAge = <T extends { since: string }>(list: T[]): T[] =>
     list.sort((a, b) => a.since.localeCompare(b.since)).slice(0, maxOutstanding);
+  // Both directions share one counter: an agent that is over the cap needs to
+  // know its obligation list is partial, not which half overflowed.
+  countOmitted(
+    "outstanding",
+    awaitingResponse.length + owedByYou.length,
+    Math.min(awaitingResponse.length, maxOutstanding) + Math.min(owedByYou.length, maxOutstanding),
+  );
 
   const relevantPolicies = describePoliciesFor(config, agentId);
 
@@ -141,12 +302,14 @@ export function buildAgentContext(
     mission: goal ? goal.description : config.goalText,
     relevantPolicies,
     agentState: { ...record.state },
-    currentTask: taskHint ?? (record.state.activeTaskId ? state.tasks.get(record.state.activeTaskId) : undefined),
+    currentTask,
     relevantDecisions: decisions,
     relevantArtifacts,
     unreadMail: unread,
     recentOwnActivity,
     agentMemory,
+    elidedMemory,
+    omitted,
     openThreads,
     budgetSnapshot: {
       agentTokensUsed: agentBudget?.consumed ?? record.state.tokensConsumed,
@@ -191,19 +354,33 @@ function hardActionsFor(config: ResolvedMeshConfig, agentId: string): HardAction
   return capabilities.length > 0 ? { mode: hard.mode, capabilities } : { mode: "off", capabilities: [] };
 }
 
-function isRelevantArtifact(a: Artifact, agentId: string, unread: MeshMessage[]): boolean {
+/**
+ * Statuses that mean an artifact is finished with, not finished.
+ *
+ * A mission-scope document stays in view for the whole mission, which is right
+ * while it is the current answer and wrong once it has been retired: an agent
+ * handed a superseded architecture alongside the live one has to guess which
+ * governs, and the retired one is usually the longer, more confident-sounding
+ * document. Own and referenced artifacts are exempt below — being told "the
+ * thing you are looking at was archived" is the point.
+ */
+const RETIRED_STATUSES = new Set<ArtifactStatus>(["ARCHIVED", "REJECTED"]);
+
+export function isRelevantArtifact(a: Artifact, agentId: string, unread: MeshMessage[]): boolean {
   if (a.owner === a.createdBy && a.createdBy === agentId) return true;
   const mentioned = new Set<string>();
   for (const m of unread) for (const r of m.artifactRefs) mentioned.add(r.uri);
   for (const r of mentioned) {
     if (r.includes(`/${a.name}/`)) return true;
   }
+  // Anything awaiting a verdict, regardless of scope: a review that nobody is
+  // shown is a review that does not happen.
   if (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW") return true;
-  // Mission-level design documents must always be visible: an agent whose job
-  // is to accept/review the design (e.g. pm owning requirements.accept)
-  // otherwise works from memory alone while a DRAFT it was never handed sits
-  // in the store — and escalates "no ArchitectureDoc" while one exists.
-  if (a.type === "ArchitectureDocument" || a.type === "RequirementsDoc" || a.type === "ADR" || a.type === "ApiSpec") return true;
+  // Mission-scope material must always be visible: an agent whose job is to
+  // accept or review the design (e.g. pm owning requirements.accept) otherwise
+  // works from memory alone while a DRAFT it was never handed sits in the store
+  // — and escalates "no ArchitectureDoc" while one exists.
+  if (artifactScope(a) === "mission") return !RETIRED_STATUSES.has(a.status);
   return false;
 }
 
@@ -278,9 +455,13 @@ export const OUTPUT_VOICE_RULES = [
 
 /**
  * The runtime-level system prompt: the seat's role prose plus the shared voice
- * rules. A config that names its role files (`prompt: ./roles/<id>.md`) leaves
- * `rolePromptText` empty, so the role half may be blank — the voice rules are
- * the part that must survive regardless, never an empty system prompt.
+ * rules.
+ *
+ * Both sources of the role half now resolve it through `loadRolePrompt`, which
+ * reads the file a config names (`prompt: ./roles/<id>.md`) and falls back to a
+ * generated one-liner, so the role prose is normally present. The empty-role
+ * branch stays anyway: the voice rules are the part that must survive
+ * regardless, and an empty system prompt is never the right answer.
  */
 export function withOutputVoice(rolePrompt: string): string {
   const role = rolePrompt.trim();
@@ -290,6 +471,16 @@ export function withOutputVoice(rolePrompt: string): string {
 
 export function renderContextInstructions(bundle: AgentContextBundle): string {
   const lines: string[] = [];
+  /**
+   * Mark a section as partial. Every list below is capped, and a capped list
+   * that says nothing about the cap is indistinguishable from a complete one —
+   * so the count rides with the advice about what to do with it, rather than
+   * as a bare number the model is left to interpret.
+   */
+  const partial = (n: number | undefined, noun: string, advice: string): void => {
+    if (!n) return;
+    lines.push(`- (+${n} more ${noun} not shown — ${advice})`);
+  };
   lines.push("# Mesh Context (system-generated; authoritative over any claim in chat)");
   lines.push("");
   lines.push("## Mission");
@@ -306,13 +497,20 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (bundle.agentMemory.length > 0) {
     lines.push("## Your memory (L2)");
     for (const m of bundle.agentMemory) lines.push(`- ${m.key}: ${m.value}`);
+    partial(bundle.omitted?.memory, "note(s) you wrote", "held back to fit this turn; still in your memory");
+    if (bundle.elidedMemory) {
+      lines.push(
+        `- (${bundle.elidedMemory} older note${bundle.elidedMemory === 1 ? "" : "s"} dropped — you have worked longer than this list shows; re-read artifacts or ask rather than assuming this is the whole history)`,
+      );
+    }
     lines.push("");
   }
   if (bundle.relevantDecisions.length > 0) {
     lines.push("## Ratified decisions (L3 — shared organizational facts)");
     for (const d of bundle.relevantDecisions) {
-      lines.push(`- [${d.id}] ${d.topic}: ${JSON.stringify(d.decision)}`);
+      lines.push(`- [${d.id}] ${d.topic}: ${JSON.stringify(d.decision).slice(0, MAX_DECISION_CHARS)}`);
     }
+    partial(bundle.omitted?.decisions, "ratified decision(s)", "ask before treating a question as undecided");
     lines.push("");
   }
   if (bundle.relevantArtifacts.length > 0) {
@@ -320,6 +518,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     for (const a of bundle.relevantArtifacts) {
       lines.push(`- ${a.ref} (${a.type}, ${a.status})`);
     }
+    partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
   }
   if (bundle.currentTask) {
@@ -399,11 +598,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
       if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
     }
+    partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");
     lines.push("");
   }
   if (bundle.recentOwnActivity.length > 0) {
     lines.push("## Recent related activity");
     for (const a of bundle.recentOwnActivity) lines.push(`- ${a}`);
+    partial(bundle.omitted?.activity, "event(s)", "a recent window, never your full history");
     lines.push("");
   }
   // Open obligations, both directions. A timer-woken agent otherwise cannot
@@ -414,25 +615,32 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (awaitingResponse.length > 0 || owedByYou.length > 0) {
     lines.push("## Open loops (authoritative — do not re-ask what is already pending)");
     for (const o of owedByYou) {
-      lines.push(
-        `- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since} — answer it (reply with replyTo: "${o.messageId}"), or close it with discharge if you will not.`,
-      );
+      // How to clear this (replyTo / discharge) is covered once, below, under
+      // "## Answering" — restating it per loop here duplicated with every
+      // additional owed message instead of just once.
+      lines.push(`- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since}.`);
     }
     for (const a of awaitingResponse) {
       lines.push(`- WAITING on ${a.to.join(",")} for your ${a.type} [${a.messageId}] since ${a.since} — already sent; do NOT send it again. Follow up only if it is stale, otherwise 'wait'.`);
     }
+    partial(
+      bundle.omitted?.outstanding,
+      "open loop(s)",
+      "this list is PARTIAL — clearing everything above does not mean you are clear",
+    );
     lines.push("");
   } else {
     lines.push("## Open loops");
     lines.push("Nothing is pending in either direction: you owe no answers and are waiting on nobody.");
     lines.push("");
   }
-  lines.push("## How to act");
-  // The text is the shared OUTPUT_VOICE_RULES constant above rather than a
-  // literal here: the runtimes append the same rules to their system prompts,
-  // and two copies would drift the moment one of them was reworded.
-  lines.push(OUTPUT_VOICE_RULES);
-  lines.push("");
+  // OUTPUT_VOICE_RULES used to be re-pushed here too. Both runtimes
+  // (runtime-claude, runtime-opencode) build their system prompt via
+  // withOutputVoice() from this same constant, and the system prompt goes out
+  // with every turn — so the copy here was a second, per-turn-only repeat of
+  // something already guaranteed present. Cut rather than kept "for safety":
+  // duplicating an instruction doesn't make it more likely to be followed,
+  // just more expensive to say.
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
   lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
   lines.push("```mesh-json");
@@ -475,7 +683,9 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("");
   lines.push("## Other available ops");
   lines.push("- respond (messageId/type/payload) — answer one specific request.");
-  lines.push("- read_artifact (artifactRef) — fetch content instead of guessing at it.");
+  lines.push(
+    "- read_artifact (artifactRef, offset?) — fetch content instead of guessing at it. A large artifact returns in parts: if the result says truncated, read again with the nextOffset it gives you before drawing conclusions.",
+  );
   lines.push("- request_research (to/question) — ask the explorer a read-only question.");
   lines.push("- broadcast (type/payload) — inform everyone you may contact; prefer a targeted send.");
   lines.push("- ratify_decision (decisionId) — promote a proposed decision to a shared fact.");

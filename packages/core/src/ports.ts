@@ -102,6 +102,20 @@ export interface RuntimeResolver {
   resolve(runtimeName: string): import("../../protocol/src/index").AgentRuntime;
 }
 
+/**
+ * Derives acceptance criteria from a mission goal, for missions that boot
+ * without hand-written `acceptance_criteria`.
+ *
+ * Optional on purpose: it is the only port here that reaches a model before
+ * the mission exists, so a mesh without one (or with generation disabled)
+ * falls back to `DEFAULT_CRITERIA` exactly as it did before. Implementations
+ * return `null` rather than throwing when the model is unreachable or answers
+ * unusably — a mission must not fail to start because criteria generation did.
+ */
+export type CriteriaGeneratorPort = (
+  goalText: string,
+) => Promise<import("./criteria").GeneratedCriterion[] | null>;
+
 export interface SessionRegistryPort {
   record(agentId: string, sessionId: string, runtime: string): Promise<void>;
   lookup(agentId: string): Promise<{ sessionId: string; runtime: string } | null>;

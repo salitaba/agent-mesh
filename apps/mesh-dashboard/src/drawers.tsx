@@ -1052,7 +1052,14 @@ export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
       ]);
       if (dead) return;
       if (content == null) {
-        setBodyErr("the file body could not be fetched.");
+        // getText collapses every failure to null, so ask again through the
+        // JSON client. A 503 carries the server's reason for an unreadable
+        // blob — worth showing, since "unreadable" and "empty" look identical
+        // otherwise. A timeout (status 0) carries nothing worth showing.
+        const { status, json: err } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}/content${q}`);
+        if (dead) return;
+        const reason = status === 503 && typeof err?.error === "string" ? err.error : null;
+        setBodyErr(reason ?? "the file body could not be fetched.");
         return;
       }
       setBody({ version: shown, content });

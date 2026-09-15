@@ -119,6 +119,21 @@ export type ArtifactStatus =
 
 export type ArtifactStateMachineKind = "code" | "release" | "document";
 
+/**
+ * Who an artifact is background reading for.
+ *
+ * `mission` is shared reference material the whole mesh may need to consult —
+ * the current architecture, the requirements everyone is building against.
+ * `work` is the output of one piece of work: it matters to its owner, its
+ * reviewers, and whoever was handed a reference to it, and to nobody else.
+ *
+ * This distinction used to be a hardcoded list of four artifact TYPES inside
+ * the context builder, which made it unstateable: a mesh-wide TestReport could
+ * not be shared reference material, and a throwaway ADR draft could not stop
+ * being one. It is a property of the artifact because that is what it is.
+ */
+export type ArtifactScope = "mission" | "work";
+
 export interface ArtifactRef {
   uri: string;
   version?: number;
@@ -136,6 +151,12 @@ export interface Artifact {
   contentRef: string;
   digest: string;
   parent?: ArtifactId;
+  /**
+   * Optional. Absent means "derive it from the type" — see `artifactScope`.
+   * Left optional rather than backfilled so that logs written before this
+   * existed replay to exactly the same answer they always did.
+   */
+  scope?: ArtifactScope;
   metadata: Record<string, unknown>;
   provenance: ContentProvenance;
   createdAt: string;
@@ -754,6 +775,12 @@ export interface MeshOpPublishArtifact {
   type: ArtifactType;
   status?: ArtifactStatus;
   content: string;
+  /**
+   * Overrides the type-derived default. An agent publishing something the whole
+   * mesh should keep in view says so here rather than hoping its type is on a
+   * list it cannot see.
+   */
+  scope?: ArtifactScope;
   metadata?: Record<string, unknown>;
   parentArtifactId?: ArtifactId;
   asVersionOf?: ArtifactId;
@@ -762,6 +789,12 @@ export interface MeshOpPublishArtifact {
 export interface MeshOpReadArtifact {
   op: "read_artifact";
   artifactRef: string;
+  /**
+   * Character offset to resume from. Artifact content is the one thing an agent
+   * can pull into its own window without limit, so reads are sliced and paged
+   * rather than returned whole.
+   */
+  offset?: number;
 }
 
 export interface MeshOpTransitionArtifact {
@@ -1142,6 +1175,25 @@ export interface AgentContextBundle {
   unreadMail: MeshMessage[];
   recentOwnActivity: string[];
   agentMemory: AgentMemoryNote[];
+  /** Count of memory notes dropped by eviction; 0 when nothing was lost. */
+  elidedMemory?: number;
+  /**
+   * Per-section count of what this turn had available but did not include,
+   * because a cap cut the list short.
+   *
+   * Absent keys mean nothing was withheld from that section. Rendered into the
+   * prompt so an agent can tell a complete list from the top of a long one —
+   * without it, every capped section reads as exhaustive, and an agent shown
+   * 3 of 9 open obligations will close 3 and report itself finished.
+   */
+  omitted?: {
+    unread?: number;
+    decisions?: number;
+    artifacts?: number;
+    activity?: number;
+    outstanding?: number;
+    memory?: number;
+  };
   openThreads: Thread[];
   budgetSnapshot: { agentTokensUsed: number; agentTokenBudget: number; missionTokensUsed: number; missionTokenBudget: number };
   /**

@@ -3,6 +3,7 @@ export * from "./projections";
 export * from "./kernel";
 export * from "./budgets";
 export * from "./context";
+export * from "./criteria";
 export * from "./patch-files";
 export * from "./ports";
 export * from "./termination";

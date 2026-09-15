@@ -1,4 +1,4 @@
-﻿import { shortHash, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
+﻿import { shortHash, type AgentDefinition, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
 import { HUMAN_AGENT_ID } from "../../../packages/core/src/index";
 import {
@@ -28,15 +28,55 @@ const TERMINAL_ARTIFACT_STATUS = new Set(["MERGED", "ACCEPTED", "FINAL", "ARCHIV
  */
 const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest"]);
 
+/**
+ * Tools whose own description already names the capability/authority/mode
+ * required to use them (git.merge, veto authority, architecture.approve,
+ * worker-only). Every seat used to see all of these regardless of whether it
+ * held the grant, which cost ~4x the role prompt in tool-slot tokens and told
+ * the model nothing about what it could actually call. Keyed by tool name;
+ * a tool absent here has no such requirement.
+ */
+const TOOL_REQUIREMENT: Record<string, (def: AgentDefinition | undefined) => boolean> = {
+  mesh_merge: (def) => !!def?.capabilities.includes("git.merge"),
+  mesh_veto: (def) => !!def?.authority.some((a) => a === "*" || a.endsWith(".veto")),
+  mesh_decision_ratify: (def) => !!def?.authority.some((a) => a === "*" || a === "architecture.approve"),
+  mesh_submit_result: (def) => def?.mode === "service",
+};
+
 export class McpToolset {
   private tools: Map<string, McpToolDefinition>;
 
-  constructor(private supervisor: Supervisor, opts: { readOnly?: boolean } = {}) {
+  constructor(
+    private supervisor: Supervisor,
+    private opts: { readOnly?: boolean } = {},
+  ) {
     this.tools = new Map();
     for (const t of this.buildTools()) {
       if (opts.readOnly && !READ_TOOLS.has(t.name)) continue;
       this.tools.set(t.name, t);
     }
+  }
+
+  /**
+   * The tool list for one specific seat: the full toolset minus whichever
+   * TOOL_REQUIREMENT entries this agent's definition doesn't satisfy. The
+   * observability tools stay in every seat's list on purpose — agents use
+   * them to check run status, not just external observers (see "mcp bus:
+   * read-only observability tools answer run questions" in bus-api.test.ts);
+   * the separate readOnly toolset (this.opts.readOnly) exists for observers
+   * who should see ONLY those 6 and nothing else, so it passes through
+   * unfiltered here. Authorization itself is unaffected — executeOp still
+   * gates every op the same way it always did; this only trims what's
+   * advertised.
+   */
+  private toolsFor(agentId: string): McpToolDefinition[] {
+    const all = [...this.tools.values()];
+    if (this.opts.readOnly) return all;
+    const def = this.supervisor.state.agents.get(agentId)?.definition;
+    return all.filter((t) => {
+      const requirement = TOOL_REQUIREMENT[t.name];
+      return requirement ? requirement(def) : true;
+    });
   }
 
   verifyToken(agentId: string, token: string): boolean {
@@ -70,7 +110,7 @@ export class McpToolset {
       case "notifications/initialized":
         return { jsonrpc: "2.0", id: id ?? null, result: {} };
       case "tools/list":
-        return { jsonrpc: "2.0", id, result: { tools: [...this.tools.values()] } };
+        return { jsonrpc: "2.0", id, result: { tools: this.toolsFor(agentId) } };
       case "tools/call": {
         const name = request.params?.name as string;
         const args = (request.params?.arguments ?? {}) as Record<string, any>;
@@ -116,7 +156,14 @@ export class McpToolset {
 
   private summarize(op: MeshOp, result: OpResult): Record<string, unknown> {
     if (op.op === "read_artifact") {
-      return { ok: result.ok, content: result.reason };
+      const out: Record<string, unknown> = { ok: result.ok, content: result.reason };
+      if (result.totalChars !== undefined) out.totalChars = result.totalChars;
+      if (result.truncated) {
+        out.truncated = true;
+        out.nextOffset = result.nextOffset;
+        out.note = `Content truncated. You have characters 0-${result.nextOffset} of ${result.totalChars}. Call mesh_artifact_read again with offset=${result.nextOffset} for the next part.`;
+      }
+      return out;
     }
     const out: Record<string, unknown> = { ok: result.ok };
     if (result.messageId) out.messageId = result.messageId;
@@ -154,9 +201,9 @@ export class McpToolset {
       case "mesh_escalate":
         return { op: "escalate", reason: a.reason, detail: a.detail, conflictKey: a.conflictKey };
       case "mesh_artifact_publish":
-        return { op: "publish_artifact", name: a.name, type: a.type, content: a.content, status: a.status, metadata: a.metadata, asVersionOf: a.asVersionOf, parentArtifactId: a.parentArtifactId };
+        return { op: "publish_artifact", name: a.name, type: a.type, content: a.content, status: a.status, scope: a.scope, metadata: a.metadata, asVersionOf: a.asVersionOf, parentArtifactId: a.parentArtifactId };
       case "mesh_artifact_read":
-        return { op: "read_artifact", artifactRef: a.artifactRef };
+        return { op: "read_artifact", artifactRef: a.artifactRef, offset: a.offset };
       case "mesh_artifact_transition":
         return { op: "transition_artifact", artifactId: a.artifactId, to: a.to, evidence: a.evidence };
       case "mesh_request_review":
@@ -460,8 +507,8 @@ export class McpToolset {
       { name: "mesh_reject", description: "Reject a subject domain or artifact review.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_veto", description: "Veto an action (requires explicit veto authority in the subject domain).", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_escalate", description: "Escalate a disagreement or blocker to the human seat.", inputSchema: { type: "object", required: ["reason"], properties: { reason: str("escalation reason"), detail: obj("structured detail"), conflictKey: str("stable key for repeated conflicts") }, additionalProperties: false } },
-      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content.", inputSchema: { type: "object", required: ["name", "type", "content"], properties: { name: str("artifact name"), type: str("ArtifactType"), content: str("full content"), status: str("optional initial status"), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
-      { name: "mesh_artifact_read", description: "Read the full content of an artifact version by URI or id.", inputSchema: { type: "object", required: ["artifactRef"], properties: { artifactRef: str("artifact:// URI or artifact id") }, additionalProperties: false } },
+      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content.", inputSchema: { type: "object", required: ["name", "type", "content"], properties: { name: str("artifact name"), type: str("ArtifactType"), content: str("full content"), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
+      { name: "mesh_artifact_read", description: "Read the content of an artifact version by URI or id. Large artifacts come back in parts: if the result says truncated, call again with the offset it gives you.", inputSchema: { type: "object", required: ["artifactRef"], properties: { artifactRef: str("artifact:// URI or artifact id"), offset: { type: "number", description: "character offset to resume from, taken from a previous truncated result's nextOffset" } }, additionalProperties: false } },
       { name: "mesh_artifact_transition", description: "Request an artifact state-machine transition (runtime-enforced gates apply).", inputSchema: { type: "object", required: ["artifactId", "to"], properties: { artifactId: str("artifact id"), to: str("target ArtifactStatus"), evidence: str("evidence description") }, additionalProperties: false } },
       { name: "mesh_request_review", description: "Move an artifact to review and request reviewers.", inputSchema: { type: "object", required: ["artifactId", "reviewers"], properties: { artifactId: str("artifact id"), reviewers: strArr("reviewer agent ids") }, additionalProperties: false } },
       { name: "mesh_task_claim", description: "Claim an open task you have the capabilities for.", inputSchema: { type: "object", required: ["taskId"], properties: { taskId: str("task id") }, additionalProperties: false } },

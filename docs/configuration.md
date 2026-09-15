@@ -15,6 +15,9 @@ mesh:
   acceptance_criteria:              # optional; else defaults are used,
     - { id: architecture-approved, description: "…", mandatory: true }   # and PM
     - { id: implementation-merged, description: "…", mandatory: true }   # can add more
+  # generate_acceptance_criteria: true # instead of declaring criteria, derive
+                                       # them from `goal` (default false). Ignored
+                                       # when `acceptance_criteria` is set above.
   workspace: { path: ./workspace }
   runtime:   { default: opencode }  # + optional model: provider/model, variant: low|high|max for the whole mesh
   defaults:                         # mesh-wide session/delegation defaults every agent inherits
@@ -23,6 +26,27 @@ mesh:
 startup:
   activate: [pm, architect]         # not every agent — config-selected
 ```
+
+`mesh.generate_acceptance_criteria` asks the model to derive acceptance criteria
+from `mesh.goal` at boot, for missions that declare none. It is off by default
+because it puts a model call in the boot path, and a mesh that already declares
+its criteria should not start behaving differently because the feature exists.
+Declared `acceptance_criteria` always win; generation is only consulted when
+they are absent. If the model is unreachable or answers unusably the mission
+falls back to the built-in defaults and starts anyway — generation can improve
+the criteria a mission runs on, but never prevents one from starting. What it
+produces is one model's reading of a single paragraph of prose, and every agent
+reads that list on every turn, which is why generated criteria get a review hold
+and the other two sources do not.
+
+A mission that boots on **generated** criteria starts held: the goal is paused
+with the reason "acceptance criteria were generated from the goal — review them,
+then resume the mission to start work", and no agent is woken. Review the list
+and resume to begin — `mesh resume`, or the dashboard's unpause button (`r`).
+The hold exists because the criteria are the completion gate, so running against
+an unreviewed list means every agent works toward a definition of done nobody
+agreed to. Declared and built-in-default criteria are never held: the operator
+wrote one, the other is fixed and reviewable in the source.
 
 `mesh.defaults.session` / `mesh.defaults.delegation` take the same keys as the
 per-agent blocks below and set them once for the whole mesh. Each of the six keys

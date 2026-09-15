@@ -95,6 +95,13 @@
       "type": "string",
       "maxLength": 200
     },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "mission",
+        "work"
+      ]
+    },
     "metadata": {
       "type": "object"
     },

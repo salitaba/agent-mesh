@@ -1,4 +1,5 @@
 import {
+  ARTIFACT_SCOPES,
   ARTIFACT_STATUSES,
   ARTIFACT_TYPES,
   EVENT_TYPES,
@@ -124,6 +125,10 @@ export const artifactSchema = {
     contentRef: { type: "string", maxLength: 1000 },
     digest: { type: "string", pattern: "^sha256:", maxLength: 100 },
     parent: { type: "string", maxLength: 200 },
+    // Optional, and must stay so: the schema is `additionalProperties: false`,
+    // so the field has to be declared here to be writable at all, and required
+    // here would invalidate every artifact logged before it existed.
+    scope: { type: "string", enum: ARTIFACT_SCOPES },
     metadata: { type: "object" },
     provenance: {
       type: "object",
@@ -230,6 +235,7 @@ export const meshConfigSchema = {
             additionalProperties: false,
           },
         },
+        generate_acceptance_criteria: { type: "boolean" },
         workspace: {
           type: "object",
           properties: { path: { type: "string" } },

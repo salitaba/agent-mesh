@@ -1,7 +1,7 @@
 import type { MeshEvent, WorkspaceLease } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import { dischargeCommitment, ensureBudget } from "./state";
-import { MAX_CONFLICTS } from "./state";
+import { MAX_CONFLICTS, MAX_MEMORY_VALUE_CHARS, evictMemory } from "./state";
 import { ProjectionError } from "./projections-helpers";
 
 export function applySystemEvent(state: Projections, event: MeshEvent, p: Record<string, any>): boolean {
@@ -52,7 +52,12 @@ export function applySystemEvent(state: Projections, event: MeshEvent, p: Record
     case "memory.updated": {
       const { agentId, note } = p as { agentId: string; note: import("../../protocol/src/index").AgentMemoryNote };
       const m = state.memory.get(agentId) ?? new Map();
-      m.set(note.key, note);
+      // Delete before set so insertion order tracks the LAST write: an agent
+      // that keeps refreshing one note must not have it evicted as "oldest"
+      // while staler notes outlive it.
+      m.delete(note.key);
+      m.set(note.key, { ...note, value: note.value.slice(0, MAX_MEMORY_VALUE_CHARS) });
+      evictMemory(m, agentId, event.timestamp);
       state.memory.set(agentId, m);
       break;
     }

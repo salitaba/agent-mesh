@@ -3,7 +3,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
 import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
-import { verdictText, type VerdictText } from "./run-report";
+import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
 export interface DeadlockFinding {
   kind: "thread_depth" | "repeated_conflict" | "review_rounds" | "idle_stall" | "fingerprint_loop" | "wait_cycle";
@@ -278,9 +278,10 @@ export type TerminationVerdict =
  * The `reason` fields above are code literals, and for a long time the only
  * place that turned them into English was a switch inside the dashboard's
  * escalation card — so the CLI printed nothing and a newly-added reason
- * rendered as a raw snake_case token. The phrasing now lives in `run-report.ts`
- * and every surface reads it from there; this wrapper exists so callers holding
- * a verdict do not have to reach past it for the detail that sharpens the text.
+ * rendered as a raw snake_case token. The phrasing now lives in the protocol
+ * catalog and every surface reads it from there; this wrapper exists so callers
+ * holding a verdict do not have to reach past it for the detail that sharpens
+ * the text.
  *
  * Returns null for `continue`: a mission that is still running has no verdict
  * to describe.

@@ -25,6 +25,7 @@ import {
   type AgentRuntimeStatus,
   type Artifact,
   type ArtifactRef,
+  type ArtifactScope,
   type ArtifactStatus,
   type CreateGoalInput,
   type DecisionRecord,
@@ -45,6 +46,7 @@ import {
   type Task,
   type Thread,
   type ActivationReason,
+  type AgentContextBundle,
   type ApprovalKind,
   type BudgetHint,
   type PolicyDecisionResult,
@@ -52,6 +54,7 @@ import {
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
+import { ARTIFACT_SCOPES } from "../../protocol/src/index";
 import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
@@ -60,10 +63,11 @@ import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domain
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
-import type { BudgetManager } from "./budgets";
+import type { BudgetManager, BudgetKey } from "./budgets";
 import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
 import type {
   ArtifactContentStore,
+  CriteriaGeneratorPort,
   PolicyEvaluator,
   RuntimeResolver,
   SchedulerActivationRequest,
@@ -73,6 +77,7 @@ import type {
   WorkspacePort,
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
+import { loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, renderContextInstructions } from "./context";
 import type { ContextLimits } from "./context";
 import { DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
@@ -94,6 +99,12 @@ export interface SupervisorDeps {
   scheduler: SchedulerPort;
   runtimes: RuntimeResolver;
   content: ArtifactContentStore;
+  /**
+   * Turns `mesh.goal` into acceptance criteria for missions that declare none.
+   * Absent, or disabled by `mesh.generate_acceptance_criteria`, leaves the
+   * mission on `DEFAULT_CRITERIA`.
+   */
+  criteriaGenerator?: CriteriaGeneratorPort;
   workspace?: WorkspacePort;
   sessionRegistry?: SessionRegistryPort;
   hooks?: SupervisorHooks;
@@ -113,6 +124,15 @@ export interface OpResult {
   reason?: string;
   artifact?: Artifact;
   escalationId?: string;
+  /**
+   * Set on a `read_artifact` that returned only a slice. An agent that cannot
+   * tell a partial document from a whole one will reason confidently over the
+   * half it got, so truncation is reported as data rather than left for the
+   * model to infer from a sentence stopping mid-word.
+   */
+  truncated?: boolean;
+  nextOffset?: number;
+  totalChars?: number;
 }
 
 export const HUMAN_AGENT_ID = "human";
@@ -166,9 +186,190 @@ const TURN_COST_SAFETY_FACTOR = 1.5;
  * broken one, and the previous shared budget suspended healthy agents.
  */
 const MAX_TIMEOUT_RETRIES = 5;
-const MAX_TURN_TEXT_CHARS = 20000;
-const MAX_TURN_INSTRUCTIONS_CHARS = 8000;
-const MAX_TURN_TOOLCALLS = 30;
+/**
+ * Bounds on the TRACE COPY of a turn — what the Steps drawer and the audit
+ * mirror retain. Named `MAX_TRACE_*` rather than `MAX_TURN_*` because the old
+ * names read, in every grep, as if they bounded the prompt: they are applied to
+ * the copy handed to `pushTurn`, never to the `instructions` that actually go
+ * out over `runtime.send`. The real prompt guard is
+ * `INSTRUCTIONS_SOFT_CAP_TOKENS` below.
+ */
+const MAX_TRACE_TEXT_CHARS = 20000;
+const MAX_TRACE_INSTRUCTIONS_CHARS = 8000;
+const MAX_TRACE_TOOLCALLS = 30;
+
+/**
+ * Characters per token, for converting a built prompt into the unit every
+ * budget in this system is denominated in.
+ *
+ * A real tokenizer was considered and rejected, not skipped. Anthropic's
+ * tokenizer is not published, so every JS option (`tiktoken`, `gpt-tokenizer`)
+ * is a *different* model's BPE — it would add a dependency and a per-turn cost
+ * to buy 10-25% precision that is not actually precision, just a confident
+ * number from the wrong vocabulary.
+ *
+ * 3.5 rather than the ~4 that English prose averages, because the error is not
+ * symmetric. Under-stating chars/token over-states tokens, which takes a
+ * slightly larger hold and trims slightly sooner; over-stating it admits a turn
+ * the ledger cannot actually afford. Bias toward the harmless side.
+ */
+const CHARS_PER_TOKEN = 3.5;
+
+/** Estimated tokens for a rendered prompt. Deliberately an estimate — see `CHARS_PER_TOKEN`. */
+export function estimateTokens(chars: number): number {
+  return Math.ceil(Math.max(0, chars) / CHARS_PER_TOKEN);
+}
+
+/**
+ * Soft ceiling on the assembled per-turn prompt, in estimated tokens.
+ *
+ * This is the only check that measures what is actually about to be sent. Every
+ * other bound in the context bundle is an ITEM count, which is a proxy for size
+ * and a weak one.
+ *
+ * Tokens rather than chars so it is comparable with the ledgers it shares a
+ * turn with: the same number is used below to top up the pre-flight hold, and a
+ * cap denominated in chars could not have been.
+ *
+ * Overflow REBUILDS the bundle smaller — it never truncates the string. The ops
+ * contract and the output-voice rules render LAST, so a hard slice would cut
+ * off exactly the part telling the agent how to reply, turning an oversized
+ * prompt into a malformed one.
+ */
+const INSTRUCTIONS_SOFT_CAP_TOKENS = 9000;
+
+/**
+ * Ceiling on a single `read_artifact`, in characters.
+ *
+ * Generous on purpose: an agent asking for a document should usually get the
+ * document, and paging a design doc across four turns costs more than sending
+ * it once. This exists for the pathological case — a giant generated file, a
+ * log, a patch — not to make reading artifacts feel rationed.
+ */
+const ARTIFACT_READ_MAX_CHARS = 60000;
+
+/**
+ * The two degradation tiers, shared by the thread-budget path and the
+ * instructions soft cap so both shrink a turn the same way.
+ */
+/**
+ * Floor tier. Reached only when `tight` still renders over the soft cap, which
+ * before this existed simply logged and sent the oversized prompt anyway.
+ *
+ * `maxUnread: 2` rather than 1 on purpose: every other section is recoverable
+ * from state next turn, but mail that is never shown is mail the agent does not
+ * know it was sent. The context builder clamps each field to at least 1, so no
+ * section can be removed outright here — this is the smallest a turn can get.
+ */
+const CONTEXT_LIMITS_MINIMAL: ContextLimits = {
+  maxUnread: 2, maxDecisions: 1, maxArtifactRefs: 1, maxActivity: 1, maxOutstanding: 1, maxMemory: 1,
+};
+
+const CONTEXT_LIMITS_TIGHT: ContextLimits = {
+  maxUnread: 3, maxDecisions: 3, maxArtifactRefs: 5, maxActivity: 4, maxOutstanding: 3, maxMemory: 5,
+};
+const CONTEXT_LIMITS_REDUCED: ContextLimits = {
+  maxUnread: 6, maxDecisions: 5, maxArtifactRefs: 10, maxActivity: 7, maxOutstanding: 5, maxMemory: 10,
+};
+
+/** Ordered widest-to-narrowest. The soft cap walks this and stops at the first tier that fits. */
+export const CONTEXT_TIER_LADDER: ContextLimits[] = [CONTEXT_LIMITS_REDUCED, CONTEXT_LIMITS_TIGHT, CONTEXT_LIMITS_MINIMAL];
+
+export function tierName(t: ContextLimits | undefined): string {
+  if (t === CONTEXT_LIMITS_MINIMAL) return "minimal";
+  if (t === CONTEXT_LIMITS_TIGHT) return "tight";
+  if (t === CONTEXT_LIMITS_REDUCED) return "reduced";
+  return "full";
+}
+
+/**
+ * Walk the tier ladder until the rendered turn fits under the soft cap.
+ *
+ * Extracted from the activation path rather than left inline: this is the one
+ * piece of context assembly that DROPS things the agent would otherwise have
+ * seen, and inline in a several-hundred-line method it could only be exercised
+ * by standing up a whole mission. `rebuild` is the seam — the caller supplies
+ * bundle construction, this supplies the search.
+ *
+ * Deliberately reports `landed: false` instead of throwing or truncating: a
+ * prompt that will not shrink is still a prompt the agent can answer, and
+ * slicing the string would cut the ops contract off the end (see
+ * `INSTRUCTIONS_SOFT_CAP_TOKENS`).
+ */
+export function fitToSoftCap<T>(opts: {
+  /** The already-rendered full-tier turn, and the value it came from. */
+  value: T;
+  render: (value: T) => string;
+  /** Tier budget pressure already chose, if any. The walk starts BELOW it. */
+  startTier?: ContextLimits;
+  rebuild: (tier: ContextLimits) => T;
+  cap?: number;
+}): { value: T; rendered: string; tier: ContextLimits | undefined; landed: boolean; before: number; after: number } {
+  const cap = opts.cap ?? INSTRUCTIONS_SOFT_CAP_TOKENS;
+  let rendered = opts.render(opts.value);
+  const before = estimateTokens(rendered.length);
+  if (before <= cap) {
+    return { value: opts.value, rendered, tier: opts.startTier, landed: true, before, after: before };
+  }
+
+  // Slicing from the current tier keeps the walk monotonic: it can never
+  // rebuild at a WIDER tier than the one budget pressure already picked.
+  const startAt = opts.startTier ? CONTEXT_TIER_LADDER.indexOf(opts.startTier) + 1 : 0;
+  let value = opts.value;
+  let tier = opts.startTier;
+  let after = before;
+  for (const candidate of CONTEXT_TIER_LADDER.slice(Math.max(0, startAt))) {
+    value = opts.rebuild(candidate);
+    tier = candidate;
+    rendered = opts.render(value);
+    after = estimateTokens(rendered.length);
+    // Stop at the FIRST tier that fits: a turn that would have been fine at
+    // `reduced` should not be stripped to `minimal` for nothing.
+    if (after <= cap) return { value, rendered, tier, landed: true, before, after };
+  }
+  return { value, rendered, tier, landed: false, before, after };
+}
+
+/**
+ * Raise the pre-flight hold to cover the prompt that was actually assembled.
+ *
+ * Extracted for the same reason as `fitToSoftCap`: inline in the activation
+ * path this could only be reached by running a whole mission, and its one
+ * interesting behaviour — a refused top-up must NOT kill the turn — is exactly
+ * the kind that stays plausible-looking while being wrong.
+ *
+ * Returns shortfalls rather than logging them, so the caller owns the audit
+ * voice and a test can assert on the decision instead of on a string.
+ */
+export async function topUpPromptHold(
+  budget: Pick<BudgetManager, "reserve">,
+  opts: {
+    agentId: string;
+    promptTokens: number;
+    reserveAmount: number;
+    targets: Array<{ key: BudgetKey; limit: number | null }>;
+  },
+): Promise<{
+  topUp: number;
+  reservations: Array<{ key: BudgetKey; reservationId: string }>;
+  shortfalls: Array<{ key: BudgetKey; requested: number; granted: number; blocked: boolean }>;
+}> {
+  const topUp = opts.promptTokens - opts.reserveAmount;
+  const reservations: Array<{ key: BudgetKey; reservationId: string }> = [];
+  const shortfalls: Array<{ key: BudgetKey; requested: number; granted: number; blocked: boolean }> = [];
+  if (topUp <= 0) return { topUp: 0, reservations, shortfalls };
+
+  for (const { key, limit } of opts.targets) {
+    const extra = await budget.reserve(key, "tokens", topUp, limit, { actorId: opts.agentId });
+    // Collected even when blocked: a partial grant still consumed headroom, and
+    // dropping the id would leak the reservation past settlement.
+    if (extra.reservationId) reservations.push({ key, reservationId: extra.reservationId });
+    if (extra.blocked || extra.granted < extra.requested) {
+      shortfalls.push({ key, requested: extra.requested, granted: extra.granted, blocked: extra.blocked });
+    }
+  }
+  return { topUp, reservations, shortfalls };
+}
 
 /**
  * Clamps on model-authored task prose, for the same reason `MAX_PLAN_STEP_CHARS`
@@ -277,6 +478,14 @@ export class Supervisor {
    */
   private patchRefusalNotified = new Set<string>();
   private startedAt = Date.now();
+  /**
+   * Set when a mission booted on model-generated acceptance criteria and is
+   * waiting for the operator to accept them. Held here rather than derived from
+   * the goal status because `resumeGoal` must be able to tell "the operator
+   * acknowledged the criteria" from "the operator lifted an ordinary pause" —
+   * only the former needs to start the agents that boot deliberately skipped.
+   */
+  private criteriaReviewHold = false;
   private detector: DeadlockDetector;
   private termination = new TerminationManager();
   private watchdogChain: Promise<void> = Promise.resolve();
@@ -548,15 +757,37 @@ export class Supervisor {
       if (opts.resume && live) {
         this.state.activeGoalId = live.id;
       } else {
-        await this.createGoal({
+        // Declared criteria need no derivation and no review: the operator
+        // wrote them. Only a model's list is unverified, and it is the
+        // completion gate, so it is the one case that holds for acknowledgement.
+        const derived = this.config.goalCriteria
+          ? { criteria: this.config.goalCriteria, generated: false }
+          : await this.deriveAcceptanceCriteria();
+        const goal = await this.createGoal({
           description: this.config.goalText,
-          acceptanceCriteria: this.config.goalCriteria ?? DEFAULT_CRITERIA,
+          acceptanceCriteria: derived.criteria,
           budget: {
             tokens: this.config.budgets.mission.tokens,
             wallClockMinutes: this.config.budgets.mission.wallClockMinutes,
             maxEvents: this.config.budgets.mission.maxEvents,
           },
         });
+        if (derived.generated) {
+          // Pause rather than invent a gate: this is the operator's own pause
+          // path, so agents are refused with the ordinary "mission is paused"
+          // and `resumeGoal` is the acknowledgement. The reason is what tells
+          // the operator this is a review, not a fault.
+          this.criteriaReviewHold = true;
+          await this.deps.kernel.emit(
+            "goal.paused",
+            {
+              goalId: goal.id,
+              reason:
+                "acceptance criteria were generated from the goal — review them, then resume the mission to start work",
+            },
+            { actorId: HUMAN_AGENT_ID },
+          );
+        }
       }
     }
     // 7. register agents (+ human seat, Â§36)
@@ -616,26 +847,34 @@ export class Supervisor {
     this.startStallWatch();
     if (!parked) {
       this.deps.scheduler.start();
-      const activate = opts.resume ? this.recoveryCandidates() : this.config.startupActivate;
-      // Nobody decomposed the goal. Every agent received the same raw goal text
-      // as its mission and independently guessed which slice was its own, so
-      // the mesh ran N divergent partial plans that never reconciled — the
-      // single biggest quality gap against one agent holding one coherent plan.
-      // The first startup agent is now the planner: it must publish the split
-      // before doing role work, and the rest are told to align to that plan
-      // rather than invent a parallel one.
-      for (const [i, id] of activate.entries()) {
-        await this.activateAgent(id, {
-          kind: opts.resume ? "recovery" : "startup",
-          note: opts.resume
-            ? "mission resumed from event log"
-            : i === 0
-              ? this.plannerBrief()
-              : "startup activation. A lead agent is decomposing the goal into tasks right now — do NOT invent your own parallel plan. Check the mission acceptance criteria and open tasks, claim what your role owns, and ask the lead if your slice is unclear.",
-        });
-      }
+      // A mission holding on generated criteria starts nobody. Waking agents
+      // into a paused mission buys one refused turn each, and a brief that says
+      // "start work" when every op will be rejected is worse than no brief.
+      if (!this.criteriaReviewHold) await this.activateStartup(Boolean(opts.resume));
     }
     return this.state.goals.get(goalId) ?? null;
+  }
+
+  /**
+   * Wake the seat that owns the first move and brief the rest.
+   *
+   * Shared by boot and by the acknowledgement of a criteria review, because
+   * those are the same moment: a mission whose planning never happened still
+   * needs the lead to decompose the goal before the others invent parallel
+   * plans of their own.
+   */
+  private async activateStartup(resume: boolean): Promise<void> {
+    const activate = resume ? this.recoveryCandidates() : this.config.startupActivate;
+    for (const [i, id] of activate.entries()) {
+      await this.activateAgent(id, {
+        kind: resume ? "recovery" : "startup",
+        note: resume
+          ? "mission resumed from event log"
+          : i === 0
+            ? this.plannerBrief()
+            : "startup activation. A lead agent is decomposing the goal into tasks right now — do NOT invent your own parallel plan. Check the mission acceptance criteria and open tasks, claim what your role owns, and ask the lead if your slice is unclear.",
+      });
+    }
   }
 
   /**
@@ -779,6 +1018,45 @@ export class Supervisor {
   }
 
   // ------------------------------------------------------- MeshRuntime API (Â§48)
+
+  /**
+   * Criteria for a mission that declared none.
+   *
+   * Runs before `goal.created`, so the criteria are part of the goal from the
+   * first event rather than something agents watch change underneath them.
+   * That ordering is the whole reason this is a boot step: every agent reads
+   * the criteria list on every turn and the completion gate is computed from
+   * it, so a list that arrives late is a mission already judged against a
+   * different target.
+   *
+   * Every failure falls back to `DEFAULT_CRITERIA`. Generation improves on the
+   * defaults; it is never a precondition for a mission starting, so a model
+   * that is slow, unreachable, or answers with prose must not be able to stop
+   * one. The criteria actually used are on the `goal.created` payload, which
+   * is where an operator sees them either way.
+   */
+  private async deriveAcceptanceCriteria(): Promise<{
+    criteria: Array<Partial<AcceptanceCriterion> & { description: string }>;
+    /**
+     * True when a model wrote these, which is what triggers the review hold.
+     * Defaulted and operator-declared criteria are both already known-good:
+     * one is a fixed list the operator can read in the source, the other the
+     * operator wrote. Only a model's guess is unverified.
+     */
+    generated: boolean;
+  }> {
+    const generate = this.deps.criteriaGenerator;
+    if (!generate || !this.config.generateAcceptanceCriteria) {
+      return { criteria: DEFAULT_CRITERIA, generated: false };
+    }
+    try {
+      const generated = await generate(this.config.goalText);
+      if (generated && generated.length > 0) return { criteria: generated, generated: true };
+    } catch {
+      // Falls through to the defaults below.
+    }
+    return { criteria: DEFAULT_CRITERIA, generated: false };
+  }
 
   async createGoal(input: CreateGoalInput): Promise<Goal> {
     if (this.state.activeGoalId && this.state.goals.get(this.state.activeGoalId)?.status !== "CREATED") {
@@ -1398,6 +1676,12 @@ export class Supervisor {
     type: Artifact["type"];
     content: string;
     status?: ArtifactStatus;
+    /**
+     * Overrides the type's default scope. Omitted by almost every caller —
+     * `artifactScope` falls back to the default at read time, so the common
+     * case needs no field at all and old logs keep replaying identically.
+     */
+    scope?: ArtifactScope;
     metadata?: Record<string, unknown>;
     parentArtifactId?: string;
     asVersionOf?: string;
@@ -1406,6 +1690,13 @@ export class Supervisor {
   }): Promise<{ artifact: Artifact; uri: string } | { error: string }> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { error: "no active goal" };
+    // Every artifact in the system is born here, which makes this the one place
+    // an unknown scope can be stopped before it reaches the log. It is dropped
+    // rather than rejected: scope is advisory — it widens who sees the document,
+    // it does not decide whether the document exists — so losing a whole publish
+    // over the one field nobody asked for would be the wrong trade. Dropping it
+    // falls back to the type default, which is the behaviour that predates it.
+    const scope = ARTIFACT_SCOPES.includes(input.scope as ArtifactScope) ? input.scope : undefined;
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
     // Reject model-invented artifact types at the gate: without this a
     // publish like type "ArchitectureDoc" (not in ARTIFACT_TYPES) lands in
@@ -1442,6 +1733,10 @@ export class Supervisor {
         ...current,
         version: current.version + 1,
         parent: current.id,
+        // A new version may re-scope, but silence inherits: `...current` already
+        // carried the predecessor's scope, and dropping it on every version
+        // would quietly reset a deliberate choice back to the type default.
+        ...(scope ? { scope } : {}),
         status: input.status === "DRAFT" || input.status === undefined || input.status === "PROPOSED" ? initial : current.status,
         contentRef: "",
         digest: "",
@@ -1465,6 +1760,7 @@ export class Supervisor {
         status: input.status === "FINAL" && machine === "document" ? "FINAL" : initial,
         contentRef: "",
         digest: "",
+        ...(scope ? { scope } : {}),
         metadata: input.metadata ?? {},
         provenance: {
           source: input.provenanceSource ?? (input.actorId === HUMAN_AGENT_ID ? "human" : "agent"),
@@ -2438,7 +2734,17 @@ export class Supervisor {
   async resumeGoal(goalId?: GoalId): Promise<void> {
     const gid = goalId ?? this.state.activeGoalId;
     if (!gid) return;
+    const acknowledgingCriteria = this.criteriaReviewHold;
+    this.criteriaReviewHold = false;
     await this.deps.kernel.emit("goal.resumed", { goalId: gid, reason: "user resume" }, { actorId: HUMAN_AGENT_ID });
+    // A mission held on generated criteria never ran its startup activation, so
+    // the agents that need waking are the startup set. `recoveryCandidates()`
+    // would find nobody: it returns agents that already hold mail, a task, or a
+    // stalled lifecycle, and a seat that was never briefed has none of those.
+    if (acknowledgingCriteria && this.liveMode) {
+      await this.activateStartup(false);
+      return;
+    }
     for (const c of this.recoveryCandidates()) {
       await this.activateAgent(c, { kind: "recovery", note: "goal resumed" });
     }
@@ -2816,6 +3122,8 @@ export class Supervisor {
        * written to cope with exactly this.)
        */
       let threadReservationId: string | undefined;
+      /** Hoisted so the post-assembly top-up can charge the thread ledger too. */
+      let threadLedgerKey: string | undefined;
       /**
        * Context trimming for this turn. `undefined` === full context, which is
        * the only value on the normal path, so an unpressured turn builds a
@@ -2824,6 +3132,7 @@ export class Supervisor {
       let contextLimits: ContextLimits | undefined;
       if (reason.threadId) {
         const tk = threadKey(goalId, reason.threadId);
+        threadLedgerKey = tk;
         const threadReserveAmount = this.sizedTurnReserve(agentId, this.config.budgets.threadReserveTokens);
         let tReserve = await this.deps.budget.reserve(tk, "tokens", threadReserveAmount, this.config.budgets.threadTokens, { actorId: agentId });
         if (tReserve.blocked && (await this.tryAutoRaise(tk, this.config.budgets.threadTokens, agentId))) {
@@ -2859,9 +3168,7 @@ export class Supervisor {
           // Two levels, not a smooth curve: a shortfall means the hold could
           // not even be taken in full and is the harsher signal; merely
           // crossing the soft cap is an early warning and only halves things.
-          contextLimits = shortfall
-            ? { maxUnread: 3, maxDecisions: 3, maxArtifactRefs: 5, maxActivity: 4, maxOutstanding: 3 }
-            : { maxUnread: 6, maxDecisions: 5, maxArtifactRefs: 10, maxActivity: 7, maxOutstanding: 5 };
+          contextLimits = shortfall ? CONTEXT_LIMITS_TIGHT : CONTEXT_LIMITS_REDUCED;
           this.auditLine(
             `thread ${tk} under budget pressure (consumed ${tLedger?.consumed ?? 0}/${tLedger?.limit ?? "∞"}, held ${tReserve.granted}/${tReserve.requested}) — degrading ${agentId}'s context instead of blocking`,
           );
@@ -2904,7 +3211,7 @@ export class Supervisor {
       const session = await this.ensureSession(agentId);
       // build context from undelivered mail first, then drain via delivery events
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
-      const bundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
+      const rawBundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
       // Delivery is bookkeeping: the agent only ever reads the first
       // MAX_UNREAD (12) in context. Cap per-turn fan-out so a deep backlog
       // (hundreds/thousands queued) can't turn one turn into thousands of
@@ -2919,7 +3226,62 @@ export class Supervisor {
           { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
         );
       }
-      const instructions = renderContextInstructions(bundle) + `\n\n## Why you were woken\n${describeReason(reason)}\n\nEmit your reply as mesh operations.`;
+      const renderTurn = (b: AgentContextBundle): string =>
+        renderContextInstructions(b) + `\n\n## Why you were woken\n${describeReason(reason)}\n\nEmit your reply as mesh operations.`;
+      // Item caps bound how MANY things go in, never how big they are. When the
+      // assembled result still lands over budget, shrink the bundle and
+      // re-render — never slice the string (see the constant's comment).
+      const fitted = fitToSoftCap({
+        value: rawBundle,
+        render: renderTurn,
+        startTier: contextLimits,
+        rebuild: (tier) => buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, tier),
+      });
+      const bundle = fitted.value;
+      const instructions = fitted.rendered;
+      if (fitted.tier !== contextLimits || !fitted.landed) {
+        contextLimits = fitted.tier;
+        this.auditLine(
+          fitted.landed
+            ? `${agentId} instructions ~${fitted.before} tokens over soft cap ${INSTRUCTIONS_SOFT_CAP_TOKENS} — rebuilt ${tierName(fitted.tier)} (~${fitted.after} tokens)`
+            // Nothing left to give. Send it and say so, rather than truncate the
+            // string and hand the agent a prompt missing its ops contract.
+            : `${agentId} instructions ~${fitted.after} tokens still over soft cap ${INSTRUCTIONS_SOFT_CAP_TOKENS} at tier ${tierName(fitted.tier)} — sending oversized`,
+        );
+      }
+
+      /**
+       * Top up the pre-flight hold to cover the prompt that was actually built.
+       *
+       * The hold above is taken BEFORE the context exists, sized from this
+       * agent's rolling average turn cost — so an agent whose history is cheap
+       * can be admitted on a 4k hold and then be handed a 25k prompt. The hold
+       * is then not a bound on anything; it is a number that happened to pass.
+       * The input side of the turn is the one part whose size is knowable in
+       * advance, so once it IS known, make the ledgers reflect it.
+       *
+       * A blocked top-up does NOT block the turn. The turn already cleared the
+       * pre-flight check, the bundle is already at its tightest tier, and
+       * killing it here would spend the assembly for nothing. The point of the
+       * top-up is that a CONCURRENT turn sees the headroom is gone; settlement
+       * still charges the real figure either way.
+       */
+      const promptTokens = estimateTokens(instructions.length);
+      const topped = await topUpPromptHold(this.deps.budget, {
+        agentId,
+        promptTokens,
+        reserveAmount: agentReserveAmount,
+        targets: [
+          { key: agentKey(goalId, agentId), limit: this.state.agents.get(agentId)?.definition.budget.tokens ?? null },
+          ...(threadLedgerKey ? [{ key: threadLedgerKey, limit: this.config.budgets.threadTokens }] : []),
+        ],
+      });
+      openReservations.push(...topped.reservations);
+      for (const s of topped.shortfalls) {
+        this.auditLine(
+          `${agentId} prompt ~${promptTokens} tokens exceeds its ${agentReserveAmount} hold; ${s.key} could not cover the ${topped.topUp} difference — proceeding, settlement will charge the real cost`,
+        );
+      }
       // Make "what it's working on" visible while still THINKING: the runtime
       // call below blocks until the full output arrives, so without this the
       // Steps drawer would show a running turn with no content until it ends.
@@ -2929,7 +3291,7 @@ export class Supervisor {
         reason,
         startedAt: turnStartedAt,
         status: "running",
-        instructions: instructions.slice(0, MAX_TURN_INSTRUCTIONS_CHARS),
+        instructions: instructions.slice(0, MAX_TRACE_INSTRUCTIONS_CHARS),
       });
       this.markTurn(turnId, "contextAt");
 
@@ -3184,9 +3546,9 @@ export class Supervisor {
         // skipped ops ran.
         ops: turn.results.map((r) => r.op),
         toolCalls: output.toolCalls?.length ?? 0,
-        toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TURN_TOOLCALLS),
+        toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TRACE_TOOLCALLS),
         summary: endSummary,
-        text: (output.text ?? "").slice(0, MAX_TURN_TEXT_CHARS),
+        text: (output.text ?? "").slice(0, MAX_TRACE_TEXT_CHARS),
       });
       if (endSummary) {
         await this.rememberMemory(agentId, `turn:${turnId}`, endSummary);
@@ -3285,6 +3647,20 @@ export class Supervisor {
         ops: output.operations.map((o) => o.op),
         toolCalls: output.toolCalls ?? [],
         tokens: output.tokensUsed,
+        // The assembled prompt's real size, recorded nowhere else: the trace
+        // copy is truncated, so without this there is no way to correlate what
+        // a turn COST with how big its context actually was, and no way to tell
+        // a cache miss caused by prompt churn from one caused by volume.
+        instructionsChars: input.instructions?.length ?? 0,
+        // Recorded next to the chars it came from so systematic bias in
+        // `CHARS_PER_TOKEN` is visible to a human reading the audit against
+        // real spend. Deliberately NOT self-calibrating: the only reality
+        // signal available is the turn's `input`, which also contains the
+        // system prompt, the tool schemas and the whole accumulated
+        // transcript, so a ratio derived from it would be measuring mostly
+        // other things and drifting the constant for the wrong reason.
+        estInputTokens: estimateTokens(input.instructions?.length ?? 0),
+        memoryNotes: input.context.agentMemory.length,
       }),
     );
     // Realtime mirror: keep the in-memory turn trace fresh even before the turn ends.
@@ -3297,13 +3673,13 @@ export class Supervisor {
       model: output.model,
       ops: output.operations.map((o) => o.op),
       toolCalls: output.toolCalls?.length ?? 0,
-      toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TURN_TOOLCALLS),
+      toolCallsDetail: (output.toolCalls ?? []).slice(0, MAX_TRACE_TOOLCALLS),
       tokens: output.tokensUsed?.total ?? 0,
       tokensInput: output.tokensUsed?.input,
       tokensOutput: output.tokensUsed?.output,
       summary: declaredTurnSummary(output)?.slice(0, 500),
-      text: (output.text ?? "").slice(0, MAX_TURN_TEXT_CHARS),
-      instructions: input.instructions?.slice(0, MAX_TURN_INSTRUCTIONS_CHARS),
+      text: (output.text ?? "").slice(0, MAX_TRACE_TEXT_CHARS),
+      instructions: input.instructions?.slice(0, MAX_TRACE_INSTRUCTIONS_CHARS),
     });
   }
 
@@ -3484,7 +3860,13 @@ export class Supervisor {
       workspacePath: await this.agentWorkspace(agentId),
       busUrl: process.env.MESH_BUS_URL ?? `http://${this.config.server.host}:${this.config.server.port}`,
       agentToken: `${this.config.meshId}:${agentId}:${shortHash(this.state.activeGoalId ?? "x")}`,
-      rolePromptText: rec.definition.prompt.text ?? "",
+      // Resolved, not read off the definition. `prompt.text` is only ever set
+      // for the two hardcoded seats; every YAML-configured agent carries
+      // `prompt.file`, so reading `.text` here handed each one an empty system
+      // prompt — silently, since a seat with no role prose still answers, just
+      // without knowing who it is. `loadRolePrompt` is the same resolver the
+      // per-turn context bundle uses, so both runtimes now see one value.
+      rolePromptText: loadRolePrompt(this.config, agentId, rec.definition),
       capabilityGrants: rec.definition.capabilities,
       env: { MESH_AGENT_ID: agentId, MESH_GOAL_ID: this.state.activeGoalId ?? "" },
     };
@@ -3646,6 +4028,7 @@ export class Supervisor {
             type: op.type,
             content: op.content,
             status: op.status,
+            scope: op.scope,
             metadata: op.metadata,
             parentArtifactId: op.parentArtifactId,
             asVersionOf: op.asVersionOf,
@@ -3659,7 +4042,25 @@ export class Supervisor {
           const a = this.findArtifactByUri(op.artifactRef);
           if (!a) return { ok: false, op: op.op, reason: "unknown artifact ref" };
           const content = await this.deps.content.read(a.contentRef);
-          return { ok: true, op: op.op, reason: content };
+          // Refs keep artifacts OUT of the assembled prompt, but a read put the
+          // whole document back in with no ceiling — the one path by which an
+          // agent could flood its own window from inside a turn. Slice it, and
+          // say so, so a partial read is a fact the agent holds rather than an
+          // absence it cannot detect.
+          const offset = Math.max(0, Math.floor(op.offset ?? 0));
+          const slice = content.slice(offset, offset + ARTIFACT_READ_MAX_CHARS);
+          const end = offset + slice.length;
+          if (end < content.length) {
+            return {
+              ok: true,
+              op: op.op,
+              reason: slice,
+              truncated: true,
+              nextOffset: end,
+              totalChars: content.length,
+            };
+          }
+          return { ok: true, op: op.op, reason: slice, totalChars: content.length };
         }
         case "transition_artifact": {
           const targetId = this.resolveArtifactRef(op.artifactId, op.artifactUri);

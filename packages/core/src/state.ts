@@ -288,6 +288,82 @@ export const MAX_CONFLICTS = 500;
 export const MAX_DISCHARGE_HISTORY = 500;
 
 /**
+ * L2 memory was the one projection missing from the caps above, and the only
+ * one fed automatically: the supervisor writes a note under a unique
+ * `turn:<id>` key after every successful turn. Uncapped, that map grew by one
+ * entry per turn for the life of a mission, was re-rendered in full into every
+ * later prompt, and was serialized into every snapshot — so prompt size grew
+ * linearly in turns and total tokens quadratically, defeating the item caps
+ * every other context section already carried.
+ *
+ * Auto-written and agent-authored notes get SEPARATE budgets deliberately.
+ * Under one shared cap a long run's turn summaries would evict the notes an
+ * agent explicitly chose to keep, which is a worse failure than the growth:
+ * the mesh would silently forget what it was told to remember. Turn exhaust is
+ * also the cheaper of the two to lose — `recentOwnActivity` already covers
+ * recent-turn ground in the same prompt.
+ */
+export const AUTO_MEMORY_PREFIX = "turn:";
+export const MAX_AUTO_MEMORY = 10;
+export const MAX_AGENT_MEMORY = 30;
+export const MAX_MEMORY_VALUE_CHARS = 2000;
+
+/**
+ * Bookkeeping slot recording how many turn summaries have been dropped. It is
+ * neither auto nor authored and counts against neither budget.
+ *
+ * There is deliberately no digest of the dropped notes. Folding them into one
+ * concatenated string would be compaction in name only — without a model you
+ * cannot compress meaning, only join and truncate, which is what eviction
+ * already does, at the cost of machinery that merely looks like progress. What
+ * an agent actually needs is the same thing a truncated artifact read gives it:
+ * knowledge that something is missing, so it does not mistake the window it has
+ * for the whole history. Real summarization is a model call and a deliberate
+ * spend; this is the honest cheap half.
+ */
+export const ELIDED_MEMORY_KEY = "memory:elided";
+
+export function isAutoMemoryNote(key: string): boolean {
+  return key.startsWith(AUTO_MEMORY_PREFIX);
+}
+
+/**
+ * Evict oldest-first within each class until both are under budget.
+ *
+ * Deterministic on replay, which a reducer requires: JS Maps iterate in
+ * insertion order, and the caller deletes before re-setting an existing key so
+ * that order tracks LAST write rather than first. Replaying the same log
+ * therefore evicts the same notes in the same sequence.
+ */
+export function evictMemory(m: Map<string, AgentMemoryNote>, agentId: string, at: string): void {
+  const auto: string[] = [];
+  const authored: string[] = [];
+  for (const key of m.keys()) {
+    if (key === ELIDED_MEMORY_KEY) continue;
+    (isAutoMemoryNote(key) ? auto : authored).push(key);
+  }
+
+  const dropAuto = auto.slice(0, Math.max(0, auto.length - MAX_AUTO_MEMORY));
+  const dropAuthored = authored.slice(0, Math.max(0, authored.length - MAX_AGENT_MEMORY));
+  for (const key of dropAuto) m.delete(key);
+  for (const key of dropAuthored) m.delete(key);
+
+  const dropped = dropAuto.length + dropAuthored.length;
+  if (dropped === 0) return;
+  const marker = m.get(ELIDED_MEMORY_KEY);
+  const before = marker ? Number.parseInt(marker.value, 10) || 0 : 0;
+  const total = before + dropped;
+  m.delete(ELIDED_MEMORY_KEY);
+  m.set(ELIDED_MEMORY_KEY, {
+    agentId,
+    key: ELIDED_MEMORY_KEY,
+    value: String(total),
+    updatedAt: at,
+    eventId: "",
+  } as AgentMemoryNote);
+}
+
+/**
  * The single place an ask leaves the ledger.
  *
  * Every discharge path funnels through here so that (a) the reason is always

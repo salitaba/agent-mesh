@@ -2,11 +2,23 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { bootstrapMesh, type MeshInstance } from "../apps/mesh-server/src/index";
+import type { CriteriaGeneratorPort } from "../packages/core/src/ports";
 import type { AgentDefinition } from "../packages/protocol/src/index";
 
 export interface AgentSpec {
   id: string;
   role: string;
+  /**
+   * Inline role prose for this seat. `makeMesh` writes it to
+   * `roles/<id>.md` beside the generated `mesh.yaml` and the config names it
+   * as `prompt: ./roles/<id>.md`.
+   *
+   * Text rather than a path because `resolveConfig` rejects a config whose
+   * prompt ref points at no file, so the ref and the file have to be produced
+   * together. Leave it unset and the seat falls back to the role one-liner
+   * `loadRolePrompt` generates.
+   */
+  prompt?: string;
   capabilities?: string[];
   authority?: string[];
   interests?: string[];
@@ -28,7 +40,12 @@ export interface TestMeshOptions {
   wallClockMinutes?: number;
   maxActiveAgents?: number;
   maxTotalAgents?: number;
-  criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
+  /** `null` omits the block entirely, which is what makes generation kick in. */
+  criteria?: Array<{ id: string; description: string; mandatory?: boolean }> | null;
+  /** Sets `mesh.generate_acceptance_criteria`. */
+  generateAcceptanceCriteria?: boolean;
+  /** Injected generator; without it the boot path falls back to defaults. */
+  criteriaGenerator?: CriteriaGeneratorPort;
   goal?: string;
   uiOnly?: boolean;
   mode?: "parked" | "live";
@@ -69,6 +86,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
   const agents = opts.agents
     .map((a) => {
       const lines = [`  ${a.id}:`, `    role: ${a.role}`, `    runtime: stub`];
+      if (a.prompt !== undefined) lines.push(`    prompt: ./roles/${a.id}.md`);
       if (a.mode) lines.push(`    mode: ${a.mode}`);
       if (a.capabilities) lines.push(`    capabilities: [${a.capabilities.join(", ")}]`);
       if (a.authority) lines.push(`    authority: [${a.authority.join(", ")}]`);
@@ -86,18 +104,21 @@ export function testConfigYaml(opts: TestMeshOptions): string {
   const gates = Object.entries(opts.transitions ?? {})
     .map(([k, v]) => `    ${k}:\n      requires: [${v.join(", ")}]`)
     .join("\n");
-  const criteria = (opts.criteria ?? [{ id: "ship", description: "the mission artifact exists", mandatory: true }])
-    .map((c) => `    - { id: ${c.id}, description: "${c.description}", mandatory: ${c.mandatory ?? true} }`)
-    .join("\n");
+  const declared =
+    opts.criteria === null
+      ? null
+      : opts.criteria ?? [{ id: "ship", description: "the mission artifact exists", mandatory: true }];
+  const criteriaBlock = declared
+    ? `  acceptance_criteria:\n${declared.map((c) => `    - { id: ${c.id}, description: "${c.description}", mandatory: ${c.mandatory ?? true} }`).join("\n")}\n`
+    : "";
+  const generateBlock = opts.generateAcceptanceCriteria ? "  generate_acceptance_criteria: true\n" : "";
   return `version: 1
 
 mesh:
   id: test-${Math.random().toString(36).slice(2, 8)}
   goal: |
     ${opts.goal ?? "Test mission."}
-  acceptance_criteria:
-${criteria}
-  workspace:
+${criteriaBlock}${generateBlock}  workspace:
     path: ./workspace
   runtime:
     default: stub
@@ -138,8 +159,22 @@ export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-test-"));
   const configPath = path.join(dir, "mesh.yaml");
   fs.writeFileSync(configPath, testConfigYaml(opts), "utf8");
+  // Before bootstrap, not after: resolveConfig refuses a config whose `prompt:`
+  // ref names a file that does not exist.
+  for (const a of opts.agents) {
+    if (a.prompt === undefined) continue;
+    const roleFile = path.join(dir, "roles", `${a.id}.md`);
+    fs.mkdirSync(path.dirname(roleFile), { recursive: true });
+    fs.writeFileSync(roleFile, a.prompt, "utf8");
+  }
   const mode = opts.mode ?? (opts.uiOnly ? "parked" : "live");
-  const instance = await bootstrapMesh({ configPath, inMemory: true, mode, uiOnly: mode === "parked" });
+  const instance = await bootstrapMesh({
+    configPath,
+    inMemory: true,
+    mode,
+    uiOnly: mode === "parked",
+    ...(opts.criteriaGenerator ? { criteriaGenerator: opts.criteriaGenerator } : {}),
+  });
   (globalThis as unknown as Record<string, unknown>).__meshDebug = () => {
     const st = instance.kernel.state;
     const agents = [...st.agents.values()].map((r) => `${r.definition.id}:${r.state.lifecycle}(act ${r.state.activations}, unread ${st.unread.get(r.definition.id)?.length ?? 0})`).join("  ");

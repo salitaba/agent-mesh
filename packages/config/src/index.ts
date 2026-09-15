@@ -37,6 +37,13 @@ export interface RawMeshFile {
     name?: string;
     goal: string;
     acceptance_criteria?: Array<{ id: string; description: string; mandatory?: boolean }>;
+    /**
+     * Derive acceptance criteria from `goal` when none are declared. Off by
+     * default: it puts a model call in the boot path, and a mesh that already
+     * declares its criteria should not start behaving differently because the
+     * feature exists.
+     */
+    generate_acceptance_criteria?: boolean;
     workspace?: { path?: string };
     runtime?: { default?: string; model?: string; variant?: string };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
@@ -232,6 +239,8 @@ export interface ResolvedMeshConfig {
   meshName: string;
   goalText: string;
   goalCriteria: Array<{ id: string; description: string; mandatory: boolean }> | null;
+  /** Derive criteria from `goalText` when `goalCriteria` is null. */
+  generateAcceptanceCriteria: boolean;
   workspacePath: string;
   stateDir: string;
   defaultRuntime: string;
@@ -505,6 +514,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       description: c.description,
       mandatory: c.mandatory ?? true,
     })) ?? null,
+    generateAcceptanceCriteria: raw.mesh.generate_acceptance_criteria ?? false,
     workspacePath,
     stateDir,
     defaultRuntime,
@@ -606,8 +616,18 @@ export function loadRolePrompt(config: ResolvedMeshConfig, agentId: string, fall
   if (ref?.text) return ref.text;
   if (ref?.file) {
     const abs = path.isAbsolute(ref.file) ? ref.file : path.resolve(config.dir, ref.file);
-    if (fs.existsSync(abs)) return fs.readFileSync(abs, "utf8");
+    // A seat that CONFIGURED a prompt and cannot get it is a broken invariant,
+    // not a default: falling through here handed the agent a one-line
+    // synthesized role and let it run on, answering competently without
+    // knowing who it was. Nothing in the output distinguishes that from a
+    // working seat, so it has to be loud.
+    if (!fs.existsSync(abs)) {
+      throw new ConfigError([`agent '${agentId}' prompt file not found: ${ref.file}`]);
+    }
+    return fs.readFileSync(abs, "utf8");
   }
+  // No prompt configured at all is a different case and stays a default: the
+  // hardcoded seats rely on it.
   return `You are the ${config.agents[agentId]?.role ?? fallback?.role ?? agentId} agent in mesh '${config.meshId}'.`;
 }
 

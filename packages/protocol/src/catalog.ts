@@ -1,4 +1,5 @@
 import type {
+  ArtifactScope,
   ArtifactStatus,
   ArtifactStateMachineKind,
   ArtifactType,
@@ -580,10 +581,174 @@ export function artifactMachineOf(type: ArtifactType): ArtifactStateMachineKind 
   return ARTIFACT_MACHINE[type] ?? "document";
 }
 
+/**
+ * Types that are mission-wide reference material unless an author says
+ * otherwise. These four were previously an unconditional `return true` in the
+ * context builder, with the same intent and none of the escape hatch: a mesh
+ * where nobody can read the architecture is a mesh reinventing it every turn.
+ */
+export const ARTIFACT_SCOPES: ArtifactScope[] = ["mission", "work"];
+
+const MISSION_SCOPE_TYPES = new Set<ArtifactType>([
+  "ArchitectureDocument",
+  "RequirementsDoc",
+  "ADR",
+  "ApiSpec",
+]);
+
+export function defaultArtifactScope(type: ArtifactType): ArtifactScope {
+  return MISSION_SCOPE_TYPES.has(type) ? "mission" : "work";
+}
+
+/**
+ * The artifact's scope, explicit if it has one and derived from its type if not.
+ *
+ * Deliberately a read-time accessor rather than a field the reducer backfills:
+ * projections must stay a pure function of the log, and an event written before
+ * `scope` existed has to keep producing the state it always produced.
+ */
+export function artifactScope(a: { type: ArtifactType; scope?: ArtifactScope }): ArtifactScope {
+  return a.scope ?? defaultArtifactScope(a.type);
+}
+
 export function artifactStatusMachineOf(status: ArtifactStatus): ArtifactStateMachineKind[] {
   const out: ArtifactStateMachineKind[] = [];
   for (const kind of ["code", "release", "document"] as ArtifactStateMachineKind[]) {
     if (status in MACHINE_TRANSITIONS[kind]) out.push(kind);
   }
   return out;
+}
+
+/** Human-readable phrasing for one termination reason. */
+export interface VerdictText {
+  /** Headline, safe to show alone in a list or a card title. */
+  title: string;
+  /** One sentence explaining what happened, in an operator's vocabulary. */
+  summary: string;
+}
+
+/**
+ * Facts a caller already computed that sharpen the phrasing. All optional:
+ * `verdictText(reason)` alone always returns usable text, because the CLI and
+ * the report often have the reason and nothing else.
+ */
+export interface VerdictContext {
+  /** Unanswered requests behind a stalemate. */
+  waiting?: number;
+  /** Agents named by a runtime failure. */
+  agents?: string[];
+  /** Exhausted thread budgets. */
+  threads?: number;
+}
+
+/**
+ * The one source of human-readable verdict text.
+ *
+ * Termination reasons are code literals (`packages/core/src/termination.ts`)
+ * and were rendered into English in exactly one place — a switch inside the
+ * dashboard's escalation card — which meant the CLI had no phrasing at all and
+ * any new reason silently rendered as a raw snake_case token. Keys here are the
+ * `reason` strings those verdicts and escalations actually carry.
+ *
+ * This lives in the catalog because all three consumers — core, the CLI and the
+ * dashboard — need it, and the catalog is the one shared table they can all
+ * import without dragging a runtime graph along: it imports nothing but types.
+ *
+ * The dashboard still owns its own `what` / `next` / placeholder copy: that
+ * text talks about clicking and answering *below*, which is true of a card and
+ * false of a terminal. Only the shared half — what happened — lives here.
+ */
+const VERDICT_TEXT: Record<string, VerdictText> = {
+  all_mandatory_criteria_evidenced: {
+    title: "Goal met",
+    summary: "Every mandatory acceptance criterion was evidenced, with no open escalations and no work still claimed.",
+  },
+  runtime_failure: {
+    title: "An agent crashed",
+    summary: "An agent hit a runtime failure while work was still outstanding, so the mission stopped rather than continuing around it.",
+  },
+  backend_unreachable: {
+    title: "A model backend went down",
+    summary: "An agent failed several turns in a row because its model backend stopped answering.",
+  },
+  budget_exhausted: {
+    title: "Mission ran out of tokens",
+    summary: "The mission token budget was spent before the goal was met.",
+  },
+  agent_budget_exhausted: {
+    title: "An agent ran out of tokens",
+    summary: "One agent spent its individual token budget and can take no further turns.",
+  },
+  thread_budget_exhausted: {
+    title: "A conversation ran out of tokens",
+    summary: "A thread spent its token budget, so no further turns can happen in it.",
+  },
+  thread_budgets_exhausted: {
+    title: "Every open conversation is out of tokens",
+    summary: "All open threads spent their token budgets and no agent is still running, so work stopped silently.",
+  },
+  budget_exhausted_tokens: {
+    title: "Out of tokens",
+    summary: "A token budget was spent before the goal was met.",
+  },
+  max_events_exceeded: {
+    title: "Mission hit its event cap",
+    summary: "The run produced more events than the configured mission cap allows.",
+  },
+  wall_clock_exceeded: {
+    title: "Mission ran out of time",
+    summary: "The run exceeded its configured wall-clock limit.",
+  },
+  stalemate: {
+    title: "Stalemate",
+    summary: "The mesh deadlocked: agents are waiting on answers that only a human can give.",
+  },
+  "stalemate:unanswered_request": {
+    title: "An agent is waiting for an answer",
+    summary: "A request went unanswered long enough to stall the agent that sent it.",
+  },
+  // Synthesized by `deriveVerdict` when a run stopped without the termination
+  // manager recording a reason — a hard kill, a crash, or a log that ends
+  // mid-mission. Phrased rather than left to the snake_case fallback because
+  // these are the states an interrupted run actually lands in.
+  no_goal: {
+    title: "No mission",
+    summary: "No goal was ever activated in this log, so there is nothing to report on.",
+  },
+  goal_failed: {
+    title: "Mission failed",
+    summary: "The goal was marked failed without a recorded termination reason — check the escalations and the last events.",
+  },
+  goal_escalated: {
+    title: "Mission escalated",
+    summary: "The goal is parked awaiting a human decision; see the open escalations below.",
+  },
+};
+
+/**
+ * Human-readable text for a termination or escalation `reason`.
+ *
+ * Unknown reasons degrade to the de-snaked literal rather than throwing or
+ * rendering an empty card: a reason nobody has phrased yet is still better
+ * shown than swallowed.
+ */
+export function verdictText(reason: string, ctx: VerdictContext = {}): VerdictText {
+  const base = VERDICT_TEXT[reason];
+  if (!base) {
+    const plain = reason.replace(/[:_]+/g, " ").trim();
+    return {
+      title: plain ? plain.charAt(0).toUpperCase() + plain.slice(1) : "Mission stopped",
+      summary: `The mission stopped for a reason this build has no phrasing for (\`${reason}\`). Check the escalations and the event log.`,
+    };
+  }
+  if (reason === "runtime_failure" && ctx.agents?.length) {
+    return { ...base, title: `Agent crashed: ${ctx.agents.join(", ")}` };
+  }
+  if (reason === "stalemate" && typeof ctx.waiting === "number") {
+    return { ...base, title: ctx.waiting > 0 ? `Stalemate (${ctx.waiting} waiting)` : "Stalemate (clearing)" };
+  }
+  if (reason === "thread_budgets_exhausted" && typeof ctx.threads === "number" && ctx.threads > 0) {
+    return { ...base, summary: `${ctx.threads} conversation thread${ctx.threads === 1 ? "" : "s"} spent their token budgets and no agent is still running, so work stopped silently.` };
+  }
+  return base;
 }

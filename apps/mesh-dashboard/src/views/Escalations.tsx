@@ -5,14 +5,15 @@ import { Button, Card, ErrorState, Input } from "../components";
 import { AgentDrawer, ArtifactDrawer } from "../drawers";
 import { MeshMark } from "./Overview";
 import { isParkedStatus, useGoLive } from "../actions";
-// Deep import, not the package barrel: `run-report.ts` value-imports only
-// `protocol/src/catalog` (a const table), so this pulls in the verdict phrasing
-// and nothing else — same arrangement events.tsx uses for EVENT_SEVERITY.
+// Deep import, not the package barrel: the catalog imports nothing but types,
+// so this pulls in the verdict phrasing and nothing else — the same
+// arrangement events.tsx uses for EVENT_SEVERITY. Going through
+// `protocol/src/index` would drag AJV into the bundle.
 // Card titles used to be a second copy of the termination vocabulary that
 // drifted from the reasons in `packages/core/src/termination.ts`; the headline
-// now comes from there, while the `what` / `next` / placeholder copy below
-// stays local because it talks about clicking and answering *below*.
-import { verdictText } from "../../../../packages/core/src/run-report";
+// now comes from the shared table, while the `what` / `next` / placeholder copy
+// below stays local because it talks about clicking and answering *below*.
+import { verdictText } from "../../../../packages/protocol/src/catalog";
 
 interface BudgetInfo {
   title: string;

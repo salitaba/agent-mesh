@@ -7,7 +7,7 @@ import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, Des
 import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
-import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, type OpResult } from "../../../packages/core/src/index";
+import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
 import { missionKey } from "../../../packages/core/src/budgets";
 import { JsonlEventStore, MemoryEventStore, type EventStore } from "../../../packages/event-store/src/index";
 import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-engine/src/index";
@@ -61,6 +61,12 @@ export interface BootstrapOptions {
     requestTimeoutMs?: number;
   };
   httpRuntimeUrl?: string;
+  /**
+   * Overrides the designer-backed criteria generator. Tests inject a stub here
+   * to exercise the boot path without a model; production leaves it unset and
+   * gets the designer adapter.
+   */
+  criteriaGenerator?: CriteriaGeneratorPort;
 }
 
 export interface MeshInstance {
@@ -282,6 +288,13 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     content,
     workspace,
     sessionRegistry,
+    // Criteria generation borrows the designer's one-shot call: it needs a
+    // model, not a seat — no bus identity, no MCP, no mesh session, and no
+    // agent's context (or budget) behind it. Only consulted when
+    // `mesh.generate_acceptance_criteria` is on and the goal declares none.
+    criteriaGenerator:
+      options.criteriaGenerator ??
+      ((goalText) => generateAcceptanceCriteria(goalText, (text, opts) => designerAdapter.prompt(text, opts))),
     scheduler: noopScheduler,
     auditFile: options.inMemory ? undefined : path.join(layout.logs, "turn-audit.jsonl"),
     // JSONL sidecar for the in-memory turn ring: restores rich per-step data

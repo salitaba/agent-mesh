@@ -60,6 +60,17 @@ export class StubRuntime implements AgentRuntime {
   private turnIndex = new Map<string, number>();
   private statuses = new Map<string, AgentRuntimeStatus>();
   private sessions = new Map<string, AgentSession>();
+  /**
+   * The RuntimeContext every `start` received, per agent, oldest first.
+   *
+   * A real runtime turns this into the model's system prompt — runtime-claude
+   * writes `context.rolePromptText` to ROLE.md and passes it as the custom
+   * system prompt — so a stub that discards it leaves the whole
+   * config-to-seat path untestable: nothing downstream of `start` can tell a
+   * configured role prompt from a missing one. Kept as a list rather than
+   * last-wins so a restart (resume/recovery) stays visible.
+   */
+  private startContexts = new Map<string, RuntimeContext[]>();
 
   constructor(private options: StubOptions) {}
 
@@ -71,7 +82,10 @@ export class StubRuntime implements AgentRuntime {
     this.turnIndex.delete(agentId);
   }
 
-  async start(agent: AgentDefinition, _context: RuntimeContext): Promise<AgentSession> {
+  async start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession> {
+    const seen = this.startContexts.get(agent.id) ?? [];
+    seen.push(context);
+    this.startContexts.set(agent.id, seen);
     const session: AgentSession = {
       sessionId: newAgentSessionId(),
       agentId: agent.id,
@@ -82,6 +96,17 @@ export class StubRuntime implements AgentRuntime {
     this.sessions.set(session.sessionId, session);
     this.statuses.set(agent.id, "IDLE");
     return session;
+  }
+
+  /** Every context `start` received for this agent, oldest first. */
+  startContextsFor(agentId: string): RuntimeContext[] {
+    return [...(this.startContexts.get(agentId) ?? [])];
+  }
+
+  /** The context of this agent's most recent `start`, or undefined if never started. */
+  lastStartContext(agentId: string): RuntimeContext | undefined {
+    const seen = this.startContexts.get(agentId);
+    return seen?.[seen.length - 1];
   }
 
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {

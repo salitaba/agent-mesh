@@ -1,5 +1,5 @@
-import { ARTIFACT_TYPES, MESSAGE_TYPES } from "./catalog";
-import type { ArtifactType, MessageType } from "./types";
+import { ARTIFACT_SCOPES, ARTIFACT_TYPES, MESSAGE_TYPES } from "./catalog";
+import type { ArtifactScope, ArtifactType, MessageType } from "./types";
 
 /**
  * Translate model-invented op names/fields into canonical MeshOps.
@@ -176,6 +176,16 @@ export function aliasTextOp(raw: unknown): Record<string, unknown> | null {
       if (out.type === undefined && typeof o.kind === "string") {
         if ((ARTIFACT_TYPES as string[]).includes(o.kind)) out.type = o.kind as ArtifactType;
       }
+      // `scope` is advisory — it widens who sees the artifact, it does not
+      // decide whether the artifact exists. A model that writes "Mission" or
+      // invents "global" should not lose the whole document to a schema error
+      // on the one field nobody asked it for, so normalize what is recognizable
+      // and drop what is not; the read-time default then applies.
+      if (out.scope !== undefined) {
+        const s = typeof o.scope === "string" ? o.scope.toLowerCase() : "";
+        if ((ARTIFACT_SCOPES as string[]).includes(s)) out.scope = s as ArtifactScope;
+        else delete out.scope;
+      }
       // Model-supplied addressing hints have no op fields; keep them as metadata.
       const meta = { ...((o.metadata as Record<string, unknown> | undefined) ?? {}) };
       for (const k of ["uri", "version", "supersedes"]) {
@@ -230,6 +240,11 @@ export function aliasTextOp(raw: unknown): Record<string, unknown> | null {
     case "read_artifact": {
       const ref = str(o.artifactRef) ?? str(o.artifact) ?? str(o.ref) ?? str(o.uri);
       if (ref) out.artifactRef = ref;
+      // Models routinely hand back a numeric field as a string; a dropped
+      // offset silently restarts the read at 0, which loops a paging agent.
+      const rawOffset = o.offset ?? o.from ?? o.start;
+      const offset = typeof rawOffset === "number" ? rawOffset : Number(str(rawOffset) ?? NaN);
+      if (Number.isFinite(offset) && offset > 0) out.offset = Math.floor(offset);
       break;
     }
     case "transition_artifact":

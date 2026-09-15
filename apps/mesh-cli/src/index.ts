@@ -337,8 +337,27 @@ async function launchMesh(opts: {
       const stop = () => {
         resolve();
       };
-      process.once("SIGINT", stop);
-      process.once("SIGTERM", stop);
+      // The report prints exactly once, whoever ends the run. An interrupted
+      // run is still a run: it published artifacts, satisfied criteria and
+      // left work open, and printing nothing on Ctrl-C threw all of that away.
+      let reported = false;
+      const report = (fallback: string) => {
+        if (reported) return;
+        reported = true;
+        try {
+          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
+        } catch (err) {
+          // A report that throws must not swallow the run's outcome.
+          console.log(fallback);
+          console.error(`  (run report unavailable: ${(err as Error).message})`);
+        }
+      };
+      const interrupt = () => {
+        report("\ninterrupted — shutting down");
+        stop();
+      };
+      process.once("SIGINT", interrupt);
+      process.once("SIGTERM", interrupt);
       if (!parked) {
         // Live goals terminate; parked consoles never auto-complete (scheduler
         // is stopped), so only SIGINT/SIGTERM ends them.
@@ -352,13 +371,7 @@ async function launchMesh(opts: {
               // report is composed from the same state the supervisor just
               // finished writing — no extra round trip, no chance of racing
               // the server into shutdown.
-              try {
-                console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
-              } catch (err) {
-                // A report that throws must not swallow the run's outcome.
-                console.log(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
-                console.error(`  (run report unavailable: ${(err as Error).message})`);
-              }
+              report(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
               stop();
             }
           } catch {

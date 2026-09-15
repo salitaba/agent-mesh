@@ -94,6 +94,29 @@ export interface ClaudeAdapterOptions {
   startupProbeMs?: number;
   /** Extra SDK options merged last, for escape hatches and tests. */
   extraOptions?: Partial<Options>;
+  /** Override for `SESSION_CONTEXT_ROTATE_TOKENS`. */
+  rotateAtContextTokens?: number;
+  /**
+   * Seam for the SDK's `query`. Defaults to the real one.
+   *
+   * Session rotation tears down a live query and stands a replacement up
+   * mid-mission; with `query` bound at module scope there is no way to exercise
+   * that without spawning real CLIs, so the riskiest path in this adapter would
+   * ship untested. Narrower than `extraOptions` on purpose — it replaces the
+   * transport, not the configuration.
+   */
+  queryFn?: typeof query;
+  /** Observer for session rotations, so the supervisor can audit them. */
+  onRotate?: (info: {
+    agentId: string;
+    meshSessionId: string;
+    previousSdkSessionId: string;
+    sdkSessionId: string;
+    contextTokens: number;
+    turns: number;
+    rotations: number;
+    reason: string;
+  }) => void;
 }
 
 /**
@@ -114,6 +137,41 @@ export function usageToTokens(u: ClaudeTurnUsage | undefined): AgentOutput["toke
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
   return { input, output, total: input + output + cacheWrite, cacheRead };
+}
+
+/**
+ * Transcript size at which the agent's SDK session is retired and a fresh one
+ * opened.
+ *
+ * This is the bound that was missing. `query()` is opened once per agent with a
+ * streaming input queue, so every turn is appended to one conversation that
+ * nothing ever trimmed: turn N's real input was all N-1 prior turns plus the
+ * new instructions. Bounding the assembled prompt (which the supervisor does)
+ * only bounds what each turn ADDS — the floor still rose forever.
+ *
+ * Rotating is cheap here specifically because the mesh is state-projected: the
+ * supervisor rebuilds the agent's whole working context from projections every
+ * turn — mission, task, plan, decisions, artifacts, unread mail, L2 memory — so
+ * a fresh session is handed everything it needs on its first turn. What is lost
+ * is the agent's un-declared reasoning and any local tool output it had not
+ * recorded in the mesh; that is exactly the material the mesh asks agents to
+ * externalise as artifacts and `done` summaries.
+ *
+ * 120k against a 200k window leaves room for the turn itself plus tool results
+ * rather than rotating at the edge of a failure.
+ */
+const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
+
+/**
+ * How much conversation the model loaded for a turn.
+ *
+ * `input + cache_read`, because a cached prefix is still context the model read
+ * — it is only cheaper, not absent. Reading `input` alone would report a
+ * 150k-token transcript as a few hundred tokens once the prefix caches, which
+ * is exactly the blind spot that let the transcript grow unnoticed.
+ */
+export function transcriptSize(t: AgentOutput["tokensUsed"] | undefined): number {
+  return (t?.input ?? 0) + (t?.cacheRead ?? 0);
 }
 
 export interface ClaudeTurnUsage {
@@ -224,6 +282,25 @@ interface LiveSession {
   lastModel?: string;
   /** Model we asked for, used until the backend tells us what it really ran. */
   configuredModel?: string;
+  /**
+   * Stable id the MESH knows this session by. Equal to `sdkSessionId` until the
+   * first rotation, after which the SDK id moves and this one does not — the
+   * supervisor holds `AgentSession.sessionId` and must keep resolving.
+   */
+  meshSessionId: string;
+  /** Kept so a rotation can rebuild the query; `send` is not given either. */
+  agent: AgentDefinition;
+  context: RuntimeContext;
+  /**
+   * Size of the transcript the model actually read on the last turn
+   * (`input + cache_read`). This is a measurement, not an estimate: it is what
+   * the backend reported it had loaded, and it is the only honest signal for
+   * "how big has this conversation become".
+   */
+  contextTokens: number;
+  /** Turns served by the CURRENT sdk session, and rotations so far. */
+  turns: number;
+  rotations: number;
 }
 
 /**
@@ -347,7 +424,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
-    const s = this.live.get(session.sessionId);
+    let s = this.live.get(session.sessionId);
     if (!s || s.closed) {
       // No live query behind a session the supervisor still believes in. That
       // is the Claude-shaped equivalent of opencode's dead-backend case.
@@ -357,6 +434,15 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     if (s.pending) {
       throw new Error(`claude runtime: turn already in flight for agent ${session.agentId}`);
     }
+
+    // Rotate BEFORE the push, never after: the decision is made on the
+    // transcript the last turn actually read, and rotating afterwards would
+    // still have let this turn load the oversized one.
+    const rotateAt = this.options.rotateAtContextTokens ?? SESSION_CONTEXT_ROTATE_TOKENS;
+    if (s.contextTokens >= rotateAt) {
+      s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
+    }
+    const live = s;
 
     this.statuses.set(session.agentId, "RUNNING");
     const result = await new Promise<TurnResult>((resolve, reject) => {
@@ -368,7 +454,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           if (turn.settled) return;
           turn.settled = true;
           clearTimeout(timer);
-          s.pending = undefined;
+          live.pending = undefined;
           // Tool calls ride out with the result: `s.pending` is cleared here,
           // so reading them off the session afterwards would always find none.
           if (outcome.ok) resolve({ msg: outcome.msg, toolCalls: turn.toolCalls });
@@ -378,11 +464,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       const timer = setTimeout(() => {
         // Abort the model, not the session: the query stays usable for the
         // next turn, matching opencode's per-turn abort semantics.
-        void s.q.interrupt().catch(() => undefined);
+        void live.q.interrupt().catch(() => undefined);
         turn.settle({ ok: false, err: new Error(`claude runtime: turn exceeded ${this.turnTimeoutMs}ms`) });
       }, this.turnTimeoutMs);
-      s.pending = turn;
-      s.inbox.push({
+      live.pending = turn;
+      live.inbox.push({
         type: "user",
         message: { role: "user", content: input.instructions },
         parent_tool_use_id: null,
@@ -393,7 +479,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     });
 
     this.statuses.set(session.agentId, "IDLE");
-    return this.toAgentOutput(result, s);
+    const output = this.toAgentOutput(result, live);
+    live.turns++;
+    // `input + cache_read` is what the backend says it loaded for this turn —
+    // i.e. the transcript's current size. Recorded here rather than estimated
+    // anywhere else, and read by the rotation check on the NEXT turn.
+    live.contextTokens = transcriptSize(output.tokensUsed);
+    return output;
   }
 
   private toAgentOutput(turn: TurnResult, s: LiveSession): AgentOutput {
@@ -597,6 +689,57 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     for (const sessionId of [...this.live.keys()]) this.teardown(sessionId);
   }
 
+  /**
+   * Retire an oversized transcript and open a fresh SDK session in its place,
+   * keeping the mesh-facing session id stable so the supervisor's handle still
+   * resolves.
+   *
+   * Not `teardown` + `open`: teardown settles `pending` with an error and drops
+   * the map entry. Rotation happens between turns, with nothing pending, and
+   * the entry must survive because it is being replaced under the same key.
+   *
+   * A mesh restart after a rotation will try to resume the ORIGINAL id, which
+   * is no longer a live Claude session — `restoreSession` gets a failed
+   * `confirmAlive`, returns null, and the supervisor starts fresh. That is the
+   * correct outcome here rather than a bug to route around: a fresh session is
+   * what rotation produces anyway, and projections refill it.
+   */
+  private async rotate(s: LiveSession, reason: string): Promise<LiveSession> {
+    const previousId = s.sdkSessionId;
+    const rotations = s.rotations + 1;
+    s.closed = true;
+    s.inbox.close();
+    try {
+      s.q.close();
+    } catch {
+      // Already gone; the point is to stop feeding it, not to prove it died.
+    }
+    this.live.delete(s.meshSessionId);
+    const fresh = this.open(s.agent, s.context, randomUUID(), false, s.meshSessionId);
+    fresh.rotations = rotations;
+    try {
+      await fresh.ready;
+    } catch (err) {
+      this.statuses.set(s.agent.id, "UNREACHABLE");
+      this.live.delete(s.meshSessionId);
+      throw new BackendUnreachableError(
+        `claude:${s.meshSessionId}`,
+        `session rotation failed (${reason}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    this.options.onRotate?.({
+      agentId: s.agent.id,
+      meshSessionId: s.meshSessionId,
+      previousSdkSessionId: previousId,
+      sdkSessionId: fresh.sdkSessionId,
+      contextTokens: s.contextTokens,
+      turns: s.turns,
+      rotations,
+      reason,
+    });
+    return fresh;
+  }
+
   private teardown(sessionId: string): void {
     const s = this.live.get(sessionId);
     if (!s) return;
@@ -630,8 +773,16 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     return dir;
   }
 
-  private open(agent: AgentDefinition, context: RuntimeContext, sdkSessionId: string, resuming: boolean): LiveSession {
-    const existing = this.live.get(sdkSessionId);
+  private open(
+    agent: AgentDefinition,
+    context: RuntimeContext,
+    sdkSessionId: string,
+    resuming: boolean,
+    // Defaults to the SDK id, so `start`/`restoreSession` behave exactly as
+    // before. Only a rotation passes the two apart.
+    meshSessionId: string = sdkSessionId,
+  ): LiveSession {
+    const existing = this.live.get(meshSessionId);
     if (existing && !existing.closed) return existing;
 
     const inbox = new PushQueue<SDKUserMessage>();
@@ -644,8 +795,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // The role prose is composed with the shared OUTPUT_VOICE_RULES rather
       // than passed through raw: this runtime builds the model's system prompt
       // itself, so without that the seat would answer under a different set of
-      // output rules than the same seat on opencode — and `rolePromptText` is
-      // empty whenever the config names role files instead of inline text.
+      // output rules than the same seat on opencode.
       systemPrompt: { type: "custom", prompt: withOutputVoice(context.rolePromptText) },
       mcpServers: { mesh: this.meshMcpServer(agent, context) },
       canUseTool: buildPermissionGate(
@@ -662,7 +812,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       ...this.options.extraOptions,
     };
 
-    const q = query({ prompt: inbox, options });
+    const q = (this.options.queryFn ?? query)({ prompt: inbox, options });
     let markReady = () => {};
     let markDead = (_err: Error) => {};
     const ready = new Promise<void>((resolve, reject) => {
@@ -682,8 +832,14 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       markDead,
       settledReady: false,
       configuredModel: this.modelFor(agent),
+      meshSessionId,
+      agent,
+      context,
+      contextTokens: 0,
+      turns: 0,
+      rotations: 0,
     };
-    this.live.set(sdkSessionId, s);
+    this.live.set(meshSessionId, s);
     void this.pump(s, agent.id);
     return s;
   }
