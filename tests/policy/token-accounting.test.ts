@@ -8,7 +8,7 @@ import type { MeshOp } from "../../packages/protocol/src/index";
  * Two failures that together made a healthy-looking mission stop dead:
  *
  * 1. Persistent sessions replay the whole transcript each turn, and the
- *    backend reports that replay as `cache.read`. Billing it charged the
+ *    backend reports that replay as a cache read. Billing it charged the
  *    entire history again every turn (a turn doing 3,698 in / 36 out was
  *    charged 429,191 and rising), which exhausted every thread budget.
  * 2. Nothing watched thread budgets, so once they were all exhausted the mesh
@@ -32,35 +32,35 @@ function terminationState(over: Partial<Record<string, unknown>> = {}) {
 
 const CONFIG = { budgets: { mission: { maxEvents: 100000, wallClockMinutes: 100000 } } } as any;
 
-test("tokens: a replayed transcript (cache.read) is not billed as this turn's work", async () => {
-  const { OpenCodeRuntimeAdapter } = await import("../../packages/runtime-opencode/src/index");
-  const rt: any = new (OpenCodeRuntimeAdapter as any)({});
-  // Stand in for the backend: a small turn on a long persistent session.
-  rt.request = async () => ({
-    info: { tokens: { input: 3698, output: 36, reasoning: 0, cache: { read: 425457, write: 0 } }, modelID: "m" },
-    parts: [{ type: "text", text: "ok" }],
+test("tokens: a replayed transcript (cache_read) is not billed as this turn's work", async () => {
+  const { usageToTokens } = await import("../../packages/runtime-claude/src/index");
+  // Stand in for the backend: a small turn on a long persistent session, where
+  // the replayed prefix dwarfs the work actually done this turn.
+  const t = usageToTokens({
+    input_tokens: 3698,
+    output_tokens: 36,
+    cache_read_input_tokens: 425457,
+    cache_creation_input_tokens: 0,
   });
-  rt.statuses = new Map();
-  const out = await rt.send({ agentId: "dev", sessionId: "s", handle: { baseUrl: "http://x" } }, { instructions: "go", context: { rolePrompt: "r" } });
 
-  assert.equal(out.tokensUsed.total, 3734, "charge must be input + output + reasoning only");
-  assert.equal(out.tokensUsed.cacheRead, 425457, "the replayed prefix stays visible for cost reporting");
-  assert.ok(out.tokensUsed.total < 10000, "a small turn must never be billed as a six-figure turn");
+  assert.equal(t.total, 3734, "charge must be fresh input + output only");
+  assert.equal(t.cacheRead, 425457, "the replayed prefix stays visible for cost reporting");
+  assert.ok(t.total < 10000, "a small turn must never be billed as a six-figure turn");
 });
 
 test("tokens: repeated turns on a growing session cost roughly the same, not more each time", async () => {
-  const { OpenCodeRuntimeAdapter } = await import("../../packages/runtime-opencode/src/index");
-  const rt: any = new (OpenCodeRuntimeAdapter as any)({});
-  rt.statuses = new Map();
+  const { usageToTokens } = await import("../../packages/runtime-claude/src/index");
   const charges: number[] = [];
   // Transcript grows every turn; the real work per turn does not.
   for (let i = 1; i <= 5; i++) {
-    rt.request = async () => ({
-      info: { tokens: { input: 3000, output: 40, reasoning: 0, cache: { read: 100000 * i, write: 0 } }, modelID: "m" },
-      parts: [{ type: "text", text: "ok" }],
-    });
-    const out = await rt.send({ agentId: "dev", sessionId: "s", handle: { baseUrl: "http://x" } }, { instructions: "go", context: { rolePrompt: "r" } });
-    charges.push(out.tokensUsed.total);
+    charges.push(
+      usageToTokens({
+        input_tokens: 3000,
+        output_tokens: 40,
+        cache_read_input_tokens: 100000 * i,
+        cache_creation_input_tokens: 0,
+      }).total,
+    );
   }
   assert.deepEqual(charges, [3040, 3040, 3040, 3040, 3040], "per-turn cost must not grow with transcript length");
 });

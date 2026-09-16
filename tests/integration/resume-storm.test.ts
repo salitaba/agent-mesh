@@ -68,7 +68,10 @@ test("resume storm: continue + set&resume on a real mission log stays responsive
   try {
     const yaml = fs
       .readFileSync(SOURCE_YAML, "utf8")
-      .replaceAll("runtime: opencode", "runtime: stub")
+      // The fixture now names claude; this test wants no model backend at all,
+      // so both the mesh default and every seat are forced to stub.
+      .replaceAll("runtime: claude", "runtime: stub")
+      .replaceAll("default: claude", "default: stub")
       .replaceAll("prompt: ../../roles/", `prompt: ${path.join(REPO, "roles")}/`)
       .replace("path: ./workspace", `path: ${path.join(dir, "workspace")}`);
     fs.writeFileSync(configPath, yaml, "utf8");

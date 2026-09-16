@@ -6,7 +6,6 @@ import * as path from "path";
 import { makeMesh } from "../helpers";
 import { createHttpServer, closeHttpServer } from "../../apps/mesh-server/src/index";
 import { HttpRuntimeAdapter } from "../../packages/runtime-http/src/index";
-import { OpenCodeRuntimeAdapter } from "../../packages/runtime-opencode/src/index";
 
 /** A backend that accepts the connection but never responds — the "server not
  *  responding" case. Honors abort like a real fetch so timeouts can fire. */
@@ -61,46 +60,6 @@ test("http runtime: model work (send) keeps the long timeout", async () => {
   );
   const elapsed = Date.now() - t0;
   assert.ok(elapsed >= 100 && elapsed < 5000, `send used ${elapsed}ms, expected ~requestTimeoutMs (150ms)`);
-});
-
-test("opencode runtime: session setup fails fast against a hanging backend", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-opencode-ctl-"));
-  try {
-    const adapter = new OpenCodeRuntimeAdapter({
-      spawnProcesses: false,
-      baseUrl: "http://127.0.0.1:9",
-      fetchImpl: hangingFetch,
-      requestTimeoutMs: 600000,
-      controlTimeoutMs: 100,
-    });
-    const agent = { id: "a1", role: "a1", mode: "peer", runtime: "opencode", capabilities: [], authority: [] } as never;
-    const ctx = {
-      goalId: "g",
-      meshId: "m",
-      workspacePath: dir,
-      busUrl: "http://127.0.0.1:1",
-      agentToken: "m:a1:tok",
-      rolePromptText: "role",
-      capabilityGrants: [],
-      env: {},
-    } as never;
-    const t0 = Date.now();
-    await assert.rejects(() => adapter.start(agent, ctx));
-    assert.ok(Date.now() - t0 < 5000, `opencode start hung ${Date.now() - t0}ms`);
-
-    const session = {
-      sessionId: "s1",
-      agentId: "a1",
-      runtime: "opencode",
-      createdAt: new Date().toISOString(),
-      handle: { baseUrl: "http://127.0.0.1:9" },
-    } as never;
-    const t1 = Date.now();
-    await adapter.interrupt(session);
-    assert.ok(Date.now() - t1 < 5000, `opencode interrupt hung ${Date.now() - t1}ms`);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("server close resolves with an open dashboard SSE stream", async () => {

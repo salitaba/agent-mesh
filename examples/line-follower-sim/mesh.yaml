@@ -30,7 +30,7 @@ mesh:
   workspace:
     path: ./workspace
   runtime:
-    default: opencode
+    default: claude
 startup:
   activate:
     - pm
@@ -38,7 +38,7 @@ startup:
 agents:
   pm:
     role: product-manager
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/pm.md
     capabilities:
       - repository.read
@@ -53,7 +53,7 @@ agents:
       persistent: true
   architect:
     role: architect
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/architect.md
     capabilities:
       - repository.read
@@ -72,7 +72,7 @@ agents:
       persistent: true
   tech-lead:
     role: tech-lead
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/tech-lead.md
     capabilities:
       - repository.read
@@ -91,7 +91,7 @@ agents:
       - review.requested
   developer:
     role: developer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/developer.md
     capabilities:
       - repository.read
@@ -103,7 +103,7 @@ agents:
       - review.rejected
   qa:
     role: qa
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/qa.md
     capabilities:
       - repository.read
@@ -118,7 +118,7 @@ agents:
       - release.candidate
   explorer:
     role: explorer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/explorer.md
     mode: service
     capabilities:

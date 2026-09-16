@@ -29,7 +29,7 @@ function resolveRaw(text: string) {
 }
 
 test("mesh.runtime.model resolves to defaultModel and stays in the raw config", () => {
-  const cfg = resolveRaw(meshWith("runtime: { default: opencode, model: openrouter/anthropic/claude-sonnet-4 }"));
+  const cfg = resolveRaw(meshWith("runtime: { default: claude, model: openrouter/anthropic/claude-sonnet-4 }"));
   assert.equal(cfg.defaultModel, "openrouter/anthropic/claude-sonnet-4");
   assert.equal(cfg.raw.mesh.runtime?.model, "openrouter/anthropic/claude-sonnet-4");
 });
@@ -44,7 +44,7 @@ test("a non-string mesh.runtime.model fails schema validation", () => {
 });
 
 test("mesh.runtime.variant resolves to defaultVariant and stays in the raw config", () => {
-  const cfg = resolveRaw(meshWith("runtime: { default: opencode, variant: max }"));
+  const cfg = resolveRaw(meshWith("runtime: { default: claude, variant: max }"));
   assert.equal(cfg.defaultVariant, "max");
   assert.equal(cfg.raw.mesh.runtime?.variant, "max");
 });
@@ -64,7 +64,7 @@ mesh:
   id: cfgtest
   goal: |
     Test.
-  runtime: { default: opencode, variant: max }
+  runtime: { default: claude, variant: max }
 agents:
   a: { role: worker, variant: low }
 `);

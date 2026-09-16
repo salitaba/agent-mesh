@@ -11,7 +11,7 @@ mesh:
     path: ./workspace
 
   runtime:
-    default: opencode
+    default: claude
 
 startup:
   activate:
@@ -22,7 +22,7 @@ agents:
 
   architect:
     role: architect
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/architect.md
 
     capabilities:
@@ -44,7 +44,7 @@ agents:
 
   tech-lead:
     role: tech-lead
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/tech-lead.md
 
     capabilities:
@@ -69,7 +69,7 @@ agents:
 
   developer:
     role: developer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/developer.md
 
     capabilities:
@@ -87,7 +87,7 @@ agents:
 
   qa:
     role: qa
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/qa.md
 
     capabilities:
@@ -106,7 +106,7 @@ agents:
 
   security:
     role: security
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/security.md
 
     capabilities:
@@ -126,7 +126,7 @@ agents:
 
   explorer:
     role: explorer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/explorer.md
 
     mode: service
@@ -139,7 +139,7 @@ agents:
 
   pm:
     role: product-manager
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/pm.md
 
     capabilities:

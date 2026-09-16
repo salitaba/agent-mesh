@@ -14,7 +14,7 @@ mesh:
     path: ./workspace
 
   runtime:
-    default: opencode
+    default: claude
 
 startup:
   activate:
@@ -24,7 +24,7 @@ agents:
 
   architect:
     role: architect
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/architect.md
     capabilities: [repository.read, architecture.write, review.design]
     authority: [architecture.approve]
@@ -33,7 +33,7 @@ agents:
 
   tech-lead:
     role: tech-lead
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/tech-lead.md
     capabilities: [repository.read, architecture.read, code.review, review.design, task.assign, git.merge]
     # roles/tech-lead.md makes this seat the design gate, and a plain
@@ -44,7 +44,7 @@ agents:
 
   developer:
     role: developer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/developer.md
     capabilities: [repository.read, repository.write, test.execute, git.commit]
     interests: [architecture.approved, review.rejected]
@@ -57,7 +57,7 @@ agents:
 
   qa:
     role: qa
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/qa.md
     capabilities: [repository.read, test.execute, test.write]
     authority: [quality.block, quality.pass]
@@ -65,7 +65,7 @@ agents:
 
   security:
     role: security
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/security.md
     capabilities: [repository.read, security.scan, security.review]
     authority: [security.block, security.pass]
@@ -73,7 +73,7 @@ agents:
 
   explorer:
     role: explorer
-    runtime: opencode
+    runtime: claude
     mode: service
     prompt: ../../roles/explorer.md
     capabilities: [repository.read]

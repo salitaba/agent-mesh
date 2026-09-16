@@ -36,7 +36,6 @@ import { applyStagedProposal } from "./staging";
 import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { mergeTurnSteps } from "./steps-view";
-import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { ClaudeRuntimeAdapter, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { requireAuth, resolveActor } from "./auth";
@@ -55,15 +54,6 @@ export interface BootstrapOptions {
   /** Explicit successor of `uiOnly`. `parked` == uiOnly, `live` == autonomous. Takes precedence when set. */
   mode?: ServerMode;
   triageModel?: TriageModel;
-  opencodeOptions?: {
-    executable?: string;
-    baseUrl?: string;
-    model?: { providerID: string; modelID: string };
-    /** Mesh-wide thinking variant; `agents.<id>.variant` overrides per agent. */
-    variant?: string;
-    spawnProcesses?: boolean;
-    requestTimeoutMs?: number;
-  };
   httpRuntimeUrl?: string;
   /**
    * Overrides the designer-backed criteria generator. Tests inject a stub here
@@ -202,52 +192,29 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     resolver.register(name, stub);
     stubRuntimes.set(name, stub);
   }
-  // Held by name as well as registered: the designer's model picker asks this
-  // adapter what models the installation can actually reach.
-  const opencodeAdapter = new OpenCodeRuntimeAdapter({
-    executable: options.opencodeOptions?.executable,
-    baseUrl: options.opencodeOptions?.baseUrl,
-    spawnProcesses: options.opencodeOptions?.spawnProcesses,
-    // Explicit bootstrap override wins; otherwise the mesh-wide default from
-    // mesh.runtime.model. Agents with their own `model` still override both.
-    model: options.opencodeOptions?.model ?? parseModelRef(config.defaultModel),
-    variant: options.opencodeOptions?.variant ?? config.defaultVariant,
-    // The adapter's HTTP deadline must outlive the supervisor's turn timeout,
-    // which fires first and interrupts the session. Without this the adapter
-    // aborted at its 600s default even when config asked for a longer turn.
-    requestTimeoutMs: options.opencodeOptions?.requestTimeoutMs ?? config.scheduling.turnTimeoutMs + 30000,
-    mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
-  });
-  resolver.register("opencode", opencodeAdapter);
   const meshDefaultModel = toClaudeModelId(config.defaultModel);
   const claudeDefaultModel = meshDefaultModel?.startsWith("claude") ? meshDefaultModel : undefined;
-  // Claude Code as an alternative agent backend. Registered unconditionally
-  // like opencode: the adapter spawns nothing until an agent whose mesh.yaml
-  // says `runtime: claude` is actually started, so an installation that never
-  // names it pays nothing for its presence.
+  // The agent backend. Registered unconditionally: the adapter spawns nothing
+  // until an agent is actually started, so an installation that runs only stub
+  // or http seats pays nothing for its presence.
   const claudeAdapter = new ClaudeRuntimeAdapter({
       // Same rule as the opencode adapter: the runtime's own deadline must
       // outlive the supervisor's turn timeout, which fires first and
       // interrupts the turn.
       turnTimeoutMs: config.scheduling.turnTimeoutMs + 30000,
       // Only inherit the mesh-wide default when it actually names a Claude
-      // model. `mesh.runtime.model` is usually written for opencode
+      // model. Older configs wrote `mesh.runtime.model` for opencode
       // ("openrouter/anthropic/..."), and forwarding one of those would hand
-      // the SDK an id it cannot resolve — a confusing hard failure on turn 1
-      // rather than the CLI's own default. Per-agent `model` still wins and
-      // is passed through verbatim.
+      // the SDK an id it cannot resolve — a confusing hard failure on turn 1.
+      // Per-agent `model` still wins and is passed through verbatim.
       model: claudeDefaultModel,
       mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
     });
   resolver.register("claude", claudeAdapter);
-  // Which backend answers the designer's own chat. Explicitly opt-in rather
-  // than inferred from `mesh.runtime.model`: a default model of
-  // "anthropic/claude-..." is a statement about agent turns, and flipping the
-  // designer off the installation the user already has working on that basis
-  // would be a surprise. Agent seats are unaffected either way — they follow
-  // each agent's own `runtime`.
-  const designerAdapter: DesignerRuntime =
-    process.env.MESH_DESIGNER_RUNTIME === "claude" ? claudeAdapter : opencodeAdapter;
+  // Answers the designer's own chat and serves its model picker. Only one
+  // runtime implements DesignerRuntime now, so there is nothing to select:
+  // MESH_DESIGNER_RUNTIME went with the opencode adapter.
+  const designerAdapter: DesignerRuntime = claudeAdapter;
   if (options.httpRuntimeUrl) {
     resolver.register("http", new HttpRuntimeAdapter({ baseUrl: options.httpRuntimeUrl }));
   }

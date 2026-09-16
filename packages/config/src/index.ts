@@ -393,7 +393,21 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     errors.push(`project.id '${projectId}' must match ${PROJECT_ID_PATTERN.source}`);
   }
 
-  const defaultRuntime = raw.mesh.runtime?.default ?? "opencode";
+  const defaultRuntime = raw.mesh.runtime?.default ?? "claude";
+  // The opencode backend was removed. Caught here rather than at activation:
+  // an unregistered runtime name otherwise resolves fine at boot and fails on
+  // the first turn, long after the mesh looked healthy.
+  const opencodeSeats = [
+    ...(raw.mesh.runtime?.default === "opencode" ? ["mesh.runtime.default"] : []),
+    ...agentIds.filter((id) => raw.agents[id].runtime === "opencode").map((id) => `agents.${id}.runtime`),
+  ];
+  if (opencodeSeats.length > 0) {
+    errors.push(
+      `runtime 'opencode' was removed; ${opencodeSeats.join(", ")} still names it. ` +
+        "Set it to 'claude' (needs no separate install — it rides on the declared " +
+        "@anthropic-ai/claude-agent-sdk dependency), or 'stub' to run with zero model calls.",
+    );
+  }
   // mesh-wide defaults an agent inherits when it leaves the key out. Resolved with
   // `??` everywhere below: an agent that explicitly sets `false` or `0` means it, and
   // must win over the mesh default — only an absent key inherits.
@@ -979,31 +993,6 @@ function dedupe(list: string[]): string[] {
 
 export function defaultEventEnvelopeBase(goalId: string): Pick<MeshEvent, "goalId" | "protocolVersion"> {
   return { goalId, protocolVersion: "1.0" };
-}
-
-/**
- * Is the `opencode` CLI on PATH? Picks the default runtime for a scaffolded
- * mesh: a machine without the CLI gets `stub`, which boots but does no work,
- * instead of an `opencode` mesh that fails on first activation.
- *
- * There is deliberately no `hasClaudeCli()` counterpart. The asymmetry is
- * real, not an oversight: opencode is an external binary the user installs
- * themselves, while the `claude` runtime rides on
- * `@anthropic-ai/claude-agent-sdk`, a declared dependency that ships its own
- * executable and is used whenever `pathToClaudeCodeExecutable` is unset. A
- * PATH probe for `claude` would fail on a perfectly working install, and a
- * credential probe would wrongly reject anyone authenticated by OAuth or an
- * apiKeyHelper rather than ANTHROPIC_API_KEY. A claude backend that genuinely
- * cannot start reports it at `start()` as a labeled BackendUnreachableError,
- * which is the right place for it.
- */
-export function hasOpenCodeCli(): boolean {
-  try {
-    const r = spawnSync("opencode", ["--version"], { stdio: "ignore", timeout: 10000, shell: process.platform === "win32" });
-    return r.status === 0;
-  } catch {
-    return false;
-  }
 }
 
 export function writeDefaultMeshYaml(

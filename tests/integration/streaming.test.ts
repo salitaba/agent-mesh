@@ -4,7 +4,6 @@ import * as http from "http";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { OpenCodeRuntimeAdapter, extractReasoning, extractSessionDelta, extractSessionPart } from "../../packages/runtime-opencode/src/index";
 import { TurnTracker, type TurnRecord } from "../../packages/core/src/turn-tracker";
 import { makeMesh } from "../helpers";
 import { createHttpServer, closeHttpServer } from "../../apps/mesh-server/src/index";
@@ -15,7 +14,7 @@ const devDef: AgentDefinition = {
   id: "developer",
   role: "developer",
   mode: "peer",
-  runtime: "opencode",
+  runtime: "claude",
   prompt: { text: "you build things" },
   capabilities: ["repository.write"],
   authority: [],
@@ -61,35 +60,6 @@ function baseInput(onToken?: (d: string) => void): AgentInput {
     ...(onToken ? { onToken } : {}),
   };
 }
-
-test("extractSessionDelta pulls text deltas for our session only", () => {
-  const frame = (props: unknown) => `data: ${JSON.stringify({ id: "evt_1", type: "message.part.delta", properties: props })}\n`;
-  assert.equal(
-    extractSessionDelta(frame({ sessionID: "ses_abc", messageID: "msg_1", partID: "prt_1", field: "text", delta: "hello " }), "ses_abc"),
-    "hello ",
-  );
-  assert.equal(extractSessionDelta(frame({ sessionID: "ses_other", delta: "x" }), "ses_abc"), null);
-  assert.equal(
-    extractSessionDelta(`data: ${JSON.stringify({ id: "evt_2", type: "session.created", properties: {} })}\n`, "ses_abc"),
-    null,
-  );
-  assert.equal(extractSessionDelta("not json at all", "ses_abc"), null);
-  assert.equal(extractSessionDelta("", "ses_abc"), null);
-  // Reasoning deltas are tagged, kept out of the answer buffer, and handed to
-  // the designer tap with their field intact.
-  const reasoning = frame({ sessionID: "ses_abc", field: "reasoning", delta: "hmm" });
-  assert.equal(extractSessionDelta(reasoning, "ses_abc"), null);
-  assert.deepEqual(extractSessionPart(reasoning, "ses_abc"), { field: "reasoning", delta: "hmm" });
-});
-
-test("extractReasoning joins reasoning parts and ignores text/tool parts", () => {
-  assert.equal(
-    extractReasoning({ parts: [{ type: "reasoning", text: "step 1" }, { type: "text", text: "answer" }, { type: "reasoning", text: "step 2" }] }),
-    "step 1\nstep 2",
-  );
-  assert.equal(extractReasoning({ parts: [{ type: "text", text: "answer" }] }), "");
-  assert.equal(extractReasoning({}), "");
-});
 
 /** Mock backend: /event streams deltas, /message answers after a delay. */
 function startStreamingMock(deltas: Array<{ atMs: number; sessionId: string; text: string }>, opts: { eventOk?: boolean; messageDelayMs?: number } = {}): Promise<{ url: string; close(): void }> {
@@ -163,43 +133,6 @@ function startStreamingMock(deltas: Array<{ atMs: number; sessionId: string; tex
     });
   });
 }
-
-test("opencode adapter forwards SSE text deltas to onToken without breaking the turn", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-stream-"));
-  const mock = await startStreamingMock([
-    { atMs: 50, sessionId: "ses_stream1", text: "hello " },
-    { atMs: 150, sessionId: "ses_stream1", text: "streaming " },
-    { atMs: 250, sessionId: "ses_other", text: "IGNORED " },
-    { atMs: 300, sessionId: "ses_stream1", text: "world" },
-  ]);
-  try {
-    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, requestTimeoutMs: 10000, controlTimeoutMs: 5000 });
-    const session = await adapter.start(devDef, runtimeCtx(dir));
-    const seen: string[] = [];
-    const out = await adapter.send(session, baseInput((d) => seen.push(d)));
-    assert.equal(out.text, "final answer");
-    assert.equal(seen.join(""), "hello streaming world");
-    await adapter.stop(session);
-  } finally {
-    mock.close();
-  }
-});
-
-test("opencode adapter turn succeeds with full output when /event is unavailable", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-stream-"));
-  const mock = await startStreamingMock([], { eventOk: false, messageDelayMs: 50 });
-  try {
-    const adapter = new OpenCodeRuntimeAdapter({ baseUrl: mock.url, requestTimeoutMs: 10000, controlTimeoutMs: 5000 });
-    const session = await adapter.start(devDef, runtimeCtx(dir));
-    const seen: string[] = [];
-    const out = await adapter.send(session, baseInput((d) => seen.push(d)));
-    assert.equal(out.text, "final answer");
-    assert.deepEqual(seen, []);
-    await adapter.stop(session);
-  } finally {
-    mock.close();
-  }
-});
 
 test("TurnTracker.appendText buffers live deltas with a cap, ignoring finished turns", () => {
   const tracker = new TurnTracker();

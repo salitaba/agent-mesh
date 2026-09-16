@@ -1,7 +1,7 @@
 ﻿import * as fs from "fs";
 import * as path from "path";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
-import { writeDefaultMeshYaml, hasOpenCodeCli } from "../../../packages/config/src/index";
+import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
@@ -278,23 +278,6 @@ async function launchMesh(opts: {
 }): Promise<number> {
   const file = opts.configPath;
   const preflight = resolveConfig(file);
-  const needsOpenCode =
-    preflight.defaultRuntime === "opencode" || Object.values(preflight.agents).some((a) => a.runtime === "opencode");
-  if (needsOpenCode && !hasOpenCodeCli()) {
-    if (opts.mode === "live") {
-      console.error(
-        "error: this mesh uses runtime 'opencode' but the 'opencode' CLI was not found on PATH.\n" +
-          "  - install OpenCode:  npm i -g opencode-ai   (https://opencode.ai)\n" +
-          "  - or switch to Claude Code, which needs no separate install:\n" +
-          "      edit " + file + " and set mesh.runtime.default: claude\n" +
-          "  - or run a model-free version:  npm run mesh -- init <dir>  (falls back to runtime: stub)\n" +
-          "  - or edit " + file + " and set mesh.runtime.default: stub\n" +
-          "  - or open the panel without running agents:  npm run mesh -- console " + file,
-      );
-      return 2;
-    }
-    console.warn("warn: 'opencode' CLI not found — console will load, but wake/start will fail until it is installed (or switch runtime to claude or stub).");
-  }
   const useDemo = !opts.noDemo && preflight.meshId === "demo-stub";
   // A scripted demo always starts clean (its team is re-attached each
   // boot); a real mesh resumes from its event log unless --fresh.
@@ -402,13 +385,11 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "init": {
         const dir = path.resolve(args.positional[0] ?? ".");
-        const runtime = hasOpenCodeCli() ? "opencode" : "stub";
-        const file = writeDefaultMeshYaml(dir, path.basename(dir), runtime);
+        // Always claude: it needs no separate install, riding on the declared
+        // @anthropic-ai/claude-agent-sdk dependency. Set runtime: stub by hand
+        // for a mesh that boots and runs with zero model calls.
+        const file = writeDefaultMeshYaml(dir, path.basename(dir), "claude");
         console.log(`wrote ${file}`);
-        if (runtime === "stub") {
-          console.log("note: 'opencode' CLI not found on PATH — templated with runtime: stub (runs with zero model calls).");
-          console.log("      install OpenCode (https://opencode.ai) and change 'runtime: default' to opencode for real agents.");
-        }
         return 0;
       }
       case "emit-schemas": {

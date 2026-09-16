@@ -32,12 +32,11 @@ import {
 // Runtime commons: the queue every adapter needs to hand frames back, and
 // the fold that turns those frames into the struct the supervisor reads.
 import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
-// The mesh op protocol is one contract, so it gets one parser. These live in
-// the opencode adapter today purely because it was written first; they are
-// pure text functions with no opencode coupling. Follow-up: lift them into
-// packages/agent-runtime as runtime commons and have both adapters import
-// from there, removing this sideways package dependency.
-import { parseMeshOps, extractSummary, extractDeclaredSummary, shortDigest } from "../../runtime-opencode/src/index";
+// The mesh op protocol is one contract, so it gets one parser. It lives in
+// packages/agent-runtime as runtime commons; these are pure text functions
+// with no backend coupling. Ops here normally arrive typed via mesh_* MCP
+// tools, so this is the fallback path, not the primary one.
+import { parseMeshOps, extractSummary, extractDeclaredSummary, shortDigest } from "../../agent-runtime/src/index";
 // The output-voice rules belong to the prompt layer, not to either adapter:
 // importing them from there is what keeps this runtime and runtime-opencode
 // byte-identical on the part of the prompt that must not vary by backend.

@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as http from "http";
 import { isConnectionError, BackendUnreachableError } from "../../packages/protocol/src/index";
 
 /**
@@ -49,38 +48,4 @@ test("transport: a genuinely refused socket is still unreachable", () => {
 test("transport: our own abort is not a dead backend", () => {
   const abort = new DOMException("This operation was aborted", "AbortError");
   assert.equal(isConnectionError(abort), false);
-});
-
-/**
- * End-to-end proof against a real socket: a server that accepts the connection
- * and then never answers is alive by definition. The adapter must surface that
- * as a timeout it can retry, never as a crashed process.
- */
-test("transport: a live-but-silent server is not reported as unreachable", async () => {
-  const server = http.createServer(() => {
-    /* accept, then never respond: exactly a model still thinking */
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
-  try {
-    const { OpenCodeRuntimeAdapter } = await import("../../packages/runtime-opencode/src/index");
-    // Short request timeout so the adapter's own deadline fires quickly; the
-    // point is which error class comes out, not how long it waits.
-    const rt = new OpenCodeRuntimeAdapter({ requestTimeoutMs: 300 }) as unknown as {
-      request: (b: string, m: string, p: string, body?: unknown, t?: number) => Promise<unknown>;
-    };
-    await assert.rejects(
-      () => rt.request(`http://127.0.0.1:${port}`, "POST", "/session/s/message", {}),
-      (err: unknown) => {
-        assert.equal(
-          isConnectionError(err),
-          false,
-          "a server holding the connection open is alive — restarting it loses the turn for nothing",
-        );
-        return true;
-      },
-    );
-  } finally {
-    await new Promise<void>((r) => server.close(() => r()));
-  }
 });

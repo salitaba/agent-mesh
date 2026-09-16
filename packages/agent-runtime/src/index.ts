@@ -10,7 +10,7 @@ import type {
   MeshOp,
   RuntimeContext,
 } from "../../protocol/src/index";
-import { newAgentSessionId } from "../../protocol/src/index";
+import { newAgentSessionId, aliasTextOp } from "../../protocol/src/index";
 
 export type StubScript = (input: AgentInput, turnIndex: number, session: AgentSession) => StubTurn | Promise<StubTurn>;
 
@@ -341,4 +341,131 @@ export async function collectAgentOutput(
     ...(end.declaredSummary !== undefined ? { declaredSummary: end.declaredSummary } : {}),
     ...(end.error !== undefined ? { error: end.error } : {}),
   };
+}
+
+// ---- mesh op parsing (runtime commons) --------------------------------------
+// The mesh op protocol is one contract, so it gets one parser. These lived in
+// the opencode adapter until that backend was removed, purely because it was
+// written first; they are pure text functions with no backend coupling. Any
+// runtime that has to recover ops from prose rather than from typed tool calls
+// uses these. The claude runtime takes ops from typed mesh_* MCP tools and
+// only falls back here, which is why `typedOps` can be trusted on that path.
+const OPS_BLOCK = /```(?:mesh-json|json)?\s*\n?([\s\S]*?)```/g;
+
+export function parseMeshOps(text: string): MeshOp[] {
+  const candidates: string[] = [];
+  let m: RegExpExecArray | null;
+  const re = new RegExp(OPS_BLOCK.source, "g");
+  while ((m = re.exec(text)) !== null) candidates.push(m[1]);
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) candidates.push(trimmed);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const ops = normalizeOps(parsed);
+      if (ops) return ops;
+    } catch {
+      continue;
+    }
+  }
+  // Salvage path: small models sometimes emit YAML-ish blocks (```mesh-op
+  // with `op:` lines) instead of JSON. Only runs when JSON found nothing.
+  for (const candidate of candidates) {
+    const op = parseYamlishOp(candidate);
+    if (op) return [op];
+  }
+  return [];
+}
+
+/**
+ * Minimal single-op parser for `key: value` blocks. Narrow by design: only
+ * fenced content starting an `op:` key qualifies, multi-line values continue
+ * until the next `key:` line. Anything JSON-shaped is left alone.
+ */
+export function parseYamlishOp(content: string): MeshOp | null {
+  if (/^\s*[{[]/.test(content)) return null;
+  if (!/^\s*op\s*:/m.test(content)) return null;
+  const out: Record<string, unknown> = {};
+  let cur = "";
+  let started = false;
+  for (const line of content.split(/\r?\n/)) {
+    const kv = /^([A-Za-z_][\w.-]*)\s*:\s*(.*)$/.exec(line);
+    if (kv) {
+      cur = kv[1];
+      started = true;
+      out[cur] = stripQuotes(kv[2].trim());
+    } else if (started && line.trim().length > 0) {
+      out[cur] = `${String(out[cur] ?? "").trimEnd()}\n${line.trim()}`.trim();
+    }
+  }
+  if (!started) return null;
+  const aliased = aliasTextOp(out);
+  if (!aliased || typeof aliased.op !== "string") return null;
+  return aliased as unknown as MeshOp;
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function normalizeOps(parsed: unknown): MeshOp[] | null {
+  const aliased = (x: unknown): MeshOp | null => {
+    const a = aliasTextOp(x);
+    return a && typeof a.op === "string" ? (a as unknown as MeshOp) : null;
+  };
+  if (Array.isArray(parsed)) {
+    const ops = parsed.map(aliased).filter((x): x is MeshOp => x !== null);
+    // Empty array parses but means nothing; fall through to salvage paths.
+    if (parsed.length === 0) return null;
+    return ops;
+  }
+  if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.operations)) {
+      return obj.operations.map(aliased).filter((x): x is MeshOp => x !== null);
+    }
+    const single = aliased(parsed);
+    if (single) return [single];
+  }
+  return null;
+}
+
+export function extractSummary(text: string): string | undefined {
+  // Skip fenced op blocks AND bare JSON op lines: previously the first line
+  // of a ```mesh-json array ("[") became the turn summary, which then rode
+  // into agent memory as `turn:<id>: [` — the agent "remembered" success
+  // while learning nothing about what actually ran.
+  const line = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    // Closing delimiters were missed by the original guard (it skipped "[" but
+    // not "]" or "},"), so a turn whose ops block ended the reply produced the
+    // summary "]" — and that rode into agent memory as `turn:<id>: ]`. Agents
+    // then carried a memory of having succeeded at something unnameable. Live
+    // runs showed 5+ such entries per agent.
+    .find((l) => l.length > 0 && !l.startsWith("```") && !/^[[\]{}(),;]+$/.test(l) && !/^\s*[{[]/.test(l));
+  return line?.slice(0, 200);
+}
+
+export function extractDeclaredSummary(operations: MeshOp[]): string | undefined {
+  // The agent's OWN account of the turn, taken from the `done` op it emitted.
+  // `extractSummary` guesses this from the first prose line that is not an op
+  // block, which drifts with the model's formatting; a declared summary is
+  // what the seat meant to say. Absent when no `done` op carried one, which is
+  // the signal to fall back to the scrape.
+  for (const op of operations) {
+    if (op.op !== "done") continue;
+    const summary = op.summary;
+    if (typeof summary === "string" && summary.trim().length > 0) return summary.trim().slice(0, 200);
+  }
+  return undefined;
+}
+
+export function shortDigest(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `dgx-${(h >>> 0).toString(16)}`;
 }

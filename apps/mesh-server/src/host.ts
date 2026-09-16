@@ -37,7 +37,7 @@ import {
   type ProjectSupervisor,
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
-import { writeDefaultMeshYaml, hasOpenCodeCli } from "../../../packages/config/src/index";
+import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import {
   MultiplexHub,
   SseDecoder,
@@ -582,7 +582,7 @@ export function createHostServer(deps: {
           let scaffolded = false;
           const resolved = path.resolve(root);
           if (b.init === true && !fs.existsSync(path.join(resolved, MESH_CONFIG_FILENAME))) {
-            writeDefaultMeshYaml(resolved, path.basename(resolved), hasOpenCodeCli() ? "opencode" : "stub");
+            writeDefaultMeshYaml(resolved, path.basename(resolved), "claude");
             scaffolded = true;
           }
           // If the add below throws, the scaffolded files stay. They are a valid

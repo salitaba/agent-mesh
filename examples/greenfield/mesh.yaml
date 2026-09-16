@@ -17,7 +17,7 @@ mesh:
     path: ./workspace
 
   runtime:
-    default: opencode
+    default: claude
 
 startup:
   activate:
@@ -27,7 +27,7 @@ agents:
 
   architect:
     role: architect
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/architect.md
     capabilities: [repository.read, architecture.write, review.design, code.review]
     authority: [architecture.approve, implementation.approve]
@@ -35,14 +35,14 @@ agents:
 
   developer:
     role: developer
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/developer.md
     capabilities: [repository.read, repository.write, test.execute, git.commit, code.review]
     interests: [architecture.approved, review.rejected]
 
   qa:
     role: qa
-    runtime: opencode
+    runtime: claude
     prompt: ../../roles/qa.md
     capabilities: [repository.read, test.execute, test.write]
     authority: [quality.block, quality.pass]
