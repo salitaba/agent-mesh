@@ -14,6 +14,8 @@ import {
   BackendUnreachableError,
   normalizeCapability,
   type AgentDefinition,
+  type AgentEvent,
+  type AgentEventTurnEnd,
   type AgentInput,
   type AgentOutput,
   type AgentRuntime,
@@ -27,6 +29,9 @@ import {
   type ModelCatalogue,
   type RuntimeContext,
 } from "../../protocol/src/index";
+// Runtime commons: the queue every adapter needs to hand frames back, and
+// the fold that turns those frames into the struct the supervisor reads.
+import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
 // The mesh op protocol is one contract, so it gets one parser. These live in
 // the opencode adapter today purely because it was written first; they are
 // pure text functions with no opencode coupling. Follow-up: lift them into
@@ -85,13 +90,25 @@ export interface ClaudeAdapterOptions {
    * and surfaces as a failed turn rather than wedging the scheduler slot.
    */
   turnTimeoutMs?: number;
+
   /**
-   * How long `start`/`restoreSession` wait for the CLI's `system`/`init`
-   * handshake before giving the backend the benefit of the doubt. This is the
-   * analogue of opencode's readiness probe loop, except a miss here is not
-   * fatal — see `confirmAlive`.
+   * How long a turn may produce NOTHING before the session is written off.
+   *
+   * Distinct from `turnTimeoutMs`, which bounds a turn that is working. This
+   * bounds a turn that never started: a push answered by total silence. The
+   * separation matters because the two have different safe values — a real
+   * turn can legitimately think for minutes, but no healthy backend is silent
+   * for more than about a second after a push.
    */
-  startupProbeMs?: number;
+  firstFrameTimeoutMs?: number;
+  /**
+   * How long `start`/`restoreSession` wait for a spawn to fail before giving
+   * the backend the benefit of the doubt. Despite what this was called, it
+   * never observed the `system`/`init` handshake — that cannot arrive before
+   * the first user message, so the wait always ran to completion. See
+   * `confirmAlive`.
+   */
+  spawnFailureGraceMs?: number;
   /** Extra SDK options merged last, for escape hatches and tests. */
   extraOptions?: Partial<Options>;
   /** Override for `SESSION_CONTEXT_ROTATE_TOKENS`. */
@@ -232,16 +249,21 @@ interface ClaudeSessionHandle {
 }
 
 interface TurnState {
-  toolCalls: Array<{ name: string; args: unknown; resultDigest: string }>;
-  onToken?: (delta: string) => void;
+  /** Live frames for `stream`. Closed by `settle`, however the turn ends. */
+  events: PushQueue<AgentEvent>;
+  /** Fallback correlation id when a tool_use block carries no id of its own. */
+  toolSeq: number;
+  /** Set by `settle` on failure; rethrown by `stream` once the queue drains. */
+  failure?: unknown;
   settle: (outcome: { ok: true; msg: ResultMessage } | { ok: false; err: unknown }) => void;
   settled: boolean;
-}
-
-/** A finished turn: the result frame plus the tool calls observed during it. */
-interface TurnResult {
-  msg: ResultMessage;
-  toolCalls: Array<{ name: string; args: unknown; resultDigest: string }>;
+  /**
+   * Whether ANY frame arrived from the CLI this turn. A healthy backend emits
+   * `system`/`init` within milliseconds of every push, so this flag staying
+   * false is not slowness — it means the query is not attached to a process
+   * that will ever answer.
+   */
+  sawFrame: boolean;
 }
 
 /**
@@ -303,41 +325,6 @@ interface LiveSession {
   rotations: number;
 }
 
-/**
- * Async iterable driven by `push`. The SDK takes streaming input as an
- * AsyncIterable it consumes for the lifetime of the query; we need to feed it
- * one message per mesh turn, arriving whenever the supervisor schedules us.
- */
-class PushQueue<T> {
-  private items: T[] = [];
-  private waiters: Array<(r: IteratorResult<T>) => void> = [];
-  private done = false;
-
-  push(item: T): void {
-    const w = this.waiters.shift();
-    if (w) w({ value: item, done: false });
-    else this.items.push(item);
-  }
-
-  close(): void {
-    this.done = true;
-    for (const w of this.waiters.splice(0)) w({ value: undefined as never, done: true });
-  }
-
-  async *[Symbol.asyncIterator](): AsyncGenerator<T, void> {
-    for (;;) {
-      const buffered = this.items.shift();
-      if (buffered !== undefined) {
-        yield buffered;
-        continue;
-      }
-      if (this.done) return;
-      const r = await new Promise<IteratorResult<T>>((res) => this.waiters.push(res));
-      if (r.done) return;
-      yield r.value;
-    }
-  }
-}
 
 /**
  * Claude Code as a mesh agent runtime.
@@ -357,11 +344,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private statuses = new Map<string, AgentRuntimeStatus>();
   private live = new Map<string, LiveSession>();
   private turnTimeoutMs: number;
-  private startupProbeMs: number;
+  private firstFrameTimeoutMs: number;
+  private spawnFailureGraceMs: number;
 
   constructor(private options: ClaudeAdapterOptions = {}) {
     this.turnTimeoutMs = options.turnTimeoutMs ?? 600000;
-    this.startupProbeMs = options.startupProbeMs ?? 10000;
+    this.firstFrameTimeoutMs = options.firstFrameTimeoutMs ?? 45000;
+    this.spawnFailureGraceMs = options.spawnFailureGraceMs ?? 500;
   }
 
   /** Per-agent `model` from mesh.yaml, else the mesh-wide adapter default. */
@@ -423,7 +412,25 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     }
   }
 
+  /**
+   * One turn, folded back into the struct the supervisor reads.
+   *
+   * Implemented over `stream` rather than beside it so the two can never
+   * drift: every field of the returned output has exactly one producer.
+   */
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
+    return collectAgentOutput(this.stream(session, input), input);
+  }
+
+  /**
+   * Live frames for one turn.
+   *
+   * An async generator, so the setup below (session lookup, context rotation)
+   * runs on first pull rather than at call time and `send` stays a one-liner.
+   * The pump feeds `turn.events`; `settle` closes it however the turn ends, so
+   * this loop always terminates.
+   */
+  async *stream(session: AgentSession, input: AgentInput): AsyncGenerator<AgentEvent, void> {
     let s = this.live.get(session.sessionId);
     if (!s || s.closed) {
       // No live query behind a session the supervisor still believes in. That
@@ -445,74 +452,98 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     const live = s;
 
     this.statuses.set(session.agentId, "RUNNING");
-    const result = await new Promise<TurnResult>((resolve, reject) => {
-      const turn: TurnState = {
-        toolCalls: [],
-        onToken: input.onToken,
-        settled: false,
-        settle: (outcome) => {
-          if (turn.settled) return;
-          turn.settled = true;
-          clearTimeout(timer);
-          live.pending = undefined;
-          // Tool calls ride out with the result: `s.pending` is cleared here,
-          // so reading them off the session afterwards would always find none.
-          if (outcome.ok) resolve({ msg: outcome.msg, toolCalls: turn.toolCalls });
-          else reject(outcome.err);
-        },
-      };
-      const timer = setTimeout(() => {
-        // Abort the model, not the session: the query stays usable for the
-        // next turn, matching opencode's per-turn abort semantics.
-        void live.q.interrupt().catch(() => undefined);
-        turn.settle({ ok: false, err: new Error(`claude runtime: turn exceeded ${this.turnTimeoutMs}ms`) });
-      }, this.turnTimeoutMs);
-      live.pending = turn;
-      live.inbox.push({
-        type: "user",
-        message: { role: "user", content: input.instructions },
-        parent_tool_use_id: null,
-      } as SDKUserMessage);
-    }).catch((err) => {
-      this.statuses.set(session.agentId, "UNREACHABLE");
-      throw err;
-    });
+    const turn: TurnState = {
+      events: new PushQueue<AgentEvent>(),
+      toolSeq: 0,
+      settled: false,
+      sawFrame: false,
+      settle: (outcome) => {
+        if (turn.settled) return;
+        turn.settled = true;
+        clearTimeout(timer);
+        clearTimeout(firstFrame);
+        live.pending = undefined;
+        if (outcome.ok) {
+          const end = this.toTurnEnd(outcome.msg, live);
+          live.turns++;
+          // `input + cache_read` is what the backend says it loaded for this
+          // turn — i.e. the transcript's current size. Recorded here rather
+          // than estimated anywhere else, and read by the rotation check on
+          // the NEXT turn.
+          live.contextTokens = transcriptSize(end.tokensUsed);
+          this.statuses.set(session.agentId, "IDLE");
+          turn.events.push(end);
+        } else {
+          // Surfaced by `stream` after the queue drains, so frames already
+          // emitted this turn are not swallowed by the failure.
+          turn.failure = outcome.err;
+          this.statuses.set(session.agentId, "UNREACHABLE");
+        }
+        turn.events.close();
+      },
+    };
+    const timer = setTimeout(() => {
+      // Abort the model, not the session: the query stays usable for the
+      // next turn, matching opencode's per-turn abort semantics.
+      void live.q.interrupt().catch(() => undefined);
+      turn.settle({ ok: false, err: new Error(`claude runtime: turn exceeded ${this.turnTimeoutMs}ms`) });
+    }, this.turnTimeoutMs);
+    const firstFrame = setTimeout(() => {
+      if (turn.settled || turn.sawFrame) return;
+      // Not one frame came back — not a token, not a tool call, not even the
+      // `system`/`init` a live CLI emits within milliseconds of a push. This
+      // is the signature of a query bound to a process that will never answer:
+      // a resume whose session never came up, or a spawn that went mute. The
+      // session is discarded rather than ridden to `turnTimeoutMs`, so the
+      // supervisor's retry lands on a fresh spawn — the shape that works.
+      //
+      // Tearing down matters as much as failing fast: a session left open here
+      // keeps a CLI running against the same transcript, which is how orphaned
+      // `--resume` processes accumulate and keep billing after the mesh has
+      // stopped listening to them.
+      turn.settle({
+        ok: false,
+        err: new BackendUnreachableError(
+          `claude:${live.sdkSessionId}`,
+          `claude backend produced no frames within ${this.firstFrameTimeoutMs}ms of the turn being sent`,
+        ),
+      });
+      this.teardown(live.meshSessionId);
+    }, this.firstFrameTimeoutMs);
+    firstFrame.unref?.();
+    live.pending = turn;
+    live.inbox.push({
+      type: "user",
+      message: { role: "user", content: input.instructions },
+      parent_tool_use_id: null,
+    } as SDKUserMessage);
 
-    this.statuses.set(session.agentId, "IDLE");
-    const output = this.toAgentOutput(result, live);
-    live.turns++;
-    // `input + cache_read` is what the backend says it loaded for this turn —
-    // i.e. the transcript's current size. Recorded here rather than estimated
-    // anywhere else, and read by the rotation check on the NEXT turn.
-    live.contextTokens = transcriptSize(output.tokensUsed);
-    return output;
+    for await (const ev of turn.events) yield ev;
+    if (turn.failure) throw turn.failure;
   }
 
-  private toAgentOutput(turn: TurnResult, s: LiveSession): AgentOutput {
-    const result = turn.msg;
+  private toTurnEnd(result: ResultMessage, s: LiveSession): AgentEventTurnEnd {
     const text = result.result ?? "";
     const operations: MeshOp[] = parseMeshOps(text);
-    const toolCalls = turn.toolCalls;
     const declared = extractDeclaredSummary(operations);
+    const error = result.is_error ? (text || `claude turn failed: ${result.subtype}`) : undefined;
     // Same contract as the opencode adapter: `summary` stays the prose scrape
     // it has always been, and `declaredSummary` carries the agent's own `done`
-    // summary when it gave one. Not yet a field on `AgentOutput`
-    // (packages/protocol/src/types.ts), hence the widening on the literal.
-    const output: AgentOutput & { declaredSummary?: string } = {
+    // summary when it gave one. Ops here are parsed out of prose, never typed:
+    // agents that call the mesh_* MCP tools execute through McpToolset directly
+    // and never reach this mapping, so typed-only transport is preserved.
+    return {
+      kind: "turn_end",
+      stopReason: result.is_error ? "error" : "end_turn",
       text,
       operations,
-      // Ops here are parsed out of prose, never typed. Agents that call the
-      // mesh_* MCP tools execute through McpToolset directly and never reach
-      // this mapping, so the typed-only transport rule is preserved.
       tokensUsed: usageToTokens(result.usage),
       model: s.lastModel ?? s.configuredModel,
       modelVersion: s.lastModel,
-      toolCalls,
       summary: extractSummary(text),
       ...(declared ? { declaredSummary: declared } : {}),
-      error: result.is_error ? (text || `claude turn failed: ${result.subtype}`) : undefined,
+      ...(error !== undefined ? { error } : {}),
     };
-    return output;
   }
 
   async interrupt(session: AgentSession): Promise<void> {
@@ -721,14 +752,23 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     this.live.delete(s.meshSessionId);
     const fresh = this.open(s.agent, s.context, randomUUID(), false, s.meshSessionId);
     fresh.rotations = rotations;
-    try {
-      await fresh.ready;
-    } catch (err) {
+    // Not `await fresh.ready`: `ready` resolves on `system`/`init`, which the
+    // CLI does not emit until a message is pushed — and this turn's push does
+    // not happen until rotation returns, so waiting outright deadlocks every
+    // healthy rotation until the supervisor's backstop fires.
+    //
+    // `confirmAlive` asks the bounded version of the same question, exactly as
+    // startup does: it can only report false for a replacement that has
+    // already died, which is the case worth failing loudly on rather than
+    // carrying into a turn. A replacement that is merely quiet is handed the
+    // turn, and the first-frame watchdog judges it there — the first moment a
+    // mute backend is observable at all.
+    if (!(await this.confirmAlive(fresh))) {
       this.statuses.set(s.agent.id, "UNREACHABLE");
       this.live.delete(s.meshSessionId);
       throw new BackendUnreachableError(
         `claude:${s.meshSessionId}`,
-        `session rotation failed (${reason}): ${err instanceof Error ? err.message : String(err)}`,
+        `session rotation failed (${reason}): the replacement backend did not start`,
       );
     }
     this.options.onRotate?.({
@@ -853,21 +893,31 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
-   * Bounded wait for the init handshake. Returns true if the backend is
-   * confirmed alive, false if it is confirmed dead.
+   * Bounded wait for a spawn failure. Returns true unless the backend is
+   * confirmed dead.
    *
-   * The timeout deliberately resolves to `true`: whether the CLI emits
-   * `system`/`init` before or only after the first user message is not
-   * something this adapter pins down, so a quiet backend is treated as
-   * "unknown, assume alive" — exactly today's behaviour. A backend that
-   * genuinely failed to spawn does not go quiet, it makes the pump throw,
-   * which is why the dead case is still caught here rather than surfacing
-   * several seconds later as a mystery turn failure.
+   * This does not observe the init handshake, despite what it used to be
+   * called. The CLI emits nothing on the message stream until the first user
+   * message is pushed: a streaming query with an unfed inbox answers control
+   * requests (`supportedModels` returns the model list) while producing no
+   * `system`/`init` for as long as you care to wait. `start()` runs before
+   * any message exists, so a wait for that handshake could only ever end in
+   * the timeout — which is why a strict version of this check crash-looped
+   * every agent in the mesh.
+   *
+   * What the window does buy is the failure path: a spawn that cannot start
+   * rejects `ready` through `markDead` in milliseconds, so a short grace
+   * catches every dead spawn the old ten-second one did. Those ten seconds
+   * were paid in full by every healthy session, on its first turn, for a
+   * signal that could not arrive.
+   *
+   * A backend that spawns and then goes mute is still not caught here, and
+   * cannot be — the first turn is the only place that becomes observable.
    */
   private async confirmAlive(s: LiveSession): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;
     const grace = new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(true), this.startupProbeMs);
+      timer = setTimeout(() => resolve(true), this.spawnFailureGraceMs);
       timer.unref?.();
     });
     try {
@@ -886,6 +936,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private async pump(s: LiveSession, agentId: string): Promise<void> {
     try {
       for await (const msg of s.q as AsyncIterable<SDKMessage>) {
+        // Liveness is "the backend spoke at all", not "the backend emitted
+        // text": a turn spent entirely inside one long tool call streams no
+        // tokens and must not read as a dead session.
+        if (s.pending) s.pending.sawFrame = true;
         if (msg.type === "system" && msg.subtype === "init") {
           // The CLI is up. This is the adapter's liveness signal, and it also
           // reports whether the mesh MCP server attached — a seat whose bus
@@ -903,22 +957,27 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           const blocks = Array.isArray(m.content) ? m.content : [];
           for (const b of blocks as Array<Record<string, unknown>>) {
             if (b.type === "tool_use") {
-              s.pending?.toolCalls.push({
-                name: String(b.name ?? "tool"),
-                args: (b.input as unknown) ?? {},
-                resultDigest: shortDigest(JSON.stringify(b.input ?? "")),
-              });
+              // Announced as it starts, not tallied at the end: an operator
+              // watching a slow turn needs to see the call while it runs.
+              const pending = s.pending;
+              if (pending) {
+                pending.events.push({
+                  kind: "tool_call",
+                  toolCallId: String(b.id ?? `tool-${pending.toolSeq++}`),
+                  name: String(b.name ?? "tool"),
+                  args: (b.input as unknown) ?? {},
+                  resultDigest: shortDigest(JSON.stringify(b.input ?? "")),
+                });
+              }
             }
           }
         } else if (msg.type === "stream_event") {
           // Live token tap, observability only — never fails the turn.
           const ev = (msg as { event?: { type?: string; delta?: { type?: string; text?: string } } }).event;
           if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && typeof ev.delta.text === "string") {
-            try {
-              s.pending?.onToken?.(ev.delta.text);
-            } catch {
-              // A broken consumer must not take the turn down with it.
-            }
+            // The onToken fan-out now lives in `collectAgentOutput`, which
+            // guards it; pushing a frame here cannot throw into the pump.
+            s.pending?.events.push({ kind: "agent_message_chunk", delta: ev.delta.text });
           }
         } else if (msg.type === "result") {
           s.pending?.settle({ ok: true, msg: msg as unknown as ResultMessage });

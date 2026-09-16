@@ -119,6 +119,53 @@ test("reset: archives and wipes the product checkout", { skip: !hasGit && "git u
   }
 });
 
+test("reset: leaves the fresh product checkout as its own git repo", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-reinit-"));
+  const m = await boot(dir, { useGit: true });
+  try {
+    const product = m.productPath;
+    fs.writeFileSync(path.join(product, "PRODUCT.txt"), "shipped by the old mission", "utf8");
+
+    await m.reset({});
+
+    // Fail closed: "no repo at all" is exactly the bug this guards, so an
+    // unreadable toplevel has to fail the assertion, never skip past it.
+    const toplevel = (() => {
+      try {
+        return require("child_process")
+          .execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: product, stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim();
+      } catch {
+        return null;
+      }
+    })();
+    assert.ok(toplevel, "reset must re-init the product checkout, not leave a bare directory behind");
+    assert.equal(
+      fs.realpathSync(toplevel),
+      fs.realpathSync(product),
+      "the fresh checkout must own its repo, not adopt an ancestor's",
+    );
+    // An empty repo has no commit to branch from, so the next run's worktrees
+    // would fail: the re-init must carry its initial commit on the base branch.
+    const head = require("child_process")
+      .execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: product })
+      .toString()
+      .trim();
+    assert.equal(head, "main", "the fresh repo must sit on the branch the mission cuts worktrees from");
+    assert.ok(!fs.existsSync(path.join(product, "PRODUCT.txt")), "old product must not survive the re-init");
+
+    // The proof that matters to the next mission: a worktree can still be cut.
+    const workspace = m.supervisor.deps.workspace;
+    assert.ok(workspace, "git mode must expose a workspace");
+    const wt = await workspace.ensureWorktree("a");
+    assert.ok(fs.existsSync(path.join(wt, ".git")), "a worktree must be cuttable from the re-inited repo");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("reset: archives and wipes the non-git product workspace", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-product-nogit-"));
   const m = await boot(dir);
@@ -151,6 +198,53 @@ test("reset: archives and wipes the non-git product workspace", async () => {
       "the live state dir must not be double-archived into the product archive",
     );
     assert.ok(fs.existsSync(path.join(root, ".mesh-state")), "the state dir must stay in the workspace");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset: git-inits the fresh non-git product workspace", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-nogit-init-"));
+  const m = await boot(dir);
+  try {
+    const root = m.productPath;
+    fs.writeFileSync(path.join(root, "PRODUCT.txt"), "shipped by the old mission", "utf8");
+
+    await m.reset({});
+
+    // Fail closed: "no repo at all" is the bug this guards, so an unreadable
+    // toplevel must fail the assertion rather than skip past it.
+    const toplevel = (() => {
+      try {
+        return require("child_process")
+          .execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: root, stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim();
+      } catch {
+        return null;
+      }
+    })();
+    assert.ok(toplevel, "reset must git-init the fresh workspace, not leave a bare directory behind");
+    assert.equal(
+      fs.realpathSync(toplevel),
+      fs.realpathSync(root),
+      "the fresh workspace must own its repo, not adopt an enclosing one",
+    );
+    const head = require("child_process")
+      .execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root })
+      .toString()
+      .trim();
+    assert.equal(head, "main", "the fresh repo must carry an initial commit on the base branch");
+    assert.ok(!fs.existsSync(path.join(root, "PRODUCT.txt")), "old product must not survive the re-init");
+    // The state dir stays in the workspace, so it must be ignored or the
+    // product reads dirty from the first turn.
+    assert.ok(fs.existsSync(path.join(root, ".mesh-state")), "the state dir must stay in the workspace");
+    const status = require("child_process")
+      .execFileSync("git", ["status", "--porcelain"], { cwd: root })
+      .toString()
+      .trim();
+    assert.equal(status, "", "the fresh workspace is clean — mesh state must not count as product work");
   } finally {
     await m.close();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -33,6 +33,10 @@ export interface TurnStep {
     llmCallAt?: number;
     firstTokenAt?: number;
     lastTokenAt?: number;
+    /** First sign of life of any kind — a token or a tool frame. */
+    firstActivityAt?: number;
+    /** Most recent sign of life of any kind. Superset of `lastTokenAt`. */
+    lastActivityAt?: number;
     llmDoneAt?: number;
     opsStartAt?: number;
     opsDoneAt?: number;
@@ -40,6 +44,8 @@ export interface TurnStep {
   };
   attempt?: number;
   streamChars?: number;
+  /** Tool frames seen — the only throughput a file-writing turn produces. */
+  toolFrames?: number;
   /** Structured crash detail (kind, message, frames, cause chain, phase). */
   errorDetail?: {
     kind: string;

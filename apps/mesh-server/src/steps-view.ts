@@ -39,6 +39,7 @@ export function mergeTurnSteps(fromLog: TurnStep[], live: TurnRecord[]): TurnSte
       phases: t.phases ?? prev?.phases,
       attempt: t.attempt ?? prev?.attempt,
       streamChars: t.streamChars ?? prev?.streamChars,
+      toolFrames: t.toolFrames ?? prev?.toolFrames,
       errorDetail: t.errorDetail ?? prev?.errorDetail,
       opTimings: t.opTimings ?? prev?.opTimings,
     });

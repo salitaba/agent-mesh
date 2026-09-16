@@ -496,6 +496,18 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const w of warnUnenforceableHardActions(Object.values(agents))) {
     configWarnings.push(w);
   }
+  for (const w of warnUncoveredCapabilities(Object.values(agents))) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnmergeableGates(Object.values(agents), raw.policies?.transitions ?? {})) {
+    configWarnings.push(w);
+  }
+  for (const w of warnNoStartupActivation(Object.values(agents), startupActivate)) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnreachableAgents(Object.values(agents))) {
+    configWarnings.push(w);
+  }
 
   if (errors.length > 0) throw new ConfigError(dedupe(errors));
 
@@ -790,6 +802,114 @@ export function warnUnenforceableHardActions(agents: AgentDefinition[]): string[
     } else if (blind.length > 0) {
       warnings.push(
         `agent '${agent.id}' lists hard_actions capabilities the plan gate cannot see: ${blind.join(", ")} — they are used by the runtime's own tools, not a mesh op`,
+      );
+    }
+  }
+  return warnings;
+}
+
+/**
+ * A mesh that can write, but can never land.
+ *
+ * `validateCapabilityTokens` proves every declared token EXISTS; nothing
+ * proves the capabilities the mission will REQUIRE are held by anyone. A mesh
+ * whose seats can produce work but where no seat holds `git.commit` loads
+ * clean, boots clean, and then deadlocks the first time a binding commit gate
+ * is reached: the gate is unsatisfiable, and no amount of waiting fixes it.
+ * Same failure class as an unknown token — validates fine, stalls at runtime —
+ * one layer up.
+ *
+ * Deliberately narrow. It fires only once some seat can write, so a mesh that
+ * is read-only on purpose (review, audit, research) stays silent, and it asks
+ * a question with one defensible answer: who lands the work this mesh is
+ * about to produce? A warning rather than an error, because the commit may
+ * legitimately happen outside the mesh, and erroring would refuse meshes that
+ * boot and finish today.
+ */
+export function warnUncoveredCapabilities(agents: AgentDefinition[]): string[] {
+  const writers = agents.filter((a) => a.capabilities.includes("repository.write"));
+  if (writers.length === 0) return [];
+  if (agents.some((a) => a.capabilities.includes("git.commit"))) return [];
+  const who = writers.map((a) => `'${a.id}'`).join(", ");
+  return [
+    `no agent holds 'git.commit', but ${writers.length === 1 ? "agent" : "agents"} ${who} can write the repository — this mesh can produce work it can never land, and will deadlock at the first binding commit gate`,
+  ];
+}
+
+/**
+ * A mesh that gates a merge no one can perform.
+ *
+ * `warnUncoveredCapabilities` asks who lands the work; this asks who merges
+ * it. A `*.merge` transition gate is the config stating outright that this
+ * mesh merges patches, and the artifact state machine demands capability
+ * `git.merge` for any transition to MERGED. With no holder, every approval
+ * the gate names can be collected and the merge is still refused forever.
+ *
+ * Fires only when a merge gate is declared, so a mesh that never merges stays
+ * silent. A warning rather than an error for the same reason as the commit
+ * check: the merge may legitimately happen outside the mesh.
+ */
+export function warnUnmergeableGates(
+  agents: AgentDefinition[],
+  transitions: Record<string, { requires?: string[] }>,
+): string[] {
+  const gates = Object.keys(transitions).filter((g) => g.endsWith(".merge"));
+  if (gates.length === 0) return [];
+  if (agents.some((a) => a.capabilities.includes("git.merge"))) return [];
+  const names = gates.map((g) => `'${g}'`).join(", ");
+  return [
+    `no agent holds 'git.merge', but ${names} ${gates.length === 1 ? "is a merge gate" : "are merge gates"} — every approval it names can be collected and the transition to MERGED will still be refused`,
+  ];
+}
+
+/**
+ * A mesh where nobody boots.
+ *
+ * `startup.activate` is the only list a fresh boot reads: the supervisor
+ * activates `recoveryCandidates()` on resume and `config.startupActivate`
+ * otherwise. Empty, and going live registers every seat and wakes none.
+ *
+ * Deliberately not an error, and deliberately not phrased as a deadlock: the
+ * stall watchdog does eventually nudge an arbitrary live agent, so the
+ * mission recovers. What it cannot recover is intent — the first seat to move
+ * is a watchdog's guess rather than the lead the operator meant to start.
+ */
+export function warnNoStartupActivation(agents: AgentDefinition[], startupActivate: string[]): string[] {
+  if (agents.length === 0 || startupActivate.length > 0) return [];
+  return [
+    "startup.activate is empty — going live registers every agent and activates none, so the mesh opens idle until the stall watchdog nudges an arbitrary seat. Name the agent that should start.",
+  ];
+}
+
+/**
+ * An agent wired to nobody.
+ *
+ * Promoted out of the designer's advisor list so a CLI or server boot sees it
+ * too. A seat with no communication edge in either direction can neither ask
+ * for help nor be asked for any; it can only ever act alone on whatever it
+ * was activated with.
+ *
+ * Connectivity is read generously — either direction, either side of the
+ * policy — so a mesh that declares only `may_be_contacted_by` is not accused
+ * of isolating a seat it wired perfectly well.
+ */
+export function warnUnreachableAgents(agents: AgentDefinition[]): string[] {
+  if (agents.length < 2) return [];
+  const warnings: string[] = [];
+  for (const agent of agents) {
+    const own = agent.communicationPolicy;
+    const wired =
+      own.mayContact.some((t) => t !== agent.id) ||
+      own.mayBeContactedBy.some((t) => t !== agent.id) ||
+      agents.some(
+        (o) =>
+          o.id !== agent.id &&
+          (o.communicationPolicy.mayContact.includes(agent.id) ||
+            o.communicationPolicy.mayBeContactedBy.includes(agent.id)),
+      );
+    if (!wired) {
+      warnings.push(
+        `agent '${agent.id}' is wired to nobody — no agent may contact it and it may contact no one, so it can never ask for help or be asked for any`,
       );
     }
   }

@@ -1044,6 +1044,16 @@ export interface AgentInput {
    * out-of-band (never kernel events) so the event log stays compact.
    */
   onToken?: (delta: string) => void;
+  /**
+   * Best-effort live tool-activity callback: the tool-side twin of `onToken`.
+   * Fires when a call is announced, and again if the backend refines it, so an
+   * operator watching a slow turn sees what the agent is doing while it does
+   * it -- `AgentOutput.toolCalls` structurally cannot, since it only lands
+   * once the turn is over. Same contract as `onToken`: never fails the turn,
+   * never a kernel event. Only the streaming path can serve it; a `send`-only
+   * runtime has no frames to observe and simply never invokes it.
+   */
+  onToolEvent?: (ev: AgentEventToolCall | AgentEventToolCallUpdate) => void;
 }
 
 export interface AgentOutput {
@@ -1115,10 +1125,132 @@ export interface RuntimeContext {
   env: Record<string, string>;
 }
 
+/**
+ * One frame of a turn while it is still happening.
+ *
+ * `AgentOutput` is what a turn WAS; `AgentEvent` is what a turn IS DOING. Both
+ * exist on purpose: every turn still ends in an `AgentOutput` (folded by
+ * `collectAgentOutput` in packages/agent-runtime), so this union can grow
+ * toward live tool visibility without moving the ~20 sites that read the
+ * struct. A runtime that cannot stream simply omits `AgentRuntime.stream`.
+ *
+ * Member names mirror ACP's `session/update` variants
+ * (agentclientprotocol.com) WITHOUT depending on ACP, so a runtime that later
+ * speaks ACP natively maps onto this union rather than translating between two
+ * vocabularies that mean the same thing.
+ *
+ * Deliberately absent: a `plan` member. ACP carries plans as session updates,
+ * but here a plan is an op (`MeshOpPlan`, `op: "plan"`) that already flows
+ * through `AgentOutput.operations` and is already projected. A second path for
+ * the same fact would give the plan gate two sources of truth.
+ *
+ * Discriminated on `kind`, never on `op`: tests/protocol/ops-contract.test.ts
+ * scrapes this file for `op: "..."` and asserts every hit is a mesh op named in
+ * the agent instructions, so an `op`-keyed event would break that contract for
+ * a reason that has nothing to do with the bus.
+ */
+export type AgentEvent =
+  | AgentEventMessageChunk
+  | AgentEventThoughtChunk
+  | AgentEventToolCall
+  | AgentEventToolCallUpdate
+  | AgentEventTurnEnd;
+
+/**
+ * Assistant text as it arrives. Observability only: the authoritative text is
+ * `AgentEventTurnEnd.text`, because a backend may revise or re-emit content,
+ * so the concatenated deltas are not guaranteed to equal the final message.
+ */
+export interface AgentEventMessageChunk {
+  kind: "agent_message_chunk";
+  delta: string;
+}
+
+/**
+ * Reasoning text as it arrives, mirroring the `"thinking"` case this codebase
+ * already distinguishes in `DesignerStreamDelta`. Kept separate from
+ * `agent_message_chunk` because thinking must never be appended to the visible
+ * transcript nor parsed for ops: a `send` op the model quotes while reasoning
+ * aloud is not a request to send anything.
+ *
+ * No agent runtime emits this yet — the Claude pump taps `text_delta` only.
+ */
+export interface AgentEventThoughtChunk {
+  kind: "agent_thought_chunk";
+  delta: string;
+}
+
+/**
+ * A tool invocation, reported when it STARTS rather than after the turn ends.
+ * This is what `AgentOutput.toolCalls` structurally cannot give: an operator
+ * watching a slow turn needs to see what the agent is doing while it does it.
+ */
+export interface AgentEventToolCall {
+  kind: "tool_call";
+  /** Correlates with a later `tool_call_update`. Unique within the turn. */
+  toolCallId: string;
+  name: string;
+  args: unknown;
+  /**
+   * Digest available at call time. Named for the field it lands in
+   * (`AgentOutput.toolCalls[].resultDigest`) and kept here because the Claude
+   * adapter has only the arguments when the call is announced; a backend that
+   * reports real results refines it via `tool_call_update`.
+   */
+  resultDigest?: string;
+}
+
+/**
+ * Terminal state of a call announced earlier by `tool_call`. Correlated by
+ * `toolCallId`, never by arrival order: backends interleave concurrent calls,
+ * so position in the stream says nothing about which one finished.
+ */
+export interface AgentEventToolCallUpdate {
+  kind: "tool_call_update";
+  toolCallId: string;
+  status: "completed" | "failed";
+  resultDigest?: string;
+}
+
+/**
+ * The turn's authoritative result. Exactly one of these ends a stream, and a
+ * stream that closes without it is a transport failure, not an empty turn.
+ *
+ * It carries the parsed payload rather than leaving the fold to derive it,
+ * because prose parsing is still a per-backend concern today (`parseMeshOps`
+ * lives in the opencode adapter). Once ops move to typed MCP tools that
+ * parsing disappears and these fields thin out to the stream proper.
+ */
+export interface AgentEventTurnEnd {
+  kind: "turn_end";
+  /** Why the turn stopped. `error` means the backend reported failure. */
+  stopReason: "end_turn" | "error";
+  text: string;
+  operations: MeshOp[];
+  typedOps?: boolean;
+  tokensUsed: AgentOutput["tokensUsed"];
+  model?: string;
+  modelVersion?: string;
+  temperature?: number;
+  summary?: string;
+  declaredSummary?: string;
+  /** Present iff `stopReason` is "error". Surfaced as `AgentOutput.error`. */
+  error?: string;
+}
+
 export interface AgentRuntime {
   readonly name: string;
   start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession>;
   send(session: AgentSession, input: AgentInput): Promise<AgentOutput>;
+  /**
+   * Live event stream for one turn, when the backend can provide one.
+   *
+   * Optional by design: `send` stays the contract every runtime implements, and
+   * a runtime that streams implements `send` as a fold over this (see
+   * `collectAgentOutput`) so the two can never drift. The supervisor prefers
+   * `stream` when present and falls back to `send` otherwise.
+   */
+  stream?(session: AgentSession, input: AgentInput): AsyncIterable<AgentEvent>;
   interrupt(session: AgentSession): Promise<void>;
   suspend(session: AgentSession): Promise<void>;
   resume(session: AgentSession): Promise<void>;
@@ -1326,6 +1458,17 @@ export interface AgentContextBundle {
    * usable.
    */
   delegationEnabled?: boolean;
+  /**
+   * Whether this agent may satisfy an acceptance criterion — `approve` on
+   * `subject: "criterion:<id>"`, as opposed to approving a reviewed artifact.
+   *
+   * That branch requires `requirements.accept` or `requirements.approve`, and
+   * the kernel refuses every other seat. Same "never advertise a rule that
+   * cannot fire" discipline as `delegationEnabled` above: a seat without the
+   * authority was being told to close criteria it could only be denied for,
+   * and each denial then read as an argument for widening its grant.
+   */
+  criterionAcceptanceEnabled?: boolean;
   /**
    * Effective hard-action policy for this agent: `capabilities` is already
    * intersected with what the agent actually holds AND with the tokens the op

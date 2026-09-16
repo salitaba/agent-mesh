@@ -56,13 +56,20 @@ export interface HostSpend {
 export interface ProjectSink {
   /** A kernel event, already unwrapped from its `{projectId, seq, event}` frame. */
   event: (raw: unknown) => void;
-  /** An out-of-band frame (`turn.token`): no seq, never replayed. */
+  /** An out-of-band frame (`turn.token`, `turn.tool`): no seq, never replayed. */
   stream: (type: string, raw: any) => void;
   /** The stream lost continuity — refetch rather than assume it. */
   resync: (reason: string) => void;
   /** Highest seq held, read at connect time to build the resume cursor. */
   cursor: () => number;
 }
+
+/**
+ * Out-of-band frame types, listened for by name. They carry no seq and are
+ * never replayed, so they are routed to `sink.stream` rather than the timeline;
+ * `es.onmessage` never sees them because each arrives under its own event name.
+ */
+const LIVE_FRAME_TYPES = ["turn.token", "turn.tool"] as const;
 
 type SseState = "connecting" | "open" | "reconnecting";
 
@@ -258,18 +265,20 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     // Stream frames are merged, not wrapped: `{projectId, ...data}`. Fanning
     // them out with the projectId still attached keeps every field the existing
     // listener reads.
-    try {
-      es.addEventListener("turn.token", ((m: MessageEvent) => {
-        try {
-          const data = JSON.parse(m.data);
-          const sink = typeof data?.projectId === "string" ? sinks.current.get(data.projectId) : undefined;
-          sink?.stream("turn.token", data);
-        } catch {
-          /* ignore */
-        }
-      }) as EventListener);
-    } catch {
-      /* noop */
+    for (const type of LIVE_FRAME_TYPES) {
+      try {
+        es.addEventListener(type, ((m: MessageEvent) => {
+          try {
+            const data = JSON.parse(m.data);
+            const sink = typeof data?.projectId === "string" ? sinks.current.get(data.projectId) : undefined;
+            sink?.stream(type, data);
+          } catch {
+            /* ignore */
+          }
+        }) as EventListener);
+      } catch {
+        /* noop */
+      }
     }
 
     // Overflow or gap: continuity is gone, so the affected stores refetch.

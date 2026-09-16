@@ -13,7 +13,17 @@
  * Pure functions over data already on the wire; no extra requests.
  * ---------------------------------------------------------------------- */
 
-import type { TurnStep } from "./store";
+/**
+ * Structural, not `TurnStep` from `./store`: importing the store pulls a .tsx
+ * module (and React, and the DOM lib) into this file's graph, which is what
+ * keeps a pure module out of the node:test build. `TurnStep` satisfies this.
+ */
+export interface BaselineStep {
+  status: string;
+  agentId: string;
+  durationMs?: number;
+  tokens: number;
+}
 
 export interface TurnPhases {
   startedAt: number;
@@ -21,6 +31,10 @@ export interface TurnPhases {
   llmCallAt?: number;
   firstTokenAt?: number;
   lastTokenAt?: number;
+  /** First sign of life of any kind — a token or a tool frame. */
+  firstActivityAt?: number;
+  /** Most recent sign of life of any kind. Always >= `lastTokenAt`. */
+  lastActivityAt?: number;
   llmDoneAt?: number;
   opsStartAt?: number;
   opsDoneAt?: number;
@@ -67,6 +81,8 @@ export interface VitalsInput {
   /** Client-side stream buffer facts (SSE), used when phases are absent. */
   clientChars?: number;
   clientUpdatedAt?: number;
+  /** Tool frames seen this turn — work an agent did without saying anything. */
+  toolFrames?: number;
   running: boolean;
   startedAt?: string;
   now?: number;
@@ -76,8 +92,10 @@ export interface Vitals {
   health: Health;
   /** Time to first token, ms. Undefined until the first token lands. */
   ttftMs?: number;
-  /** Milliseconds since the last token. Undefined if nothing streamed yet. */
+  /** Milliseconds since the last sign of life. Undefined if nothing happened yet. */
   silentMs?: number;
+  /** Tool frames seen — non-zero means the agent worked without narrating. */
+  toolFrames?: number;
   /** Characters per second over the streaming window. */
   charsPerSec?: number;
   chars: number;
@@ -96,6 +114,7 @@ export function vitalsOf(inp: VitalsInput): Vitals {
   const now = inp.now ?? Date.now();
   const p = inp.phases;
   const chars = inp.clientChars ?? 0;
+  const toolFrames = inp.toolFrames ?? 0;
   const llmCallAt = p?.llmCallAt ?? p?.contextAt ?? p?.startedAt;
   const firstTokenAt = p?.firstTokenAt;
   const lastTokenAt = p?.lastTokenAt ?? inp.clientUpdatedAt;
@@ -106,11 +125,47 @@ export function vitalsOf(inp: VitalsInput): Vitals {
   }
 
   const ttftMs = firstTokenAt && llmCallAt ? Math.max(0, firstTokenAt - llmCallAt) : undefined;
-  const silentMs = lastTokenAt ? Math.max(0, now - lastTokenAt) : undefined;
+  // Silence means "no sign of life", not "no prose". A turn that stops talking
+  // to write six files is the healthiest thing on the board; grading it on
+  // tokens alone calls it stalled while its tool frames are still arriving.
+  const lastAnythingAt = p?.lastActivityAt ?? lastTokenAt;
+  const silentMs = lastAnythingAt ? Math.max(0, now - lastAnythingAt) : undefined;
   const streamWindow = firstTokenAt && lastTokenAt ? Math.max(1, lastTokenAt - firstTokenAt) : undefined;
   const charsPerSec = streamWindow && chars ? (chars / streamWindow) * 1000 : undefined;
 
-  // Nothing streamed yet: the model is still thinking. How long it has been
+  // Nothing streamed yet. Prose is not the only kind of work: an agent that
+  // designs by writing files emits tool frames and never a token, so grading
+  // that turn on token silence reports "no response" about an agent that is
+  // visibly producing files. When there is any sign of life, grade on that.
+  if (firstTokenAt === undefined && p?.lastActivityAt !== undefined) {
+    const quietMs = Math.max(0, now - p.lastActivityAt);
+    const work = toolFrames ? `${toolFrames} tool call${toolFrames === 1 ? "" : "s"}` : "tool calls";
+    const base = { silentMs: quietMs, chars, toolFrames };
+    if (quietMs > STALL_BAD_MS) {
+      return {
+        ...base,
+        health: "stalled",
+        label: "stalled",
+        detail: `${work} and then nothing for ${Math.round(quietMs / 1000)}s — the turn is probably wedged`,
+      };
+    }
+    if (quietMs > STALL_WARN_MS) {
+      return {
+        ...base,
+        health: "slow",
+        label: "working",
+        detail: `${work}, quiet for ${Math.round(quietMs / 1000)}s — may be running a long tool`,
+      };
+    }
+    return {
+      ...base,
+      health: "streaming",
+      label: "working",
+      detail: `${work} — working without narrating, so there is no text to show yet`,
+    };
+  }
+
+  // Nothing at all yet: the model is still thinking. How long it has been
   // thinking is the only signal available, so grade on that.
   if (firstTokenAt === undefined) {
     const waitedMs = llmCallAt ? Math.max(0, now - llmCallAt) : inp.startedAt ? Math.max(0, now - Date.parse(inp.startedAt)) : 0;
@@ -135,12 +190,12 @@ export function vitalsOf(inp: VitalsInput): Vitals {
     return { health: "warming", silentMs: waitedMs, chars: 0, label: "thinking", detail: "waiting for the first token" };
   }
 
-  const base = { ttftMs, silentMs, charsPerSec, chars };
+  const base = { ttftMs, silentMs, charsPerSec, chars, toolFrames };
   if (silentMs !== undefined && silentMs > STALL_BAD_MS) {
     return { ...base, health: "stalled", label: "stalled", detail: `silent for ${Math.round(silentMs / 1000)}s after streaming ${chars} characters — the turn is probably wedged` };
   }
   if (silentMs !== undefined && silentMs > STALL_WARN_MS) {
-    return { ...base, health: "slow", label: "paused", detail: `no new tokens for ${Math.round(silentMs / 1000)}s — may be running a tool or thinking mid-answer` };
+    return { ...base, health: "slow", label: "paused", detail: `nothing for ${Math.round(silentMs / 1000)}s — may be running a long tool or thinking mid-answer` };
   }
   return { ...base, health: "streaming", label: "streaming", detail: charsPerSec ? `${Math.round(charsPerSec)} chars/sec` : "receiving tokens" };
 }
@@ -174,8 +229,13 @@ export function phaseLegs(p: TurnPhases | undefined, running: boolean, now = Dat
     legs.push({ key, label, ms, start: from, open: to === undefined, hint });
   };
   add("prep", "gathering context", p.startedAt, p.contextAt ?? p.llmCallAt, "reading its inbox and building the prompt");
-  add("wait", "waiting on model", p.llmCallAt ?? p.contextAt, p.firstTokenAt ?? p.llmDoneAt, "prompt sent, no tokens back yet");
+  add("wait", "waiting on model", p.llmCallAt ?? p.contextAt, p.firstTokenAt ?? p.firstActivityAt ?? p.llmDoneAt, "prompt sent, nothing back yet");
   add("stream", "writing answer", p.firstTokenAt, p.llmDoneAt ?? p.lastTokenAt, "streaming its reply");
+  // Only for a turn that never spoke: otherwise this would double-count the
+  // stream leg, since tokens stamp the activity marks too.
+  if (p.firstTokenAt === undefined) {
+    add("work", "using tools", p.firstActivityAt, p.llmDoneAt ?? p.lastActivityAt, "running tools — writing files, searching, calling the mesh");
+  }
   add("ops", "applying changes", p.opsStartAt ?? p.llmDoneAt, p.opsDoneAt ?? p.endedAt, "sending messages, publishing files, moving tasks");
   const kept = legs.filter((l) => l.ms > 0 || l.open);
   // Offsets run from the first leg that survived the filter, not from turn
@@ -211,7 +271,7 @@ function median(xs: number[]): number {
  * agent — a researcher's 40s turn is normal, a router's is not, so a global
  * median would mislabel both.
  */
-export function baselineOf(steps: TurnStep[], agentId?: string): Baseline {
+export function baselineOf(steps: BaselineStep[], agentId?: string): Baseline {
   const pool = steps.filter(
     (s) => s.status !== "running" && (!agentId || s.agentId === agentId) && typeof s.durationMs === "number",
   );

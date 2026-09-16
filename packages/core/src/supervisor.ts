@@ -55,6 +55,7 @@ import {
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES } from "../../protocol/src/index";
+import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
@@ -2140,8 +2141,17 @@ export class Supervisor {
       const acceptCheck = this.deps.policy.evaluateAuthority(actorId, "requirements", "accept", ctx);
       const overrideCheck = this.deps.policy.evaluateAuthority(actorId, "requirements", "approve", ctx);
       if (acceptCheck.decision !== "ALLOW" && overrideCheck.decision !== "ALLOW") {
-        await this.denied(actorId, subject, "accept criterion", acceptCheck);
-        return { ok: false, reason: acceptCheck.reason };
+        // Both authorities were tried, so surfacing only acceptCheck.reason
+        // misnames the remedy: it reports that the seat lacks
+        // 'requirements.accept' and stays silent about 'requirements.approve',
+        // which would equally have allowed this. Read literally, the refusal
+        // became an argument for granting the acceptance gate itself to
+        // whoever was refused. Name both, and carry the engine's own reason.
+        const reason =
+          `cannot accept criterion '${criterionId}' — this needs authority 'requirements.accept' or ` +
+          `'requirements.approve', and '${actorId}' holds neither (${acceptCheck.reason})`;
+        await this.denied(actorId, subject, "accept criterion", { ...acceptCheck, reason });
+        return { ok: false, reason };
       }
       const evt = await this.deps.kernel.emit(
         "review.approved",
@@ -3577,6 +3587,25 @@ export class Supervisor {
             /* observer must never break the turn */
           }
         },
+        onToolEvent: (ev) => {
+          // Tool frames are observability only, like tokens: no buffer to
+          // append to (the authoritative record is AgentOutput.toolCalls) and
+          // no event-log write. But they are the ONLY sign of life an agent
+          // that works by writing files ever emits, so they must register as
+          // progress — otherwise such a turn is indistinguishable from a dead
+          // one to every liveness reader and to the dashboard.
+          try {
+            this.turns.noteToolFrame(turnId);
+            this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
+          } catch {
+            /* a missing activity mark must never break the turn */
+          }
+          try {
+            this.deps.hooks?.onTurnToolEvent?.(turnId, agentId, ev);
+          } catch {
+            /* observer must never break the turn */
+          }
+        },
       };
 
       const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [] };
@@ -3882,7 +3911,15 @@ export class Supervisor {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([session.runtime.send(session.session, input), timeout]);
+      // Prefer the live stream when the runtime has one. `collectAgentOutput`
+      // folds it back into the same struct every read site downstream already
+      // expects, and forwards text deltas to `input.onToken` — which is what
+      // stamps phases.firstTokenAt/lastTokenAt, so the silence watchdog in
+      // `interruptSilentTurns` keeps seeing a streaming turn as alive.
+      const turn = session.runtime.stream
+        ? collectAgentOutput(session.runtime.stream(session.session, input), input)
+        : session.runtime.send(session.session, input);
+      return await Promise.race([turn, timeout]);
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -5442,12 +5479,21 @@ export class Supervisor {
       const turnId = this.activeTurnByAgent.get(agentId);
       const session = this.sessions.get(agentId);
       const phases = turnId ? this.turns.get(turnId)?.phases : undefined;
-      const lastTokenAt = phases?.firstTokenAt === undefined ? undefined : (phases.lastTokenAt ?? phases.firstTokenAt);
-      if (!turnId || !session || lastTokenAt === undefined) continue;
-      if (now - lastTokenAt <= silenceMs) continue;
+      // The entry condition stays `firstTokenAt`: a turn that never spoke is
+      // still left to think (it may be a long tool run or a slow first token,
+      // neither of which is a stall). But once a turn HAS spoken, silence is
+      // measured against activity of any kind — a turn that stops narrating to
+      // spend four minutes writing files is working, not wedged, and killing it
+      // is the same mistake as reporting "no response" about it.
+      const lastAliveAt =
+        phases?.firstTokenAt === undefined
+          ? undefined
+          : (phases.lastActivityAt ?? phases.lastTokenAt ?? phases.firstTokenAt);
+      if (!turnId || !session || lastAliveAt === undefined) continue;
+      if (now - lastAliveAt <= silenceMs) continue;
       if (this.interruptedTurnIds.has(turnId)) continue;
       this.interruptedTurnIds.add(turnId);
-      this.auditLine(`stall silence: turn ${turnId} for ${agentId} silent for ${now - lastTokenAt}ms — interrupting`);
+      this.auditLine(`stall silence: turn ${turnId} for ${agentId} silent for ${now - lastAliveAt}ms — interrupting`);
       void session.runtime.interrupt(session.session).catch(() => undefined);
       // Real runtimes settle the send() via the abort; a no-op interrupt
       // (stub) leaves it pending forever, so force-settle after a short grace.

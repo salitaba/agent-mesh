@@ -4,6 +4,7 @@ import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient 
 import { VIEWS, hashFor, parseHash, type HashRoute, type View } from "./route";
 import { useProjectsOptional, type ProjectSink } from "./projects";
 import { retainCap, trimRetained } from "./tabmodel";
+import { foldToolEvent, type ToolLive } from "./streams";
 import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
 
 /** Derived from the route rather than restated, so the two cannot drift apart. */
@@ -47,6 +48,8 @@ export interface TurnStep {
   /** >1 when the scheduler re-activated this agent after a timeout. */
   attempt?: number;
   streamChars?: number;
+  /** Tool frames seen — the only throughput a file-writing turn produces. */
+  toolFrames?: number;
   errorDetail?: import("./vitals").TurnError;
   opTimings?: import("./vitals").OpTiming[];
 }
@@ -72,6 +75,11 @@ export interface StreamBuf {
   updatedAt: number;
   /** When the first delta landed — client-side TTFT when the server has no marks. */
   firstAt: number;
+  /**
+   * Tool calls seen live on this turn (`turn.tool`). Absent until one arrives,
+   * and absent for the whole turn on backends that stream text only.
+   */
+  tools?: ToolLive[];
 }
 
 /** Client-side caps: DOM stays cheap even if a turn streams a novel. */
@@ -431,7 +439,32 @@ export function MeshProvider({ children, projectId = null, background = false }:
       const text = ((cur?.text ?? "") + delta).slice(-STREAM_TEXT_MAX);
       const next: Record<string, StreamBuf> = {
         ...prev,
-        [turnId]: { text, chars: (cur?.chars ?? 0) + delta.length, updatedAt: now, firstAt: cur?.firstAt ?? now },
+        [turnId]: { text, chars: (cur?.chars ?? 0) + delta.length, updatedAt: now, firstAt: cur?.firstAt ?? now, tools: cur?.tools },
+      };
+      const keys = Object.keys(next);
+      if (keys.length > STREAM_TURNS_MAX) {
+        keys.sort((a, b) => next[a].updatedAt - next[b].updatedAt);
+        for (const k of keys.slice(0, keys.length - STREAM_TURNS_MAX)) delete next[k];
+      }
+      return next;
+    });
+  }, []);
+
+  const ingestToolEvent = useCallback((raw: any) => {
+    // `turn.tool` nests its event: {type, turnId, agentId, tool, at}. Same
+    // out-of-band path as turn.token — no seq, no log, drawer buffers only.
+    const turnId = raw?.turnId;
+    if (typeof turnId !== "string" || !turnId) return;
+    setStreams((prev) => {
+      const cur = prev[turnId];
+      const now = Date.now();
+      const tools = foldToolEvent(cur?.tools, raw?.tool, now);
+      // Nothing usable in the frame: re-rendering every open drawer for it
+      // would be pure cost.
+      if (!tools) return prev;
+      const next: Record<string, StreamBuf> = {
+        ...prev,
+        [turnId]: { text: cur?.text ?? "", chars: cur?.chars ?? 0, updatedAt: now, firstAt: cur?.firstAt ?? now, tools },
       };
       const keys = Object.keys(next);
       if (keys.length > STREAM_TURNS_MAX) {
@@ -477,7 +510,10 @@ export function MeshProvider({ children, projectId = null, background = false }:
         ingestEvent(raw);
         livePatch();
       },
-      stream: (_type, raw) => ingestToken(raw),
+      stream: (type, raw) => {
+        if (type === "turn.tool") ingestToolEvent(raw);
+        else ingestToken(raw);
+      },
       resync: () => {
         // Continuity is gone. Refetch instead of carrying on: the alternative
         // is a timeline that silently misses everything the gap swallowed.
@@ -492,7 +528,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
       cursor: () => lastSeqRef.current,
     };
     return subscribe(projectId, sink);
-  }, [subscribe, projectId, ingestEvent, ingestToken, livePatch, refreshStatus, refreshSteps]);
+  }, [subscribe, projectId, ingestEvent, ingestToken, ingestToolEvent, livePatch, refreshStatus, refreshSteps]);
 
   // Coming back into focus: the buffer was capped while backgrounded, so
   // whatever fell off has to come from `/events` rather than be assumed

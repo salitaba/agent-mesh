@@ -33,6 +33,7 @@ import {
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
 import { applyStagedProposal } from "./staging";
+import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { mergeTurnSteps } from "./steps-view";
 import { OpenCodeRuntimeAdapter, parseModelRef } from "../../../packages/runtime-opencode/src/index";
@@ -418,6 +419,11 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
           exclude: [config.stateDir],
         });
         fs.mkdirSync(config.workspacePath, { recursive: true });
+        // Hand the next mission a real repo, not a bare directory: git mode
+        // gets one from `ensureRepo` above, and without the same here every
+        // git read of the product silently answers from an enclosing repo (or
+        // from nothing) for the rest of the run.
+        initProductRepo(config.workspacePath, config.stateDir);
       }
       // 4. Release the sqlite index handle before the directory moves; an open
       //    handle would keep writing into the archived copy.
@@ -751,6 +757,17 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       }
       hub.stream("turn.token", { type: "turn.token", turnId, agentId, delta, at: new Date().toISOString() });
     },
+    onTurnToolEvent: (turnId, agentId, ev) => {
+      try {
+        prevHooks?.onTurnToolEvent?.(turnId, agentId, ev);
+      } catch {
+        /* prior hook must never break streaming */
+      }
+      // The frame nests rather than flattening like `turn.token`: `tool_call`
+      // and `tool_call_update` carry different fields, and keeping the
+      // discriminated union intact lets a client switch on `tool.kind`.
+      hub.stream("turn.tool", { type: "turn.tool", turnId, agentId, tool: ev, at: new Date().toISOString() });
+    },
   };
   const mcp = createMcpToolset(supervisor);
   // Served to local observers (the designer's mesh_observe MCP) via
@@ -1045,6 +1062,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
                 phases: t.phases ?? prev?.phases,
                 attempt: t.attempt ?? prev?.attempt,
                 streamChars: t.streamChars ?? prev?.streamChars,
+                toolFrames: t.toolFrames ?? prev?.toolFrames,
                 errorDetail: t.errorDetail ?? prev?.errorDetail,
                 opTimings: t.opTimings ?? prev?.opTimings,
               });
@@ -1617,11 +1635,28 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               }
             }
           }
+          /* A Save that overwrote the RUNNING config leaves the file and the live
+           * mesh disagreeing, because mesh.yaml is a seed and not a mirror (see
+           * ./config-drift). Hand back the exact proposal that would close the
+           * gap so the operator can sync in one reviewed click, through the
+           * apply route that already carries every guard. Null when this save
+           * wrote a copy somewhere else — that file is nobody's running config. */
+          let drift: ReturnType<typeof configDrift> | null = null;
+          if (parts[1] === "save" && target && path.resolve(config.filePath) === target) {
+            try {
+              drift = configDrift(resolved, instance);
+            } catch {
+              /* The save itself succeeded and the bytes are on disk. A failed
+               * comparison must not turn that into an error the operator has
+               * to interpret; they simply get no sync offer. */
+            }
+          }
           return json(200, {
             valid: true,
             yaml: yamlText,
             savedTo: target,
             archived,
+            drift,
             warnings: [...new Set(warnings)],
             createdPrompts,
             summary: {
@@ -2329,19 +2364,75 @@ function gitChanges(root: string): Array<{ path: string; status: string }> {
   }
 }
 
-function gitFacts(root: string): Record<string, string> {
-  const sh = (cmd: string, ...args: string[]): string => {
+/**
+ * Give a freshly wiped product root its own git repository.
+ *
+ * Git mode gets this from `GitWorkspace.ensureRepo`; without it the no-git
+ * path resets into a bare directory, and every git read afterwards either
+ * finds nothing or — worse — walks up and answers from whatever repo happens
+ * to enclose the workspace. Best-effort: a box without git still resets, it
+ * just resets into a plain directory, and `gitFacts` now says so instead of
+ * reporting a clean tree.
+ */
+export function initProductRepo(root: string, stateDir?: string): boolean {
+  const git = (...args: string[]): void => {
+    const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 10_000 });
+    if (r.error) throw r.error;
+    if (r.status !== 0) throw new Error(r.stderr?.trim() || `git ${args[0]} failed`);
+  };
+  try {
+    git("init", "-b", "main");
+    git("config", "user.email", "mesh@localhost");
+    git("config", "user.name", "Mesh Supervisor");
+    // The state dir lives inside the workspace by default. Unignored, the
+    // mission's own event log lands in the product diff and the tree reads
+    // "dirty" from the first turn onwards.
+    const rel = stateDir ? path.relative(root, stateDir) : "";
+    const ignoreState = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? `${rel.split(path.sep).join("/")}/\n` : "";
+    fs.writeFileSync(path.join(root, ".gitignore"), `${ignoreState}node_modules/\n`, "utf8");
+    fs.writeFileSync(path.join(root, "README.md"), "# Mesh workspace\n\nManaged by agent-mesh.\n", "utf8");
+    git("add", "-A");
+    git("commit", "-m", "mesh: initialize workspace");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function gitFacts(root: string): Record<string, string> {
+  const sh = (...args: string[]): string | null => {
     try {
-      return spawnSync(cmd, args, { cwd: root, encoding: "utf8", timeout: 4000 }).stdout.trim();
+      const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 4000 });
+      return r.status === 0 && !r.error ? r.stdout.trim() : null;
     } catch {
-      return "";
+      return null;
     }
   };
+  // Fail closed. `git status` answers from the nearest ENCLOSING repo, so a
+  // workspace that merely sits inside someone else's checkout would report
+  // that repo's branch and cleanliness as if they were the product's — and a
+  // workspace with no repo at all would report an empty status, which the old
+  // `length === 0` test read as a clean tree. Only an exact toplevel match
+  // counts as "this directory is the repository"; anything else is no repo,
+  // and no repo is unknown, never clean.
+  const toplevel = sh("rev-parse", "--show-toplevel");
+  let ownsRepo = false;
+  if (toplevel) {
+    try {
+      ownsRepo = fs.realpathSync(toplevel) === fs.realpathSync(root);
+    } catch {
+      ownsRepo = false;
+    }
+  }
+  if (!ownsRepo) return { gitRepo: "false", gitBranch: "", gitHead: "", gitClean: "unknown", gitLog: "" };
+  const status = sh("status", "--porcelain");
   return {
-    gitBranch: sh("git", "rev-parse", "--abbrev-ref", "HEAD"),
-    gitHead: sh("git", "rev-parse", "--short", "HEAD"),
-    gitClean: String(sh("git", "status", "--porcelain").length === 0),
-    gitLog: sh("git", "log", "--oneline", "-5"),
+    gitRepo: "true",
+    gitBranch: sh("rev-parse", "--abbrev-ref", "HEAD") ?? "",
+    gitHead: sh("rev-parse", "--short", "HEAD") ?? "",
+    // An unreadable status is not a clean tree either.
+    gitClean: status === null ? "unknown" : String(status.length === 0),
+    gitLog: sh("log", "--oneline", "-5") ?? "",
   };
 }
 

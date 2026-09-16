@@ -282,6 +282,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
         phases: current?.phases,
         clientChars: buf?.chars ?? 0,
         clientUpdatedAt: buf?.updatedAt,
+        toolFrames: current?.toolFrames ?? 0,
         running: true,
         startedAt: current?.startedAt,
       })
@@ -730,6 +731,7 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
     phases,
     clientChars: Math.max(buf?.chars ?? 0, liveChars),
     clientUpdatedAt: buf?.updatedAt,
+    toolFrames: t.toolFrames ?? listStep?.toolFrames ?? 0,
     running: isRunning,
     startedAt: t.startedAt,
   });

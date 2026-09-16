@@ -207,7 +207,7 @@ export default function Product(): React.JSX.Element {
 
   return (
     <div>
-      <div className="view-title"><h2>Product</h2><span className={`pill ${wsErr ? "failed" : info?.gitClean === "true" ? "completed" : "waiting"}`}>{wsErr ? "no workspace" : info?.gitBranch || "…"}</span><span className="page-actions"><Button variant="small" onClick={openPg}>{pg ? "close playground" : "open playground"}</Button></span></div>
+      <div className="view-title"><h2>Product</h2><span className={`pill ${wsErr || info?.gitRepo === "false" ? "failed" : info?.gitClean === "true" ? "completed" : "waiting"}`}>{wsErr ? "no workspace" : info?.gitRepo === "false" ? "no repo" : info?.gitBranch || "…"}</span><span className="page-actions"><Button variant="small" onClick={openPg}>{pg ? "close playground" : "open playground"}</Button></span></div>
       <div className="view-sub">The codebase agents delivered — browse the files, build, test, run scenarios.</div>
       <Card style={{ marginBottom: 12 }}>
         {wsErr ? (
@@ -216,7 +216,7 @@ export default function Product(): React.JSX.Element {
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
             <div className="kpi kpi-tile"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
             <div className="kpi kpi-tile"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
-            <div className="kpi kpi-tile"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
+            <div className="kpi kpi-tile"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitRepo === "false" ? "no repo" : info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
             <div className="kpi kpi-tile" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
             <div style={{ flex: 1 }} />
             <div className="chips">

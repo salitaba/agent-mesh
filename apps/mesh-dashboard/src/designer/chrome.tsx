@@ -4,7 +4,9 @@
  * via props from the Designer. */
 
 import { tabOfError } from "./model";
-import { Button, TextArea } from "../components";
+import { CONFIRM_WORD, destructiveKindsIn, summarizeMutation } from "./mutations";
+import { Button, Input, TextArea } from "../components";
+import type { StagedMutation } from "@mesh/protocol";
 import type { SourceState } from "./model";
 import type { Advice, Tab } from "./types";
 
@@ -189,15 +191,87 @@ export function ReviewCard({ targetPath, savingRunning, diff, differs, targetCon
 
 /* ---------------- saved confirmation ---------------- */
 
-export function SavedCard({ path, isRunning, onYaml, onHome }: { path: string; isRunning: boolean; onYaml: () => void; onHome: () => void }): React.JSX.Element {
+export function SavedCard({ path, isRunning, syncOffered, onYaml, onHome }: { path: string; isRunning: boolean; syncOffered?: boolean; onYaml: () => void; onHome: () => void }): React.JSX.Element {
+  /* "Restart the mesh to run it" is true of seats and budgets, which boot
+   * reconciles from the file every time, and NOT of the goal, which boot mints
+   * only when it is not resuming. When the sync card below is offering to close
+   * that gap, it owns the sentence; repeating a restart line here would send the
+   * operator off to do the one thing that will not move their mission. */
   return (
     <section className="card save-done" role="status" aria-label="saved">
       <b>Saved to {path}.</b>
-      <span className="muted">{isRunning ? " Restart the mesh to run it." : " Run it any time."}</span>
+      <span className="muted">{syncOffered ? "" : isRunning ? " Restart the mesh to run it." : " Run it any time."}</span>
       <div className="row" style={{ marginTop: 6 }}>
         <Button variant="small" onClick={onYaml}>Review YAML</Button>
         <Button variant="small" onClick={onHome}>Back to Overview</Button>
       </div>
+    </section>
+  );
+}
+
+/* ---------------- sync the running mission ---------------- */
+
+/**
+ * Offered after a Save that overwrote the RUNNING config, because mesh.yaml is
+ * a seed and not a mirror: the file moves, the live mission does not. The
+ * server computes the proposal (it needs fully-resolved AgentDefinitions — see
+ * mesh-server/src/config-drift.ts) and applying it goes back through the
+ * ordinary staged-apply route, so every Supervisor refusal reaches the operator
+ * verbatim instead of being re-implemented here.
+ *
+ * `problems` is rendered as prominently as the changes: it is what the sync
+ * CANNOT carry (a live seat whose definition changed, a retired seat, the token
+ * budget), and hiding it would let a partial sync read as a complete one.
+ */
+export interface SyncCardProps {
+  mutations: StagedMutation[];
+  problems: string[];
+  busy: boolean;
+  /** Outcome of the last apply: the server's own sentences, never an HTTP code. */
+  result: { ok: boolean; msg: string } | null;
+  confirmText: string;
+  setConfirmText: (s: string) => void;
+  onApply: () => void;
+  onDismiss: () => void;
+}
+
+export function SyncCard({ mutations, problems, busy, result, confirmText, setConfirmText, onApply, onDismiss }: SyncCardProps): React.JSX.Element {
+  const lines = mutations.flatMap((m) => summarizeMutation(m, { model: null }));
+  const destructive = destructiveKindsIn(mutations);
+  const confirmed = !destructive.length || confirmText.trim().toLowerCase() === CONFIRM_WORD;
+  return (
+    <section className="card save-sync" aria-label="bring the running mission in line">
+      <div className="wb-sec-head"><h3>The running mission still differs</h3></div>
+      <div className="verdict warn">Saved to the file. The running mission still has what it booted with.</div>
+      {mutations.length ? (
+        <ul className="diff-list">{lines.map((d, k) => <li key={`y${k}-${d}`}>{d}</li>)}</ul>
+      ) : (
+        <div className="muted tx-meta">Nothing in this save has a live counterpart to apply.</div>
+      )}
+      {problems.length ? (
+        <>
+          <div className="muted tx-meta">{problems.length === 1 ? "One thing cannot be synced:" : `${problems.length} things cannot be synced:`}</div>
+          <ul className="diff-list">{problems.map((t) => <li key={t}>{t}</li>)}</ul>
+        </>
+      ) : null}
+      {destructive.length ? (
+        <div className="ms-chat-confirm">
+          <div className="verdict bad">destructive: {destructive.join(", ")}. type “{CONFIRM_WORD}” to confirm.</div>
+          <Input
+            value={confirmText}
+            onChange={(ev) => setConfirmText(ev.target.value)}
+            placeholder={CONFIRM_WORD}
+            aria-label={`type ${CONFIRM_WORD} to confirm a destructive change`}
+          />
+        </div>
+      ) : null}
+      <div className="row" style={{ marginTop: 8 }}>
+        <Button variant="primary" disabled={busy || !mutations.length || !confirmed || result?.ok === true} onClick={onApply}>
+          {busy ? "applying…" : "apply to the running mission"}
+        </Button>
+        <Button variant="ghost" onClick={onDismiss}>{result?.ok ? "close" : "leave it"}</Button>
+      </div>
+      {result && !busy ? <div className={`verdict ${result.ok ? "ok" : "bad"}`}>{result.msg}</div> : null}
     </section>
   );
 }

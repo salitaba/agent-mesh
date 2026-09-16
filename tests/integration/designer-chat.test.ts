@@ -10,9 +10,16 @@ async function chatHarness() {
   const m = await makeMesh({
     agents: [
       { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
-      { id: "lead", role: "tech-lead", capabilities: [], interests: [] },
+      // The lead holds git.commit so this fixture is a mesh that can actually
+      // land its work; without it the config layer warns (correctly) that the
+      // mesh would deadlock, and these "validates clean" assertions fail.
+      { id: "lead", role: "tech-lead", capabilities: ["git.commit"], interests: [] },
     ],
     mayContact: { dev: ["lead"], lead: [] },
+    // Same reason as git.commit above, one layer over: a mesh that activates
+    // nobody opens idle and only moves when the stall watchdog guesses a seat,
+    // so the config layer warns and these "validates clean" assertions fail.
+    startup: ["lead"],
   });
   const seen: { text: string; system?: string } = { text: "" };
   let replyText = "";

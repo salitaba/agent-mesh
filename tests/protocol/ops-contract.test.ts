@@ -72,7 +72,7 @@ test("ops contract: delegation ops appear exactly when they are usable", () => {
 });
 
 test("ops contract: criterion acceptance is documented with its evidence requirement", () => {
-  const text = renderContextInstructions(emptyBundle());
+  const text = renderContextInstructions(emptyBundle({ criterionAcceptanceEnabled: true }));
   assert.match(text, /criterion:/, "agents must see the subject shape that satisfies a criterion");
   assert.match(text, /artifactId/, "acceptance without an evidence reference is rejected by the runtime");
   // The failure mode is silent: without this, agents burn turns being rejected
@@ -83,6 +83,24 @@ test("ops contract: criterion acceptance is documented with its evidence require
     /MANDATORY|required|rejected/i,
     "the prompt must state that evidence is mandatory, not merely available",
   );
+});
+
+test("ops contract: criterion acceptance appears exactly when the seat can perform it", () => {
+  const off = renderContextInstructions(emptyBundle());
+  assert.ok(
+    !off.includes("criterion:"),
+    "the criterion branch of approve is refused without requirements.accept/approve — advertising it buys denied turns, and the denial then reads as an argument for granting the acceptance gate itself",
+  );
+  // Artifact review is a DIFFERENT authority check and must survive the gate:
+  // the architect, security and every other review-capability seat still needs
+  // it, so gating on requirements authority must not take it with them.
+  assert.match(
+    off,
+    /Approve or reject a reviewed artifact/,
+    "artifact approve/reject is not gated on requirements authority",
+  );
+  const on = renderContextInstructions(emptyBundle({ criterionAcceptanceEnabled: true }));
+  assert.match(on, /criterion:/, "a seat holding requirements.accept must be shown how to close a criterion");
 });
 
 test("ops contract: artifact review lifecycle is documented", () => {

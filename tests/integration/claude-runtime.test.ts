@@ -210,7 +210,7 @@ test("restoreSession returns null when the backend cannot be reopened", async ()
     // wall clock; the dead path does not depend on it expiring.
     const adapter = new ClaudeRuntimeAdapter({
       executablePath: path.join(dir, "no-such-claude"),
-      startupProbeMs: 1000,
+      spawnFailureGraceMs: 1000,
     });
     const restored = await adapter.restoreSession(
       devDef,
@@ -275,4 +275,91 @@ test("a designer turn without opts.mcp opens no MCP servers at all", async () =>
   await adapter.prompt("just talk to me", { system: "you are a designer" });
   assert.equal(seen[0].mcpServers, undefined, "no bus named, no bridge");
   await adapter.stopAll();
+});
+
+/**
+ * A backend that spawns cleanly and then parks: the query opens, never emits
+ * `system`/`init`, and never ends. This is the shape that used to be reported
+ * healthy — the pump never throws, so only the startup probe can catch it.
+ */
+function parkedQuery(): ClaudeAdapterOptions["queryFn"] {
+  return (() => {
+    const gen = (async function* () {
+      // Never settles, and holds no timer or socket, so it cannot keep the
+      // event loop alive after the test ends.
+      await new Promise<never>(() => {});
+    })();
+    return Object.assign(gen, { interrupt: async () => undefined });
+  }) as unknown as ClaudeAdapterOptions["queryFn"];
+}
+
+test("start defers judgement when a spawned backend never emits its init handshake", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const adapter = new ClaudeRuntimeAdapter({ queryFn: parkedQuery(), spawnFailureGraceMs: 25 });
+    // Not a deferral by choice: `init` cannot arrive before the first pushed
+    // message — verified against the SDK, where an unfed streaming query
+    // answers control requests and emits nothing — so start() has no way to
+    // tell a parked backend from a healthy one. It hands back a live session
+    // and the turn dies later. Catching this belongs on the first turn.
+    const started = await adapter.start(devDef, runtimeCtx(dir));
+    assert.equal(started.agentId, devDef.id);
+    assert.ok(started.sessionId, "a quiet spawn still yields a session id");
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("restoreSession still tolerates a resume that stays quiet", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const adapter = new ClaudeRuntimeAdapter({ queryFn: parkedQuery(), spawnFailureGraceMs: 25 });
+    const sessionId = "11111111-2222-3333-4444-555555555555";
+    const restored = await adapter.restoreSession(devDef, sessionId, runtimeCtx(dir));
+    // Asymmetric on purpose: whether the CLI re-emits `init` on resume is not
+    // pinned down, and guessing wrong here costs a wasted turn rather than a
+    // seat that never opens.
+    assert.ok(restored, "a quiet resume must not be failed by the strict probe");
+    assert.equal(restored.sessionId, sessionId);
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a turn answered by total silence fails fast instead of riding the turn timeout", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const adapter = new ClaudeRuntimeAdapter({
+      queryFn: parkedQuery(),
+      spawnFailureGraceMs: 25,
+      firstFrameTimeoutMs: 40,
+      // Deliberately enormous by comparison. If the first-frame watchdog were
+      // not carrying this, the test would hang for ten minutes rather than
+      // fail — which is precisely the production symptom: a healthy-looking
+      // session that answers a push with nothing at all, held open until the
+      // backstop fires.
+      turnTimeoutMs: 600000,
+    });
+    const started = await adapter.start(devDef, runtimeCtx(dir));
+    const began = Date.now();
+    await assert.rejects(
+      () => adapter.send(started, agentInput("design the panel")),
+      (err: unknown) => {
+        // The "backend is gone" class, so the supervisor retries onto a fresh
+        // spawn rather than reporting a step that simply failed.
+        assert.ok(err instanceof BackendUnreachableError, `got ${String(err)}`);
+        return true;
+      },
+    );
+    assert.ok(Date.now() - began < 5000, "a mute backend must not be ridden to turnTimeoutMs");
+    // The session is dropped rather than left open. A session kept alive here
+    // is how orphaned `--resume` processes pile up against one transcript,
+    // still working and still billing after the mesh stopped listening.
+    await assert.rejects(() => adapter.send(started, agentInput("again")), BackendUnreachableError);
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -256,3 +256,50 @@ the live-run kinds instead of telling the operator to restart, and why the gener
 local, still needs Save", so a config change made through chat read as though Save were the whole
 story. Both chat draft cards now carry the same standing note. The goal/criteria warning sits on
 top of it for the case where restarting is not the fallback either.
+
+---
+
+## Follow-up 2 — the warning was not the fix: Save now offers to sync
+
+The warning above tells an operator that a config goal edit will not move the running mission. It
+does not move it. Operator verdict: *"still mesh config is not sync with overview page"* — correct,
+and the reason is that nothing in the product could close the gap without hand-editing the mission
+through chat. A Save onto the running config now hands back the proposal that closes it, and the
+Designer offers it in one reviewed click.
+
+Chosen shape (operator's call): **offer to apply after Save**, scoped to **everything with a live
+counterpart** — goal, criteria, seats and the mission budget.
+
+- `apps/mesh-server/src/config-drift.ts` — NEW. `configDrift(resolved, instance): StagedProposal`.
+  Pure description, no mutation. Server-side because `seat.spawn` needs a fully resolved
+  `AgentDefinition`; building one in the browser would fork `buildResolved`'s defaults.
+- `apps/mesh-server/src/index.ts` — `POST /config/save` returns `drift` in its 200, but **only when
+  the save landed on the running config** (`path.resolve(config.filePath) === target`); a copy-save
+  writes a file that is nobody's running config. A throw from the comparison is swallowed: the
+  bytes are already on disk, and a failed comparison must not turn a successful save into an error.
+- `apps/mesh-dashboard/src/designer/chrome.tsx` — `SyncCard`, presentational like the rest of the
+  file. Reuses `summarizeMutation` / `destructiveKindsIn` / `CONFIRM_WORD`, so the sync offer reads
+  in the same language as the chat's proposals and takes the same typed confirm.
+- `apps/mesh-dashboard/src/designer/Designer.tsx` — `drift` state, and `applySync` posting to
+  `POST /designer/staged/apply`. **No new route and no new authority**: every Supervisor refusal,
+  destructive-reason check and halt-on-first-failure comes from the path that already had them,
+  and the card prints the server's own sentences rather than an HTTP code.
+- `tests/server/config-drift.test.ts` — 11 tests against a really-booted mesh rather than a stubbed
+  state, because the module's whole job is comparing the file to what boot made of it.
+
+**What the sync deliberately cannot do**, surfaced as `problems` next to what it can (a partial
+sync must never read as a complete one):
+- a live seat whose definition changed — no staged kind replaces one; `agent.replaced` is boot's,
+  and has no mutation counterpart. Restart applies these.
+- a seat that was RETIRED. Terminal.
+- the mission token budget — `adjustGoalBudget` accepts only `maxEvents` / `wallClockMinutes`.
+- a file with no `acceptance_criteria` while the mission has live ones — reported, never acted on.
+  An absent section is the ordinary shape of derived criteria, not a request to clear them.
+
+`SavedCard` drops its "Restart the mesh to run it" line while a sync is offered: the SyncCard owns
+the sentence there, and a restart is exactly what will not move a resumed mesh's goal.
+
+**Still unverified end to end.** Everything above is typechecked, linted and covered by tests
+(full suite 1099/1099), but no one has driven the real flow in a browser: Save onto a running
+config, read the offer, apply, watch the Overview change. That pass needs a live mesh and is out of
+reach from the dev environment these changes were written in.

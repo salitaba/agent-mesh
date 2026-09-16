@@ -8,7 +8,8 @@ import { OpenCodeRuntimeAdapter, extractReasoning, extractSessionDelta, extractS
 import { TurnTracker, type TurnRecord } from "../../packages/core/src/turn-tracker";
 import { makeMesh } from "../helpers";
 import { createHttpServer, closeHttpServer } from "../../apps/mesh-server/src/index";
-import type { AgentDefinition, AgentInput, RuntimeContext } from "../../packages/protocol/src/index";
+import type { AgentDefinition, AgentEvent, AgentInput, RuntimeContext } from "../../packages/protocol/src/index";
+import { collectAgentOutput } from "../../packages/agent-runtime/src/index";
 
 const devDef: AgentDefinition = {
   id: "developer",
@@ -294,6 +295,87 @@ test("turn.token frames reach SSE subscribers out-of-band and never touch the lo
     assert.equal(tokenFrames.length, 1);
     assert.deepEqual(tokenFrames[0].data, { type: "turn.token", turnId: "turn-9", agentId: "dev", delta: "live delta", at: (tokenFrames[0].data as { at: string }).at });
     assert.equal(m.kernel.state.eventCount, eventsBefore, "token frames must not append to the event log");
+  } finally {
+    await closeHttpServer(server).catch(() => undefined);
+    await m.cleanup();
+  }
+});
+
+test("collectAgentOutput forwards tool frames to onToolEvent, and a throwing observer cannot corrupt the fold", async () => {
+  async function* frames(): AsyncGenerator<AgentEvent> {
+    yield { kind: "tool_call", toolCallId: "tool-0", name: "read_file", args: { path: "a.ts" } };
+    yield { kind: "tool_call_update", toolCallId: "tool-0", status: "completed", resultDigest: "sha:beef" };
+    yield { kind: "turn_end", stopReason: "end_turn", text: "done", operations: [], tokensUsed: { input: 3, output: 4, total: 7 } };
+  }
+  const seen: Array<{ kind: string; toolCallId: string }> = [];
+  const out = await collectAgentOutput(frames(), {
+    onToolEvent: (ev) => {
+      seen.push({ kind: ev.kind, toolCallId: ev.toolCallId });
+      // Every observer here throws: the fold must be indifferent to it.
+      throw new Error("observer blew up");
+    },
+  });
+
+  assert.deepEqual(seen, [
+    { kind: "tool_call", toolCallId: "tool-0" },
+    { kind: "tool_call_update", toolCallId: "tool-0" },
+  ], "both tool frame kinds reach the observer, in stream order");
+  // The authoritative record survives the throwing observer intact -- including
+  // the resultDigest that only arrives via the update frame.
+  const calls = out.toolCalls ?? [];
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, "read_file");
+  assert.equal(calls[0].resultDigest, "sha:beef");
+  assert.equal(out.text, "done");
+});
+
+test("turn.tool frames reach SSE subscribers out-of-band and never touch the log", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }],
+    mayContact: {},
+    mode: "parked",
+  });
+  const server = createHttpServer(m, { dashboardDir: undefined });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const eventsBefore = m.kernel.state.eventCount;
+  try {
+    const frames: Array<{ event: string; data: unknown }> = [];
+    let buf = "";
+    const req = http.get(`http://127.0.0.1:${port}/events/stream`, (res) => {
+      res.on("data", (c: Buffer) => {
+        buf += c.toString("utf8");
+        let idx: number;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          const ev = /^event: (.*)$/m.exec(block)?.[1];
+          const dataLine = block.split("\n").find((l) => l.startsWith("data:"));
+          if (ev && dataLine) {
+            try {
+              frames.push({ event: ev, data: JSON.parse(dataLine.slice(5).trim()) });
+            } catch { /* ignore */ }
+          }
+        }
+      });
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const call = { kind: "tool_call", toolCallId: "tool-0", name: "read_file", args: { path: "a.ts" } } as const;
+    m.supervisor.deps.hooks?.onTurnToolEvent?.("turn-9", "dev", call);
+    await new Promise((r) => setTimeout(r, 300));
+    req.destroy();
+    const toolFrames = frames.filter((f) => f.event === "turn.tool");
+    assert.equal(toolFrames.length, 1);
+    // The frame nests the union rather than flattening it, so a client can
+    // switch on `tool.kind` to tell a call from its later refinement.
+    assert.deepEqual(toolFrames[0].data, {
+      type: "turn.tool",
+      turnId: "turn-9",
+      agentId: "dev",
+      tool: { kind: "tool_call", toolCallId: "tool-0", name: "read_file", args: { path: "a.ts" } },
+      at: (toolFrames[0].data as { at: string }).at,
+    });
+    assert.equal(m.kernel.state.eventCount, eventsBefore, "tool frames must not append to the event log");
   } finally {
     await closeHttpServer(server).catch(() => undefined);
     await m.cleanup();

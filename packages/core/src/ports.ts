@@ -1,5 +1,7 @@
 import type {
   AgentDefinition,
+  AgentEventToolCall,
+  AgentEventToolCallUpdate,
   Artifact,
   ArtifactStatus,
   Goal,
@@ -138,6 +140,14 @@ export interface SupervisorHooks {
    * frequency — receivers must handle batching/caps themselves.
    */
   onTurnToken?: (turnId: string, agentId: string, delta: string) => void;
+  /**
+   * Live tool activity for a running turn. Same out-of-band contract as
+   * `onTurnToken` (never a kernel event; the host forwards it to SSE), and the
+   * same inverted arg order as its neighbour for symmetry. Fires only on the
+   * streaming path, so a `send`-only runtime reports tool calls just once, in
+   * `AgentOutput.toolCalls`, after the turn ends.
+   */
+  onTurnToolEvent?: (turnId: string, agentId: string, ev: AgentEventToolCall | AgentEventToolCallUpdate) => void;
 }
 
 export type { EventBus } from "./event-bus";

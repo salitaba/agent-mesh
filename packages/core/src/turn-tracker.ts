@@ -20,6 +20,16 @@ export interface TurnPhases {
   firstTokenAt?: number;
   /** Most recent streamed token — the stall detector reads this. */
   lastTokenAt?: number;
+  /**
+   * First sign of life of ANY kind: a streamed token OR a tool frame. An agent
+   * that answers by writing files never streams prose, so `firstTokenAt` stays
+   * undefined for its whole turn and it reads as "no response" while it is in
+   * fact working. This is the superset — liveness belongs on it, not on the
+   * token stamps.
+   */
+  firstActivityAt?: number;
+  /** Most recent sign of life of any kind. Always >= `lastTokenAt`. */
+  lastActivityAt?: number;
   /** Runtime returned a complete output. */
   llmDoneAt?: number;
   /** First op dispatched to the kernel. */
@@ -146,6 +156,11 @@ export interface TurnRecord {
   streamChars?: number;
   /** Number of `onToken` deltas seen — distinguishes chunky from smooth. */
   streamFrames?: number;
+  /**
+   * Tool frames seen this turn. A file-writing agent produces these and no
+   * prose, so this is the only throughput number its turn ever has.
+   */
+  toolFrames?: number;
 }
 
 export const RECENT_TURNS_MAX = 200;
@@ -232,6 +247,7 @@ export class TurnTracker {
     if (!cur) return;
     if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
     if (phase === "firstTokenAt" && cur.phases.firstTokenAt !== undefined) return;
+    if (phase === "firstActivityAt" && cur.phases.firstActivityAt !== undefined) return;
     if (phase === "opsStartAt" && cur.phases.opsStartAt !== undefined) return;
     cur.phases[phase] = at;
     this.schedulePersist();
@@ -280,6 +296,27 @@ export class TurnTracker {
     if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
     if (cur.phases.firstTokenAt === undefined) cur.phases.firstTokenAt = at;
     cur.phases.lastTokenAt = at;
+    // Tokens are a kind of activity, so the activity stamps stay a true
+    // superset: a consumer reading only those never has to also check tokens.
+    if (cur.phases.firstActivityAt === undefined) cur.phases.firstActivityAt = at;
+    cur.phases.lastActivityAt = at;
+    this.schedulePersist();
+  }
+
+  /**
+   * Record one tool frame on a running turn. Deliberately separate from the
+   * token stamps: tool work proves the agent is alive, but it is not output,
+   * and folding it into `lastTokenAt` would tell the silence watchdog a turn
+   * had started streaming when it had not.
+   */
+  noteToolFrame(turnId: string): void {
+    const cur = this.recent.find((t) => t.turnId === turnId);
+    if (!cur || cur.status !== "running") return;
+    cur.toolFrames = (cur.toolFrames ?? 0) + 1;
+    const at = Date.now();
+    if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
+    if (cur.phases.firstActivityAt === undefined) cur.phases.firstActivityAt = at;
+    cur.phases.lastActivityAt = at;
     this.schedulePersist();
   }
 

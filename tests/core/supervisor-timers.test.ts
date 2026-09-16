@@ -34,7 +34,8 @@ interface StallProbe {
   sessions: Map<string, { session: { sessionId: string; agentId: string }; runtime: { interrupt(s: unknown): Promise<void> } }>;
   turns: {
     push(rec: unknown): void;
-    get(turnId: string): { status: string; phases?: { firstTokenAt?: number; lastTokenAt?: number } } | undefined;
+    noteToolFrame(turnId: string): void;
+    get(turnId: string): { status: string; toolFrames?: number; phases?: { firstTokenAt?: number; lastTokenAt?: number; lastActivityAt?: number } } | undefined;
   };
 }
 
@@ -419,6 +420,30 @@ test("silence watch: a turn that never streamed a token is left to think", async
     const posed = poseStreamingTurn(m, "dev", undefined);
     p.interruptSilentTurns(Date.now());
     assert.deepEqual(posed.interrupts, [], "pre-token silence is not a stall");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("silence watch: a turn that stopped narrating to run tools is left alone", async () => {
+  const m = await makeMesh({ agents: AGENTS, mode: "parked" });
+  try {
+    const p = probe(m);
+    (m.supervisor.config.scheduling as { turnSilenceMs: number }).turnSilenceMs = 100;
+    // Five seconds since the last word — well past the threshold on prose
+    // alone. But the agent is writing files, which is what an agent that
+    // designs by building looks like from here.
+    const posed = poseStreamingTurn(m, "dev", 5000);
+    p.turns.noteToolFrame(posed.turnId);
+
+    p.interruptSilentTurns(Date.now());
+
+    assert.deepEqual(posed.interrupts, [], "tool work is work: silence is the absence of activity, not of prose");
+    assert.equal(p.interruptedTurnIds.has(posed.turnId), false);
+    const rec = p.turns.get(posed.turnId);
+    assert.equal(rec?.toolFrames, 1, "the frame must be counted, not just used to reset a clock");
+    assert.ok(rec?.phases?.lastActivityAt !== undefined, "tool frames stamp activity");
+    assert.equal(rec?.phases?.lastTokenAt, undefined, "and must not be mistaken for streamed output");
   } finally {
     await m.cleanup();
   }

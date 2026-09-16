@@ -20,6 +20,7 @@ import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
 import { agentKey, missionKey } from "./budgets";
 import { outstandingDebtors, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
+import { holdsAuthority } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -339,6 +340,15 @@ export function buildAgentContext(
     delegationEnabled: (config.agents[agentId]?.delegationPolicy.allowDelegation ?? false) &&
       (config.agents[agentId]?.delegationPolicy.maxDepth ?? 0) > 0 &&
       (config.agents[agentId]?.delegationPolicy.maxWorkers ?? 0) > 0,
+    /* Same discipline, one branch over. The `criterion:<id>` subject of
+     * `approve` is the only way work becomes evidence, and the kernel refuses
+     * it without requirements.accept / requirements.approve — so a seat
+     * without either was reading a closing-out instruction it could only be
+     * denied for. holdsAuthority covers `requirements.*` and the human seat's
+     * `*`, so widening a grant still widens the contract with it. */
+    criterionAcceptanceEnabled:
+      holdsAuthority(config.agents[agentId]?.authority, "requirements", "accept") ||
+      holdsAuthority(config.agents[agentId]?.authority, "requirements", "approve"),
     /* Same "never advertise a rule that cannot fire" discipline as
      * delegationEnabled above. The declared capability list is narrowed twice
      * before it reaches the prompt:
@@ -727,14 +737,23 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // into evidence, while repeatedly attempting acceptance without the
   // required artifactId and being rejected every time.
   lines.push("## Closing out work (how evidence actually gets recorded)");
-  lines.push(
-    'Satisfy an acceptance criterion with: {"op":"approve","subject":"criterion:<criterionId>","artifactId":"<evidence artifact id>","comment":"why this proves it"}. Use the exact criterion id from the acceptance-criteria list above.',
-  );
-  // The artifactId requirement is enforced in recordDecision; stating it here
-  // is what keeps agents from burning turns on rejected comment-only accepts.
-  lines.push(
-    'For a MANDATORY criterion the artifactId is REQUIRED and must point at a real published deliverable of THIS goal — a comment alone is rejected, and so is a stub or placeholder artifact. Publish the actual work first, then accept against it. Optional criteria may be accepted with a comment.',
-  );
+  // Shown only to a seat that can actually close a criterion. `approve` on
+  // subject `criterion:<id>` is refused without requirements.accept /
+  // requirements.approve, so for every other seat these two lines are an
+  // instruction to spend turns on a call the kernel will deny — and the
+  // denial names an authority, which is how a refusal became a request to
+  // widen a grant. The artifact approve/reject line below stays visible to
+  // every review-capability seat; only the criterion branch is gated.
+  if (bundle.criterionAcceptanceEnabled) {
+    lines.push(
+      'Satisfy an acceptance criterion with: {"op":"approve","subject":"criterion:<criterionId>","artifactId":"<evidence artifact id>","comment":"why this proves it"}. Use the exact criterion id from the acceptance-criteria list above.',
+    );
+    // The artifactId requirement is enforced in recordDecision; stating it here
+    // is what keeps agents from burning turns on rejected comment-only accepts.
+    lines.push(
+      'For a MANDATORY criterion the artifactId is REQUIRED and must point at a real published deliverable of THIS goal — a comment alone is rejected, and so is a stub or placeholder artifact. Publish the actual work first, then accept against it. Optional criteria may be accepted with a comment.',
+    );
+  }
   lines.push(
     'Approve or reject a reviewed artifact with: {"op":"approve","subject":"<what>","artifactId":"<id>"} — also "reject", "veto", "block", same shape. This needs the matching authority or review capability, and you cannot approve your own artifact when a peer reviewer exists.',
   );

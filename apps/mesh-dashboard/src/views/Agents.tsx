@@ -28,7 +28,7 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
     : a.lifecycle === "COMPLETED" ? "finished"
     : a.lifecycle === "STARTING" ? "starting up"
     : "idle";
-  const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, running: true, startedAt: step.startedAt }) : null;
+  const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, toolFrames: step.toolFrames ?? 0, running: true, startedAt: step.startedAt }) : null;
   const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;
   // The list payload carries a scalar projection of the plan, not the steps —
   // enough to say how far along it is, which is the one fact a card can act on.

@@ -10,6 +10,8 @@ import {
   aliasTextOp,
   normalizeCapability,
   type AgentDefinition,
+  type AgentEvent,
+  type AgentEventTurnEnd,
   type AgentInput,
   type AgentOutput,
   type AgentRuntime,
@@ -19,6 +21,10 @@ import {
   type MeshOp,
   type RuntimeContext,
 } from "../../protocol/src/index";
+// Runtime commons shared with runtime-claude: the queue both adapters push
+// frames through, and the fold that turns those frames back into the
+// `AgentOutput` the supervisor reads. Imports protocol only, so no cycle.
+import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
 // The output-voice rules belong to the prompt layer, not to this adapter:
 // importing them from there is what keeps opencode and runtime-claude
 // byte-identical on the part of the prompt that must not vary by backend.
@@ -1093,7 +1099,26 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     }
   }
 
+  /**
+   * One turn, folded back into the struct the supervisor reads.
+   *
+   * Implemented over `stream` rather than beside it so the two can never
+   * drift: every field of the returned output has exactly one producer.
+   */
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
+    return collectAgentOutput(this.stream(session, input), input);
+  }
+
+  /**
+   * Live frames for one turn.
+   *
+   * opencode's `POST /message` blocks until the turn ends, so the request runs
+   * as a background task that settles the queue while this generator drains
+   * it. Awaiting the POST inline instead would buffer every delta until the
+   * turn was already over — which is precisely the silence the supervisor's
+   * stall detector force-settles a turn for.
+   */
+  async *stream(session: AgentSession, input: AgentInput): AsyncGenerator<AgentEvent, void> {
     const handle = session.handle as { baseUrl: string; model?: OpenCodeModelRef; variant?: string };
     const baseUrl = handle.baseUrl;
     // A handle rehydrated from a persisted session predates per-agent models,
@@ -1110,28 +1135,61 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     };
     if (model) body.model = model;
     if (variant) body.variant = variant;
-    // Live token tap: opencode's POST /message blocks until the turn ends,
-    // but GET /event streams `message.part.delta` frames while it runs.
-    // Best-effort observability only — any failure here degrades to the old
-    // request/response behavior, never fails the turn.
-    const stopTap = input.onToken ? this.tapTokenStream(baseUrl, session.sessionId, input.onToken) : undefined;
-    let response: OpenCodeMessageResponse;
-    try {
-      response = await this.request<OpenCodeMessageResponse>(baseUrl, "POST", `/session/${session.sessionId}/message`, body);
-    } catch (err) {
-      this.statuses.set(session.agentId, "UNREACHABLE");
-      throw err;
-    } finally {
-      stopTap?.();
-    }
-    this.statuses.set(session.agentId, "IDLE");
+
+    const events = new PushQueue<AgentEvent>();
+    // Live tap: `GET /event` streams `message.part.delta` frames while the POST
+    // blocks. Best-effort observability only — any failure in there degrades to
+    // request/response behavior and never fails the turn.
+    const stopTap = this.tapTurnEvents(baseUrl, session.sessionId, (ev) => events.push(ev));
+    let failure: unknown;
+    void (async () => {
+      try {
+        const response = await this.request<OpenCodeMessageResponse>(baseUrl, "POST", `/session/${session.sessionId}/message`, body);
+        this.statuses.set(session.agentId, "IDLE");
+        // Stop the tap BEFORE the end frame, never after: `stop()` flushes the
+        // deltas batched since the last tick synchronously, and a chunk landing
+        // after `turn_end` is a chunk the fold has stopped listening for.
+        stopTap();
+        (response.parts ?? []).forEach((part, index) => {
+          if (part.type !== "tool") return;
+          events.push({
+            kind: "tool_call",
+            // opencode parts carry no id of their own. Position in the turn is
+            // unique and stable, which is all correlation needs here: this
+            // adapter only learns tool results post-hoc, off the settled
+            // response, so it reports them on the call frame and never sends a
+            // separate `tool_call_update` to match up later.
+            toolCallId: `tool-${index}`,
+            name: String(part.tool ?? "tool"),
+            args: part.state?.input ?? {},
+            resultDigest: shortDigest(JSON.stringify(part.state?.output ?? "")),
+          });
+        });
+        events.push(this.toTurnEnd(response, model));
+      } catch (err) {
+        this.statuses.set(session.agentId, "UNREACHABLE");
+        stopTap();
+        // Surfaced by `stream` once the queue drains, so frames already emitted
+        // this turn are not swallowed by the failure.
+        failure = err;
+      } finally {
+        events.close();
+      }
+    })();
+
+    for await (const ev of events) yield ev;
+    if (failure) throw failure;
+  }
+
+  /** The settled response, mapped to the frame that closes every turn. */
+  private toTurnEnd(response: OpenCodeMessageResponse, model: OpenCodeModelRef | undefined): AgentEventTurnEnd {
     const text = extractText(response);
-    const operations = parseMeshOps(text);
     // This adapter parses ops out of prose, so its output is never typed —
     // even when the model also used tools (bash, read, ...). Typed MCP turns
     // (`mesh_*` tools) execute through McpToolset.executeOp directly and
     // never pass through here, so under typed-only transport this turn's
     // parsed ops are refused while tool-issued state changes stand.
+    const operations = parseMeshOps(text);
     const info = response.info ?? response;
     const tokens = info.tokens ?? { input: 0, output: 0, reasoning: 0 };
     // Budget charge = NEW work this turn: fresh input + output + reasoning.
@@ -1155,22 +1213,18 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // `declaredSummary` rides ALONGSIDE `summary` and never replaces it: every
     // consumer already reads `summary`, so its value stays exactly the scrape
     // it has always been. The declared field is populated only when the turn
-    // actually declared one, and it is not yet a field on `AgentOutput`
-    // (packages/protocol/src/types.ts) — hence the widening on the literal
-    // below, which goes away once the protocol declares it.
-    const output: AgentOutput & { declaredSummary?: string } = {
+    // actually declared one.
+    return {
+      kind: "turn_end",
+      stopReason: "end_turn",
       text,
       operations,
       tokensUsed: { input: tokens.input ?? 0, output: tokens.output ?? 0, total, cacheRead },
       model: info.modelID ?? model?.modelID,
       modelVersion: info.modelID,
-      toolCalls: (response.parts ?? [])
-        .filter((p) => p.type === "tool")
-        .map((p) => ({ name: String(p.tool ?? "tool"), args: p.state?.input ?? {}, resultDigest: shortDigest(JSON.stringify(p.state?.output ?? "")) })),
       summary: extractSummary(text),
       ...(declared ? { declaredSummary: declared } : {}),
     };
-    return output;
   }
 
   /**
@@ -1252,20 +1306,27 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
 
   /**
    * Subscribe to the backend's SSE event stream and forward text deltas for
-   * our session to onToken, batched (~150ms / 2KB) to avoid callback spam.
+   * our session, batched (~150ms / 2KB) to avoid frame spam, and emitted as
+   * `agent_message_chunk` / `agent_thought_chunk`.
    * Returns a stop function; the caller must invoke it when the turn settles.
    */
-  private tapTokenStream(baseUrl: string, sessionId: string, onToken: (delta: string) => void): () => void {
+  private tapTurnEvents(baseUrl: string, sessionId: string, emit: (ev: AgentEvent) => void): () => void {
     const ctrl = new AbortController();
     let stopped = false;
-    // Hoisted so `stop()` can drain the buffer before tearing the stream down.
-    let pending = "";
+    // Hoisted so `stop()` can drain the buffers before tearing the stream down.
+    // Answer text and reasoning batch SEPARATELY: they are different frames, and
+    // one shared buffer would splice thinking into the middle of the answer.
+    let pendingText = "";
+    let pendingThought = "";
     const flush = (): void => {
-      if (!pending) return;
-      const delta = pending;
-      pending = "";
+      if (!pendingText && !pendingThought) return;
+      const text = pendingText;
+      const thought = pendingThought;
+      pendingText = "";
+      pendingThought = "";
       try {
-        onToken(delta);
+        if (text) emit({ kind: "agent_message_chunk", delta: text });
+        if (thought) emit({ kind: "agent_thought_chunk", delta: thought });
       } catch {
         /* observer must never break the stream */
       }
@@ -1274,7 +1335,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       stopped = true;
       // Emit what arrived since the last tick BEFORE aborting. Deltas are
       // batched on a 150ms timer, so up to 150ms of text is typically sitting
-      // in `pending` when the turn settles. Aborting first makes the in-flight
+      // in the buffers when the turn settles. Aborting first makes the in-flight
       // `reader.read()` reject, which jumps to the catch block and skips the
       // end-of-stream flush entirely — silently dropping the tail of the
       // answer. This must also be synchronous: `stop()` runs in send()'s
@@ -1309,10 +1370,18 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           while ((idx = buf.indexOf("\n\n")) >= 0) {
             const block = buf.slice(0, idx);
             buf = buf.slice(idx + 2);
-            const delta = extractSessionDelta(block, sessionId);
-            if (delta) {
-              pending += delta;
-              if (pending.length >= 2000) flush();
+            const part = extractSessionPart(block, sessionId);
+            if (part) {
+              // Reasoning deltas ride their own frame rather than being dropped
+              // here: the fold discards thought chunks on the way to the
+              // transcript, so they can be observed without polluting it.
+              if (part.field === "text") {
+                pendingText += part.delta;
+                if (pendingText.length >= 2000) flush();
+              } else {
+                pendingThought += part.delta;
+                if (pendingThought.length >= 2000) flush();
+              }
             }
           }
         }
@@ -1332,7 +1401,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
-   * Designer-chat variant of `tapTokenStream`: same SSE plumbing, but deltas
+   * Designer-chat variant of `tapTurnEvents`: same SSE plumbing, but deltas
    * are tagged by the part field they belong to (`reasoning`/`thinking` vs
    * everything else, which is answer text). No batching — the consumer is an
    * HTTP SSE writer, not a per-turn observer.

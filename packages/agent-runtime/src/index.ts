@@ -1,5 +1,7 @@
 import type {
   AgentDefinition,
+  AgentEvent,
+  AgentEventTurnEnd,
   AgentInput,
   AgentOutput,
   AgentRuntime,
@@ -214,3 +216,129 @@ export const NO_OP_OUTPUT: AgentOutput = {
   operations: [{ op: "done" }],
   tokensUsed: { input: 0, output: 0, total: 0 },
 };
+
+/**
+ * Async iterable driven by `push`.
+ *
+ * Runtime commons rather than adapter-local: the Claude adapter needs one to
+ * feed the SDK's streaming input, and every adapter implementing
+ * `AgentRuntime.stream` needs one to hand events back. It lives here so the
+ * second caller does not have to import the first adapter sideways — the
+ * mistake already flagged in packages/runtime-claude/src/index.ts for the mesh
+ * op parser.
+ */
+export class PushQueue<T> {
+  private items: T[] = [];
+  private waiters: Array<(r: IteratorResult<T>) => void> = [];
+  private done = false;
+
+  push(item: T): void {
+    const w = this.waiters.shift();
+    if (w) w({ value: item, done: false });
+    else this.items.push(item);
+  }
+
+  close(): void {
+    this.done = true;
+    for (const w of this.waiters.splice(0)) w({ value: undefined as never, done: true });
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<T, void> {
+    for (;;) {
+      const buffered = this.items.shift();
+      if (buffered !== undefined) {
+        yield buffered;
+        continue;
+      }
+      if (this.done) return;
+      const r = await new Promise<IteratorResult<T>>((res) => this.waiters.push(res));
+      if (r.done) return;
+      yield r.value;
+    }
+  }
+}
+
+/**
+ * Fold a turn's event stream into the `AgentOutput` the supervisor still reads.
+ *
+ * Two jobs, both load-bearing:
+ *
+ * 1. `toolCalls` is rebuilt from `tool_call` / `tool_call_update` frames. It is
+ *    the only field genuinely reconstructed here; everything else rides on
+ *    `turn_end`, because prose parsing is still per-backend.
+ * 2. Text deltas are forwarded to `input.onToken`. This is NOT optional
+ *    bookkeeping: the supervisor force-settles a silent turn based on
+ *    `phases.firstTokenAt` / `lastTokenAt`, which are set only as a side effect
+ *    of that callback. Drop it and a streaming runtime looks permanently mute,
+ *    so every turn gets killed at the silence threshold.
+ *
+ * A stream that ends without `turn_end` is a transport failure — the backend
+ * went away mid-turn — and throws, landing on the supervisor's RuntimeFailure
+ * path rather than being mistaken for an empty but successful turn.
+ */
+export async function collectAgentOutput(
+  events: AsyncIterable<AgentEvent>,
+  input: Pick<AgentInput, "onToken" | "onToolEvent">,
+): Promise<AgentOutput> {
+  const toolCalls: Array<{ name: string; args: unknown; resultDigest: string }> = [];
+  const byId = new Map<string, { name: string; args: unknown; resultDigest: string }>();
+  let end: AgentEventTurnEnd | undefined;
+
+  for await (const ev of events) {
+    switch (ev.kind) {
+      case "agent_message_chunk":
+        try {
+          input.onToken?.(ev.delta);
+        } catch {
+          /* observer must never break the turn */
+        }
+        break;
+      case "agent_thought_chunk":
+        // Reasoning is not transcript: deliberately not forwarded to onToken,
+        // and deliberately not parsed for ops.
+        break;
+      case "tool_call": {
+        const call = { name: ev.name, args: ev.args, resultDigest: ev.resultDigest ?? "" };
+        byId.set(ev.toolCallId, call);
+        toolCalls.push(call);
+        // Observers run after the fold, never before: a throwing subscriber
+        // must not be able to leave `toolCalls` missing a call that happened.
+        try {
+          input.onToolEvent?.(ev);
+        } catch {
+          /* observer must never break the turn */
+        }
+        break;
+      }
+      case "tool_call_update": {
+        const call = byId.get(ev.toolCallId);
+        if (call && ev.resultDigest !== undefined) call.resultDigest = ev.resultDigest;
+        try {
+          input.onToolEvent?.(ev);
+        } catch {
+          /* observer must never break the turn */
+        }
+        break;
+      }
+      case "turn_end":
+        end = ev;
+        break;
+    }
+  }
+
+  if (!end) throw new Error("agent stream ended without a turn_end frame");
+
+  return {
+    text: end.text,
+    operations: end.operations,
+    ...(end.typedOps !== undefined ? { typedOps: end.typedOps } : {}),
+    tokensUsed: end.tokensUsed,
+    ...(end.model !== undefined ? { model: end.model } : {}),
+    ...(end.modelVersion !== undefined ? { modelVersion: end.modelVersion } : {}),
+    ...(end.temperature !== undefined ? { temperature: end.temperature } : {}),
+    toolCalls,
+    ...(end.summary !== undefined ? { summary: end.summary } : {}),
+    ...(end.declaredSummary !== undefined ? { declaredSummary: end.declaredSummary } : {}),
+    ...(end.error !== undefined ? { error: end.error } : {}),
+  };
+}

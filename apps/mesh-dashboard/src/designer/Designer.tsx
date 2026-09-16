@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
 import { fmt } from "../format";
 import { useMesh } from "../store";
-import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, SourceStateLine, YamlCard } from "./chrome";
+import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedCard, SourceStateLine, SyncCard, YamlCard } from "./chrome";
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";
 import { hueVar } from "./ui";
@@ -27,6 +27,7 @@ import { Button, Input, useDismissable } from "../components";
 import { register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
 import { useFocusMode, useMedia } from "../shell";
 import type { Advice, DCtx, Pos, SaveTarget, Tab } from "./types";
+import type { StagedMutation } from "@mesh/protocol";
 
 /** Debounced after each edit: re-validate, persist draft + node layout. */
 const SAVE_DELAY_MS = 550;
@@ -112,6 +113,18 @@ export default function Designer(): React.JSX.Element {
   const [runningStale, setRunningStale] = useState(false);
   const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  /* What the last Save left disagreeing between the file and the RUNNING
+   * mission. mesh.yaml seeds the mesh at boot and is never re-read, so an
+   * overwrite of the running config moves the Config view and leaves the
+   * Overview on the mission that actually booted. The server hands back the
+   * proposal that closes the gap (mesh-server/src/config-drift.ts); applying
+   * it goes through /designer/staged/apply, the same route the chat's live-run
+   * changes use, so every Supervisor refusal is re-checked in front of the
+   * operator. Null whenever there is nothing to offer. */
+  const [drift, setDrift] = useState<{ mutations: StagedMutation[]; problems: string[] } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [syncConfirm, setSyncConfirm] = useState("");
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   // A first visit with no running mesh loads a starter template. It used to do
   // that silently, so the workbench opened on a three-agent org chart the
@@ -447,20 +460,15 @@ export default function Designer(): React.JSX.Element {
     for (const w of serverWarnings) {
       if (typeof w === "string") list.push({ level: "warn", tab: tabOfError(w), msg: w });
     }
-    if (ag.length > 1) {
-      for (const id of ag) {
-        const outN = ((mm.policies.communication[id] || {}).may_contact || []).filter((t: string) => mm.agents[t] && t !== id).length;
-        const inN = ag.filter((o) => o !== id && ((mm.policies.communication[o] || {}).may_contact || []).includes(id)).length;
-        if (!outN && !inN) list.push({ level: "warn", tab: "crew", msg: `“${id}” is wired to nobody — it can’t ask for help or be asked.` });
-      }
-    }
     // Gate satisfiability is NOT re-derived here: a gate token is
     // `<actor>.<kind>` matched against recorded approvals by actor id/role, so
     // requiring the literal token in an agent's `authority` list produces
     // false "no agent can decide that" warnings on every correctly-wired mesh.
     // The server owns this check (validateTransitionGates, surfaced as
     // proposal `problems`); keep this list to checks the server won't flag.
-    if (ag.length && !(mm.startup?.activate || []).length) list.push({ level: "info", tab: "crew", msg: "nobody boots — going live starts an idle mesh; wake an agent by hand." });
+    // "wired to nobody" and "nobody boots" used to live here; they moved into
+    // packages/config so a CLI or server boot sees them too, and they arrive
+    // back through `serverWarnings` above — do not re-add them here.
     const sum = ag.reduce((n, id) => n + (mm.budgets?.agent?.[id] ?? mm.agents[id]?.budget?.tokens ?? 200000), 0);
     if (sum > (mm.budgets?.mission?.tokens ?? 2000000)) list.push({ level: "info", tab: "policy", msg: `crew budgets add up to ${fmt(sum)} — more than the ${fmt(mm.budgets?.mission?.tokens)} mission cap. Fine, just know someone stops early.` });
     if (!mm.mesh?.goal?.trim()) list.push({ level: "warn", tab: "mesh", msg: "the mission has no goal — agents will drift." });
@@ -796,6 +804,16 @@ export default function Designer(): React.JSX.Element {
         setRestoredAt(null);
         clearStored();
         setSavedInfo({ path: json.savedTo });
+        /* Only a save onto the running file can produce drift; the server
+         * returns null otherwise, and a proposal with neither changes nor
+         * problems is nothing to show. */
+        const d = json.drift;
+        const offer = d && (d.mutations?.length || d.problems?.length)
+          ? { mutations: d.mutations ?? [], problems: d.problems ?? [] }
+          : null;
+        setDrift(offer);
+        setSyncResult(null);
+        setSyncConfirm("");
         toast("saved", json.archived ? `${json.savedTo} — previous kept in ${json.archived}` : json.savedTo, "ok");
       } else {
         toast("save failed", (json?.errors || [json?.error, "invalid"]).filter(Boolean).join("; ").slice(0, 240), "bad");
@@ -806,6 +824,38 @@ export default function Designer(): React.JSX.Element {
       toast("save failed", err instanceof Error ? err.message : "the server is unreachable", "bad");
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* Push the drift proposal at the live mesh. No new authority: this is the
+   * staged-apply route, so the Supervisor's own refusals come back as the
+   * sentences shown on the card rather than an HTTP code the operator would
+   * have to interpret. A partial apply is reported as partial — the route
+   * halts on the first failure and says how far it got. */
+  const applySync = async () => {
+    if (!drift || syncing) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { status, json } = await client.post("/designer/staged/apply", { mutations: drift.mutations });
+      const ok = status === 200 && json?.ok === true;
+      const failed: string[] = Array.isArray(json?.results)
+        ? json.results.filter((r: any) => r && r.ok === false).map((r: any) => `${r.kind}: ${r.detail}`)
+        : [];
+      const n = json?.applied ?? 0;
+      const msg = ok
+        ? `the running mission now matches the file — ${n} change${n === 1 ? "" : "s"} applied`
+        : failed.length
+          ? `${n} of ${drift.mutations.length} applied — ${failed.join("; ")}`
+          : `the server refused this apply (HTTP ${status})`;
+      setSyncResult({ ok, msg });
+      toast(ok ? "mission updated" : "sync failed", msg, ok ? "ok" : "bad");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "the server is unreachable";
+      setSyncResult({ ok: false, msg });
+      toast("sync failed", msg, "bad");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -1047,8 +1097,21 @@ export default function Designer(): React.JSX.Element {
           <SavedCard
             path={savedInfo.path}
             isRunning={savingRunning || savedInfo.path === runningPath}
+            syncOffered={drift !== null}
             onYaml={openYaml}
             onHome={() => setView("overview")}
+          />
+        ) : null}
+        {drift ? (
+          <SyncCard
+            mutations={drift.mutations}
+            problems={drift.problems}
+            busy={syncing}
+            result={syncResult}
+            confirmText={syncConfirm}
+            setConfirmText={setSyncConfirm}
+            onApply={() => void applySync()}
+            onDismiss={() => setDrift(null)}
           />
         ) : null}
         {importOpen ? (

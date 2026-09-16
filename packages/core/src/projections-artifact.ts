@@ -66,14 +66,23 @@ function doTransition(
 
 // An approval must not be inert: a document approved while it sits in
 // READY_FOR_REVIEW (no tracked review round) used to record the verdict and
-// stay open forever. Take the machine's terminal review edge instead. The
-// UNDER_REVIEW path keeps its original whitelist so logs written under the old
-// rules still replay (a later re-review may legally reopen those).
-const APPROVABLE_TYPES = new Set<ArtifactType>(["ArchitectureDocument", "CodePatch", "ApiSpec"]);
-
+// stay open forever. Take the machine's terminal review edge instead.
+//
+// That fix originally reached only the READY_FOR_REVIEW branch, and the normal
+// flow races straight past it: `request_review` drives DRAFT ->
+// READY_FOR_REVIEW -> UNDER_REVIEW before any reviewer answers, so by decision
+// time the artifact is always in the other branch. There a hardcoded whitelist
+// dropped every type but three on the floor. The verdict was recorded and the
+// reviewer's pending cleared, but the artifact never moved -- and it could not
+// be reopened either, because nothing had been closed. It just sat in
+// UNDER_REVIEW looking busy, which no stall check is built to notice.
+//
+// The whitelist was never guarding a machine invariant: every machine that has
+// an UNDER_REVIEW state already declares UNDER_REVIEW -> APPROVED legal (`code`
+// and `document` both; `release` has no such state), so assertArtifactTransition
+// would have admitted each of these. Ask the machine, not a type list.
 function approvalPath(type: ArtifactType, status: ArtifactStatus): ArtifactStatus[] {
-  if (status === "UNDER_REVIEW") return APPROVABLE_TYPES.has(type) ? ["APPROVED"] : [];
-  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)]["READY_FOR_REVIEW"] ?? [];
+  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)][status] ?? [];
   if (allowed.includes("APPROVED")) return ["APPROVED"];
   if (allowed.includes("FINAL")) return ["FINAL"];
   return [];
