@@ -1253,7 +1253,20 @@ export interface AgentRuntime {
   stream?(session: AgentSession, input: AgentInput): AsyncIterable<AgentEvent>;
   interrupt(session: AgentSession): Promise<void>;
   suspend(session: AgentSession): Promise<void>;
-  resume(session: AgentSession): Promise<void>;
+  /**
+   * Bring a suspended session back.
+   *
+   * Carries the definition and context because a runtime that tore its backend
+   * down on `suspend` needs both to rebuild: the session struct names the
+   * transcript but not how to reopen it. Without them an adapter can only flip
+   * a status field and hope the next turn repairs things.
+   *
+   * Returns the live session — whose handle may differ from the one passed in,
+   * since rebuilding can mint a new one — or null when the backend could not be
+   * reached, which tells the caller to drop its cached session rather than keep
+   * a struct pointing at a query nobody is running.
+   */
+  resume(session: AgentSession, agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession | null>;
   stop(session: AgentSession): Promise<void>;
   getStatus(session: AgentSession): Promise<AgentRuntimeStatus>;
   restoreSession?(agent: AgentDefinition, sessionId: string, context: RuntimeContext): Promise<AgentSession | null>;

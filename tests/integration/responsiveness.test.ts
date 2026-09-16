@@ -42,7 +42,7 @@ test("http runtime: control-plane calls fail fast against a hanging backend", as
   assert.ok(Date.now() - t0 < 5000, `getStatus hung ${Date.now() - t0}ms`);
 
   t0 = Date.now();
-  await Promise.all([adapter.interrupt(session), adapter.suspend(session), adapter.resume(session), adapter.stop(session)]);
+  await Promise.all([adapter.interrupt(session), adapter.suspend(session), adapter.resume(session, agent, ctx), adapter.stop(session)]);
   assert.ok(Date.now() - t0 < 5000, `control calls hung ${Date.now() - t0}ms`);
 });
 

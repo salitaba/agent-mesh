@@ -228,7 +228,9 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     },
     async interrupt() {},
     async suspend() {},
-    async resume() {},
+    async resume(): Promise<null> {
+      return null;
+    },
     async stop() {},
     async getStatus() {
       return "STOPPED" as const;

@@ -328,6 +328,49 @@ test("restoreSession still tolerates a resume that stays quiet", async () => {
   }
 });
 
+test("resume rebuilds the query that suspend tore down", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const adapter = new ClaudeRuntimeAdapter({ queryFn: parkedQuery(), spawnFailureGraceMs: 25 });
+    const started = await adapter.start(devDef, runtimeCtx(dir));
+    await adapter.suspend(started);
+    assert.equal(await adapter.getStatus(started), "SUSPENDED");
+
+    const revived = await adapter.resume(started, devDef, runtimeCtx(dir));
+    // The session id is the transcript's name, so a rebuild that changed it
+    // would silently strand every turn of history the agent had accumulated.
+    assert.ok(revived, "resume must hand back a live session, not just a status");
+    assert.equal(revived.sessionId, started.sessionId);
+    assert.equal(await adapter.getStatus(started), "IDLE");
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resume reports null when the backend cannot be rebuilt", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const adapter = new ClaudeRuntimeAdapter({
+      executablePath: path.join(dir, "no-such-claude"),
+      spawnFailureGraceMs: 1000,
+    });
+    const orphan: AgentSession = {
+      sessionId: "11111111-2222-3333-4444-555555555555",
+      agentId: devDef.id,
+      runtime: "claude",
+      createdAt: new Date().toISOString(),
+      handle: null,
+    };
+    // The old resume flipped this to IDLE and returned, so a seat whose
+    // backend had gone away looked ready right up until its next turn died.
+    assert.equal(await adapter.resume(orphan, devDef, runtimeCtx(dir)), null);
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a turn answered by total silence fails fast instead of riding the turn timeout", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
   try {

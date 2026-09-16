@@ -1676,9 +1676,19 @@ export class Supervisor {
   }
 
   async resumeAgent(agentId: string): Promise<void> {
-    if (this.state.agents.get(agentId)?.state.lifecycle === "RETIRED") return;
+    const rec = this.state.agents.get(agentId);
+    if (rec?.state.lifecycle === "RETIRED") return;
     const sess = this.sessions.get(agentId);
-    if (sess) await sess.runtime.resume(sess.session).catch(() => undefined);
+    if (sess && rec) {
+      const context = await this.buildRuntimeContext(agentId);
+      const revived = await sess.runtime.resume(sess.session, rec.definition, context).catch(() => null);
+      // A resume that could not reach the backend leaves us holding a session
+      // struct for a query nobody is running. Dropping it sends the next turn
+      // through ensureSession, which restores from the transcript or starts
+      // fresh — the same path a crashed backend already takes.
+      if (revived) this.sessions.set(agentId, { ...sess, session: revived });
+      else this.sessions.delete(agentId);
+    }
     await this.deps.kernel.emit("agent.resumed", { agentId }, { actorId: HUMAN_AGENT_ID });
   }
 

@@ -134,9 +134,19 @@ export class HttpRuntimeAdapter implements AgentRuntime {
     this.statuses.set(session.agentId, "SUSPENDED");
   }
 
-  async resume(session: AgentSession): Promise<void> {
-    await this.call("POST", `/sessions/${session.sessionId}/resume`, undefined, this.controlTimeoutMs).catch(() => undefined);
+  /**
+   * The remote owns the session, so there is nothing local to rebuild: the
+   * definition and context go unused here. A failed call returns null rather
+   * than swallowing the error, so the caller stops trusting the cached session.
+   */
+  async resume(session: AgentSession, _agent: AgentDefinition, _context: RuntimeContext): Promise<AgentSession | null> {
+    let reached = true;
+    await this.call<void>("POST", `/sessions/${session.sessionId}/resume`, undefined, this.controlTimeoutMs).catch(() => {
+      reached = false;
+    });
+    if (!reached) return null;
     this.statuses.set(session.agentId, "IDLE");
+    return session;
   }
 
   async stop(session: AgentSession): Promise<void> {

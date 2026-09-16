@@ -562,12 +562,19 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     this.statuses.set(session.agentId, "SUSPENDED");
   }
 
-  async resume(session: AgentSession): Promise<void> {
-    // Deliberately a no-op beyond the status flip: rebuilding the query needs
-    // the AgentDefinition and RuntimeContext, which this signature does not
-    // carry. The supervisor calls restoreSession for that, and `send` fails
-    // loudly with BackendUnreachableError if it did not.
-    this.statuses.set(session.agentId, "IDLE");
+  /**
+   * Rebuild what `suspend` tore down. The transcript is durable in Claude's
+   * session store, so resuming is `restoreSession` under another name — and
+   * delegating keeps one implementation of "reopen a known session id" instead
+   * of two that drift.
+   */
+  async resume(session: AgentSession, agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession | null> {
+    const live = this.live.get(session.sessionId);
+    if (live && !live.closed) {
+      this.statuses.set(session.agentId, "IDLE");
+      return session;
+    }
+    return this.restoreSession(agent, session.sessionId, context);
   }
 
   async stop(session: AgentSession): Promise<void> {

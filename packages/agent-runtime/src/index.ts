@@ -156,8 +156,9 @@ export class StubRuntime implements AgentRuntime {
     this.statuses.set(session.agentId, "SUSPENDED");
   }
 
-  async resume(session: AgentSession): Promise<void> {
+  async resume(session: AgentSession, _agent: AgentDefinition, _context: RuntimeContext): Promise<AgentSession | null> {
     this.statuses.set(session.agentId, "IDLE");
+    return session;
   }
 
   async stop(session: AgentSession): Promise<void> {
