@@ -273,11 +273,12 @@ Re-verify this section before implementing; it was uncommitted at survey time.
    deprecate-plus-remove-the-affordance; `TriageModel` is an embedder extension
    seam and is left alone. **Decided AND shipped (session 10)** — all nine
    implementation items done, 1217/1217. See the step-6 "Shipped" subsection.
-8. **`scheduling.activation.max_activation_delay_ms` is inert too** — found in
-   session 10, same block, same grade 3, also editable in the Designer
-   (`MeshPanel.tsx:183-185`), zero readers. Deliberately left out of session 10's
-   approved scope. Cheapest job on the board now: the decision and the precedent
-   both already exist. **Next.**
+8. ~~**`scheduling.activation.max_activation_delay_ms` is inert too** — same
+   block, same grade 3, also editable in the Designer, zero readers.~~
+   **Done (session 10, second change)** — `<Num>` deleted, warning widened to
+   `warnInertActivationKeys`, resolved field removed, designer stops seeding the
+   block. `scheduling.activation` now has no readers at all. See the second
+   "Shipped" subsection.
 7. Merge `resolved.warnings` into the `/config/validate` response. Verified in
    session 10: the route never forwards them, so five config warnings have no UI
    at all, though the Designer already renders whatever it is sent. Own session —
@@ -687,3 +688,52 @@ So `scheduling.activation` contained *two* inert operator-facing keys and now
 contains one. Worth asking whether the block should exist at all: if the delay
 key goes the same way, `activation` holds nothing that is read, and the Designer
 has no reason to seed it — which would simplify `model.ts` back down.
+
+### Shipped (session 10, second change) — `max_activation_delay_ms`, and the block is now wholly inert
+
+Done immediately after the above, on an explicit re-grant. 1220/1220, both
+typechecks `ok`, 0 lint errors in the touched set.
+
+- `<Num label="max activation delay (ms)">` **deleted** from `MeshPanel.tsx`,
+  replaced by a comment. Second grade-3 affordance gone.
+- `warnInertStrategy` widened to **`warnInertActivationKeys(activation,
+  triageMode)`**, returning **one sentence per key** — deliberately not merged,
+  because the remedies differ (see copy note below).
+- Resolved `maxActivationDelayMs` deleted — type and resolver write. Zero
+  readers, verified by grep across `packages apps tests`.
+- **The designer no longer seeds `scheduling.activation` at all** (`model.ts`,
+  both sites). This answers the question left open above: with neither key
+  readable or editable, seeding the block would write an empty `activation: {}`
+  into every saved mesh.yaml for nobody.
+- `tests/config/inert-strategy.test.ts` → **`inert-activation.test.ts`** (git mv,
+  the subject is the block now), 4 tests → 7.
+
+**Nothing to strip from examples or fixtures:** `max_activation_delay_ms` was
+set in no YAML anywhere — only the declaration and the resolver. Smaller job
+than `strategy` for that reason.
+
+**KEPT, same argument as before:** the raw type (`:126`) and both JSON schemas
+still carry both properties. `additionalProperties: false` makes removal a hard
+validation failure for any config that sets them.
+
+### Copy — the FIFTH item-3 sentence, and the first with no substitute to offer
+
+The register now has five, and this one splits the "config-time" genre in two:
+
+> `scheduling.activation.max_activation_delay_ms` is set to `250` but inert — no
+> code reads it, so activations always fire immediately and no other key delays
+> them. Remove it
+
+`strategy`'s remedy is **"use this other key"**; this one is **"there is nothing
+to use"**, because the behaviour was never implemented. A merged warning would
+have had to drop one of those, which is why the function emits two sentences.
+`inert-activation.test.ts` pins the distinction both ways — the delay warning
+asserts `doesNotMatch(/triage\.mode/)`, so a future edit cannot quietly offer a
+substitute that does not exist.
+
+### `scheduling.activation` — now empty of readers entirely
+
+Both keys it ever held are inert. The block survives only as accepted-and-warned
+legacy surface. If a future change is willing to take the schema break, the
+whole block can go; until then nothing should be *added* to it, and nothing
+reads it.

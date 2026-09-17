@@ -297,7 +297,6 @@ export interface ResolvedMeshConfig {
   };
   scheduling: {
     mode: "event-driven";
-    maxActivationDelayMs: number;
     triageMode: "off" | "heuristic";
     triageRules: Array<{
       agent: string;
@@ -544,7 +543,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const w of warnUngrantedApprovalGates(Object.values(agents))) {
     configWarnings.push(w);
   }
-  for (const w of warnInertStrategy(raw.scheduling?.activation?.strategy, raw.scheduling?.triage?.mode)) {
+  for (const w of warnInertActivationKeys(raw.scheduling?.activation, raw.scheduling?.triage?.mode)) {
     configWarnings.push(w);
   }
 
@@ -607,7 +606,6 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     },
     scheduling: {
       mode: "event-driven",
-      maxActivationDelayMs: raw.scheduling?.activation?.max_activation_delay_ms ?? 0,
       triageMode: raw.scheduling?.triage?.mode ?? "off",
       triageRules: (raw.scheduling?.triage?.rules ?? []).map((r) => ({
         agent: r.agent,
@@ -984,27 +982,46 @@ export function warnInertVariant(agents: AgentDefinition[], defaultVariant: stri
 }
 
 /**
- * `scheduling.activation.strategy` is declared, defaulted and in the JSON
- * schema, and is read by nothing. Whether the router pass runs is decided by
- * `scheduling.triage.mode` alone — see `triage()` in the scheduler.
+ * Every key under `scheduling.activation` is declared, defaulted and in the
+ * JSON schema — and read by nothing. The whole block is inert:
+ *
+ * - `strategy` — whether the router pass runs is decided by
+ *   `scheduling.triage.mode` alone. See `triage()` in the scheduler.
+ * - `max_activation_delay_ms` — activations are never delayed, whatever it
+ *   says. Unlike `strategy` there is no other key to redirect to, because the
+ *   behaviour it names was never implemented.
  *
  * Warned rather than rejected, and rather than dropped from the schema: the
- * activation block is `additionalProperties: false`, so removing the property
- * would turn every config `mesh init` has ever written into a hard validation
- * failure. Wiring it instead would be worse still — two keys for one behaviour,
- * and every config pinning the default would silently lose its triage rules.
+ * activation block is `additionalProperties: false`, so removing a property
+ * would turn every config that sets it — including everything `mesh init` has
+ * ever written — into a hard validation failure. Wiring `strategy` instead
+ * would be worse still: two keys for one behaviour, and every config pinning
+ * the default would silently lose its triage rules.
  *
- * Accepting it in silence is the one option refused. The operator who sets a
- * switch is owed the news that it does nothing; that is the whole point.
+ * Accepting them in silence is the one option refused. The operator who sets a
+ * switch is owed the news that it does nothing; that is the whole point. Each
+ * key gets its own sentence because each has its own remedy — one says "use
+ * this other key", the other says "there is nothing to use".
  *
- * Fires only when the key is explicitly present — a default carries no claim,
- * and `mesh init` no longer writes one.
+ * Fires only on keys explicitly present. A default carries no claim, neither
+ * key is editable in the designer any more, and `mesh init` writes neither.
  */
-export function warnInertStrategy(strategy: string | undefined, triageMode: string | undefined): string[] {
-  if (strategy === undefined) return [];
-  return [
-    `scheduling.activation.strategy is set to '${strategy}' but inert — no code reads it, and whether the router pass runs is decided by scheduling.triage.mode alone (currently '${triageMode ?? "off"}'). Remove the key; set triage.mode: heuristic if you want the router pass`,
-  ];
+export function warnInertActivationKeys(
+  activation: { strategy?: string; max_activation_delay_ms?: number } | undefined,
+  triageMode: string | undefined,
+): string[] {
+  const warnings: string[] = [];
+  if (activation?.strategy !== undefined) {
+    warnings.push(
+      `scheduling.activation.strategy is set to '${activation.strategy}' but inert — no code reads it, and whether the router pass runs is decided by scheduling.triage.mode alone (currently '${triageMode ?? "off"}'). Remove the key; set triage.mode: heuristic if you want the router pass`,
+    );
+  }
+  if (activation?.max_activation_delay_ms !== undefined) {
+    warnings.push(
+      `scheduling.activation.max_activation_delay_ms is set to ${activation.max_activation_delay_ms} but inert — no code reads it, so activations always fire immediately and no other key delays them. Remove it`,
+    );
+  }
+  return warnings;
 }
 
 /**

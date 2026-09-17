@@ -183,11 +183,16 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
           touch();
         }} hint="peers + services" />
       </div>
-      <Num label="max activation delay (ms)" value={m.scheduling?.activation?.max_activation_delay_ms} span onSet={(v) => {
-        m.scheduling.activation ||= {};
-        if (v === null) delete m.scheduling.activation.max_activation_delay_ms; else m.scheduling.activation.max_activation_delay_ms = v;
-        touch();
-      }} hint="0 = instant" />
+      {/*
+        A "max activation delay (ms)" number lived here, bound to
+        `scheduling.activation.max_activation_delay_ms`. Also read by nothing:
+        activations were never delayed, whatever it said. Unlike the strategy
+        select there is no other key to point at — the behaviour it named was
+        never implemented — so the config warning says to remove it outright.
+
+        With both gone, `scheduling.activation` has no editor and no reader, so
+        the designer stops seeding the block at all (see model.ts).
+      */}
 
       <div className="ms-h">Triage — the cheap pre-filter before waking peers</div>
       <Field label="triage mode">

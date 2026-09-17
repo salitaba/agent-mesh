@@ -137,10 +137,9 @@ export function densure(m: any): void {
   m.budgets.task ||= { tokens: 100000 };
   m.scheduling ||= {};
   m.scheduling.mode ||= "event-driven";
-  // `activation` is seeded empty, not with a strategy: nothing reads that key
-  // (see warnInertStrategy). The object stays because the panel still edits
-  // `max_activation_delay_ms` under it.
-  m.scheduling.activation ||= {};
+  // No `activation` seeding: both keys it ever held (`strategy`,
+  // `max_activation_delay_ms`) are inert and no longer editable, so seeding it
+  // would write an empty block into every saved mesh.yaml for nobody.
   m.scheduling.triage ||= { mode: "off" };
   m.scheduling.triage.rules ||= [];
   m.scheduling.concurrency ||= { max_active_agents: 4 };
@@ -170,7 +169,7 @@ function baseMesh(id: string, name: string, goal: string, runtime: string): any 
     agents: {},
     policies: { communication: {}, transitions: {}, escalation: { thread: { max_depth: 8 }, repeated_conflict: { threshold: 3 }, artifact_review_rounds: { max: 5 } } },
     budgets: { mission: { tokens: 2000000, wall_clock_minutes: 240, max_events: 10000 }, agent: {}, thread: { tokens: 50000 }, task: { tokens: 100000 } },
-    scheduling: { mode: "event-driven", activation: {}, triage: { mode: "off", rules: [] }, concurrency: { max_active_agents: 4 }, timeouts: {} },
+    scheduling: { mode: "event-driven", triage: { mode: "off", rules: [] }, concurrency: { max_active_agents: 4 }, timeouts: {} },
     server: { port: 7420 },
   };
 }
