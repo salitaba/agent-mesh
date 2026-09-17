@@ -1236,6 +1236,19 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const tool = typeof b.tool === "string" ? b.tool.trim() : "";
         if (!agentId || !tool) return json(400, { ok: false, reason: "provide `agentId` and `tool`" });
         const revoke = b.revoke === true;
+        // A grant on a seat that gates nothing is recorded and then never
+        // consulted by anything, so a 200 here tells an operator they unlocked
+        // a tool when they did not. 404 would be the opposite lie — the seat is
+        // right there in the roster — so an ungated seat is refused with 409,
+        // the code this host already uses for "exists, but not in a state where
+        // what you asked for means anything".
+        if (!revoke) {
+          const seat = instance.config.agents[agentId];
+          if (!seat) return json(404, { ok: false, reason: `unknown agent '${agentId}'` });
+          if ((seat.requiresApproval?.length ?? 0) === 0) {
+            return json(409, { ok: false, reason: `'${agentId}' gates no tools — it sets no \`requires_approval\`` });
+          }
+        }
         const ok = revoke ? supervisor.revokeToolApproval(agentId, tool) : supervisor.grantToolApproval(agentId, tool);
         if (!ok) {
           return json(404, {

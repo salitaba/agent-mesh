@@ -155,12 +155,13 @@ test("tool approvals: GET lists gated seats only", async () => {
     const seats = (await h.list()).json.seats;
     assert.deepEqual(seats.map((s) => s.agentId), ["dev"]);
 
-    // An ungated seat is a known agent, so the grant is accepted — but it has
-    // nothing to unlock and never surfaces in the listing. Recorded here as the
-    // behaviour it is: the route validates existence, not gatedness.
+    // An ungated seat exists, so this is not a 404 — but it gates nothing, so a
+    // grant on it would be recorded and then never consulted. 409 rather than a
+    // 200 that would report unlocking a tool that was never locked.
     const r = await h.post({ agentId: "reviewer", tool: "Edit" });
-    assert.equal(r.status, 200);
-    assert.equal(r.json.granted, true);
+    assert.equal(r.status, 409);
+    assert.match(r.json.reason ?? "", /requires_approval/);
+    // ...and it leaves no residue behind it.
     assert.deepEqual((await h.list()).json.seats.map((s) => s.agentId), ["dev"]);
   } finally {
     await h.close();

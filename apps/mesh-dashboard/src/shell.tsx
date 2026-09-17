@@ -36,7 +36,16 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
 // order exactly — Events moving up to 2 costs some muscle memory, but a sidebar
 // numbered 1, 5, 2, 3, 4 costs more.
 const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "gates", "graph", "artifacts", "product", "cost", "designer"];
-const viewKey = (v: View): string => String(KEY_VIEWS.indexOf(v) + 1);
+/**
+ * Only the first nine positions have a key an operator can actually press: the
+ * keydown handler matches a single `ev.key`, so position ten would have to be
+ * typed "1" then "0" and never fires. Past nine the hint is omitted rather than
+ * printed as a digit that does nothing.
+ */
+const viewKey = (v: View): string => {
+  const i = KEY_VIEWS.indexOf(v);
+  return i >= 0 && i < 9 ? String(i + 1) : "";
+};
 
 // Mirrors the `@media (max-width: 800px)` rule in styles.css that turns the
 // sidebar into an off-canvas drawer. Below it the sidebar is translated out of
@@ -370,7 +379,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       }
       return;
     }
-    const map: Record<string, View> = Object.fromEntries(KEY_VIEWS.map((v, i) => [String(i + 1), v]));
+    // Mirrors `viewKey`: only the reachable nine, so the table cannot claim a
+    // binding for a key this handler can never be handed.
+    const map: Record<string, View> = Object.fromEntries(KEY_VIEWS.slice(0, 9).map((v, i) => [String(i + 1), v]));
     if (map[ev.key]) return setView(map[ev.key]);
     // Esc unwinds exactly one layer. A modal panel is innermost and claims it
     // in the guard above; below that the order is the non-modal event pane,
@@ -626,7 +637,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               <button key={n.view} data-view={n.view} className={`tab${view === n.view ? " active" : ""}`} aria-current={view === n.view ? "page" : undefined} title={n.title} onClick={() => { setView(n.view as View); closeMenu(); }}>
                 <i>{n.icon}</i>{n.label}
                 {n.view === "escalations" && escOpen ? <em className="kbd esc-kbd" id="esc-badge" title={`${escOpen} open decisions`}>{escOpen}</em> : null}
-                <em className="kbd">{viewKey(n.view as View)}</em>
+                {viewKey(n.view as View) ? <em className="kbd">{viewKey(n.view as View)}</em> : null}
               </button>
             ),
           )}
