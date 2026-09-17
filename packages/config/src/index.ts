@@ -186,7 +186,9 @@ export interface RawAgent {
   model?: string;
   /**
    * Provider-specific thinking variant (opencode: `low` | `high` | `max`).
-   * Overrides `mesh.runtime.variant`; blank inherits it.
+   * Inert: that backend was removed, no registered runtime reads this, and the
+   * mesh-wide `mesh.runtime.variant` never inherited onto it. Setting it is
+   * surfaced as a config warning rather than silently ignored.
    */
   variant?: string;
   mode?: "peer" | "service";
@@ -246,7 +248,11 @@ export interface ResolvedMeshConfig {
   defaultRuntime: string;
   /** Mesh-wide model applied to agents that leave `model` blank. */
   defaultModel?: string;
-  /** Mesh-wide thinking variant applied to agents that leave `variant` blank. */
+  /**
+   * Mesh-wide thinking variant, held for a runtime that reads it. Nothing does
+   * today: it was the opencode knob, and it never inherited onto seats that
+   * leave `variant` blank. Setting it is surfaced as a config warning.
+   */
   defaultVariant?: string;
   startupActivate: string[];
   /**
@@ -520,6 +526,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     configWarnings.push(w);
   }
   for (const w of warnUnreachableAgents(Object.values(agents))) {
+    configWarnings.push(w);
+  }
+  for (const w of warnInertVariant(Object.values(agents), defaultVariant)) {
     configWarnings.push(w);
   }
 
@@ -931,6 +940,35 @@ export function warnUnreachableAgents(agents: AgentDefinition[]): string[] {
 }
 
 /**
+ * A knob no surviving runtime reads.
+ *
+ * `variant` was the opencode runtime's thinking knob (`low` | `high` | `max`).
+ * That backend was removed and nothing took the field over, so no registered
+ * runtime reads it. The mesh-wide key does not inherit either: a seat that
+ * leaves `variant` blank gains nothing from `mesh.runtime.variant`, which is
+ * stored and ignored, while `mesh.runtime.model` genuinely does inherit onto
+ * seats. So a mesh.yaml setting either one is asking for something nothing
+ * will do.
+ *
+ * Reported rather than removed. The key is schema'd at both levels and sits on
+ * `AgentDefinition`, which is persisted in `agent.registered` events, so
+ * deleting it would be a protocol change for no runtime benefit. A warning
+ * rather than an error because it is inert, not broken.
+ */
+export function warnInertVariant(agents: AgentDefinition[], defaultVariant: string | undefined): string[] {
+  const paths = [
+    ...(defaultVariant ? ["mesh.runtime.variant"] : []),
+    ...agents
+      .filter((a) => typeof a.variant === "string" && a.variant.trim().length > 0)
+      .map((a) => `agents.${a.id}.variant`),
+  ];
+  if (paths.length === 0) return [];
+  return [
+    `${paths.join(", ")} ${paths.length === 1 ? "is" : "are"} set but inert — 'variant' was the opencode runtime's thinking knob, that backend was removed, and no registered runtime reads the field. Remove the key, or leave it for a runtime that consumes it`,
+  ];
+}
+
+/**
  * A transition gate names the approvals a state change requires, as
  * `<actorRole|actorId>.<kind>` (e.g. `tech-lead.approve`, `qa.pass`). If no
  * configured agent can ever produce one of those approvals, the gate is
@@ -998,7 +1036,7 @@ export function defaultEventEnvelopeBase(goalId: string): Pick<MeshEvent, "goalI
 export function writeDefaultMeshYaml(
   targetDir: string,
   meshId: string,
-  defaultRuntime: string = "opencode",
+  defaultRuntime: string = "claude",
   opts: { projectId?: string } = {},
 ): string {
   const target = path.join(targetDir, "mesh.yaml");

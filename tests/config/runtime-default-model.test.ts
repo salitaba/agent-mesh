@@ -71,3 +71,47 @@ agents:
   assert.equal(cfg.agents.a?.variant, "low");
   assert.equal(cfg.defaultVariant, "max");
 });
+
+test("a configured variant is reported inert, since no runtime reads it", () => {
+  const cfg = resolveRaw(meshWith("runtime: { default: claude, variant: max }"));
+  const inert = cfg.warnings.filter((w) => /inert/.test(w));
+  assert.equal(inert.length, 1);
+  assert.match(inert[0], /^mesh\.runtime\.variant is set but inert/);
+});
+
+test("an agent-level variant is reported inert and names the seat", () => {
+  const cfg = resolveRaw(`version: 1
+mesh:
+  id: cfgtest
+  goal: |
+    Test.
+  workspace: { path: ./workspace }
+  runtime: { default: claude }
+agents:
+  a: { role: worker, variant: low }
+`);
+  const inert = cfg.warnings.filter((w) => /inert/.test(w));
+  assert.equal(inert.length, 1);
+  assert.match(inert[0], /^agents\.a\.variant is set but inert/);
+});
+
+test("both levels set produces one warning naming both paths", () => {
+  const cfg = resolveRaw(`version: 1
+mesh:
+  id: cfgtest
+  goal: |
+    Test.
+  workspace: { path: ./workspace }
+  runtime: { default: claude, variant: max }
+agents:
+  a: { role: worker, variant: low }
+`);
+  const inert = cfg.warnings.filter((w) => /inert/.test(w));
+  assert.equal(inert.length, 1);
+  assert.match(inert[0], /^mesh\.runtime\.variant, agents\.a\.variant are set but inert/);
+});
+
+test("no variant configured draws no inert warning", () => {
+  const cfg = resolveRaw(meshWith("runtime: { default: stub }"));
+  assert.equal(cfg.warnings.filter((w) => /inert/.test(w)).length, 0);
+});

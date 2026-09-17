@@ -473,7 +473,10 @@ export interface AgentDefinition {
   mode: AgentMode;
   runtime: RuntimeTypeName;
   model?: string;
-  /** Provider-specific reasoning variant (opencode: `low` | `high` | `max`). */
+  /**
+   * Provider-specific reasoning variant (opencode: `low` | `high` | `max`).
+   * Inert since that backend was removed — no registered runtime reads it.
+   */
   variant?: string;
   prompt: PromptReference;
   capabilities: string[];

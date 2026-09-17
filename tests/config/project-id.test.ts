@@ -135,6 +135,19 @@ test("mesh init: scaffolds a project block with a slugged id", () => {
   assert.equal(resolved.projectIdDerived, false, "an init-generated file must not warn");
 });
 
+test("mesh init: the scaffold's own runtime default is one the loader still accepts", () => {
+  const dir = tmpDir("defaulted");
+  // Omitting the runtime must not scaffold the removed 'opencode' backend:
+  // the loader rejects that name outright, so the file would not load at all.
+  const file = writeDefaultMeshYaml(dir, path.basename(dir));
+  const text = fs.readFileSync(file, "utf8");
+  assert.doesNotMatch(text, /opencode/);
+  const raw = parseMeshSource(text);
+  assert.ok(validateMeshConfig(raw).valid, "the generated file must satisfy the schema");
+  const { resolved } = analyzeMeshConfig(raw, dir);
+  assert.equal(resolved.defaultRuntime, "claude");
+});
+
 test("mesh init: an explicit projectId overrides the folder-derived one", () => {
   const dir = tmpDir("whatever");
   const file = writeDefaultMeshYaml(dir, "whatever", "stub", { projectId: "payment-api" });
