@@ -5,6 +5,7 @@ import {
   digestOf,
   ARTIFACT_TYPES,
   INITIAL_ARTIFACT_STATUS,
+  MACHINE_TRANSITIONS,
   artifactMachineOf,
   validateMessage,
   validateArtifact,
@@ -1776,7 +1777,17 @@ export class Supervisor {
         // carried the predecessor's scope, and dropping it on every version
         // would quietly reset a deliberate choice back to the type default.
         ...(scope ? { scope } : {}),
-        status: input.status === "DRAFT" || input.status === undefined || input.status === "PROPOSED" ? initial : current.status,
+        // A version is new content — `contentRef` and `digest` are cleared just
+        // below — so it must not carry the predecessor's verdict. Inheriting
+        // `current.status` handed v3 of a CodePatch an APPROVED no reviewer ever
+        // granted, and the code machine leaves APPROVED only for VERIFIED, so no
+        // seat could undo it. Start at the machine's initial status and honour a
+        // requested one only where the machine allows that step from there —
+        // the same latitude a first publish gets.
+        status:
+          input.status && (MACHINE_TRANSITIONS[machine][initial] ?? []).includes(input.status)
+            ? input.status
+            : initial,
         contentRef: "",
         digest: "",
         metadata: { ...(current.metadata ?? {}), ...(input.metadata ?? {}) },
