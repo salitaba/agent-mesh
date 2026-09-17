@@ -85,8 +85,8 @@ open-close-restart-delete only. Feasibility, checked against the source:
    setter, and the next heartbeat tick sees the new number. Plus a new
    `GET`/`PUT /api/host/config` route.
 
-2. **`ceilingTripped` is a one-way latch, and Tier 3 is what turns that into a
-   bug.** Declared `false` (`:352`), set `true` (`:450`), and there is **no third
+2. **DONE (`8fe8eb5`). `ceilingTripped` was a one-way latch, and Tier 3 is what
+   turns that into a bug.** Declared `false` (`:352`), set `true` (`:450`), and there is **no third
    assignment in the codebase** — the fall-through path (`:456-469`) never clears
    it. Today that is harmless: spend is monotonic, so once
    `totals.usd >= ceiling` the `:449` condition stays true on every tick and the
@@ -110,9 +110,31 @@ Keys: `spend_ceiling_usd` (live, once the latch is fixed), `max_concurrent_turns
 *indirectly* — a mispriced model trips the ceiling early (`host.ts:362` feeds the
 `:449` check) and parks everything.
 
-**The shipped banner is right by luck.** It tells the operator to restart the
-host, and a restart is in fact the only thing that currently clears the latch.
-Do not soften that copy until item 2 is done.
+**The shipped banner's copy is now on borrowed time.** It tells the operator to
+restart the host (`views/Overview.tsx:222`, which even cites `host.ts:902` by
+line). That was right by luck while a restart was the only thing that cleared
+the latch. Item 2 is done, so today it is merely unnecessary advice — but the
+moment `PUT /api/host/config` lands it becomes actively wrong, and it has to
+change in that same commit.
+
+**A second latch, not in the original survey: `parkedByPolicy`.** Declared
+`host.ts:351`, pushed at `:421`, read onto the wire at `:385`, and **never
+removed** — the same shape as `ceilingTripped`, dormant for the same reason (a
+resumed project is re-parked on the next tick while `:449` still holds).
+Invisible today because `parked` renders only *inside* the ceiling banner
+(`Overview.tsx:222`), so fixing `ceilingTripped` concealed it rather than fixed
+it. It cannot be cleared wholesale on the fall-through: the list also holds
+projects parked by the **turn cap**, and the `:463-468` loop skips those once
+they are idle (`runningTurns === 0`), so a blanket clear would silently drop
+still-parked ids. It needs a reason tag per entry, or a `parked` derived from
+child state — and deriving means a protocol change, because the heartbeat
+carries no mode/parked field (`packages/projects/src/supervisor.ts:60-74`).
+
+**Correction to this brief: `tests/` does already drive the flag.**
+`tests/server/host-resources.test.ts:171` asserts `ceilingTripped === true` and
+`:177` the parked list, against a real stub child emitting real beats. The gap
+was only the *clearing* half, which `8fe8eb5` adds. Anything further here
+extends that file; it does not need a new harness.
 
 ### Out of scope — not configurable without a code change
 
