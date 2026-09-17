@@ -193,8 +193,18 @@ export default function Overview(): React.JSX.Element {
         <div className="status-strip ok" style={{ marginBottom: 12 }}><MeshMark /><div><b>Done — all mandatory checks passed.</b> <span className="muted">Here's what the mission shipped.</span> <Button variant="banner-act" onClick={doReplay}>replay</Button></div></div>
       ) : goal.status === "FAILED" ? (
         <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Failed.</b></div></div>
-      ) : active.length === 0 && waiting.length === 0 && goal.status === "ACTIVE" ? (
-        <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>All quiet. Wake an agent or send a message to get going.</div></div>
+      ) : !parked && active.length === 0 && runningSteps.length === 0 && goal.status === "ACTIVE" ? (
+        // One neutral-grey "All quiet" used to cover this, and only when nothing
+        // was WAITING either — so the state an operator actually gets stuck in
+        // (scheduler live, no seat ever queued, because startup activation was
+        // empty or refused at boot) rendered as a routine lull, or, with anyone
+        // waiting, as no banner at all. A live mission with nobody working is
+        // never routine: say which of the two it is and what unblocks it.
+        waiting.length === 0 ? (
+          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Live, but no agent is working.</b> <span className="muted">The scheduler is running with nothing queued behind it — usually startup agents that were never configured, or that were refused at boot. Wake an agent to get going.</span></div></div>
+        ) : (
+          <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div><b>All quiet.</b> <span className="muted">{waiting.length} agent{waiting.length > 1 ? "s" : ""} waiting, none working right now. Wake one or send a message to get going.</span></div></div>
+        )
       ) : null}
       <Delivered goal={goal} arts={goalArts} artsLoaded={artsLoaded} artsErr={artsErr} onRetryArts={() => setArtsAttempt((n) => n + 1)} openArt={openArt} />
       <div className="grid kpis">
