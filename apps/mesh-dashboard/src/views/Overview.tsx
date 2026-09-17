@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fmt, goalTone, plainGoal, plainArtifact, artifactCls, shortUri, dur, RUNNING, mandatoryProgress } from "../format";
-import { useMesh } from "../store";
+import { useMesh, type TimelineEvent } from "../store";
 import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
 import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
@@ -15,6 +15,33 @@ export function MeshMark(): React.JSX.Element {
 }
 
 const SHIP_STATES = new Set(["MERGED", "APPROVED", "VERIFIED", "MERGEABLE", "FINAL", "ACCEPTED", "QA_VERIFIED", "SECURITY_VERIFIED", "UNDER_REVIEW"]);
+
+/**
+ * Policy blocks that are still standing, newest first.
+ *
+ * `message.rejected` has carried the policy's own sentence all along —
+ * `max_activations 3 reached`, `thread budget exhausted (12/12)`, `transition
+ * 'x' requires a,b; missing: b` — and nothing has ever rendered it. Two rules
+ * keep this honest:
+ *
+ * - A refusal is reported once and re-reported only when its WORDING changes,
+ *   so the newest denial for an agent is its current reason. Age proves
+ *   nothing: a block that has stood quietly for ten minutes is still the
+ *   reason that agent is not working, which is why this does not time-window.
+ * - A block has lifted when the agent has done anything since. If the newest
+ *   event naming it as actor is still its denial, it never ran.
+ */
+function standingBlocks(events: TimelineEvent[]): TimelineEvent[] {
+  const newestByActor = new Map<string, TimelineEvent>();
+  for (const e of events) {
+    if (!e.actorId) continue;
+    const prev = newestByActor.get(e.actorId);
+    if (!prev || e.seq >= prev.seq) newestByActor.set(e.actorId, e);
+  }
+  return [...newestByActor.values()]
+    .filter((e) => e.type === "message.rejected" && e.payload?.denied)
+    .sort((a, b) => b.seq - a.seq);
+}
 
 /* strip scheme:// and everything before .mesh-state — the artifact's own path. */
 function shortRef(ref: unknown): string {
@@ -187,6 +214,8 @@ export default function Overview(): React.JSX.Element {
   // registry, so a null context means "no host that could have a ceiling".
   const hostSpend = useProjectsOptional()?.hostSpend ?? null;
   const ceilingHit = hostSpend?.ceilingTripped === true;
+  const blocks = standingBlocks(events);
+  const anyDeny = blocks.some((b) => b.payload?.decision === "DENY");
   const hasHistory = (steps?.length ?? 0) > 0 || (metrics?.metrics?.messages ?? 0) > 0 || (st.eventCount ?? 0) > 15;
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
@@ -225,6 +254,25 @@ export default function Overview(): React.JSX.Element {
         ) : (
           <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
         )
+      ) : null}
+      {!st.uiOnly && blocks.length > 0 ? (
+        // The policy engine has always written this sentence; the scheduler
+        // threw it away before anything could render it, so a seat refused by
+        // `max_activations` looked exactly like a seat with nothing to do.
+        // Additive rather than part of the chain below: "why is nothing
+        // happening" and "the mission is paused" are different questions and
+        // the operator can be owed both answers at once.
+        <div className={`status-strip ${anyDeny ? "bad" : "warn"}`} style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{blocks.length === 1 ? `${blocks[0].actorId} is not being woken.` : `${blocks.length} agents are not being woken.`}</b>{" "}
+          <span className="muted">
+            {blocks.slice(0, 3).map((b) => `${b.actorId} — ${String(b.payload?.reason || "refused by policy")}${b.payload?.ruleId ? ` (${b.payload.ruleId})` : ""}`).join("; ")}
+            {blocks.length > 3 ? `; and ${blocks.length - 3} more` : ""}.{" "}
+            {anyDeny
+              ? "Refused outright: these do not retry on their own, and waking one by hand is refused the same way — the named rule has to change before anything moves."
+              : "Deferred, not refused: each queues itself again the moment the budget or goal it is waiting on moves. Waking one by hand will not stick while the limit still binds — raise the limit instead."}
+          </span>{" "}
+          <Button variant="banner-act" onClick={() => setView("designer")}>Open designer</Button>
+        </div></div>
       ) : null}
       {needYou ? (
         <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>{escOpen.length} decision{escOpen.length > 1 ? "s" : ""} waiting on you — mission is paused.</b> <Button variant="banner-act" onClick={() => setView("escalations")}>Review now</Button></div></div>

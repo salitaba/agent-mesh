@@ -79,6 +79,11 @@ export interface SchedulerPort {
    */
   noteTurnOutcome?(agentId: string, outcome: TurnOutcome): void;
   /**
+   * The policy refusal still blocking this agent, so a caller can report the
+   * reason rather than infer one from a false. Optional for mocks.
+   */
+  lastActivationRefusal?(agentId: string): PolicyDecisionResult | undefined;
+  /**
    * Is this agent currently parked by the circuit breaker? The stall watchdog
    * asks so it never picks a parked agent as the mission driver — that agent
    * is by definition the one that cannot make progress. Optional for mocks.

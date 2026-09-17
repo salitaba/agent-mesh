@@ -1676,7 +1676,12 @@ export class Supervisor {
       explicit: opts.explicit ?? reason.kind === "manual",
     };
     const queued = await this.deps.scheduler.requestActivation(req);
-    return { queued, blocked: queued ? undefined : "already active, or deferred by budget/policy" };
+    if (queued) return { queued: true };
+    // "already active, or deferred by budget/policy" was the best this could do
+    // while the scheduler collapsed the policy's decision into a boolean. When
+    // the refusal came from policy the sentence already exists — use it.
+    const refusal = this.deps.scheduler.lastActivationRefusal?.(agentId);
+    return { queued: false, blocked: refusal?.reason ?? "already active, or deferred by budget/policy" };
   }
 
   async suspendAgent(agentId: string): Promise<void> {
@@ -2326,9 +2331,24 @@ export class Supervisor {
     const goalId = this.state.activeGoalId ?? undefined;
     await this.deps.kernel.emit(
       "message.rejected",
-      { from: actorId, action, subject: subjectId, reason: decision.reason, ruleId: decision.ruleId, denied: true },
+      // `decision` rides along because DENY and DEFER need different words to
+      // the operator: DEFER clears itself when the budget or the goal moves,
+      // DENY does not and waiting for it is the trap. Without this the only
+      // way to tell them apart was to re-derive policy knowledge in the UI.
+      { from: actorId, action, subject: subjectId, reason: decision.reason, ruleId: decision.ruleId, decision: decision.decision, denied: true },
       { actorId, goalId },
     );
+  }
+
+  /**
+   * TurnRunner hook: the scheduler refused an activation on policy grounds.
+   * Routes it to the same `message.rejected` the op path emits, so an
+   * activation-level block (`max-activations`, `thread-budget`, `goal-paused`,
+   * a transition gate) is visible in exactly the place an op-level one already
+   * is, instead of the agent going quiet with no record anywhere.
+   */
+  async reportActivationDenied(agentId: string, decision: PolicyDecisionResult, reason: ActivationReason): Promise<void> {
+    await this.denied(agentId, undefined, `activate (${reason.kind})`, decision);
   }
 
   async claimTask(actorId: string, taskId: string): Promise<{ ok: boolean; reason?: string }> {

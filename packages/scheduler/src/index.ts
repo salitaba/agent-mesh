@@ -1,4 +1,4 @@
-import type { ActivationReason, MeshEvent, EventType, LifecycleState } from "../../protocol/src/index";
+import type { ActivationReason, MeshEvent, EventType, LifecycleState, PolicyDecisionResult } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
@@ -15,6 +15,14 @@ export interface TurnRunner {
    * a timer-free microtask loop that starves HTTP (full wedge, 100% CPU).
    */
   isTurnInFlight?(agentId: string): boolean;
+  /**
+   * A policy refusal the operator should be told about. The scheduler has no
+   * event channel of its own, so refusals travel back through the runner (the
+   * Supervisor) the same way `escalateStuckRequest` does. Optional like the
+   * other callbacks: a scheduler wired to a bare runner still schedules, it
+   * just cannot narrate.
+   */
+  reportActivationDenied?(agentId: string, decision: PolicyDecisionResult, reason: ActivationReason): Promise<void>;
 }
 
 export interface TriageModel {
@@ -68,6 +76,16 @@ export class Scheduler implements SchedulerPort {
    * operator is pacing those by hand.
    */
   private strikes = new Map<string, { count: number; parkedUntil: number }>();
+  /**
+   * The policy refusal currently blocking each agent, kept so the reason
+   * outlives the boolean this method returns. Written on every refusal (so
+   * `lastActivationRefusal` is never stale) but reported once per distinct
+   * refusal: a permanent block like `max_activations 3 reached` is re-evaluated
+   * on every timer nudge, and emitting that each time would bury the event log
+   * under the same sentence. A refusal that CHANGES is news and reports again.
+   */
+  private lastRefusal = new Map<string, PolicyDecisionResult>();
+  private reportedRefusal = new Map<string, string>();
   private static readonly STRIKE_LIMIT = 3;
   private static readonly PARK_MS = 30000;
   private listeners: Array<() => void> = [];
@@ -151,6 +169,8 @@ export class Scheduler implements SchedulerPort {
     this.deniedCounts = new Map();
     this.stuckEscalated = new Set();
     this.strikes = new Map();
+    this.lastRefusal = new Map();
+    this.reportedRefusal = new Map();
     this.lastNudge = new Map();
     this.interests = new Map();
     this.idleFired = true;
@@ -335,12 +355,42 @@ export class Scheduler implements SchedulerPort {
       // unread-requeue spins a timer-free loop that starves HTTP).
       payload: { note: req.reason.note ?? req.reason.kind, threadId: req.reason.threadId },
     }, { config: this.config, projections: this.state, goal: this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined });
-    if (decision.decision === "DENY" || decision.decision === "DEFER") return false;
+    // The policy already wrote the sentence — `max_activations 3 reached`,
+    // `thread budget exhausted (12/12)`, `transition 'x' requires a,b; missing:
+    // b`. Collapsing all of that to `false` was not merely unrendered, it was
+    // destroyed: unlike the op path this site never reached `denied()`, so no
+    // event carried it either and the agent simply went quiet. Keep the
+    // decision, then refuse.
+    if (decision.decision === "DENY" || decision.decision === "DEFER") {
+      this.noteRefusal(req.agentId, decision, req.reason);
+      return false;
+    }
+    this.lastRefusal.delete(req.agentId);
+    this.reportedRefusal.delete(req.agentId);
     this.queue.push({ agentId: req.agentId, reason: req.reason, priority: req.priority, enqueuedAt: Date.now(), explicit: req.explicit });
     this.queue.sort((a, b) => b.priority - a.priority || a.enqueuedAt - b.enqueuedAt);
     this.idleFired = false;
     void this.pump();
     return true;
+  }
+
+  /**
+   * The policy refusal still blocking this agent, or undefined if its last
+   * activation was admitted. Callers use it to say why instead of guessing;
+   * see `activateAgent`, which used to answer every refusal with "already
+   * active, or deferred by budget/policy" because this was the only thing the
+   * boolean left it.
+   */
+  lastActivationRefusal(agentId: string): PolicyDecisionResult | undefined {
+    return this.lastRefusal.get(agentId);
+  }
+
+  private noteRefusal(agentId: string, decision: PolicyDecisionResult, reason: ActivationReason): void {
+    this.lastRefusal.set(agentId, decision);
+    const key = JSON.stringify([decision.decision, decision.ruleId ?? "", decision.reason ?? ""]);
+    if (this.reportedRefusal.get(agentId) === key) return;
+    this.reportedRefusal.set(agentId, key);
+    void this.runner.reportActivationDenied?.(agentId, decision, reason)?.catch(() => undefined);
   }
 
   private capacityAvailable(agentId: string): boolean {

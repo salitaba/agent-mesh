@@ -353,3 +353,48 @@ test("scheduler: a finished mission drops stale agent-mail requeues, human mail 
   assert.equal(turns.pm2, 1, "human feedback must still reach its recipient");
   await m.cleanup();
 });
+
+/**
+ * The scheduler used to answer a policy DENY/DEFER with a bare `false`. Unlike
+ * the op path it never reached `denied()`, so the reason was not merely
+ * unrendered — it was destroyed, and a refused seat looked exactly like an idle
+ * one. These pin the three properties that fix depends on: the reason escapes,
+ * it escapes once, and it stays readable afterwards.
+ */
+test("scheduler: a policy refusal reaches the operator instead of collapsing to a bare false", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
+    mayContact: { dev: [] },
+  });
+  const s = stub(m);
+  s.setScript("dev", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+
+  const gid = m.kernel.state.activeGoalId ?? "";
+  await m.kernel.emit("goal.paused", { goalId: gid, reason: "test pause" }, { actorId: "human" });
+  assert.equal(m.kernel.state.goals.get(gid)?.status, "PAUSED", "fixture: the goal must actually be paused");
+
+  const rejectsForDev = async () =>
+    (await m.store.read()).filter((e) => e.type === "message.rejected" && (e.payload as any)?.from === "dev");
+  const before = (await rejectsForDev()).length;
+
+  const req = { agentId: "dev", reason: { kind: "manual", note: "operator wake" }, priority: 6, explicit: true } as never;
+  assert.equal(await m.scheduler.requestActivation(req), false, "a DEFERred activation is still refused");
+
+  const after = await rejectsForDev();
+  assert.equal(after.length, before + 1, "the refusal must reach the event log, not die as a false");
+  const p = after[after.length - 1].payload as any;
+  assert.equal(p.reason, "goal paused", "the policy's own sentence, not one the UI re-derived");
+  assert.equal(p.ruleId, "goal-paused");
+  assert.equal(p.decision, "DEFER", "DENY and DEFER need different words to the operator");
+  assert.equal(p.denied, true);
+
+  // A standing block is re-evaluated on every timer nudge; reporting it each
+  // time would bury the log under one repeated sentence.
+  assert.equal(await m.scheduler.requestActivation(req), false);
+  assert.equal((await rejectsForDev()).length, before + 1, "an unchanged refusal reports once");
+
+  // ...but it stays readable for whoever asks, which is what lets activateAgent
+  // say why instead of "already active, or deferred by budget/policy".
+  assert.equal(m.scheduler.lastActivationRefusal("dev")?.ruleId, "goal-paused");
+  await m.cleanup();
+});
