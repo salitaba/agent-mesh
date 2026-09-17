@@ -1688,6 +1688,18 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // one: it is strictly stronger, since it also checks the named agent
           // can actually record the approval, which config cannot see.
           const warnings: string[] = resolved.warnings.filter((w) => !w.startsWith("transition gate '"));
+          // Warnings this route can raise on a WRITE and nowhere else, kept apart
+          // from the list above. The distinction is not decorative: `warnings`
+          // here is byte-identical to what /config/validate returns for the same
+          // document (both resolve against `baseDir`), so the designer's health
+          // strip already shows all of it from the debounced validate. A save-only
+          // entry cannot be reproduced by any later validate — it is a fact about
+          // `dirname(target)`, a directory validate is never told about. Handing it
+          // to the strip would put a claim in a channel whose next refresh would
+          // delete it whether or not the operator fixed anything. So it rides its
+          // own field, and the client shows it on the post-save card, which the
+          // next edit or save clears.
+          const saveWarnings: string[] = [];
           // Schema-valid drafts can still name a gate actor no agent can play,
           // or an approve the named agent has no way to record. Run the same
           // satisfiability preflight the designer-proposal path runs so manual
@@ -1724,7 +1736,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             for (const id of Object.keys(resolved.raw.agents)) {
               const p = resolved.raw.agents[id].prompt;
               if (p && !fs.existsSync(path.resolve(dir, p))) {
-                warnings.push(`agent '${id}' prompt file not found (relative to ${dir}): ${p}`);
+                // In both lists on purpose: `warnings` stays a complete account of
+                // this response, and `saveWarnings` is the part of it that only a
+                // write can know. materializeRolePrompts above skipped this one —
+                // it is absolute, or it escapes the save directory — so this ref
+                // is still dangling on disk.
+                const msg = `agent '${id}' prompt file not found (relative to ${dir}): ${p}`;
+                warnings.push(msg);
+                saveWarnings.push(msg);
               }
             }
           }
@@ -1751,6 +1770,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             archived,
             drift,
             warnings: [...new Set(warnings)],
+            saveWarnings: [...new Set(saveWarnings)],
             createdPrompts,
             summary: {
               meshId: resolved.meshId,

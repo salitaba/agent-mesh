@@ -111,7 +111,7 @@ export default function Designer(): React.JSX.Element {
   const [confirmReplace, setConfirmReplace] = useState<null | { kind: "load" | "template" | "import"; json?: any; model?: any }>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [runningStale, setRunningStale] = useState(false);
-  const [savedInfo, setSavedInfo] = useState<{ path: string } | null>(null);
+  const [savedInfo, setSavedInfo] = useState<{ path: string; warnings: string[] } | null>(null);
   const [saving, setSaving] = useState(false);
   /* What the last Save left disagreeing between the file and the RUNNING
    * mission. mesh.yaml seeds the mesh at boot and is never re-read, so an
@@ -806,7 +806,16 @@ export default function Designer(): React.JSX.Element {
         setRedo(null);
         setRestoredAt(null);
         clearStored();
-        setSavedInfo({ path: json.savedTo });
+        /* `json.warnings` is deliberately NOT read here. It is what the health
+         * strip is already showing — the debounced validate ran against these
+         * exact bytes, and both routes resolve against the same baseDir, so
+         * re-rendering it beside the "saved" card would repeat the strip and
+         * silently redefine its meaning from "your draft validates" to "your
+         * last save said something". Only the save-only subset rides along:
+         * facts about the directory this save wrote into, which no validate can
+         * see and no later validate can clear. They live on the post-save card,
+         * which the next edit or save removes. */
+        setSavedInfo({ path: json.savedTo, warnings: Array.isArray(json.saveWarnings) ? json.saveWarnings : [] });
         /* Only a save onto the running file can produce drift; the server
          * returns null otherwise, and a proposal with neither changes nor
          * problems is nothing to show. */
@@ -1099,6 +1108,7 @@ export default function Designer(): React.JSX.Element {
         {savedInfo ? (
           <SavedCard
             path={savedInfo.path}
+            warnings={savedInfo.warnings}
             isRunning={savingRunning || savedInfo.path === runningPath}
             syncOffered={drift !== null}
             onYaml={openYaml}

@@ -191,7 +191,16 @@ export function ReviewCard({ targetPath, savingRunning, diff, differs, targetCon
 
 /* ---------------- saved confirmation ---------------- */
 
-export function SavedCard({ path, isRunning, syncOffered, onYaml, onHome }: { path: string; isRunning: boolean; syncOffered?: boolean; onYaml: () => void; onHome: () => void }): React.JSX.Element {
+/**
+ * The post-save card. `warnings` is the SAVE-ONLY subset (mesh-server
+ * `/config/save` → `saveWarnings`), not the whole response: everything else in
+ * that response is config-time and already on the health strip, because the
+ * debounced validate resolved the same bytes against the same baseDir. What
+ * arrives here is what only a write can learn — today, a prompt ref that is
+ * still dangling in the directory this save just wrote into. It belongs on this
+ * card rather than the strip because this card clears with the next write, which
+ * is the only event that can change the answer. */
+export function SavedCard({ path, warnings, isRunning, syncOffered, onYaml, onHome }: { path: string; warnings?: string[]; isRunning: boolean; syncOffered?: boolean; onYaml: () => void; onHome: () => void }): React.JSX.Element {
   /* "Restart the mesh to run it" is true of seats and budgets, which boot
    * reconciles from the file every time, and NOT of the goal, which boot mints
    * only when it is not resuming. When the sync card below is offering to close
@@ -201,6 +210,25 @@ export function SavedCard({ path, isRunning, syncOffered, onYaml, onHome }: { pa
     <section className="card save-done" role="status" aria-label="saved">
       <b>Saved to {path}.</b>
       <span className="muted">{syncOffered ? "" : isRunning ? " Restart the mesh to run it." : " Run it any time."}</span>
+      {warnings && warnings.length ? (
+        <div style={{ marginTop: 6 }}>
+          <b>
+            {warnings.length} prompt file{warnings.length === 1 ? " is" : "s are"} missing next to this save.
+          </b>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {warnings.map((w) => <li key={w} className="mono">{w}</li>)}
+          </ul>
+          {/* Register move 3, and the one this card owed: re-saving does not help,
+           * because the lookup is relative to the file just written. Without it a
+           * warning next to a green "Saved" reads as a flaky save. */}
+          <span className="muted">
+            Re-saving will not fix {warnings.length === 1 ? "it" : "them"} — the path is resolved against the
+            directory this save wrote into, not against your unsent draft. Create
+            {warnings.length === 1 ? " the file" : " those files"}, or point the agent&rsquo;s <span className="mono">prompt</span> at
+            a path inside that directory. Your config saved fine; only the agent&rsquo;s prompt is unreadable.
+          </span>
+        </div>
+      ) : null}
       <div className="row" style={{ marginTop: 6 }}>
         <Button variant="small" onClick={onYaml}>Review YAML</Button>
         <Button variant="small" onClick={onHome}>Back to Overview</Button>

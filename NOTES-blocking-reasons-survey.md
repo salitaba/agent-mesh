@@ -238,7 +238,14 @@ Re-verify this section before implementing; it was uncommitted at survey time.
   text. Copy column is a guess.
 - `policies.escalation.*` thresholds: schema read, consumers not traced.
 - Inherited from the parent brief and still unchecked: `store.tsx` hash
-  rewriting, the `confirm()` promise plumbing, `Escalations.tsx` `doRaise`.
+  rewriting, the `confirm()` promise plumbing.
+- ~~`Escalations.tsx` `doRaise`~~ — **struck (session 11).** This row was stale,
+  not the file. `NOTES-blocking-config-ui.md:56-72` already verified the raise
+  path in session 2 (`doRaise(:578)` → `/budgets/raise` `:592`; `doCapRaise(:620)`
+  → `/mission/limits` `:625`), and session 11 confirmed both still exist and are
+  wired into all three card variants (`:694`, `:700`, `:709`). The file was
+  carried as pending for seven sessions on the strength of this row alone. Do
+  not re-add it; the config-ui note is the record.
 
 ## Open decisions carried forward (both the operator's, unchanged)
 
@@ -838,9 +845,106 @@ equivalent — actually arrives). 1224/1224, typecheck ok, 0 lint errors.
 `serverWarnings`". That claim was false when written; this change makes it true,
 and the comment now names the seam and the one exclusion.
 
-**Still open, deliberately not done here:** `doSave`
+~~**Still open, deliberately not done here:** `doSave`
 (`Designer.tsx:789-828`) reads `savedTo`/`archived`/`drift` and still ignores
 `json.warnings`, and never calls `setResult` — so an operator who saves without
 validating sees no warnings at all, even though the save response now carries
 them. Same "computed then dropped" shape as the bug just fixed, one layer up.
-Small, self-contained, and the obvious next item.
+Small, self-contained, and the obvious next item.~~
+
+**Superseded (session 11) — see "Item 7b" below.** The *mechanics* above were
+right and the *consequence* was wrong: the Designer validates on a 550 ms
+debounce after every edit, so the strip is already showing that family by the
+time anyone reaches for Save. And "call `setResult` in `doSave`" — the fix this
+paragraph implies — is the session-8 trap, not the fix.
+
+---
+
+### Item 7b — the save path's warnings: SHIPPED (session 11)
+
+The brief for this session carried two errors, both checked against source
+before editing. Recording them because the second is the kind that survives into
+the next brief:
+
+1. **Premise.** "An operator who edits and saves without clicking validate sees
+   no warnings at all" is **false**. `touch()` (`Designer.tsx:241-253`) fires
+   `void validate()` on a 550 ms debounce (`SAVE_DELAY_MS`, `:33`) after every
+   mutation, and load validates unconditionally (`:312`). Save does not mutate
+   the draft, so `result` almost always already holds a 200 for the same bytes.
+   The strip was not empty; only one warning kind was ever missing.
+2. **Line number.** The save-only push is at `mesh-server/src/index.ts:1727`,
+   not `:1715` (that is the version-stamp loop).
+
+**What was actually missing: one warning kind.**
+
+```
+apps/mesh-server/src/index.ts:1727 (was)
+  warnings.push(`agent '${id}' prompt file not found (relative to ${dir}): ${p}`);
+```
+
+The only push inside `if (parts[1] === "save")`, and **unreproducible by
+construction**: `baseDir = … : config.dir` (`:1675`) and the Designer posts no
+`dir`, so `/config/validate` resolves prompt refs against `config.dir` while save
+resolves them against `dirname(target)`. Different directory — the two routes
+cannot agree about the same ref, no matter when they run.
+
+**Decision: SEPARATE. REPLACE and MERGE are both the session-8 trap.**
+
+Applying the channel table (`:396-402`): save-time warnings are **S1 in origin**
+but fire on a *write*, so they are a new shape — standing and **write-scoped**.
+The disqualifier is not the block (they block nothing) but the *clear*:
+
+| | Shape | Clears? | Blocks? |
+|---|---|---|---|
+| S1 | polled, draft-scoped | on next validate | design-time |
+| S3b | standing, polled | never | yes |
+| S4 | standing, event-derived, terminal | never | n/a — over |
+| **save-only** | **standing, write-scoped** | **on next edit — *wrongly*** | no |
+
+`setResult(...)` in `doSave` would put a claim about `dirname(target)` into a
+channel whose refresher re-runs against `config.dir` on the next keystroke. It
+would delete the warning **whether or not the operator fixed the ref** — a false
+clear, strictly worse than today's silence. Session 8's rule verbatim (*"do not
+give a channel a second source that answering the card could not clear"*,
+`:289-296`); same argument as C5's first consequence (`:411-413`).
+
+**Also rejected as redundant:** forwarding the config-time family on save.
+`warnings` at `:1690` is `resolved.warnings` minus the gate-actor prefix —
+byte-identical to what the debounced validate of the same content already
+returned, because both take `baseDir = config.dir`. Merging it re-renders nine
+warnings the strip is already showing, next to a "saved" toast — and silently
+redefines the strip from *"your draft validates"* to *"your last save said
+something"*. Those are different claims; this is the two-verdict trap.
+
+**Shipped.**
+
+- `mesh-server/src/index.ts` — new `saveWarnings: string[]`, sibling to
+  `warnings`, in the response beside it. The `:1727` push goes to **both**, so
+  `warnings` stays a complete account of the response and `saveWarnings` ⊆
+  `warnings`. `/config/validate` returns `[]`.
+- `Designer.tsx` — `savedInfo` carries `warnings`; `doSave` reads **only**
+  `json.saveWarnings`, with a comment saying why `json.warnings` is deliberately
+  unread here so nobody "fixes" it back to `setResult`.
+- `chrome.tsx` — `SavedCard` renders them, with the register's third move (the
+  one this card owed): *"Re-saving will not fix it — the path is resolved against
+  the directory this save wrote into, not against your unsent draft."* Without
+  that sentence a warning beside a green "Saved" reads as a flaky save. Cleared
+  by the next edit or save — `touch()` already nulls `savedInfo`.
+- `tests/integration/bus-api.test.ts` — clean save asserts `saveWarnings` is
+  `[]` and `warnings` is still populated; then the discrimination case, an
+  **absolute** prompt ref, which `materializeRolePrompts` skips
+  (`packages/config/src/index.ts:720`) so the file is still absent when the loop
+  runs. Asserts it appears in `saveWarnings`, is a subset of `warnings`, and
+  **cannot be reproduced by `/config/validate`** — the property the split exists
+  for, asserted rather than assumed.
+
+**Why not a client-side prefix filter.** The only client-side way to find the
+subset is matching `agent '` / `prompt file not found` — the same fragile
+message-prefix coupling the session-10 resolution deliberately locked with a
+test (`:826-829`). Adding a field is cheap; that anti-pattern is not.
+
+**Gate overlap untouched.** `:1690`'s filter and the `transition gate '` prefix
+are unchanged, so `tests/config/mesh-satisfiability.test.ts` stays green and
+load-bearing. No route warning was reworded.
+
+1224/1224, both typechecks ok, 0 lint errors in the touched set.

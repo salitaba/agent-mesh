@@ -358,6 +358,15 @@ test("http api: config designer — validate/parse/save + designer page served",
     assert.deepEqual(saved.json.createdPrompts.map((c: any) => c.agent).sort(), ["lead", "qa"]);
     assert.ok(fs.existsSync(path.join(dir, "roles", "qa.md")), "referenced role prompts are written next to mesh.yaml");
     assert.ok(fs.existsSync(path.join(dir, "roles", "lead.md")));
+    // The save-only channel. `warnings` is byte-identical to what
+    // /config/validate returns for the same document — both resolve against the
+    // same baseDir — so the designer's health strip already carries all of it,
+    // and re-rendering it beside the saved card would only repeat the strip
+    // while redefining what the strip means. `saveWarnings` holds the part only
+    // a write can learn. This save materialized both prompts, so it is empty.
+    assert.ok(Array.isArray(saved.json.saveWarnings), "saveWarnings must be an array");
+    assert.deepEqual(saved.json.saveWarnings, [], "nothing is save-only when every prompt materialized");
+    assert.ok(saved.json.warnings.length > 0, "the config-time family still rides `warnings`, unchanged");
     const { loadMeshFile, analyzeMeshConfig, resolveConfig } = require("../../packages/config/src/index");
     const rawBack = loadMeshFile(target);
     assert.equal(rawBack.mesh.id, "designed");
@@ -372,6 +381,29 @@ test("http api: config designer — validate/parse/save + designer page served",
     assert.match(fs.readFileSync(resaved.json.archived, "utf8"), /designed/, "the overwritten bytes are recoverable");
     assert.equal(loadMeshFile(target).mesh.goal, "second proposal");
     fs.rmSync(dir, { recursive: true, force: true });
+
+    // The one shape that reaches `saveWarnings` and can never reach
+    // /config/validate: an ABSOLUTE prompt ref, which materializeRolePrompts
+    // skips (packages/config/src/index.ts:720 `if (!ref || path.isAbsolute(ref))
+    // continue`), so the file is still absent when the warning loop runs. This
+    // is the discrimination the split exists for, so it is asserted, not assumed.
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-dangle-"));
+    const dangling = JSON.parse(JSON.stringify(doc));
+    dangling.agents.qa.prompt = path.join(dir2, "nowhere", "qa.md");
+    const dw = await post("/config/save", { config: dangling, path: path.join(dir2, "mesh.yaml") });
+    assert.equal(dw.status, 200, JSON.stringify(dw.json));
+    assert.equal(dw.json.saveWarnings.length, 1, JSON.stringify(dw.json.saveWarnings));
+    assert.match(dw.json.saveWarnings[0], /prompt file not found/);
+    // A subset, not a replacement: `warnings` stays a complete account of the
+    // response, so nothing that already reads it regresses.
+    assert.ok(dw.json.warnings.includes(dw.json.saveWarnings[0]), "saveWarnings ⊆ warnings");
+    // And validate cannot produce it, because validate is never told the
+    // directory the save wrote into. This is why it must not ride the strip.
+    const vd = await post("/config/validate", { config: dangling });
+    const vw: string[] = Array.isArray(vd.json.warnings) ? vd.json.warnings : [];
+    assert.ok(!vw.some((w: string) => /prompt file not found/.test(w)), `validate must not reproduce a save-only warning: ${JSON.stringify(vw)}`);
+    if (vd.status === 200) assert.deepEqual(vd.json.saveWarnings, [], "a read has nothing save-only to report");
+    fs.rmSync(dir2, { recursive: true, force: true });
 
     const noPath = await post("/config/save", { config: doc });
     assert.equal(noPath.status, 400);
