@@ -17,7 +17,7 @@ function fakeTurn(agentId: string) {
   } as never;
 }
 
-test("freeze: agent ops are refused while escalated, except alarm/reads; human bypasses", async () => {
+test("freeze: work-moving agent ops are refused while escalated; talking, alarm and reads pass; human bypasses", async () => {
   const m = await makeMesh({
     agents: [
       { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
@@ -37,15 +37,24 @@ test("freeze: agent ops are refused while escalated, except alarm/reads; human b
   await m.kernel.emit("goal.escalated", { goalId, reason: "test freeze" }, { actorId: "human" });
   assert.equal(m.kernel.state.goals.get(goalId)?.status, "ESCALATED");
 
-  // Mutating agent ops are refused — with no rejection event spam.
+  // Ops that move work are refused — with no rejection event spam.
   const rejectedBefore = (await m.store.read({ types: ["message.rejected"] })).length;
-  assert.match((await m.supervisor.executeOp("dev", send, fakeTurn("dev"))).reason ?? "", /escalated/i);
-  assert.equal((await m.supervisor.executeOp("dev", send, fakeTurn("dev"))).ok, false);
-  assert.equal((await m.supervisor.executeOp("dev", { op: "publish_artifact", name: "nope", type: "ADR", content: "x" }, fakeTurn("dev"))).ok, false);
+  const frozen = await m.supervisor.executeOp("dev", { op: "publish_artifact", name: "nope", type: "ADR", content: "x" }, fakeTurn("dev"));
+  assert.equal(frozen.ok, false);
+  assert.match(frozen.reason ?? "", /escalated/i);
   assert.equal((await m.supervisor.executeOp("dev", { op: "approve", subject: "release" }, fakeTurn("dev"))).ok, false);
   assert.equal((await m.supervisor.executeOp("dev", { op: "transition_artifact", artifactId: artId, to: "FINAL" }, fakeTurn("dev"))).ok, false);
   const rejectedAfter = (await m.store.read({ types: ["message.rejected"] })).length;
   assert.equal(rejectedAfter, rejectedBefore, "guard must refuse before the policy layer emits rejections");
+
+  // Talking stays legal. Denying `send` here did not silence the seats, it
+  // routed them: with `escalate` the only op that could carry words, a seat
+  // answering the operator or correcting a premise had to raise an escalation
+  // to do it, and the operator's queue filled with replies wearing the costume
+  // of new blockers. Nothing restarts — `activateAgent` still refuses to wake
+  // anyone on a halted goal — so the message waits in the inbox for the resume.
+  assert.equal((await m.supervisor.executeOp("dev", send, fakeTurn("dev"))).ok, true);
+  assert.equal((await m.supervisor.activateAgent("qa", { kind: "message" })).queued, false, "a delivered message must not restart a halted mission");
 
   // Alarm, turn-enders, reads and memory stay legal.
   assert.equal((await m.supervisor.executeOp("dev", { op: "escalate", reason: "still stuck", detail: {} }, fakeTurn("dev"))).ok, true);
@@ -60,7 +69,8 @@ test("freeze: agent ops are refused while escalated, except alarm/reads; human b
   const esc = [...m.kernel.state.escalations.values()].find((e) => e.reason === "still stuck")!;
   assert.equal((await m.supervisor.respondEscalation(esc.id, " Deal with it")).ok, true);
   await m.supervisor.pauseGoal();
-  const paused = await m.supervisor.executeOp("dev", send, fakeTurn("dev"));
+  // Checked with a work-moving op: `send` is legal under either halt.
+  const paused = await m.supervisor.executeOp("dev", { op: "publish_artifact", name: "still-nope", type: "ADR", content: "x" }, fakeTurn("dev"));
   assert.equal(paused.ok, false);
   assert.match(paused.reason ?? "", /paused/i);
   await m.cleanup();

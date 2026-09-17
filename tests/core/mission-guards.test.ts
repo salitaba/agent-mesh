@@ -74,11 +74,13 @@ test("haltReasonText: any other status falls through to a generic sentence", () 
 });
 
 test("MISSION_HALTED_ALLOW_OPS: escape hatches only, no mutation of shared state", () => {
-  for (const op of ["escalate", "wait", "done", "remember", "read_artifact"] as const) {
+  for (const op of ["escalate", "send", "wait", "done", "remember", "read_artifact"] as const) {
     assert.equal(MISSION_HALTED_ALLOW_OPS.has(op), true, op);
   }
-  assert.equal(MISSION_HALTED_ALLOW_OPS.size, 5);
-  for (const op of ["message", "commit", "propose_decision", "write_artifact"] as const) {
+  assert.equal(MISSION_HALTED_ALLOW_OPS.size, 6);
+  // `send` talks; these move work. A halt that let any of them through would
+  // hand the operator a changed mission to come back to.
+  for (const op of ["message", "commit", "publish_artifact", "propose_decision", "write_artifact"] as const) {
     assert.equal(MISSION_HALTED_ALLOW_OPS.has(op as never), false, op);
   }
 });

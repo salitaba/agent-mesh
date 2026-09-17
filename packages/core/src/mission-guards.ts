@@ -1,9 +1,19 @@
 import type { MeshOp } from "../../protocol/src/index";
 import type { Projections } from "./state";
 
-/** Ops allowed while the mission itself is halted (paused/escalated). */
+/**
+ * Ops allowed while the mission itself is halted (paused/escalated).
+ *
+ * `send` is here because leaving it out did not silence the seats — it routed
+ * them. With `escalate` the only way to say anything, a seat needing to correct
+ * a premise or answer the human raised an escalation to do it, and the operator's
+ * queue filled with replies wearing the costume of new blockers. None of these
+ * ops move work: they talk, wait, or read. Publishing and landing stay frozen,
+ * which is what the halt is actually for.
+ */
 export const MISSION_HALTED_ALLOW_OPS: ReadonlySet<MeshOp["op"]> = new Set([
   "escalate",
+  "send",
   "wait",
   "done",
   "remember",

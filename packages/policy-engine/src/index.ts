@@ -39,11 +39,16 @@ export class PolicyEngine implements PolicyEvaluator {
     const senderDef = this.agentDef(ctx, from);
     if (!senderDef) return { decision: "DENY", reason: `sender ${from} is not registered`, ruleId: "registry" };
 
-    const goal = ctx.goal ?? (ctx.projections.activeGoalId ? ctx.projections.goals.get(ctx.projections.activeGoalId) : undefined);
-    if (goal && (goal.status === "ESCALATED" || goal.status === "BLOCKED") && message.type !== "ESCALATE") {
-      return { decision: "DENY", reason: `goal is ${goal.status}; only escalation messages are accepted`, ruleId: "goal-state" };
-    }
-
+    // No goal-status gate here. A halted mission is frozen by the op guard in
+    // `executeOp` (`MISSION_HALTED_ALLOW_OPS`), which is the one place that
+    // decides what survives a halt and covers the MCP bus too. This layer used
+    // to deny every non-ESCALATE message while ESCALATED/BLOCKED, which did not
+    // silence the seats — it routed them: `escalate` became the only way to say
+    // anything, so replies and premise corrections arrived dressed as new
+    // blockers. Talking is now allowed while halted; landing work is not.
+    // Nothing restarts either way, since `activateAgent` still refuses to wake
+    // anyone on a halted goal, so these messages queue until the operator
+    // resumes.
     const existingThread = ctx.projections.threads.get(message.threadId);
     const isReply = Boolean(existingThread || message.taskId);
     const allowed: string[] = [];
