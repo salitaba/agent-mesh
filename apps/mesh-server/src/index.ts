@@ -98,8 +98,17 @@ export interface MeshInstance {
    * affordances hidden. Deriving it makes that class of drift impossible.
    */
   readonly mode: ServerMode;
-  /** Parked -> live. Idempotent: second call reports alreadyLive instead of re-booting. */
-  goLive(note?: string): Promise<{ alreadyLive: boolean; activated: string[] }>;
+  /**
+   * Parked -> live. Idempotent: second call reports alreadyLive instead of
+   * re-booting. `refused` carries the startup seats the scheduler would not
+   * queue and why; without it a boot where every seat was blocked is
+   * indistinguishable from one where none were configured.
+   */
+  goLive(note?: string): Promise<{
+    alreadyLive: boolean;
+    activated: string[];
+    refused: Array<{ agentId: string; reason: string }>;
+  }>;
   /** Live -> parked. Stops the scheduler and drains the queue. */
   park(): Promise<void>;
   /**
@@ -329,7 +338,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       // Asks the scheduler, not a mode flag: a completed mission left the
       // scheduler stopped, and the old `self.mode === "live"` check made this
       // an "already live" no-op on precisely the mesh that could not run.
-      if (self.scheduler.isRunning()) return { alreadyLive: true, activated: [] };
+      if (self.scheduler.isRunning()) return { alreadyLive: true, activated: [], refused: [] };
       self.scheduler.start();
       // The supervisor owns the stall watchdog; it must hear about going live
       // or the watchdog stays dead (its liveMode is a separate field) and a
@@ -344,11 +353,13 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         ? `${note} — ${unmet.length} of ${mandatory.length} mandatory criteria unmet (${unmet.slice(0, 3).map((c) => c.id).join(", ")}${unmet.length > 3 ? ", …" : ""}); see Mission acceptance criteria in your context`
         : note;
       const activated: string[] = [];
+      const refused: Array<{ agentId: string; reason: string }> = [];
       for (const id of config.startupActivate) {
         const r = await supervisor.activateAgent(id, { kind: "startup", note: fullNote });
         if (r.queued) activated.push(id);
+        else refused.push({ agentId: id, reason: r.blocked ?? "refused" });
       }
-      return { alreadyLive: false, activated };
+      return { alreadyLive: false, activated, refused };
     },
     async park() {
       await scheduler.stop();
@@ -1501,9 +1512,19 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if (instance.mode === "parked") {
           // parked -> live: start the scheduler and run the config's startup
           // activation. After this the console behaves exactly like `mesh run`.
-          const { alreadyLive, activated } = await instance.goLive();
+          const { alreadyLive, activated, refused } = await instance.goLive();
           void alreadyLive;
-          return json(200, { ok: true, started: true, mode: instance.mode, note: `scheduler live; startup agents activated: ${activated.join(", ") || config.startupActivate.join(", ") || "(none configured)"}` });
+          // The old note fell back to printing config.startupActivate whenever
+          // `activated` was empty, so a boot in which every seat was blocked
+          // reported the blocked seats as if they had started. Name only what
+          // actually queued, and say why the rest did not.
+          const summary = config.startupActivate.length === 0
+            ? "no startup agents configured"
+            : [
+                `activated: ${activated.join(", ") || "(none)"}`,
+                ...(refused.length ? [`blocked: ${refused.map((x) => `${x.agentId} (${x.reason})`).join(", ")}`] : []),
+              ].join("; ");
+          return json(200, { ok: true, started: true, mode: instance.mode, refused, note: `scheduler live; ${summary}` });
         }
         // Already live: idempotent no-op instead of re-booting a second goal.
         return json(200, { ok: true, started: false, mode: instance.mode, note: "already live" });
