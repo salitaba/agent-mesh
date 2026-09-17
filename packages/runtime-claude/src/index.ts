@@ -198,6 +198,62 @@ export interface ClaudeTurnUsage {
 }
 
 /**
+ * git subcommands a seat needs to stage and land a commit. Deliberately short:
+ * anything outside it is reachable by granting `shell.execute`, which is the
+ * capability that exists to say so. `push` and `merge` are absent because
+ * `git.merge` is its own capability.
+ */
+const COMMIT_SUBCOMMANDS = new Set(["add", "commit", "status", "diff", "log", "show", "rev-parse", "ls-files"]);
+
+/**
+ * True when `command` is one git invocation carrying no shell control flow.
+ *
+ * Quoting is the whole difficulty. This repo writes conventional subjects
+ * ("fix(designer): ..."), so a scan that rejected parentheses outright would
+ * reject the exact command this capability exists to permit. So: track quote
+ * state, reject only what can start a second command, and keep rejecting `$(`
+ * and backticks inside double quotes, where they still substitute.
+ */
+function isBareGitCommand(command: string): boolean {
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote === "'") {
+      if (c === "'") quote = null;
+      continue;
+    }
+    if (quote === '"') {
+      if (c === "\\") { i++; continue; }
+      if (c === '"') { quote = null; continue; }
+      if (c === "`") return false;
+      if (c === "$" && command[i + 1] === "(") return false;
+      continue;
+    }
+    if (c === "\\") { i++; continue; }
+    if (c === "'" || c === '"') { quote = c; continue; }
+    if (c === "`" || c === ";" || c === "&" || c === "|" || c === "<" || c === ">" || c === "\n") return false;
+    if (c === "$" && command[i + 1] === "(") return false;
+  }
+  return quote === null;
+}
+
+/** Why a commit-only seat may not run this Bash call, or null if it may. */
+function commitScopeDenial(toolInput: Record<string, unknown>): string | null {
+  const raw = toolInput.command;
+  const command = typeof raw === "string" ? raw.trim() : "";
+  if (!command) return "a commit-only seat may run git commands, and this call carries no command string";
+  if (!isBareGitCommand(command)) {
+    return "a commit-only seat may run a single git command, with no chaining, redirection, or substitution";
+  }
+  const named = /^git\s+(?:-[^\s]+\s+)*([a-z][a-z-]*)/.exec(command);
+  if (!named) return "a commit-only seat may run git commands only";
+  if (!COMMIT_SUBCOMMANDS.has(named[1])) {
+    return `'git ${named[1]}' is outside the commit path — grant shell.execute if this seat needs it`;
+  }
+  return null;
+}
+
+/**
  * Capability-to-tool gate. The opencode adapter expresses this as a static
  * permission block in a generated config; the SDK offers a callback instead,
  * which is a closer fit — the decision is computed from the same capability
@@ -211,10 +267,13 @@ export function buildPermissionGate(capabilities: string[]): CanUseTool {
   const canEdit = caps.has("repository.write") || caps.has("architecture.write") || caps.has("test.write");
   const canExec = caps.has("shell.execute") || caps.has("test.execute");
   const canFetch = caps.has("network.request");
-  // opencode renders git.commit as bash:"ask". There is no human on a mesh
-  // turn to ask, and a pending prompt would stall the slot to its timeout,
-  // so a commit-only seat gets exec rather than an unanswerable question.
-  const canCommitOnly = caps.has("git.commit");
+  // `git.commit` once bought blanket exec: opencode rendered it as bash:"ask",
+  // nothing on a mesh turn could answer that prompt, and a pending one would
+  // stall the slot to its timeout — so the seat got exec instead. That backend
+  // is gone and the widening outlived its reason: a seat granted git.commit and
+  // deliberately *not* granted shell.execute was still getting arbitrary bash.
+  // It now buys the commit path only.
+  const canCommit = caps.has("git.commit");
 
   const deny = (message: string) => ({ behavior: "deny" as const, message });
 
@@ -227,9 +286,15 @@ export function buildPermissionGate(capabilities: string[]): CanUseTool {
         : deny(`${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`);
     }
     if (EXEC_TOOLS.has(toolName)) {
-      return canExec || canCommitOnly
-        ? { behavior: "allow", updatedInput: toolInput }
-        : deny(`${toolName} denied: this seat holds no shell.execute or test.execute capability.`);
+      if (canExec) return { behavior: "allow", updatedInput: toolInput };
+      if (!canCommit) {
+        return deny(`${toolName} denied: this seat holds no shell.execute or test.execute capability.`);
+      }
+      // BashOutput and KillShell address a shell this seat already opened; only
+      // Bash opens a new one, so only Bash needs its command scoped.
+      if (toolName !== "Bash") return { behavior: "allow", updatedInput: toolInput };
+      const why = commitScopeDenial(toolInput);
+      return why ? deny(`Bash denied: ${why}.`) : { behavior: "allow", updatedInput: toolInput };
     }
     if (NETWORK_TOOLS.has(toolName)) {
       return canFetch
