@@ -29,13 +29,15 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
   { view: "cost", icon: "¤", label: "Cost", title: "Token spend and budgets." },
   { section: "Build" },
   { view: "designer", icon: "⚒", label: "Designer", title: "Create or edit a mesh, then run it." },
+  { section: "Host" },
+  { view: "hostsettings", icon: "⚙", label: "Host settings", title: "Limits that apply to every project on this host — the spend ceiling, the turn cap, prices." },
 ];
 
 // Order matters twice over: it is the digit each view answers to, and the digit
 // is printed next to the view in the sidebar. It must therefore track NAV's
 // order exactly — Events moving up to 2 costs some muscle memory, but a sidebar
 // numbered 1, 5, 2, 3, 4 costs more.
-const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "gates", "graph", "artifacts", "product", "cost", "designer"];
+const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "gates", "graph", "artifacts", "product", "cost", "designer", "hostsettings"];
 /**
  * Only the first nine positions have a key an operator can actually press: the
  * keydown handler matches a single `ev.key`, so position ten would have to be
@@ -703,7 +705,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               <Button variant="banner-act" onClick={() => void refreshStatus()}>Retry now</Button>
             </div>
           ) : null}
-          {registryPending ? null : noProjects ? <HostEmptyState /> : viewNode}
+          {/* Host settings is the one view that outranks the empty state: its
+              keys are host-wide, they already have values nobody chose, and an
+              operator with no project open is exactly who should be able to set
+              a spend ceiling *before* opening one. Every other view really does
+              need a project, so they still get the empty state. */}
+          {registryPending ? null : noProjects && view !== "hostsettings" ? <HostEmptyState /> : viewNode}
         </main>
       </FocusCtx.Provider>
 

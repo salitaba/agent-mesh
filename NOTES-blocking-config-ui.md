@@ -213,9 +213,27 @@ is a default or explicitly set** — that distinction is the whole lesson here.
 1. Tier 3 groundwork: `ceilingTripped` un-latched (`8fe8eb5`).
 2. `parkedByPolicy` un-latched, `GET`/`PUT /api/host/config`, the reload path,
    and the Overview banner copy that the PUT made wrong.
-3. Next: the host settings screen itself, rendering `effects`/`explicit` from
-   the GET. Then the ~30-key "why you are stopped" survey (see the top of this
-   brief), which is the half that makes an editor worth having.
+3. The host settings screen (`views/HostSettings.tsx`), rendering `effects` and
+   `explicit` from the GET, one Save per key with the effect stated on the
+   button's own row and repeated in the toast. Registered in four places —
+   `route.ts` `VIEWS`, `main.tsx` `ViewSwitch`, `shell.tsx` `NAV` + `KEY_VIEWS`.
+
+   Two things found while building it:
+   - **A host-level view was unreachable when it is most needed.**
+     `shell.tsx` replaced the whole view node with `HostEmptyState` whenever the
+     registry held zero projects, so an operator with nothing open could not
+     reach host settings — which is exactly when you would want to set a ceiling
+     *before* opening anything. `hostsettings` is now excepted from that gate.
+   - **`model_prices` is advertised but not writable.** `HOST_CONFIG_EFFECTS`
+     reports it `live`, but `UPDATE_KEYS` has no entry, so a PUT rejects it as
+     "not an editable host setting". The screen renders it read-only and says
+     so, rather than offering a field that 400s. Either wire it into
+     `UPDATE_KEYS` or drop it from the effects map — right now they disagree.
+
+4. Next: the ~30-key "why you are stopped" survey (see the top of this brief),
+   which is the half that makes an editor worth having. It is not a fan-out job:
+   each key needs a decision about *where* its reason surfaces at the moment it
+   blocks, and the answer differs per layer.
 
 **Line numbers in this brief go stale fast** — `host.ts` shifted by +5/+13 in a
 single commit. Grep for the symbol; do not trust a number here.

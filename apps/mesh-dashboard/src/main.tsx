@@ -12,6 +12,7 @@ import Artifacts from "./views/Artifacts";
 import Cost from "./views/Cost";
 import Escalations from "./views/Escalations";
 import Gates from "./views/Gates";
+import HostSettings from "./views/HostSettings";
 
 const Graph = lazy(() => import("./views/Graph"));
 const Product = lazy(() => import("./views/Product"));
@@ -44,6 +45,8 @@ function ViewSwitch(): React.JSX.Element {
       return <Gates />;
     case "designer":
       return <Designer />;
+    case "hostsettings":
+      return <HostSettings />;
     default:
       return <div className="empty">unknown view</div>;
   }
