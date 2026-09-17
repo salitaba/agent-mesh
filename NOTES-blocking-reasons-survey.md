@@ -737,3 +737,54 @@ Both keys it ever held are inert. The block survives only as accepted-and-warned
 legacy surface. If a future change is willing to take the schema break, the
 whole block can go; until then nothing should be *added* to it, and nothing
 reads it.
+
+### Item 7 — forwarding `resolved.warnings` to `/config/validate`: DIAGNOSED, NOT SHIPPED
+
+Session 10 third phase. Stopped before editing, because the scope estimate the
+decision rested on was wrong. Do not start this until the two questions below
+are answered.
+
+**The change itself is one line.** `analyzeMeshConfig` already runs in the
+handler and `resolved` is in scope: `apps/mesh-server/src/index.ts:1676`. The
+warnings array is built empty at `:1678`; seeding it
+(`const warnings: string[] = [...resolved.warnings]`) is the whole fix. It
+covers **both** `/config/validate` and `/config/save` — one handler serves both
+(`:1666`). Response shape already carries `warnings` (`:1741`), and the Designer
+already renders whatever arrives: `Designer.tsx:458-462` → `HealthStrip`
+(`:907`) + `AdvisoryList` (`:913`). **No UI work is needed at all.**
+
+**BLOCKER 1 — the noise is nine warning kinds, not four.** `configWarnings` has
+ten push sites: `config/src/index.ts:398` and the cluster at `:523-547`
+(gate actors, unenforceable hard_actions, uncovered capabilities, unmergeable
+gates, no-startup-activation, unreachable agents, inert variant, ungranted
+approval gates, + `warnInertActivationKeys`). Every mesh that trips any of them
+starts showing them in the designer. The operator approved this on a stated
+count of four; re-confirm before shipping, and consider whether a subset should
+forward first.
+
+**BLOCKER 2 — possible duplicate and/or false gate warnings.** The server
+already pushes its own gate check into the same array (`validateTransitionGates`,
+`:1683-1685`, imported from outside `packages/config`). The config cluster runs a
+**different** function, `validateTransitionGateActors`
+(`config/src/index.ts:1059`). Forwarding runs both into one list.
+`Designer.tsx:463-468` says client-side gate satisfiability was deliberately
+removed because it produced false "no agent can decide that" warnings on every
+correctly-wired mesh, and that "the server owns this check". So:
+- Do the two functions overlap? Double-reporting is the mild case.
+- Does `validateTransitionGateActors` have the false-positive behaviour that
+  comment describes? If so, forwarding reintroduces the bug the comment prevents,
+  and that source must be excluded or fixed first.
+**Read both function bodies before touching the route.** This is the real work
+of the job; the forward is trivial.
+
+**Related, smaller, and NOT blocked:** `doSave` (`Designer.tsx:789-828`) reads
+`json.savedTo`/`archived`/`drift` and **ignores `json.warnings`** entirely; the
+failure toast uses `json.errors` only (`:819`). Save never calls `setResult`, so
+the HealthStrip keeps showing the last *validate* result — an operator who saves
+without validating sees no warnings at all. Once the forward lands, save returns
+them too, so this becomes worth wiring.
+
+**Stale comment to fix when this ships:** `Designer.tsx:469-471` claims the
+"wired to nobody" and "nobody boots" warnings "arrive back through
+`serverWarnings` above". They do not, today. Shipping the forward makes the
+claim true; until then it is false and misleading.
