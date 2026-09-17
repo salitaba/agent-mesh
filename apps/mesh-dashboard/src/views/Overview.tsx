@@ -320,6 +320,9 @@ export default function Overview(): React.JSX.Element {
         // the refusal strip above would cry wolf on a state that is usually
         // seconds old, and would send the operator off to change a limit that
         // was never the problem. Neutral grey for the same reason.
+        // The remedy carries its timing because the limit is read once at boot:
+        // without that clause the strip sends the operator to raise a ceiling
+        // that cannot move until the next run.
         <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>
           <b>{capacityWaits.length === 1 ? `${capacityWaits[0].agentId} is queued, waiting for a slot.` : `${capacityWaits.length} agents are queued, waiting for a slot.`}</b>{" "}
           <span className="muted">
@@ -328,8 +331,9 @@ export default function Overview(): React.JSX.Element {
             ) : null}
             Nothing was refused and nothing is lost: each one starts on its own the moment a running turn finishes, so this normally clears within a turn. Waking one by hand will not help — an explicit wake skips a parked scheduler, not a full one.{" "}
             {ceilingLabel
-              ? <>Raise <code>{ceilingLabel}</code> in the designer's Mesh panel if these should run in parallel instead.</>
-              : <>Raise the concurrency limits in the designer's Mesh panel if these should run in parallel instead.</>}
+              ? <>Raise <code>{ceilingLabel}</code> in the designer's Mesh panel if these should run in parallel instead</>
+              : <>Raise the concurrency limits in the designer's Mesh panel if these should run in parallel instead</>}
+            {" "}— but <code>scheduling.*</code> edits apply on the next mesh boot, so raising it will not release the agents queued right now.
           </span>
         </div></div>
       ) : null}
