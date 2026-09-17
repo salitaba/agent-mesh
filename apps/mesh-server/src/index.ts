@@ -1524,7 +1524,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
                 `activated: ${activated.join(", ") || "(none)"}`,
                 ...(refused.length ? [`blocked: ${refused.map((x) => `${x.agentId} (${x.reason})`).join(", ")}`] : []),
               ].join("; ");
-          return json(200, { ok: true, started: true, mode: instance.mode, refused, note: `scheduler live; ${summary}` });
+          return json(200, { ok: true, started: true, mode: instance.mode, activated, refused, note: `scheduler live; ${summary}` });
         }
         // Already live: idempotent no-op instead of re-booting a second goal.
         return json(200, { ok: true, started: false, mode: instance.mode, note: "already live" });

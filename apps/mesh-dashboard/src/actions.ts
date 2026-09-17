@@ -125,7 +125,23 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
     try {
       const { status, json } = await client.post("/mission/start");
       const already = json?.started === false;
-      toast(status === 200 ? (already ? "already live" : "mission continuing — agents are running") : "could not go live", json?.note ?? json?.error ?? "scheduler live", status === 200 ? "ok" : "bad");
+      // A 200 means the scheduler started, not that anyone is working. Reading
+      // "agents are running" off the status alone told the operator the mission
+      // was under way even when every startup seat was refused — while the
+      // boot's own note, rendered directly below it, said the opposite. Take
+      // the counts the route reports instead of asserting.
+      const started: string[] = Array.isArray(json?.activated) ? json.activated : [];
+      const blocked: unknown[] = Array.isArray(json?.refused) ? json.refused : [];
+      const title = status !== 200 ? "could not go live"
+        : already ? "already live"
+        : started.length === 0 ? (blocked.length > 0 ? "scheduler live, but no agent started" : "scheduler live")
+        : blocked.length > 0 ? `mission continuing — ${blocked.length} agent${blocked.length > 1 ? "s" : ""} blocked`
+        : "mission continuing — agents are running";
+      const kind = status !== 200 ? "bad"
+        : started.length === 0 && blocked.length > 0 ? "bad"
+        : blocked.length > 0 ? "warn"
+        : "ok";
+      toast(title, json?.note ?? json?.error ?? "scheduler live", kind);
     } catch {
       toast("could not go live", "the server did not answer", "bad");
     } finally {
