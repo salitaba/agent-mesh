@@ -7,7 +7,7 @@
  * this file is pulled in through tsconfig `files` rather than `include`.
  */
 
-export const VIEWS = ["overview", "steps", "agents", "graph", "events", "artifacts", "cost", "product", "escalations", "designer"] as const;
+export const VIEWS = ["overview", "steps", "agents", "graph", "events", "artifacts", "cost", "product", "escalations", "gates", "designer"] as const;
 export type View = (typeof VIEWS)[number];
 
 export const DEFAULT_VIEW: View = "overview";

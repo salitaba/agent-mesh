@@ -11,6 +11,7 @@ import Events from "./views/Events";
 import Artifacts from "./views/Artifacts";
 import Cost from "./views/Cost";
 import Escalations from "./views/Escalations";
+import Gates from "./views/Gates";
 
 const Graph = lazy(() => import("./views/Graph"));
 const Product = lazy(() => import("./views/Product"));
@@ -39,6 +40,8 @@ function ViewSwitch(): React.JSX.Element {
       return <Product />;
     case "escalations":
       return <Escalations />;
+    case "gates":
+      return <Gates />;
     case "designer":
       return <Designer />;
     default:

@@ -21,6 +21,7 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
   { view: "steps", icon: "▶", label: "Steps", title: "Every agent turn, newest first. The rollup: what each turn did, rather than each event it emitted." },
   { view: "agents", icon: "◉", label: "Agents", title: "Who is working, stuck, or idle. Wake, suspend, or inspect one." },
   { view: "escalations", icon: "⚑", label: "Needs you", title: "Only when the mesh is paused and needs your decision." },
+  { view: "gates", icon: "⊘", label: "Tool gates", title: "Seats holding a capability they may not use until you unlock the tool." },
   { section: "Inspect" },
   { view: "graph", icon: "◈", label: "Graph", title: "Who talks to whom." },
   { view: "artifacts", icon: "▤", label: "Files", title: "Files and documents agents produced, with versions." },
@@ -34,7 +35,7 @@ const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string;
 // is printed next to the view in the sidebar. It must therefore track NAV's
 // order exactly — Events moving up to 2 costs some muscle memory, but a sidebar
 // numbered 1, 5, 2, 3, 4 costs more.
-const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "graph", "artifacts", "product", "cost", "designer"];
+const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "gates", "graph", "artifacts", "product", "cost", "designer"];
 const viewKey = (v: View): string => String(KEY_VIEWS.indexOf(v) + 1);
 
 // Mirrors the `@media (max-width: 800px)` rule in styles.css that turns the

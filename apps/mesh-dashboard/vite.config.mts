@@ -15,7 +15,7 @@ const API_ROOTS = [
   "playground", "presets",
   "status", "metrics", "steps", "turns", "scheduler", "activity", "events",
   "graph", "timeline", "agents", "threads", "messages", "artifacts", "budgets",
-  "approvals", "escalations", "mission", "goals", "config", "internal", "health",
+  "approvals", "tool-approvals", "escalations", "mission", "goals", "config", "internal", "health",
 ];
 
 // Dev proxy target: override with MESH_BUS_URL (e.g. when your mesh runs on a
