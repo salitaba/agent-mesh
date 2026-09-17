@@ -779,3 +779,71 @@ export function verdictText(reason: string, ctx: VerdictContext = {}): VerdictTe
   }
   return base;
 }
+
+/** `raisedBy` on the cards `TerminationManager` raises (`supervisor.ts`). */
+export const TERMINATION_RAISER = "termination-manager";
+
+/** A verdict that is standing right now, carrying the reason it keys on. */
+export interface LiveVerdict extends VerdictText {
+  /** A real `VERDICT_TEXT` key — never the de-snaked fallback. */
+  reason: string;
+}
+
+/**
+ * An open escalation as `/status` serves it. Structural on purpose: the catalog
+ * imports nothing but types, and widening this to core's real `Escalation`
+ * would drag a runtime graph into every consumer that only wants the phrasing.
+ */
+export interface VerdictEscalation {
+  reason?: string;
+  raisedBy?: string;
+  advisory?: boolean;
+  status?: string;
+  detail?: unknown;
+}
+
+/**
+ * The mission's own verdict, phrased, from live state — or null.
+ *
+ * `TerminationManager.evaluate` already decides this, but it is unreachable
+ * from a banner: the tick that sees the condition escalates and flips the goal
+ * to ESCALATED, and from the next tick on `evaluate` returns `continue`. The
+ * verdict is computable for exactly one tick. What outlives it is the card that
+ * tick raised, which carries the verdict `reason` literal verbatim — so the
+ * standing verdict stays readable from `openEscalations` long after the verdict
+ * itself stopped being computable. That is the whole trick here.
+ *
+ * Only termination-manager cards qualify, and only for reasons this table has
+ * phrased. An agent-raised escalation carries free prose in `reason`, which
+ * `verdictText` would cheerfully de-snake into a headline — a graceful degrade
+ * in a card, a garbled sentence in the most prominent copy on the page. A
+ * banner is the wrong surface to guess on.
+ */
+export function liveMissionVerdict(escalations: readonly VerdictEscalation[]): LiveVerdict | null {
+  // Last match, not first: a mission can escalate, be answered, and escalate
+  // again, and the log preserves insertion order — the newest card is live.
+  for (let i = escalations.length - 1; i >= 0; i--) {
+    const e = escalations[i];
+    if (!e || e.advisory === true) continue;
+    // Absent status means the caller already filtered to open cards, which is
+    // what `/status` serves; a present one still has to say OPEN.
+    if (e.status !== undefined && e.status !== "OPEN") continue;
+    if (e.raisedBy !== TERMINATION_RAISER) continue;
+    const reason = e.reason;
+    // `hasOwnProperty`, not `in`: "constructor" and "toString" are reachable as
+    // reason strings and would both pass a prototype-chain check.
+    if (!reason || !Object.prototype.hasOwnProperty.call(VERDICT_TEXT, reason)) continue;
+    const detail = (e.detail && typeof e.detail === "object" ? e.detail : {}) as Record<string, unknown>;
+    // The three detail keys are the ones `evaluate` actually writes, read back
+    // here so the headline carries live numbers rather than the generic line.
+    return {
+      reason,
+      ...verdictText(reason, {
+        agents: Array.isArray(detail.failedAgents) ? (detail.failedAgents as string[]) : undefined,
+        threads: typeof detail.exhaustedThreads === "number" ? detail.exhaustedThreads : undefined,
+        waiting: Array.isArray(detail.openDeadlockEscalations) ? detail.openDeadlockEscalations.length : undefined,
+      }),
+    };
+  }
+  return null;
+}

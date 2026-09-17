@@ -5,6 +5,7 @@ import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../com
 import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
 import { useProjectsOptional } from "../projects";
+import { liveMissionVerdict } from "../../../../packages/protocol/src/catalog";
 
 export function MeshMark(): React.JSX.Element {
   return (
@@ -192,6 +193,14 @@ export default function Overview(): React.JSX.Element {
   const sched = st.scheduler || {};
   const runningSteps = (steps || []).filter((s: any) => s.status === "running");
   const needYou = escOpen.length > 0;
+  // The mission's own verdict, phrased. `TerminationManager.evaluate` is what
+  // decides it, but it is unreachable from here: the tick that sees the
+  // condition escalates and flips the goal to ESCALATED, and from the next tick
+  // on `evaluate` returns `continue` — the verdict is computable for exactly
+  // one tick. The card that tick raised carries the reason literal and outlives
+  // it, so the banner reads the card. Null for an agent-raised escalation,
+  // whose reason is free prose with no phrasing behind it.
+  const verdict = liveMissionVerdict(escOpen);
   const halted = needYou || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "FAILED";
   const parked = Boolean(st.uiOnly) || st.mode === "parked";
   // How many seats boot was asked to start. null means the server predates the
@@ -313,7 +322,22 @@ export default function Overview(): React.JSX.Element {
         </div></div>
       ) : null}
       {needYou ? (
-        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>{escOpen.length} decision{escOpen.length > 1 ? "s" : ""} waiting on you — mission is paused.</b> <Button variant="banner-act" onClick={() => setView("escalations")}>Review now</Button></div></div>
+        // The count alone said *that* the mission stopped and never *why*: a run
+        // killed by its wall-clock limit rendered as "1 decision waiting on
+        // you", and the operator had to open the escalations view to find the
+        // sentence the catalog has had phrased all along. The verdict leads now;
+        // the count keeps its place in the detail line, where it still earns one
+        // once there is more than a single card. Agent-raised escalations have
+        // no phrasing, so those keep the original wording exactly.
+        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{verdict ? `${verdict.title}.` : `${escOpen.length} decision${escOpen.length > 1 ? "s" : ""} waiting on you — mission is paused.`}</b>{" "}
+          {verdict ? (
+            <span className="muted">
+              {verdict.summary} This is the mission's own stopping condition, not a quiet patch: it will not clear on its own, and the mission stays parked until it is answered.{escOpen.length > 1 ? ` ${escOpen.length} decisions are waiting in total.` : ""}{" "}
+            </span>
+          ) : null}
+          <Button variant="banner-act" onClick={() => setView("escalations")}>Review now</Button>
+        </div></div>
       ) : goal.status === "PAUSED" ? (
         <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Mission is paused. Nothing is running.</b></div></div>
       ) : goal.status === "COMPLETED" ? (
