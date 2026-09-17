@@ -601,6 +601,23 @@ export function MeshProvider({ children, projectId = null, background = false }:
   // Holding the resolver here (rather than inside the component) keeps the
   // promise and the unmount in one place: closing always settles the await.
   const [confirmReq, setConfirmReq] = useState<{ req: ConfirmRequest; resolve: (v: string | null) => void } | null>(null);
+  // That covered the *dialog's* unmount, not the provider's. A provider can be
+  // torn down with an ask still open — a project dropping out of `mounted` in
+  // main.tsx mid-question — and the resolver dies with it, leaving the caller
+  // awaiting a promise nobody will ever settle. `useGoLive` behind the parked
+  // banner's Continue is the one that bit: no toast, no busy state, no error,
+  // just a click that did nothing, forever. Mirror the resolver so the
+  // provider's own teardown can settle it the way a cancel would.
+  const pendingConfirm = useRef<{ resolve: (v: string | null) => void } | null>(null);
+  useEffect(() => {
+    pendingConfirm.current = confirmReq;
+  }, [confirmReq]);
+  useEffect(
+    () => () => {
+      pendingConfirm.current?.resolve(null);
+    },
+    [],
+  );
   const confirm = useCallback<ConfirmFn>(
     (req) =>
       new Promise((resolve) => {
