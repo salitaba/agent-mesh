@@ -341,6 +341,7 @@ export async function collectAgentOutput(
     ...(end.summary !== undefined ? { summary: end.summary } : {}),
     ...(end.declaredSummary !== undefined ? { declaredSummary: end.declaredSummary } : {}),
     ...(end.error !== undefined ? { error: end.error } : {}),
+    ...(end.heldTools !== undefined ? { heldTools: end.heldTools } : {}),
   };
 }
 

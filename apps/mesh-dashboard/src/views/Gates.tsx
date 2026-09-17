@@ -15,6 +15,12 @@ interface Seat {
   agentId: string;
   requiresApproval: string[];
   granted: string[];
+  /**
+   * Tools this seat actually reached for and the gate refused. Reported by the
+   * runtime, so these are spelled the way the backend spells them -- unlocking
+   * from here cannot miss by a typo the way the free-text field can.
+   */
+  requested: string[];
 }
 
 export default function Gates(): React.JSX.Element {
@@ -94,6 +100,29 @@ export default function Gates(): React.JSX.Element {
           <div className="muted">
             gated: {s.requiresApproval.map((c) => <code key={c}>{c}</code>).reduce<React.ReactNode[]>((acc, el, i) => (i ? [...acc, ", ", el] : [el]), [])}
           </div>
+
+          {/*
+            * Shown only when the seat has actually been refused something. The
+            * free-text field below still exists for granting ahead of time, but
+            * this is the path that cannot be typo'd: the tool names come from
+            * the runtime that refused them.
+            */}
+          {s.requested.length > 0 ? (
+            <div className="row-actions" style={{ flexWrap: "wrap", margin: "8px 0" }}>
+              <span className="muted">waiting on you:</span>
+              {s.requested.map((tool) => (
+                <Button
+                  key={tool}
+                  variant="small"
+                  disabled={busy === `${s.agentId}:${tool}`}
+                  title={`Unlock ${tool} — takes effect on the seat's next turn, so wake it after granting`}
+                  onClick={() => void decide(s.agentId, tool, false)}
+                >
+                  {tool} ✓
+                </Button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="row-actions" style={{ flexWrap: "wrap", margin: "8px 0" }}>
             {s.granted.length === 0

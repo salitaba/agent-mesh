@@ -335,7 +335,8 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
     approval?.onRequest?.(toolName);
     return deny(
       `${toolName} needs operator approval: this seat holds ${gated.join(", ")}, which requires_approval gates. ` +
-        "The request is recorded — end your turn rather than retrying; you will be re-activated if it is granted.",
+        "The request is recorded on the operator's gate surface — end your turn rather than retrying, " +
+        "since a grant cannot unlock a call already in flight.",
     );
   };
 
@@ -462,6 +463,12 @@ interface LiveSession {
    * new set here would leave the running gate reading the old one.
    */
   grantedTools: Set<string>;
+  /**
+   * Tools the gate refused since the last turn end. Filled by the gate's
+   * `onRequest` hook and drained onto the turn-end frame, so the operator sees
+   * what the seat asked for instead of having to guess the tool name.
+   */
+  heldTools: Set<string>;
 }
 
 
@@ -673,6 +680,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   private toTurnEnd(result: ResultMessage, s: LiveSession): AgentEventTurnEnd {
+    // Drained, not copied: the set is session-lived, so the next turn has to
+    // start empty or a tool held once would be re-reported on every turn after
+    // -- including turns where the seat never reached for it.
+    const held = [...s.heldTools];
+    s.heldTools.clear();
     const text = result.result ?? "";
     const operations: MeshOp[] = parseMeshOps(text);
     const declared = extractDeclaredSummary(operations);
@@ -693,6 +705,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       summary: extractSummary(text),
       ...(declared ? { declaredSummary: declared } : {}),
       ...(error !== undefined ? { error } : {}),
+      ...(held.length ? { heldTools: held } : {}),
     };
   }
 
@@ -997,6 +1010,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // session was created, and no later unlock could reach a running seat.
     // `stream` refreshes this one in place, per turn.
     const grantedTools = new Set(context.approvalGranted ?? []);
+    // Session-owned for the same reason as `grantedTools`: the gate is built
+    // once per session and must write somewhere that outlives the call.
+    const heldTools = new Set<string>();
     const options: Options = {
       cwd: context.workspacePath,
       // `custom` rather than the claude_code preset: a mesh seat is not a
@@ -1017,6 +1033,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // re-gate a tool the operator already unlocked this session.
           requires: context.approvalRequired ?? agent.requiresApproval ?? [],
           granted: grantedTools,
+          onRequest: (toolName) => heldTools.add(toolName),
         },
       ),
       // canUseTool is the authority; "default" is the mode that routes tool
@@ -1057,6 +1074,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       turns: 0,
       rotations: 0,
       grantedTools,
+      heldTools,
     };
     this.live.set(meshSessionId, s);
     void this.pump(s, agent.id);

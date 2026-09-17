@@ -1083,6 +1083,15 @@ export interface AgentOutput {
   text: string;
   operations: MeshOp[];
   /**
+   * Tools the approval gate refused this turn, in call order, deduplicated.
+   *
+   * Empty/absent for the ordinary case (nothing gated, or nothing blocked).
+   * A runtime without a permission gate never sets it. This is a report of
+   * what was held, not a request queue: a refused call cannot be replayed,
+   * so granting one of these unlocks the tool for the seat's NEXT turn.
+   */
+  heldTools?: string[];
+  /**
    * True when `operations` came from typed tool calls (MCP `mesh_*`, or the
    * equivalent structured adapter payload) rather than from parsing the
    * model's prose.
@@ -1272,6 +1281,13 @@ export interface AgentEventTurnEnd {
   declaredSummary?: string;
   /** Present iff `stopReason` is "error". Surfaced as `AgentOutput.error`. */
   error?: string;
+  /**
+   * Tools this turn tried to call and the approval gate held. Surfaced as
+   * `AgentOutput.heldTools` so the supervisor can show the operator what the
+   * seat is actually blocked on, rather than the operator having to guess a
+   * tool name and type it in.
+   */
+  heldTools?: string[];
 }
 
 export interface AgentRuntime {

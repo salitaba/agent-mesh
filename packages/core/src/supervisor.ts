@@ -460,6 +460,14 @@ export class Supervisor {
    * transcript rotation does not drop a grant out from under a live mission.
    */
   private toolGrants = new Map<string, Set<string>>();
+  /**
+   * Tools each seat's gate actually refused, as reported by the runtime on its
+   * turn-end frame. The read half of `toolGrants`: it turns the operator's gate
+   * surface from "type a tool name and hope you spelled it the way the backend
+   * does" into a list of what the seat is demonstrably blocked on. Same
+   * in-memory lifetime and same keying as the grants, for the same reasons.
+   */
+  private toolRequests = new Map<string, Set<string>>();
   private restartAttempts = new Map<string, number>();
   /**
    * Consecutive turn failures caused by a dead backend, per agent. Unlike
@@ -3644,6 +3652,14 @@ export class Supervisor {
       // a terminal failure.
       this.timeoutRetries.delete(agentId);
       this.auditTurn(turnId, agentId, input, output);
+      // Recorded BEFORE the error throw: a turn can be held and then fail, and
+      // what the seat reached for is exactly what the operator needs to see in
+      // that case -- arguably more than in the successful one.
+      if (output.heldTools?.length) {
+        const held = this.toolRequests.get(agentId) ?? new Set<string>();
+        for (const tool of output.heldTools) held.add(tool);
+        this.toolRequests.set(agentId, held);
+      }
       if (output.error) throw new RuntimeFailure(output.error);
       // Record BEFORE the op loop: the ops below are where an agent accepts a
       // criterion, and `markCriterionEvidence` has to know whether this turn
@@ -4219,6 +4235,10 @@ export class Supervisor {
     const set = this.toolGrants.get(agentId) ?? new Set<string>();
     set.add(tool);
     this.toolGrants.set(agentId, set);
+    // The seat is no longer blocked on this, so it stops being an outstanding
+    // ask. A later revoke does not put it back: the seat has to reach for the
+    // tool and be refused again before that is true of it once more.
+    this.toolRequests.get(agentId)?.delete(tool);
     this.auditLine(`tool approval: ${agentId} granted ${tool}`);
     return true;
   }
@@ -4230,14 +4250,23 @@ export class Supervisor {
     return removed;
   }
 
-  /** Gated seats and what has been unlocked on each, for the operator surface. */
-  listToolApprovals(): Array<{ agentId: string; requiresApproval: string[]; granted: string[] }> {
+  /**
+   * Gated seats, what has been unlocked on each, and what each has actually
+   * been refused, for the operator surface.
+   */
+  listToolApprovals(): Array<{
+    agentId: string;
+    requiresApproval: string[];
+    granted: string[];
+    requested: string[];
+  }> {
     return Object.values(this.config.agents)
       .filter((a) => (a.requiresApproval?.length ?? 0) > 0)
       .map((a) => ({
         agentId: a.id,
         requiresApproval: a.requiresApproval ?? [],
         granted: [...(this.toolGrants.get(a.id) ?? [])],
+        requested: [...(this.toolRequests.get(a.id) ?? [])],
       }));
   }
 

@@ -235,6 +235,28 @@ test("requires_approval holds a tool the seat is otherwise capable of", async ()
   assert.match(res.message, /end your turn rather than retrying/);
 });
 
+test("the gate reports the tool it held, so the operator need not guess the name", async () => {
+  // `onRequest` was declared and called but never supplied by any caller, so
+  // the deny path's claim that "the request is recorded" recorded nothing.
+  // What the operator could do was type a tool name into a free-text field and
+  // hope they spelled it the way the backend does.
+  const held: string[] = [];
+  const gate = buildPermissionGate(["repository.write"], {
+    requires: ["repository.write"],
+    granted: new Set(["Write"]),
+    onRequest: (tool) => held.push(tool),
+  });
+
+  assert.equal((await gate("Edit", {}, gateCtx()))?.behavior, "deny");
+  // Never gated: reported nothing.
+  assert.equal((await gate("Read", {}, gateCtx()))?.behavior, "allow");
+  // Gated but already unlocked: also reported nothing, or granting a tool would
+  // immediately re-list it as something the operator still owes the seat.
+  assert.equal((await gate("Write", {}, gateCtx()))?.behavior, "allow");
+
+  assert.deepEqual(held, ["Edit"]);
+});
+
 test("a grant added after the gate was built reaches the running gate", async () => {
   // The load-bearing half of mid-session unlocking: the gate keeps the CALLER's
   // set rather than copying it, so `open` can hand a session-owned set to the
