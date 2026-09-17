@@ -82,6 +82,44 @@ test("scheduler: concurrency cap bounds parallel agent turns", async () => {
   await m.cleanup();
 });
 
+test("scheduler: a queued agent with no slot says which ceiling binds, and is not a refusal", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "holder", role: "holder", interests: [] },
+      { id: "waiter", role: "waiter", interests: [] },
+    ],
+    mayContact: { holder: [], waiter: [] },
+    maxActiveAgents: 1,
+  });
+  const s = stub(m);
+  s.setScript("holder", async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    return { operations: [{ op: "done" } as MeshOp] };
+  });
+  s.setScript("waiter", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+  await m.supervisor.activateAgent("holder", { kind: "manual" });
+  await new Promise((r) => setTimeout(r, 20));
+  await m.supervisor.activateAgent("waiter", { kind: "manual" });
+
+  const waiting = m.scheduler.queueWaits().find((w) => w.agentId === "waiter");
+  assert.ok(waiting, "a queued agent with no slot must say why it is waiting");
+  assert.equal(waiting.kind, "capacity");
+  assert.equal(waiting.limit, 1);
+  assert.equal(waiting.running, 1);
+  assert.equal(waiting.configKey, "scheduling.concurrency.max_active_agents");
+
+  // The distinction the whole surface rests on: this agent WAS queued, so the
+  // policy-refusal channel must stay empty for it. Reporting a capacity wait as
+  // a refusal would tell the operator to go change a rule that never fired.
+  assert.equal(m.scheduler.lastActivationRefusal("waiter"), undefined);
+
+  // …and it clears itself when the slot frees, which is why it never earns an
+  // event of its own.
+  await new Promise((r) => setTimeout(r, 600));
+  assert.equal(m.scheduler.queueWaits().length, 0, "the wait must clear once a slot frees");
+  await m.cleanup();
+});
+
 test("scheduler: urgent mail outranks routine activations", async () => {
   const m = await makeMesh({
     agents: [

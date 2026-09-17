@@ -3,7 +3,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
 import { stillOwes } from "../../core/src/state";
-import type { PolicyEvaluator, SchedulerActivationRequest, SchedulerPort, TurnOutcome } from "../../core/src/ports";
+import type { PolicyEvaluator, QueueWait, SchedulerActivationRequest, SchedulerPort, TurnOutcome } from "../../core/src/ports";
 
 export interface TurnRunner {
   runTurn(agentId: string, reason: ActivationReason): Promise<void>;
@@ -393,9 +393,18 @@ export class Scheduler implements SchedulerPort {
     void this.runner.reportActivationDenied?.(agentId, decision, reason)?.catch(() => undefined);
   }
 
-  private capacityAvailable(agentId: string): boolean {
+  /**
+   * The concurrency ceiling currently holding this agent, or undefined when a
+   * slot is free. Returns which ceiling bound rather than a bare boolean: the
+   * three have different numbers and different remedies, and from the outside
+   * all of them look identical to "nothing is happening".
+   */
+  private capacityWait(agentId: string): QueueWait | undefined {
     // Whole-team ceiling first: peers + services combined never exceed it.
-    if (this.runningMap.size >= this.config.scheduling.maxTotalAgents) return false;
+    const total = this.runningMap.size;
+    if (total >= this.config.scheduling.maxTotalAgents) {
+      return { agentId, kind: "capacity", limit: this.config.scheduling.maxTotalAgents, running: total, configKey: "scheduling.concurrency.max_total_agents" };
+    }
     const def = this.state.agents.get(agentId)?.definition;
     const mode = def?.mode ?? "peer";
     let peer = 0;
@@ -404,9 +413,49 @@ export class Scheduler implements SchedulerPort {
       if (this.state.agents.get(id)?.definition.mode === "service") service++;
       else peer++;
     }
-    return mode === "service"
-      ? service < this.config.scheduling.maxParallelServiceAgents
-      : peer < this.config.scheduling.maxActiveAgents;
+    if (mode === "service") {
+      return service < this.config.scheduling.maxParallelServiceAgents
+        ? undefined
+        : { agentId, kind: "capacity", limit: this.config.scheduling.maxParallelServiceAgents, running: service, configKey: "scheduling.concurrency.max_parallel_service_agents" };
+    }
+    return peer < this.config.scheduling.maxActiveAgents
+      ? undefined
+      : { agentId, kind: "capacity", limit: this.config.scheduling.maxActiveAgents, running: peer, configKey: "scheduling.concurrency.max_active_agents" };
+  }
+
+  /**
+   * The one thing stopping this queue entry from starting, in the pump's own
+   * precedence order. undefined means it is runnable right now. Extracted from
+   * the pump's scan so that the three conditions it ANDs together stay a single
+   * predicate — they used to collapse into one `idx < 0` break that said
+   * nothing about which of them fired.
+   */
+  private queueWait(item: QueueItem): QueueWait | undefined {
+    // Never start a duplicate turn for a mid-flight agent (see isBusy): the
+    // duplicate bails out instantly and its finish requeues — the wedge.
+    if (this.isBusy(item.agentId)) return { agentId: item.agentId, kind: "busy" };
+    const capacity = this.capacityWait(item.agentId);
+    if (capacity) return capacity;
+    if (this.stopped && !item.explicit) return { agentId: item.agentId, kind: "stopped" };
+    return undefined;
+  }
+
+  /**
+   * Why every queued agent is still waiting. Recomputed on read and never
+   * cached off the pump: these clear within a turn, and a stale snapshot would
+   * have the console reporting a full mesh seconds after the slot freed.
+   *
+   * This is a live read, not an event stream, and that is the point. A capacity
+   * wait is not a refusal — the agent is queued and will start on its own — so
+   * it gets no `message.rejected` and cannot be recovered from the event log.
+   */
+  queueWaits(): QueueWait[] {
+    const waits: QueueWait[] = [];
+    for (const item of this.queue) {
+      const wait = this.queueWait(item);
+      if (wait) waits.push(wait);
+    }
+    return waits;
   }
 
   private async pump(): Promise<void> {
@@ -414,9 +463,12 @@ export class Scheduler implements SchedulerPort {
     this.pumping = true;
     try {
       while (this.queue.length > 0) {
-        // Never start a duplicate turn for a mid-flight agent (see isBusy):
-        // the duplicate bails out instantly and its finish requeues — the wedge.
-        const idx = this.queue.findIndex((q) => !this.isBusy(q.agentId) && this.capacityAvailable(q.agentId) && (!this.stopped || q.explicit));
+        const idx = this.queue.findIndex((q) => !this.queueWait(q));
+        // Every queued agent is held by something — its own turn, a concurrency
+        // ceiling, or a parked scheduler. There is nothing to dispatch; which
+        // of the three it was is recoverable from `queueWaits()`, live, when
+        // the console asks. It is deliberately not an event: these resolve
+        // constantly and one event per block would drown the log.
         if (idx < 0) break;
         const item = this.queue.splice(idx, 1)[0];
         this.runningMap.set(item.agentId, item);

@@ -31,6 +31,17 @@ const SHIP_STATES = new Set(["MERGED", "APPROVED", "VERIFIED", "MERGEABLE", "FIN
  * - A block has lifted when the agent has done anything since. If the newest
  *   event naming it as actor is still its denial, it never ran.
  */
+/**
+ * The three concurrency ceilings, labelled the way the designer's Mesh panel
+ * labels them, so "raise it" names a control the operator can actually find
+ * rather than a raw config key they would have to go hunting for.
+ */
+const CEILING_LABEL: Record<string, string> = {
+  "scheduling.concurrency.max_active_agents": "peers at once",
+  "scheduling.concurrency.max_parallel_service_agents": "services at once",
+  "scheduling.concurrency.max_total_agents": "total turns at once",
+};
+
 function standingBlocks(events: TimelineEvent[]): TimelineEvent[] {
   const newestByActor = new Map<string, TimelineEvent>();
   for (const e of events) {
@@ -216,6 +227,14 @@ export default function Overview(): React.JSX.Element {
   const ceilingHit = hostSpend?.ceilingTripped === true;
   const blocks = standingBlocks(events);
   const anyDeny = blocks.some((b) => b.payload?.decision === "DENY");
+  // Queued agents with no slot. Deliberately NOT derived from `events` the way
+  // `standingBlocks` is: a capacity block is not a refusal, so it emits no
+  // `message.rejected` — and it must not, because these resolve constantly and
+  // one event apiece would bury the log. Live scheduler state or nothing.
+  const capacityWaits: Array<{ agentId: string; kind?: string; limit?: number; running?: number; configKey?: string }> =
+    (sched.waits || []).filter((w: any) => w.kind === "capacity");
+  const ceiling = capacityWaits[0];
+  const ceilingLabel = ceiling?.configKey ? CEILING_LABEL[ceiling.configKey] : undefined;
   const hasHistory = (steps?.length ?? 0) > 0 || (metrics?.metrics?.messages ?? 0) > 0 || (st.eventCount ?? 0) > 15;
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
@@ -272,6 +291,25 @@ export default function Overview(): React.JSX.Element {
               : "Deferred, not refused: each queues itself again the moment the budget or goal it is waiting on moves. Waking one by hand will not stick while the limit still binds — raise the limit instead."}
           </span>{" "}
           <Button variant="banner-act" onClick={() => setView("designer")}>Open designer</Button>
+        </div></div>
+      ) : null}
+      {!st.uiOnly && !parked && capacityWaits.length > 0 ? (
+        // Queued, not refused — and the difference is the whole banner. These
+        // clear on their own when a running turn finishes, so wording this like
+        // the refusal strip above would cry wolf on a state that is usually
+        // seconds old, and would send the operator off to change a limit that
+        // was never the problem. Neutral grey for the same reason.
+        <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{capacityWaits.length === 1 ? `${capacityWaits[0].agentId} is queued, waiting for a slot.` : `${capacityWaits.length} agents are queued, waiting for a slot.`}</b>{" "}
+          <span className="muted">
+            {typeof ceiling?.running === "number" && typeof ceiling?.limit === "number" ? (
+              <>The mesh is running {ceiling.running} of {ceiling.limit}{ceilingLabel ? <> — <code>{ceilingLabel}</code> is the ceiling that binds</> : null}. </>
+            ) : null}
+            Nothing was refused and nothing is lost: each one starts on its own the moment a running turn finishes, so this normally clears within a turn. Waking one by hand will not help — an explicit wake skips a parked scheduler, not a full one.{" "}
+            {ceilingLabel
+              ? <>Raise <code>{ceilingLabel}</code> in the designer's Mesh panel if these should run in parallel instead.</>
+              : <>Raise the concurrency limits in the designer's Mesh panel if these should run in parallel instead.</>}
+          </span>
         </div></div>
       ) : null}
       {needYou ? (

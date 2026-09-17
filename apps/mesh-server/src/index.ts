@@ -1505,7 +1505,12 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // "refused at boot, or started and has since stopped" as a guess on
           // precisely the screen an operator opens to stop guessing.
           lastBoot: instance.lastBoot,
-          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue },
+          // `waits` says why the queued ones are not running. It is live state
+          // rather than a log entry on purpose: a capacity block emits no
+          // event (it is not a refusal and clears itself), so the console
+          // cannot derive this from the event buffer the way it derives
+          // standing policy refusals.
+          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue, waits: instance.scheduler.queueWaits?.() ?? [] },
           recentTurns: supervisor.getRecentTurns(10),
           commitments: supervisor.commitmentStats(),
           sseClients: hub.clientCount,

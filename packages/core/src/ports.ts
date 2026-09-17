@@ -67,6 +67,36 @@ export interface SchedulerActivationRequest {
 
 export type TurnOutcome = "ok" | "blocked" | "failed";
 
+/**
+ * Why an already-queued agent is not running yet.
+ *
+ * Deliberately NOT a `PolicyDecisionResult`. Nothing in this layer asks the
+ * policy engine, so there is no decision, no `ruleId` and no authored sentence
+ * to transport; synthesizing one would put text the policy never produced
+ * behind `lastActivationRefusal`, which every `message.rejected` consumer reads
+ * as policy output. The two states also differ in kind: a policy refusal means
+ * the agent was never queued, while a wait means it IS queued and merely has no
+ * slot. Calling that second one "refused" cries wolf on a state that normally
+ * clears within a turn.
+ */
+export type QueueWaitKind =
+  /** the agent already has a turn in flight; this activation runs after it */
+  | "busy"
+  /** a `scheduling.concurrency.*` ceiling is full */
+  | "capacity"
+  /** the scheduler is parked and this activation is not an explicit wake */
+  | "stopped";
+
+export interface QueueWait {
+  agentId: string;
+  kind: QueueWaitKind;
+  /** The ceiling that bound and the live count against it (`capacity` only). */
+  limit?: number;
+  running?: number;
+  /** Raw config key an operator would raise to lift it (`capacity` only). */
+  configKey?: string;
+}
+
 export interface SchedulerPort {
   handleEvent(event: MeshEvent): Promise<void>;
   requestActivation(req: SchedulerActivationRequest): Promise<boolean>;
@@ -89,6 +119,13 @@ export interface SchedulerPort {
    * is by definition the one that cannot make progress. Optional for mocks.
    */
   isParkedForBackoff?(agentId: string): boolean;
+  /**
+   * Why each queued agent is still waiting, computed live against the current
+   * queue. The console needs a channel that is NOT the event log: capacity
+   * waits resolve constantly, so an event per block would bury the log under a
+   * state that clears itself. Optional for mocks.
+   */
+  queueWaits?(): QueueWait[];
   pending(): number;
   running(): number;
   start(): void;
