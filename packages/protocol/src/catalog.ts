@@ -576,6 +576,7 @@ export const CAPABILITY_ALIASES: Record<string, string> = {
   "docs.write": "repository.write",
   "test.run": "test.execute",
   "quality.verify": "test.execute",
+  "repository.commit": "git.commit",
   "repository.merge": "git.merge",
 };
 

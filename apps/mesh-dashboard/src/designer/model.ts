@@ -2,9 +2,14 @@
  * templates, schema padding (densure), diff summary, source-of-truth state and
  * error routing. No React here — import from anywhere. */
 
+import { CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
 import type { SaveTarget, Tab } from "./types";
 
-export const CAPS = ["repository.read", "repository.write", "architecture.write", "architecture.read", "review.design", "code.review", "task.assign", "test.execute", "test.write", "security.scan", "security.review", "git.commit", "git.merge", "shell.execute", "network.request"];
+/* Derived, not duplicated: this list was hand-maintained and drifted — it was
+ * missing `request_review`, so the designer could not offer a token the runtime
+ * accepts. Sourcing it from the runtime's own catalog makes that class of drift
+ * impossible rather than merely fixed once. */
+export const CAPS: string[] = [...CAPABILITY_TOKENS];
 
 /* Capability → permissions group. Explicit for every known CAPS entry because
  * the name and the prefix don't always agree (`code.review` is Review, not
@@ -25,6 +30,7 @@ export const CAP_GROUP: Record<string, string> = {
   "git.merge": "Version control",
   "shell.execute": "Execution",
   "network.request": "Execution",
+  request_review: "Review",
 };
 
 export const OTHER_CAP_GROUP = "Other";
