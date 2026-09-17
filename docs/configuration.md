@@ -19,7 +19,8 @@ mesh:
                                        # them from `goal` (default false). Ignored
                                        # when `acceptance_criteria` is set above.
   workspace: { path: ./workspace }
-  runtime:   { default: opencode }  # + optional model: provider/model, variant: low|high|max for the whole mesh
+  runtime:   { default: claude }    # + optional model: provider/model for the whole mesh.
+                                     #   `variant` is inert here — see the note under agents.
   defaults:                         # mesh-wide session/delegation defaults every agent inherits
     session:    { persistent: true, max_context_tokens: 120000 }
     delegation: { allow: false, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }
@@ -69,9 +70,10 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 agents:
   developer:
     role: developer
-    runtime: opencode                # opencode | claude | http | stub | custom
+    runtime: claude                  # registered: claude | stub | none
     model: provider/model            # optional; blank = mesh.runtime.model, then backend default
-    variant: high                    # optional thinking variant (opencode: low|high|max); blank = mesh.runtime.variant
+    variant: high                    # inert: opencode's thinking knob, read by no registered runtime,
+                                     #   and it does NOT inherit mesh.runtime.variant — setting it warns.
     mode: peer                       # peer | service
     prompt: ./roles/developer.md
     capabilities: [repository.read, repository.write, git.commit, test.execute]

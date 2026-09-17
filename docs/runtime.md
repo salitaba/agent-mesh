@@ -147,11 +147,10 @@ changing the protocol.
   place. `POST /mission/park` parks it again.
   `mesh status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
   talk to `/api`.
-- `mesh init` detects whether the `opencode` CLI is on PATH and templates
-  `runtime: default: stub` when it is not; `mesh run` preflights opencode-based
-  configs and prints guidance instead of crashing. There is no equivalent probe
-  for `claude` and there should not be: its executable ships with the SDK, so a
-  PATH check would fail on a working install.
+- `mesh init` templates `runtime: default: claude`. There is no PATH probe for
+  it and there should not be: its executable ships with the SDK, so a check
+  would fail on a working install. `mesh run` needs no backend preflight to
+  print guidance about.
 - `mesh emit-schemas` regenerates `schemas/*.json` from the code (single source).
 - `mesh bench` runs the mesh-vs-single comparison across the A–F corpus.
 - `mesh mcp` is the internal stdio↔HTTP bridge spawned by OpenCode.

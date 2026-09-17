@@ -116,13 +116,14 @@ npm run mesh -- send --to architect --type MISSION --payload "{\"note\":\"go\"}"
 npm run mesh -- respond <escalationId> "approved, proceed"
 ```
 
-Real LLM collaboration needs a model backend. Two are built in:
+Real LLM collaboration needs a model backend:
 
 - `runtime: claude` — Claude Code via `@anthropic-ai/claude-agent-sdk`. Nothing
   to install: the SDK is a declared dependency and ships its own executable.
-- `runtime: opencode` — needs the OpenCode CLI (`npm i -g opencode-ai` +
-  provider keys). `mesh run` preflights this one and prints guidance instead of
-  crashing if it is missing.
+- `runtime: stub` — no model calls at all, for offline runs and tests.
+
+`runtime: opencode` was removed. A config that still names it fails to load,
+with an error pointing at the agents that do.
 
 Set it per agent, or mesh-wide via `mesh.runtime.default`. Add `--git` to give
 writing agents real git worktrees.
