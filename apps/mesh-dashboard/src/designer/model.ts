@@ -167,7 +167,7 @@ function baseMesh(id: string, name: string, goal: string, runtime: string): any 
 }
 
 function tplSolo(): any {
-  const m = baseMesh("solo-builder", "Solo Builder", "Ship a small change end-to-end: design it, build it, test it.", "opencode");
+  const m = baseMesh("solo-builder", "Solo Builder", "Ship a small change end-to-end: design it, build it, test it.", "stub");
   m.startup.activate = ["builder"];
   m.agents.builder = {
     role: "developer",

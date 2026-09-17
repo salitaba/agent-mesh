@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
-import { parseMeshSource } from "../../packages/config/src/index";
+import { analyzeMeshConfig, parseMeshSource } from "../../packages/config/src/index";
 import { validateTransitionGates } from "../../packages/policy-engine/src/index";
 import { TEMPLATES } from "../../apps/mesh-dashboard/src/designer/model";
 
@@ -25,6 +25,14 @@ for (const tpl of TEMPLATES) {
   test(`template ${tpl.key}: every transition gate is satisfiable`, () => {
     const model = tpl.make();
     assert.deepEqual(validateTransitionGates(model.policies?.transitions, model.agents), []);
+  });
+
+  // Gates were the only thing checked here, so a template could name a runtime
+  // the loader rejects and still pass: `solo` shipped `runtime: opencode` past
+  // the removal of that backend. Run the whole cross-field validator, which is
+  // what the operator's mesh.yaml hits on load.
+  test(`template ${tpl.key}: passes full config validation`, () => {
+    assert.doesNotThrow(() => analyzeMeshConfig(tpl.make()));
   });
 }
 
