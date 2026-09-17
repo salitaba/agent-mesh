@@ -167,7 +167,12 @@ export interface HostSpend {
   ceilingUsd: number | null;
   /** `null` when the concurrency cap is disabled. */
   maxConcurrentTurns: number | null;
-  /** The ceiling has been hit and open projects were parked. */
+  /**
+   * The total was over the ceiling on the most recent enforcement tick, and
+   * open projects were parked for it. Cleared by the first tick that finds the
+   * total under again — which, spend being monotonic, only a raised ceiling can
+   * produce.
+   */
   ceilingTripped: boolean;
   /** Projects parked by the ceiling or the turn cap, in the order parked. */
   parked: string[];
@@ -453,6 +458,14 @@ export function createHostServer(deps: {
       for (const id of supervisor.runningIds()) await parkChild(id);
       return;
     }
+    // Reaching here means the ceiling is not over on this tick, so the flag has
+    // to come back down with it. It was previously set and never cleared, which
+    // was invisible only because spend is monotonic: once the total crossed, the
+    // check above stayed true forever and the latch never showed. Raising the
+    // ceiling is the one thing that can make it false again, so an editable
+    // ceiling is exactly what turns a dormant latch into a host reporting a
+    // parked mesh over a live one.
+    ceilingTripped = false;
     const cap = hostConfig.maxConcurrentTurns;
     if (cap === null || totals.runningTurns <= cap) return;
     let over = totals.runningTurns - cap;

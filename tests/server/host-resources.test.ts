@@ -185,6 +185,55 @@ test("the spend ceiling parks every open project once the aggregate crosses it",
   }
 });
 
+test("raising the ceiling un-trips it on the next beat", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const b = makeProject(base, "beta", "beta");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  config.modelPrices = { m: { inputPerMtok: 3, outputPerMtok: 15 } };
+  // $18 per child, $36 across the two: over a $5 ceiling, under a $100 one.
+  process.env.MESH_STUB_INPUT = "1000000";
+  process.env.MESH_STUB_OUTPUT = "1000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await addAndOpen(host, b.root);
+    await settle(400);
+
+    const tripped = (await (await fetch(`${host.url}/api/projects`)).json()) as {
+      spend: { ceilingTripped: boolean; parked: string[] };
+    };
+    assert.equal(tripped.spend.ceilingTripped, true, "the ceiling trips first");
+    assert.deepEqual([...tripped.spend.parked].sort(), ["alpha", "beta"]);
+
+    // Mutating the same object the host holds is what an editable ceiling will
+    // do: `applyLimits` reads `spendCeilingUsd` at call time, not at
+    // construction, so the next beat sees the new number with no restart.
+    config.spendCeilingUsd = 100;
+    await settle(400);
+
+    const cleared = (await (await fetch(`${host.url}/api/projects`)).json()) as {
+      spend: { usd: number; ceilingUsd: number | null; ceilingTripped: boolean };
+    };
+    assert.equal(cleared.spend.ceilingUsd, 100);
+    // The regression this pins: the flag was set once and never cleared, so a
+    // host that had correctly resumed still reported a trip, and the Overview
+    // strip announced "Parked — the host hit its spend ceiling" over a healthy
+    // mesh. Worse than the original bug, where the message was at least true.
+    assert.equal(cleared.spend.ceilingTripped, false, "a raised ceiling un-trips the flag");
+    // Spend never fell — the ceiling rose past it. Without this the assertion
+    // above would also pass if the children had simply stopped reporting.
+    assert.ok(cleared.spend.usd > 5, "the total is still over the old ceiling");
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("a null ceiling disables the backstop entirely", { timeout: 30_000 }, async () => {
   const base = tmpRoot();
   const a = makeProject(base, "alpha", "alpha");
