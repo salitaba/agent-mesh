@@ -56,6 +56,7 @@ import {
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES } from "../../protocol/src/index";
+import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
@@ -5296,6 +5297,38 @@ export class Supervisor {
       );
       retired++;
     }
+    // Phase 1b — stale `review_rounds` primaries. The counter this card reports
+    // is deleted the moment the artifact reaches a settled status (see
+    // `projections-artifact.ts`), and the detector's own self-healing then
+    // forgets the finding — but that only lets it fire AGAIN later, it never
+    // closed the card already sitting in front of the operator. So an artifact
+    // that was rejected or approved left a card demanding a decision about a
+    // review that is over, and — because the stalemate summary supports it —
+    // parked the whole mission behind an unanswerable question. Answering the
+    // card did not help either: the count survives the answer, so the next
+    // review request re-tripped it immediately.
+    //
+    // Keyed on the artifact being SETTLED, not on the counter being absent:
+    // same rule as Phase 1, "gone" is not "answered". A conflictKey naming an
+    // artifact the log does not hold is a state/log divergence rather than a
+    // resolution, so it keeps its card for the operator.
+    for (const esc of [...this.state.escalations.values()]) {
+      if (esc.status !== "OPEN" || isDerivedEscalation(esc)) continue;
+      const artifactId = reviewRoundsArtifactOf(esc);
+      if (!artifactId) continue;
+      const artifact = this.state.artifacts.get(artifactId);
+      if (!artifact || !isSettledArtifactStatus(artifact.status)) continue;
+      await this.deps.kernel.emit(
+        "escalation.auto_resolved",
+        {
+          escalationId: esc.id,
+          reason: `auto-resolved: ${artifact.name} settled as ${artifact.status}, so the review it counted rounds for is over`,
+          artifactId,
+        },
+        { actorId: "termination-manager", goalId: esc.goalId },
+      );
+      retired++;
+    }
     // Phase 2 — derived summaries left without an open support.
     for (const esc of [...this.state.escalations.values()]) {
       if (esc.status !== "OPEN" || !isDerivedEscalation(esc)) continue;
@@ -6006,6 +6039,17 @@ function stuckRequestOf(esc: Escalation): { messageId: string; agentId: string }
   const m = /^stuck:(.+):([^:]+)$/.exec(String(esc.conflictKey ?? ""));
   if (m) return { messageId: m[1], agentId: m[2] };
   return null;
+}
+
+/**
+ * Extract the artifact from a `deadlock:review_rounds` card. The conflictKey is
+ * the authoritative identity here — the detector builds it as
+ * `review_rounds:<artifactId>` and `escalate()` is called with it verbatim — so
+ * there is no detail-shaped fallback to drift from.
+ */
+function reviewRoundsArtifactOf(esc: Escalation): string | null {
+  const m = /^review_rounds:(.+)$/.exec(String(esc.conflictKey ?? ""));
+  return m ? m[1] : null;
 }
 
 function describeReason(reason: ActivationReason): string {

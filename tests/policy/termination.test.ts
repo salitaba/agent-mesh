@@ -267,6 +267,43 @@ test("deadlock: review rounds escalate only past the cap, and settle with the ar
   await m.cleanup();
 });
 
+test("deadlock: a review-rounds card retires once its artifact settles", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
+    mayContact: { dev: [] },
+  });
+  const state = m.kernel.state;
+  const created = await m.supervisor.createArtifact({ actorId: "dev", name: "settling", type: "CodePatch", content: "diff" });
+  if (!("artifact" in created)) throw new Error("artifact failed");
+  const artifactId = created.artifact.id;
+  // The sweep is private and the real watchdog tick is debounced a second;
+  // calling it directly keeps this about the invariant, not the timer.
+  const sweep = () => (m.supervisor as unknown as { reconcileDerivedEscalations(): Promise<void> }).reconcileDerivedEscalations();
+
+  await m.kernel.emit("review.requested", { artifactId }, { actorId: "dev", goalId: state.activeGoalId ?? undefined });
+  state.reviewRounds.set(artifactId, m.config.escalation.artifactReviewRoundsMax + 1);
+
+  // The card the watchdog raises, carrying the detector's own conflictKey.
+  const esc = await m.supervisor.escalate({
+    reason: "deadlock:review_rounds",
+    raisedBy: "deadlock-detector",
+    conflictKey: `review_rounds:${artifactId}`,
+    artifactId,
+  });
+  assert.equal(state.escalations.get(esc.id)?.status, "OPEN");
+
+  // Still under review: the question is live, so the card must survive a sweep.
+  await sweep();
+  assert.equal(state.escalations.get(esc.id)?.status, "OPEN", "an unsettled artifact keeps its card");
+
+  // Settling ends the review the card was counting rounds for.
+  await m.kernel.emit("review.approved", { artifactId, kind: "approve" }, { actorId: "dev", goalId: state.activeGoalId ?? undefined });
+  assert.equal(state.artifacts.get(artifactId)?.status, "APPROVED");
+  await sweep();
+  assert.notEqual(state.escalations.get(esc.id)?.status, "OPEN", "a settled artifact must not keep demanding a decision");
+  await m.cleanup();
+});
+
 test("deadlock: a resolved finding is forgotten, so a recurrence escalates again", async () => {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
