@@ -738,11 +738,12 @@ legacy surface. If a future change is willing to take the schema break, the
 whole block can go; until then nothing should be *added* to it, and nothing
 reads it.
 
-### Item 7 — forwarding `resolved.warnings` to `/config/validate`: DIAGNOSED, NOT SHIPPED
+### Item 7 — forwarding `resolved.warnings` to `/config/validate`: SHIPPED
 
-Session 10 third phase. Stopped before editing, because the scope estimate the
-decision rested on was wrong. Do not start this until the two questions below
-are answered.
+Session 10 third phase. Diagnosed, then stopped once before editing because the
+scope estimate the decision rested on was wrong; both blockers below were then
+answered and the change shipped. **Read the resolution at the end of this
+section** — one blocker turned out to be a real pre-existing bug.
 
 **The change itself is one line.** `analyzeMeshConfig` already runs in the
 handler and `resolved` is in scope: `apps/mesh-server/src/index.ts:1676`. The
@@ -788,3 +789,58 @@ them too, so this becomes worth wiring.
 "wired to nobody" and "nobody boots" warnings "arrive back through
 `serverWarnings` above". They do not, today. Shipping the forward makes the
 claim true; until then it is false and misleading.
+
+#### Resolution — both blockers answered
+
+**Blocker 1 (noise) — accepted as-is, nine kinds.** No filtering by noise. Every
+one of them describes a real defect in the operator's own config, and the
+designer already had the surface to show them (`HealthStrip` + `AdvisoryList`);
+they were being computed and thrown away. Suppressing true warnings to keep a
+list short is the bug this whole survey exists to fix.
+
+**Blocker 2 (gate overlap) — was a real bug, not just duplication.** The two
+checkers are not the same function:
+
+| | `validateTransitionGates` (policy-engine:428) | `validateTransitionGateActors` (config:1059) |
+|---|---|---|
+| malformed token | yes | yes — **duplicate** |
+| actor is no agent id/role | yes | yes — **duplicate** |
+| named agent can *record* the approval (`canReviewArtifactType`) | yes | no — cannot see it |
+| **human seat exempt** | **yes** (`:443`) | **no — FALSE POSITIVE** |
+
+The config variant had drifted: it has no human-seat exemption, so every
+`human.approve` gate was reported as "the gate can never be satisfied". That is
+a supported pattern — `tests/integration/human.test.ts:53` is named "human:
+direct approvals satisfy gates; humans are a mesh seat not an external oracle".
+So the check was telling operators a working mesh was deadlocked, at boot and
+in the CLI, before any of this forwarding existed.
+
+Fixed in two places:
+1. **`config/src/index.ts:1059`** — exempt `"human"`, matching policy-engine.
+   Literal, not core's `HUMAN_AGENT_ID` (`core/src/supervisor.ts:140`): config
+   imports only protocol, and protocol already hardcodes the same string.
+2. **`mesh-server/src/index.ts:1678`** — forward `resolved.warnings`, filtering
+   out `transition gate '…'` because the policy-engine check runs into the same
+   array ten lines below and is strictly stronger. One defect, one line.
+
+**The prefix coupling is the fragile part** and is deliberately locked by a test
+("gate-actor warnings keep the prefix the server dedups on",
+`tests/config/mesh-satisfiability.test.ts`). Reword either config gate message
+without updating the server filter and the duplicate comes back silently.
+
+Tests: 4 in `mesh-satisfiability.test.ts` (human seat silent; human + unknown
+reports only the unknown; unknown still reported, so the exemption is one string
+and not a hole; prefix lock) and 2 assertions in `bus-api.test.ts` (a ghost gate
+appears exactly once; the inert-activation warning — which has no server-side
+equivalent — actually arrives). 1224/1224, typecheck ok, 0 lint errors.
+
+`Designer.tsx:469` previously claimed config warnings "arrive back through
+`serverWarnings`". That claim was false when written; this change makes it true,
+and the comment now names the seam and the one exclusion.
+
+**Still open, deliberately not done here:** `doSave`
+(`Designer.tsx:789-828`) reads `savedTo`/`archived`/`drift` and still ignores
+`json.warnings`, and never calls `setResult` — so an operator who saves without
+validating sees no warnings at all, even though the save response now carries
+them. Same "computed then dropped" shape as the bug just fixed, one layer up.
+Small, self-contained, and the obvious next item.

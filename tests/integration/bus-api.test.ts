@@ -309,6 +309,28 @@ test("http api: config designer — validate/parse/save + designer page served",
     const gg = await post("/config/validate", { config: ghostGate });
     assert.equal(gg.status, 200);
     assert.ok(gg.json.warnings.some((w: string) => /ghost/.test(w)), "gate satisfiability warnings reach the draft validator");
+    // One defect, one line. packages/config runs its own gate-actor check and
+    // the response now forwards resolved.warnings, so without the dedup in the
+    // handler the operator sees this same unsatisfiable gate twice in two
+    // different wordings.
+    assert.equal(
+      gg.json.warnings.filter((w: string) => /ghost/.test(w)).length,
+      1,
+      `one unsatisfiable gate must not be reported twice, got ${JSON.stringify(gg.json.warnings)}`,
+    );
+
+    // Config-time warnings that have no server-side equivalent reach the
+    // designer at all: before the handler seeded its list from
+    // resolved.warnings, the whole family was computed during resolve and
+    // dropped here, so the designer only ever showed the gate check above.
+    const inertKey = JSON.parse(JSON.stringify(doc));
+    inertKey.scheduling = { activation: { strategy: "interest" } };
+    const ik = await post("/config/validate", { config: inertKey });
+    assert.equal(ik.status, 200);
+    assert.ok(
+      ik.json.warnings.some((w: string) => /activation\.strategy/.test(w) && /inert/.test(w)),
+      `config-time warnings must reach the validator, got ${JSON.stringify(ik.json.warnings)}`,
+    );
 
     const bad = JSON.parse(JSON.stringify(doc));
     bad.policies.communication.lead.may_contact = ["ghost"];

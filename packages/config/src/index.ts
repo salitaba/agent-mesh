@@ -1073,6 +1073,15 @@ export function validateTransitionGateActors(
         errors.push(`transition gate '${gate}' requirement '${requirement}' must be '<agent-or-role>.<kind>'`);
         continue;
       }
+      // The human seat satisfies gates but is not an agent, so it never lands
+      // in `actors` above. Without this exemption every `human.approve` gate is
+      // reported as permanently unsatisfiable — a false alarm on a supported
+      // pattern (tests/integration/human.test.ts: "humans are a mesh seat not
+      // an external oracle"). The policy-engine's validateTransitionGates has
+      // always skipped it; this check had drifted from it.
+      // Literal rather than core's HUMAN_AGENT_ID (core/src/supervisor.ts:140):
+      // config imports only protocol, which hardcodes the same string.
+      if (actor === "human") continue;
       if (!actors.has(actor)) {
         errors.push(
           `transition gate '${gate}' requires '${requirement}', but no agent or role '${actor}' exists — the gate can never be satisfied`,

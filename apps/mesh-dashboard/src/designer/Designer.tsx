@@ -468,7 +468,10 @@ export default function Designer(): React.JSX.Element {
     // proposal `problems`); keep this list to checks the server won't flag.
     // "wired to nobody" and "nobody boots" used to live here; they moved into
     // packages/config so a CLI or server boot sees them too, and they arrive
-    // back through `serverWarnings` above — do not re-add them here.
+    // back through `serverWarnings` above — do not re-add them here. That is
+    // every config-time warning, not just those two: /config/validate seeds its
+    // response from `resolved.warnings` (mesh-server/src/index.ts), minus the
+    // gate-actor check it would otherwise report twice.
     const sum = ag.reduce((n, id) => n + (mm.budgets?.agent?.[id] ?? mm.agents[id]?.budget?.tokens ?? 200000), 0);
     if (sum > (mm.budgets?.mission?.tokens ?? 2000000)) list.push({ level: "info", tab: "policy", msg: `crew budgets add up to ${fmt(sum)} — more than the ${fmt(mm.budgets?.mission?.tokens)} mission cap. Fine, just know someone stops early.` });
     if (!mm.mesh?.goal?.trim()) list.push({ level: "warn", tab: "mesh", msg: "the mission has no goal — agents will drift." });

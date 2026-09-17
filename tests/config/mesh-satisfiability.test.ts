@@ -166,3 +166,48 @@ test("a single-agent mesh is never accused of being wired to nobody", () => {
   const cfg = resolve({ agents: [lead], startup: ["lead"] });
   assert.deepEqual(wired(cfg.warnings), []);
 });
+
+/* ---------------- the human seat is a valid gate actor ---------------- */
+
+const gateActor = (w: string[]) => w.filter((x) => x.startsWith("transition gate '"));
+
+test("a gate requiring the human seat is not called unsatisfiable", () => {
+  // `human` is never an agent, so it cannot appear in the id/role set this
+  // check builds — but direct human approvals do satisfy gates (see
+  // tests/integration/human.test.ts, "humans are a mesh seat not an external
+  // oracle"). Warning here is a false alarm on a supported pattern, and it
+  // tells the operator a working mesh is deadlocked.
+  const cfg = resolve({ agents: [lead], transitions: { "release.accepted": ["human.approve"] }, startup: ["lead"] });
+  assert.deepEqual(gateActor(cfg.warnings), []);
+});
+
+test("mixing the human seat with an unknown actor still reports the unknown one", () => {
+  const cfg = resolve({
+    agents: [lead],
+    transitions: { "release.accepted": ["human.approve", "ghost.approve"] },
+    startup: ["lead"],
+  });
+  const hits = gateActor(cfg.warnings);
+  assert.equal(hits.length, 1, `only the unknown actor is a problem, got ${JSON.stringify(hits)}`);
+  assert.match(hits[0], /ghost/, "names the actor that actually cannot play the gate");
+  assert.doesNotMatch(hits[0], /human/, "the exempted seat must never be blamed");
+});
+
+test("an unknown gate actor is still reported after the exemption", () => {
+  // The exemption is one string, not a hole: everything else still checks.
+  const cfg = resolve({ agents: [lead], transitions: { "patch.merge": ["ghost.approve"] }, startup: ["lead"] });
+  assert.equal(gateActor(cfg.warnings).length, 1, JSON.stringify(cfg.warnings));
+});
+
+test("gate-actor warnings keep the prefix the server dedups on", () => {
+  // mesh-server's /config/validate seeds its response from resolved.warnings
+  // but filters these out, because it runs the policy-engine's stronger gate
+  // check and would otherwise show one defect twice in different words. That
+  // filter matches on this prefix — reword the message without updating
+  // mesh-server/src/index.ts and the duplicate silently comes back.
+  const cfg = resolve({ agents: [lead], transitions: { "patch.merge": ["ghost.approve"] }, startup: ["lead"] });
+  assert.ok(
+    cfg.warnings.some((w) => w.startsWith("transition gate '")),
+    `the prefix mesh-server filters on must survive rewording, got ${JSON.stringify(cfg.warnings)}`,
+  );
+});

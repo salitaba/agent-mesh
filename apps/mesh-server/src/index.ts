@@ -1675,7 +1675,19 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const baseDir = typeof b.dir === "string" && b.dir ? path.resolve(b.dir) : config.dir;
           const { resolved } = analyzeMeshConfig(doc, baseDir);
           const yamlText = stringifyMesh(doc);
-          const warnings: string[] = [];
+          // Config-time warnings (inert keys, unreachable agents, ungranted
+          // approval gates, uncovered capabilities, …) are computed during
+          // resolve and were being dropped here, so the designer only ever saw
+          // the gate check below. Forward them: the client already renders
+          // whatever this array holds.
+          //
+          // Minus the gate-actor warnings. validateTransitionGateActors in
+          // packages/config reports the same unsatisfiable gates the
+          // policy-engine check below reports, in different words — forwarding
+          // both shows the operator one defect twice. Keep the policy-engine
+          // one: it is strictly stronger, since it also checks the named agent
+          // can actually record the approval, which config cannot see.
+          const warnings: string[] = resolved.warnings.filter((w) => !w.startsWith("transition gate '"));
           // Schema-valid drafts can still name a gate actor no agent can play,
           // or an approve the named agent has no way to record. Run the same
           // satisfiability preflight the designer-proposal path runs so manual
