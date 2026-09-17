@@ -106,6 +106,19 @@ interface ProjectsState {
    * "+ Add a project" button whose POST 404s too.
    */
   hasRegistry: boolean | null;
+  /**
+   * Host-wide spend, or `null` before the first answer and on a server with no
+   * registry. `ceilingTripped` is the field that changes what the operator
+   * should *do*: the host parks every running project once total spend crosses
+   * `spendCeilingUsd` (`mesh-server/src/host.ts:449`) and re-parks them on the
+   * next child heartbeat. So a mesh parked this way cannot be restarted by
+   * clicking Continue — it goes live, activates its startup seats, and is
+   * parked again seconds later. The ceiling has to move first.
+   *
+   * This was already on the wire and already typed; nothing rendered it, which
+   * is why that loop was invisible.
+   */
+  hostSpend: HostSpend | null;
 }
 
 const Ctx = createContext<ProjectsState | null>(null);
@@ -163,6 +176,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   // Starts unknown rather than optimistic: showing the strip and then pulling
   // it away is worse than letting it arrive a beat late in host mode.
   const [hasRegistry, setHasRegistry] = useState<boolean | null>(null);
+  const [hostSpend, setHostSpend] = useState<HostSpend | null>(null);
   // Read from inside the 5s poll, which must not be rebuilt when the verdict
   // lands. `mesh console` has no /api/projects route and never grows one, so
   // once it has 404ed the poll was asking a question already answered — twelve
@@ -203,6 +217,10 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     setHasRegistry(status !== 404);
     const list: ProjectSummary[] = Array.isArray(json?.projects) ? json.projects : [];
     setProjects((prev) => (sameProjects(prev, list) ? prev : list));
+    // The same response has always carried host-wide spend; it used to be
+    // dropped here, so `ceilingTripped` could be true on the wire while the
+    // console showed a parked mesh and no reason for it.
+    setHostSpend((json?.spend as HostSpend | undefined) ?? null);
     setLoaded(true);
     return list;
   }, []);
@@ -458,9 +476,9 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const value = useMemo<ProjectsState>(
     () => ({
       projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject,
-      restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry,
+      restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend,
     }),
-    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry],
+    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend],
   );
 
   return <Ctx.Provider value={value}>{children(activeId)}</Ctx.Provider>;

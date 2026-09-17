@@ -67,15 +67,25 @@ The B banner says "usually startup agents that were never configured, or that we
 refused at boot". It says *usually* because it is guessing: it derives idleness from
 agent lifecycles, and the actual cause is not on `/status`.
 
-- "never configured" **is** durably knowable — the server has
-  `config.startupActivate.length`. Putting that count on `/status` would let the
-  banner say definitively "no startup agents are configured" and link to the designer,
-  closing the loop between the two surfaces.
-- "refused at boot" is **not** durably knowable — `refused` exists only in the
-  `/mission/start` response and is gone on refresh. Would need the server to remember
-  the last boot's refusals.
+- ~~"never configured"~~ **done** — `/status` now carries
+  `startupActivateCount` (`mesh-server/src/index.ts`, the status route), and the
+  banner states that case outright and links to the designer. A count of zero is
+  now a fact, not a guess.
+- ~~"refused at boot"~~ **done** — `MeshInstance.lastBoot` (`mesh-server/src/index.ts`)
+  records `{ at, activated, refused }` on every real boot and rides `/status`, so the
+  refusals outlive the response that used to be their only carrier. The
+  `alreadyLive` early return deliberately leaves the previous record standing: a
+  no-op click booted nothing and must not overwrite the boot that did.
+  In memory on purpose — it describes *this* process's last boot, and after a
+  restart the honest answer comes from booting again, not from a stale record.
 
-Do the first before the second; it is much cheaper and covers the commoner case.
+The banner is **no longer hedged**. `Overview.tsx` picks its wording from
+`lastBoot`: every seat refused names each seat and its reason; some activated says
+so and attributes the idleness to work that has since stopped; zero configured is
+unchanged. The old "either refused at boot or have since stopped" wording survives
+only as the fallback for a server without the field, or a process that never booted
+from parked (a `mesh run` start), where guessing really is all that is available.
+
 Do **not** drive the banner off the POST response alone — it vanishes on refresh,
 which is exactly when a stuck operator goes looking.
 

@@ -109,6 +109,20 @@ export interface MeshInstance {
     activated: string[];
     refused: Array<{ agentId: string; reason: string }>;
   }>;
+  /**
+   * The last boot's outcome, or null before the first one in this process.
+   *
+   * `refused` is otherwise reachable only on the `goLive()` response, which the
+   * console throws away on the next refresh — and a refresh is exactly what a
+   * stuck operator does before going looking for why nothing is running. Kept
+   * in memory on purpose: it describes *this* process's last boot, and after a
+   * restart the honest answer comes from booting again, not from a stale record.
+   */
+  readonly lastBoot: {
+    at: string;
+    activated: string[];
+    refused: Array<{ agentId: string; reason: string }>;
+  } | null;
   /** Live -> parked. Stops the scheduler and drains the queue. */
   park(): Promise<void>;
   /**
@@ -311,6 +325,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   await supervisor.boot({ resume, mode });
 
   const mainProductPath = path.join(config.workspacePath, "main");
+  let lastBoot: MeshInstance["lastBoot"] = null;
   const instance: MeshInstance = {
     config,
     productPath: workspace
@@ -332,6 +347,9 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     },
     get uiOnly(): boolean {
       return !scheduler.isRunning();
+    },
+    get lastBoot(): MeshInstance["lastBoot"] {
+      return lastBoot;
     },
     async goLive(note = "mission started from console") {
       const self = this as MeshInstance;
@@ -359,6 +377,11 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         if (r.queued) activated.push(id);
         else refused.push({ agentId: id, reason: r.blocked ?? "refused" });
       }
+      // Recorded before returning, so the console can still answer "why is
+      // nothing running" after the response that carried it is long gone. The
+      // `alreadyLive` path above returns early and leaves the previous boot's
+      // record standing, which is correct: it did not boot anything.
+      lastBoot = { at: new Date().toISOString(), activated, refused };
       return { alreadyLive: false, activated, refused };
     },
     async park() {
@@ -1473,6 +1496,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           meshId: config.meshId,
           mode: instance.mode,
           uiOnly: instance.uiOnly,
+          // How many seats boot was *asked* to activate. Lets the console tell
+          // "nobody was ever configured to start" apart from "they were
+          // configured and something stopped them".
+          startupActivateCount: config.startupActivate.length,
+          // …and which of those two it was, kept past the boot response that
+          // used to be its only carrier. Without it the console can only offer
+          // "refused at boot, or started and has since stopped" as a guess on
+          // precisely the screen an operator opens to stop guessing.
+          lastBoot: instance.lastBoot,
           scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue },
           recentTurns: supervisor.getRecentTurns(10),
           commitments: supervisor.commitmentStats(),

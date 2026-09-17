@@ -132,13 +132,21 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
       // the counts the route reports instead of asserting.
       const started: string[] = Array.isArray(json?.activated) ? json.activated : [];
       const blocked: unknown[] = Array.isArray(json?.refused) ? json.refused : [];
+      // `started.length === 0` is the operator's click achieving nothing, and it
+      // reads the same whether the seats were blocked or were never configured:
+      // the scheduler is running, the parked banner has cleared, and no agent
+      // will ever take a turn. The old split reported the un-configured case as
+      // a plain green "scheduler live" — technically true, and the exact toast
+      // behind "I clicked Continue and the mesh did not start". The server's
+      // `note` carries which of the two it was, so the title does not have to.
       const title = status !== 200 ? "could not go live"
         : already ? "already live"
-        : started.length === 0 ? (blocked.length > 0 ? "scheduler live, but no agent started" : "scheduler live")
+        : started.length === 0 ? "scheduler live, but no agent started"
         : blocked.length > 0 ? `mission continuing — ${blocked.length} agent${blocked.length > 1 ? "s" : ""} blocked`
         : "mission continuing — agents are running";
       const kind = status !== 200 ? "bad"
-        : started.length === 0 && blocked.length > 0 ? "bad"
+        : already ? "ok"
+        : started.length === 0 ? "bad"
         : blocked.length > 0 ? "warn"
         : "ok";
       toast(title, json?.note ?? json?.error ?? "scheduler live", kind);

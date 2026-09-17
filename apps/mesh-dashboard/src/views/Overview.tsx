@@ -4,6 +4,7 @@ import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../components";
 import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
+import { useProjectsOptional } from "../projects";
 
 export function MeshMark(): React.JSX.Element {
   return (
@@ -155,10 +156,37 @@ export default function Overview(): React.JSX.Element {
   const needYou = escOpen.length > 0;
   const halted = needYou || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "FAILED";
   const parked = Boolean(st.uiOnly) || st.mode === "parked";
+  // How many seats boot was asked to start. null means the server predates the
+  // field — then we can only guess the cause, as before.
+  const startupSeats: number | null = typeof st.startupActivateCount === "number" ? st.startupActivateCount : null;
+  // The last boot's actual outcome. Reaching the console on /status rather than
+  // only on the go-live response is the whole point: the response is gone by the
+  // time the operator refreshes, which is when they come looking. Absent when
+  // this process never booted from parked (a `mesh run` start, or a server that
+  // predates the field) — then the hedged wording below is still the honest one.
+  const lastBoot = st.lastBoot as
+    | { at: string; activated: string[]; refused: Array<{ agentId: string; reason: string }> }
+    | null
+    | undefined;
+  const why = (rs: Array<{ agentId: string; reason: string }>) => rs.map((r) => `${r.agentId} — ${r.reason}`).join("; ");
+  const idleCause =
+    startupSeats === 0
+      ? "No startup agents are configured, so boot had nobody to start and the scheduler came up with an empty queue."
+      : lastBoot && lastBoot.activated.length === 0 && lastBoot.refused.length > 0
+        ? `Every startup agent was refused at the last boot: ${why(lastBoot.refused)}.`
+        : lastBoot && lastBoot.activated.length > 0
+          ? `The last boot started ${lastBoot.activated.join(", ")}${lastBoot.refused.length ? `, and was refused ${why(lastBoot.refused)}` : ""} — that work has since finished or stopped.`
+          : startupSeats === null
+            ? "The scheduler is running with nothing queued behind it — usually startup agents that were never configured, or that were refused at boot."
+            : `The scheduler is running with nothing queued behind it — all ${startupSeats} startup agent${startupSeats === 1 ? "" : "s"} were either refused at boot or have since stopped.`;
   // A finished mission rejects every mutating op, so "send the PM a message"
   // silently does nothing until the goal is reopened — offer the reopen right
   // where the operator sees the verdict.
   const missionOver = goal.status === "COMPLETED" || goal.status === "FAILED";
+  // Optional by design: `mesh console` serves a single mesh and has no project
+  // registry, so a null context means "no host that could have a ceiling".
+  const hostSpend = useProjectsOptional()?.hostSpend ?? null;
+  const ceilingHit = hostSpend?.ceilingTripped === true;
   const hasHistory = (steps?.length ?? 0) > 0 || (metrics?.metrics?.messages ?? 0) > 0 || (st.eventCount ?? 0) > 15;
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
@@ -183,7 +211,18 @@ export default function Overview(): React.JSX.Element {
       <div className="view-title"><h2>Overview</h2><span className={`pill ${goalTone(goal.status)}`}>{(plainGoal(goal.status))}</span><span className="page-actions"><Button variant="small" onClick={() => setView("steps")}>See what agents did</Button>{missionOver ? <Button variant="small" disabled={reopenBusy} title="Reject the result and put the agents back to work — nothing is deleted" onClick={reopenMission}>{reopenBusy ? "reopening…" : "Not good enough — reopen"}</Button> : null}<Button variant="small" danger disabled={resetBusy} title="Wipe all mission data and restart the goal from zero" onClick={resetMission}>{resetBusy ? "resetting…" : "Reset to zero"}</Button></span></div>
       <div className="view-sub">Is the mission healthy? Start here. Details live in Steps and Events.</div>
       {st.uiOnly ? (
-        <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
+        ceilingHit ? (
+          // The one parked state Continue cannot fix. The host parks every
+          // running project when aggregate spend crosses `spend_ceiling_usd`
+          // (mesh-server/src/host.ts:449) and re-runs that check on each child
+          // heartbeat — so a click here goes live, activates its startup seats,
+          // and is parked again seconds later. Offering "continue" as the
+          // remedy is what made this look like a broken button instead of a
+          // budget that ran out. The ceiling has to move first.
+          <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: the host re-parks every open project on the next heartbeat while the total is over. Raise <code>spend_ceiling_usd</code> in <code>~/.agent-mesh/host.yaml</code> (<code>null</code> disables it), then <b>restart the host</b> — it reads that file once at startup (<code>host.ts:902</code>), so editing it alone changes nothing and the next click parks you again.</span></div></div>
+        ) : (
+          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
+        )
       ) : null}
       {needYou ? (
         <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>{escOpen.length} decision{escOpen.length > 1 ? "s" : ""} waiting on you — mission is paused.</b> <Button variant="banner-act" onClick={() => setView("escalations")}>Review now</Button></div></div>
@@ -201,7 +240,7 @@ export default function Overview(): React.JSX.Element {
         // waiting, as no banner at all. A live mission with nobody working is
         // never routine: say which of the two it is and what unblocks it.
         waiting.length === 0 ? (
-          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Live, but no agent is working.</b> <span className="muted">The scheduler is running with nothing queued behind it — usually startup agents that were never configured, or that were refused at boot. Wake an agent to get going.</span></div></div>
+          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Live, but no agent is working.</b> <span className="muted">{idleCause} {startupSeats === 0 ? "Wake an agent now, or say who should start next time." : "Wake an agent to get going."}</span>{startupSeats === 0 ? <> <Button variant="banner-act" onClick={() => setView("designer")}>Set startup agents</Button></> : null}</div></div>
         ) : (
           <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div><b>All quiet.</b> <span className="muted">{waiting.length} agent{waiting.length > 1 ? "s" : ""} waiting, none working right now. Wake one or send a message to get going.</span></div></div>
         )
