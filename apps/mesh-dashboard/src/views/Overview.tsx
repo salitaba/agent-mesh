@@ -214,12 +214,14 @@ export default function Overview(): React.JSX.Element {
         ceilingHit ? (
           // The one parked state Continue cannot fix. The host parks every
           // running project when aggregate spend crosses `spend_ceiling_usd`
-          // (mesh-server/src/host.ts:449) and re-runs that check on each child
-          // heartbeat — so a click here goes live, activates its startup seats,
-          // and is parked again seconds later. Offering "continue" as the
-          // remedy is what made this look like a broken button instead of a
-          // budget that ran out. The ceiling has to move first.
-          <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: the host re-parks every open project on the next heartbeat while the total is over. Raise <code>spend_ceiling_usd</code> in <code>~/.agent-mesh/host.yaml</code> (<code>null</code> disables it), then <b>restart the host</b> — it reads that file once at startup (<code>host.ts:902</code>), so editing it alone changes nothing and the next click parks you again.</span></div></div>
+          // (`applyLimits` in mesh-server/src/host.ts — named, not cited by
+          // line, because the last line number here went stale in one commit)
+          // and re-runs that check on each child heartbeat — so a click here
+          // goes live, activates its startup seats, and is parked again
+          // seconds later. Offering "continue" as the remedy is what made this
+          // look like a broken button instead of a budget that ran out. The
+          // ceiling has to move first.
+          <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: while the total is over, the host re-parks every open project on the next heartbeat. The ceiling is host-wide, not this mission's — raise it in the host's settings and it takes effect on the next heartbeat, no restart. Editing <code>~/.agent-mesh/host.yaml</code> by hand still needs one, because the file is read only at startup. Projects the host already parked stay parked until you reopen them.</span></div></div>
         ) : (
           <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
         )

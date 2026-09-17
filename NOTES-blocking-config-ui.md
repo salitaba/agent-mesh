@@ -78,7 +78,13 @@ work — this is a re-siting job, not new plumbing.
 (`apps/mesh-server/src/host.ts:529-657`) are health / events / projects
 open-close-restart-delete only. Feasibility, checked against the source:
 
-1. **The reload itself is easy.** `applyLimits` (`:447`) reads
+1. **DONE. The reload itself is easy.** `GET`/`PUT /api/host/config` now exists,
+   the closure binding is a `let`, and `saveHostConfig` (new, in
+   `packages/projects/src/host-config.ts`) is `host.yaml`'s first write path.
+   The PUT enforces before it answers, so a raise is in force by the time the
+   operator sees the response. Raising or removing a spend ceiling requires
+   `{ confirm: true }`; lowering does not. Original note follows.
+   `applyLimits` (`:447`) reads
    `hostConfig.spendCeilingUsd` *at call time*, not at construction. The binding
    is one closure `const` at `host.ts:250` (`startHostServer` loads its own at
    `:902` and passes it down as `deps.hostConfig`). Make `:250` a `let`, add a
@@ -98,17 +104,27 @@ open-close-restart-delete only. Feasibility, checked against the source:
    than today, where the message is at least true. **Any reload path must clear
    the latch**, or derive the flag instead of latching it.
 
-3. **Not every key can hot-reload.** `projectMemoryMb` is consumed at `:903` into
-   `supervisorOptions.memoryMb` — a child *spawn* flag, so a change affects only
-   projects opened afterwards. A settings UI has to mark, per key, whether the
-   edit is live / next-open / host-restart. One undifferentiated "Save" button
-   reproduces the original trap in a new place.
+3. **Not every key can hot-reload.** A settings UI has to mark, per key, whether
+   the edit is live or needs something else to happen first. One
+   undifferentiated "Save" button reproduces the original trap in a new place.
+   The labels now live in `HOST_CONFIG_EFFECTS` (`host-config.ts`) and ride the
+   `GET` response, so the screen renders them rather than keeping its own copy.
 
-Keys: `spend_ceiling_usd` (live, once the latch is fixed), `max_concurrent_turns`
+   **Correction to this brief: `project_memory_mb` is `host-restart`, not
+   "next project open".** This draft said a change "affects only projects opened
+   afterwards", reasoning from it being a child spawn flag. That is the
+   intuitive answer and it is wrong: `startHostServer` reads the value once into
+   `supervisorOptions.memoryMb` and hands it to the `ChildProcessSupervisor`
+   constructor, which spawns from that captured `this.opts` copy
+   (`packages/projects/src/supervisor.ts:268`). Saving the key changes the file
+   and nothing else until the host restarts. Labelling it "next open" would have
+   been the original trap rebuilt with better manners.
+
+Keys: `spend_ceiling_usd` (live, latch now fixed), `max_concurrent_turns`
 (live, same closure, no latch involved), `default_usd_per_mtok` / `model_prices`
-(live), `project_memory_mb` (next project open only). `model_prices` is blocking
-*indirectly* — a mispriced model trips the ceiling early (`host.ts:362` feeds the
-`:449` check) and parks everything.
+(live), `project_memory_mb` (**host-restart**, see above). `model_prices` is
+blocking *indirectly* — a mispriced model trips the ceiling early and parks
+everything.
 
 **The shipped banner's copy is now on borrowed time.** It tells the operator to
 restart the host (`views/Overview.tsx:222`, which even cites `host.ts:902` by
@@ -117,7 +133,29 @@ the latch. Item 2 is done, so today it is merely unnecessary advice — but the
 moment `PUT /api/host/config` lands it becomes actively wrong, and it has to
 change in that same commit.
 
-**A second latch, not in the original survey: `parkedByPolicy`.** Declared
+**DONE. A second latch, not in the original survey: `parkedByPolicy`.** Resolved
+as a per-entry reason tag: the list is a `Map<id, "ceiling" | "turn-cap">`, and
+entries are removed at the project lifecycle routes (open, close, restart,
+delete) rather than on any limit check. Two things this brief got wrong, both
+found by checking the source before building:
+
+- *Nothing ever un-parks.* `/mission/park` has no counterpart call anywhere in
+  the host. So dropping an entry when its own limit lifts would be a fresh lie,
+  not a fix — a project parked by the ceiling is still parked after the ceiling
+  moves. Only the project's lifecycle ends a policy park.
+- *A derived `parked` would over-report.* Children boot parked by default
+  (`options.childMode ?? "parked"`) and the child's own mode is just
+  `scheduler.isRunning() ? "live" : "parked"`, so a flag derived from the
+  heartbeat would mark every freshly-opened project as policy-parked. Deriving
+  does not replace the host-side record, it adds a wire field on top of it —
+  which is why the protocol change was dropped.
+
+Still open, and small: a child that crashes while parked and is auto-restarted
+by the supervision tree keeps its entry, because that path does not pass through
+the routes. The fix is to tag each entry with the child's `startedAt` and drop
+it when the running child no longer matches. Original note follows.
+
+Declared
 `host.ts:351`, pushed at `:421`, read onto the wire at `:385`, and **never
 removed** — the same shape as `ceilingTripped`, dormant for the same reason (a
 resumed project is re-parked on the next tick while `:449` still holds).
@@ -163,10 +201,21 @@ the system that noticed. Raising it should confirm; nothing else here needs to.
 file on disk to look at. A settings UI should show **effective value + whether it
 is a default or explicitly set** — that distinction is the whole lesson here.
 
-## Open questions for the operator
+## Settled with the operator
 
-- Does "blocking config" mean *stops the mesh* (assumed here) or *requires a
-  restart to change*? The tiers above cover both readings, but Tier 3 is only
-  worth its cost under the second.
-- Per-project or global settings screen? Tier 1/2 are per-mesh; Tier 3 is
-  cross-project. They probably cannot share one screen.
+- **"Blocking config" means the union of both readings** — stops the mesh *and*
+  requires a restart to change. Three sessions of work.
+- **Host config gets its own screen**, not a section in Overview. Tier 1/2 are
+  per-mesh; Tier 3 is cross-project, and they cannot share one screen.
+
+## Session log
+
+1. Tier 3 groundwork: `ceilingTripped` un-latched (`8fe8eb5`).
+2. `parkedByPolicy` un-latched, `GET`/`PUT /api/host/config`, the reload path,
+   and the Overview banner copy that the PUT made wrong.
+3. Next: the host settings screen itself, rendering `effects`/`explicit` from
+   the GET. Then the ~30-key "why you are stopped" survey (see the top of this
+   brief), which is the half that makes an editor worth having.
+
+**Line numbers in this brief go stale fast** — `host.ts` shifted by +5/+13 in a
+single commit. Grep for the symbol; do not trust a number here.

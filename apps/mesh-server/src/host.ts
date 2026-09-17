@@ -27,9 +27,13 @@ import {
   MESH_CONFIG_FILENAME,
   ProjectError,
   SupervisionTree,
+  HOST_CONFIG_EFFECTS,
   defaultHostConfig,
+  hostConfigPath,
   loadHostConfig,
   priceTokens,
+  saveHostConfig,
+  validateHostConfigUpdate,
   type HostConfig,
   type ProjectHandle,
   type ProjectRef,
@@ -249,10 +253,15 @@ export function createHostServer(deps: {
   multiplexQueue?: number;
   /** Resource policy. Defaults (ceiling on, no memory cap) when omitted. */
   hostConfig?: HostConfig;
+  /** Mesh home, for the `host.yaml` the config route writes. */
+  home?: string;
 }): HostServer {
   const { registry, tree, supervisor, projects } = deps;
   const startedAt = deps.startedAt ?? Date.now();
-  const hostConfig = deps.hostConfig ?? defaultHostConfig();
+  // `let`, because `PUT /api/host/config` rebinds it. Every limit check reads
+  // through this binding at call time rather than capturing the numbers, so a
+  // rebind is seen by the very next heartbeat with no restart involved.
+  let hostConfig = deps.hostConfig ?? defaultHostConfig();
 
   /**
    * The host's own subscription to one child's `/events/stream`.
@@ -347,13 +356,27 @@ export function createHostServer(deps: {
   };
 
   /**
-   * Ids parked by a resource limit, in the order they were parked.
+   * Ids parked by a resource limit -> which limit parked them, in the order
+   * they were parked.
    *
    * Kept separate from the crash-loop breaker: this is not a failure, it is
    * the host doing what it was configured to do, and the UI must be able to
    * say so rather than showing a project as broken.
+   *
+   * The reason is load-bearing, and two tempting ways to clear this are both
+   * wrong. Clearing it wholesale beside `ceilingTripped` below drops turn-cap
+   * parks: that loop skips a project once it is idle, and a parked project
+   * reports no running turns, so a blanket clear would silently forget ids
+   * that are still parked and never re-add them. Dropping an entry the moment
+   * its own limit lifts is no better — the host parks children and has no
+   * resume, so a project parked by the ceiling is still parked after the
+   * ceiling moves, and saying otherwise just relocates the lie.
+   *
+   * What actually ends a policy park is the project's own lifecycle, so
+   * entries are removed where that happens: open, close, restart and delete.
    */
-  const parkedByPolicy: string[] = [];
+  type ParkReason = "ceiling" | "turn-cap";
+  const parkedByPolicy = new Map<string, ParkReason>();
   let ceilingTripped = false;
 
   /** Live spend for one project, from its last heartbeat. */
@@ -387,7 +410,7 @@ export function createHostServer(deps: {
       ceilingUsd: hostConfig.spendCeilingUsd,
       maxConcurrentTurns: hostConfig.maxConcurrentTurns,
       ceilingTripped,
-      parked: [...parkedByPolicy],
+      parked: [...parkedByPolicy.keys()],
     };
   };
 
@@ -398,7 +421,7 @@ export function createHostServer(deps: {
    * keeps its state dir, its event log and its lock, so the operator can raise
    * the ceiling and resume rather than replaying a mission from scratch.
    */
-  const parkChild = async (projectId: string): Promise<void> => {
+  const parkChild = async (projectId: string, reason: ParkReason): Promise<void> => {
     const child = supervisor.running(projectId);
     if (!child) return;
     await new Promise<void>((resolve) => {
@@ -423,7 +446,9 @@ export function createHostServer(deps: {
       req.on("close", () => resolve());
       req.end();
     });
-    if (!parkedByPolicy.includes(projectId)) parkedByPolicy.push(projectId);
+    // First reason wins: it is the limit that actually took the project down,
+    // and re-tagging it on a later sweep would rewrite that history.
+    if (!parkedByPolicy.has(projectId)) parkedByPolicy.set(projectId, reason);
   };
 
   /**
@@ -455,7 +480,7 @@ export function createHostServer(deps: {
       ceilingTripped = true;
       // Everything, not the newest: the ceiling is a total, so leaving any
       // project live means the total keeps climbing past a limit already hit.
-      for (const id of supervisor.runningIds()) await parkChild(id);
+      for (const id of supervisor.runningIds()) await parkChild(id, "ceiling");
       return;
     }
     // Reaching here means the ceiling is not over on this tick, so the flag has
@@ -477,7 +502,7 @@ export function createHostServer(deps: {
       if (over <= 0) break;
       const spend = spendOf(id);
       if (!spend || spend.runningTurns === 0) continue;
-      await parkChild(id);
+      await parkChild(id, "turn-cap");
       over -= spend.runningTurns;
     }
   };
@@ -575,6 +600,78 @@ export function createHostServer(deps: {
         return json(200, browseDir(u.searchParams.get("path")));
       }
 
+      // ----------------------------------------------------------- host config
+      // Cross-project, unlike everything under `/api/projects/:id`: one host
+      // process has exactly one of each of these numbers.
+      if (parts[0] === "api" && parts[1] === "host" && parts[2] === "config" && parts.length === 3) {
+        const describe = (): Record<string, unknown> => ({
+          path: hostConfigPath(deps.home),
+          config: {
+            projectMemoryMb: hostConfig.projectMemoryMb,
+            maxConcurrentTurns: hostConfig.maxConcurrentTurns,
+            spendCeilingUsd: hostConfig.spendCeilingUsd,
+            defaultUsdPerMtok: hostConfig.defaultUsdPerMtok,
+            modelPrices: hostConfig.modelPrices,
+          },
+          // The effective number alone cannot be read: a `$50` ceiling looks
+          // identical whether the operator set it or the defaults did, and
+          // "nobody chose this" is the single most useful thing to know about
+          // a limit that just stopped your mesh.
+          explicit: hostConfig.explicitKeys ?? [],
+          effects: HOST_CONFIG_EFFECTS,
+          warnings: hostConfig.warnings,
+        });
+
+        if (req.method === "GET") return json(200, describe());
+
+        if (req.method === "PUT") {
+          const { confirm, ...patch } = await body();
+          const { update, errors } = validateHostConfigUpdate(patch);
+          if (errors.length > 0) return json(400, { error: errors[0], errors });
+          if (Object.keys(update).length === 0) {
+            return json(400, { error: "body carried no editable host settings" });
+          }
+
+          // A UI that makes raising a ceiling frictionless makes overspending
+          // frictionless. The mesh that prompted this work was $53.33 in with
+          // every mandatory acceptance criterion still unsatisfied, and the
+          // ceiling was the only thing in the system that noticed — so the
+          // one edit that can un-notice it asks first. Lowering never does.
+          if ("spendCeilingUsd" in update) {
+            const from = hostConfig.spendCeilingUsd;
+            const to = update.spendCeilingUsd ?? null;
+            if (from !== null && (to === null || to > from) && confirm !== true) {
+              return json(409, {
+                error:
+                  to === null
+                    ? `removing the $${from.toFixed(2)} spend ceiling needs { confirm: true }`
+                    : `raising the spend ceiling from $${from.toFixed(2)} to $${to.toFixed(2)} needs { confirm: true }`,
+                needsConfirm: true,
+                from,
+                to,
+              });
+            }
+          }
+
+          let saved: HostConfig;
+          try {
+            saved = saveHostConfig(update, deps.home);
+          } catch (err) {
+            // A host.yaml we could not parse. Refusing beats overwriting the
+            // operator's file with our own reading of it.
+            return json(409, { error: (err as Error).message });
+          }
+          hostConfig = saved;
+          // Enforce on this request instead of waiting for the next beat: an
+          // operator raising a ceiling to unstick a mesh should not have to
+          // guess whether it took.
+          await enforceLimits();
+          return json(200, describe());
+        }
+
+        return json(405, { error: `no route: ${req.method} ${u.pathname}` });
+      }
+
       // ------------------------------------------------------ registry routes
       if (parts[0] === "api" && parts[1] === "projects") {
         if (parts.length === 2 && req.method === "GET") {
@@ -610,6 +707,12 @@ export function createHostServer(deps: {
           if (!ref) return json(404, { error: `no project '${id}' in the registry` });
 
           if (parts[3] === "open" && parts.length === 4 && req.method === "POST") {
+            // A project that is not running cannot still be parked by policy:
+            // the record outlived the child that it described, so opening is
+            // the point where it stops being true. Guarded on `running`
+            // because an open against an already-open project is a no-op, and
+            // that project may be sitting parked right now.
+            if (!supervisor.running(id)) parkedByPolicy.delete(id);
             const handle = await registry.open(id);
             // 200 even when the child failed to come up: the request itself
             // succeeded, and the caller needs the status and reason to show a
@@ -622,11 +725,13 @@ export function createHostServer(deps: {
             // resync against a project that is meant to be gone.
             await multiplex.unfollow(id);
             await registry.close(id);
+            parkedByPolicy.delete(id);
             return json(200, summarize(ref));
           }
           if (parts[3] === "restart" && parts.length === 4 && req.method === "POST") {
             await multiplex.unfollow(id);
             await registry.close(id);
+            parkedByPolicy.delete(id);
             projects.armManualRestart(id);
             const handle = await registry.open(id);
             return json(200, summarize(handle.ref));
@@ -634,6 +739,7 @@ export function createHostServer(deps: {
           if (parts.length === 3 && req.method === "DELETE") {
             await multiplex.unfollow(id);
             await registry.remove(id);
+            parkedByPolicy.delete(id);
             // Drop it from supervision too, or a removed project keeps its
             // crash history and its breaker state for a later re-add.
             await tree.forget(ref);
@@ -968,7 +1074,11 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
       path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
     ].find((d) => fs.existsSync(d));
 
-  const server = createHostServer({ registry, tree, supervisor, projects, dashboardDir, hostConfig });
+  const hostDeps: Parameters<typeof createHostServer>[0] = { registry, tree, supervisor, projects, dashboardDir, hostConfig };
+  // Only when set: `saveHostConfig` falls back to `meshHome()`, and passing an
+  // explicit `undefined` would defeat that default.
+  if (options.home) hostDeps.home = options.home;
+  const server = createHostServer(hostDeps);
   hosted = server;
   const port = options.port ?? 7420;
   const host = options.host ?? "127.0.0.1";

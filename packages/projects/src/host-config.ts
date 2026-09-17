@@ -13,7 +13,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { parse as parseYaml } from "yaml";
+import { Document, parse as parseYaml, parseDocument } from "yaml";
 import { meshHome } from "./store";
 
 export const HOST_CONFIG_FILENAME = "host.yaml";
@@ -60,6 +60,17 @@ export interface HostConfig {
   defaultUsdPerMtok: number;
   /** Non-fatal complaints about the file, surfaced by the CLI at boot. */
   warnings: string[];
+  /**
+   * YAML keys whose effective value came from the file rather than from the
+   * defaults above, e.g. `["spend_ceiling_usd"]`.
+   *
+   * The whole lesson of the `$50` ceiling nobody set is that "on by default"
+   * and "you chose this" are indistinguishable once they are both just a
+   * number on a screen. A key stated but rejected as invalid is *not* listed:
+   * the value in force is still the default, and that is what the operator
+   * needs told. Optional so existing `HostConfig` literals keep compiling.
+   */
+  explicitKeys?: string[];
 }
 
 export function hostConfigPath(home: string = meshHome()): string {
@@ -74,6 +85,7 @@ export function defaultHostConfig(): HostConfig {
     modelPrices: {},
     defaultUsdPerMtok: DEFAULT_USD_PER_MTOK,
     warnings: [],
+    explicitKeys: [],
   };
 }
 
@@ -147,15 +159,30 @@ export function parseHostConfig(text: string): HostConfig {
   // and rejecting the obvious shorthand is a papercut with no upside.
   const raw = isRecord(parsed.host) ? parsed.host : parsed;
 
+  const explicit: string[] = [];
   const memory = optionalNumber(raw, "project_memory_mb", config.warnings);
-  if (memory !== undefined) config.projectMemoryMb = memory;
+  if (memory !== undefined) {
+    config.projectMemoryMb = memory;
+    explicit.push("project_memory_mb");
+  }
   const turns = optionalNumber(raw, "max_concurrent_turns", config.warnings);
-  if (turns !== undefined) config.maxConcurrentTurns = turns;
+  if (turns !== undefined) {
+    config.maxConcurrentTurns = turns;
+    explicit.push("max_concurrent_turns");
+  }
   const ceiling = optionalNumber(raw, "spend_ceiling_usd", config.warnings);
-  if (ceiling !== undefined) config.spendCeilingUsd = ceiling;
+  if (ceiling !== undefined) {
+    config.spendCeilingUsd = ceiling;
+    explicit.push("spend_ceiling_usd");
+  }
   const fallback = optionalNumber(raw, "default_usd_per_mtok", config.warnings);
-  if (fallback !== undefined && fallback !== null) config.defaultUsdPerMtok = fallback;
+  if (fallback !== undefined && fallback !== null) {
+    config.defaultUsdPerMtok = fallback;
+    explicit.push("default_usd_per_mtok");
+  }
   config.modelPrices = parsePrices(raw.model_prices, config.warnings);
+  if (Object.keys(config.modelPrices).length > 0) explicit.push("model_prices");
+  config.explicitKeys = explicit;
   return config;
 }
 
@@ -191,4 +218,126 @@ export function priceTokens(
   const inRate = price ? price.inputPerMtok : config.defaultUsdPerMtok;
   const outRate = price ? price.outputPerMtok : config.defaultUsdPerMtok;
   return (input / 1_000_000) * inRate + (output / 1_000_000) * outRate;
+}
+
+/** The scalar `host.yaml` keys a running host can be told to change. */
+export interface HostConfigUpdate {
+  projectMemoryMb?: number | null;
+  maxConcurrentTurns?: number | null;
+  spendCeilingUsd?: number | null;
+  defaultUsdPerMtok?: number;
+}
+
+/** Field name -> the YAML key it is written as, and whether it may be `null`. */
+const UPDATE_KEYS: Record<keyof HostConfigUpdate, { yaml: string; nullable: boolean }> = {
+  projectMemoryMb: { yaml: "project_memory_mb", nullable: true },
+  maxConcurrentTurns: { yaml: "max_concurrent_turns", nullable: true },
+  spendCeilingUsd: { yaml: "spend_ceiling_usd", nullable: true },
+  // No `null` here: an unpriced model billed at zero is an invisible way to
+  // spend past the ceiling, which is the one thing a backstop cannot allow.
+  defaultUsdPerMtok: { yaml: "default_usd_per_mtok", nullable: false },
+};
+
+/**
+ * When each key takes effect. The settings UI renders this rather than
+ * carrying its own copy.
+ *
+ * A single undifferentiated "Save" is what made the original `$50` ceiling so
+ * expensive to diagnose: the operator had no way to know which edits were
+ * already in force and which needed something else to happen first. That
+ * distinction is a property of the host, so the host is what states it.
+ */
+export type HostConfigEffect = "live" | "host-restart";
+
+export const HOST_CONFIG_EFFECTS: Record<string, HostConfigEffect> = {
+  // Read at call time by the limit check that runs on every heartbeat, so a
+  // saved value is in force on the next beat.
+  spend_ceiling_usd: "live",
+  max_concurrent_turns: "live",
+  default_usd_per_mtok: "live",
+  model_prices: "live",
+  // `host-restart`, and specifically NOT "next project open", which is the
+  // intuitive answer and is wrong. It is a child spawn flag, so a *fresh*
+  // supervisor would pick it up per child — but the running supervisor was
+  // constructed once at host start with the value read then, and it spawns
+  // from that captured copy. Saving this key changes the file and nothing
+  // else until the host is restarted, and a screen that promised otherwise
+  // would be the original `$50` trap rebuilt with better manners.
+  project_memory_mb: "host-restart",
+};
+
+/**
+ * Check a proposed update without applying it.
+ *
+ * Deliberately here and not in the dashboard or the route: the same rules have
+ * to hold for a CLI write and a server boot, and a check that lives in one
+ * caller is a check the other two silently skip.
+ */
+export function validateHostConfigUpdate(raw: Record<string, unknown>): {
+  update: HostConfigUpdate;
+  errors: string[];
+} {
+  const out: Record<string, number | null> = {};
+  const errors: string[] = [];
+  for (const [key, spec] of Object.entries(UPDATE_KEYS)) {
+    if (!(key in raw)) continue;
+    const value = raw[key];
+    if (value === null) {
+      if (!spec.nullable) {
+        errors.push(`${spec.yaml} must be a positive number`);
+        continue;
+      }
+      out[key] = null;
+      continue;
+    }
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      out[key] = value;
+      continue;
+    }
+    errors.push(`${spec.yaml} must be a positive number${spec.nullable ? " or null" : ""}`);
+  }
+  for (const key of Object.keys(raw)) {
+    if (!(key in UPDATE_KEYS)) errors.push(`'${key}' is not an editable host setting`);
+  }
+  return { update: out as HostConfigUpdate, errors };
+}
+
+/**
+ * Write the changed keys back to `<home>/host.yaml` and return the reloaded
+ * config.
+ *
+ * Edits the existing document rather than re-emitting a parsed object:
+ * `host.yaml` is hand-written and usually carries the operator's own notes
+ * about why a ceiling is what it is, and a save from a settings screen that
+ * silently deletes those comments is its own small betrayal.
+ *
+ * Throws on a file that does not parse. `loadHostConfig` deliberately falls
+ * back to defaults there — booting is more important than the file — but a
+ * *write* has no such excuse: overwriting a document we could not read would
+ * destroy whatever the operator actually meant.
+ */
+export function saveHostConfig(update: HostConfigUpdate, home: string = meshHome()): HostConfig {
+  const file = hostConfigPath(home);
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  const doc = text.trim().length > 0 ? parseDocument(text) : new Document({});
+  if (doc.errors.length > 0) {
+    throw new Error(`${file} is not valid YAML — fix it by hand before saving (${doc.errors[0].message})`);
+  }
+  // Mirrors the read side, which accepts both a `host:` block and the bare
+  // top level: write the keys back wherever the operator already keeps them.
+  const nested = doc.has("host");
+  for (const [key, spec] of Object.entries(UPDATE_KEYS)) {
+    const value = (update as Record<string, number | null | undefined>)[key];
+    if (value === undefined) continue;
+    if (nested) doc.setIn(["host", spec.yaml], value);
+    else doc.set(spec.yaml, value);
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, doc.toString(), "utf8");
+  return loadHostConfig(home);
 }

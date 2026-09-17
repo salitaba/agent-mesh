@@ -45,12 +45,17 @@ const http = require("http");
 const fs = require("fs");
 const token = process.env.MESH_API_TOKEN || "";
 const parkFile = process.env.MESH_STUB_PARKFILE;
+// A parked child has stopped its scheduler, so it reports no turns in flight.
+// That is not decoration: it is the reason the host cannot re-derive a park
+// from the next beat, and so the reason the parked list has to be remembered.
+let parked = false;
 const server = http.createServer((req, res) => {
   if ((req.headers.authorization || "") !== "Bearer " + token) {
     res.writeHead(401); res.end("{}"); return;
   }
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/mission/park" && req.method === "POST") {
+    parked = true;
     fs.appendFileSync(parkFile, process.env.MESH_CHILD_PROJECT_ID + "\\n");
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
@@ -67,7 +72,7 @@ server.listen(0, "127.0.0.1", () => {
       rss: 1234,
       pid: process.pid,
       models: [{ model: "m", input: Number(process.env.MESH_STUB_INPUT || 0), output: Number(process.env.MESH_STUB_OUTPUT || 0) }],
-      runningTurns: Number(process.env.MESH_STUB_TURNS || 0),
+      runningTurns: parked ? 0 : Number(process.env.MESH_STUB_TURNS || 0),
     })}\\n\`);
   }, 30);
   beat.unref();
@@ -327,6 +332,237 @@ test("host.yaml supplies project_memory_mb and a flag overrides it", { timeout: 
     assert.equal((fromFlag.supervisor as unknown as { opts: { memoryMb?: number } }).opts.memoryMb, 512);
   } finally {
     await fromFlag.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+/** The shape `GET`/`PUT /api/host/config` answers with. */
+interface HostConfigView {
+  path: string;
+  config: { spendCeilingUsd: number | null; maxConcurrentTurns: number | null; defaultUsdPerMtok: number };
+  explicit: string[];
+  effects: Record<string, string>;
+}
+
+async function startBareHost(base: string, home: string): Promise<HostHandle> {
+  return startHostServer({
+    home,
+    port: 0,
+    childScript: spendingChildScript(base),
+    readyTimeoutMs: 10_000,
+    stopGraceMs: 2_000,
+    dashboardDir: path.join(base, "no-dashboard"),
+  });
+}
+
+test("a turn-cap park survives the ceiling check falling through", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const b = makeProject(base, "beta", "beta");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  // A ceiling nothing here will ever reach, so every tick takes the
+  // fall-through — which is exactly where the tempting one-line fix would sit.
+  config.spendCeilingUsd = 1000;
+  config.maxConcurrentTurns = 3;
+  config.modelPrices = { m: { inputPerMtok: 3, outputPerMtok: 15 } };
+  process.env.MESH_STUB_INPUT = "1000000";
+  process.env.MESH_STUB_OUTPUT = "0";
+  process.env.MESH_STUB_TURNS = "2"; // 2 + 2 = 4, over a cap of 3
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await addAndOpen(host, b.root);
+    await settle(600);
+
+    const body = (await (await fetch(`${host.url}/api/projects`)).json()) as {
+      spend: { ceilingTripped: boolean; parked: string[] };
+    };
+    assert.equal(body.spend.ceilingTripped, false, "the ceiling was never in play");
+
+    // The regression this pins. Clearing the parked list next to
+    // `ceilingTripped` on the fall-through reads as the same fix and is not:
+    // beta reports no turns once parked, so the cap loop skips it from the
+    // next tick onward and never re-adds it. A blanket clear would drop it
+    // here and leave a project the host parked with nothing saying so —
+    // the original bug's exact shape, one field over.
+    assert.deepEqual(body.spend.parked, ["beta"], "beta stays listed while it is still parked");
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("closing a parked project is what drops it from the parked list", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const b = makeProject(base, "beta", "beta");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  config.modelPrices = { m: { inputPerMtok: 3, outputPerMtok: 15 } };
+  process.env.MESH_STUB_INPUT = "1000000";
+  process.env.MESH_STUB_OUTPUT = "1000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await addAndOpen(host, b.root);
+    await settle(400);
+    const tripped = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { parked: string[] } };
+    assert.deepEqual([...tripped.spend.parked].sort(), ["alpha", "beta"]);
+
+    await fetch(`${host.url}/api/projects/alpha/close`, { method: "POST" });
+    await settle(200);
+
+    // The list outlived the child before this: an id pushed once was never
+    // removed, so a project the operator had closed kept reporting as parked
+    // for as long as the host lived.
+    const after = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { parked: string[] } };
+    assert.deepEqual(after.spend.parked, ["beta"], "only the project still parked is still listed");
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("PUT /api/host/config raises the ceiling and un-trips it with no restart", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const home = path.join(base, "home");
+  fs.mkdirSync(home, { recursive: true });
+  // Written as a file, not passed as an object: the reload path reads the file
+  // back, so this also proves the operator's other keys survive the write.
+  fs.writeFileSync(
+    path.join(home, "host.yaml"),
+    "host:\n  spend_ceiling_usd: 5\n  model_prices:\n    m:\n      input_per_mtok: 3\n      output_per_mtok: 15\n",
+    "utf8",
+  );
+  const a = makeProject(base, "alpha", "alpha");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  process.env.MESH_STUB_PARKFILE = parkFile;
+  process.env.MESH_STUB_INPUT = "1000000";
+  process.env.MESH_STUB_OUTPUT = "1000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startBareHost(base, home);
+  try {
+    await addAndOpen(host, a.root);
+    await settle(400);
+    const tripped = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { ceilingTripped: boolean } };
+    assert.equal(tripped.spend.ceilingTripped, true, "$18 of spend trips a $5 ceiling");
+
+    const put = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spendCeilingUsd: 100, confirm: true }),
+    });
+    assert.equal(put.status, 200);
+    const saved = (await put.json()) as HostConfigView;
+    assert.equal(saved.config.spendCeilingUsd, 100);
+    assert.ok(saved.explicit.includes("spend_ceiling_usd"), "a saved key reads as explicitly set");
+
+    // No restart, and no waiting for the next beat: the route enforces before
+    // it answers, so the trip is already gone by the time the operator sees
+    // the response. This is the whole point of the `let` binding.
+    const now = (await (await fetch(`${host.url}/api/projects`)).json()) as {
+      spend: { usd: number; ceilingUsd: number | null; ceilingTripped: boolean };
+    };
+    assert.equal(now.spend.ceilingUsd, 100);
+    assert.equal(now.spend.ceilingTripped, false);
+    assert.ok(now.spend.usd > 5, "the total never fell — the ceiling rose past it");
+
+    const text = fs.readFileSync(path.join(home, "host.yaml"), "utf8");
+    assert.match(text, /spend_ceiling_usd: 100/);
+    assert.match(text, /input_per_mtok: 3/, "the keys the UI did not touch are still there");
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("raising a spend ceiling needs a confirm; lowering one does not", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const home = path.join(base, "home");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "host.yaml"), "host:\n  spend_ceiling_usd: 5\n", "utf8");
+  const host = await startBareHost(base, home);
+  try {
+    const bare = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spendCeilingUsd: 100 }),
+    });
+    // The cap was the only thing that noticed a mesh spending $53.33 against
+    // nothing but unsatisfied criteria. The one edit that can un-notice it
+    // asks first.
+    assert.equal(bare.status, 409);
+    const refusal = (await bare.json()) as { needsConfirm: boolean; from: number; to: number };
+    assert.equal(refusal.needsConfirm, true);
+    assert.equal(refusal.from, 5);
+    assert.equal(refusal.to, 100);
+    assert.match(fs.readFileSync(path.join(home, "host.yaml"), "utf8"), /spend_ceiling_usd: 5/);
+
+    // Removing the ceiling is the largest raise there is, so it asks too.
+    const off = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spendCeilingUsd: null }),
+    });
+    assert.equal(off.status, 409);
+
+    // Tightening a limit needs no ceremony — the friction is about spending
+    // more, not about touching the setting.
+    const lower = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spendCeilingUsd: 2 }),
+    });
+    assert.equal(lower.status, 200);
+    assert.equal(((await lower.json()) as HostConfigView).config.spendCeilingUsd, 2);
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("GET /api/host/config separates a value in force from a value chosen", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const home = path.join(base, "home");
+  fs.mkdirSync(home, { recursive: true });
+  // No host.yaml at all: the case that started this work, where a $50 ceiling
+  // parks a mesh and the file the operator is told to check does not exist.
+  const host = await startBareHost(base, home);
+  try {
+    const body = (await (await fetch(`${host.url}/api/host/config`)).json()) as HostConfigView;
+    assert.equal(body.config.spendCeilingUsd, 50, "the default ceiling is in force");
+    assert.deepEqual(body.explicit, [], "and nobody chose it");
+
+    // Per key, because one undifferentiated Save is the original trap rebuilt.
+    assert.equal(body.effects.spend_ceiling_usd, "live");
+    assert.equal(body.effects.max_concurrent_turns, "live");
+    // Not "next project open", which is the intuitive answer: the running
+    // supervisor captured this value at host start and spawns from that copy.
+    assert.equal(body.effects.project_memory_mb, "host-restart");
+
+    // Validation is the shared package's, not the route's and not the UI's.
+    const bad = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spendCeilingUsd: -5 }),
+    });
+    assert.equal(bad.status, 400);
+    assert.match(((await bad.json()) as { error: string }).error, /spend_ceiling_usd must be a positive number/);
+
+    const unknown = await fetch(`${host.url}/api/host/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nonsense: 1 }),
+    });
+    assert.equal(unknown.status, 400);
+  } finally {
+    await host.close();
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
