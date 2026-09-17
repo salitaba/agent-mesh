@@ -176,7 +176,7 @@ export async function handleDesignerMcpRequest(request: Record<string, any>): Pr
   }
 }
 
-/** stdio JSON-RPC loop wired into `opencode serve` as the `mesh_designer` MCP server. */
+/** stdio JSON-RPC loop exposed as the `mesh_designer` MCP server. */
 export async function runStdioDesignerMcp(): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
   // Every write is tracked so the loop can flush before resolving: callers

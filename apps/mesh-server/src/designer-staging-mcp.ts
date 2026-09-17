@@ -113,9 +113,9 @@ export class DesignerTurnBuffer {
   /**
    * The one open turn, when there is exactly one.
    *
-   * Needed because not every runtime can carry a per-turn header: opencode
-   * keeps ONE designer backend process across turns, so its MCP bridge is
-   * spawned once and cannot be told which turn is live. Rather than let the
+   * Needed because not every runtime can carry a per-turn header: a runtime
+   * that keeps ONE designer backend process across turns spawns its MCP
+   * bridge once and cannot be told which turn is live. Rather than let the
    * model name its own turn — an id it can get wrong, which is the cross-turn
    * write this design exists to prevent — the server resolves it, and refuses
    * when the answer is ambiguous. Two concurrent designer turns is a rare state
@@ -214,7 +214,7 @@ export const STAGING_TOOLS: McpToolDefinition[] = [
         mode: { ...str("peer (default) | service | worker"), enum: ["peer", "service", "worker"] },
         runtime: str("runtime name; defaults to whatever the existing seats use"),
         model: str("provider/model string; blank uses the mesh default"),
-        variant: str("reasoning variant (opencode: low | high | max)"),
+        variant: str("inert — no registered runtime reads it; leave blank"),
         prompt: str("role prompt file path"),
         capabilities: strArr("capability tokens this seat may use"),
         authority: strArr("authority tokens this seat holds"),

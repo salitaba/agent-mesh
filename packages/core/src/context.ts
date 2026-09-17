@@ -705,13 +705,12 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push("Nothing is pending in either direction: you owe no answers and are waiting on nobody.");
     lines.push("");
   }
-  // OUTPUT_VOICE_RULES used to be re-pushed here too. Both runtimes
-  // (runtime-claude, runtime-opencode) build their system prompt via
-  // withOutputVoice() from this same constant, and the system prompt goes out
-  // with every turn — so the copy here was a second, per-turn-only repeat of
-  // something already guaranteed present. Cut rather than kept "for safety":
-  // duplicating an instruction doesn't make it more likely to be followed,
-  // just more expensive to say.
+  // OUTPUT_VOICE_RULES used to be re-pushed here too. Every runtime builds its
+  // system prompt via withOutputVoice() from this same constant, and the system
+  // prompt goes out with every turn — so the copy here was a second,
+  // per-turn-only repeat of something already guaranteed present. Cut rather
+  // than kept "for safety": duplicating an instruction doesn't make it more
+  // likely to be followed, just more expensive to say.
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
   lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
   lines.push("```mesh-json");

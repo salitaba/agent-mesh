@@ -1,7 +1,7 @@
 /**
  * Failure classification shared by agent runtimes and the supervisor.
  *
- * A dead model backend (crashed opencode server, refused HTTP endpoint)
+ * A dead model backend (crashed runtime process, refused HTTP endpoint)
  * must not look like any other turn failure: the recovery strategy (respawn
  * and retry) and the operator message ("which backend, and is it alive?")
  * both differ. Adapters throw {@link BackendUnreachableError}; the
@@ -10,7 +10,7 @@
 
 /** The agent's model backend died or refused the connection mid-turn. */
 export class BackendUnreachableError extends Error {
-  /** Backend that failed, e.g. `http://127.0.0.1:4104` (opencode) or a configured baseUrl (http). */
+  /** Backend that failed, e.g. a configured baseUrl (http). */
   readonly backend: string;
 
   constructor(backend: string, causeMessage: string) {

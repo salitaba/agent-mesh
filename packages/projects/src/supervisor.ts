@@ -131,8 +131,8 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
- * SIGTERM, poll, then SIGKILL. Mirrors `runtime-opencode`'s existing escalation
- * rather than inventing a second style. Always resolves: a process we cannot
+ * SIGTERM, poll, then SIGKILL. One escalation style for every child process
+ * rather than a second one per caller. Always resolves: a process we cannot
  * kill is reported by leaving it alone, never by hanging the caller.
  */
 export function killPidWithEscalation(pid: number, graceMs = DEFAULT_STOP_GRACE_MS): Promise<void> {

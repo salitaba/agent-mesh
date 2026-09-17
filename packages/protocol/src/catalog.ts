@@ -563,7 +563,7 @@ export function effectiveHardActions(policy: HardActionsPolicy | undefined): Har
  * Domain-flavored names seen in hand-written mesh.yaml files (api.write,
  * ui.write, ...) mapped onto the canonical tokens the runtime checks. Without
  * this a mesh that "grants" api.write grants nothing: policy denies every
- * write op and the generated opencode config denies the edit tool.
+ * write op and the runtime's capability gate denies the edit tool.
  */
 export const CAPABILITY_ALIASES: Record<string, string> = {
   "api.read": "repository.read",

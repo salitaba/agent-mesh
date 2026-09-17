@@ -23,7 +23,7 @@ export const HOST_CONFIG_FILENAME = "host.yaml";
  *
  * The ceiling defaults **on**. N projects each honouring their own per-mesh
  * token budget have no combined ceiling at all, and every open project spawns
- * its own `runtime-opencode` children — so "no ceiling" is the one setting a
+ * its own runtime children — so "no ceiling" is the one setting a
  * user cannot discover is wrong until the bill arrives. 50 is high enough that
  * ordinary use never meets it and low enough that a runaway is caught the same
  * day. `spend_ceiling_usd: null` disables it.
