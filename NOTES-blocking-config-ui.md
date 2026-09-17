@@ -49,31 +49,70 @@ Caveat: config is a boot seed, not a mirror (`apps/mesh-server/src/index.ts:1711
 so these need a **project reopen** to take effect. Say so in the UI; do not imply
 they are live.
 
-### Tier 2 — live raises. Already restart-free. Just wire the UI.
+### Tier 2 — live raises. They exist. Only an escalation can reach them.
 
-- `POST /mission/limits` (`index.ts:1622`) — `max_events`, `wall_clock_minutes`
-- `POST /budgets/raise` (`index.ts:1225`) — agent/thread budgets
-- `POST /designer/staged/apply` (`index.ts:1763`)
+**Correction: an earlier draft of this brief called these "unexposed" and ranked
+them highest value. Both claims were wrong.** They are already wired, in
+`apps/mesh-dashboard/src/views/Escalations.tsx`:
 
-These bypass the file and apply immediately. **Highest value per unit of work in
-the whole brief** — the no-restart experience already exists and is unexposed.
+- `POST /budgets/raise` — `doRaise(escId, key, newLimit, needConfirm)` at `:578`,
+  posts at `:592`, then answers the escalation at `:597`
+- `POST /mission/limits` — `doCapRaise(kind, escId)` at `:620`, posts at `:625`,
+  and **also persists to mesh.yaml** via `GET /config` + `/config/save`
+  (`:632-639`), so the raise survives a project reopen
+- `POST /designer/staged/apply` (`index.ts:1763`) — not re-checked; treat the
+  line above as unverified
 
-### Tier 3 — host config. The actual engineering.
+Every one of them takes an `escId`. So the gap is not "no UI" — it is that a
+limit can only be changed **reactively**, once an agent has already stalled and
+filed an escalation. There is no way to raise a cap you can see coming.
+
+Real remaining work: lift these controls out of the escalation card so they can
+be driven proactively. The POST bodies and the mesh.yaml write-back already
+work — this is a re-siting job, not new plumbing.
+
+### Tier 3 — host config. The actual engineering, and a measured trap.
 
 **`host.yaml` has no write path at all.** Only `loadHostConfig` reads it
 (`packages/projects/src/host-config.ts:163`); the host's routes
 (`apps/mesh-server/src/host.ts:529-657`) are health / events / projects
-open-close-restart-delete only. Needs:
+open-close-restart-delete only. Feasibility, checked against the source:
 
-1. a new host route (`GET`/`PUT /api/host/config`), and
-2. **a reload path** — `hostConfig` is captured in a `const` at `host.ts:902` and
-   never re-read, so `applyLimits` (`:447`) closes over the startup value. Writing
-   the file without this changes nothing until restart.
+1. **The reload itself is easy.** `applyLimits` (`:447`) reads
+   `hostConfig.spendCeilingUsd` *at call time*, not at construction. The binding
+   is one closure `const` at `host.ts:250` (`startHostServer` loads its own at
+   `:902` and passes it down as `deps.hostConfig`). Make `:250` a `let`, add a
+   setter, and the next heartbeat tick sees the new number. Plus a new
+   `GET`/`PUT /api/host/config` route.
 
-Keys: `spend_ceiling_usd`, `max_concurrent_turns`, `default_usd_per_mtok` /
-`model_prices`, `project_memory_mb`. Note `model_prices` is blocking *indirectly*
-— a mispriced model trips the ceiling early (`host.ts:362` feeds the `:449` check)
-and parks everything.
+2. **`ceilingTripped` is a one-way latch, and Tier 3 is what turns that into a
+   bug.** Declared `false` (`:352`), set `true` (`:450`), and there is **no third
+   assignment in the codebase** — the fall-through path (`:456-469`) never clears
+   it. Today that is harmless: spend is monotonic, so once
+   `totals.usd >= ceiling` the `:449` condition stays true on every tick and the
+   latch is redundant. **Raising the ceiling is the only thing that can make
+   `:449` false again.** So the moment the ceiling is editable you get a host that
+   has correctly resumed — projects live, nothing being parked — still reporting
+   `ceilingTripped: true` on `/api/projects`, with the Overview strip announcing
+   "Parked — the host hit its spend ceiling" over a healthy mesh. Strictly worse
+   than today, where the message is at least true. **Any reload path must clear
+   the latch**, or derive the flag instead of latching it.
+
+3. **Not every key can hot-reload.** `projectMemoryMb` is consumed at `:903` into
+   `supervisorOptions.memoryMb` — a child *spawn* flag, so a change affects only
+   projects opened afterwards. A settings UI has to mark, per key, whether the
+   edit is live / next-open / host-restart. One undifferentiated "Save" button
+   reproduces the original trap in a new place.
+
+Keys: `spend_ceiling_usd` (live, once the latch is fixed), `max_concurrent_turns`
+(live, same closure, no latch involved), `default_usd_per_mtok` / `model_prices`
+(live), `project_memory_mb` (next project open only). `model_prices` is blocking
+*indirectly* — a mispriced model trips the ceiling early (`host.ts:362` feeds the
+`:449` check) and parks everything.
+
+**The shipped banner is right by luck.** It tells the operator to restart the
+host, and a restart is in fact the only thing that currently clears the latch.
+Do not soften that copy until item 2 is done.
 
 ### Out of scope — not configurable without a code change
 
