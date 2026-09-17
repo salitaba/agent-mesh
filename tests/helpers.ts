@@ -21,6 +21,8 @@ export interface AgentSpec {
   prompt?: string;
   capabilities?: string[];
   authority?: string[];
+  /** Capability families this seat holds but may not use until an operator unlocks the tool. */
+  requiresApproval?: string[];
   interests?: string[];
   mode?: "peer" | "service";
   tokens?: number;
@@ -90,6 +92,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.mode) lines.push(`    mode: ${a.mode}`);
       if (a.capabilities) lines.push(`    capabilities: [${a.capabilities.join(", ")}]`);
       if (a.authority) lines.push(`    authority: [${a.authority.join(", ")}]`);
+      if (a.requiresApproval) lines.push(`    requires_approval: [${a.requiresApproval.join(", ")}]`);
       if (a.interests) lines.push(`    interests: [${a.interests.join(", ")}]`);
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
