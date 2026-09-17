@@ -148,3 +148,69 @@ test("freeze: mission-over blocks agent writes but keeps reads", async () => {
   assert.equal((await m.supervisor.executeOp("dev", { op: "read_artifact", artifactRef: pub.artifactId! }, fakeTurn("dev"))).ok, true);
   await m.cleanup();
 });
+
+test("freeze: verdicts arriving outside a turn are refused while halted; the human seat still decides", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "lead", role: "tech-lead", capabilities: ["code.review", "git.merge"], authority: ["implementation.approve"], interests: [] },
+    ],
+    mayContact: { dev: ["lead"], lead: ["dev"] },
+  });
+  const goalId = m.kernel.state.activeGoalId!;
+
+  // Two artifacts under review: one the frozen mission must not settle, one for
+  // the operator's bypass, so neither assertion disturbs the other's state.
+  const underReview = async (name: string) => {
+    const created = await m.supervisor.createArtifact({ actorId: "dev", name, type: "CodePatch", content: "diff" });
+    if (!("artifact" in created)) throw new Error(`publish failed for ${name}`);
+    const id = created.artifact.id;
+    await m.supervisor.transitionArtifact("dev", id, { to: "READY_FOR_REVIEW" });
+    await m.supervisor.transitionArtifact("dev", id, { to: "UNDER_REVIEW" });
+    return id;
+  };
+  const agentArt = await underReview("frozen-patch");
+  const humanArt = await underReview("operator-patch");
+
+  await m.kernel.emit("goal.escalated", { goalId, reason: "test freeze" }, { actorId: "human" });
+  assert.equal(m.kernel.state.goals.get(goalId)?.status, "ESCALATED");
+
+  // `POST /approvals` reaches `recordDecision` directly, with no turn and no
+  // active seat, so the `executeOp` guard never sees these calls. All four
+  // verdict kinds are covered here: only `approve` has coverage at the op
+  // layer, and the halt is not a per-kind decision.
+  const rejectedBefore = (await m.store.read({ types: ["message.rejected"] })).length;
+  for (const kind of ["approve", "reject", "veto", "block"] as const) {
+    const res = await m.supervisor.recordDecision("lead", kind, "implementation", agentArt, `${kind} while frozen`);
+    assert.equal(res.ok, false, `${kind} must not land on a halted mission`);
+    assert.match(res.reason ?? "", /escalated/i, `${kind} must be refused for the halt`);
+  }
+  assert.equal(m.kernel.state.artifacts.get(agentArt)?.status, "UNDER_REVIEW", "no verdict may move an artifact while halted");
+
+  // Checked ahead of the task lookup, so even an unknown id reports the halt.
+  const done = await m.supervisor.completeTask("dev", "task-does-not-exist", "done via API");
+  assert.equal(done.ok, false);
+  assert.match(done.reason ?? "", /escalated/i, "the halt outranks 'unknown task'");
+
+  assert.equal(
+    (await m.store.read({ types: ["message.rejected"] })).length,
+    rejectedBefore,
+    "the halt must refuse silently, like the guard in executeOp",
+  );
+
+  // The operator keeps their total bypass — deciding on a frozen mission is how
+  // a human unfreezes one.
+  const human = await m.supervisor.recordDecision("human", "approve", "implementation", humanArt, "operator decides anyway");
+  assert.equal(human.ok, true, human.reason);
+
+  // Unfrozen, the identical refused call lands: the halt was the reason, not authority.
+  // `reopenGoal`, not `resumeGoal`: the latter only lifts PAUSED, and an
+  // ESCALATED mission is the case `goal.reopened` exists for (see its
+  // projection). Nothing is revived or activated here — this test only needs
+  // the status back to ACTIVE.
+  await m.supervisor.reopenGoal({ reason: "operator unfreezes the mission", activate: [] });
+  assert.equal(m.kernel.state.goals.get(goalId)?.status, "ACTIVE");
+  const after = await m.supervisor.recordDecision("lead", "approve", "implementation", agentArt, "looks good");
+  assert.equal(after.ok, true, after.reason);
+  await m.cleanup();
+});

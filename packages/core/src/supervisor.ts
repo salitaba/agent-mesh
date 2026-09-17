@@ -2127,9 +2127,40 @@ export class Supervisor {
     return { ok: true };
   }
 
+  /**
+   * Refusal reason if `actorId` may not settle work right now, else null.
+   *
+   * `executeOp` already freezes work-moving agent ops behind this same halt,
+   * but verdicts and task completions also arrive over HTTP, where there is
+   * no turn and no seat: `POST /approvals` calls `recordDecision` and
+   * `completeTask` straight through, and `resolveActor` attributes the call to
+   * any id in the roster. An agent-attributed verdict was therefore the one
+   * way to land work on a frozen mission.
+   *
+   * Deliberately NOT written as a lookup in `MISSION_HALTED_ALLOW_OPS`. That
+   * set is consulted per-op inside a turn, where adding a verdict to it would
+   * be inert — a halted mission activates no seat, so no turn ever runs to
+   * spend the permission (`tests/policy/mission-freeze.test.ts`). It would
+   * still re-open this path, which needs no seat at all. Keeping the rule here
+   * stops a change aimed at seats from quietly reaching the HTTP route.
+   *
+   * Silent, like the `executeOp` guard: no `denied()` event. The conflict that
+   * choice records is still open — see the comment on the halt guard in
+   * `executeOp`; this is not the place to settle it.
+   */
+  private haltedSettlementRefusal(actorId: string): string | null {
+    // The operator keeps their total bypass: deciding on a frozen mission is
+    // how a human unfreezes one.
+    if (actorId === HUMAN_AGENT_ID) return null;
+    const halted = haltedGoalStatus(this.state);
+    return halted ? haltReasonText(halted) : null;
+  }
+
   async recordDecision(actorId: string, kind: ApprovalKind, subject: string, artifactId?: string, comment?: string): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, reason: "no active goal" };
+    const frozen = this.haltedSettlementRefusal(actorId);
+    if (frozen) return { ok: false, reason: frozen };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
     const domain = this.domainOfSubject(subject, artifactId);
     const artifact = artifactId ? this.state.artifacts.get(artifactId) : undefined;
@@ -2369,6 +2400,11 @@ export class Supervisor {
   }
 
   async completeTask(actorId: string, taskId: string, summary: string, artifacts?: ArtifactRef[]): Promise<{ ok: boolean; reason?: string }> {
+    // Checked before the task itself: the mission being frozen is the reason,
+    // whatever state the task is in. Reachable the same way `recordDecision`
+    // is — `POST /approvals` with a `taskId` completes a task outside any turn.
+    const frozen = this.haltedSettlementRefusal(actorId);
+    if (frozen) return { ok: false, reason: frozen };
     const task = this.state.tasks.get(taskId);
     if (!task) return { ok: false, reason: "unknown task" };
     if (task.status !== "CLAIMED" && task.status !== "IN_PROGRESS") return { ok: false, reason: `task is ${task.status}` };
