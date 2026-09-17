@@ -266,11 +266,17 @@ Re-verify this section before implementing; it was uncommitted at survey time.
    `concurrency.*` keys already have the capacity strip, but `triage.mode`,
    `activation.strategy`, `agents.<id>.interests`, the circuit-breaker park and
    the 8 `timeouts.*` keys do not.
-6. Open question raised by that diagnosis, and it may outrank 5: two keys are
-   **inert but editable in the Designer** — `scheduling.activation.strategy`
-   (zero read sites) and the `TriageModel` branch (zero construction sites).
-   A setting that does nothing is worse than a silent drop, because the operator
-   believes they fixed something. Same section, last subheading.
+6. ~~Open question: two keys are **inert but editable in the Designer** —
+   `scheduling.activation.strategy` and the `TriageModel` branch.~~
+   **Decided (session 10) — see the step-6 section at the bottom.** They are two
+   different things: `strategy` is a real operator-facing lie and gets
+   deprecate-plus-remove-the-affordance; `TriageModel` is an embedder extension
+   seam and is left alone. The decision is written; **the implementation list in
+   step 6 is not yet done** and is the next session's job.
+7. Merge `resolved.warnings` into the `/config/validate` response. Verified in
+   session 10: the route never forwards them, so five config warnings have no UI
+   at all, though the Designer already renders whatever it is sent. Own session —
+   it changes what every existing mesh displays.
 
 ## Two verdict channels, and why step 4 needed both (session 8)
 
@@ -491,3 +497,140 @@ in the default UI**, not silent losses in an opt-in path:
 
 Neither was chased further. Recorded so the next session greps construction
 sites before believing either.
+
+---
+
+## Step 6 — `activation.strategy` is inert: the decision (session 10, diagnosis only)
+
+Session 10 answered the open decision from session 9's last subheading and then
+**stopped at the phase boundary — nothing implemented.** The decision below is
+the deliverable; the implementation list is mechanical and pre-verified.
+
+### The two "inert keys" are NOT the same thing — split them
+
+- **`scheduling.activation.strategy` — CONFIRMED-DEAD, and an operator-facing
+  lie (grade 3).** Zero read sites, verified exhaustively across
+  `packages/ apps/ tests/ schemas/ scripts/ spec/ docs/ roles/`. The resolver
+  *flattens* raw `scheduling.activation.strategy` → resolved
+  `config.scheduling.strategy` (`config/src/index.ts:608`); the resolved field
+  has zero reads too. Legal values `"interest" | "interest+triage"`, default
+  `"interest"`. `triage()` (`scheduler/src/index.ts:281-291`) keys off
+  `scheduling.triageMode` alone.
+- **`TriageModel` — NOT dead in the same sense. Leave it.** It has real read
+  sites (`scheduler/src/index.ts:283`, `:285`) and a clean pass-through:
+  `BootstrapOptions.triageModel` (`mesh-server/src/index.ts:56`) → the only
+  `new Scheduler(` in the repo (`:301`). Nothing in-repo constructs one, so the
+  branch never runs *here* — but it is a **programmatic extension seam for
+  embedders, invisible in the operator's UI.** No false affordance, nothing to
+  warn about, nothing to delete. Grade 1 by the ladder, and intentional.
+  Do not "fix" it. Stop carrying it as an open question.
+
+### Verdict: `triage.mode` is the real switch. Deprecate `strategy` — do not wire it, do not delete it from the schema.
+
+All three options in the session-10 brief are wrong as stated. Why:
+
+- **Do NOT wire it.** Four of five shipped examples pin `strategy: interest`
+  (`spring-boot:128`, `line-follower-sim:209`, `demo-stub:111`,
+  `payment-api:264`); only `greenfield:77` has `interest+triage`. Wiring would
+  mean any of those four that later adds triage rules gets them **silently
+  ignored** — two switches for one behaviour, strictly worse than today.
+- **Do NOT delete it from the schema.** The activation block is
+  `additionalProperties: false` (`protocol/src/schemas.ts:384-392`,
+  `schemas/mesh.schema.json:520`). Deleting the property turns all five
+  examples, and **every config `mesh init` has ever written**, into a hard
+  validation failure.
+- **Warn — but strip the key from everything we generate first**, or the tool
+  scolds the operator for its own output. `mesh init` writes
+  `activation:\n    strategy: interest` today (`config/src/index.ts:1149`).
+
+So: **accept-and-warn (deprecation), plus remove the affordance.** The grade-3
+lie is fixed by deleting the Designer select, not by the warning — once the
+select is gone the key cannot be set from the UI at all. The warning then serves
+only hand-written YAML, whose authors are CLI/boot users who *do* see boot
+warnings. That is why BOOT-ONLY (below) is sufficient here.
+
+### S1 is boot-only — VERIFIED, and the survey's hope was wrong
+
+`/config/validate` (`mesh-server/src/index.ts:1666`) builds its `warnings` array
+from scratch at `:1678` and only ever fills it from `validateTransitionGates`
+(`:1683-1685`) and missing prompt files on save (`:1715`).
+**`resolved.warnings` is never merged in.** The Designer *does* render what it is
+sent — `result.json.warnings` → `{level:"warn"}` advice (`Designer.tsx:458-462`)
+→ `HealthStrip` (`:907`) + `AdvisoryList` (`:913`), reachable in the normal
+designer tab — so the UI half already exists; the server simply does not forward.
+`doSave` (`:789-828`) ignores `json.warnings` entirely. Boot prints:
+`mesh-cli/src/index.ts:285` (boot preflight), `:422` (`mesh validate`).
+
+**Stale comment, now provably false:** `Designer.tsx:469-471` claims the
+"nobody boots" warning "arrive[s] back through `serverWarnings` above". It does
+not. Fix or delete that comment when you touch this.
+
+**Separate change, large payoff, NOT this one:** merging `resolved.warnings`
+into the `/config/validate` response would light up **five** config warnings in
+the existing HealthStrip for the first time (`warnNoStartupActivation`,
+`warnInertVariant`, `warnUngrantedApprovalGates`,
+`warnUnenforceableHardActions`, + the new one). Deliberately deferred: it
+changes what every existing mesh shows in the designer, which is an operator's
+noise-budget call, not a refactor. Own session.
+
+### Precedent — S1 already has this exact genre, three times
+
+Sessions 5–9 all used runtime surfaces and never touched S1; S1 turns out to be
+the best-precedented of the six channels for *this* shape:
+- `warnInertVariant` (`config/src/index.ts:980-982`) — **the model to copy**:
+  "…is set but inert — 'variant' was the o‍pencode runtime's thinking knob, that
+  backend was removed, and no registered runtime reads the field. Remove the
+  key, or leave it for a runtime that consumes it"
+- `warnUngrantedApprovalGates` (`:1003-1005`), `warnUnenforceableHardActions`
+  (`:836-842`) — same register, both "this gates nothing".
+- A warning is a **bare `string`** — no `level`/`path`/`code`. Carrier is
+  `ResolvedMeshConfig.warnings: string[]` (`:269`), collected into local
+  `configWarnings` (`:524-547`), assigned at `:573`.
+
+### Copy — the FOURTH item-3 sentence, and a different genre
+
+The triple is now a quartet. The first three are runtime states; this one is a
+statement about the config itself, and it is **the first whose remedy is "change
+a different key", not "raise a limit"**:
+
+> `scheduling.activation.strategy` is set to `"interest+triage"` but inert — no
+> code reads it, and whether the router pass runs is decided by
+> `scheduling.triage.mode` alone (currently `"off"`). Remove the key; set
+> `triage.mode: heuristic` if you want the router pass.
+
+Carries both live values (register item 2), says what will and will not help
+(item 3), names the remedy and that it lives elsewhere (item 4).
+
+### Implementation list — all sites verified, in order
+
+1. `config/src/index.ts:1149` — drop `activation:\n    strategy: interest` from
+   the `mesh init` template. **Do this first**; everything else assumes new
+   configs are clean.
+2. `designer/panels/MeshPanel.tsx:121-123` — delete the "how agents wake up"
+   Field/Select. **This is the grade-3 fix.**
+3. `designer/model.ts:140` and `:170` — `activation ||= { strategy: "interest" }`
+   → `activation ||= {}`. **Keep the `activation` object**: it also carries
+   `max_activation_delay_ms`, whose read sites are NOT yet verified.
+4. New `warnInertStrategy` beside `warnInertVariant` (~`:980`), registered in the
+   `configWarnings` cluster (`:524-547`). Fire **only when explicitly set**
+   (`raw.scheduling?.activation?.strategy !== undefined`), never on the default.
+5. Delete the resolved field — type `:300`, resolver write `:608`. Zero reads.
+6. `tests/scheduler/scheduler.test.ts:184` — delete the poke. It sets
+   `config.scheduling.strategy = "interest+triage"` **expecting triage to turn
+   on**; it passes only because its own `triage:` YAML sets the mode. Misaimed,
+   delete-safe, and it will fail typecheck once step 5 lands.
+7. Strip the key from the five examples (`greenfield:77`, `spring-boot:128`,
+   `line-follower-sim:209`, `demo-stub:111`, `payment-api:264`) and the inert
+   fixtures (`mesh-cli/src/bench.ts:193,245,1044`, `tests/helpers.ts:154`), so
+   nothing we ship warns. Behaviourally a no-op — the key has no readers.
+8. Test the warning: fires when set, silent on a default/absent config.
+9. **KEEP** the raw type (`:126`) and both JSON schemas — see the
+   `additionalProperties` argument above.
+
+### Still open / unchanged by this session
+
+- `MISSION_HALTED_ALLOW_OPS` — still the small well-scoped alternative.
+- Layer B remainder: `triage.mode` surface, `agents.<id>.interests`, the
+  circuit-breaker park, the 8 `timeouts.*`.
+- `max_activation_delay_ms` read sites — unverified, and step 3 depends on not
+  assuming. Cheap to check next time.
