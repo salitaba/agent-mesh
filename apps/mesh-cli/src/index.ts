@@ -278,6 +278,11 @@ async function launchMesh(opts: {
 }): Promise<number> {
   const file = opts.configPath;
   const preflight = resolveConfig(file);
+  // The same warnings `mesh validate` prints. Booting is when they matter most
+  // — an uncovered commit gate deadlocks the mission with no runtime error —
+  // and run/serve/up/console/ui used to compute these and drop them, so the
+  // only way to see one was to remember to validate first.
+  for (const w of preflight.warnings) console.warn(`warn: ${w}`);
   const useDemo = !opts.noDemo && preflight.meshId === "demo-stub";
   // A scripted demo always starts clean (its team is re-attached each
   // boot); a real mesh resumes from its event log unless --fresh.
