@@ -256,7 +256,36 @@ Re-verify this section before implementing; it was uncommitted at survey time.
    today, so this is the missing half of step 1.
 3. ~~`capacityAvailable` + the `pump` scan → reasons (Layer B concurrency).~~
    **Done (session 6)** — see the correction box above.
-4. Lift `verdictText` out of termination into the live banner path.
+4. ~~Lift `verdictText` out of termination into the live banner path.~~
+   **Done (sessions 7–8)** — halt banner from the open card
+   (`liveMissionVerdict`), terminal banners from the event log
+   (`terminalMissionVerdict`). See the channel note below.
 5. Layer B authored copy — `ignore_if_text_matches` counter first.
+
+## Two verdict channels, and why step 4 needed both (session 8)
+
+A halt reads the open **card**: it can be answered and retired, so the banner
+clears with it. A finished mission reads the **event**: the completion path
+raises no card at all (`supervisor.ts` emits `goal.completed` and calls
+`completeMission()`), and an event that never clears is correct for a state
+that never needs to. Same `VERDICT_TEXT` table, two selectors, and
+`goal.escalated` is deliberately excluded from the event one — it would give
+the halt banner a second, permanent source that answering the card could not
+clear.
+
+**Two of the three terminal banners cannot light up today.** Both are wired and
+both fall back to their original wording verbatim; neither is a claimed fix:
+
+- `goal.failed` — `{ kind: "fail" }` (`termination.ts`, the union arm) has
+  **zero construction sites**, so the emit guarded by `verdict.kind === "fail"`
+  is unreachable. `FAILED` may therefore be an unreachable goal status too;
+  not chased.
+- `goal.paused` — its one emitter sends `reason: "user pause"`, free prose, not
+  a `VERDICT_TEXT` key. The guard refuses it, which is right: phrasing it would
+  mean *authoring* pause copy, which is step 5's job, not transport.
+
+Same shape as the `backend_unreachable` limit recorded in the session log: the
+phrasing exists, the producer does not. Do not "fix" either by loosening a
+guard — find the producer, or author the copy in step 5.
 
 Steps 1–2 are one commit and are most of the operator-visible win.

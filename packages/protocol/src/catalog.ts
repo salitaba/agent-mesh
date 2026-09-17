@@ -847,3 +847,70 @@ export function liveMissionVerdict(escalations: readonly VerdictEscalation[]): L
   }
   return null;
 }
+
+/**
+ * One timeline event, as the dashboard's buffer and `/events` serve it.
+ * Structural for the same reason `VerdictEscalation` is.
+ */
+export interface VerdictEvent {
+  type?: string;
+  payload?: unknown;
+}
+
+/**
+ * Goal-terminal events, and the goal status each one leaves behind.
+ *
+ * `goal.escalated` is deliberately absent even though it carries the same
+ * `reason`. A halt is read from the open *card* (`liveMissionVerdict`), because
+ * a card can be answered and retired and the banner then disappears with it;
+ * an event stays in the buffer forever and that banner would never clear. The
+ * three below are states that never need to clear, which is exactly why the
+ * event channel is the right one for them.
+ */
+const TERMINAL_VERDICT_EVENTS: Record<string, string> = {
+  "goal.completed": "COMPLETED",
+  "goal.failed": "FAILED",
+  "goal.paused": "PAUSED",
+};
+
+/**
+ * The verdict a finished mission stopped on, phrased, from the event log — or
+ * null.
+ *
+ * The completion path raises no escalation (`supervisor.ts`: it emits
+ * `goal.completed` and calls `completeMission()`), so `liveMissionVerdict` has
+ * no card to find and the Overview's COMPLETED banner had to hardcode its own
+ * wording. The reason is not lost, though — it rides the event payload
+ * verbatim, which is what this reads.
+ *
+ * Two rules differ from `liveMissionVerdict`, both on purpose:
+ *
+ * - **The newest terminal event decides, and nothing older is consulted.**
+ *   Open cards coexist, so scanning past one that does not qualify is right
+ *   there; terminal events are a timeline, and a mission that completed, was
+ *   reopened and then failed has both in the buffer — the older one is a lie by
+ *   the time the newer lands. So a mismatch returns null rather than searching
+ *   on for an event that agrees.
+ * - **No raiser guard.** These three types are emitted from one branch of the
+ *   supervisor and nowhere else, so the type *is* the provenance. The
+ *   `VERDICT_TEXT` guard still stands: `goal.paused` carries `"user pause"`,
+ *   free prose that `verdictText` would de-snake into a headline.
+ *
+ * No `VerdictContext` is passed because none of these payloads carries a key it
+ * reads: `goal.failed` has only `{goalId, reason}`, and `goal.completed`'s
+ * `evidence` is a criterion-id summary, not an agent or thread count.
+ */
+export function terminalMissionVerdict(events: readonly VerdictEvent[], goalStatus: string): LiveVerdict | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const type = events[i]?.type;
+    if (!type || !Object.prototype.hasOwnProperty.call(TERMINAL_VERDICT_EVENTS, type)) continue;
+    // Disagreement means the event is stale — a reopened mission still has its
+    // old `goal.completed` in the buffer, and the banner it would feed is gone.
+    if (TERMINAL_VERDICT_EVENTS[type] !== goalStatus) return null;
+    const payload = (events[i]!.payload && typeof events[i]!.payload === "object" ? events[i]!.payload : {}) as Record<string, unknown>;
+    const reason = typeof payload.reason === "string" ? payload.reason : undefined;
+    if (!reason || !Object.prototype.hasOwnProperty.call(VERDICT_TEXT, reason)) return null;
+    return { reason, ...verdictText(reason) };
+  }
+  return null;
+}

@@ -5,7 +5,7 @@ import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../com
 import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
 import { useProjectsOptional } from "../projects";
-import { liveMissionVerdict } from "../../../../packages/protocol/src/catalog";
+import { liveMissionVerdict, terminalMissionVerdict } from "../../../../packages/protocol/src/catalog";
 
 export function MeshMark(): React.JSX.Element {
   return (
@@ -201,6 +201,12 @@ export default function Overview(): React.JSX.Element {
   // it, so the banner reads the card. Null for an agent-raised escalation,
   // whose reason is free prose with no phrasing behind it.
   const verdict = liveMissionVerdict(escOpen);
+  // The same phrasing for a mission that is over rather than halted. A
+  // different channel by necessity: the completion path raises no escalation,
+  // so there is no card for the selector above to read — but it does emit
+  // `goal.completed` carrying the reason, and an event is the right carrier
+  // here precisely because a finished mission never needs its banner to clear.
+  const finalVerdict = terminalMissionVerdict(events, goal.status);
   const halted = needYou || goal.status === "PAUSED" || goal.status === "ESCALATED" || goal.status === "FAILED";
   const parked = Boolean(st.uiOnly) || st.mode === "parked";
   // How many seats boot was asked to start. null means the server predates the
@@ -339,11 +345,37 @@ export default function Overview(): React.JSX.Element {
           <Button variant="banner-act" onClick={() => setView("escalations")}>Review now</Button>
         </div></div>
       ) : goal.status === "PAUSED" ? (
-        <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Mission is paused. Nothing is running.</b></div></div>
+        // Wired to the selector for shape, and it will stay on the fallback
+        // until a pause carries a real reason: the one `goal.paused` emitter
+        // sends `"user pause"`, free prose with no phrasing behind it, which is
+        // the right thing for the catalog guard to refuse.
+        <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{finalVerdict ? `${finalVerdict.title}.` : "Mission is paused. Nothing is running."}</b>
+          {finalVerdict ? <> <span className="muted">{finalVerdict.summary}</span></> : null}
+        </div></div>
       ) : goal.status === "COMPLETED" ? (
-        <div className="status-strip ok" style={{ marginBottom: 12 }}><MeshMark /><div><b>Done — all mandatory checks passed.</b> <span className="muted">Here's what the mission shipped.</span> <Button variant="banner-act" onClick={doReplay}>replay</Button></div></div>
+        // "all mandatory checks passed" was the code's summary of the verdict,
+        // not the verdict itself, and it dropped the two conditions completion
+        // actually also requires — no open escalations, and no work still
+        // claimed. Those are in the phrased summary, which is the sentence an
+        // operator needs to trust a green banner. The counts stay in the KPI
+        // row below and the remedy stays on the reopen button in the title, so
+        // this says what happened and leaves both where they already were.
+        <div className="status-strip ok" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{finalVerdict ? `${finalVerdict.title}.` : "Done — all mandatory checks passed."}</b>{" "}
+          <span className="muted">{finalVerdict ? `${finalVerdict.summary} ` : ""}Here's what the mission shipped.</span>{" "}
+          <Button variant="banner-act" onClick={doReplay}>replay</Button>
+        </div></div>
       ) : goal.status === "FAILED" ? (
-        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Failed.</b></div></div>
+        // Also fallback-only today, and for a sharper reason than the pause:
+        // `{ kind: "fail" }` is a declared verdict arm that nothing in
+        // `termination.ts` constructs, so the `goal.failed` emit it guards is
+        // unreachable. Wired anyway — the day a producer lands, the phrasing is
+        // already on the wire and this needs no second visit.
+        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{finalVerdict ? `${finalVerdict.title}.` : "Failed."}</b>
+          {finalVerdict ? <> <span className="muted">{finalVerdict.summary}</span></> : null}
+        </div></div>
       ) : !parked && active.length === 0 && runningSteps.length === 0 && goal.status === "ACTIVE" ? (
         // One neutral-grey "All quiet" used to cover this, and only when nothing
         // was WAITING either — so the state an operator actually gets stuck in
