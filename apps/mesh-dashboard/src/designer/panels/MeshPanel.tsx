@@ -117,12 +117,15 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             </Select>
           </Field>
         ) : null}
-        <Field label="how agents wake up">
-          <Select value={m.scheduling?.activation?.strategy || "interest"} onChange={(e) => { setPath(m, "scheduling.activation.strategy", e.target.value); touch(); }}>
-            <option value="interest">on matching events</option>
-            <option value="interest+triage">events + a router pass</option>
-          </Select>
-        </Field>
+        {/*
+          There was a "how agents wake up" select here, bound to
+          `scheduling.activation.strategy`. It is gone because nothing read the
+          key: whether the router pass runs is decided by
+          `scheduling.triage.mode` alone, which the Triage block below edits. An
+          operator who set this believed they had changed the wake-up path and
+          had not — a false affordance is worse than a missing one. The key is
+          still accepted in mesh.yaml and now warns at config time.
+        */}
       </div>
 
       <div className="field">

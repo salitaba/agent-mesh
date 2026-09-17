@@ -151,7 +151,6 @@ ${opts.autoRaise ? `  auto_raise: { enabled: ${opts.autoRaise.enabled ?? true}${
 ${opts.bus ? `bus:\n${opts.bus.commitments?.semantic ? `  commitments: { semantic: ${opts.bus.commitments.semantic} }\n` : ""}${opts.bus.transport ? `  transport: ${opts.bus.transport}\n` : ""}` : ""}
 scheduling:
   mode: event-driven
-  activation: { strategy: interest }
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}
   concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4}${opts.maxTotalAgents !== undefined ? `, max_total_agents: ${opts.maxTotalAgents}` : ""} }
   timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: 300, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }

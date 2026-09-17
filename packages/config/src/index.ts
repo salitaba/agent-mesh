@@ -297,7 +297,6 @@ export interface ResolvedMeshConfig {
   };
   scheduling: {
     mode: "event-driven";
-    strategy: "interest" | "interest+triage";
     maxActivationDelayMs: number;
     triageMode: "off" | "heuristic";
     triageRules: Array<{
@@ -545,6 +544,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const w of warnUngrantedApprovalGates(Object.values(agents))) {
     configWarnings.push(w);
   }
+  for (const w of warnInertStrategy(raw.scheduling?.activation?.strategy, raw.scheduling?.triage?.mode)) {
+    configWarnings.push(w);
+  }
 
   if (errors.length > 0) throw new ConfigError(dedupe(errors));
 
@@ -605,7 +607,6 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     },
     scheduling: {
       mode: "event-driven",
-      strategy: raw.scheduling?.activation?.strategy ?? "interest",
       maxActivationDelayMs: raw.scheduling?.activation?.max_activation_delay_ms ?? 0,
       triageMode: raw.scheduling?.triage?.mode ?? "off",
       triageRules: (raw.scheduling?.triage?.rules ?? []).map((r) => ({
@@ -983,6 +984,30 @@ export function warnInertVariant(agents: AgentDefinition[], defaultVariant: stri
 }
 
 /**
+ * `scheduling.activation.strategy` is declared, defaulted and in the JSON
+ * schema, and is read by nothing. Whether the router pass runs is decided by
+ * `scheduling.triage.mode` alone — see `triage()` in the scheduler.
+ *
+ * Warned rather than rejected, and rather than dropped from the schema: the
+ * activation block is `additionalProperties: false`, so removing the property
+ * would turn every config `mesh init` has ever written into a hard validation
+ * failure. Wiring it instead would be worse still — two keys for one behaviour,
+ * and every config pinning the default would silently lose its triage rules.
+ *
+ * Accepting it in silence is the one option refused. The operator who sets a
+ * switch is owed the news that it does nothing; that is the whole point.
+ *
+ * Fires only when the key is explicitly present — a default carries no claim,
+ * and `mesh init` no longer writes one.
+ */
+export function warnInertStrategy(strategy: string | undefined, triageMode: string | undefined): string[] {
+  if (strategy === undefined) return [];
+  return [
+    `scheduling.activation.strategy is set to '${strategy}' but inert — no code reads it, and whether the router pass runs is decided by scheduling.triage.mode alone (currently '${triageMode ?? "off"}'). Remove the key; set triage.mode: heuristic if you want the router pass`,
+  ];
+}
+
+/**
  * An approval gate on a capability the seat was never granted.
  *
  * `requires_approval` NARROWS an existing grant: it says "this seat may use
@@ -1145,8 +1170,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation:
-    strategy: interest
   concurrency:
     max_active_agents: 4
 `;

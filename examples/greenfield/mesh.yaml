@@ -73,8 +73,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation:
-    strategy: interest+triage
   triage:
     mode: heuristic
     rules:

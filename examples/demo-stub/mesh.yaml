@@ -108,7 +108,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation: { strategy: interest }
   concurrency: { max_active_agents: 4 }
   timeouts: { turn_timeout_ms: 300000, wait_wakeup_ms: 3000 }
 

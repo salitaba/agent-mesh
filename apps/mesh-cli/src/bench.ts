@@ -190,7 +190,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation: { strategy: interest }
   concurrency: { max_active_agents: 4 }
   timeouts: { turn_timeout_ms: 20000, wait_wakeup_ms: 300, idle_quiet_period_ms: 1000 }
 `;
@@ -242,7 +241,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation: { strategy: interest }
   concurrency: { max_active_agents: 1 }
   timeouts: { turn_timeout_ms: 20000, wait_wakeup_ms: 300, idle_quiet_period_ms: 1000 }
 `;
@@ -1041,7 +1039,6 @@ budgets:
 
 scheduling:
   mode: event-driven
-  activation: { strategy: interest }
   concurrency: { max_active_agents: 3 }
   timeouts: { turn_timeout_ms: 10000, wait_wakeup_ms: 400, idle_quiet_period_ms: 500 }
 `;

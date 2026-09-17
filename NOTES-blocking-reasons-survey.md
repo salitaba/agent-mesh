@@ -271,8 +271,13 @@ Re-verify this section before implementing; it was uncommitted at survey time.
    **Decided (session 10) — see the step-6 section at the bottom.** They are two
    different things: `strategy` is a real operator-facing lie and gets
    deprecate-plus-remove-the-affordance; `TriageModel` is an embedder extension
-   seam and is left alone. The decision is written; **the implementation list in
-   step 6 is not yet done** and is the next session's job.
+   seam and is left alone. **Decided AND shipped (session 10)** — all nine
+   implementation items done, 1217/1217. See the step-6 "Shipped" subsection.
+8. **`scheduling.activation.max_activation_delay_ms` is inert too** — found in
+   session 10, same block, same grade 3, also editable in the Designer
+   (`MeshPanel.tsx:183-185`), zero readers. Deliberately left out of session 10's
+   approved scope. Cheapest job on the board now: the decision and the precedent
+   both already exist. **Next.**
 7. Merge `resolved.warnings` into the `/config/validate` response. Verified in
    session 10: the route never forwards them, so five config warnings have no UI
    at all, though the Designer already renders whatever it is sent. Own session —
@@ -634,3 +639,51 @@ Carries both live values (register item 2), says what will and will not help
   circuit-breaker park, the 8 `timeouts.*`.
 - `max_activation_delay_ms` read sites — unverified, and step 3 depends on not
   assuming. Cheap to check next time.
+
+### Shipped (session 10) — the decision above, implemented
+
+All nine items done. 1217/1217 (1213 + 4 new), both typechecks `ok`, 0 lint
+errors in the touched set.
+
+- `mesh init` no longer writes the key (`config/src/index.ts`).
+- Designer select **deleted** (`MeshPanel.tsx`), replaced by a comment saying
+  why. This was the grade-3 fix: the key can no longer be set from the UI.
+- `model.ts` seeds `activation ||= {}` (both sites); the object stays because
+  the panel still edits `max_activation_delay_ms` under it.
+- `warnInertStrategy` added beside `warnInertVariant`, registered in the
+  `configWarnings` cluster. Fires **only when explicitly set**.
+- Resolved `scheduling.strategy` field deleted — type and resolver write.
+- The misaimed poke at `tests/scheduler/scheduler.test.ts:184` deleted;
+  that file still passes 15/15, confirming it always ran off its own `triage:`
+  YAML block and never off the field it set.
+- Key stripped from all five examples and the four inert fixtures, so nothing
+  we ship warns about itself.
+- `tests/config/inert-strategy.test.ts` — 4 tests. The load-bearing one is
+  "a config that omits the key is silent": it is what stops `mesh init` output
+  from warning, which is the failure mode that ruled out warn-only in the first
+  place. A fourth pins that resolved config exposes no `strategy`, so no future
+  consumer can start branching on it and bring the two-switch problem back.
+
+**Deliberate omission:** the raw type (`:126`) and both JSON schemas keep the
+property. Removing them is the `additionalProperties: false` hard failure.
+
+### NEW FINDING — `max_activation_delay_ms` is inert too, and also in the UI
+
+Found while checking the one dependency this section flagged as unverified.
+**Same defect, same config block, same grade 3.** Resolved at
+`config/src/index.ts:609` → `maxActivationDelayMs` (resolved type `:301`), in
+the JSON schema (`protocol/src/schemas.ts:389`), and **editable in the Designer**
+at `MeshPanel.tsx:183-185` (`<Num label="max activation delay (ms)">`). Grep for
+`maxActivationDelayMs` across `packages apps tests`: the declaration, the
+resolver write, and nothing else. **Zero readers.**
+
+Left out of session 10 on purpose: deleting that `<Num>` is a visible UI change
+that was not in the approved scope. It is now the cheapest known job in this
+survey — the decision is already made (it is the same decision), the precedent
+is the function just shipped, and `warnInertStrategy` could become
+`warnInertActivationKeys` covering both. **Do this next.**
+
+So `scheduling.activation` contained *two* inert operator-facing keys and now
+contains one. Worth asking whether the block should exist at all: if the delay
+key goes the same way, `activation` holds nothing that is read, and the Designer
+has no reason to seed it — which would simplify `model.ts` back down.

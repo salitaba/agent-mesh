@@ -181,7 +181,6 @@ test("scheduler: cheap triage suppresses irrelevant wakeups", async () => {
       ],
     },
   });
-  (m.supervisor.deps.config as { scheduling: { strategy: string } }).scheduling.strategy = "interest+triage";
   const s = stub(m);
   s.setScript("qa", async () => ({ operations: [{ op: "done" } as MeshOp] }));
   await m.kernel.emit("dependency.changed", { files: ["README.md"], summary: "docs bump" }, { actorId: "trigger" });

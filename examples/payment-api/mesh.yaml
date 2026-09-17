@@ -260,9 +260,6 @@ scheduling:
 
   mode: event-driven
 
-  activation:
-    strategy: interest
-
   concurrency:
     max_active_agents: 4
 
