@@ -1510,7 +1510,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // event (it is not a refusal and clears itself), so the console
           // cannot derive this from the event buffer the way it derives
           // standing policy refusals.
-          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue, waits: instance.scheduler.queueWaits?.() ?? [] },
+          // `triagedAway` rides the same channel for a different kind of loss:
+          // not a block that clears, but events dropped before anything was
+          // queued, which no surface could otherwise report.
+          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue, waits: instance.scheduler.queueWaits?.() ?? [], triagedAway: instance.scheduler.triagedAwayCount?.() ?? 0 },
           recentTurns: supervisor.getRecentTurns(10),
           commitments: supervisor.commitmentStats(),
           sseClients: hub.clientCount,

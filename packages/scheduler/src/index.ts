@@ -68,6 +68,18 @@ export class Scheduler implements SchedulerPort {
   private wakeAfterTurn = new Map<string, SchedulerActivationRequest>();
   private nudgeCounts = new Map<string, number>();
   private deniedCounts = new Map<string, number>();
+  /**
+   * Events a triage rule dropped before anything was queued, counted per
+   * mission. Nothing else records them: the IGNORE branch in `handleEvent` is a
+   * bare `continue`, so there is no card, no queue entry and no event — the
+   * agent simply never reacts and nothing anywhere says why. A count is the
+   * minimum that makes the loss visible.
+   *
+   * Zeroed by `resetMissionState` with every other per-mission counter: a tally
+   * carried across a reset answers a question nobody asked. Reads 0 in a
+   * default config, because `triageMode` defaults to "off" — see `triage()`.
+   */
+  private triagedAway = 0;
   private stuckEscalated = new Set<string>();
   /**
    * Circuit breaker: consecutive non-ok turn outcomes per agent. At the limit
@@ -167,6 +179,7 @@ export class Scheduler implements SchedulerPort {
     this.wakeAfterTurn = new Map();
     this.nudgeCounts = new Map();
     this.deniedCounts = new Map();
+    this.triagedAway = 0;
     this.stuckEscalated = new Set();
     this.strikes = new Map();
     this.lastRefusal = new Map();
@@ -221,7 +234,10 @@ export class Scheduler implements SchedulerPort {
       // tokens in a live mesh.
       if (this.isRedundantObservation(agentId, event)) continue;
       const triage = await this.triage(agentId, event);
-      if (triage === "IGNORE") continue;
+      if (triage === "IGNORE") {
+        this.triagedAway++;
+        continue;
+      }
       await this.requestActivation({
         agentId,
         reason: { kind: "interest_event", eventId: event.id, eventType: event.type },
@@ -456,6 +472,20 @@ export class Scheduler implements SchedulerPort {
       if (wait) waits.push(wait);
     }
     return waits;
+  }
+
+  /**
+   * How many events triage dropped this mission. Polled for the same reason
+   * `queueWaits` is — a drop emits no event and cannot be recovered from the
+   * log — but it is the opposite kind of state. A capacity wait is a block that
+   * clears itself; a triage drop blocks nothing (nothing is refused, queued or
+   * waiting) and never clears, because the event is gone and will not be
+   * retried. So it belongs in neither the event log nor the "why you are
+   * stopped" banners: one event apiece would bury the log, and a healthy mesh
+   * that filtered 40 events is not stopped.
+   */
+  triagedAwayCount(): number {
+    return this.triagedAway;
   }
 
   private async pump(): Promise<void> {

@@ -250,6 +250,12 @@ export default function Overview(): React.JSX.Element {
     (sched.waits || []).filter((w: any) => w.kind === "capacity");
   const ceiling = capacityWaits[0];
   const ceilingLabel = ceiling?.configKey ? CEILING_LABEL[ceiling.configKey] : undefined;
+  // Events a triage rule dropped this mission. Read the same way `waits` is —
+  // live scheduler state, untyped on the wire — but it is not a wait: nothing
+  // is queued and nothing resolves. Reads 0 unless the operator set BOTH
+  // `scheduling.triage.mode: heuristic` and a non-empty `ignore_if_text_matches`,
+  // so the strip below is invisible in a default mesh.
+  const triagedAway: number = sched.triagedAway ?? 0;
   const hasHistory = (steps?.length ?? 0) > 0 || (metrics?.metrics?.messages ?? 0) > 0 || (st.eventCount ?? 0) > 15;
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any) => art && openDrawer(<ArtifactDrawer id={art.id} />);
@@ -388,6 +394,24 @@ export default function Overview(): React.JSX.Element {
         ) : (
           <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div><b>All quiet.</b> <span className="muted">{waiting.length} agent{waiting.length > 1 ? "s" : ""} waiting, none working right now. Wake one or send a message to get going.</span></div></div>
         )
+      ) : null}
+      {!st.uiOnly && triagedAway > 0 ? (
+        // Silent loss, not a block — which is why this sits BELOW the whole
+        // banner chain rather than inside it, and why it is neutral grey. A
+        // triage drop refuses nothing, queues nothing and waits for nothing, so
+        // a mesh that filtered 40 events may be in perfect health; wording it
+        // like a halt would cry wolf on the operator's own working config.
+        // But it never clears either — unlike a capacity wait, the event is
+        // gone. Permanent yet not blocking is a third state, so neither the
+        // "clears within a turn" strip above nor the verdict banners fit it.
+        // Polled, never emitted: one event per drop would bury the log exactly
+        // as a capacity block would have.
+        <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>
+          <b>{triagedAway === 1 ? "1 event was triaged away — no agent saw it." : `${triagedAway} events were triaged away — no agent saw them.`}</b>{" "}
+          <span className="muted">
+            Nothing is blocked and nothing is waiting: a triage rule matched {triagedAway === 1 ? "it" : "them"} and dropped {triagedAway === 1 ? "it" : "them"} before anything was queued. {triagedAway === 1 ? "It" : "They"} will not be retried, so an agent that looks idle may simply never have been told. Loosen or remove the rule under Triage in the designer's Mesh panel — <code>scheduling.*</code> edits apply on the next mesh boot, not to this run.
+          </span>
+        </div></div>
       ) : null}
       <Delivered goal={goal} arts={goalArts} artsLoaded={artsLoaded} artsErr={artsErr} onRetryArts={() => setArtsAttempt((n) => n + 1)} openArt={openArt} />
       <div className="grid kpis">

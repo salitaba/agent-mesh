@@ -260,7 +260,17 @@ Re-verify this section before implementing; it was uncommitted at survey time.
    **Done (sessions 7–8)** — halt banner from the open card
    (`liveMissionVerdict`), terminal banners from the event log
    (`terminalMissionVerdict`). See the channel note below.
-5. Layer B authored copy — `ignore_if_text_matches` counter first.
+5. ~~Layer B authored copy — `ignore_if_text_matches` counter first.~~
+   **Done (session 9)** — diagnosed and shipped in one session; see the step-5
+   section at the bottom for both. The rest of Layer B is untouched: the three
+   `concurrency.*` keys already have the capacity strip, but `triage.mode`,
+   `activation.strategy`, `agents.<id>.interests`, the circuit-breaker park and
+   the 8 `timeouts.*` keys do not.
+6. Open question raised by that diagnosis, and it may outrank 5: two keys are
+   **inert but editable in the Designer** — `scheduling.activation.strategy`
+   (zero read sites) and the `TriageModel` branch (zero construction sites).
+   A setting that does nothing is worse than a silent drop, because the operator
+   believes they fixed something. Same section, last subheading.
 
 ## Two verdict channels, and why step 4 needed both (session 8)
 
@@ -289,3 +299,195 @@ phrasing exists, the producer does not. Do not "fix" either by loosening a
 guard — find the producer, or author the copy in step 5.
 
 Steps 1–2 are one commit and are most of the operator-visible win.
+
+---
+
+## Step 5, piece 1 — `ignore_if_text_matches` counter (session 9: diagnosed AND shipped)
+
+**Green: 1213/1213 tests, both typechecks `ok`, lint clean on the touched set
+apart from the pre-existing `rules-of-hooks` error at `Overview.tsx:241`.**
+All six touch points, as scoped in the diagnosis below:
+
+- `scheduler/src/index.ts` — `private triagedAway = 0` in the counter cluster,
+  incremented in the IGNORE branch of `handleEvent`, zeroed in
+  `resetMissionState`, read by a new `triagedAwayCount()` beside `queueWaits()`.
+- `core/src/ports.ts` — `triagedAwayCount?()` on `SchedulerPort`, optional for
+  mocks exactly as `queueWaits?()` is.
+- `mesh-server/src/index.ts` — `triagedAway` on the `/status` scheduler literal.
+- `views/Overview.tsx` — `const triagedAway` beside `capacityWaits`, plus a
+  neutral-grey strip placed **below the entire banner chain** (after the
+  `All quiet` ternary, before `<Delivered>`), gated on
+  `!st.uiOnly && triagedAway > 0`. Outside the chain by construction, not just
+  by wording — that was the C5 decision's one structural consequence.
+- `tests/scheduler/triage-counter.test.ts` — 4 tests.
+
+**The dead-by-default finding is now a test, not a note.** "reads 0 in a default
+config, however many events flow" asserts both that the count stays 0 and that
+the very event a rule would have dropped woke the agent instead. If anyone later
+flips `triageMode`'s default to `heuristic`, that test fails and names what they
+changed. Empirically confirmed, not just grepped.
+
+Neutral grey was deliberate, matching the capacity strip: the operator
+configured this filtering on purpose, so `warn` would cry wolf on their own
+working config. The strip's job is to stop a filtered event looking like a
+broken agent, not to report a fault.
+
+Diagnosis follows, unchanged — it is the design record for the remaining pieces.
+
+## Step 5 diagnosis — `ignore_if_text_matches` (session 9)
+
+### Reachability: DEAD BY DEFAULT — and the opposite shape to session 8
+
+Verified first-hand. The anchor is `packages/scheduler/src/index.ts:224`, a bare
+`continue` inside `handleEvent` (`:179`). Two short-circuits sit above the rule
+scan in `triage()` (`:265-284`):
+
+- `:266` — `if (this.config.scheduling.triageMode === "off") return "ACT";` and
+  the default **is** `"off"` (`packages/config/src/index.ts:610`, `?? "off"`).
+  The Designer's new-mesh seed agrees: `designer/model.ts:170` →
+  `triage: { mode: "off", rules: [] }`.
+- `:277` — returns `"SKIM"` when no rule matches, and `triageRules` defaults to
+  `[]` (`config/src/index.ts:611`).
+
+Reaching `:224` therefore needs an operator to do **both**: set
+`triage.mode: heuristic` *and* add a rule with a non-empty
+`ignore_if_text_matches`. The scheduler documents this itself at `:217-219`
+("the default mode is `off` — which returns ACT for everything").
+
+**This is not the session-8 failure and the difference decides the session.**
+`{ kind: "fail" }` was dead because **no producer exists**. Here the producer
+exists, is fully wired, has a shipping UI authoring path
+(`designer/panels/MeshPanel.tsx:206-207`, read directly), and is **live in a
+shipped example**: `examples/greenfield/mesh.yaml:79,86` sets `mode: heuristic`
+with `ignore_if_text_matches: ["README", "docs/"]`. The other four examples
+carry no `triage` key at all. So the branch is two keys from firing and any
+operator who started from greenfield is already past both.
+
+Dead by default ≠ dead. Do not cancel step 5 over this — but **gate the render
+on `count > 0`**, which makes it free for every default install and exact for
+the self-selected operators who can actually be bitten.
+
+### The drop is total
+
+`:224` emits nothing, logs nothing, queues nothing. The whole
+`packages/scheduler/src/index.ts` has no logger, no `console.*`, and no kernel
+emit — it *cannot* trace anything. Contrast the policy refusal path at `:366`,
+which does record (`lastRefusal` / `reportedRefusal`, `:81-88`). Refusals are
+traced; triage drops are not. Nearest traceless sibling is
+`isRedundantObservation` (`:222`, helper `:247-262`) — hardcoded, no config key,
+out of scope here.
+
+### Channel C5 — cumulative + polled, and it is NOT a block
+
+The four shipped channels, plus the new one. Decided explicitly, not by analogy:
+
+| # | Shape | Clears? | Blocks? | Pipe |
+|---|-------|---------|---------|------|
+| S2 | standing, event-derived, live | on answer | yes | `message.rejected` → `standingBlocks` |
+| S3a | self-clearing, polled | within a turn | yes | `queueWaits()` → capacity strip |
+| S3b | standing, polled | never | yes | `liveMissionVerdict` → halt banner |
+| S4 | standing, event-derived, terminal | never | n/a — over | `terminalMissionVerdict` → COMPLETED/FAILED/PAUSED |
+| **C5** | **cumulative, polled** | **never** | **NO** | **counter field → its own conditional strip** |
+
+C5 is the first surface in this work that is **not** about being stopped. A
+triaged-away event refuses nothing, queues nothing and waits for nothing; the
+mesh may be in perfect health. It is **silent loss**, and the count only grows.
+
+Consequences, all load-bearing:
+- **No event per drop.** Same reasoning that sent capacity waits to S3 in
+  session 6: one event apiece would bury the log. Poll it.
+- **Not in the "why you are stopped" banner chain.** A mesh that triaged 40
+  events away may not be stopped at all. Putting it there would cry wolf and
+  would make the halt banner's "it will not clear on its own" ambiguous.
+- **Per-mission, not per-process.** `resetMissionState` (`:167-178`) zeroes
+  every counter; the new one goes in there. "40 events triaged away" from three
+  missions ago is not actionable, so "cumulative" means *within the mission*.
+  Say so in the copy or the number is a riddle.
+
+### Copy — the third item-3 sentence
+
+The register's two existing item-3 sentences are opposites and must stay so.
+The counter needs a third position, and there are two axes, not one:
+
+- capacity strip — transient, blocking: *"this normally clears within a turn"*
+- halt banner — permanent, blocking: *"it will not clear on its own, and the
+  mission stays parked until it is answered"*
+- **triage strip — permanent, NOT blocking:** *"nothing is blocked and nothing
+  is waiting … they will not be retried"*
+
+Full draft, all four register moves:
+
+> **{n} events triaged away — no agent saw them**
+> Nothing is blocked and nothing is waiting: a triage rule matched these events
+> and dropped them before anything was queued. They will not be retried, so an
+> agent that looks idle may simply never have been told.
+> The rules live in **Designer → Mesh panel → Triage**. Changes take effect on
+> the next mesh boot, not on this one.
+
+It is the only strip in the set whose first move says *nothing is wrong*. That
+is exactly why it must not share the banner chain.
+
+### Remedy verified — the session-6 registry finding was a misleading true negative
+
+`scheduling.*` is absent from `UPDATE_KEYS` and `HOST_CONFIG_EFFECTS` because
+**both registries govern `host.yaml` only** (`packages/projects/src/host-config.ts:232`,
+`:252`; the `UPDATE_KEYS` gate is `PUT /api/host/config`,
+`apps/mesh-server/src/host.ts:627`). Their absence implies nothing about mesh
+editability. The real answers:
+
+- **Editable: yes, and a full UI already exists** —
+  `designer/panels/MeshPanel.tsx:189` "Triage — the cheap pre-filter before
+  waking peers": mode `:191`, per-rule agent `:199`, event `:203`,
+  `ignore_if_text_matches` `:206-207`, `act_if_text_matches` `:208`.
+  Persisted by `Designer.tsx` → `POST /config/save`
+  (`apps/mesh-server/src/index.ts:1663`, write `:1704`).
+- **Live: no.** The scheduler holds config as a constructor-assigned field
+  (`scheduler/src/index.ts:100`), built once at `apps/mesh-server/src/index.ts:301`.
+  Rules are re-read per decision (`:274`) but off a boot object that is never
+  replaced. `configDrift` syncs only goal/criteria/seat/run.budget — no
+  scheduling kind. So: **next mesh boot, not this one.** This matches the tier
+  brief's "config is a boot seed, not a mirror" and it is now confirmed for
+  `scheduling.*` specifically, which session 6 could not claim.
+- Do **not** point the copy at `views/HostSettings.tsx` — that screen edits
+  `host.yaml`.
+
+### Landing site — what one counter field touches
+
+Six places, all identified:
+1. field decl beside the other private counters, `scheduler/src/index.ts:65-78`
+2. increment at `:224`
+3. a getter beside `queueWaits()` (`:452-459`)
+4. the optional port decl, `packages/core/src/ports.ts:128` (`queueWaits` is
+   optional there — follow that pattern)
+5. the `/status` literal, `apps/mesh-server/src/index.ts:1513` —
+   `scheduler: { pending, running, queue, waits }`. **Untyped inline object**;
+   the `...st` spread (`core/src/supervisor.ts:5861-5878`) has no `scheduler`
+   field, and `Overview.tsx:250` reads it as `any`. Adding a field needs no
+   protocol change, which is why this is cheap — and why nothing type-checks it.
+6. `resetMissionState` (`:167-178`), per the per-mission decision above
+
+### Two NEW dead paths found while answering the above
+
+Both are the session-8 shape — declared, plumbed, exposed, no consumer — and
+both are arguably higher-value than the counter because they are **config lies
+in the default UI**, not silent losses in an opt-in path:
+
+- **`scheduling.activation.strategy` is inert.** Declared
+  (`config/src/index.ts:126`, `:300`), defaulted (`:608`), in the JSON schema
+  (`protocol/src/schemas.ts:388`), and **editable in the Designer**
+  (`MeshPanel.tsx:121-123`, "events + a router pass"). Grep for `.strategy`
+  across `packages` + `apps` finds **zero read sites** — `triage()` keys off
+  `triageMode` alone. The only other mutation is a test poke at
+  `scheduling.strategy` (`tests/scheduler/scheduler.test.ts:184`), a path that
+  may not even match the resolved shape (unconfirmed, and it proves no
+  coverage either way). **The survey's own Layer B row for this key is wrong**:
+  it cannot cause "agent never activates", because nothing reads it. Correct
+  surface is S1 — "this setting currently has no effect" — or delete the key.
+- **`TriageModel` has zero construction sites.** Interface at
+  `scheduler/src/index.ts:28-29`, optional ctor arg `:104`, consumed `:267-269`,
+  threaded from `apps/mesh-server/src/index.ts:56` → `:301`. Nothing anywhere
+  constructs one, so the model branch of `triage()` is unreachable and
+  `mode: heuristic` always means the rule scan.
+
+Neither was chased further. Recorded so the next session greps construction
+sites before believing either.

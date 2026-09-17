@@ -126,6 +126,12 @@ export interface SchedulerPort {
    * state that clears itself. Optional for mocks.
    */
   queueWaits?(): QueueWait[];
+  /**
+   * How many events a triage rule dropped this mission. Polled like
+   * `queueWaits` and for a related reason — the drop emits nothing — but it is
+   * not a wait: nothing is queued and nothing will resolve. Optional for mocks.
+   */
+  triagedAwayCount?(): number;
   pending(): number;
   running(): number;
   start(): void;
