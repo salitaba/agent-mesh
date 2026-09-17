@@ -832,8 +832,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   };
 
   /**
-   * Memoised model catalogue for GET /models. Resolving it can shell out to the
-   * `opencode` CLI (~1s), and the designer refetches whenever the crew panel
+   * Memoised model catalogue for GET /models. Resolving it shells out to the
+   * Claude CLI (~1s), and the designer refetches whenever the crew panel
    * mounts; the set of installed providers changes on the order of never.
    */
   let modelCatalogue: { at: number; value: Awaited<ReturnType<typeof instance.designerRuntime.listModels>> } | undefined;
@@ -1219,6 +1219,44 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
         const res2 = await supervisor.recordDecision(by, kind, b.subject ?? "release", b.artifactId, b.comment);
         return json(res2.ok ? 200 : 403, res2);
+      }
+
+      // -------------------------------------------------- tool approvals
+      // Deliberately not folded into /approvals above: that route decides
+      // artifacts and releases via recordDecision, and its kinds (approve,
+      // pass, veto, merge) are all judgements ABOUT work. This unlocks a tool
+      // for a seat, which is a different subject with a different lifetime,
+      // and overloading a decision kind would have made both harder to read.
+      if (parts[0] === "tool-approvals" && req.method === "GET" && parts.length === 1) {
+        return json(200, { seats: supervisor.listToolApprovals() });
+      }
+      if (parts[0] === "tool-approvals" && req.method === "POST" && parts.length === 1) {
+        const b = await body();
+        const agentId = typeof b.agentId === "string" ? b.agentId.trim() : "";
+        const tool = typeof b.tool === "string" ? b.tool.trim() : "";
+        if (!agentId || !tool) return json(400, { ok: false, reason: "provide `agentId` and `tool`" });
+        const revoke = b.revoke === true;
+        const ok = revoke ? supervisor.revokeToolApproval(agentId, tool) : supervisor.grantToolApproval(agentId, tool);
+        if (!ok) {
+          return json(404, {
+            ok: false,
+            reason: revoke ? `no grant for '${tool}' on '${agentId}'` : `unknown agent '${agentId}'`,
+          });
+        }
+        try {
+          const auditFile = `${instance.config.stateDir}/logs/auth-audit.log`;
+          fs.mkdirSync(`${instance.config.stateDir}/logs`, { recursive: true });
+          fs.appendFileSync(
+            auditFile,
+            `${new Date().toISOString()} tool-approval ${revoke ? "revoke" : "grant"} agent=${agentId} tool=${tool}\n`,
+            "utf8",
+          );
+        } catch {
+          /* audit never breaks the runtime */
+        }
+        // Does not resume the seat — pair with POST /agents/:id/wake. An
+        // operator clearing several requests should wake once, not per grant.
+        return json(200, { ok: true, agentId, tool, granted: !revoke });
       }
 
       // ------------------------------------------------------- escalations
@@ -1736,10 +1774,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
 
       // ----------------------------------------------------------- models
       // Model catalogue for the designer's per-role picker. Proxied from the
-      // OpenCode installation rather than hardcoded, so the list matches the
-      // providers this machine is actually credentialed for.
+      // runtime's own installation rather than hardcoded, so the list matches
+      // the providers this machine is actually credentialed for.
       //
-      // Cached: resolving it may shell out to the `opencode` CLI, and the
+      // Cached: resolving it shells out to the Claude CLI, and the
       // designer refetches on every panel mount. `?refresh=1` forces a reload
       // after the operator adds a provider.
       if (parts[0] === "models" && req.method === "GET" && parts.length === 1) {
@@ -2449,9 +2487,8 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
       try {
         await instance.close();
       } finally {
-        // Runtime children (`opencode serve`) are ours, not the instance's:
-        // without this a SIGTERM shutdown leaves them reparented and holding
-        // ~0.5GB each until the next mission's orphan sweep.
+        // Designer queries are ours, not the instance's: without this a
+        // SIGTERM shutdown leaves live SDK sessions open past the host.
         await instance.designerRuntime.stopAll();
       }
     },

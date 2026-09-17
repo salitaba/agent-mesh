@@ -45,7 +45,7 @@ export interface RawMeshFile {
      */
     generate_acceptance_criteria?: boolean;
     workspace?: { path?: string };
-    runtime?: { default?: string; model?: string; variant?: string };
+    runtime?: { default?: string; model?: string; variant?: string; requires_approval?: string[] };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
   };
   startup?: { activate?: string[] };
@@ -191,6 +191,12 @@ export interface RawAgent {
    * surfaced as a config warning rather than silently ignored.
    */
   variant?: string;
+  /**
+   * Capability tokens this seat holds but may not use unaided: an operator must
+   * grant the tool first. Inherits `mesh.runtime.requires_approval` when absent;
+   * an explicit `[]` opts the seat out of a mesh-wide gate.
+   */
+  requires_approval?: string[];
   mode?: "peer" | "service";
   prompt?: string;
   capabilities?: string[];
@@ -422,6 +428,10 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   const defHard = raw.mesh.defaults?.hard_actions;
   const defaultModel = raw.mesh.runtime?.model?.trim() || undefined;
   const defaultVariant = raw.mesh.runtime?.variant?.trim() || undefined;
+  // Normalized here so a mesh writing an alias (`api.write`) gates the same
+  // token the runtime checks. `??` at the seat, per the rule above: an explicit
+  // `[]` means "ungated", and must beat a mesh-wide gate rather than inherit it.
+  const defaultRequiresApproval = raw.mesh.runtime?.requires_approval?.map(normalizeCapability);
   const workspacePath = path.resolve(dir, raw.mesh.workspace?.path ?? "./workspace");
   const stateDir = path.resolve(dir, raw.server?.state_dir ?? path.join(raw.mesh.workspace?.path ?? "./workspace", ".mesh-state"));
 
@@ -440,6 +450,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       runtime: a.runtime ?? defaultRuntime,
       model: a.model,
       variant: a.variant,
+      requiresApproval: (a.requires_approval ?? defaultRequiresApproval)?.map(normalizeCapability),
       prompt: { file: a.prompt },
       capabilities: [...capPolicy],
       authority: a.authority ?? [],
@@ -529,6 +540,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     configWarnings.push(w);
   }
   for (const w of warnInertVariant(Object.values(agents), defaultVariant)) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUngrantedApprovalGates(Object.values(agents))) {
     configWarnings.push(w);
   }
 
@@ -966,6 +980,31 @@ export function warnInertVariant(agents: AgentDefinition[], defaultVariant: stri
   return [
     `${paths.join(", ")} ${paths.length === 1 ? "is" : "are"} set but inert — 'variant' was the opencode runtime's thinking knob, that backend was removed, and no registered runtime reads the field. Remove the key, or leave it for a runtime that consumes it`,
   ];
+}
+
+/**
+ * An approval gate on a capability the seat was never granted.
+ *
+ * `requires_approval` NARROWS an existing grant: it says "this seat may use
+ * that capability's tools, but not until an operator says so". Naming a token
+ * the seat does not hold gates nothing, because the capability check already
+ * denies those tools outright — approval is never reached.
+ *
+ * Warned rather than errored: the seat is safe, just not what its author
+ * meant. The likely intent was to grant the capability AND gate it, and a
+ * config that silently does neither is the one worth flagging.
+ */
+export function warnUngrantedApprovalGates(agents: AgentDefinition[]): string[] {
+  const warnings: string[] = [];
+  for (const a of agents) {
+    const held = new Set(a.capabilities);
+    const stray = (a.requiresApproval ?? []).filter((t) => !held.has(t));
+    if (stray.length === 0) continue;
+    warnings.push(
+      `agents.${a.id}.requires_approval names ${stray.join(", ")}, which this seat does not hold — that gates nothing, since the capability check already denies those tools. Grant the capability too, or drop it from requires_approval`,
+    );
+  }
+  return warnings;
 }
 
 /**

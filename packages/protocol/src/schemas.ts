@@ -156,6 +156,7 @@ const agentConfigSchema = {
     mode: { type: "string", enum: ["peer", "service"] },
     prompt: { type: "string", maxLength: 20000 },
     capabilities: { type: "array", items: { type: "string", maxLength: 200 } },
+    requires_approval: { type: "array", items: { type: "string", maxLength: 200 } },
     authority: { type: "array", items: { type: "string", maxLength: 200 } },
     interests: { type: "array", items: { type: "string", maxLength: 200 } },
     session: {
@@ -247,6 +248,7 @@ export const meshConfigSchema = {
             default: { type: "string", maxLength: 200 },
             model: { type: "string", maxLength: 200 },
             variant: { type: "string", maxLength: 200 },
+            requires_approval: { type: "array", items: { type: "string", maxLength: 200 } },
           },
           additionalProperties: false,
         },

@@ -37,9 +37,9 @@ import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
 // with no backend coupling. Ops here normally arrive typed via mesh_* MCP
 // tools, so this is the fallback path, not the primary one.
 import { parseMeshOps, extractSummary, extractDeclaredSummary, shortDigest } from "../../agent-runtime/src/index";
-// The output-voice rules belong to the prompt layer, not to either adapter:
-// importing them from there is what keeps this runtime and runtime-opencode
-// byte-identical on the part of the prompt that must not vary by backend.
+// The output-voice rules belong to the prompt layer, not to any one adapter:
+// importing them from there is what keeps every runtime byte-identical on
+// the part of the prompt that must not vary by backend.
 import { withOutputVoice } from "../../core/src/context";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
@@ -253,14 +253,45 @@ function commitScopeDenial(toolInput: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Operator-approval half of {@link buildPermissionGate}. */
+export interface ApprovalGate {
+  /** Capability tokens whose tools need a grant. Normalized by the caller. */
+  requires: readonly string[];
+  /** Tool names the operator has unlocked for this session. */
+  granted: ReadonlySet<string>;
+  /**
+   * Record a tool refused for want of a grant. Called at most once per call.
+   *
+   * Optional: the denial already tells the model, and the operator surface
+   * lists gated seats from config. A caller that wants a live "blocked on"
+   * queue supplies this; nothing in the mesh requires one yet.
+   */
+  onRequest?(toolName: string): void;
+}
+
 /**
- * Capability-to-tool gate. The opencode adapter expresses this as a static
- * permission block in a generated config; the SDK offers a callback instead,
- * which is a closer fit — the decision is computed from the same capability
- * set, but an unknown or newly added tool fails closed here instead of
- * falling through whatever the config file happened not to mention.
+ * Capability-to-tool gate. The removed opencode adapter expressed this as a
+ * static permission block in a generated config; the SDK offers a callback
+ * instead, which is a closer fit — the decision is computed from the same
+ * capability set, but an unknown or newly added tool fails closed here instead
+ * of falling through whatever the config file happened not to mention.
+ *
+ * `approval` layers an operator gate over that: a capability the seat holds,
+ * whose tools stay denied until the operator unlocks them.
+ *
+ * The denial IS the mechanism — this gate never blocks waiting for a human,
+ * even though it could (the callback is async). `interruptSilentTurns` kills
+ * any turn that goes quiet for `turnSilenceMs`, resolved to 60-120s, which is
+ * well inside human response latency: a blocking hold would be destroyed by
+ * the supervisor's own stall detector before most operators answered. So the
+ * gate refuses, records the request, and lets the turn end WAITING; the
+ * operator grants over HTTP and the agent is re-activated.
+ *
+ * That shape also settles what a grant can honestly mean. A refused call
+ * cannot be replayed — the model re-decides on its next turn — so the operator
+ * unlocks the TOOL for the rest of the session, never one invocation of it.
  */
-export function buildPermissionGate(capabilities: string[]): CanUseTool {
+export function buildPermissionGate(capabilities: string[], approval?: ApprovalGate): CanUseTool {
   // Normalized here as well as at config load: capabilityGrants also arrive
   // from direct AgentDefinition construction (tests, bench harnesses).
   const caps = new Set(capabilities.map(normalizeCapability));
@@ -277,19 +308,56 @@ export function buildPermissionGate(capabilities: string[]): CanUseTool {
 
   const deny = (message: string) => ({ behavior: "deny" as const, message });
 
+  const requires = new Set((approval?.requires ?? []).map(normalizeCapability));
+  const granted = approval?.granted ?? new Set<string>();
+
+  /**
+   * The seat's OWN tokens that authorize this tool. Filtered against `caps` on
+   * purpose: `requires_approval` narrows a grant and must never widen one, so
+   * a token the seat does not hold can neither gate nor unlock anything.
+   */
+  const authorizing = (toolName: string): string[] => {
+    const candidates = EDIT_TOOLS.has(toolName)
+      ? ["repository.write", "architecture.write", "test.write"]
+      : EXEC_TOOLS.has(toolName)
+        ? ["shell.execute", "test.execute", "git.commit"]
+        : NETWORK_TOOLS.has(toolName)
+          ? ["network.request"]
+          : [];
+    return candidates.filter((t) => caps.has(t));
+  };
+
+  /** A denial when this tool is gated and not yet unlocked, else undefined. */
+  const held = (toolName: string) => {
+    if (requires.size === 0 || granted.has(toolName)) return undefined;
+    const gated = authorizing(toolName).filter((t) => requires.has(t));
+    if (gated.length === 0) return undefined;
+    approval?.onRequest?.(toolName);
+    return deny(
+      `${toolName} needs operator approval: this seat holds ${gated.join(", ")}, which requires_approval gates. ` +
+        "The request is recorded — end your turn rather than retrying; you will be re-activated if it is granted.",
+    );
+  };
+
   return async (toolName, toolInput) => {
     if (toolName.startsWith(MESH_MCP_PREFIX)) return { behavior: "allow", updatedInput: toolInput };
     if (READ_TOOLS.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
     if (EDIT_TOOLS.has(toolName)) {
-      return canEdit
-        ? { behavior: "allow", updatedInput: toolInput }
-        : deny(`${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`);
+      if (!canEdit) {
+        return deny(`${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`);
+      }
+      return held(toolName) ?? { behavior: "allow", updatedInput: toolInput };
     }
     if (EXEC_TOOLS.has(toolName)) {
-      if (canExec) return { behavior: "allow", updatedInput: toolInput };
-      if (!canCommit) {
+      if (!canExec && !canCommit) {
         return deny(`${toolName} denied: this seat holds no shell.execute or test.execute capability.`);
       }
+      // Checked before the commit-scope narrowing below: an operator gate is
+      // about whether this seat may reach the tool at all, which is a question
+      // that comes before what it may pass to it.
+      const hold = held(toolName);
+      if (hold) return hold;
+      if (canExec) return { behavior: "allow", updatedInput: toolInput };
       // BashOutput and KillShell address a shell this seat already opened; only
       // Bash opens a new one, so only Bash needs its command scoped.
       if (toolName !== "Bash") return { behavior: "allow", updatedInput: toolInput };
@@ -297,9 +365,10 @@ export function buildPermissionGate(capabilities: string[]): CanUseTool {
       return why ? deny(`Bash denied: ${why}.`) : { behavior: "allow", updatedInput: toolInput };
     }
     if (NETWORK_TOOLS.has(toolName)) {
-      return canFetch
-        ? { behavior: "allow", updatedInput: toolInput }
-        : deny(`${toolName} denied: this seat holds no network.request capability.`);
+      if (!canFetch) {
+        return deny(`${toolName} denied: this seat holds no network.request capability.`);
+      }
+      return held(toolName) ?? { behavior: "allow", updatedInput: toolInput };
     }
     // Fail closed. A tool nobody mapped is a tool nobody authorized.
     return deny(`${toolName} is not available to mesh agents under the claude runtime.`);
@@ -775,9 +844,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
-   * Accepted and ignored: the opencode adapter needs this because it writes a
-   * config file naming the bus before it can spawn, whereas designer turns
-   * here run with no MCP at all and so have nothing to point at a bus. Kept
+   * Accepted and ignored: the removed opencode adapter needed this because it
+   * wrote a config file naming the bus before it could spawn, whereas designer
+   * turns here run with no MCP at all and so have nothing to point at a bus. Kept
    * to satisfy the port, and because a future observed-designer mode would
    * need exactly this hook.
    */
@@ -919,6 +988,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       mcpServers: { mesh: this.meshMcpServer(agent, context) },
       canUseTool: buildPermissionGate(
         context.capabilityGrants.length ? context.capabilityGrants : agent.capabilities,
+        {
+          // The context wins: the supervisor resolves inheritance and holds the
+          // live grant set, while `agent` is the static definition and would
+          // re-gate a tool the operator already unlocked this session.
+          requires: context.approvalRequired ?? agent.requiresApproval ?? [],
+          granted: new Set(context.approvalGranted ?? []),
+        },
       ),
       // canUseTool is the authority; "default" is the mode that routes tool
       // calls through it instead of auto-allowing or hard-denying them.

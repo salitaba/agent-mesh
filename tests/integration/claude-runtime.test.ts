@@ -210,6 +210,56 @@ test("permission gate resolves capability aliases", async () => {
   assert.equal(await allows(["api.read"], "Edit"), false);
 });
 
+/** Drive the gate with an operator-approval half attached. */
+async function allowsUnder(
+  caps: string[],
+  tool: string,
+  requires: string[],
+  granted: string[] = [],
+): Promise<boolean> {
+  const gate = buildPermissionGate(caps, { requires, granted: new Set(granted) });
+  const res = await gate(tool, { any: "input" }, gateCtx());
+  return res?.behavior === "allow";
+}
+
+test("requires_approval holds a tool the seat is otherwise capable of", async () => {
+  const gate = buildPermissionGate(["repository.write"], {
+    requires: ["repository.write"],
+    granted: new Set(),
+  });
+  const res = await gate("Edit", {}, gateCtx());
+  assert.ok(res && res.behavior === "deny");
+  // The seat has the capability, so the denial must not read as "no capability" —
+  // the model should end its turn and wait, not conclude it was misconfigured.
+  assert.match(res.message, /needs operator approval/);
+  assert.match(res.message, /end your turn rather than retrying/);
+});
+
+test("an operator grant unlocks exactly the tool it names", async () => {
+  assert.equal(await allowsUnder(["repository.write"], "Edit", ["repository.write"], ["Edit"]), true);
+  // Grants are per tool, not per capability: unlocking Edit leaves Write held.
+  assert.equal(await allowsUnder(["repository.write"], "Write", ["repository.write"], ["Edit"]), false);
+});
+
+test("requires_approval gates only the capability families it names", async () => {
+  // Gating writes must not quietly gate a seat's shell access as collateral.
+  assert.equal(await allowsUnder(["shell.execute"], "Bash", ["repository.write"]), true);
+  // And a gate never promotes: naming a capability the seat lacks grants nothing.
+  assert.equal(await allowsUnder(["api.read"], "Edit", ["repository.write"]), false);
+});
+
+test("an empty requires_approval leaves the gate byte-for-byte unchanged", async () => {
+  // The knob is opt-in; a mesh that never sets it must not pay for it.
+  assert.equal(await allowsUnder(["repository.write"], "Edit", []), true);
+  assert.equal(await allowsUnder(["shell.execute"], "Bash", []), true);
+});
+
+test("read-only tools stay reachable under an approval gate", async () => {
+  // A held seat must still be able to see why it was held, and to report back.
+  assert.equal(await allowsUnder(["repository.write"], "Read", ["repository.write"]), true);
+  assert.equal(await allowsUnder(["repository.write"], "Grep", ["repository.write"]), true);
+});
+
 test("send without a live session raises BackendUnreachableError", async () => {
   const adapter = new ClaudeRuntimeAdapter();
   const session: AgentSession = {

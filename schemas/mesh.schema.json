@@ -103,6 +103,13 @@
             "variant": {
               "type": "string",
               "maxLength": 200
+            },
+            "requires_approval": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
             }
           },
           "additionalProperties": false
@@ -219,6 +226,13 @@
             "maxLength": 20000
           },
           "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "requires_approval": {
             "type": "array",
             "items": {
               "type": "string",

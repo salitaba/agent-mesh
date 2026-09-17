@@ -478,6 +478,15 @@ export interface AgentDefinition {
    * Inert since that backend was removed — no registered runtime reads it.
    */
   variant?: string;
+  /**
+   * Capability tokens this seat holds but may not use unaided: the tools they
+   * authorize need an operator grant first. Resolved from `requires_approval`,
+   * which inherits from `mesh.runtime.requires_approval` when the seat omits it.
+   *
+   * Listing a token the seat does not hold does nothing — this narrows an
+   * existing grant, it never widens one.
+   */
+  requiresApproval?: string[];
   prompt: PromptReference;
   capabilities: string[];
   authority: Authority[];
@@ -1125,6 +1134,19 @@ export interface RuntimeContext {
   agentToken: string;
   rolePromptText: string;
   capabilityGrants: string[];
+  /**
+   * Capability tokens among `capabilityGrants` whose tools need an operator
+   * grant before use. Absent means nothing is gated.
+   */
+  approvalRequired?: string[];
+  /**
+   * Tool names the operator has already unlocked for this session.
+   *
+   * The grant is per tool, not per call: a denied tool call cannot be replayed
+   * — the model re-decides on the next turn — so what the operator unlocks is
+   * the tool for the rest of the session, and the surface must say so.
+   */
+  approvalGranted?: string[];
   env: Record<string, string>;
 }
 
@@ -1221,7 +1243,7 @@ export interface AgentEventToolCallUpdate {
  *
  * It carries the parsed payload rather than leaving the fold to derive it,
  * because prose parsing is still a per-backend concern today (`parseMeshOps`
- * lives in the opencode adapter). Once ops move to typed MCP tools that
+ * lives in agent-runtime). Once ops move to typed MCP tools that
  * parsing disappears and these fields thin out to the stream proper.
  */
 export interface AgentEventTurnEnd {

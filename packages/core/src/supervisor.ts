@@ -451,6 +451,15 @@ export class Supervisor {
   private turnInFlight = new Set<string>();
   /** Turn ids the silence detector already interrupted — one interrupt per turn. */
   private interruptedTurnIds = new Set<string>();
+  /**
+   * Tools an operator has unlocked for a seat gated by `requires_approval`.
+   *
+   * In-memory by intent: a grant dies with the supervisor, which is the
+   * conservative direction — a restarted mesh re-gates rather than carrying an
+   * old approval silently forward. Keyed by agent, not by SDK session, so a
+   * transcript rotation does not drop a grant out from under a live mission.
+   */
+  private toolGrants = new Map<string, Set<string>>();
   private restartAttempts = new Map<string, number>();
   /**
    * Consecutive turn failures caused by a dead backend, per agent. Unlike
@@ -4109,7 +4118,7 @@ export class Supervisor {
           advisory: true,
           detail: {
             agentId,
-            backend: backend ?? "unknown — check the agent's runtime (opencode server port, http baseUrl)",
+            backend: backend ?? "unknown — check the agent's runtime (http baseUrl)",
             error: short,
             consecutiveFailures: streak,
             attempts,
@@ -4171,6 +4180,8 @@ export class Supervisor {
       // per-turn context bundle uses, so both runtimes now see one value.
       rolePromptText: loadRolePrompt(this.config, agentId, rec.definition),
       capabilityGrants: rec.definition.capabilities,
+      approvalRequired: rec.definition.requiresApproval,
+      approvalGranted: [...(this.toolGrants.get(agentId) ?? [])],
       env: { MESH_AGENT_ID: agentId, MESH_GOAL_ID: this.state.activeGoalId ?? "" },
     };
   }
@@ -4180,6 +4191,50 @@ export class Supervisor {
       return this.deps.workspace.ensureWorktree(agentId);
     }
     return this.config.workspacePath;
+  }
+
+  // ------------------------------------------------------ tool approvals
+
+  /**
+   * Unlock a gated tool for a seat.
+   *
+   * The grant covers the tool for the rest of the session, not one call: a
+   * refused tool call cannot be replayed — the model re-decides on its next
+   * turn — so this is the only thing an approval can honestly mean, and the
+   * operator surface says so rather than implying per-call review.
+   *
+   * Does not wake the agent. Granting and resuming are separate on purpose:
+   * `POST /agents/:id/wake` already exists, and an operator reviewing several
+   * requests should not restart the seat once per grant.
+   *
+   * False for an unknown agent, so the caller answers 404 instead of recording
+   * a grant no seat will ever consume.
+   */
+  grantToolApproval(agentId: string, tool: string): boolean {
+    if (!this.config.agents[agentId]) return false;
+    const set = this.toolGrants.get(agentId) ?? new Set<string>();
+    set.add(tool);
+    this.toolGrants.set(agentId, set);
+    this.auditLine(`tool approval: ${agentId} granted ${tool}`);
+    return true;
+  }
+
+  /** Withdraw a grant. The seat re-gates that tool from its next turn on. */
+  revokeToolApproval(agentId: string, tool: string): boolean {
+    const removed = this.toolGrants.get(agentId)?.delete(tool) ?? false;
+    if (removed) this.auditLine(`tool approval: ${agentId} revoked ${tool}`);
+    return removed;
+  }
+
+  /** Gated seats and what has been unlocked on each, for the operator surface. */
+  listToolApprovals(): Array<{ agentId: string; requiresApproval: string[]; granted: string[] }> {
+    return Object.values(this.config.agents)
+      .filter((a) => (a.requiresApproval?.length ?? 0) > 0)
+      .map((a) => ({
+        agentId: a.id,
+        requiresApproval: a.requiresApproval ?? [],
+        granted: [...(this.toolGrants.get(a.id) ?? [])],
+      }));
   }
 
   // ----------------------------------------------------------------- ops
