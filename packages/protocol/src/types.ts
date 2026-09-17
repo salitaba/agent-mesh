@@ -1049,6 +1049,17 @@ export interface AgentInput {
   context: AgentContextBundle;
   instructions: string;
   /**
+   * Tools the operator has unlocked for this seat, as of THIS turn.
+   *
+   * Carried per-turn rather than read from `RuntimeContext.approvalGranted`
+   * because context is built once per session (`start`/`restoreSession`) while
+   * grants change while the session is live. A runtime that gates tools
+   * refreshes its gate from this, so an unlock reaches a seat that is already
+   * running; runtimes without a gate ignore it. Absent means "not told" — the
+   * gate keeps whatever it already had, it does not reset to empty.
+   */
+  approvalGranted?: string[];
+  /**
    * Best-effort live token callback. Runtimes backed by a streaming backend
    * (opencode SSE) invoke it with text deltas as the model responds; others
    * ignore it. Never fails the turn — streaming is observability only, the

@@ -3591,6 +3591,10 @@ export class Supervisor {
         activation: reason,
         context: bundle,
         instructions,
+        // Re-read per turn, not inherited from the session's RuntimeContext:
+        // `toolGrants` is the live truth and an operator can change it between
+        // turns of a session that never restarts.
+        approvalGranted: [...(this.toolGrants.get(agentId) ?? [])],
         onToken: (delta: string) => {
           // Live tokens are observability only: buffer them for polling
           // clients and forward out-of-band to SSE. Never throws, never

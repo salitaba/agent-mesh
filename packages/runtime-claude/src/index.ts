@@ -456,6 +456,12 @@ interface LiveSession {
   /** Turns served by the CURRENT sdk session, and rotations so far. */
   turns: number;
   rotations: number;
+  /**
+   * Tools unlocked for this seat, held BY REFERENCE by the permission gate.
+   * Mutated in place each turn from `AgentInput.approvalGranted`; assigning a
+   * new set here would leave the running gate reading the old one.
+   */
+  grantedTools: Set<string>;
 }
 
 
@@ -583,6 +589,17 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
     }
     const live = s;
+
+    // After the rotation check, not before: `rotate` builds a fresh session
+    // whose gate seeded its set from the session-start context, so refreshing
+    // earlier would be discarded by the rotation. Mutated in place because the
+    // gate closed over this exact set — see `LiveSession.grantedTools`.
+    // Undefined means the caller did not say (opencode-shaped runtimes, tests):
+    // leave the gate as it is rather than silently revoking everything.
+    if (input.approvalGranted) {
+      live.grantedTools.clear();
+      for (const tool of input.approvalGranted) live.grantedTools.add(tool);
+    }
 
     this.statuses.set(session.agentId, "RUNNING");
     const turn: TurnState = {
@@ -974,6 +991,12 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     if (existing && !existing.closed) return existing;
 
     const inbox = new PushQueue<SDKUserMessage>();
+    // Owned by the session rather than built inline in the gate call below:
+    // `open` returns an existing session untouched (above), so a set created
+    // at gate-construction time would freeze the grants as they stood when the
+    // session was created, and no later unlock could reach a running seat.
+    // `stream` refreshes this one in place, per turn.
+    const grantedTools = new Set(context.approvalGranted ?? []);
     const options: Options = {
       cwd: context.workspacePath,
       // `custom` rather than the claude_code preset: a mesh seat is not a
@@ -993,7 +1016,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // live grant set, while `agent` is the static definition and would
           // re-gate a tool the operator already unlocked this session.
           requires: context.approvalRequired ?? agent.requiresApproval ?? [],
-          granted: new Set(context.approvalGranted ?? []),
+          granted: grantedTools,
         },
       ),
       // canUseTool is the authority; "default" is the mode that routes tool
@@ -1033,6 +1056,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       contextTokens: 0,
       turns: 0,
       rotations: 0,
+      grantedTools,
     };
     this.live.set(meshSessionId, s);
     void this.pump(s, agent.id);

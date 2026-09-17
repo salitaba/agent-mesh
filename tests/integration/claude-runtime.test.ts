@@ -235,6 +235,27 @@ test("requires_approval holds a tool the seat is otherwise capable of", async ()
   assert.match(res.message, /end your turn rather than retrying/);
 });
 
+test("a grant added after the gate was built reaches the running gate", async () => {
+  // The load-bearing half of mid-session unlocking: the gate keeps the CALLER's
+  // set rather than copying it, so `open` can hand a session-owned set to the
+  // gate once and `stream` can refresh that set per turn. If this regresses to
+  // a copy, an operator's grant silently cannot reach a seat that is already
+  // running -- the gate goes on refusing from a set captured at session start,
+  // and `open` returns the live session unchanged so nothing ever rebuilds it.
+  const granted = new Set<string>();
+  const gate = buildPermissionGate(["repository.write"], {
+    requires: ["repository.write"],
+    granted,
+  });
+  const before = await gate("Edit", {}, gateCtx());
+  assert.ok(before && before.behavior === "deny");
+
+  granted.add("Edit");
+
+  const after = await gate("Edit", {}, gateCtx());
+  assert.equal(after?.behavior, "allow");
+});
+
 test("an operator grant unlocks exactly the tool it names", async () => {
   assert.equal(await allowsUnder(["repository.write"], "Edit", ["repository.write"], ["Edit"]), true);
   // Grants are per tool, not per capability: unlocking Edit leaves Write held.
