@@ -528,3 +528,114 @@ test("a turn answered by total silence fails fast instead of riding the turn tim
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Captures the SDK options an agent seat opens its query with.
+ *
+ * The seat path feeds a push queue rather than a single string, so unlike
+ * `captureDesignerQuery` this one has to keep draining the prompt. The options
+ * are recorded on OPEN, before any turn runs, which is all these tests assert.
+ */
+function captureSeatQuery() {
+  const seen: Record<string, unknown>[] = [];
+  const queryFn = (({ prompt, options }: { prompt: unknown; options: Record<string, unknown> }) => {
+    seen.push(options);
+    const gen = (async function* () {
+      yield {
+        type: "system",
+        subtype: "init",
+        session_id: String(options.sessionId ?? "seat-fake"),
+        model: String(options.model ?? "claude-test"),
+        mcp_servers: [{ name: "mesh", status: "connected" }],
+      };
+      for await (const msg of prompt as AsyncIterable<unknown>) void msg;
+    })();
+    return Object.assign(gen, { interrupt: async () => undefined });
+  }) as unknown as ClaudeAdapterOptions["queryFn"];
+  return { queryFn, seen };
+}
+
+test("an agent seat opens with its effort pinned, not the operator's", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const { queryFn, seen } = captureSeatQuery();
+    const adapter = new ClaudeRuntimeAdapter({ queryFn });
+    await adapter.start(devDef, runtimeCtx(dir));
+    assert.equal(seen.length, 1, "opening a seat opens exactly one query");
+    // Unset, the CLI falls back to the OPERATOR's personal effortLevel in
+    // ~/.claude/settings.json, so the same mesh would think harder for one
+    // operator than another and two runs of it would not be comparable.
+    // Pinning makes a seat's reasoning depth a property of the mesh.
+    assert.equal(seen[0].effort, "high");
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("extraOptions still overrides the seat's effort pin", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-"));
+  try {
+    const { queryFn, seen } = captureSeatQuery();
+    // Spread BEFORE extraOptions deliberately: the pin must not close the
+    // embedder escape hatch that already exists for `model`.
+    const adapter = new ClaudeRuntimeAdapter({ queryFn, extraOptions: { effort: "low" } });
+    await adapter.start(devDef, runtimeCtx(dir));
+    assert.equal(seen[0].effort, "low", "the escape hatch still wins");
+    await adapter.stopAll();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a designer turn carries the effort its caller asked for", async () => {
+  const { queryFn, seen } = captureDesignerQuery();
+  const adapter = new ClaudeRuntimeAdapter({ queryFn });
+  await adapter.prompt("hello", { system: "you are a designer", effort: "medium" });
+  assert.equal(seen[0].effort, "medium", "a per-call effort must reach the query");
+  await adapter.stopAll();
+});
+
+test("a designer turn that names no effort sends none", async () => {
+  const { queryFn, seen } = captureDesignerQuery();
+  const adapter = new ClaudeRuntimeAdapter({ queryFn });
+  // Acceptance-criteria generation shares this path and runs on Haiku, which
+  // has no effort support at all. Defaulting anything here would put the knob
+  // on a call whose model cannot take it, so absence has to stay absence.
+  await adapter.prompt("derive acceptance criteria", { system: "you are a designer" });
+  assert.equal("effort" in seen[0], false, "no caller asked, so no effort is sent");
+  await adapter.stopAll();
+});
+
+test("usageToTokens reports reasoning without billing it a second time", () => {
+  const t = usageToTokens({
+    input_tokens: 100,
+    output_tokens: 400,
+    cache_creation_input_tokens: 50,
+    cache_read_input_tokens: 900,
+    output_tokens_details: { thinking_tokens: 300 },
+  });
+  assert.equal(t.thinking, 300);
+  // The backend bills reasoning INSIDE output_tokens, so 300 of those 400
+  // already carry it. Summing `thinking` in would charge for the same tokens
+  // twice — the failure the cache_read exclusion exists to avoid.
+  assert.equal(t.total, 100 + 400 + 50);
+  assert.equal(t.cacheRead, 900, "and the cache_read exclusion is untouched");
+});
+
+test("usageToTokens tells 'no reasoning reported' apart from 'none used'", () => {
+  // Older CLI builds omit the object entirely and the wire type allows null.
+  // Those both mean UNKNOWN, so neither may be reported as 0: a turn that did
+  // not think and a turn we cannot measure are different facts, and collapsing
+  // them is what makes the number useless for tuning effort.
+  assert.equal("thinking" in usageToTokens({ input_tokens: 1, output_tokens: 2 }), false);
+  assert.equal("thinking" in usageToTokens({ input_tokens: 1, output_tokens: 2, output_tokens_details: null }), false);
+  assert.equal(
+    "thinking" in usageToTokens({ input_tokens: 1, output_tokens: 2, output_tokens_details: { thinking_tokens: null } }),
+    false,
+  );
+  // A reported zero IS a measurement, so it is kept rather than dropped.
+  const measured = usageToTokens({ input_tokens: 1, output_tokens: 2, output_tokens_details: { thinking_tokens: 0 } });
+  assert.equal("thinking" in measured, true);
+  assert.equal(measured.thinking, 0);
+});
