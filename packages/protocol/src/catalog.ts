@@ -734,6 +734,12 @@ const VERDICT_TEXT: Record<string, VerdictText> = {
     title: "An agent is waiting for an answer",
     summary: "A request went unanswered long enough to stall the agent that sent it.",
   },
+  // One entry covers both flavours; `detail.cause` distinguishes nudges that
+  // were delivered and bought nothing from nudges that never reached an agent.
+  "stalemate:stall_nudge_cap": {
+    title: "A stuck mission needs a decision",
+    summary: "The stall watchdog woke the mesh repeatedly and nothing moved, so it stopped spending context on the mission and handed it over.",
+  },
   // Synthesized by `deriveVerdict` when a run stopped without the termination
   // manager recording a reason — a hard kill, a crash, or a log that ends
   // mid-mission. Phrased rather than left to the snake_case fallback because

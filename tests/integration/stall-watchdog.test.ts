@@ -143,6 +143,61 @@ test("stall watchdog: idle and cooldown are both gates — either one alone keep
   }
 });
 
+test("stall watchdog: a mission it cannot un-stick reaches a human instead of being nudged forever", async () => {
+  // The end-to-end shape of the cap. Every nudged turn here answers `wait`:
+  // real turns, real tokens, no work. The mission stays actionable throughout
+  // (its mandatory criterion is unmet), so quiescence never fires and the old
+  // watchdog would have driven this loop for the whole mission budget.
+  //
+  // The cap alone would be a worse bug — a watchdog that quietly gave up on a
+  // mission that still has work IS the deadlock. So the assertion that matters
+  // is not "the nudges stopped" but "the nudges stopped AND an operator was
+  // told, once".
+  const m = await makeMesh({ agents: AGENTS, mayContact: { dev: [] }, mode: "live", ...stallOpts() });
+  try {
+    let turns = 0;
+    stub(m).setScript("dev", async () => {
+      turns++;
+      return { operations: [{ op: "wait" } as MeshOp] };
+    });
+
+    for (let i = 1; i <= 3; i++) {
+      goQuiet(m);
+      clearCooldown(m);
+      await internals(m).checkStall();
+      await waitFor(`stall nudge ${i} produced a turn`, () => turns === i);
+      await idle(m, `nudged turn ${i} to finish`);
+    }
+
+    // The fourth tick has both gates open and a mission that still has work,
+    // and buys no turn at all.
+    goQuiet(m);
+    clearCooldown(m);
+    await internals(m).checkStall();
+    assert.equal(turns, 3, "the fourth nudge must not be spent re-proving the mission is stuck");
+
+    const cards = [...m.kernel.state.escalations.values()].filter((e) => e.reason === "stalemate:stall_nudge_cap");
+    assert.equal(cards.length, 1, "the mission must be handed to a human exactly once");
+    assert.equal(cards[0]!.status, "OPEN");
+    assert.equal(cards[0]!.raisedBy, "stall-watchdog");
+    assert.match(String((cards[0]!.detail as { note?: string }).note), /needs an operator decision/);
+
+    // Event-sourced or it did not happen: a card that lives only in memory is
+    // lost on the next replay, and the mission is silently wedged again.
+    assert.ok(eventTypes(await collectEvents(m)).includes("escalation.requested"), "the hand-off is in the log");
+
+    // A fifth tick must not mint a second card or resume nudging behind the
+    // operator's back.
+    goQuiet(m);
+    clearCooldown(m);
+    await internals(m).checkStall();
+    assert.equal(turns, 3);
+    assert.equal([...m.kernel.state.escalations.values()].filter((e) => e.reason === "stalemate:stall_nudge_cap").length, 1);
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("watchdog auto-raise: an exhausted agent ledger is raised in place instead of halting the mission", async () => {
   // 5k tokens buys roughly one scripted turn; the turn below spends 9k, which
   // latches `exceeded` on the agent ledger. That latch is read on a TIMER by

@@ -28,6 +28,9 @@ interface StallProbe {
   lastTurnAt: number;
   lastStallNudgeAt: number;
   stallNoopRetryAt: number;
+  stallNudgeStreak: number;
+  stallRefusalStreak: number;
+  stallCapEscalated: boolean;
   turnInFlight: Set<string>;
   activeTurnByAgent: Map<string, string>;
   interruptedTurnIds: Set<string>;
@@ -333,6 +336,118 @@ test("stall tick: a refused driver keeps the cooldown unspent and re-arms the fa
     assert.match(audit.read(), /driver pm refused .* cooldown not consumed/);
   } finally {
     audit.dispose();
+    await m.cleanup();
+  }
+});
+
+/** Open both stall gates so the very next `checkStall()` is free to nudge. */
+function openGates(p: StallProbe): void {
+  p.lastTurnAt = 0;
+  p.lastStallNudgeAt = 0;
+}
+
+/** The stall-cap cards on the mesh, newest last. */
+function capCards(m: MeshInstance): Array<{ id: string; status: string; detail?: unknown }> {
+  return [...m.kernel.state.escalations.values()].filter((e) => e.reason === "stalemate:stall_nudge_cap");
+}
+
+test("stall tick: the nudge cap stops at three and hands the wedged mission to a human exactly once", async () => {
+  // Nothing here ever runs a turn, so no nudge can produce work — which is
+  // precisely the mission the cap exists for: still actionable (a mandatory
+  // criterion is unmet), still not moving. The old behaviour was to nudge on
+  // every tick forever at a full context window each.
+  const m = await makeMesh({ agents: AGENTS, startup: ["pm"], mode: "parked" });
+  const audit = withAuditFile(m);
+  try {
+    const p = probe(m);
+    const wakes = blockActivations(m, true);
+    p.liveMode = true;
+
+    for (let i = 0; i < 4; i++) {
+      openGates(p);
+      await p.checkStall();
+    }
+
+    assert.deepEqual(wakes, ["pm", "pm", "pm"], "three nudges buy the mission its chance; the fourth tick must not");
+    assert.equal(p.stallNudgeStreak, 3);
+    const cards = capCards(m);
+    assert.equal(cards.length, 1, "the cap must reach the operator — a cap that only stops nudging is the deadlock it replaced");
+    assert.equal(cards[0]!.status, "OPEN");
+    const detail = cards[0]!.detail as { cause?: string; nudges?: number; refusals?: number; actionable?: string };
+    assert.equal(detail.cause, "nudges_produced_no_work", "the card must say which failure this was");
+    assert.equal(detail.nudges, 3);
+    assert.equal(detail.refusals, 0, "no activation was refused, so nothing may claim one was");
+    assert.match(String(detail.actionable), /mandatory criteria unmet/);
+    assert.match(audit.read(), /escalating to a human/);
+
+    // Further ticks while the card is open: no nudges, no second card.
+    for (let i = 0; i < 3; i++) {
+      openGates(p);
+      await p.checkStall();
+    }
+    assert.equal(wakes.length, 3, "an open cap card means the human owns the mission; nudging around it is the spam the cap stops");
+    assert.equal(capCards(m).length, 1, "one card per wedged mission, not one per tick");
+  } finally {
+    audit.dispose();
+    await m.cleanup();
+  }
+});
+
+test("stall tick: answering the cap card releases the cap instead of merely acknowledging it", async () => {
+  // The whole justification for capping a watchdog is that a human is told.
+  // That is only true if the answer also puts the mission back in motion —
+  // otherwise the escalation is a nicer-looking deadlock.
+  const m = await makeMesh({ agents: AGENTS, startup: ["pm"], mode: "parked" });
+  try {
+    const p = probe(m);
+    const wakes = blockActivations(m, true);
+    p.liveMode = true;
+    for (let i = 0; i < 4; i++) {
+      openGates(p);
+      await p.checkStall();
+    }
+    const card = capCards(m)[0]!;
+    assert.equal(wakes.length, 3);
+
+    await m.supervisor.respondEscalation(card.id, "criterion 2 is out of scope — drive the rest");
+    // Responding wakes recovery candidates through the same stubbed scheduler,
+    // so the baseline is taken after it rather than assumed to be three.
+    const afterAnswer = wakes.length;
+
+    openGates(p);
+    await p.checkStall();
+
+    assert.equal(wakes.length, afterAnswer + 1, "an answered card must let the watchdog drive again");
+    assert.equal(p.stallNudgeStreak, 1, "the streak restarts from the answer, not from where it gave up");
+    assert.equal(p.stallCapEscalated, false, "and the latch drops so a second wedge can escalate again");
+    assert.equal(capCards(m).length, 1, "releasing the cap must not mint a duplicate card");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("stall tick: refused nudges cap on their own counter and name the real failure", async () => {
+  // "The agent ignored three nudges" and "the mesh could not schedule anyone"
+  // are the same silence and different bugs. Conflating them would blame an
+  // agent that was never woken.
+  const m = await makeMesh({ agents: AGENTS, startup: ["pm"], mode: "parked" });
+  try {
+    const p = probe(m);
+    const wakes = blockActivations(m, false);
+    p.liveMode = true;
+    openGates(p);
+
+    for (let i = 0; i < 4; i++) await p.checkStall();
+
+    assert.deepEqual(wakes, ["pm", "pm", "pm"], "three refusals are enough evidence that nothing can be scheduled");
+    assert.equal(p.stallNudgeStreak, 0, "a refusal is not an ignored nudge");
+    assert.equal(p.lastStallNudgeAt, 0, "and still must not spend the cooldown");
+    const cards = capCards(m);
+    assert.equal(cards.length, 1);
+    const detail = cards[0]!.detail as { cause?: string; refusals?: number };
+    assert.equal(detail.cause, "activations_refused", "the operator must be pointed at the block, not at the agent");
+    assert.equal(detail.refusals, 3);
+  } finally {
     await m.cleanup();
   }
 });

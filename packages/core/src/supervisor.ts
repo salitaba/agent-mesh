@@ -190,6 +190,17 @@ const TURN_COST_SAFETY_FACTOR = 1.5;
  */
 const MAX_TIMEOUT_RETRIES = 5;
 /**
+ * How many consecutive stall nudges may buy nothing before the watchdog stops
+ * nudging and asks a human instead (see `checkStall`).
+ *
+ * Module-local, deliberately, exactly like the scheduler's own `MAX_NUDGES`:
+ * this is the SHAPE of the failure, not a knob. An operator tuning it would be
+ * choosing how much budget to spend re-proving a mission is stuck, which is not
+ * a choice worth offering — and a config key would have to be read, defaulted,
+ * documented and replayed for a number whose only sane value is "a few".
+ */
+const MAX_STALL_NUDGES = 3;
+/**
  * Bounds on the TRACE COPY of a turn — what the Steps drawer and the audit
  * mirror retain. Named `MAX_TRACE_*` rather than `MAX_TURN_*` because the old
  * names read, in every grep, as if they bounded the prompt: they are applied to
@@ -591,6 +602,41 @@ export class Supervisor {
    * from state every tick, so a stale flag can never keep the mesh asleep.
    */
   private quiesced = false;
+  /**
+   * The same idea as `quiesced`, for the opposite case. Quiescence rests the
+   * watchdog when there is provably NOTHING to do; this counts the nudges that
+   * had something to do — unmet criteria, mail, open escalations, claimed
+   * tasks — and produced no work anyway. One is a mission that is finished but
+   * unclosable, the other a mission that is wedged; they need different answers
+   * (silence vs. a human), so they are counted separately and neither gate
+   * reads the other's state.
+   *
+   * MISSION-WIDE, not per-agent, because `stallDriver` deliberately ROTATES
+   * across stuck agents: a per-agent counter would need N x MAX nudges before
+   * an N-agent mesh said anything, and each agent's count would look innocent
+   * the whole way. The condition being detected is "this MISSION is wedged",
+   * not "this agent is" — and `checkStall` has exactly one active goal by
+   * construction, so one counter is the honest key.
+   *
+   * In memory only, like `turnCostEstimate`: it measures a live streak, and a
+   * streak restored from disk would describe a run that is no longer happening.
+   */
+  private stallNudgeStreak = 0;
+  /**
+   * Consecutive nudges that never reached an agent at all (policy DENY/DEFER,
+   * busy, parked). Separate from `stallNudgeStreak` so "the driver ignored 3
+   * nudges" is never conflated with "the mesh could not schedule anyone": both
+   * are silent, both wedge the mission, but they need different fixes and the
+   * escalation has to be able to say which one happened.
+   */
+  private stallRefusalStreak = 0;
+  /**
+   * One stall-cap card per mission. `escalate()` dedupes on conflictKey against
+   * OPEN cards only, so without this latch an answered card would be minted
+   * again on the very next tick; with it, an answered card RELEASES the cap
+   * (see `checkStall`) instead of being re-raised.
+   */
+  private stallCapEscalated = false;
 
   constructor(public readonly deps: SupervisorDeps) {
     // Restore the persisted turn ring before anything can push a turn; the
@@ -646,6 +692,13 @@ export class Supervisor {
     this.stallNoopRetryAt = 0;
     this.lastStallNudgeAt = 0;
     this.quiesced = false;
+    // The nudge cap is a statement about one live run. Going live (or being
+    // re-parked and sent live again) starts a new one, so a streak earned
+    // before the switch must not spend the new run's first three nudges — and
+    // the latch has to drop with it or the next cap would escalate nothing.
+    this.stallNudgeStreak = 0;
+    this.stallRefusalStreak = 0;
+    this.stallCapEscalated = false;
   }
 
   /**
@@ -3439,6 +3492,13 @@ export class Supervisor {
     // breaker — but in a quiet mission with unmet criteria they also produced
     // no work, so the next driver should be tried soon.
     let turnChangedNothing = false;
+    // The mirror image, and NOT simply `!turnChangedNothing`: this stays false
+    // for a turn that threw, where "did it move the mesh?" was never answered.
+    // It clears the watchdog's nudge streak in the `finally` below — a turn
+    // that produced work is the proof the mission is not wedged, whoever woke
+    // it, so the streak has to break on any real turn rather than only on a
+    // watchdog-driven one.
+    let turnProducedWork = false;
     try {
       // budget reservation
       const agentReserveAmount = this.sizedTurnReserve(agentId);
@@ -3927,6 +3987,7 @@ export class Supervisor {
         this.auditLine(`turn ${turnId} for ${agentId}: accepted with caveats: ${caveats}`);
       }
       turnChangedNothing = turnChangedNothing || unproductive;
+      turnProducedWork = !turnChangedNothing;
       this.finishTurn(turnId, agentId, {
         status: target === "IDLE" ? "ok" : target === "WAITING" ? "waiting" : "blocked",
         tokens,
@@ -3995,6 +4056,12 @@ export class Supervisor {
       // next driver should be tried in seconds, not minutes. The breaker still
       // parks a chronic no-op agent after 3 strikes, and `checkStall` still
       // skips when anything is pending/running — so this cannot hot-loop.
+      // A turn that moved the mesh ends the watchdog's "nudges that bought
+      // nothing" streak: that is what the cap is counting, and a mission that
+      // just produced work is by definition not the wedged one it escalates
+      // for. Kept here, next to the fast-retry arm, so the two halves of the
+      // no-op story stay in one place.
+      if (turnProducedWork) this.stallNudgeStreak = 0;
       if (turnChangedNothing && this.liveMode) {
         this.stallNoopRetryAt = Date.now() + this.config.scheduling.stallNoopRetryMs;
         if (this.stallNoopTimer) clearTimeout(this.stallNoopTimer);
@@ -5625,11 +5692,63 @@ export class Supervisor {
       }
       return;
     }
-    // NOTE: no nudge cap on this path. Here the mission demonstrably still has
-    // work (unmet criteria, mail, escalations, claimed tasks), and a watchdog
-    // that gave up on a genuinely stuck mission would be a deadlock, not a
-    // saving. Chronic no-op agents are already handled where they should be:
-    // the circuit breaker parks them and `stallDriver` skips parked agents.
+    // NUDGE CAP. Everything above has established that the mission still has
+    // work (unmet criteria, mail, escalations, claimed tasks), so this path
+    // would otherwise nudge forever — and the note that stood here argued that
+    // was correct, because a watchdog that gave up on a genuinely stuck mission
+    // is a deadlock, not a saving. That objection still holds, and it is why
+    // the cap is written the way it is: what it forbids is giving up SILENTLY.
+    //
+    // After MAX_STALL_NUDGES consecutive nudges that bought no work, the mesh
+    // has demonstrated it cannot un-stick itself, and every further nudge pays
+    // a full context window to re-prove it (one live run spent 325k tokens
+    // learning this the expensive way — see `quiesced`). So the watchdog stops
+    // nudging and RAISES AN ESCALATION: the mission surfaces to a human, which
+    // is the opposite of a deadlock, and is the only reason a cap is allowed
+    // here at all. Stopping without the card would be exactly the deadlock the
+    // old note warned about.
+    //
+    // The card is also the release. While it is OPEN the human owns the
+    // mission and the watchdog stays quiet; once it is answered or retired the
+    // streak is forgotten and this tick drives again — so an operator decision
+    // resumes the mission instead of merely acknowledging it.
+    //
+    // Chronic no-op AGENTS are still the circuit breaker's job (it parks them
+    // and `stallDriver` skips parked agents); this counts the MISSION.
+    const capKey = `stall-cap:${goal.id}`;
+    if (this.stallNudgeStreak >= MAX_STALL_NUDGES || this.stallRefusalStreak >= MAX_STALL_NUDGES) {
+      const open = [...this.state.escalations.values()].some((e) => e.status === "OPEN" && e.conflictKey === capKey);
+      if (open) return;
+      if (this.stallCapEscalated) {
+        this.stallCapEscalated = false;
+        this.stallNudgeStreak = 0;
+        this.stallRefusalStreak = 0;
+        this.auditLine("stall watch: the stall-cap escalation is no longer open — forgetting the streak and driving the mission again");
+      } else {
+        this.stallCapEscalated = true;
+        const unreachable = this.stallRefusalStreak >= MAX_STALL_NUDGES;
+        await this.escalate({
+          reason: "stalemate:stall_nudge_cap",
+          raisedBy: "stall-watchdog",
+          conflictKey: capKey,
+          detail: {
+            cause: unreachable ? "activations_refused" : "nudges_produced_no_work",
+            nudges: this.stallNudgeStreak,
+            refusals: this.stallRefusalStreak,
+            candidateDriver: this.stallDriver(),
+            actionable: actionable.why,
+            criteria: this.unmetCriteriaSummary(),
+            note: unreachable
+              ? `the watchdog could not schedule any driver ${this.stallRefusalStreak} times running while the mission still had work (${actionable.why}) — a policy, budget or breaker block is holding the mesh, not the mission`
+              : `${this.stallNudgeStreak} stall nudges in a row produced no work while the mission still had work (${actionable.why}) — the mesh cannot un-stick itself and needs an operator decision or a rework of the plan`,
+          },
+        });
+        this.auditLine(
+          `stall watch: ${unreachable ? `${this.stallRefusalStreak} refused nudges` : `${this.stallNudgeStreak} nudges`} in a row bought no work (${actionable.why}) — escalating to a human and resting until it is answered`,
+        );
+        return;
+      }
+    }
     const driver = this.stallDriver();
     if (!driver) return;
     const res = await this.activateAgent(driver, { kind: "timer", note: this.stallWakeNote() });
@@ -5638,21 +5757,36 @@ export class Supervisor {
       // let the next tick try another driver. The activation itself (breaker,
       // policy) is the real limiter.
       if (noopFastRetry) this.stallNoopRetryAt = Date.now() + this.config.scheduling.stallNoopRetryMs;
+      // The refusal counts against the cap, but on its OWN counter: no agent
+      // was woken, so this can never read as "the driver ignored a nudge". The
+      // cooldown is still deliberately not consumed — a refusal costs no
+      // tokens, and pinning the mission to a 5-minute cooldown for a free
+      // non-event is what left it idle until the cooldown lapsed.
+      this.stallRefusalStreak++;
       // Activation refused (policy DENY/DEFER, busy, parked): nothing was
       // scheduled, so burning the 5-minute cooldown here would leave the
       // mission idle until it lapses. Retry next tick instead — and say so,
       // so the audit trail shows a mesh that cannot schedule rather than one
       // that is merely quiet.
-      this.auditLine(`stall watch: mission quiet but driver ${driver} refused (${res.blocked ?? "unknown"}) — retrying next tick, cooldown not consumed`);
+      this.auditLine(
+        `stall watch: mission quiet but driver ${driver} refused (${res.blocked ?? "unknown"}) [refusal ${this.stallRefusalStreak}/${MAX_STALL_NUDGES}] — retrying next tick, cooldown not consumed`,
+      );
       return;
     }
     this.lastStallNudgeAt = now;
+    // Count only nudges an agent actually got. The refusal branch above owns
+    // the other failure; cleared here because a scheduled nudge proves the
+    // mesh CAN schedule, whatever the turn then does with it.
+    this.stallNudgeStreak++;
+    this.stallRefusalStreak = 0;
     if (this.stallNoopTimer) {
       clearTimeout(this.stallNoopTimer);
       this.stallNoopTimer = undefined;
     }
     this.stallNoopRetryAt = 0;
-    this.auditLine(`stall watch: mission quiet for ${Math.round((now - this.lastTurnAt) / 1000)}s, nudging ${driver}`);
+    this.auditLine(
+      `stall watch: mission quiet for ${Math.round((now - this.lastTurnAt) / 1000)}s, nudging ${driver} (nudge ${this.stallNudgeStreak}/${MAX_STALL_NUDGES})`,
+    );
   }
 
   /**
