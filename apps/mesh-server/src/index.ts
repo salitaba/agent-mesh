@@ -524,6 +524,23 @@ export interface ServerHandle {
 }
 
 /**
+ * Reasoning effort for the two designer chat routes below.
+ *
+ * Lower than the backend's default `high` because this is the one model call in
+ * the mesh with a human reading every turn: the operator sees the reply, and
+ * the draft config it proposes is schema- and gate-validated before the UI will
+ * apply it, so a reasoning reduction that hurts shows up immediately and costs
+ * one retry. Nothing autonomous depends on this turn.
+ *
+ * Applies to the designer's own chat ONLY. Acceptance-criteria generation
+ * borrows the same one-shot runtime call but must NOT inherit this: it runs on
+ * `config.criteriaModel` (Haiku by default), which has no effort support at
+ * all. That is why this is passed per call rather than configured on the
+ * designer runtime.
+ */
+const DESIGNER_EFFORT = "medium" as const;
+
+/**
  * Persona/contract for POST /designer/chat. The whole-config-every-turn rule
  * is what lets the UI diff one reply against the current draft instead of
  * replaying a sequence of partial patches.
@@ -1873,7 +1890,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if ("error" in built) return json(400, { error: built.error });
         const { turnId, mcp: mcpOpts } = openDesignerTurn();
         try {
-          const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts });
+          const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT });
           const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
           return json(200, { reply, proposedConfig, problems, proposal });
         } finally {
@@ -1907,7 +1924,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         try {
           const { reply, thinking } = await instance.designerRuntime.promptStream(
             built.promptText,
-            { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts },
+            { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT },
             (delta) => send({ type: delta.kind, delta: delta.delta }),
           );
           const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);

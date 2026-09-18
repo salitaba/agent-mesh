@@ -158,7 +158,19 @@ export function usageToTokens(u: ClaudeTurnUsage | undefined): AgentOutput["toke
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
-  return { input, output, total: input + output + cacheWrite, cacheRead };
+  // Reported, never summed. `thinking` is a slice of `output_tokens` that the
+  // backend already billed, so it rides alongside `total` and is deliberately
+  // absent from the expression above — see AgentOutput.tokensUsed.thinking.
+  // Left undefined when the backend sent no breakdown, so an old CLI reads as
+  // "unknown" instead of a turn that happened not to think.
+  const thinking = usage.output_tokens_details?.thinking_tokens;
+  return {
+    input,
+    output,
+    total: input + output + cacheWrite,
+    cacheRead,
+    ...(typeof thinking === "number" ? { thinking } : {}),
+  };
 }
 
 /**
@@ -242,6 +254,34 @@ export function rotateAtFor(model: string | undefined): number {
 }
 
 /**
+ * Reasoning effort every agent seat runs at.
+ *
+ * THIS IS A DETERMINISM PIN, NOT A COST LEVER. `high` is already the CLI's
+ * `default_effort` for the models a seat realistically runs (Opus 5, Sonnet 5),
+ * so on a stock machine this changes no behaviour and saves nothing. What it
+ * removes is a variable: the SDK only forwards `--effort` when we set it, and
+ * an unset effort lets the CLI fall back to the OPERATOR's personal
+ * `effortLevel` in `~/.claude/settings.json`. One operator's seats then think
+ * harder (or cost ~1.6x more at `xhigh`) than another's for the same mesh, and
+ * two runs are not comparable. Pinning makes the seat's effort a property of
+ * the mesh rather than of whoever booted it.
+ *
+ * Unconditional on purpose, even though `claude-haiku-4-5` has no `effort`
+ * capability and a seat may be pointed at it (`model:` is a free-form string —
+ * see `rotateAtFor` on why an id we cannot place is never guessed at). The CLI
+ * gates this itself: it resolves effort to `undefined` for a model whose
+ * catalogue entry lacks the capability, and drops the key from `output_config`
+ * while assembling the request body, so an unsupported seat sends no effort at
+ * all rather than being rejected. Reproducing that capability table here would
+ * be a second copy of a list we cannot validate and would silently rot as
+ * models ship; deferring to the CLI's own copy cannot.
+ *
+ * Still overridable: this is spread BEFORE `extraOptions`, so an operator
+ * escape hatch continues to win, as it does for `model`.
+ */
+const SEAT_EFFORT = "high" as const;
+
+/**
  * How much conversation the model loaded for a turn.
  *
  * `input + cache_read`, because a cached prefix is still context the model read
@@ -258,6 +298,20 @@ export interface ClaudeTurnUsage {
   output_tokens?: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  /**
+   * Reasoning half of `output_tokens`, NOT a fifth token bucket.
+   *
+   * The SDK documents this as a read-only decomposition: `output_tokens` stays
+   * the inclusive, authoritative billing total, `thinking_tokens` is always
+   * <= it, and `output_tokens - thinking_tokens` approximates the visible
+   * reply. Adding it to any sum that already counts `output_tokens` would
+   * double-bill reasoning, which is why {@link usageToTokens} reports it
+   * alongside `total` and never inside it.
+   *
+   * Optional and nullable at both levels because it is: older CLI builds omit
+   * the object, and the wire type is `{ thinking_tokens: number } | null`.
+   */
+  output_tokens_details?: { thinking_tokens?: number | null } | null;
 }
 
 /**
@@ -864,6 +918,12 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           ? { model: toClaudeModelId(opts.model) ?? this.options.model }
           : {}),
         ...(this.options.executablePath ? { pathToClaudeCodeExecutable: this.options.executablePath } : {}),
+        // Only when the caller asked. This one-shot path is shared: the
+        // designer chat sets an effort, acceptance-criteria generation does
+        // not, and that caller runs on Haiku, which has no effort support.
+        // Defaulting anything here would put a knob on the criteria call that
+        // its model cannot take.
+        ...(opts.effort ? { effort: opts.effort } : {}),
         ...this.options.extraOptions,
       },
     });
@@ -1111,6 +1171,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       ...(this.modelFor(agent) ? { model: this.modelFor(agent) } : {}),
       ...(this.options.executablePath ? { pathToClaudeCodeExecutable: this.options.executablePath } : {}),
       ...(resuming ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
+      // See SEAT_EFFORT: pins the seat's reasoning depth to the mesh instead of
+      // inheriting the operator's personal `effortLevel`. Before extraOptions,
+      // so the escape hatch still wins.
+      effort: SEAT_EFFORT,
       ...this.options.extraOptions,
     };
 

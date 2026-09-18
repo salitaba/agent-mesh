@@ -1115,6 +1115,19 @@ export interface AgentOutput {
     total: number;
     /** Replayed/cached prompt prefix. Observability only — never billed. */
     cacheRead?: number;
+    /**
+     * The reasoning slice of `output`, already counted in it and in `total`.
+     *
+     * Additive reporting only. `total` above says "input + output + reasoning
+     * + cache writes" and that is exactly right: the backend bills reasoning
+     * inside `output`, so this is a decomposition of a number already counted,
+     * never a new one to add. Summing it into any total is double-billing.
+     *
+     * Absent, rather than 0, when the backend reported no breakdown — so "we
+     * do not know" stays distinguishable from "it did not think", which is the
+     * whole point of measuring it.
+     */
+    thinking?: number;
   };
   model?: string;
   modelVersion?: string;
@@ -1330,6 +1343,18 @@ export interface DesignerPromptOptions {
   system?: string;
   /** Per-call model override. Falls back to the runtime's default. */
   model?: string;
+  /**
+   * Per-call reasoning effort. Omitted means "whatever the backend defaults
+   * to", which is what every caller got before this existed.
+   *
+   * Deliberately per-call rather than a runtime-wide setting, because the two
+   * callers on this path want opposite things: the designer chat is a human
+   * watching every turn, so a reduction is caught immediately and is worth the
+   * tokens, while acceptance-criteria generation shares the same one-shot call
+   * on a model that may have no effort support at all. Only the caller knows
+   * which of those it is, so only the caller sets it.
+   */
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
   /**
    * Remote MCP endpoint the designer may call for this turn, carrying the
    * staging tools plus read-only observability.
