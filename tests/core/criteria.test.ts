@@ -7,6 +7,7 @@ import {
   parseGeneratedCriteria,
 } from "../../packages/core/src/criteria";
 import { DEFAULT_CRITERIA } from "../../packages/core/src/supervisor";
+import { DEFAULT_CRITERIA_MODEL } from "../../packages/config/src/index";
 import { makeMesh, goalOf, stub, waitFor } from "../helpers";
 
 /**
@@ -125,6 +126,54 @@ test("an empty goal is not sent to the model", async () => {
   });
   assert.equal(called, false, "a misconfigured mesh should not spend a model call learning its goal is blank");
   assert.equal(out, null);
+});
+
+/**
+ * The model override. Criteria generation is the one model call in a mission
+ * that gains nothing from a large model — a fixed system prompt plus the goal,
+ * no conversation, no tools, once per boot — so it is routed to a cheap one.
+ * The designer path has always accepted a per-call `model`; the callback type
+ * here was narrower than the adapter, which is the only reason it never got
+ * through.
+ */
+test("the criteria model reaches the designer call", async () => {
+  let seen: { system: string; model?: string } | undefined;
+  const out = await generateAcceptanceCriteria(
+    "Build a payment API.",
+    async (_text, opts) => {
+      seen = opts;
+      return good();
+    },
+    "claude-haiku-4-5",
+  );
+
+  assert.equal(seen?.model, "claude-haiku-4-5");
+  assert.equal(seen?.system, CRITERIA_SYSTEM_PROMPT, "the contract still travels with the cheaper model");
+  assert.equal(out?.length, 3);
+});
+
+test("omitting the model leaves the call byte-identical to before", async () => {
+  // Not just "the model is undefined": the options bag must carry no `model`
+  // key at all, so a mesh that never asked for an override issues exactly the
+  // call it issued before this feature existed and keeps the runtime default.
+  let seen: Record<string, unknown> | undefined;
+  await generateAcceptanceCriteria("Build a payment API.", async (_text, opts) => {
+    seen = opts as unknown as Record<string, unknown>;
+    return good();
+  });
+
+  assert.deepEqual(seen, { system: CRITERIA_SYSTEM_PROMPT });
+  assert.equal(seen && "model" in seen, false, "an absent override must not be spelled as `model: undefined`");
+});
+
+test("the default criteria model is a bare id the Claude runtime can resolve", () => {
+  // `toClaudeModelId` only strips a leading provider segment — it validates
+  // nothing — so the guard that matters is the shape written here. A provider
+  // prefix would be silently stripped, and a dated suffix is the older
+  // convention this repo no longer uses ("claude-opus-5", "claude-sonnet-5").
+  assert.equal(DEFAULT_CRITERIA_MODEL, "claude-haiku-4-5");
+  assert.equal(DEFAULT_CRITERIA_MODEL.includes("/"), false, "a provider prefix would be stripped, not honoured");
+  assert.doesNotMatch(DEFAULT_CRITERIA_MODEL, /-\d{8}$/, "the SDK names models without a date suffix");
 });
 
 /** The boot path: generation is an improvement on the defaults, never a gate. */

@@ -237,6 +237,7 @@ export const meshConfigSchema = {
           },
         },
         generate_acceptance_criteria: { type: "boolean" },
+        criteria_model: { type: "string", maxLength: 200 },
         workspace: {
           type: "object",
           properties: { path: { type: "string" } },

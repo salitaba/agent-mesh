@@ -288,9 +288,19 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     // model, not a seat — no bus identity, no MCP, no mesh session, and no
     // agent's context (or budget) behind it. Only consulted when
     // `mesh.generate_acceptance_criteria` is on and the goal declares none.
+    //
+    // It borrows the call, not the designer's model: the third argument is a
+    // per-call override the adapter already honours, so this one boot step runs
+    // on `config.criteriaModel` (Haiku by default) while the designer's own
+    // chat keeps whatever the operator chose for it.
     criteriaGenerator:
       options.criteriaGenerator ??
-      ((goalText) => generateAcceptanceCriteria(goalText, (text, opts) => designerAdapter.prompt(text, opts))),
+      ((goalText) =>
+        generateAcceptanceCriteria(
+          goalText,
+          (text, opts) => designerAdapter.prompt(text, opts),
+          config.criteriaModel,
+        )),
     scheduler: noopScheduler,
     auditFile: options.inMemory ? undefined : path.join(layout.logs, "turn-audit.jsonl"),
     // JSONL sidecar for the in-memory turn ring: restores rich per-step data

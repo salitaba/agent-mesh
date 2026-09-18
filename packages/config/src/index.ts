@@ -21,6 +21,23 @@ import {
   type EventType,
 } from "../../protocol/src/index";
 
+/**
+ * Model that derives acceptance criteria when `mesh.criteria_model` is unset.
+ *
+ * Deliberately the cheapest current model rather than the designer runtime's
+ * default. Criteria generation is a session-less one-shot — a fixed system
+ * prompt plus the goal text, no conversation and no tools — so it is the one
+ * model call in the mesh that gains nothing from a larger model's context or
+ * from prompt-cache reuse, and it runs once per mission boot.
+ *
+ * Written bare and undated, which is what the Claude Code SDK expects and what
+ * `toClaudeModelId` passes through untouched; that helper only strips a leading
+ * provider segment, so it will forward a misspelled id just as happily as a
+ * real one. Keep this in the same form as the other ids in the repo
+ * ("claude-opus-5", "claude-sonnet-5") — a dated suffix is an older convention.
+ */
+export const DEFAULT_CRITERIA_MODEL = "claude-haiku-4-5";
+
 export interface RawMeshFile {
   version: number;
   /**
@@ -44,6 +61,14 @@ export interface RawMeshFile {
      * feature exists.
      */
     generate_acceptance_criteria?: boolean;
+    /**
+     * Model for criteria generation only. Defaults to `DEFAULT_CRITERIA_MODEL`
+     * rather than the designer runtime's model: this is a one-shot with a fixed
+     * system prompt and no conversation, so a small model costs a fraction and
+     * forfeits no prompt-cache reuse. Unrelated to `runtime.model`, which is the
+     * agents' default and must stay on a model that can hold a mission.
+     */
+    criteria_model?: string;
     workspace?: { path?: string };
     runtime?: { default?: string; model?: string; variant?: string; requires_approval?: string[] };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
@@ -249,6 +274,13 @@ export interface ResolvedMeshConfig {
   goalCriteria: Array<{ id: string; description: string; mandatory: boolean }> | null;
   /** Derive criteria from `goalText` when `goalCriteria` is null. */
   generateAcceptanceCriteria: boolean;
+  /**
+   * Model used for that derivation. Always set — `DEFAULT_CRITERIA_MODEL` when
+   * the mesh declares nothing — so the caller never has to decide what "unset"
+   * means, and criteria generation never silently inherits an expensive seat
+   * model just because someone left the key out.
+   */
+  criteriaModel: string;
   workspacePath: string;
   stateDir: string;
   defaultRuntime: string;
@@ -565,6 +597,10 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       mandatory: c.mandatory ?? true,
     })) ?? null,
     generateAcceptanceCriteria: raw.mesh.generate_acceptance_criteria ?? false,
+    // `|| DEFAULT` rather than `??`: a key present but blank is a typo, not a
+    // request to inherit the runtime default, and handing the SDK "" would be
+    // a turn-1 failure rather than a config error anyone can read.
+    criteriaModel: raw.mesh.criteria_model?.trim() || DEFAULT_CRITERIA_MODEL,
     workspacePath,
     stateDir,
     defaultRuntime,

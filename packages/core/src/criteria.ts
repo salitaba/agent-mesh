@@ -14,6 +14,8 @@
  * to stop a mission from starting.
  */
 
+import type { DesignerPromptOptions } from "../../protocol/src/index";
+
 /** The shape `createGoal` accepts, and what a generator must return. */
 export interface GeneratedCriterion {
   id: string;
@@ -113,15 +115,33 @@ export function parseGeneratedCriteria(text: string): GeneratedCriterion[] | nul
  * `prompt` is the one-shot, session-less call the designer already uses — the
  * generator does not need an agent identity, a bus, or a mesh session, and
  * giving it one would put a live seat's context (and cost) behind a boot step.
+ *
+ * `opts` is the designer's own option bag with `system` narrowed to required,
+ * rather than a hand-written `{ system: string }`. The hand-written shape was
+ * structurally narrower than what the adapter accepts, which silently sealed
+ * off every per-call knob the designer path already supports — `model` among
+ * them. Intersecting instead of re-declaring means the next knob arrives here
+ * for free, and keeping `system` required preserves the old contract for
+ * callers that destructure it.
+ *
+ * `model` is optional and, when absent, the options bag is byte-identical to
+ * what this sent before: the adapter then falls back to the runtime default,
+ * so an existing mesh sees no change. Because this is a one-shot — fixed
+ * system prompt plus goal text, no conversation — routing it to a small model
+ * forfeits no prompt-cache reuse.
  */
 export async function generateAcceptanceCriteria(
   goalText: string,
-  prompt: (text: string, opts: { system: string }) => Promise<string>,
+  prompt: (text: string, opts: DesignerPromptOptions & { system: string }) => Promise<string>,
+  model?: string,
 ): Promise<GeneratedCriterion[] | null> {
   const goal = goalText.trim();
   if (!goal) return null;
 
-  const reply = await prompt(goal, { system: CRITERIA_SYSTEM_PROMPT });
+  const reply = await prompt(goal, {
+    system: CRITERIA_SYSTEM_PROMPT,
+    ...(model ? { model } : {}),
+  });
   return parseGeneratedCriteria(reply);
 }
 
