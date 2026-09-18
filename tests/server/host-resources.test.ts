@@ -35,6 +35,16 @@ function makeProject(base: string, folder: string, id: string): ProjectRef {
  * `MESH_STUB_INPUT`/`MESH_STUB_OUTPUT`/`MESH_STUB_TURNS` drive the beat, and a
  * marker file records `/mission/park` so the assertion sees the host's action
  * from the child's side rather than trusting the host's own bookkeeping.
+ *
+ * `/escalations/host-ceiling` is recorded the same way and for a stronger
+ * version of the same reason: the host-side once-guard is trivially provable
+ * from the host's own Set, and trivially wrong if the call never leaves the
+ * process. Counting the requests that actually arrived at a child is the only
+ * assertion that can fail when the guard is removed.
+ *
+ * `MESH_STUB_SPENDFILE`, when set, replaces the fixed env numbers with a JSON
+ * file re-read on every beat, so a test can make spend genuinely climb inside
+ * a live host instead of restarting one with bigger constants.
  */
 function spendingChildScript(base: string): string {
   const file = path.join(base, "spending-child.js");
@@ -45,10 +55,24 @@ const http = require("http");
 const fs = require("fs");
 const token = process.env.MESH_API_TOKEN || "";
 const parkFile = process.env.MESH_STUB_PARKFILE;
+// Derived, not its own env var. Every test sets the park file to a path inside
+// its own temp dir; a second variable only some helpers set survives into the
+// next test pointing at a directory that has been removed, and an append that
+// throws in a request handler takes the whole stub child down with it.
+const escFile = parkFile ? parkFile + ".escalations" : "";
+const spendFile = process.env.MESH_STUB_SPENDFILE;
 // A parked child has stopped its scheduler, so it reports no turns in flight.
 // That is not decoration: it is the reason the host cannot re-derive a park
 // from the next beat, and so the reason the parked list has to be remembered.
 let parked = false;
+function spend() {
+  if (spendFile) {
+    // A half-written file is a torn read, not a spend of zero: fall back to
+    // the env numbers rather than emitting a beat that says the mesh stopped.
+    try { const j = JSON.parse(fs.readFileSync(spendFile, "utf8")); return { input: Number(j.input || 0), output: Number(j.output || 0) }; } catch (e) { /* fall through */ }
+  }
+  return { input: Number(process.env.MESH_STUB_INPUT || 0), output: Number(process.env.MESH_STUB_OUTPUT || 0) };
+}
 const server = http.createServer((req, res) => {
   if ((req.headers.authorization || "") !== "Bearer " + token) {
     res.writeHead(401); res.end("{}"); return;
@@ -61,6 +85,18 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ ok: true }));
     return;
   }
+  if (url.pathname === "/escalations/host-ceiling" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      // Bookkeeping must never be able to kill the child: a test that never
+      // reads this log still gets the host's call answered.
+      try { if (escFile) fs.appendFileSync(escFile, process.env.MESH_CHILD_PROJECT_ID + " " + raw.replace(/\\s+/g, "") + "\\n"); } catch (e) { /* ignore */ }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, id: "esc-stub" }));
+    });
+    return;
+  }
   res.writeHead(200, { "content-type": "application/json" });
   res.end("{}");
 });
@@ -68,10 +104,11 @@ server.listen(0, "127.0.0.1", () => {
   const port = server.address().port;
   process.stdout.write(\`${CHILD_READY_PREFIX} \${JSON.stringify({ port, pid: process.pid, projectId: process.env.MESH_CHILD_PROJECT_ID, url: "http://127.0.0.1:" + port })}\\n\`);
   const beat = setInterval(() => {
+    const s = spend();
     process.stdout.write(\`${CHILD_BEAT_PREFIX} \${JSON.stringify({
       rss: 1234,
       pid: process.pid,
-      models: [{ model: "m", input: Number(process.env.MESH_STUB_INPUT || 0), output: Number(process.env.MESH_STUB_OUTPUT || 0) }],
+      models: [{ model: "m", input: s.input, output: s.output }],
       runningTurns: parked ? 0 : Number(process.env.MESH_STUB_TURNS || 0),
     })}\\n\`);
   }, 30);
@@ -111,6 +148,28 @@ async function addAndOpen(host: HostHandle, root: string): Promise<string> {
 /** Beats land on a 30ms timer; give the host a few before asserting on them. */
 async function settle(ms = 200): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
+}
+
+/** Where the stub child logs the ceiling escalations it was asked to raise. */
+function escLogPath(parkFile: string): string {
+  return `${parkFile}.escalations`;
+}
+
+/** One line per `/escalations/host-ceiling` request that reached a child. */
+function escalationsRaised(parkFile: string): Array<{ projectId: string; usd: number; ceilingUsd: number }> {
+  const file = escLogPath(parkFile);
+  // Absent, not empty: the stub creates it on the first call, so "no file" and
+  // "no calls" are the same answer and neither is a failure to read.
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [projectId, payload] = [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)];
+      const body = JSON.parse(payload) as { usd: number; ceilingUsd: number };
+      return { projectId, usd: body.usd, ceilingUsd: body.ceilingUsd };
+    });
 }
 
 test("/api/projects reports per-project and aggregate live cost", { timeout: 30_000 }, async () => {
@@ -185,6 +244,120 @@ test("the spend ceiling parks every open project once the aggregate crosses it",
     // operator can raise the ceiling and resume instead of replaying.
     assert.ok(host.supervisor.running("alpha"), "a parked project is still open");
   } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a tripped ceiling escalates into each parked child exactly once, however many beats it stays tripped", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const b = makeProject(base, "beta", "beta");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  config.modelPrices = { m: { inputPerMtok: 3, outputPerMtok: 15 } };
+  // $18 per child, so the ceiling is over on the very first beat and stays
+  // over: spend is monotonic and nothing here lowers it.
+  process.env.MESH_STUB_INPUT = "1000000";
+  process.env.MESH_STUB_OUTPUT = "1000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await addAndOpen(host, b.root);
+    // Long enough for well over a dozen beats from each child. Each one calls
+    // `applyLimits`, and each call finds the ceiling still over.
+    await settle(900);
+
+    const tripped = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { ceilingTripped: boolean } };
+    assert.equal(tripped.spend.ceilingTripped, true, "the ceiling is still over, beat after beat");
+
+    // THE regression. Parking is idempotent at the child, so the original
+    // silent trip cost nothing to repeat — raising a card does not. Without
+    // the once-guard this is one HTTP request per child per beat for as long
+    // as the operator takes to notice, which is a worse cost bug than the
+    // silence it was added to fix. Exactly one per child, forever.
+    const raised = escalationsRaised(parkFile);
+    assert.equal(raised.length, 2, `one card per parked project, not ${raised.length}: ${JSON.stringify(raised)}`);
+    assert.deepEqual(raised.map((r) => r.projectId).sort(), ["alpha", "beta"]);
+
+    // The card is raised in each child, not on the host, because that is the
+    // page an operator is on when a mission goes quiet.
+    for (const r of raised) {
+      assert.equal(r.ceilingUsd, 5, "the card quotes the ceiling that was breached");
+      assert.ok(r.usd >= 5, "and the total that breached it");
+    }
+
+    // Both facts come from the same tick, so a card must never appear for a
+    // project the host did not actually stop.
+    const parked = new Set(fs.readFileSync(parkFile, "utf8").split("\n").filter(Boolean));
+    assert.deepEqual([...parked].sort(), ["alpha", "beta"]);
+  } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a ceiling raised and then spent through escalates a second time", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const b = makeProject(base, "beta", "beta");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  // Spend the children report, re-read on every beat: the point of this test
+  // is a total that genuinely climbs inside one live host.
+  const spendFile = path.join(base, "spend.json");
+  fs.writeFileSync(spendFile, JSON.stringify({ input: 1_000_000, output: 1_000_000 }), "utf8");
+  process.env.MESH_STUB_SPENDFILE = spendFile;
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  config.modelPrices = { m: { inputPerMtok: 3, outputPerMtok: 15 } };
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await addAndOpen(host, b.root);
+    await settle(400);
+
+    // $18 per child, $36 total, over a $5 ceiling.
+    assert.equal(escalationsRaised(parkFile).length, 2, "the first trip escalates");
+    assert.deepEqual(
+      escalationsRaised(parkFile).map((r) => r.ceilingUsd),
+      [5, 5],
+    );
+
+    // The operator raises the ceiling past the total. Mutating the object the
+    // host holds is what the settings route does — `applyLimits` reads it at
+    // call time.
+    config.spendCeilingUsd = 100;
+    await settle(400);
+    const cleared = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { ceilingTripped: boolean } };
+    assert.equal(cleared.spend.ceilingTripped, false, "a raised ceiling un-trips");
+    assert.equal(escalationsRaised(parkFile).length, 2, "un-tripping raises nothing on its own");
+
+    // ...and the mesh spends through the new one: $54 per child, $108 total.
+    fs.writeFileSync(spendFile, JSON.stringify({ input: 3_000_000, output: 3_000_000 }), "utf8");
+    await settle(600);
+
+    // What this pins: the guard is cleared by the un-trip, not filled for the
+    // life of the process. A guard that only ever grew would make the first
+    // trip the last one anyone was told about, and the second ceiling would be
+    // just as silent as the bug this whole route exists to fix.
+    const raised = escalationsRaised(parkFile);
+    assert.equal(raised.length, 4, `a second trip, a second card per project: ${JSON.stringify(raised)}`);
+    const second = raised.slice(2);
+    assert.deepEqual(second.map((r) => r.projectId).sort(), ["alpha", "beta"]);
+    for (const r of second) {
+      // The new ceiling, not the old one. This number is the child's dedupe
+      // key, so a stale value here would have the child swallow the card even
+      // though the host correctly sent it.
+      assert.equal(r.ceilingUsd, 100);
+      assert.ok(r.usd > 100, `the total that breached the raised ceiling, got ${r.usd}`);
+    }
+  } finally {
+    delete process.env.MESH_STUB_SPENDFILE;
     await host.close();
     fs.rmSync(base, { recursive: true, force: true });
   }

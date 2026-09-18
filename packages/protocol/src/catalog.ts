@@ -718,6 +718,17 @@ const VERDICT_TEXT: Record<string, VerdictText> = {
     title: "Out of tokens",
     summary: "A token budget was spent before the goal was met.",
   },
+  // Deliberately not phrased as another budget. The four entries above are
+  // token ledgers inside one mesh — mission, agent, thread — and the knob that
+  // answers them lives in this project's config. This one is the host's dollar
+  // total across every project it has open, enforced by a different process
+  // that parked this mission on its way past the limit. An operator who reads
+  // it as a mesh budget goes looking for a setting that is not there, so the
+  // summary names the money, the blast radius and where the knob actually is.
+  host_spend_ceiling: {
+    title: "The host hit its spend ceiling",
+    summary: "Every project open on this host added up to more than the host's dollar ceiling allows, so all of them were parked. Raise the ceiling in host settings to continue.",
+  },
   max_events_exceeded: {
     title: "Mission hit its event cap",
     summary: "The run produced more events than the configured mission cap allows.",
@@ -788,6 +799,21 @@ export function verdictText(reason: string, ctx: VerdictContext = {}): VerdictTe
 
 /** `raisedBy` on the cards `TerminationManager` raises (`supervisor.ts`). */
 export const TERMINATION_RAISER = "termination-manager";
+
+/**
+ * `raisedBy` on the host spend-ceiling card.
+ *
+ * A component name, like `termination-manager` and `deadlock-detector`,
+ * because a component is what raised it: the host process noticed its own
+ * aggregate limit and parked this mesh from the outside. Naming the human
+ * here would be a lie the UI repeats — the card would read as an operator
+ * decision when it is a machine backstop, and nobody could tell the two apart
+ * on the timeline.
+ */
+export const HOST_LIMITER_RAISER = "host-limiter";
+
+/** The `reason` literal the host spend-ceiling card carries. */
+export const HOST_SPEND_CEILING_REASON = "host_spend_ceiling";
 
 /** A verdict that is standing right now, carrying the reason it keys on. */
 export interface LiveVerdict extends VerdictText {

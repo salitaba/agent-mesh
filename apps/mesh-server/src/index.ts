@@ -17,7 +17,7 @@ import { StubRuntime, StaticRuntimeResolver } from "../../../packages/agent-runt
 import { FileSystemArtifactStore, GitWorkspace, InMemoryArtifactStore } from "../../../packages/artifact-store/src/index";
 import { FileSessionRegistry, ensureStateLayout, openSqliteIndex, SnapshotStore, archiveDir, archiveStateDir, acquireStateLock, type StateLockHandle } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
-import { systemClock } from "../../../packages/protocol/src/index";
+import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON } from "../../../packages/protocol/src/index";
 import {
   buildMeshGraph,
   buildCostReport,
@@ -1320,6 +1320,43 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "escalations") {
         if (req.method === "GET" && parts.length === 1) {
           return json(200, paginateCompat([...kernel.state.escalations.values()], u, 100));
+        }
+        // Raise the host's spend-ceiling card. The only create verb on this
+        // resource, and narrow on purpose: it names no `reason` and takes no
+        // prose, only the two numbers the card displays. A general
+        // `POST /escalations { reason, detail }` would be the same amount of
+        // code and would hand anyone holding this child's token — or an
+        // operator token, which the host proxy exchanges for one — a way to
+        // mint arbitrary cards into a mission's log, where they are
+        // indistinguishable from ones the mesh raised about itself. Widening
+        // this later is a smaller decision than narrowing it after something
+        // starts depending on the wide version.
+        //
+        // Sits here, after the operator-auth check above, and NOT beside
+        // `/internal/mcp`: the bridge is pre-auth because a per-agent token is
+        // the credential it verifies itself. This route has no such check of
+        // its own, so the bearer check is the whole of its protection.
+        if (req.method === "POST" && parts[1] === "host-ceiling" && parts.length === 2) {
+          const b = await body();
+          const usd = Number(b.usd);
+          const ceilingUsd = Number(b.ceilingUsd);
+          // Both are rendered into operator-facing copy and one of them is
+          // hashed into the conflictKey, so neither may be NaN, Infinity or
+          // negative — a card reading "$NaN" is worse than no card.
+          if (!Number.isFinite(usd) || usd < 0) return json(400, { ok: false, reason: "provide a non-negative numeric `usd`" });
+          if (!Number.isFinite(ceilingUsd) || ceilingUsd < 0) return json(400, { ok: false, reason: "provide a non-negative numeric `ceilingUsd`" });
+          const esc = await supervisor.escalate({
+            reason: HOST_SPEND_CEILING_REASON,
+            raisedBy: HOST_LIMITER_RAISER,
+            // Keyed by the ceiling that was breached, not by a constant. A
+            // constant would dedupe against a card still open from an earlier,
+            // lower ceiling, so raising the ceiling and spending through the
+            // new one would silently reuse a card quoting the old numbers —
+            // the same swallow this route exists to fix, one layer down.
+            conflictKey: `host:spend-ceiling:${ceilingUsd}`,
+            detail: { usd, ceilingUsd },
+          });
+          return json(200, { ok: true, id: esc.id, reason: esc.reason });
         }
         if (req.method === "POST" && parts[1] && parts[2] === "respond") {
           const b = await body();

@@ -379,6 +379,29 @@ export function createHostServer(deps: {
   const parkedByPolicy = new Map<string, ParkReason>();
   let ceilingTripped = false;
 
+  /**
+   * Ids already told, on THIS trip, that the ceiling took them down.
+   *
+   * Mirrors `stuckEscalated` in the scheduler, and for the same reason:
+   * `applyLimits` re-runs on every heartbeat from every child — a 2s cadence
+   * times N projects — and the ceiling stays over for as long as the operator
+   * takes to react. Without this, "explain the trip" becomes an unbounded
+   * stream of HTTP calls into every child, forever. The child's own
+   * `conflictKey` dedupe would stop the cards piling up but not the calls, and
+   * a cost backstop that burns a request per child per beat is a worse bug
+   * than the silence it replaced.
+   *
+   * Cleared where the trip ends, NOT on the `parkedByPolicy` lifecycle above.
+   * The two have deliberately different lives: a park outlives the trip,
+   * because the host has no resume and a project parked by the ceiling is
+   * still parked after the ceiling moves. The TRIP ends the moment the total
+   * is under the ceiling again — which, spend being monotonic, only a raised
+   * ceiling produces. Clearing there is exactly what lets a ceiling raised to
+   * $100 and then spent through raise a second card; hanging this off the park
+   * lifecycle instead would leave a stale entry that swallowed it.
+   */
+  const ceilingEscalated = new Set<string>();
+
   /** Live spend for one project, from its last heartbeat. */
   const spendOf = (id: string): { tokens: number; usd: number; runningTurns: number } | undefined => {
     const beat = supervisor.running(id)?.lastHeartbeat;
@@ -452,6 +475,61 @@ export function createHostServer(deps: {
   };
 
   /**
+   * Raise the ceiling card inside one child, at most once per trip.
+   *
+   * In the child rather than on the host because that is where an operator is
+   * looking when a mission stops: the host strip already says `ceilingTripped`
+   * and lists the parked ids, and it was still possible to sit in a project's
+   * dashboard watching a mesh that had gone quiet with nothing anywhere saying
+   * why. The card is per-project for the same reason — each parked mission
+   * needs its own explanation on its own page.
+   *
+   * Unlike `parkChild` this reads the response status instead of firing and
+   * forgetting. The guard must only be set on a call that actually landed: a
+   * child that 500s or never answers would otherwise be marked "told" and the
+   * explanation lost until the next trip, which for a monotonic total may
+   * never come.
+   */
+  const escalateCeiling = async (projectId: string, usd: number, ceilingUsd: number): Promise<void> => {
+    if (ceilingEscalated.has(projectId)) return;
+    const child = supervisor.running(projectId);
+    if (!child) return;
+    const payload = Buffer.from(JSON.stringify({ usd, ceilingUsd }), "utf8");
+    let ok = false;
+    await new Promise<void>((resolve) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: child.port,
+          method: "POST",
+          path: "/escalations/host-ceiling",
+          headers: {
+            // The child accepts only its own token. The operator's credential
+            // never reaches here: this call originates on the host, on a
+            // heartbeat, with no request to borrow one from.
+            authorization: `Bearer ${child.token}`,
+            "content-type": "application/json",
+            "content-length": payload.byteLength,
+          },
+        },
+        (res) => {
+          ok = (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300;
+          res.resume();
+          res.on("end", () => resolve());
+          res.on("error", () => resolve());
+        },
+      );
+      // Same bound as `parkChild`: this runs on the heartbeat path and a child
+      // that will not answer is the watchdog's problem, not this function's.
+      req.setTimeout(2_000, () => req.destroy());
+      req.on("error", () => resolve());
+      req.on("close", () => resolve());
+      req.end(payload);
+    });
+    if (ok) ceilingEscalated.add(projectId);
+  };
+
+  /**
    * Apply the aggregate limits.
    *
    * Both limits are enforced after the fact, and that is honest rather than
@@ -478,9 +556,16 @@ export function createHostServer(deps: {
     const totals = aggregateSpend();
     if (hostConfig.spendCeilingUsd !== null && totals.usd >= hostConfig.spendCeilingUsd) {
       ceilingTripped = true;
+      // Snapshotted before parking so the same set gets both the brake and the
+      // explanation, even if a child dies between the two loops.
+      const running = supervisor.runningIds();
       // Everything, not the newest: the ceiling is a total, so leaving any
       // project live means the total keeps climbing past a limit already hit.
-      for (const id of supervisor.runningIds()) await parkChild(id, "ceiling");
+      for (const id of running) await parkChild(id, "ceiling");
+      // Stop first, explain second. Parking is the part that costs money if it
+      // is late; a card raised into a mesh still burning tokens would be the
+      // right words at the wrong time.
+      for (const id of running) await escalateCeiling(id, totals.usd, hostConfig.spendCeilingUsd);
       return;
     }
     // Reaching here means the ceiling is not over on this tick, so the flag has
@@ -491,6 +576,12 @@ export function createHostServer(deps: {
     // ceiling is exactly what turns a dormant latch into a host reporting a
     // parked mesh over a live one.
     ceilingTripped = false;
+    // The trip is over, so the fact that it was announced is over with it. A
+    // ceiling raised past a total that then climbs through the new one is a
+    // second, genuinely new event and has to be able to say so; a guard that
+    // only ever filled up would make the first trip the last one anyone heard
+    // about. Note this is NOT where `parkedByPolicy` clears — see its comment.
+    ceilingEscalated.clear();
     const cap = hostConfig.maxConcurrentTurns;
     if (cap === null || totals.runningTurns <= cap) return;
     let over = totals.runningTurns - cap;
@@ -712,7 +803,15 @@ export function createHostServer(deps: {
             // the point where it stops being true. Guarded on `running`
             // because an open against an already-open project is a no-op, and
             // that project may be sitting parked right now.
-            if (!supervisor.running(id)) parkedByPolicy.delete(id);
+            //
+            // The "told about the trip" mark goes with it. A child that was
+            // not running was not told anything — the mark is about a process
+            // that no longer exists, and leaving it would mean the fresh child
+            // gets parked by a still-tripped ceiling with no card to say so.
+            if (!supervisor.running(id)) {
+              parkedByPolicy.delete(id);
+              ceilingEscalated.delete(id);
+            }
             const handle = await registry.open(id);
             // 200 even when the child failed to come up: the request itself
             // succeeded, and the caller needs the status and reason to show a
@@ -726,12 +825,14 @@ export function createHostServer(deps: {
             await multiplex.unfollow(id);
             await registry.close(id);
             parkedByPolicy.delete(id);
+            ceilingEscalated.delete(id);
             return json(200, summarize(ref));
           }
           if (parts[3] === "restart" && parts.length === 4 && req.method === "POST") {
             await multiplex.unfollow(id);
             await registry.close(id);
             parkedByPolicy.delete(id);
+            ceilingEscalated.delete(id);
             projects.armManualRestart(id);
             const handle = await registry.open(id);
             return json(200, summarize(handle.ref));
@@ -740,6 +841,7 @@ export function createHostServer(deps: {
             await multiplex.unfollow(id);
             await registry.remove(id);
             parkedByPolicy.delete(id);
+            ceilingEscalated.delete(id);
             // Drop it from supervision too, or a removed project keeps its
             // crash history and its breaker state for a later re-add.
             await tree.forget(ref);
