@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ClaudeRuntimeAdapter, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
+import { ClaudeRuntimeAdapter, rotateAtFor, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
 import { BackendUnreachableError } from "../../packages/protocol/src/index";
 import type {
   AgentDefinition,
@@ -118,7 +118,11 @@ function fakeQueryFactory(opts: {
         type: "system",
         subtype: "init",
         session_id: sdkSessionId,
-        model: "claude-test",
+        // Echoed rather than fixed, because the real CLI reports the model it
+        // actually seated and the adapter derives the rotation threshold from
+        // that. A test that pins no model still gets the old placeholder —
+        // which no window table recognises, so it rotates conservatively.
+        model: String(options.model ?? "claude-test"),
         mcp_servers: [{ name: "mesh", status: "connected" }],
       };
       let turnIndex = 0;
@@ -253,6 +257,99 @@ test("a rotation whose replacement never starts fails loudly instead of hanging"
   // The supervisor decides what to do about an unreachable seat; the adapter's
   // duty is to stop claiming the agent is fine.
   assert.equal(await rt.getStatus(session), "UNREACHABLE");
+
+  await rt.stop(session);
+});
+
+test("the rotation threshold is derived from the seated model's context window", () => {
+  // 60% of the window, which is the ratio this bound has always carried — it
+  // was simply written down as the single number 120k, and 120k IS 60% of
+  // Haiku 4.5's 200k. Nothing about the policy moved; its denominator just
+  // stopped being the same for every model.
+  assert.equal(rotateAtFor("claude-haiku-4-5"), 120_000);
+  assert.equal(rotateAtFor("claude-opus-5"), 600_000);
+  assert.equal(rotateAtFor("claude-sonnet-5"), 600_000);
+  // mesh.yaml may carry a provider-qualified ref for the sake of one `model:`
+  // key across runtimes; the threshold resolves off the reduced id.
+  assert.equal(rotateAtFor("anthropic/claude-opus-5"), 600_000);
+});
+
+test("a model id nobody recognises rotates at the conservative floor", () => {
+  // toClaudeModelId validates nothing — every string below survives it intact
+  // — so this table lookup is the only thing between a typo and a seat that
+  // rotates hundreds of thousands of tokens after its window has overflowed.
+  assert.equal(rotateAtFor("totally-not-a-model"), 120_000);
+  assert.equal(
+    rotateAtFor("claude-opus-5-20260401"),
+    120_000,
+    "dated ids are not this repo's convention; a near-miss is not read as Opus",
+  );
+  assert.equal(
+    rotateAtFor("openrouter/anthropic/claude-opus-5"),
+    120_000,
+    "only the first slash is stripped, so what is left is not a bare id",
+  );
+  assert.equal(rotateAtFor(undefined), 120_000, "no model named means the CLI's default, which we cannot place");
+  assert.equal(rotateAtFor(""), 120_000);
+  // The direction of the failure is the point: whatever the string, an
+  // unplaceable id may round the threshold DOWN and never up.
+  for (const junk of ["   ", "claude", "claude-opus-6", "gpt-5", "/leading", "trailing/", "claude-haiku-4-5-turbo"]) {
+    assert.ok(rotateAtFor(junk) <= 120_000, `"${junk}" must not buy a larger threshold than the floor`);
+  }
+});
+
+test("a large-window seat keeps a transcript that would retire a small-window one", async () => {
+  const dir = workspace();
+  // 200k read per turn: well past the 120k this was hardcoded at, and nowhere
+  // near Opus 5's derived 600k. No rotateAtContextTokens here on purpose —
+  // the model is what decides.
+  const { queryFn, opened } = fakeQueryFactory({ cacheReadFor: () => 200_000 });
+  const rotations: unknown[] = [];
+  const rt = new ClaudeRuntimeAdapter({ queryFn, onRotate: (info) => rotations.push(info) });
+
+  const session = await rt.start({ ...devDef, model: "claude-opus-5" }, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 1, "600k of usable window must not be shed at 120k");
+  assert.equal(rotations.length, 0);
+
+  await rt.stop(session);
+});
+
+test("an unrecognised model id rotates at the floor rather than gamble on the window", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({
+    cacheReadFor: (queryIndex) => (queryIndex === 0 ? 200_000 : 900),
+  });
+  const rt = new ClaudeRuntimeAdapter({ queryFn });
+
+  // Identical traffic to the test above; only the id changed, by one typo.
+  // Reading it as Opus-shaped and granting it 600k is how a seat that is
+  // really a 200k model gets run off the end of its context window.
+  const session = await rt.start({ ...devDef, model: "claude-opus-5-typo" }, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 2, "an id we cannot place falls back to 120k, not to the largest window we know");
+
+  await rt.stop(session);
+});
+
+test("an explicitly injected threshold still overrides the derived one", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({
+    cacheReadFor: (queryIndex) => (queryIndex === 0 ? 80_000 : 900),
+  });
+  const rt = new ClaudeRuntimeAdapter({ queryFn, rotateAtContextTokens: 50_000 });
+
+  // Opus 5 derives 600k, which 80k does not approach. The operator's number is
+  // the one that has to win, or every test above is measuring the wrong thing.
+  const session = await rt.start({ ...devDef, model: "claude-opus-5" }, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 2, "an explicit rotateAtContextTokens must beat the per-model derivation");
 
   await rt.stop(session);
 });

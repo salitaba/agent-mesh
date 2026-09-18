@@ -110,7 +110,13 @@ export interface ClaudeAdapterOptions {
   spawnFailureGraceMs?: number;
   /** Extra SDK options merged last, for escape hatches and tests. */
   extraOptions?: Partial<Options>;
-  /** Override for `SESSION_CONTEXT_ROTATE_TOKENS`. */
+  /**
+   * Pin the rotation threshold instead of deriving it from the model.
+   *
+   * Wins over `rotateAtFor` outright: operators tune this against a real mesh,
+   * and the rotation tests have to reach a threshold in a handful of fake turns
+   * rather than six hundred thousand tokens of them.
+   */
   rotateAtContextTokens?: number;
   /**
    * Seam for the SDK's `query`. Defaults to the real one.
@@ -173,10 +179,67 @@ export function usageToTokens(u: ClaudeTurnUsage | undefined): AgentOutput["toke
  * recorded in the mesh; that is exactly the material the mesh asks agents to
  * externalise as artifacts and `done` summaries.
  *
- * 120k against a 200k window leaves room for the turn itself plus tool results
- * rather than rotating at the edge of a failure.
+ * Rotating at 60% of the window leaves room for the turn itself plus tool
+ * results rather than rotating at the edge of a failure. That fraction is the
+ * policy and always was — it was just written down as the single number 120k,
+ * which is 60% of Haiku 4.5's 200k window. Hardcoded, it also charged that
+ * window to every other model: a seat on a 1M-window model shed a usable cache
+ * prefix five times earlier than it had to, for nothing.
+ */
+const SESSION_CONTEXT_ROTATE_RATIO = 0.6;
+
+/**
+ * Rotation threshold for a model whose window we cannot place.
+ *
+ * 60% of the smallest window in the table below, i.e. the value this bound had
+ * before it was derived. Nothing that reaches here is guessed upward: see
+ * `rotateAtFor`.
  */
 const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
+
+/**
+ * Context window per model id, in tokens — the denominator of the ratio above.
+ *
+ * Bare, undated ids, which is the convention `toClaudeModelId` documents and
+ * the only shape mesh.yaml writes. Taken from the published per-model table
+ * rather than from memory: this number decides when a mission's transcript is
+ * thrown away, so being wrong here either overflows a live context window or
+ * burns a paid-for cache prefix every few turns.
+ *
+ * Deliberately not exhaustive, and safe to leave that way — anything missing
+ * lands on the conservative floor above.
+ */
+const MODEL_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
+  ["claude-opus-5", 1_000_000],
+  ["claude-opus-4-8", 1_000_000],
+  ["claude-opus-4-7", 1_000_000],
+  ["claude-opus-4-6", 1_000_000],
+  ["claude-sonnet-5", 1_000_000],
+  ["claude-sonnet-4-6", 1_000_000],
+  ["claude-fable-5-1", 1_000_000],
+  ["claude-fable-5", 1_000_000],
+  ["claude-haiku-4-5", 200_000],
+]);
+
+/**
+ * Rotation threshold for the model a session is actually running.
+ *
+ * AN ID WE CANNOT PLACE GETS THE CONSERVATIVE FLOOR, NEVER A GUESS UPWARD.
+ * `toClaudeModelId` validates nothing — it strips a provider segment and hands
+ * back whatever remains — so a typo, a model released after the table above was
+ * written, and a real id are indistinguishable to this lookup. Assuming a large
+ * window for an id we cannot place would let a 200k seat run hundreds of
+ * thousands of tokens past the point where it overflows, killing a live
+ * mission; assuming a small one costs a cache prefix and nothing else. Those
+ * are not comparable failures, so the unknown case only ever rounds down.
+ */
+export function rotateAtFor(model: string | undefined): number {
+  const id = toClaudeModelId(model);
+  const window = id === undefined ? undefined : MODEL_CONTEXT_WINDOWS.get(id);
+  // Not clamped up to the floor: a KNOWN model with a window under 200k must
+  // rotate at its own share of it, not at a floor that sits past its ceiling.
+  return window === undefined ? SESSION_CONTEXT_ROTATE_TOKENS : Math.floor(window * SESSION_CONTEXT_ROTATE_RATIO);
+}
 
 /**
  * How much conversation the model loaded for a turn.
@@ -591,7 +654,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // Rotate BEFORE the push, never after: the decision is made on the
     // transcript the last turn actually read, and rotating afterwards would
     // still have let this turn load the oversized one.
-    const rotateAt = this.options.rotateAtContextTokens ?? SESSION_CONTEXT_ROTATE_TOKENS;
+    // Derived per model, so a large-window seat is not held to a small-window
+    // seat's bound. `lastModel` first for the same reason `toTurnEnd` prefers
+    // it: it is what the backend reported it actually ran, and the window
+    // belongs to that model, not to the one we asked for.
+    const rotateAt = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
     if (s.contextTokens >= rotateAt) {
       s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
     }
