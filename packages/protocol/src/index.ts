@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./catalog";
+export * from "./contracts";
 export * from "./op-aliases";
 export * from "./errors";
 export * from "./ids";

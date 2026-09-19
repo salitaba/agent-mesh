@@ -46,6 +46,8 @@ const NAME_ALIASES: Record<string, string> = {
   mesh_wait: "wait",
   mesh_done: "done",
   mesh_remember: "remember",
+  mesh_write_continuity: "write_continuity",
+  handoff: "write_continuity",
   mesh_plan: "plan",
   mesh_plan_step: "plan_step",
   // Coding agents arrive with a house todo tool already in their habits
@@ -123,19 +125,81 @@ const asArray = (v: unknown): string[] | undefined => {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.length > 0 ? v : undefined;
 
-export function aliasTextOp(raw: unknown): Record<string, unknown> | null {
+/**
+ * How often each rewrite below has fired in this process, keyed
+ * `op:<invented>-><canonical>` / `type:<invented>-><canonical>`.
+ *
+ * This table is a debt, not a feature: every entry is a name a model guessed
+ * because the vocabulary it was shown did not tell it the real one. Retiring
+ * it needs an answer to "is anything still relying on this?", and until now
+ * nothing in the mesh could answer that — the rewrite happened silently and
+ * the canonical op was indistinguishable from one the model got right. So the
+ * table papered over its own justification.
+ *
+ * Process-lived and unattributed on purpose. Turns run concurrently, so
+ * pinning a rewrite to the turn that caused it would need plumbing that could
+ * only ever be approximately right; the question this answers ("does anyone
+ * still need aliasing, and for which names") is an aggregate question.
+ */
+const aliasHits = new Map<string, number>();
+
+function recordAlias(kind: "op" | "type", from: string, to: string): void {
+  if (from === to) return;
+  const key = `${kind}:${from}->${to}`;
+  aliasHits.set(key, (aliasHits.get(key) ?? 0) + 1);
+}
+
+export interface AliasStats {
+  /** Every rewrite this process has performed. */
+  total: number;
+  /** Per-rewrite counts, descending. Empty means nothing relied on the table. */
+  byRewrite: Array<{ rewrite: string; count: number }>;
+}
+
+export function aliasStats(): AliasStats {
+  const byRewrite = [...aliasHits.entries()]
+    .map(([rewrite, count]) => ({ rewrite, count }))
+    .sort((a, b) => b.count - a.count || a.rewrite.localeCompare(b.rewrite));
+  return { total: byRewrite.reduce((n, e) => n + e.count, 0), byRewrite };
+}
+
+export function resetAliasStats(): void {
+  aliasHits.clear();
+}
+
+export interface AliasOptions {
+  /**
+   * False retires the invented-name tables: an op name or message type the
+   * model made up passes through unchanged, so `executeOp` refuses it by name
+   * and the model is told what it should have said. Structural coercion (a
+   * `to` string widened to an array, `body` read as `payload`) still applies —
+   * that is shape, not vocabulary, and nothing is being guessed at.
+   *
+   * Defaults to true. `bus.transport: "typed-only"` is the setting this exists
+   * for: there, ops are issued as typed tool calls and a parsed op is already
+   * refused, so rewriting one buys nothing and hides who still needs it.
+   */
+  aliases?: boolean;
+}
+
+export function aliasTextOp(raw: unknown, opts: AliasOptions = {}): Record<string, unknown> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   if (typeof o.op !== "string" || o.op.length === 0) return null;
-  const out: Record<string, unknown> = { ...o, op: NAME_ALIASES[o.op] ?? o.op };
+  const useAliases = opts.aliases !== false;
+  const renamed = useAliases ? NAME_ALIASES[o.op] ?? o.op : o.op;
+  if (renamed !== o.op) recordAlias("op", o.op, renamed);
+  const out: Record<string, unknown> = { ...o, op: renamed };
 
   // `message.<TYPE>` shorthand: op carries the message type.
-  if (typeof o.op === "string" && o.op.startsWith("message.") && out.op === o.op) {
+  if (useAliases && typeof o.op === "string" && o.op.startsWith("message.") && out.op === o.op) {
+    recordAlias("op", o.op, "send");
     const t = o.op.slice("message.".length).toUpperCase();
     out.op = "send";
     if (out.type === undefined && (MESSAGE_TYPES as string[]).includes(t)) out.type = t;
   }
-  if (typeof out.type === "string") {
+  if (useAliases && typeof out.type === "string") {
+    const before = out.type;
     // Match the alias table case-insensitively and ignoring separators, so
     // `RESULT` / `result` / `Research_Report` / `research report` all land on
     // the same entry. Models are inconsistent about casing between turns; a
@@ -154,7 +218,10 @@ export function aliasTextOp(raw: unknown): Record<string, unknown> | null {
         if (hit) mapped = TYPE_ALIASES[hit];
       }
     }
-    if (mapped) out.type = mapped;
+    if (mapped) {
+      out.type = mapped;
+      recordAlias("type", before, mapped);
+    }
   }
 
   switch (out.op) {

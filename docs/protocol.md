@@ -79,6 +79,34 @@ reply carrying `replyTo` closes it. This is what lets an agent go to `WAITING`
 and be woken on the response, instead of blocking on a call — messages are
 **not RPC**.
 
+### Contracts: named asks over guessed type strings
+
+24 type strings is a small vocabulary for a human and a large one for a model
+choosing under uncertainty. A **contract** is a named ask — `review.artifact`,
+`research.question`, `info.question`, `artifact.produce`, `execution.run`,
+`work.request`, `decision.challenge`, `decision.escalate` — carrying a JSON
+Schema for its request, the refusals it may come back with, the capability a
+seat needs to answer it, and an SLA.
+
+`call` raises one; `contracts` lists them with the seats that can currently
+answer. Three properties matter:
+
+1. **It is sugar.** Every contract desugars to a typed op and re-enters the
+   ordinary op path. `call` can reach nothing a typed op could not, and every
+   gate applies unchanged — there is no second route to keep in step.
+2. **It fails closed, loudly.** An unknown name is refused quoting what was
+   asked for and listing every real alternative; a request that does not match
+   the schema is refused *before any recipient is woken*, naming the offending
+   field and showing the shape that would have worked. The refusal teaches,
+   which is exactly what silently rewriting a guess cannot do.
+3. **It routes to one provider.** A contract with a `provider` capability
+   resolves against seats that hold it *and* that the caller may contact.
+   Broadcasting an ask would open an obligation on every qualified seat for
+   work only one of them needs to do.
+
+A contract's SLA narrows an existing deadline regime and never creates one; see
+`docs/configuration.md`.
+
 ### One ask to N agents is N obligations
 
 A pending request tracks its `outstanding` debtors individually. A reply

@@ -43,6 +43,29 @@ const TOOL_REQUIREMENT: Record<string, (def: AgentDefinition | undefined) => boo
   mesh_submit_result: (def) => def?.mode === "service",
 };
 
+/**
+ * Tools whose entire job a named contract now does, mapped to the contract
+ * that replaces them. Under `bus.transport: "typed-only"` these are dropped
+ * from the advertised manifest: a seat that has `mesh_call` and
+ * `mesh_contracts` can raise every one of these asks, and raising it that way
+ * is strictly better — the request shape is validated before anyone is woken,
+ * the mesh picks a recipient that policy will actually let you reach, and the
+ * refusals you may get back are named up front.
+ *
+ * Hiding is advertisement-only. `callTool` resolves against the UNFILTERED
+ * map, so a model that names a hidden tool still gets it; nothing here can
+ * take a capability away from a seat. That is also why this list stops at
+ * tools a contract fully covers: `mesh_send` stays, because answering someone
+ * and the 17 message types no contract names are still its job, and a manifest
+ * that omitted it would push the model to guess.
+ */
+const SUPERSEDED_BY_CONTRACT: Record<string, string> = {
+  mesh_request: "work.request / info.question / artifact.produce / execution.run",
+  mesh_request_review: "review.artifact",
+  mesh_research_request: "research.question",
+  mesh_escalate: "decision.escalate",
+};
+
 export class McpToolset {
   private tools: Map<string, McpToolDefinition>;
 
@@ -73,7 +96,9 @@ export class McpToolset {
     const all = [...this.tools.values()];
     if (this.opts.readOnly) return all;
     const def = this.supervisor.state.agents.get(agentId)?.definition;
+    const typedOnly = this.supervisor.config.bus.transport === "typed-only";
     return all.filter((t) => {
+      if (typedOnly && SUPERSEDED_BY_CONTRACT[t.name]) return false;
       const requirement = TOOL_REQUIREMENT[t.name];
       return requirement ? requirement(def) : true;
     });
@@ -234,6 +259,12 @@ export class McpToolset {
         return { op: "done", summary: a.summary };
       case "mesh_remember":
         return { op: "remember", key: a.key, value: a.value };
+      case "mesh_write_continuity":
+        return { op: "write_continuity", nextIntent: a.nextIntent, beliefs: a.beliefs, rejected: a.rejected };
+      case "mesh_contracts":
+        return { op: "contracts", role: a.role };
+      case "mesh_call":
+        return { op: "call", contract: a.contract, request: a.request, to: a.to };
       case "mesh_plan":
         return { op: "plan", steps: a.steps, taskId: a.taskId };
       case "mesh_plan_step":
@@ -524,6 +555,9 @@ export class McpToolset {
       { name: "mesh_wait", description: "Declare that you are waiting for responses (runtime state becomes WAITING).", inputSchema: { type: "object", properties: { reason: str("what you await") }, additionalProperties: false } },
       { name: "mesh_done", description: "Finish your current activation turn.", inputSchema: { type: "object", properties: { summary: str("turn summary") }, additionalProperties: false } },
       { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
+      { name: "mesh_write_continuity", description: "Hand your working state to the session that replaces yours. Call this when told your session is about to be rotated. Do NOT list your open asks — the mesh fills those in.", inputSchema: { type: "object", required: ["nextIntent"], properties: { nextIntent: str("one sentence: what you were about to do next"), beliefs: { type: "array", description: "what you concluded, and what each conclusion stands on", items: { type: "object", required: ["claim", "basis", "confidence"], properties: { claim: str("what you believe"), basis: str("artifact uri, message id or event id that supports it"), confidence: { type: "string", enum: ["asserted", "assumed"], description: "asserted = you verified it; assumed = you proceeded on it unchecked" } }, additionalProperties: false } }, rejected: { type: "array", description: "what you already tried that was turned down", items: { type: "object", required: ["what", "rejectedBy", "reason"], properties: { what: str("artifact uri, or a short description"), rejectedBy: str("who rejected it"), reason: str("why") }, additionalProperties: false } } }, additionalProperties: false } },
+      { name: "mesh_contracts", description: "List the named asks this mesh knows how to route, with the shape each one expects and who can answer it. Call this before mesh_call when you are unsure what to ask for.", inputSchema: { type: "object", properties: { role: str("only contracts a seat in this role would raise") }, additionalProperties: false } },
+      { name: "mesh_call", description: "Raise a named contract (see mesh_contracts). Preferred over mesh_send for the asks it covers: the mesh picks the recipient, validates the request shape before anyone is woken, and names the refusals you may get back. Unknown names are refused with the list of known ones.", inputSchema: { type: "object", required: ["contract"], properties: { contract: str("contract name, e.g. review.artifact"), request: obj("fields the contract requires"), to: strArr("override the recipient the mesh would pick") }, additionalProperties: false } },
       // This is the ONLY channel that lets an agent recover from a plan-gate
       // rejection inside the SAME turn: a prose rejection rides endSummary into
       // memory and is not read until the next activation, but an MCP caller

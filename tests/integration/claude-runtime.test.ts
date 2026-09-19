@@ -10,7 +10,7 @@ import {
   usageToTokens,
 } from "../../packages/runtime-claude/src/index";
 import type { ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
-import { BackendUnreachableError } from "../../packages/protocol/src/index";
+import { BackendUnreachableError, isTimeoutError } from "../../packages/protocol/src/index";
 import type {
   AgentDefinition,
   AgentInput,
@@ -131,6 +131,213 @@ test("usageToTokens charges new work and excludes cache reads", () => {
 test("usageToTokens tolerates a result message with no usage block", () => {
   assert.deepEqual(usageToTokens(undefined), { input: 0, output: 0, total: 0, cacheRead: 0 });
   assert.deepEqual(usageToTokens({}), { input: 0, output: 0, total: 0, cacheRead: 0 });
+});
+
+/**
+ * A backend that answers every turn with a FAILED result, carrying whatever
+ * error detail the CLI chose to report.
+ *
+ * The detail is the whole point of these two tests. A live run failed with
+ * `error_during_execution` having spent 869 tokens and two tool calls and then
+ * gone silent for two minutes, and the turn record, the `agent.failed` event
+ * and the dashboard all said exactly that and nothing more — a category, not a
+ * fault. A crashed CLI, a prompt the provider refused, a spent budget and a
+ * denied tool are four different bugs with four different fixes, and the bare
+ * subtype cannot separate them.
+ */
+function failingQuery(result?: Record<string, unknown>) {
+  return (({ prompt, options }: { prompt: unknown; options: Record<string, unknown> }) => {
+    const sdkSessionId = String(options.sessionId ?? "fake-session");
+    const gen = (async function* () {
+      yield {
+        type: "system",
+        subtype: "init",
+        session_id: sdkSessionId,
+        model: "claude-test",
+        mcp_servers: [{ name: "mesh", status: "connected" }],
+      };
+      for await (const _msg of prompt as AsyncIterable<unknown>) {
+        yield {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          result: "",
+          session_id: sdkSessionId,
+          num_turns: 1,
+          ...result,
+        };
+      }
+    })();
+    return Object.assign(gen, {
+      interrupt: async () => undefined,
+      setPermissionMode: async () => undefined,
+      setModel: async () => undefined,
+      supportedModels: async () => [],
+      supportedCommands: async () => [],
+      mcpServerStatus: async () => ({}),
+    });
+  }) as unknown as ClaudeAdapterOptions["queryFn"];
+}
+
+test("a failed turn carries the CLI's own error instead of only its category", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-err-"));
+  const adapter = new ClaudeRuntimeAdapter({
+    queryFn: failingQuery({
+      errors: ["API Error: 400 prompt is too long: 210000 tokens > 200000 maximum"],
+      terminal_reason: "prompt_too_long",
+      permission_denials: [{ tool_name: "Bash", tool_use_id: "toolu-1" }],
+    }),
+  });
+  const session = await adapter.start(devDef, runtimeCtx(dir));
+  try {
+    const out = await adapter.send(session, agentInput("read the workspace"));
+    const error = out.error ?? "";
+    // The subtype still leads, so every existing classification that greps for
+    // it keeps matching.
+    assert.match(error, /claude turn failed: error_during_execution/);
+    assert.match(error, /prompt is too long/, "the CLI's own words must survive");
+    assert.match(error, /terminated: prompt_too_long/, "and so must the structured cause");
+    assert.match(error, /denied by permissions: Bash/, "a permission wall must name the tool it held");
+  } finally {
+    await adapter.stop(session);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed turn with no detail keeps the plain subtype message", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-bare-"));
+  const adapter = new ClaudeRuntimeAdapter({ queryFn: failingQuery() });
+  const session = await adapter.start(devDef, runtimeCtx(dir));
+  try {
+    const out = await adapter.send(session, agentInput("read the workspace"));
+    // An older CLI that reports nothing else must read exactly as it always
+    // did: this is the contract `handleAgentFailure` classifies against.
+    assert.equal(out.error, "claude turn failed: error_during_execution");
+  } finally {
+    await adapter.stop(session);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * A backend that takes the prompt, goes silent, and answers an `interrupt` the
+ * way the CLI does: by resolving the turn with an ordinary error result.
+ *
+ * That reply is the trap, because it is not slow. A live run's stall watchdog
+ * interrupted a wedged turn at 10:44:37.825 and the CLI answered at 10:44:37.852
+ * — 27ms, far inside the supervisor's 2s grace for an interrupt nobody answered
+ * — so the real frame beat the grace and the adapter reported the CLI's abort
+ * reply as the turn's own failure. `handleAgentFailure` classifies on that
+ * error, so a stop the MESH ordered was booked as a backend crash and charged
+ * to the seat's restart budget.
+ */
+function silentThenInterruptedQuery() {
+  let release!: () => void;
+  const whenInterrupted = new Promise<void>((r) => { release = r; });
+  let entered!: () => void;
+  const silent = new Promise<void>((r) => { entered = r; });
+  const queryFn = (({ prompt, options }: { prompt: unknown; options: Record<string, unknown> }) => {
+    const sdkSessionId = String(options.sessionId ?? "fake-session");
+    const gen = (async function* () {
+      yield {
+        type: "system",
+        subtype: "init",
+        session_id: sdkSessionId,
+        model: "claude-test",
+        mcp_servers: [{ name: "mesh", status: "connected" }],
+      };
+      for await (const _msg of prompt as AsyncIterable<unknown>) {
+        entered();
+        await whenInterrupted;
+        // The abort, announced by the backend as an ordinary failed turn.
+        yield {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          result: "",
+          session_id: sdkSessionId,
+          num_turns: 1,
+        };
+      }
+    })();
+    return Object.assign(gen, {
+      interrupt: async () => { release(); },
+      setPermissionMode: async () => undefined,
+      setModel: async () => undefined,
+      supportedModels: async () => [],
+      supportedCommands: async () => [],
+      mcpServerStatus: async () => ({}),
+    });
+  }) as unknown as ClaudeAdapterOptions["queryFn"];
+  return { queryFn, silent };
+}
+
+test("an interrupt the mesh ordered reads as a deliberate stop, not a crash", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-abort-"));
+  const fake = silentThenInterruptedQuery();
+  const adapter = new ClaudeRuntimeAdapter({ queryFn: fake.queryFn });
+  const session = await adapter.start(devDef, runtimeCtx(dir));
+  try {
+    const turn = adapter.send(session, agentInput("read the workspace"));
+    await fake.silent;
+    await adapter.interrupt(session);
+    // `isTimeoutError` is exactly the predicate `handleAgentFailure` branches
+    // on: true takes the "slow" path, which retries without spending the
+    // restart budget. A deliberate stop must land there, not on the crash path
+    // that restarted the seat for a turn the mesh had just ended itself.
+    await assert.rejects(turn, (err: unknown) => isTimeoutError(err));
+    assert.ok(
+      !(await adapter.getStatus(session).catch(() => "UNREACHABLE") as string).startsWith("UNREACHABLE"),
+      "the session survived the abort, so it must not be reported dead",
+    );
+  } finally {
+    await adapter.stop(session);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a turn the backend completes as we abort is still the backend's turn", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-claude-abort-ok-"));
+  // Same shape, but the backend answers the abort with a SUCCESSFUL result: it
+  // finished the turn we gave up on. That is real work, so the turn must be
+  // reported as the backend reported it rather than discarded as a failure.
+  const adapter = new ClaudeRuntimeAdapter({
+    queryFn: (({ prompt, options }: { prompt: unknown; options: Record<string, unknown> }) => {
+      const sdkSessionId = String(options.sessionId ?? "fake-session");
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: sdkSessionId, model: "claude-test", mcp_servers: [] };
+        for await (const _msg of prompt as AsyncIterable<unknown>) {
+          await new Promise((r) => setTimeout(r, 20));
+          yield {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "made it",
+            session_id: sdkSessionId,
+            num_turns: 1,
+          };
+        }
+      })();
+      return Object.assign(gen, {
+        interrupt: async () => undefined,
+        setPermissionMode: async () => undefined,
+        setModel: async () => undefined,
+        supportedModels: async () => [],
+        supportedCommands: async () => [],
+        mcpServerStatus: async () => ({}),
+      });
+    }) as unknown as ClaudeAdapterOptions["queryFn"],
+  });
+  const session = await adapter.start(devDef, runtimeCtx(dir));
+  try {
+    const turn = adapter.send(session, agentInput("read the workspace"));
+    await adapter.interrupt(session);
+    const out = await turn;
+    assert.equal(out.error, undefined, "a completed turn is not a failure just because we gave up on it");
+  } finally {
+    await adapter.stop(session);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("permission gate maps capabilities onto tools", async () => {

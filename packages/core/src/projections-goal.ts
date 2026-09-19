@@ -99,6 +99,12 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
         goal.status = "ACTIVE";
         goal.completedAt = undefined;
         goal.reopenedAt = event.timestamp;
+        // A reopen starts a new run, and everything stamped with the old
+        // episode is now history rather than a live constraint. Bumped here,
+        // in the reducer, so the ordinal is a function of the log: a replay
+        // that counted reopens some other way could disagree with the mesh
+        // that ran.
+        goal.episodeOrdinal = (goal.episodeOrdinal ?? 1) + 1;
         const named = Array.isArray(p.criteria) && p.criteria.length > 0 ? new Set<string>(p.criteria as string[]) : null;
         for (const c of goal.acceptanceCriteria) {
           if (named ? !named.has(c.id) : !hadVerdict || !c.mandatory) continue;

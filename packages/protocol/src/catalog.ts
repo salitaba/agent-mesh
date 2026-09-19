@@ -40,6 +40,10 @@ export const EVENT_TYPES: EventType[] = [
   "agent.restarted",
   "agent.replaced",
   "agent.retired",
+  "agent.mute_suspected",
+  "session.rotation_pending",
+  "session.rotated",
+  "continuity.recorded",
   "thread.created",
   "message.sent",
   "message.delivered",
@@ -82,6 +86,7 @@ export const EVENT_TYPES: EventType[] = [
   "lease.acquired",
   "lease.released",
   "memory.updated",
+  "context.assembled",
   "plan.updated",
   "plan.gate_rejected",
   "budget.reserved",
@@ -157,6 +162,20 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   // notice; this one is why the seat never speaks again, which is the first
   // thing an operator debugging a stalled mission needs to find.
   "agent.retired": "alert",
+  // The seat is up, scheduled, and structurally unable to answer. Louder than
+  // a failure, because a failed agent at least stops; a mute one keeps
+  // consuming budget and looking busy.
+  "agent.mute_suspected": "alert",
+
+  // Not a fault, so not an alert — but the successor session starts without
+  // anything the predecessor held in its head, and an operator reading a sudden
+  // change in an agent's behaviour needs this line to explain it.
+  "session.rotation_pending": "notice",
+  "session.rotated": "notice",
+
+  // The one line that explains a discontinuity in an agent's behaviour, so it
+  // is not folded away with the routine traffic.
+  "continuity.recorded": "notice",
 
   "thread.created": "notice",
 
@@ -214,6 +233,11 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   "lease.released": "routine",
 
   "memory.updated": "routine",
+
+  // One per turn per awake agent: the highest-volume type in the catalog, and
+  // useful in aggregate rather than line by line. Folded by default; read when
+  // a specific turn is under investigation.
+  "context.assembled": "routine",
 
   "plan.updated": "notice",
   "plan.gate_rejected": "alert",

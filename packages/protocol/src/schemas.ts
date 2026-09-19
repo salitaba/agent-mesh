@@ -341,6 +341,8 @@ export const meshConfigSchema = {
           type: "object",
           properties: {
             semantic: { type: "string", enum: ["compat", "strict"] },
+            ttl_ms: { type: "number", minimum: 0 },
+            ttl_ms_by_role: { type: "object", additionalProperties: { type: "number", minimum: 0 } },
           },
           additionalProperties: false,
         },

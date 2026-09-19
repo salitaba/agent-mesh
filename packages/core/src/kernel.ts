@@ -2,7 +2,7 @@ import type { Clock, EventId, EventType, GoalId, MeshEvent } from "../../protoco
 import { PROTOCOL_VERSION } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
 import { applyEvent, ProjectionError } from "./projections";
-import { createInitialState, type Projections } from "./state";
+import { createInitialState, type CommitmentTtlConfig, type Projections } from "./state";
 
 export type EventListener = (event: MeshEvent) => void | Promise<void>;
 
@@ -34,7 +34,17 @@ export class Kernel {
     public readonly store: EventStore,
     public readonly clock: Clock,
     audit?: (msg: string) => void,
-    public readonly gates?: { transitionGates?: Record<string, string[]>; commitmentSemantic?: "compat" | "strict" },
+    /**
+     * Projection knobs that change what the reducer WRITES, so they have to
+     * reach every `applyEvent` the kernel makes -- live and replay alike. A
+     * knob the live kernel has and a replay does not is a divergence between
+     * the log and the state rebuilt from it.
+     */
+    public readonly gates?: {
+      transitionGates?: Record<string, string[]>;
+      commitmentSemantic?: "compat" | "strict";
+      commitmentTtl?: CommitmentTtlConfig;
+    },
     private readonly snapshots?: { provider: KernelSnapshotProvider; meshId: string; every?: number },
   ) {
     this.audit = audit ?? (() => {});
@@ -63,14 +73,42 @@ export class Kernel {
       return event;
     }
     const stored = await this.serialized(() => this.applyAndAppend(event));
+    this.dispatch(stored);
+    return stored as MeshEvent<T>;
+  }
+
+  /**
+   * Hand the stored event to every listener, in registration order, without
+   * making the emitter wait for them.
+   *
+   * `emit` used to `await` each listener in turn, which put every subscriber
+   * on the emitting agent's critical path in series: an SSE broadcast to a
+   * wedged browser, or a search-index write, delayed the next event in the
+   * mission. Fan-out is notification, not part of the transaction — the
+   * transaction already committed when `applyAndAppend` resolved.
+   *
+   * What is still guaranteed: listeners are STARTED in order, synchronously,
+   * before `emit` resolves, so a synchronous listener (which is all of them
+   * today) still runs to completion before the emitter continues, and no
+   * listener can miss an event or see two out of order. What is no longer
+   * guaranteed is that an async listener's tail has finished by then; a
+   * listener that needs that ordering owns its own queue.
+   */
+  private dispatch(stored: MeshEvent): void {
     for (const listener of [...this.listeners]) {
       try {
-        await listener(stored);
+        const result = listener(stored);
+        // Only a thenable has a tail to lose. Audit its rejection where it
+        // lands rather than dropping it into an unhandled rejection.
+        if (result && typeof (result as Promise<void>).catch === "function") {
+          void (result as Promise<void>).catch((err: unknown) => {
+            this.audit(`listener error on ${stored.type}: ${(err as Error).message}`);
+          });
+        }
       } catch (err) {
         this.audit(`listener error on ${stored.type}: ${(err as Error).message}`);
       }
     }
-    return stored as MeshEvent<T>;
   }
 
   private async applyAndAppend(event: MeshEvent): Promise<MeshEvent> {
@@ -100,7 +138,15 @@ export class Kernel {
       throw err;
     }
     this.appliedIds.add(event.id);
-    if (stored.seq !== undefined) this.state.lastEventSeq = stored.seq;
+    // A high-water mark, not a "last seen" field. Two writers touch
+    // lastEventSeq -- this line and the reducer in projections.ts -- and it is
+    // the cut a snapshot restore trusts: replayFromStore reads the tail with
+    // `{ sinceSeq: throughSeq }`, treating everything at or below the mark as
+    // already contained in the snapshot. A lower seq overwriting a higher one
+    // would strand the events in between in neither the snapshot nor the tail,
+    // dropping them from every future replay with no error. So it only ever
+    // moves forward.
+    if (stored.seq !== undefined) this.state.lastEventSeq = Math.max(this.state.lastEventSeq, stored.seq);
     this.emitCount++;
     await this.maybeSnapshot();
     return stored;
@@ -219,6 +265,7 @@ export class Kernel {
     await this.rebuild(events);
     return events.length;
   }
+
 
   activeGoal(): GoalId | null {
     return this.state.activeGoalId;

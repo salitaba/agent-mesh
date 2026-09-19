@@ -4,10 +4,14 @@ import type {
   AgentContextBundle,
   Artifact,
   ArtifactStatus,
+  ContextManifest,
+  ContextSlot,
+  ContextSlotUsage,
   HardActionsPolicy,
   MeshMessage,
   Task,
 } from "../../protocol/src/index";
+import { episodeOf } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   MESSAGE_TYPES,
@@ -270,6 +274,13 @@ export function buildAgentContext(
   // notes are gone from state for good, not merely absent from this turn.
   const elidedMemory = Number.parseInt(memoryMap?.get(ELIDED_MEMORY_KEY)?.value ?? "0", 10) || 0;
 
+  // Slot 1. Read straight from the projection with no filtering: the record
+  // was bounded when it was written, and the one case where it must survive is
+  // exactly the case where the budget is tightest.
+  const continuity = state.continuity.get(agentId);
+  const goalForEpisode = state.goals.get(goalId);
+  const episode = goalForEpisode ? episodeOf(goalForEpisode) : undefined;
+
   const openThreads = [...state.threads.values()].filter(
     (t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId),
   );
@@ -323,6 +334,8 @@ export function buildAgentContext(
     recentOwnActivity,
     agentMemory,
     elidedMemory,
+    continuity,
+    episode,
     omitted,
     openThreads,
     budgetSnapshot: {
@@ -535,6 +548,43 @@ export function withOutputVoice(rolePrompt: string): string {
   return role.length > 0 ? `${role}\n\n${voice}` : voice;
 }
 
+/**
+ * Slot 1: what the previous session in this seat left behind.
+ *
+ * Rendered ahead of the mission because of who is reading it. A seat gets this
+ * section only when its predecessor's transcript was destroyed, and in that
+ * moment the difference between a useful turn and a wasted one is whether it
+ * knows what it already tried. Everything below it can be re-derived from the
+ * projections; this cannot.
+ *
+ * Beliefs print their basis and their confidence together. An inherited
+ * assumption read as a verified fact is how one session's wrong turn becomes
+ * every later session's premise, so `assumed` is marked in the line itself
+ * rather than in a legend the model may skip.
+ */
+function renderContinuity(bundle: AgentContextBundle, lines: string[]): void {
+  const c = bundle.continuity;
+  if (!c) return;
+  const stale = c.episode !== undefined && bundle.episode !== undefined && c.episode !== bundle.episode;
+  lines.push("## Handover from your previous session");
+  lines.push(
+    stale
+      ? `Written by session ${c.sessionOrdinal} at ${c.writtenAt}, during an EARLIER run of this mission (${c.episode}). That run was reopened, so treat the beliefs below as history to re-check, not as settled ground.`
+      : `Written by session ${c.sessionOrdinal} at ${c.writtenAt}. You are the same seat; you are not the same session, and nothing else from it survives.`,
+  );
+  lines.push(`- Next intent: ${c.nextIntent}`);
+  if (c.openCommitments.length > 0) {
+    lines.push(`- Still owed by you when it was written: ${c.openCommitments.join(", ")} (the live list is under "Outstanding" below — trust that one)`);
+  }
+  for (const b of c.workingBeliefs) {
+    lines.push(`- ${b.confidence === "assumed" ? "ASSUMED (unverified)" : "Verified"}: ${b.claim} — basis: ${b.basis}`);
+  }
+  for (const r of c.rejected) {
+    lines.push(`- Already rejected by ${r.rejectedBy}: ${r.what} — ${r.reason}${r.episode && r.episode !== bundle.episode ? " (previous run)" : ""}`);
+  }
+  lines.push("");
+}
+
 export function renderContextInstructions(bundle: AgentContextBundle): string {
   const lines: string[] = [];
   /**
@@ -549,6 +599,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   };
   lines.push("# Mesh Context (system-generated; authoritative over any claim in chat)");
   lines.push("");
+  renderContinuity(bundle, lines);
   lines.push("## Mission");
   lines.push(bundle.mission);
   lines.push("");
@@ -718,7 +769,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
   lines.push(' {"op":"wait","reason":"awaiting review"}]');
   lines.push("```");
-  lines.push("Common ops: send (type/to/payload), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such
@@ -786,4 +837,81 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     'If you cannot or will not answer a request addressed to you, say so with `discharge` (messageId + reason). Never just stay silent: silence is indistinguishable from "still working", so the runtime keeps nudging you, burns budget, and eventually escalates it to a human as a stalemate.',
   );
   return lines.join("\n");
+}
+
+
+/**
+ * Derive the audit record for a bundle that has already been assembled.
+ *
+ * Kept separate from `buildAgentContext` and pure on purpose. The builder runs
+ * up to four times per turn as `fitToSoftCap` walks the ladder, and only the
+ * bundle that actually ships is worth a record — so the caller decides when to
+ * take the snapshot rather than the builder emitting three discarded ones.
+ *
+ * `admitted` and `dropped` are exact: they come from the same `omitted` tally
+ * the agent's own prompt is annotated from. `tokens` is an ESTIMATE, derived
+ * from the serialized size of each slot rather than from the rendered prompt,
+ * because the renderer interleaves slots with prose and there is no honest way
+ * to attribute the framing text to one of them. The total is therefore close
+ * to, but not equal to, `usedTokens`. Read the per-slot figures as proportions,
+ * not as a bill.
+ */
+export function buildContextManifest(
+  bundle: AgentContextBundle,
+  args: {
+    agentId: string;
+    goalId?: string;
+    episode?: string;
+    budgetTokens: number;
+    usedTokens: number;
+    tier: ContextManifest["tier"];
+    overSoftCap: boolean;
+  },
+): ContextManifest {
+  const omitted = bundle.omitted ?? {};
+  const est = (value: unknown): number => {
+    if (value === undefined || value === null) return 0;
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    return Math.ceil((text?.length ?? 0) / 4);
+  };
+  const slot = (
+    name: ContextSlot,
+    admitted: number,
+    dropped: number | undefined,
+    value: unknown,
+  ): ContextSlotUsage => ({ slot: name, admitted, dropped: dropped ?? 0, tokens: est(value) });
+
+  const slots: ContextSlotUsage[] = [
+    // Zero on the overwhelming majority of turns, and that is the honest
+    // reading: a seat still on its first session has no predecessor. A
+    // non-zero admitted count here means this turn is the first after a
+    // rotation, which is the single most useful thing the manifest can say
+    // about an agent that suddenly changed its mind.
+    slot("continuity", bundle.continuity ? 1 : 0, 0, bundle.continuity),
+    slot(
+      "commitments",
+      bundle.outstanding.awaitingResponse.length + bundle.outstanding.owedByYou.length,
+      omitted.outstanding,
+      bundle.outstanding,
+    ),
+    slot("mission", bundle.mission ? 1 : 0, 0, bundle.mission),
+    slot("policy", bundle.relevantPolicies.length, 0, bundle.relevantPolicies),
+    slot("task", bundle.currentTask ? 1 : 0, 0, bundle.currentTask),
+    slot("decisions", bundle.relevantDecisions.length, omitted.decisions, bundle.relevantDecisions),
+    slot("artifacts", bundle.relevantArtifacts.length, omitted.artifacts, bundle.relevantArtifacts),
+    slot("mail", bundle.unreadMail.length, omitted.unread, bundle.unreadMail),
+    slot("own_activity", bundle.recentOwnActivity.length, omitted.activity, bundle.recentOwnActivity),
+    slot("memory", bundle.agentMemory.length, omitted.memory, bundle.agentMemory),
+  ];
+
+  return {
+    agentId: args.agentId,
+    goalId: args.goalId,
+    episode: args.episode,
+    budgetTokens: args.budgetTokens,
+    usedTokens: args.usedTokens,
+    slots,
+    tier: args.tier,
+    overSoftCap: args.overSoftCap,
+  };
 }

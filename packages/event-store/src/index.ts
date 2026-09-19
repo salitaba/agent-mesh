@@ -33,6 +33,51 @@ export interface EventStore {
    * it has to empty this one.
    */
   reset?(): Promise<void> | void;
+  /**
+   * Follow the log as it grows: `handler` runs for every event appended after
+   * the call, in append order, and the returned function detaches it.
+   *
+   * Each subscriber keeps its own position, which is the whole reason this
+   * lives on the store. The one push path that existed before (`EventTailer`'s
+   * file watcher) held its cursor in a map keyed by file path, so two
+   * followers of one log stole events from each other and every event reached
+   * exactly one arbitrary consumer.
+   *
+   * Delivery is synchronous with the append and best-effort: a throwing
+   * handler is isolated so one bad subscriber cannot fail another's delivery,
+   * or the append itself. Subscribers see only what follows their call —
+   * a late joiner that needs history reads it first, then subscribes.
+   */
+  subscribe?(handler: (event: MeshEvent) => void): () => void;
+  /**
+   * Block until everything appended so far is durable.
+   *
+   * `append` deliberately returns before the write lands: paying
+   * open+write+close per emit stalled HTTP under burst load, and the ambient
+   * fsync cadence bounds the crash window rather than closing it. That trade
+   * is right for throughput and wrong at the moments where something outside
+   * this process is about to be told the event happened. This is the barrier
+   * for those moments — call it before handing out a receipt, not per append.
+   */
+  flush?(): Promise<void>;
+}
+
+/**
+ * Fan an append out to subscribers without letting one of them break the
+ * others, or the append. A subscriber that throws is a bug in the subscriber;
+ * making the emitting agent's turn fail for it would be a worse one.
+ */
+function notifySubscribers(subs: Set<(event: MeshEvent) => void>, event: MeshEvent): void {
+  if (subs.size === 0) return;
+  // Snapshot: a handler is allowed to unsubscribe (or subscribe) from inside
+  // its own callback without perturbing this delivery round.
+  for (const handler of [...subs]) {
+    try {
+      handler(event);
+    } catch {
+      /* isolated: see above */
+    }
+  }
 }
 
 function applyEventQuery(out: MeshEvent[], query: EventQuery): MeshEvent[] {
@@ -51,10 +96,24 @@ export class MemoryEventStore implements EventStore {
   private byId = new Map<EventId, MeshEvent>();
   private byCorrelation = new Map<string, MeshEvent[]>();
   private seq = 0;
+  private subscribers = new Set<(event: MeshEvent) => void>();
 
   async append(event: MeshEvent): Promise<MeshEvent> {
     if (this.byId.has(event.id)) return this.byId.get(event.id)!;
     const stored: MeshEvent = { ...event, seq: ++this.seq };
+    // Validate here too, exactly as the file-backed store does. This store
+    // used to accept anything, so the two stores accepted DIFFERENT event
+    // sets: a type added to the union and forgotten in the canonical schema
+    // passed the whole in-memory suite, then threw on the first emit against
+    // a real log — in production, mid-mission. Tests are only worth running
+    // against the rules production actually enforces.
+    const validation = validateEvent(stored);
+    if (!validation.valid) {
+      throw new Error(
+        `Event rejected by canonical schema (${stored.type}): ` +
+          validation.errors.map((e) => `${e.path} ${e.message}`).join("; "),
+      );
+    }
     this.events.push(stored);
     this.byId.set(stored.id, stored);
     if (stored.correlationId) {
@@ -62,8 +121,19 @@ export class MemoryEventStore implements EventStore {
       if (list) list.push(stored);
       else this.byCorrelation.set(stored.correlationId, [stored]);
     }
+    notifySubscribers(this.subscribers, stored);
     return stored;
   }
+
+  subscribe(handler: (event: MeshEvent) => void): () => void {
+    this.subscribers.add(handler);
+    return () => {
+      this.subscribers.delete(handler);
+    };
+  }
+
+  /** Nothing to drain: this store is memory, and memory is already written. */
+  async flush(): Promise<void> {}
 
   async read(query: EventQuery = {}): Promise<MeshEvent[]> {
     // Indexed fast path: a single turn's trace without scanning the log.
@@ -85,6 +155,7 @@ export class MemoryEventStore implements EventStore {
     this.byCorrelation = new Map();
     this.seq = 0;
   }
+
 
   async lastSeq(): Promise<number> {
     return this.seq;
@@ -115,6 +186,7 @@ export class JsonlEventStore implements EventStore {
   private byCorrelation = new Map<string, MeshEvent[]>();
   private seq = 0;
   private loaded = false;
+  private subscribers = new Set<(event: MeshEvent) => void>();
   /**
    * Ordered async durability queue. Visibility rule: appends update the
    * in-memory cache synchronously (reads never wait for disk) and the file
@@ -227,7 +299,37 @@ export class JsonlEventStore implements EventStore {
       .catch((err) => {
         this.writeError = this.writeError ?? err;
       });
+    // Fan out on the same visibility rule as the cache: subscribers see the
+    // event when readers do, not when the disk write lands. A subscriber that
+    // needs the durable answer calls flush().
+    notifySubscribers(this.subscribers, stored);
     return stored;
+  }
+
+  subscribe(handler: (event: MeshEvent) => void): () => void {
+    this.subscribers.add(handler);
+    return () => {
+      this.subscribers.delete(handler);
+    };
+  }
+
+  /**
+   * Durability barrier: drain the write queue, then fsync.
+   *
+   * Unlike `close()` this keeps the handle open and rethrows a queued write
+   * error. Both differences are the point — a caller flushes because it is
+   * about to tell the outside world the event happened, so it needs to know
+   * that the write failed, and it needs to keep appending afterwards.
+   */
+  async flush(): Promise<void> {
+    await this.writeChain.catch(() => undefined);
+    if (this.writeError) throw this.writeError;
+    if (this.handle) {
+      await this.handle.sync();
+      // The queue is durable as of now, so the ambient cadence restarts from
+      // here rather than firing again a few appends later for nothing.
+      this.sinceSync = 0;
+    }
   }
 
   /** Lazily opened, append-mode handle shared by all queued writes. */
@@ -312,6 +414,7 @@ export class JsonlEventStore implements EventStore {
     // pointless syscall on every subsequent append.
     this.loaded = true;
   }
+
 
   path(): string {
     return this.filePath;

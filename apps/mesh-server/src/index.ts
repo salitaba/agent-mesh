@@ -4,7 +4,7 @@ import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { URL } from "url";
-import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal } from "../../../packages/protocol/src/index";
+import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal, SessionRotated, MuteSuspected } from "../../../packages/protocol/src/index";
 import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
@@ -258,7 +258,11 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     store,
     systemClock,
     auditLog,
-    { transitionGates: config.transitionGates, commitmentSemantic: config.bus.commitmentSemantic },
+    {
+      transitionGates: config.transitionGates,
+      commitmentSemantic: config.bus.commitmentSemantic,
+      commitmentTtl: config.bus.commitmentTtl,
+    },
     snapshotProvider ? { provider: snapshotProvider, meshId: config.meshId, every: 200 } : undefined,
   );
   // EventBus decouples kernel fan-out from direct subscribe chains.
@@ -318,7 +322,52 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       // the SDK an id it cannot resolve — a confusing hard failure on turn 1.
       // Per-agent `model` still wins and is passed through verbatim.
       model: claudeDefaultModel,
+      transport: config.bus.transport,
       mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
+      // Rotation is the one moment a seat loses everything it was holding in
+      // its head. It used to be invisible: this hook existed and nothing was
+      // ever passed for it, so the adapter dropped a seat's entire working
+      // memory without the kernel, the log, or the operator ever hearing.
+      //
+      // Emitted fire-and-forget on purpose. Rotation happens inside a turn the
+      // agent is waiting on, and blocking it on a kernel append would put the
+      // event store's write chain on the critical path of every rotation.
+      // A seat that cannot reach the bus is worse than a dead one: it looks
+      // healthy, consumes its turns, and produces text nobody can act on.
+      // `alert` severity, because the mission cannot progress through it and
+      // no amount of waiting will change that.
+      onMuteSuspected: (info) => {
+        void kernel
+          .emit(
+            "agent.mute_suspected",
+            {
+              agentId: info.agentId,
+              sessionId: info.sdkSessionId,
+              servers: info.servers,
+              meshBridgeAttached: info.meshBridgeAttached,
+            } satisfies MuteSuspected,
+            { actorId: info.agentId },
+          )
+          .catch((err: unknown) => auditLog(`agent.mute_suspected emit failed: ${(err as Error).message}`));
+      },
+      onRotate: (info) => {
+        void kernel
+          .emit(
+            "session.rotated",
+            {
+              agentId: info.agentId,
+              fromSessionId: info.previousSdkSessionId,
+              toSessionId: info.sdkSessionId,
+              // `rotations` counts replacements; the seat's first session is
+              // ordinal 1, so the nth rotation produces ordinal n+1.
+              sessionOrdinal: info.rotations + 1,
+              reason: "rotation",
+              transcriptTokensDiscarded: info.contextTokens,
+            } satisfies SessionRotated,
+            { actorId: info.agentId },
+          )
+          .catch((err: unknown) => auditLog(`session.rotated emit failed: ${(err as Error).message}`));
+      },
     });
   resolver.register("claude", claudeAdapter);
   // Answers the designer's own chat and serves its model picker. Only one

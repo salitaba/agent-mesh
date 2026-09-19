@@ -17,6 +17,7 @@ import type {
   ThreadId,
   WorkspaceLease,
   AgentMemoryNote,
+  ContinuityRecord,
 } from "../../protocol/src/index";
 
 /**
@@ -48,6 +49,43 @@ export type DischargeReason =
   /** Runtime voided it to break a circular wait. */
   | "deadlock_break"
   /**
+   * The ledger was full, so the ask was never opened at all.
+   *
+   * The one reason here that does NOT describe an ask leaving the ledger —
+   * it describes one that was refused entry. It is recorded in the same ring
+   * anyway because that ring is where an operator looks to answer "what
+   * happened to my ask?", and "it was never accepted" is the answer.
+   *
+   * Distinct from `evicted_cap`, which is the opposite failure: that one says
+   * an ask WAS open and something else forced it out.
+   */
+  | "refused_cap"
+  /**
+   * The debtor said no. Exact, not inferred: an agent called `discharge` on an
+   * ask addressed to it and gave a reason, and the asker was told so.
+   *
+   * Split out of `reply` because recording a refusal as a reply made the two
+   * indistinguishable in the ledger — `commitmentStats().byReason` counted a
+   * team that answered nothing and a team that answered everything as the
+   * same shape, and the only surviving trace of the difference was a
+   * `declined: true` flag buried in the discharge event's detail.
+   *
+   * Deliberately NOT in `UNANSWERED_DISCHARGE_REASONS`: a refusal is a
+   * settlement the asker was notified of, unlike an eviction or a deadlock
+   * break, which are losses the asker never hears about.
+   */
+  | "refused"
+  /**
+   * The ask passed its `dueBy` with no answer.
+   *
+   * The ledger previously had no notion of lateness at all: an ask stayed open
+   * forever, and the only bounded lifetime was three nudges and a 1000-entry
+   * cap. That makes "waiting" and "abandoned" the same state, which is exactly
+   * the state a low-contact mesh must be able to tell apart — an asker that
+   * cannot distinguish them has to either block forever or poll.
+   */
+  | "expired"
+  /**
    * The bounded-state cap forced it out. NOT an answer: the ask is simply
    * gone, and everything downstream of the ledger (wait-cycle detection,
    * `owedByYou` context, stuck-request escalations) loses it. Recorded so
@@ -76,6 +114,11 @@ export const INFERRED_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Set<
 export const UNANSWERED_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Set<DischargeReason>([
   "evicted_cap",
   "deadlock_break",
+  // A deadline passing is not an answer. `refused` is deliberately absent:
+  // the debtor responded, the asker was told, and the ask really is settled.
+  "expired",
+  // Never opened, so certainly never answered.
+  "refused_cap",
 ]);
 
 export interface PendingRequest {
@@ -86,6 +129,19 @@ export interface PendingRequest {
   threadId: ThreadId;
   taskId?: string;
   createdAt: string;
+  /**
+   * When an answer stops being expected, ISO-8601. Absent means "no deadline",
+   * which is what every ask from before this field looked like and what a mesh
+   * with no configured TTL still produces.
+   *
+   * Set at open time from config rather than by the asker: a deadline the
+   * asker chooses is a deadline the asker can set to infinity, and the whole
+   * point is to bound how long a debtor's silence can hold a creditor open.
+   * Derived from the DEBTORS' roles (the longest of them), because the
+   * question it answers is "how long should this kind of work take?", not
+   * "how patient is the asker?".
+   */
+  dueBy?: string;
   goalId?: string;
   /** Artifact URIs referenced by the request (used to clear reviews on approve/merge). */
   artifactUris?: string[];
@@ -174,6 +230,23 @@ export interface Projections {
   leases: Map<LeaseId, WorkspaceLease>;
   activeLeaseByArtifact: Map<ArtifactId, LeaseId>;
   memory: Map<string, Map<string, AgentMemoryNote>>;
+  /**
+   * The latest continuity record each seat wrote, keyed by agent id.
+   *
+   * Latest-wins rather than a per-episode history: the consumer is the seat's
+   * NEXT session, which wants exactly one record — the most recent thing its
+   * predecessor knew. The record carries its own `episode`, so a reader can
+   * still tell a note written in this run from one inherited across a reopen,
+   * without the projection having to keep every generation alive forever.
+   */
+  continuity: Map<string, ContinuityRecord>;
+  /**
+   * How many backend sessions each seat has burned through: 1 while it is on
+   * its first, 2 after one rotation. Projected from `session.rotated`, which
+   * until now had no reducer at all — the one moment an agent loses its entire
+   * working memory was invisible to every projection in the mesh.
+   */
+  sessionOrdinal: Map<string, number>;
   pendingRequests: Map<MessageId, PendingRequest>;
   /**
    * Recently discharged asks, newest last. Bounded ring: this is an
@@ -234,6 +307,8 @@ export function createInitialState(): Projections {
     leases: new Map(),
     activeLeaseByArtifact: new Map(),
     memory: new Map(),
+    continuity: new Map(),
+    sessionOrdinal: new Map(),
     pendingRequests: new Map(),
     discharged: [],
     conflicts: new Map(),
@@ -307,6 +382,17 @@ export const AUTO_MEMORY_PREFIX = "turn:";
 export const MAX_AUTO_MEMORY = 10;
 export const MAX_AGENT_MEMORY = 30;
 export const MAX_MEMORY_VALUE_CHARS = 2000;
+
+/**
+ * Continuity caps. Tighter than the memory caps above because a continuity
+ * record is read whole, at the top of the successor's very first prompt, when
+ * it has the least context to spend and the most to gain. A record that has to
+ * be truncated by the renderer is one that arrived too late to be edited.
+ */
+export const MAX_CONTINUITY_BELIEFS = 8;
+export const MAX_CONTINUITY_REJECTIONS = 8;
+export const MAX_CONTINUITY_COMMITMENTS = 12;
+export const MAX_CONTINUITY_TEXT = 500;
 
 /**
  * Bookkeeping slot recording how many turn summaries have been dropped. It is
@@ -433,6 +519,11 @@ export const PER_DEBTOR_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Se
   "reply",
   "in_thread",
   "artifact_review",
+  // One of three reviewers declining settles that reviewer's obligation and
+  // nothing else — the other two still owe an answer, and the asker must keep
+  // being told so. `expired` is NOT here: a deadline is a property of the ask,
+  // so when it passes it passes for every debtor at once.
+  "refused",
 ]);
 
 /**
@@ -456,7 +547,105 @@ export function stillOwes(pr: PendingRequest, agentId: string): boolean {
 }
 
 /**
+ * How long a debtor's silence may hold a creditor open, per debtor role.
+ *
+ * `default` applies when no role matches and when the debtor is not a known
+ * agent (the human operator, a seat that has since been retired). Zero or
+ * absent means no deadline — the pre-deadline behaviour, kept reachable so a
+ * mission that genuinely wants unbounded asks can say so.
+ */
+export interface CommitmentTtlConfig {
+  defaultMs?: number;
+  byRole?: Record<string, number>;
+}
+
+/**
+ * The deadline an ask opens with, or undefined for "no deadline".
+ *
+ * Takes the LONGEST TTL among the debtors' roles. An ask addressed to a
+ * reviewer and an architect is not overdue until the slower of the two has
+ * had its time — expiring on the faster one would close an obligation the
+ * other agent is still legitimately working on, which is the exact failure
+ * (`evicted_cap`) that made every other consumer of this ledger draw a wrong
+ * conclusion.
+ */
+export function computeDueBy(
+  state: Projections,
+  debtors: string[],
+  createdAt: string,
+  ttl?: CommitmentTtlConfig,
+  contractSlaMs?: number,
+): string | undefined {
+  // Unchanged: no configured TTL means no deadline. A contract's SLA NARROWS an
+  // existing deadline regime; it must not create one, because expiry is an
+  // operator's choice and a mesh should not inherit deadlines from an upgrade.
+  if (!ttl) return undefined;
+  let longest = 0;
+  for (const debtor of debtors) {
+    const role = state.agents.get(debtor)?.definition.role;
+    // Precedence: the operator's explicit per-role number, then the contract's
+    // own SLA, then the mesh-wide default. The role override wins because it is
+    // the most specific thing the OPERATOR said; the contract beats the default
+    // because a cheap question and an expensive review should not share a clock.
+    const roleMs = role !== undefined ? ttl.byRole?.[role] : undefined;
+    const ms = roleMs ?? (contractSlaMs && contractSlaMs > 0 ? contractSlaMs : undefined) ?? ttl.defaultMs ?? 0;
+    if (ms > longest) longest = ms;
+  }
+  if (longest <= 0) return undefined;
+  const base = Date.parse(createdAt);
+  // A message with an unparseable timestamp is a bug elsewhere; giving it a
+  // NaN deadline would make it instantly and permanently overdue.
+  if (!Number.isFinite(base)) return undefined;
+  return new Date(base + longest).toISOString();
+}
+
+/**
+ * Asks whose deadline has passed, oldest first.
+ *
+ * Identifies only — it does not discharge. Expiry has to leave the ledger
+ * through a `commitment.discharged` EVENT, like every other out-of-reducer
+ * close, or a rebuilt state would keep asks the live mesh had already expired
+ * and the "replay is equivalent" invariant would stop holding.
+ *
+ * Honours the same escalation protection as cap eviction: an ask an operator
+ * is already looking at is not reaped out from under them. Their card is the
+ * deadline now.
+ */
+export function overdueCommitments(state: Projections, nowMs: number): PendingRequest[] {
+  const protectedIds = escalatedRequestIds(state);
+  const out: PendingRequest[] = [];
+  for (const pr of state.pendingRequests.values()) {
+    if (pr.dueBy === undefined) continue;
+    if (protectedIds.has(pr.messageId)) continue;
+    const due = Date.parse(pr.dueBy);
+    if (Number.isFinite(due) && due <= nowMs) out.push(pr);
+  }
+  return out.sort((a, b) => Date.parse(a.dueBy!) - Date.parse(b.dueBy!));
+}
+
+/**
+ * Is the ledger too full to take another ask?
+ *
+ * Backpressure at open, rather than eviction at overflow. Dropping the OLDEST
+ * ask to make room for the newest is precisely backwards: insertion order is
+ * roughly chronological, so the entries eviction reaches first are the ones
+ * that have been waiting longest — the most likely to be genuinely stuck, and
+ * the ones whose loss hides a real deadlock. Refusing the new ask instead
+ * costs the asker one immediate, visible failure and loses nothing.
+ */
+export function ledgerAtCapacity(state: Projections): boolean {
+  return state.pendingRequests.size >= MAX_PENDING_REQUESTS;
+}
+
+/**
  * Ask-ledger overflow, handled as a discharge instead of a silent delete.
+ *
+ * Now a LAST RESORT rather than the primary mechanism: `ledgerAtCapacity`
+ * refuses to open an ask once the map is full, so in a live mesh this finds
+ * nothing to do. It still runs because a map can arrive over cap by other
+ * routes — importing a snapshot written before refusal-to-open existed, or a
+ * lowered `MAX_PENDING_REQUESTS` — and in those cases the old behaviour is
+ * still the least-bad one available.
  *
  * The cap used to `pendingRequests.delete(...)` directly, which is the one
  * thing `dischargeCommitment`'s contract forbids. Three consumers read this
@@ -543,6 +732,8 @@ export function exportState(state: Projections): {
   budgets: unknown[];
   leases: unknown[];
   memory: unknown[];
+  continuity: unknown[];
+  sessionOrdinal: unknown[];
   pendingRequests: unknown[];
   discharged: unknown[];
   reviewRounds: unknown[];
@@ -565,6 +756,8 @@ export function exportState(state: Projections): {
     budgets: [...state.budgets.values()].map((b) => ({ ...b, reservations: [...b.reservations] })),
     leases: [...state.leases.values()],
     memory: [...state.memory.entries()].map(([k, v]) => [k, [...v.entries()]]),
+    continuity: [...state.continuity.values()],
+    sessionOrdinal: [...state.sessionOrdinal.entries()],
     pendingRequests: [...state.pendingRequests.values()],
     discharged: [...state.discharged],
     reviewRounds: [...state.reviewRounds.entries()],
@@ -590,6 +783,8 @@ export function importState(state: Projections, data: {
   budgets?: Array<Record<string, unknown>>;
   leases?: unknown[];
   memory?: Array<[string, Array<[string, unknown]>]>;
+  continuity?: unknown[];
+  sessionOrdinal?: Array<[string, number]>;
   pendingRequests?: unknown[];
   discharged?: unknown[];
   reviewRounds?: unknown[];
@@ -623,6 +818,12 @@ export function importState(state: Projections, data: {
   }
   for (const l of (data.leases ?? []) as Array<{ id: string }>) state.leases.set(l.id as never, l as never);
   for (const [k, entries] of (data.memory ?? [])) state.memory.set(k, new Map(entries as Array<[string, never]>));
+  for (const r of (data.continuity ?? []) as ContinuityRecord[]) {
+    if (r && typeof r.agentId === "string") state.continuity.set(r.agentId, r);
+  }
+  for (const [k, n] of (data.sessionOrdinal ?? []) as Array<[string, number]>) {
+    if (typeof k === "string" && Number.isFinite(n)) state.sessionOrdinal.set(k, n);
+  }
   if (typeof data.activeGoalId === "string" && data.activeGoalId) state.activeGoalId = data.activeGoalId as never;
   for (const pr of (data.pendingRequests ?? []) as Array<{ messageId: string }>) {
     state.pendingRequests.set((pr as { messageId: string }).messageId as never, pr as never);

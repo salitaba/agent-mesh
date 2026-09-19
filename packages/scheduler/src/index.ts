@@ -362,7 +362,8 @@ export class Scheduler implements SchedulerPort {
         this.queue[existingIdx] = { ...req, enqueuedAt: existing.enqueuedAt };
       }
       return true;
-    }    const decision = this.policy.evaluateActivation(req.agentId, {
+    }
+    const decision = this.policy.evaluateActivation(req.agentId, {
       id: req.reason.eventId ?? "activation",
       type: req.reason.eventType ?? "message.sent",
       timestamp: new Date().toISOString(),
@@ -374,9 +375,10 @@ export class Scheduler implements SchedulerPort {
     // The policy already wrote the sentence — `max_activations 3 reached`,
     // `thread budget exhausted (12/12)`, `transition 'x' requires a,b; missing:
     // b`. Collapsing all of that to `false` was not merely unrendered, it was
-    // destroyed: unlike the op path this site never reached `denied()`, so no
-    // event carried it either and the agent simply went quiet. Keep the
-    // decision, then refuse.
+    // destroyed: nothing on this site reached `denied()`, so no event carried
+    // it either and the agent simply went quiet. Keep the decision, then
+    // refuse. (The op guard in `executeOp` reaches `denied()` too now; neither
+    // path is the exception the other once was.)
     if (decision.decision === "DENY" || decision.decision === "DEFER") {
       this.noteRefusal(req.agentId, decision, req.reason);
       return false;

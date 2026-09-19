@@ -152,15 +152,44 @@ export interface RawMeshFile {
       /**
        * How an outstanding ask may leave the ledger.
        *
-       * - "compat" (default): exact signals (`replyTo`, `discharge`,
-       *   operator, verdicts, supersede) plus inference when a response
-       *   merely looks like an answer (same thread, taskId, artifact refs).
-       * - "strict": only exact signals. Inference is disabled entirely —
-       *   a response without `replyTo` delivers content but discharges
-       *   nothing. Use for missions where a falsely-closed ask costs more
-       *   than a re-ask.
+       * - "strict" (default): only exact signals — `replyTo`, the `discharge`
+       *   op, an operator answer, a review verdict, a superseding artifact
+       *   version, and the worker-result contract (a HANDOFF carrying the
+       *   taskId its REQUEST_EXECUTION minted). A response without one of
+       *   those delivers its content and discharges nothing.
+       * - "compat": the above plus inference, where a response that merely
+       *   LOOKS like an answer (same thread, artifact refs) closes the ask.
+       *
+       * The default is strict because the two failure modes are not
+       * symmetric. Inference that fires wrongly closes an ask nobody
+       * answered, and does it silently: the asker's loop is marked done, the
+       * nudge machinery stops, and no event records that a guess was made.
+       * Inference that fails to fire leaves the ask open, which is visible —
+       * the asker is nudged, the ledger shows the debt, and (with a TTL set)
+       * it expires with a reason. A missing discharge costs a re-ask; a
+       * wrong one costs work that was never done and nobody noticed.
+       *
+       * Set "compat" for a mesh whose agents cannot be relied on to set
+       * `replyTo` and which would rather over-close than stall.
        */
       semantic?: "compat" | "strict";
+      /**
+       * How long an ask may go unanswered before the runtime closes it with
+       * `expired`, in milliseconds. Omitted or `0` means no deadline, which
+       * is how every mesh behaved before this key existed.
+       *
+       * The deadline is the debtor's, not the asker's: an ask to several
+       * agents gets the LONGEST of their roles' TTLs, so a slow role is never
+       * cut off because a fast one was also addressed.
+       */
+      ttl_ms?: number;
+      /**
+       * Per-role overrides of `ttl_ms`, keyed by the DEBTOR's role. A security
+       * review and a one-line fact lookup are not the same kind of wait, and
+       * a single global deadline has to be set for the slowest of them — at
+       * which point it stops bounding the fast ones at all.
+       */
+      ttl_ms_by_role?: Record<string, number>;
     };
     /**
      * How agent turns may issue ops.
@@ -357,6 +386,11 @@ export interface ResolvedMeshConfig {
   bus: {
     /** How an outstanding ask may leave the ledger. See RawMeshFile.bus. */
     commitmentSemantic: "compat" | "strict";
+    /**
+     * Deadline an ask opens with, by debtor role. See RawMeshFile.bus.
+     * `defaultMs: 0` (the default) means asks never expire.
+     */
+    commitmentTtl: { defaultMs: number; byRole: Record<string, number> };
     /** How agent turns may issue ops. See RawMeshFile.bus. */
     transport: "mixed" | "typed-only";
   };
@@ -653,7 +687,14 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     },
     policyRules: raw.policies?.rules ?? [],
     bus: {
-      commitmentSemantic: raw.bus?.commitments?.semantic ?? "compat",
+      commitmentSemantic: raw.bus?.commitments?.semantic ?? "strict",
+      // Defaults to "no deadline" on purpose. Expiry closes asks that would
+      // otherwise stay open, so turning it on is a behaviour change an
+      // operator should choose for a mission, not inherit from an upgrade.
+      commitmentTtl: {
+        defaultMs: raw.bus?.commitments?.ttl_ms ?? 0,
+        byRole: raw.bus?.commitments?.ttl_ms_by_role ?? {},
+      },
       transport: raw.bus?.transport ?? "mixed",
     },
     budgets: {

@@ -8,6 +8,19 @@ export type TaskId = string;
 export type DecisionId = string;
 export type EscalationId = string;
 export type LeaseId = string;
+/**
+ * One logical run of a goal: `<goalId>#<n>`, where `n` starts at 1 and
+ * increments on every `goal.reopened`.
+ *
+ * A goal that is reopened keeps its id, its artifacts, its decisions and its
+ * ratified evidence — so "which run was this judged in?" had no answer, and
+ * the runtime could not tell work that had already been rejected from work
+ * produced in answer to the rejection. That was patched twice, identity-side
+ * (`AcceptanceCriterion.rejectedEvidence`) and time-side (`Goal.reopenedAt`),
+ * each time for one specific fact. Stamping the episode makes it a field
+ * lookup instead of a bug class.
+ */
+export type EpisodeId = string;
 
 export const PROTOCOL_VERSION = "1.0";
 
@@ -305,6 +318,38 @@ export type EventType =
   | "agent.restarted"
   | "agent.replaced"
   | "agent.retired"
+  /**
+   * The seat's MCP bridge did not attach, so the agent cannot call back into
+   * the mesh: it will burn whole turns producing text nobody can act on. Read
+   * from the `init.mcp_servers` frame the runtime already records and which
+   * nothing previously consumed.
+   */
+  | "agent.mute_suspected"
+  /**
+   * The backend session behind a seat is about to be torn down and replaced.
+   * Raised BEFORE the teardown, while the seat still has a live transcript to
+   * write a continuity record from, so the successor starts from that record
+   * rather than from nothing.
+   *
+   * Rotation used to be invisible: the adapter's `onRotate` hook fired into no
+   * consumer at all, so the one moment an agent loses its entire working memory
+   * left no trace in the log, no card for the operator, and nothing for replay.
+   */
+  | "session.rotation_pending"
+  /**
+   * The replacement session is live. Carries the discarded transcript size, so
+   * the cost of the amnesia is a number in the log rather than an inference
+   * from a sudden drop in what the agent seems to know.
+   */
+  | "session.rotated"
+  /**
+   * A seat wrote down what it is carrying, before something takes its working
+   * memory away. Emitted from the `write_continuity` op, so the record is on
+   * the log — which is the entire point: the backend transcript is destroyed
+   * by a rotation, and a projection rebuilt from the log is the only memory
+   * that survives it.
+   */
+  | "continuity.recorded"
   | "thread.created"
   | "message.sent"
   | "message.delivered"
@@ -347,6 +392,17 @@ export type EventType =
   | "lease.acquired"
   | "lease.released"
   | "memory.updated"
+  /**
+   * What the runtime actually put in front of an agent for one turn: every
+   * context slot with how many items were admitted, how many were eligible and
+   * did not fit, and the token cost of each.
+   *
+   * Without it "why didn't the agent know X?" cannot be answered from the log.
+   * Sub-turn detail is live-only enrichment and absent from any turn
+   * reconstructed purely from the event stream, so a dropped item used to leave
+   * no evidence that it had ever been a candidate.
+   */
+  | "context.assembled"
   | "plan.updated"
   | "plan.gate_rejected"
   | "budget.reserved"
@@ -446,6 +502,20 @@ export interface Goal {
    * completion.
    */
   reopenedAt?: string;
+  /**
+   * Which run of this goal is current: 1 on creation, +1 on every reopen.
+   *
+   * `reopenedAt` answers "when", which is enough to date a single fact against
+   * the newest round and nothing more. An ordinal is an IDENTITY, so a fact
+   * stamped with `<goalId>#2` stays legible after a third and fourth reopen,
+   * and two facts can be compared without either of them carrying a clock.
+   */
+  episodeOrdinal?: number;
+}
+
+/** The episode this goal is currently in. See {@link EpisodeId}. */
+export function episodeOf(goal: Pick<Goal, "id" | "episodeOrdinal">): EpisodeId {
+  return `${goal.id}#${goal.episodeOrdinal ?? 1}`;
 }
 
 export type Authority = string;
@@ -739,6 +809,196 @@ export interface AgentMemoryNote {
   eventId: EventId;
 }
 
+/**
+ * The slots a turn's context is assembled from, in the order they are admitted.
+ *
+ * Order is the eviction policy. Everything above `mail` is what the agent needs
+ * to not repeat itself or contradict a standing obligation; everything below it
+ * is useful background. When the budget runs out the tail is dropped first, and
+ * the drop is recorded rather than silent, so a starved slot can be re-offered
+ * on the next turn instead of vanishing.
+ */
+export type ContextSlot =
+  /** What this seat's predecessor session knew. First because losing it is the
+   * one gap the agent cannot detect from inside the turn. */
+  | "continuity"
+  /** Outstanding asks this seat owes or is owed. Second because an agent that
+   * forgets an obligation stalls a peer, not just itself. */
+  | "commitments"
+  | "mission"
+  | "policy"
+  | "task"
+  | "decisions"
+  | "artifacts"
+  | "mail"
+  | "own_activity"
+  | "memory";
+
+export interface ContextSlotUsage {
+  slot: ContextSlot;
+  /** Items that made it into the prompt. */
+  admitted: number;
+  /** Items that were eligible and did not fit. Non-zero here is the signal
+   * that the agent is being asked to work from a partial picture. */
+  dropped: number;
+  tokens: number;
+}
+
+/**
+ * What the runtime actually put in front of an agent for one turn.
+ *
+ * The assembled bundle itself is not logged — it is large, mostly redundant
+ * across turns, and reconstructible. The manifest is the cheap durable record
+ * that makes the bundle's *shape* auditable: which slots were present, how much
+ * each cost, and what was left on the floor.
+ */
+export interface ContextManifest {
+  agentId: AgentId;
+  goalId?: GoalId;
+  /** Which logical run of the goal. A fact carried across a reopen belongs to
+   * the episode it was judged in, not the one reading it. */
+  episode?: string;
+  budgetTokens: number;
+  usedTokens: number;
+  slots: ContextSlotUsage[];
+  /**
+   * Which rung of the degradation ladder produced this bundle. Names match
+   * `tierName` in the supervisor rather than introducing a parallel vocabulary.
+   * `minimal` means the agent is working from little more than its task, and a
+   * turn that goes wrong under `minimal` should be read as starved rather than
+   * incapable.
+   */
+  tier: "full" | "reduced" | "tight" | "minimal";
+  /**
+   * True when even the tightest tier did not fit under the soft cap and the
+   * prompt was sent oversized. The alternative — slicing the string — would cut
+   * the ops contract off the end, so the turn goes out over budget by design.
+   */
+  overSoftCap: boolean;
+}
+
+/**
+ * Why a backend session is being replaced.
+ *
+ * `rotation` is the routine one: the transcript approached the context window
+ * and the adapter chose a fresh session over a truncated one. The others are
+ * involuntary.
+ */
+export type SessionEndReason = "rotation" | "restart" | "suspend" | "episode_boundary";
+
+export interface SessionRotationPending {
+  agentId: AgentId;
+  /** The session about to be discarded. */
+  sessionId: string;
+  reason: SessionEndReason;
+  /** Tokens accumulated on the outgoing transcript. This is the size of the
+   * memory that is about to be thrown away. */
+  transcriptTokens: number;
+  /** The threshold that tripped, for operators asking "why now?". */
+  thresholdTokens: number;
+}
+
+export interface SessionRotated {
+  agentId: AgentId;
+  fromSessionId: string;
+  toSessionId: string;
+  /** 1 for a seat's first session, incrementing on every replacement. A seat
+   * on ordinal 6 has forgotten five times. */
+  sessionOrdinal: number;
+  reason: SessionEndReason;
+  transcriptTokensDiscarded: number;
+  /** The record the outgoing session left, when it managed to write one. Absent
+   * means the rotation was involuntary or the write turn did not land, and the
+   * successor genuinely starts from nothing. */
+  continuityRecordId?: EventId;
+}
+
+/**
+ * A claim a seat is carrying forward, and what it is standing on.
+ *
+ * `basis` is mandatory. A belief with no citable basis is a rumour, and the
+ * whole reason the successor session can trust this record at all is that
+ * every line in it points at something still in the log.
+ */
+export interface Belief {
+  claim: string;
+  /** An artifact URI, a commitment (message) id, or an event id. */
+  basis: string;
+  /**
+   * `asserted` means the seat verified it. `assumed` means it proceeded on it
+   * without checking — which the successor needs to know, because an
+   * assumption inherited as a fact is how a wrong turn outlives the turn that
+   * took it.
+   */
+  confidence: "asserted" | "assumed";
+}
+
+/**
+ * Something this seat tried that was turned down, and by whom.
+ *
+ * Carried across a rotation because it is the single most expensive thing to
+ * rediscover: without it the successor re-proposes the rejected thing, the
+ * reviewer rejects it again, and neither of them can see the loop.
+ */
+export interface RejectionNote {
+  /** An artifact URI, or a short description when nothing was published. */
+  what: string;
+  rejectedBy: AgentId;
+  reason: string;
+  /** The run it was judged in. A rejection from a previous episode is history;
+   * one from this episode is a constraint. */
+  episode?: EpisodeId;
+}
+
+/**
+ * What a seat hands to its own successor when its backend session is replaced.
+ *
+ * The mesh and the backend hold two different memories of an agent. The mesh's
+ * is rebuilt from projections every turn and is bounded and inspectable; the
+ * backend's is an accumulating transcript the kernel cannot see, and it ends by
+ * being *destroyed* rather than rebuilt — rotation mints a fresh session, not a
+ * resume. This record is the only thing that crosses that gap, so it is written
+ * by the outgoing session, on the log, before the cliff.
+ *
+ * `openCommitments` is derived (the ledger already knows) and is included so
+ * the successor does not have to infer its obligations from prose. Everything
+ * else is authored: it is what the seat concluded, what it already tried, and
+ * what it was about to do next.
+ */
+export interface ContinuityRecord {
+  agentId: AgentId;
+  episode?: EpisodeId;
+  /** 1, 2, 3… successive backend sessions for one seat. */
+  sessionOrdinal: number;
+  writtenAt: string;
+  reason: SessionEndReason;
+  /** DERIVED from the commitment ledger at write time, not authored. */
+  openCommitments: MessageId[];
+  workingBeliefs: Belief[];
+  rejected: RejectionNote[];
+  /** One sentence: what this seat was about to do. */
+  nextIntent: string;
+  /** The `continuity.recorded` event this came from. */
+  eventId?: EventId;
+}
+
+/**
+ * A seat whose MCP bridge did not attach.
+ *
+ * The bridge is how an agent calls back into the mesh; without it the agent is
+ * still scheduled, still billed, and structurally incapable of acting. Detected
+ * from the backend's own `init` frame rather than inferred from silence, so it
+ * fires on the first turn instead of after a stall timeout.
+ */
+export interface MuteSuspected {
+  agentId: AgentId;
+  sessionId: string;
+  /** Servers the backend reported, with whatever status it gave them. */
+  servers: Array<{ name: string; status: string }>;
+  /** The mesh bridge specifically — its absence is what makes the seat mute. */
+  meshBridgeAttached: boolean;
+}
+
 export type ActivationReasonKind =
   | "interest_event"
   | "message"
@@ -783,6 +1043,17 @@ export interface MeshOpRequestResearch {
   to: AgentId;
   question: string;
   artifactRefs?: ArtifactRef[];
+  /**
+   * Set only when this op was desugared from a `call`: the contract that
+   * produced it, and its version. Never typed by a model.
+   *
+   * It rides into the message payload so the commitment ledger can read the
+   * contract's SLA on replay, and so a reader of the log can see WHICH named
+   * ask this was without re-deriving it from the prose. Without it these two
+   * ops would be the only contracts whose SLA silently did not apply.
+   */
+  contract?: string;
+  contractVersion?: number;
 }
 
 export interface MeshOpRespond {
@@ -851,6 +1122,17 @@ export interface MeshOpRequestReview {
   artifactId: ArtifactId;
   artifactUri?: string;
   reviewers: AgentId[];
+  /**
+   * Set only when this op was desugared from a `call`: the contract that
+   * produced it, and its version. Never typed by a model.
+   *
+   * It rides into the message payload so the commitment ledger can read the
+   * contract's SLA on replay, and so a reader of the log can see WHICH named
+   * ask this was without re-deriving it from the prose. Without it these two
+   * ops would be the only contracts whose SLA silently did not apply.
+   */
+  contract?: string;
+  contractVersion?: number;
 }
 
 export interface MeshOpApprove {
@@ -947,6 +1229,57 @@ export interface MeshOpDone {
   summary?: string;
 }
 
+/**
+ * Hand this seat's working state to its own successor session.
+ *
+ * Distinct from `remember` on purpose. A memory note is a durable key/value an
+ * agent chooses to keep across the whole mission; a continuity record is a
+ * snapshot of one session's in-flight reasoning, written at one moment, read
+ * once by the session that replaces it. Overloading `remember` would have put
+ * transient beliefs into permanent memory and blown its eviction budget.
+ *
+ * `openCommitments` is deliberately NOT a field: the ledger already knows what
+ * this seat owes, and an agent retyping its obligations would get them wrong in
+ * exactly the cases that matter. The reducer fills them in.
+ */
+/**
+ * Discovery. Ships in the same change as `call` and is not optional: a larger
+ * vocabulary that cannot be enumerated at runtime is strictly worse than a
+ * small one, because the only remaining way to find a name is to guess — which
+ * is the failure `op-aliases.ts` was built to absorb.
+ */
+export interface MeshOpContracts {
+  op: "contracts";
+  /** Narrow to what one role can answer. Omit for everything. */
+  role?: string;
+}
+
+/**
+ * One generic ask, against a published contract.
+ *
+ * `contract` names the ask; `request` is validated against that contract's
+ * schema BEFORE anything is sent, so a malformed ask is refused at the edge
+ * rather than delivered as a well-formed message carrying nonsense.
+ *
+ * `to` is optional on purpose. Omitting it asks the mesh to resolve a provider
+ * from the contract's capability among the seats this one may contact — the
+ * direction no existing table in the repo runs.
+ */
+export interface MeshOpCall {
+  op: "call";
+  contract: string;
+  request?: unknown;
+  to?: AgentId[];
+}
+
+export interface MeshOpWriteContinuity {
+  op: "write_continuity";
+  /** One sentence: what you were about to do next. */
+  nextIntent: string;
+  beliefs?: Belief[];
+  rejected?: RejectionNote[];
+}
+
 export interface MeshOpRemember {
   op: "remember";
   key: string;
@@ -1034,7 +1367,10 @@ export type MeshOp =
   | MeshOpEscalate
   | MeshOpWait
   | MeshOpDone
-  | MeshOpRemember
+  | MeshOpWriteContinuity
+  | MeshOpContracts
+  | MeshOpCall
+| MeshOpRemember
   | MeshOpPlan
   | MeshOpPlanStep
   | MeshOpAcquireLease
@@ -1060,6 +1396,16 @@ export interface AgentInput {
   activation: ActivationReason;
   context: AgentContextBundle;
   instructions: string;
+  /**
+   * Run this turn on the CURRENT transcript even though it is over the
+   * rotation threshold.
+   *
+   * Set only for the handover turn. Without it the adapter would rotate on the
+   * way in and the seat would be asked to write down what it knew by the one
+   * session that no longer knows it — the handover would run, produce a record
+   * full of nothing, and look like it had worked.
+   */
+  suppressRotation?: boolean;
   /**
    * Tools the operator has unlocked for this seat, as of THIS turn.
    *
@@ -1347,6 +1693,25 @@ export interface AgentRuntime {
   stop(session: AgentSession): Promise<void>;
   getStatus(session: AgentSession): Promise<AgentRuntimeStatus>;
   restoreSession?(agent: AgentDefinition, sessionId: string, context: RuntimeContext): Promise<AgentSession | null>;
+  /**
+   * Is this session about to have its transcript thrown away?
+   *
+   * Asked BEFORE the turn, by the supervisor, because the rotation itself is
+   * the adapter's business but the response to it is the mesh's. An adapter
+   * that simply rotated when it needed to left the mesh no moment at which the
+   * outgoing session was both alive and known to be ending — and that moment
+   * is the only one in which a continuity record can be written.
+   *
+   * Optional: a runtime with no notion of a context window answers by not
+   * implementing it, and the supervisor skips the whole path.
+   */
+  rotationPending?(session: AgentSession): RotationPendingInfo | null;
+}
+
+/** Why the supervisor is about to spend a turn on a handover. */
+export interface RotationPendingInfo {
+  transcriptTokens: number;
+  thresholdTokens: number;
 }
 
 /** One turn of designer conversation: persona and model, no mesh session. */
@@ -1506,6 +1871,22 @@ export interface AgentContextBundle {
   unreadMail: MeshMessage[];
   recentOwnActivity: string[];
   agentMemory: AgentMemoryNote[];
+  /**
+   * What the previous session in this seat handed over, if there was one.
+   *
+   * Renders FIRST, ahead of the mission, and is the last thing evicted under
+   * pressure. A seat reading this is by definition one whose working memory was
+   * just destroyed: everything else in the bundle it could in principle
+   * re-derive from the projections, and this is the only part it cannot.
+   */
+  continuity?: ContinuityRecord;
+  /**
+   * The run this turn is happening in. Carried on the bundle so anything the
+   * agent produces can be stamped with it without re-deriving it from the
+   * goal, and so the renderer can tell a record written in THIS run from one
+   * inherited across a reopen.
+   */
+  episode?: EpisodeId;
   /** Count of memory notes dropped by eviction; 0 when nothing was lost. */
   elidedMemory?: number;
   /**

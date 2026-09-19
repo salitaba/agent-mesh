@@ -1,15 +1,27 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import type { MeshMessage, Thread } from "../../protocol/src/index";
-import { RESPONSE_TYPES } from "../../protocol/src/index";
-import { MAX_UNREAD_PER_AGENT, MAX_FINGERPRINTS_PER_THREAD, dischargeCommitment, evictOverflowingPendingRequests, setBounded, stillOwes } from "./state";
+import { RESPONSE_TYPES, findContract } from "../../protocol/src/index";
+import type { CommitmentTtlConfig, DischargeRecord } from "./state";
+import {
+  MAX_DISCHARGE_HISTORY,
+  MAX_UNREAD_PER_AGENT,
+  MAX_FINGERPRINTS_PER_THREAD,
+  computeDueBy,
+  dischargeCommitment,
+  evictOverflowingPendingRequests,
+  ledgerAtCapacity,
+  pushBounded,
+  setBounded,
+  stillOwes,
+} from "./state";
 import { artifactForRef, bumpConflict, clearPendingForArtifactReview, fingerprintOf, hasPeerReviewerFor, holdsAuthority, pendingTargetsArtifact, recordApproval } from "./projections-helpers";
 
 export function applyMessagingEvent(
   state: Projections,
   event: MeshEvent,
   p: Record<string, any>,
-  config?: { commitmentSemantic?: "compat" | "strict" },
+  config?: { commitmentSemantic?: "compat" | "strict"; commitmentTtl?: CommitmentTtlConfig },
 ): boolean {
   switch (event.type) {
     case "thread.created": {
@@ -40,8 +52,38 @@ export function applyMessagingEvent(
         const rec = state.agents.get(target);
         if (rec) rec.state.mailboxDepth = box.length;
       }
-      const isRequest = m.type.startsWith("REQUEST") || m.type === "ESCALATE" || m.type === "CHALLENGE";
-      if (isRequest) {
+      /**
+ * A `mesh.call` stamps its contract name into the payload, and the contract
+ * catalogue is static, closed and importable — so the deadline stays a pure
+ * function of the log. An unknown name never reaches here (the op refuses it at
+ * the edge), and an unrecognised one simply yields no SLA.
+ */
+function contractSlaOf(m: { payload?: unknown }): number | undefined {
+  const name = (m.payload as { contract?: unknown } | undefined)?.contract;
+  return typeof name === "string" ? findContract(name)?.slaMs : undefined;
+}
+
+const isRequest = m.type.startsWith("REQUEST") || m.type === "ESCALATE" || m.type === "CHALLENGE";
+      if (isRequest && ledgerAtCapacity(state)) {
+        // Backpressure at open. The alternative — take the ask and evict the
+        // oldest to make room — drops the entries most likely to be genuinely
+        // stuck, and does it silently. Refusing here costs the asker one
+        // immediate, visible failure and loses nothing that was already owed.
+        //
+        // Recorded in the same ring an operator already reads to answer "what
+        // happened to my ask?". `refused_cap` says it was never opened, which
+        // is a different fact from `evicted_cap`'s "it was open and forced out".
+        const refusal: DischargeRecord = {
+          messageId: m.id,
+          from: m.from,
+          to: m.to,
+          type: m.type,
+          reason: "refused_cap",
+          by: "system",
+          at: m.timestamp,
+        };
+        pushBounded(state.discharged, refusal, MAX_DISCHARGE_HISTORY);
+      } else if (isRequest) {
         state.pendingRequests.set(m.id, {
           messageId: m.id,
           from: m.from,
@@ -50,6 +92,7 @@ export function applyMessagingEvent(
           threadId: m.threadId,
           taskId: m.taskId,
           createdAt: m.timestamp,
+          dueBy: computeDueBy(state, m.to, m.timestamp, config?.commitmentTtl, contractSlaOf(m)),
           goalId: m.goalId ?? event.goalId,
           artifactUris: (m.artifactRefs ?? []).map((r) => r.uri),
           // An ask to N agents is N obligations. Tracking them individually is

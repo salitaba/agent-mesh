@@ -96,6 +96,9 @@ test("pending: an in-thread INFORM from the asked agent resolves the request (no
       { id: "answerer", role: "architect", capabilities: ["review.design"], authority: ["architecture.approve"], interests: [] },
     ],
     mayContact: { asker: ["answerer"], answerer: ["asker"] },
+    // Inference, not an exact signal: this is the behaviour `compat` exists
+    // for, so it opts in rather than riding on whatever the default is.
+    bus: { commitments: { semantic: "compat" as const } },
   });
   const req = await m.supervisor.sendMessage({
     from: "asker",
@@ -217,6 +220,9 @@ test("pending: one answer discharges only the ask it reaches, not every ask in t
     ],
     mayContact: { architect: ["dev", "pm"], pm: ["dev", "architect"], dev: ["architect", "pm"] },
     mode: "parked",
+    // Inference, not an exact signal: this is the behaviour `compat` exists
+    // for, so it opts in rather than riding on whatever the default is.
+    bus: { commitments: { semantic: "compat" as const } },
   });
   const state = m.kernel.state;
 
@@ -257,6 +263,9 @@ test("pending: an in-thread answer addressed to the asker still discharges witho
     ],
     mayContact: { architect: ["dev"], dev: ["architect"] },
     mode: "parked",
+    // Inference, not an exact signal: this is the behaviour `compat` exists
+    // for, so it opts in rather than riding on whatever the default is.
+    bus: { commitments: { semantic: "compat" as const } },
   });
   const state = m.kernel.state;
   const ask = await m.supervisor.sendMessage({

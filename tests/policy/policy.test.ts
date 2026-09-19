@@ -70,6 +70,43 @@ test("policy: authority is required to approve or block", async () => {
   await m.cleanup();
 });
 
+test("policy: an authority denial names the seat that holds it", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", capabilities: ["review.design"], interests: [] },
+      { id: "pm", role: "pm", capabilities: ["repository.read"], authority: ["requirements.approve", "requirements.reject"], interests: [] },
+    ],
+    mayContact: { architect: ["pm"], pm: ["architect"] },
+  });
+  // The live shape this guards: a seat reviewed an artifact it had no authority
+  // to approve. The old refusal named only what was missing, so the seat had no
+  // move but to retry the same op — or, as happened, to narrate success and end
+  // its turn while the requester waited on a verdict that was never recorded.
+  const wrong = await m.supervisor.recordDecision("architect", "approve", "requirements");
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason ?? "", /lacks authority 'requirements\.approve'/);
+  assert.match(wrong.reason ?? "", /held by: pm/, "the refusal must name the route out");
+  await m.cleanup();
+});
+
+test("policy: an authority nobody holds says so rather than naming a dead end", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "qa", role: "qa", capabilities: ["test.write"], authority: ["quality.block"], interests: [] },
+    ],
+    mayContact: { dev: ["qa"], qa: ["dev"] },
+  });
+  // Nobody holds `quality.approve` here, and the human seat is deliberately not
+  // offered as the remedy: it holds `*` by design, so naming it would append
+  // "held by: human" to every denial and point at a seat the mesh cannot wake.
+  const wrong = await m.supervisor.recordDecision("dev", "approve", "quality");
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason ?? "", /no agent seat holds it/);
+  assert.doesNotMatch(wrong.reason ?? "", /human/);
+  await m.cleanup();
+});
+
 test("policy: developers cannot approve their own patches (layer 3)", async () => {
   const m = await makeMesh({
     agents: [

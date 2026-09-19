@@ -82,12 +82,24 @@ function escalation(over: Partial<Escalation> & { id: string }): Escalation {
 // --- discharge reason sets -------------------------------------------------
 
 test("per-debtor reasons are exactly the 'an agent responded' paths", () => {
-  assert.deepEqual([...PER_DEBTOR_DISCHARGE_REASONS].sort(), ["artifact_review", "in_thread", "reply"]);
+  // A refusal is a response: the debtor spoke, so only that debtor's obligation
+  // closes. A per-debtor reason must never close the obligations of the other
+  // agents the same ask was addressed to.
+  assert.deepEqual(
+    [...PER_DEBTOR_DISCHARGE_REASONS].sort(),
+    ["artifact_review", "in_thread", "refused", "reply"],
+  );
   // A reason cannot be both an exact signal and an inference.
   assert.equal(INFERRED_DISCHARGE_REASONS.has("reply"), false);
+  assert.equal(INFERRED_DISCHARGE_REASONS.has("refused"), false);
   assert.equal(INFERRED_DISCHARGE_REASONS.has("in_thread"), true);
-  // Eviction and deadlock breaks are losses, not answers.
-  assert.deepEqual([...UNANSWERED_DISCHARGE_REASONS].sort(), ["deadlock_break", "evicted_cap"]);
+  // Losses, not answers: nobody told the asker anything it can act on. A refusal
+  // is deliberately absent — the asker was told "no", which is an answer.
+  assert.deepEqual(
+    [...UNANSWERED_DISCHARGE_REASONS].sort(),
+    ["deadlock_break", "evicted_cap", "expired", "refused_cap"],
+  );
+  assert.equal(UNANSWERED_DISCHARGE_REASONS.has("refused"), false);
 });
 
 // --- dischargeCommitment ---------------------------------------------------

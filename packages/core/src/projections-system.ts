@@ -49,6 +49,25 @@ export function applySystemEvent(state: Projections, event: MeshEvent, p: Record
       );
       break;
     }
+    // The successor session is live. Recorded so `write_continuity` can stamp
+    // the right ordinal without asking the adapter, and so an operator reading
+    // the log can tell a seat on its fourth transcript from one on its first.
+    case "session.rotated": {
+      const agentId = (p.agentId as string) ?? event.actorId;
+      const n = Number(p.sessionOrdinal);
+      if (agentId && Number.isFinite(n) && n > 0) state.sessionOrdinal.set(agentId, n);
+      break;
+    }
+    // Latest-wins: a seat that rotates twice has one predecessor worth
+    // reading, the most recent. The record replaces rather than merges so a
+    // belief the seat dropped does not outlive the session that dropped it.
+    case "continuity.recorded": {
+      const rec = p as unknown as import("../../protocol/src/index").ContinuityRecord;
+      const agentId = rec.agentId ?? event.actorId;
+      if (!agentId) break;
+      state.continuity.set(agentId, { ...rec, agentId, eventId: event.id, writtenAt: rec.writtenAt ?? event.timestamp });
+      break;
+    }
     case "memory.updated": {
       const { agentId, note } = p as { agentId: string; note: import("../../protocol/src/index").AgentMemoryNote };
       const m = state.memory.get(agentId) ?? new Map();

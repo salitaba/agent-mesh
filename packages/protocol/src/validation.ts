@@ -3,6 +3,7 @@ import addFormats from "ajv-formats";
 import type { ValidateFunction } from "ajv";
 import { ARTIFACT_TYPES } from "./catalog";
 import { SCHEMAS, type SchemaName } from "./schemas";
+import type { Contract } from "./contracts";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
@@ -108,4 +109,32 @@ export function validateArtifact(artifact: unknown): ValidationResult {
 
 export function validateMeshConfig(config: unknown): ValidationResult {
   return validateSchema("mesh", config);
+}
+
+/**
+ * Validate a `mesh.call` request body against its contract's schema.
+ *
+ * Compiled lazily and cached per contract name+version: a contract's schema is
+ * immutable, so the cache cannot go stale, and the alternative — compiling on
+ * every call — would put an Ajv compile in the hot path of every ask.
+ *
+ * This is the edge the whole stage is built on. Without it a contract is just
+ * a nicer-sounding type string, and the failure mode it exists to stop — an
+ * ask that is well-formed on the wire and meaningless to the reader — survives
+ * intact.
+ */
+const contractValidators = new Map<string, ValidateFunction>();
+
+export function validateContractRequest(contract: Contract, request: unknown): ValidationResult {
+  const key = `${contract.name}@${contract.version}`;
+  let v = contractValidators.get(key);
+  if (!v) {
+    v = ajv.compile(contract.request as object);
+    contractValidators.set(key, v);
+  }
+  // An object schema with required fields must not be handed `undefined`: Ajv
+  // reports that as a bare type error naming no field, which tells the seat
+  // nothing about what it left out.
+  const ok = v(request ?? {});
+  return { valid: ok === true, errors: ok ? [] : (v.errors || []).map(fmt) };
 }

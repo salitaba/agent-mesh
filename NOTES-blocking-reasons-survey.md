@@ -211,22 +211,52 @@ Copy that fails (3) is worse than no copy: it is what produced the original bug.
 
 ---
 
-## Working-set note — one key is mid-change right now
+## Working-set note — RE-VERIFIED, and it was wrong in one place
 
-The uncommitted diff (`packages/policy-engine`, `packages/core/mission-guards.ts`,
-`packages/protocol/catalog.ts`) **removes the `goal-state` gate** that denied
-every non-`ESCALATE` message while `ESCALATED`/`BLOCKED`, and moves halt
-enforcement to `MISSION_HALTED_ALLOW_OPS` in `executeOp`.
+The diff has landed (`dbb598f`, "enforce a halt at the op guard, not the message
+gate"): it **removed the `goal-state` gate** that denied every non-`ESCALATE`
+message while `ESCALATED`/`BLOCKED`, and moved halt enforcement to
+`MISSION_HALTED_ALLOW_OPS` in `executeOp`.
 
-Consequences for this table, already folded in above:
-- `ruleId: "goal-state"` is **going away** — do not build a surface for it.
-- Halt now blocks at the **op** layer, not the message layer, so it reaches
-  `denied()` → S2. This is an improvement for surfacing.
-- `MISSION_HALTED_ALLOW_OPS` is a new Layer E row: talking is allowed while
-  halted, publishing and landing are frozen. An operator watching agents chat
-  during a halt will reasonably think work is progressing. **Worth a banner.**
+What held on re-verification:
+- `ruleId: "goal-state"` is gone from live code — do not build a surface for it.
+  It was **replaced, not deleted**: `goal-halted` (`policy-engine/src/index.ts`,
+  in `evaluateActivation`) is the ruleId a halt carries now.
+- Halt does block at the **op** layer (`supervisor.ts`, top of `executeOp`).
 
-Re-verify this section before implementing; it was uncommitted at survey time.
+What did **not** hold — the claim this section told you to re-verify:
+- "so it reaches `denied()` → S2. This is an improvement for surfacing" is
+  **false**. The guard returns a bare `OpResult` — `{ ok, op, reason }`, no
+  event emitted — and `OpResult` has no `ruleId` field, so a halt denial cannot
+  structurally carry one. Moving the gate out of the message layer *lost* the
+  surface rather than gaining it. **A halted op is S4 (silent), not S2.**
+
+**The obvious fix is blocked by a deliberate decision — do not just apply it.**
+Calling `denied()` from the op guard typechecks and reads correctly, but
+`tests/policy/mission-freeze.test.ts:40-48` asserts the `message.rejected`
+count **does not move** while frozen ("guard must refuse before the policy
+layer emits rejections", "with no rejection event spam"). Three blocked ops
+produce three events and it fails. So the silence is intentional: the guard is
+on the hot path for the MCP bus, where a client can hammer refused ops and each
+one would emit. Surfacing this needs a **dedupe**, not an emit — the shape
+already in the scheduler (`lastRefusal` / `reportedRefusal`, one event per
+agent per distinct refusal) is the precedent. Attempted and reverted; the
+conflict is now recorded in a comment at the guard.
+
+Why the allowlist is narrower in practice than it reads:
+- `MISSION_HALTED_ALLOW_OPS` permits `escalate`/`send`/`wait`/`done`/`remember`/
+  `read_artifact`. But `evaluateActivation` denies or defers **every** activation
+  while halted, and `runTurn` breaks its op loop before the first op on a
+  mid-turn halt. So on the prose/turn path no halted agent executes any op at
+  all — the allowlist only takes effect on the **MCP bus**, which calls
+  `executeOp` directly and never passes the activation guard.
+- So "an operator watching agents chat during a halt" is reachable only for
+  MCP-driven seats. The dashboard's "Mission is paused. Nothing is running."
+  is accurate for turn-driven missions; **do not "fix" it** on the strength of
+  the allowlist alone. Check how the mesh in question drives its agents first.
+- `BLOCKED` was missing from `evaluateActivation`'s halted statuses (it is a
+  real `GoalStatus`), so a BLOCKED mission let activations through to pay for a
+  model call that then died at `runTurn`'s break with only an audit line. Added.
 
 ## Not verified — do not rely on without checking
 

@@ -52,15 +52,24 @@ import {
   type BudgetHint,
   type PolicyDecisionResult,
   type TrustSource,
+  type ContinuityRecord,
+  type MeshOpWriteContinuity,
+  type RotationPendingInfo,
+  type SessionRotationPending,
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
+import { episodeOf } from "../../protocol/src/index";
+import { BUILTIN_CONTRACTS, findContract, unknownContractReason } from "../../protocol/src/index";
+import { validateContractRequest } from "../../protocol/src/validation";
+import type { Contract, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
-import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
+import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
+import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, transitionLifecycle } from "./projections";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
@@ -71,6 +80,7 @@ import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
 import type {
   ArtifactContentStore,
   CriteriaGeneratorPort,
+  PolicyContext,
   PolicyEvaluator,
   RuntimeResolver,
   SchedulerActivationRequest,
@@ -81,7 +91,7 @@ import type {
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
-import { buildAgentContext, renderContextInstructions } from "./context";
+import { buildAgentContext, buildContextManifest, renderContextInstructions } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri } from "../../protocol/src/uri";
@@ -89,6 +99,7 @@ import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, t
 import {
   MISSION_HALTED_ALLOW_OPS,
   MISSION_OVER_ALLOW_OPS,
+  HANDOVER_ALLOW_OPS,
   haltedGoalStatus,
   haltReasonText,
 } from "./mission-guards";
@@ -136,6 +147,47 @@ export interface OpResult {
   truncated?: boolean;
   nextOffset?: number;
   totalChars?: number;
+  /** Set by the `contracts` op: what this seat may ask for, and of whom. */
+  contracts?: ContractListing[];
+}
+
+/** One row of `mesh.contracts` — a contract plus who can currently answer it. */
+export interface ContractListing {
+  name: string;
+  version: number;
+  summary: string;
+  request: Record<string, unknown>;
+  refusals: string[];
+  slaMs?: number;
+  requiresCapability?: string;
+  providers: string[];
+}
+
+/** Accept `to` as a string or a list of them; anything else is not a recipient. */
+/**
+ * The contract fields a desugared op carries, or nothing. Spread into a
+ * message payload so `contractSlaOf` can find the SLA on replay.
+ */
+function contractStamp(op: { contract?: string; contractVersion?: number }): Record<string, unknown> {
+  return op.contract ? { contract: op.contract, contractVersion: op.contractVersion } : {};
+}
+
+function asIdList(v: unknown): string[] | undefined {
+  if (typeof v === "string" && v.trim()) return [v.trim()];
+  if (Array.isArray(v)) {
+    const ids = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+    return ids.length > 0 ? ids : undefined;
+  }
+  return undefined;
+}
+
+/** A thread subject when the caller did not write one. */
+function firstWords(request: Record<string, unknown>): string {
+  for (const key of ["ask", "question", "what", "claim", "reason"]) {
+    const v = request[key];
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, 70);
+  }
+  return "request";
 }
 
 export const HUMAN_AGENT_ID = "human";
@@ -289,7 +341,14 @@ const CONTEXT_LIMITS_REDUCED: ContextLimits = {
 /** Ordered widest-to-narrowest. The soft cap walks this and stops at the first tier that fits. */
 export const CONTEXT_TIER_LADDER: ContextLimits[] = [CONTEXT_LIMITS_REDUCED, CONTEXT_LIMITS_TIGHT, CONTEXT_LIMITS_MINIMAL];
 
-export function tierName(t: ContextLimits | undefined): string {
+/**
+ * Name the rung, as a closed union rather than a string.
+ *
+ * The narrow return type is load-bearing now that `context.assembled` carries
+ * the tier: a new rung added to the ladder without a name here becomes a
+ * compile error at the emit site instead of a silent "full" in the audit log.
+ */
+export function tierName(t: ContextLimits | undefined): "full" | "reduced" | "tight" | "minimal" {
   if (t === CONTEXT_LIMITS_MINIMAL) return "minimal";
   if (t === CONTEXT_LIMITS_TIGHT) return "tight";
   if (t === CONTEXT_LIMITS_REDUCED) return "reduced";
@@ -444,6 +503,33 @@ function declaredTurnSummary(output: AgentOutput): string | undefined {
 }
 
 
+/**
+ * What a seat is told on the one turn it gets before its memory is taken.
+ *
+ * Written as an instruction rather than a notification. "Your session is being
+ * rotated" is a fact about infrastructure and reads as noise; what the seat
+ * needs is the shape of the record and the reason the shape matters, because
+ * it is about to be the only reader-facing account of everything it knows.
+ *
+ * It says what NOT to include for the same reason: an agent told to hand over
+ * its state writes a summary of the conversation, which is the one thing the
+ * successor does not need — the projections already carry the facts, and the
+ * mesh already carries the ledger. What is lost is judgement.
+ */
+const HANDOVER_INSTRUCTION = (info: RotationPendingInfo): string =>
+  [
+    `Your backend session is full (${info.transcriptTokens} of ${info.thresholdTokens} context tokens) and will be replaced before your next turn.`,
+    "Everything you are holding in your head goes with it. The mesh keeps the log, the artifacts and your open asks; it does not keep what you concluded from them.",
+    "",
+    "Spend this turn on `write_continuity`, then `done`. Nothing else will be accepted.",
+    "",
+    "- `nextIntent`: one sentence on what you were about to do.",
+    "- `beliefs`: what you worked out that is NOT already written down somewhere, each with the artifact, message or event it rests on, and marked `asserted` if you checked it or `assumed` if you merely proceeded on it.",
+    "- `rejected`: anything you already proposed that was turned down, and by whom — so your successor does not propose it again.",
+    "",
+    "Do not summarise the conversation, and do not list your open asks: the mesh fills those in from the ledger.",
+  ].join("\n");
+
 interface TurnState {
   turnId: string;
   agentId: string;
@@ -457,10 +543,21 @@ interface TurnState {
    *  turn (e.g. request_review) refer to "the artifact I just published" when
    *  the model's URI guess doesn't resolve. */
   publishedIds?: string[];
+  /**
+   * This turn exists only to write a continuity record; see `handoverTurn`.
+   * Ops outside `HANDOVER_ALLOW_OPS` are refused for the reason on that set.
+   */
+  handover?: boolean;
 }
 
 export class Supervisor {
   private sessions = new Map<string, { session: import("../../protocol/src/index").AgentSession; runtime: AgentRuntime }>();
+  /**
+   * Seat -> the session ordinal whose handover has already been requested.
+   * Keyed by ordinal rather than by session id because a rotation REUSES the
+   * mesh session id: the transcript is new, the handle is not.
+   */
+  private continuityAsked = new Map<string, number>();
   private turnInFlight = new Set<string>();
   /** Turn ids the silence detector already interrupted — one interrupt per turn. */
   private interruptedTurnIds = new Set<string>();
@@ -708,10 +805,18 @@ export class Supervisor {
    * mesh did — exactly the class of live-vs-replay divergence the commitment
    * ledger was built to eliminate.
    */
-  projectionConfig(): { transitionGates: Record<string, string[]>; commitmentSemantic: "compat" | "strict" } {
+  projectionConfig(): {
+    transitionGates: Record<string, string[]>;
+    commitmentSemantic: "compat" | "strict";
+    commitmentTtl: { defaultMs: number; byRole: Record<string, number> };
+  } {
     return {
       transitionGates: this.config.transitionGates,
       commitmentSemantic: this.config.bus.commitmentSemantic,
+      // Carried for the same reason as the semantic: `dueBy` is stamped by the
+      // reducer at open time, so a replay without this knob would rebuild a
+      // ledger whose asks have no deadlines and never expire.
+      commitmentTtl: this.config.bus.commitmentTtl,
     };
   }
 
@@ -1544,9 +1649,16 @@ export class Supervisor {
       await this.deps.kernel.emit(
         "commitment.discharged",
         {
+          // `detail` is spread FIRST so a caller can never overwrite the
+          // ledger's own fields. It used to come last, and a caller passing a
+          // free-text `reason` in its detail silently rewrote the canonical
+          // `DischargeReason` -- the reducer reads `p.reason` straight out of
+          // this payload, so the ledger recorded a sentence where an enum
+          // member belonged and every `PER_DEBTOR_/UNANSWERED_` membership
+          // test on it quietly answered false.
+          ...detail,
           messageId, reason, by, from: pending.from, to: pending.to, requestType: pending.type,
           ...(partial ? { partial: true, remaining: remainingAfter } : {}),
-          ...detail,
         },
         { actorId: by, goalId: this.state.activeGoalId ?? undefined },
       );
@@ -1588,6 +1700,9 @@ export class Supervisor {
         : reason === "artifact_review" ? "a review verdict landed on its artifact"
         : reason === "task" ? "its task was answered"
         : reason === "in_thread" ? "an in-thread answer arrived"
+        : reason === "refused" ? `${by} declined it — do not re-ask the same agent; route it elsewhere or proceed without it`
+        : reason === "expired" ? "its deadline passed with no answer — treat it as UNANSWERED and decide without it or re-ask"
+        : reason === "refused_cap" ? "the ask ledger was full so it was never opened — re-ask once outstanding work drains"
         : "it was closed";
       await this.activateAgent(pending.from, {
         kind: "recovery",
@@ -3312,6 +3427,19 @@ export class Supervisor {
     //    timer runs, and clearing the queue underneath a live pump would drop
     //    activations we are about to make.
     this.deps.scheduler.resetMissionState?.();
+    // 4b. The supervisor keeps its OWN per-seat penalty counters, and they are
+    //     not the scheduler's to clear. A reopen that resets the scheduler's
+    //     strikes but leaves `restartAttempts` at its limit produces a seat the
+    //     scheduler is willing to run and the supervisor refuses to restart —
+    //     which reads as a silently dead agent in a mission the operator just
+    //     revived. Every one of these counts failures against a round that is
+    //     now over.
+    this.restartAttempts.clear();
+    this.unreachableStreak.clear();
+    this.timeoutRetries.clear();
+    // A new episode judges beliefs afresh, so a handover already requested in
+    // the previous round should not suppress one in this round.
+    this.continuityAsked.clear();
 
     // 5. Restart the scheduler. `start()` is idempotent, so a mission that was
     //    reopened while still live is unharmed.
@@ -3499,6 +3627,9 @@ export class Supervisor {
     // it, so the streak has to break on any real turn rather than only on a
     // watchdog-driven one.
     let turnProducedWork = false;
+    // Set when this turn was spent on a handover; holds the reason the seat was
+    // ACTUALLY woken for, so the `finally` can give it back.
+    let handoverReactivation: ActivationReason | null = null;
     try {
       // budget reservation
       const agentReserveAmount = this.sizedTurnReserve(agentId);
@@ -3630,6 +3761,8 @@ export class Supervisor {
       );
 
       const session = await this.ensureSession(agentId);
+      const handover = await this.openHandover(agentId, session, turnId, activationEvt.id);
+      if (handover) handoverReactivation = reason;
       // build context from undelivered mail first, then drain via delivery events
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
       const rawBundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
@@ -3648,7 +3781,8 @@ export class Supervisor {
         );
       }
       const renderTurn = (b: AgentContextBundle): string =>
-        renderContextInstructions(b) + `\n\n## Why you were woken\n${describeReason(reason)}\n\nEmit your reply as mesh operations.`;
+        renderContextInstructions(b) +
+        `\n\n## Why you were woken\n${handover ? HANDOVER_INSTRUCTION(handover) : describeReason(reason)}\n\nEmit your reply as mesh operations.`;
       // Item caps bound how MANY things go in, never how big they are. When the
       // assembled result still lands over budget, shrink the bundle and
       // re-render — never slice the string (see the constant's comment).
@@ -3688,6 +3822,30 @@ export class Supervisor {
        * still charges the real figure either way.
        */
       const promptTokens = estimateTokens(instructions.length);
+
+      /**
+       * Record what this turn was actually given, slot by slot.
+       *
+       * Emitted here rather than inside the builder because the ladder walk
+       * above may have built the bundle several times; only the one that ships
+       * is worth a record. `routine` severity — one per turn per awake agent is
+       * the noisiest type in the catalog — but it is the only durable answer to
+       * "why didn't the agent know X?", which until now could not be asked of a
+       * turn reconstructed from the log at all.
+       */
+      await this.deps.kernel.emit(
+        "context.assembled",
+        buildContextManifest(bundle, {
+          agentId,
+          goalId,
+          budgetTokens: INSTRUCTIONS_SOFT_CAP_TOKENS,
+          usedTokens: promptTokens,
+          tier: tierName(fitted.tier),
+          overSoftCap: !fitted.landed,
+        }),
+        { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+      );
+
       const topped = await topUpPromptHold(this.deps.budget, {
         agentId,
         promptTokens,
@@ -3727,6 +3885,9 @@ export class Supervisor {
         activation: reason,
         context: bundle,
         instructions,
+        // The whole point of a handover turn: it must run on the transcript it
+        // is describing. See `AgentInput.suppressRotation`.
+        suppressRotation: handover !== null,
         // Re-read per turn, not inherited from the session's RuntimeContext:
         // `toolGrants` is the live truth and an operator can change it between
         // turns of a session that never restarts.
@@ -3767,7 +3928,7 @@ export class Supervisor {
         },
       };
 
-      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [] };
+      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [], handover: handover !== null };
       this.deps.hooks?.onAgentTurnStart?.(agentId, turnId);
       this.markTurn(turnId, "llmCallAt");
       const output = await this.callRuntimeWithTimeout(agentId, session, input, turnId);
@@ -4050,6 +4211,17 @@ export class Supervisor {
       this.turnVerificationTools.delete(agentId);
       this.lastTurnAt = Date.now();
       this.deps.scheduler.notifyTurnFinished(agentId);
+      // The handover turn CONSUMED the activation that woke this seat, so the
+      // work it was woken for has not happened. Put it back — after
+      // `notifyTurnFinished`, so the scheduler is no longer holding this agent
+      // as running and the request is admitted rather than stashed.
+      //
+      // This cannot loop: the next turn comes in without `suppressRotation`,
+      // the adapter rotates on the way in, and `openHandover` will not ask
+      // again until the seat has crossed the threshold on a LATER transcript.
+      if (handoverReactivation) {
+        this.activateAgent(agentId, handoverReactivation, { explicit: true });
+      }
       void this.afterActivity();
       // A turn that changed nothing must not restart the stall clock for the
       // full idle + cooldown: the mission is quiet, nothing is queued, and the
@@ -4451,9 +4623,29 @@ export class Supervisor {
         if (!(halted === "COMPLETED" && followUpTurn && op.op === "send")) {
           const terminal = halted === "COMPLETED" || halted === "FAILED";
           const allowed = terminal ? MISSION_OVER_ALLOW_OPS : MISSION_HALTED_ALLOW_OPS;
+          // Deliberately silent: no `denied()` call here. This guard refuses
+          // before the policy layer runs, and `tests/policy/mission-freeze.ts`
+          // asserts the rejection-event count does not move. The cost is that
+          // a halted op is the one block in the system carrying no event — see
+          // NOTES-blocking-reasons-survey.md, which wants it surfaced. Those
+          // two wants are in conflict; do not resolve it by editing either
+          // side without deciding what an MCP client hammering ops should
+          // produce (the scheduler's `lastRefusal`/`reportedRefusal` dedupe is
+          // the shape that would satisfy both).
           if (!allowed.has(op.op)) return { ok: false, op: op.op, reason: haltReasonText(halted) };
         }
       }
+    }
+    // A handover turn is spent, in full, on the record. Refused OUT LOUD,
+    // unlike the halt guard above: the seat asked for this turn no more than
+    // the mission did, so a bare silent no-op would read to the model as the
+    // op having worked.
+    if (turn.handover && !HANDOVER_ALLOW_OPS.has(op.op)) {
+      return {
+        ok: false,
+        op: op.op,
+        reason: "this turn is a handover: your session is about to be replaced. Call write_continuity, then done. Whatever else you were doing, the session that replaces you will pick up from what you write.",
+      };
     }
     // Plan gate. Off by default and for the human seat; see HardActionsPolicy.
     // Deliberately placed after the halt guard and before every op handler, so
@@ -4523,7 +4715,7 @@ export class Supervisor {
             type: "REQUEST_RESEARCH",
             newThread: { subject: `research: ${op.question.slice(0, 80)}`, artifactRefs: op.artifactRefs },
             artifactRefs: op.artifactRefs,
-            payload: { question: op.question },
+            payload: { question: op.question, ...contractStamp(op) },
           });
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
@@ -4557,8 +4749,23 @@ export class Supervisor {
               reason: `only ${outstandingDebtors(pending).join(", ")} may discharge this request`,
             };
           }
-          // Tell the asker before closing: a silently-closed ask leaves it
-          // waiting on an answer that will now never come.
+          // Close FIRST, then notify. The order matters and it used to be the
+          // other way round, which made the decline unrecordable: the notice
+          // carries `replyTo`, so the reducer discharged the ask as `reply`
+          // the moment the notice was logged, and the explicit discharge below
+          // then found nothing pending and silently did nothing. A refusal was
+          // therefore indistinguishable from an answer in the ledger, and the
+          // `declined: true` detail never reached the log at all.
+          //
+          // The asker is not left hanging by the reorder: `dischargeCommitment`
+          // wakes it with a reason of its own before this returns, and the
+          // notice below follows with the agent's own words.
+          const closed = await this.dischargeCommitment(op.messageId, "refused", actorId, { declined: true, note: op.reason });
+          if (!closed) {
+            // The discharge event did not reach the log, so the ask is still
+            // open. Say so rather than sending a notice that claims otherwise.
+            return { ok: false, op: op.op, reason: `could not close '${op.messageId}' — it is still open` };
+          }
           const notice = await this.sendMessage({
             from: actorId,
             to: [pending.from],
@@ -4569,7 +4776,6 @@ export class Supervisor {
             payload: { declined: true, request: op.messageId, reason: op.reason },
             priority: "HIGH",
           });
-          await this.dischargeCommitment(op.messageId, "reply", actorId, { declined: true, reason: op.reason });
           turn.sentOps++;
           return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
         }
@@ -4643,7 +4849,7 @@ export class Supervisor {
             type: "REQUEST_REVIEW",
             newThread: { subject: `review ${a.name}`, artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }] },
             artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }],
-            payload: { question: `Review ${a.type} ${a.name} v${a.version}` },
+            payload: { question: `Review ${a.type} ${a.name} v${a.version}`, ...contractStamp(op) },
           });
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
@@ -4728,6 +4934,15 @@ export class Supervisor {
         case "remember": {
           await this.rememberMemory(actorId, op.key, op.value);
           return { ok: true, op: op.op };
+        }
+        case "write_continuity": {
+          return this.writeContinuity(actorId, op);
+        }
+        case "contracts": {
+          return this.listContracts(actorId, op);
+        }
+        case "call": {
+          return this.callContract(actorId, op, turn);
         }
         case "plan": {
           return this.updatePlan(actorId, op.steps ?? [], op.taskId);
@@ -5189,6 +5404,271 @@ export class Supervisor {
       agentId,
       note: { agentId, key, value, updatedAt: this.deps.kernel.clock.iso(), eventId: "" },
     }, { actorId: agentId });
+  }
+
+  /**
+   * Decide whether THIS turn should be spent on a handover, and open it if so.
+   *
+   * Asked before the bundle is built, because the answer changes what the turn
+   * is. The alternative — letting the adapter rotate silently and telling the
+   * successor afterwards — cannot work: by the time anyone knows the rotation
+   * happened, the session that had something to say about it is gone.
+   *
+   * Asked at most once per transcript. A seat that ignores the instruction, or
+   * whose handover turn dies, does NOT get asked again on the same session:
+   * the next turn rotates normally and the successor starts cold. That is a
+   * worse outcome than a handover and a better one than a seat that can never
+   * do anything else, and the empty `continuity` slot in the next turn's
+   * manifest says which happened.
+   */
+  private async openHandover(
+    agentId: string,
+    session: { session: import("../../protocol/src/index").AgentSession; runtime: AgentRuntime },
+    turnId: string,
+    causationId: string,
+  ): Promise<RotationPendingInfo | null> {
+    if (!session.runtime.rotationPending) return null;
+    let info: RotationPendingInfo | null = null;
+    try {
+      info = session.runtime.rotationPending(session.session);
+    } catch {
+      // A runtime that cannot answer is a runtime that does not rotate, as far
+      // as this path is concerned. Never fail a turn over a handover.
+      return null;
+    }
+    if (!info) return null;
+    const ordinal = this.state.sessionOrdinal.get(agentId) ?? 1;
+    if (this.continuityAsked.get(agentId) === ordinal) return null;
+    this.continuityAsked.set(agentId, ordinal);
+    await this.deps.kernel.emit(
+      "session.rotation_pending",
+      {
+        agentId,
+        sessionId: session.session.sessionId,
+        reason: "rotation",
+        transcriptTokens: info.transcriptTokens,
+        thresholdTokens: info.thresholdTokens,
+      } satisfies SessionRotationPending,
+      { actorId: agentId, causationId, correlationId: turnId },
+    );
+    this.auditLine(`${agentId} is at ${info.transcriptTokens}/${info.thresholdTokens} context tokens — spending this turn on a handover`);
+    return info;
+  }
+
+  /**
+   * Put a seat's working state on the log, so it survives the destruction of
+   * the transcript that holds it.
+   *
+   * Three of the four fields are filled HERE rather than by the model, and for
+   * the same reason ids are: a record the successor is supposed to trust must
+   * not depend on the outgoing session getting its own bookkeeping right while
+   * it is running out of context.
+   *
+   * - `openCommitments` comes from the ledger. An agent listing its own debts
+   *   from memory omits exactly the ones it has forgotten, which are the ones
+   *   the successor most needs.
+   * - `episode` comes from the active goal. A belief is only as good as the
+   *   run it was formed in, and after a reopen the successor has to be able to
+   *   tell the two apart.
+   * - `sessionOrdinal` comes from the rotation projection.
+   */
+  /**
+   * Discovery. This is the half of the contract change that makes the other
+   * half safe: a seat that does not know a name can ask, instead of guessing
+   * and relying on an alias table to catch it.
+   *
+   * Providers are resolved LIVE against the roster and the communication
+   * policy, so the answer is "who can I actually ask, right now", not a static
+   * catalogue reprint. A contract whose provider capability nobody holds is
+   * still listed, with an empty provider list and the capability named — that
+   * is a fact about the mesh worth seeing, and hiding it would look to a seat
+   * like the contract does not exist.
+   */
+  /** The shape every policy call in this file builds by hand; named once here. */
+  private policyContext(): PolicyContext {
+    const goalId = this.state.activeGoalId ?? "";
+    return { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
+  }
+
+  private listContracts(actorId: string, op: MeshOpContracts): OpResult {
+    const wantRole = typeof op.role === "string" && op.role.trim() ? op.role.trim() : undefined;
+    const ctx = this.policyContext();
+    const contracts = BUILTIN_CONTRACTS.map((c) => {
+      const providers = this.resolveProviders(actorId, c, ctx).filter(
+        (id) => !wantRole || this.config.agents[id]?.role === wantRole,
+      );
+      return {
+        name: c.name,
+        version: c.version,
+        summary: c.summary,
+        request: c.request,
+        refusals: c.refusals,
+        slaMs: c.slaMs,
+        requiresCapability: c.provider,
+        providers,
+      };
+    }).filter((c) => !wantRole || c.providers.length > 0);
+    return { ok: true, op: op.op, contracts };
+  }
+
+  /**
+   * Seats that could answer this contract, and that `actorId` is allowed to
+   * ask. The capability filter and the communication filter are both applied
+   * here rather than left to `sendMessage`, because an unreachable provider
+   * suggested by discovery is worse than none: the seat spends a turn being
+   * refused by a gate it was pointed at.
+   *
+   * The communication check goes through the real policy engine rather than a
+   * local reimplementation — this repo already carries two diverging copies of
+   * the review-capability table, and a third copy of the contact rules would
+   * rot the same way.
+   */
+  private resolveProviders(actorId: string, contract: Contract, ctx: PolicyContext): string[] {
+    const out: string[] = [];
+    for (const id of this.config.agentOrder) {
+      if (id === actorId) continue;
+      const def = this.config.agents[id];
+      if (!def) continue;
+      if (!this.state.agents.has(id)) continue;
+      if (contract.provider && !def.capabilities.includes(contract.provider)) continue;
+      const decision = this.deps.policy.evaluateMessage(
+        actorId,
+        [id],
+        { type: contract.messageType, threadId: "", payload: {}, taskId: undefined },
+        ctx,
+      );
+      if (decision.decision !== "DENY") out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * One ask, against a published contract.
+   *
+   * Every exit desugars to a typed op and goes back through `executeOp`, which
+   * is deliberate: it means `call` cannot reach anything a typed op could not,
+   * and every gate — the halt freeze, the handover restriction, the plan gate,
+   * the capability checks, the communication policy — applies to it unchanged
+   * and without a second implementation to keep in step. `call` is sugar. If it
+   * ever stops being sugar, this is the line that broke.
+   */
+  private async callContract(actorId: string, op: MeshOpCall, turn: TurnState): Promise<OpResult> {
+    const contract = findContract(op.contract);
+    if (!contract) return { ok: false, op: op.op, reason: unknownContractReason(op.contract) };
+
+    const request = (op.request ?? {}) as Record<string, unknown>;
+    const check = validateContractRequest(contract, request);
+    if (!check.valid) {
+      const detail = check.errors.slice(0, 4).map((e) => `${e.path} ${e.message}`).join("; ");
+      return {
+        ok: false,
+        op: op.op,
+        reason: `request does not match contract ${contract.name}: ${detail}. Expected: ${JSON.stringify(contract.request)}`,
+      };
+    }
+
+    // An operator card has no peer recipient, so it resolves nothing.
+    if (contract.desugarsTo === "escalate") {
+      return this.executeOp(actorId, {
+        op: "escalate",
+        reason: String(request.reason ?? ""),
+        detail: request.detail,
+        conflictKey: typeof request.conflictKey === "string" ? request.conflictKey : undefined,
+      }, turn);
+    }
+
+    const named = op.to ?? asIdList(request.to);
+    let targets = named;
+    if (!targets || targets.length === 0) {
+      const resolved = this.resolveProviders(actorId, contract, this.policyContext());
+      if (resolved.length === 0) {
+        const why = contract.provider
+          ? `no seat you may contact holds ${contract.provider}`
+          : "no seat you may contact is available";
+        return { ok: false, op: op.op, reason: `cannot route ${contract.name}: ${why}. Name a recipient with to, or use the contracts op to see who is available.` };
+      }
+      // One provider, not all of them: a contract is an ask, and broadcasting
+      // it would open a commitment on every qualified seat for work only one
+      // of them needs to do.
+      targets = [resolved[0]];
+    }
+
+    // The contract name travels in the payload so the commitment ledger can
+    // read its SLA on replay, and so a reader can tell what was asked without
+    // re-deriving it from prose.
+    switch (contract.desugarsTo) {
+      case "request_review":
+        return this.executeOp(actorId, {
+          op: "request_review",
+          artifactId: String(request.artifact ?? ""),
+          artifactUri: typeof request.artifact === "string" && request.artifact.startsWith("artifact://") ? request.artifact : undefined,
+          reviewers: targets,
+          contract: contract.name,
+          contractVersion: contract.version,
+        }, turn);
+      case "request_research":
+        return this.executeOp(actorId, {
+          op: "request_research",
+          to: targets[0],
+          question: String(request.question ?? ""),
+          artifactRefs: (request.artifactRefs as ArtifactRef[] | undefined),
+          contract: contract.name,
+          contractVersion: contract.version,
+        }, turn);
+      default: {
+        const subject = typeof request.subject === "string" && request.subject.trim()
+          ? request.subject.trim()
+          : `${contract.name}: ${firstWords(request)}`;
+        return this.executeOp(actorId, {
+          op: "send",
+          type: contract.messageType,
+          to: targets,
+          newThread: { subject },
+          payload: { ...request, contract: contract.name, contractVersion: contract.version },
+        }, turn);
+      }
+    }
+  }
+
+  private async writeContinuity(actorId: string, op: MeshOpWriteContinuity): Promise<OpResult> {
+    const rec = this.state.agents.get(actorId);
+    if (!rec) return { ok: false, op: op.op, reason: `unknown agent '${actorId}'` };
+    const nextIntent = (op.nextIntent ?? "").trim();
+    if (!nextIntent) return { ok: false, op: op.op, reason: "nextIntent is required: one sentence on what you were about to do" };
+
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    const episode = goal ? episodeOf(goal) : undefined;
+    const openCommitments = [...this.state.pendingRequests.values()]
+      .filter((pr) => outstandingDebtors(pr).includes(actorId))
+      .slice(0, MAX_CONTINUITY_COMMITMENTS)
+      .map((pr) => pr.messageId);
+
+    const record: ContinuityRecord = {
+      agentId: actorId,
+      episode,
+      sessionOrdinal: this.state.sessionOrdinal.get(actorId) ?? 1,
+      writtenAt: this.deps.kernel.clock.iso(),
+      reason: "rotation",
+      openCommitments,
+      // Bounded on the way in. The successor reads this inside a context slot
+      // with a token budget, so an agent that dumps its whole transcript into
+      // `beliefs` would evict the very commitments it is trying to hand over.
+      workingBeliefs: (op.beliefs ?? []).slice(0, MAX_CONTINUITY_BELIEFS).map((b) => ({
+        claim: String(b.claim ?? "").slice(0, MAX_CONTINUITY_TEXT),
+        basis: String(b.basis ?? "").slice(0, MAX_CONTINUITY_TEXT),
+        confidence: b.confidence === "asserted" ? "asserted" : "assumed",
+      })),
+      rejected: (op.rejected ?? []).slice(0, MAX_CONTINUITY_REJECTIONS).map((r) => ({
+        what: String(r.what ?? "").slice(0, MAX_CONTINUITY_TEXT),
+        rejectedBy: String(r.rejectedBy ?? "").slice(0, 200),
+        reason: String(r.reason ?? "").slice(0, MAX_CONTINUITY_TEXT),
+        episode: r.episode ?? episode,
+      })),
+      nextIntent: nextIntent.slice(0, MAX_CONTINUITY_TEXT),
+    };
+    await this.deps.kernel.emit("continuity.recorded", record, { actorId, goalId: this.state.activeGoalId ?? undefined });
+    this.auditLine(`continuity recorded for ${actorId} (session ${record.sessionOrdinal}, ${openCommitments.length} open)`);
+    return { ok: true, op: op.op };
   }
 
   /**
@@ -5665,6 +6145,52 @@ export class Supervisor {
   }
 
   /**
+   * Close asks whose `dueBy` has passed.
+   *
+   * Hung on the stall watch's interval rather than the event-driven watchdog
+   * on purpose: the watchdog only fires when events flow, and a mesh where
+   * every agent is waiting on an ask that will never be answered produces no
+   * events at all. That is precisely when a deadline has to fire, so it has
+   * to come from a wall clock, not from traffic.
+   *
+   * Goes through `dischargeCommitment` like every other out-of-reducer close,
+   * so the expiry is an event and a replay reproduces it. That also means the
+   * asker is woken with a reason instead of finding its open loop quietly
+   * gone.
+   */
+  private async sweepExpiredCommitments(nowMs: number): Promise<void> {
+    const overdue = overdueCommitments(this.state, nowMs);
+    if (overdue.length === 0) return;
+    // Bounded work per tick. A mission that configures a short TTL and then
+    // goes quiet can have thousands of asks come due in the same instant;
+    // emitting all of them in one pass would block the stall watch behind a
+    // write storm. The rest come due again on the next tick — they are, by
+    // definition, in no hurry.
+    for (const pr of overdue.slice(0, Supervisor.MAX_EXPIRIES_PER_SWEEP)) {
+      const overdueMs = nowMs - Date.parse(pr.dueBy!);
+      const ok = await this.dischargeCommitment(pr.messageId, "expired", "system", {
+        dueBy: pr.dueBy,
+        overdueMs,
+        // Who was late. Without this the log records that an ask expired but
+        // not who failed to answer it, which is the only part an operator can
+        // act on.
+        unanswered: outstandingDebtors(pr),
+      }).catch((err) => {
+        this.auditLine(`expiry of ${pr.messageId} failed: ${(err as Error).message}`);
+        return false;
+      });
+      if (ok) {
+        this.auditLine(
+          `ask ${pr.messageId} (${pr.type}) from ${pr.from} expired ${Math.round(overdueMs / 1000)}s past its deadline, unanswered by ${outstandingDebtors(pr).join(", ")}`,
+        );
+      }
+    }
+  }
+
+  /** Expiries emitted per stall-watch tick. See `sweepExpiredCommitments`. */
+  private static readonly MAX_EXPIRIES_PER_SWEEP = 50;
+
+  /**
    * Nudge a quiet-but-unfinished mission: ACTIVE goal, empty scheduler, no
    * turn running, and nothing finished for STALL_IDLE_MS.
    *
@@ -5679,6 +6205,11 @@ export class Supervisor {
   private async checkStall(): Promise<void> {
     if (this.stopping || !this.liveMode) return;
     const now = Date.now();
+    // Before every other gate below. A deadline that passed while a turn was
+    // in flight, or while the goal was not ACTIVE, still passed — the early
+    // returns further down are about whether to NUDGE, which is a different
+    // question from whether an ask is overdue.
+    await this.sweepExpiredCommitments(now);
     // The silence check runs FIRST, before every mission-level guard: a stream
     // frozen after its first token is a stall regardless of goal status and
     // regardless of other scheduler work. Ordered after those guards it was
@@ -6073,7 +6604,7 @@ export class Supervisor {
     const pending = this.state.pendingRequests.get(stuck.messageId);
     const request = this.state.messages.get(stuck.messageId);
     const asker = pending?.from ?? request?.from;
-    await this.dischargeCommitment(stuck.messageId, "operator", by, { escalationId, action: "dropped", reason });
+    await this.dischargeCommitment(stuck.messageId, "operator", by, { escalationId, action: "dropped", note: reason });
     await this.deps.kernel.emit(
       "human.input",
       { action: "stuck_request_dropped", escalationId, requestMessageId: stuck.messageId, reason },

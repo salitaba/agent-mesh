@@ -60,7 +60,16 @@ export interface TestMeshOptions {
   stallIdleMs?: number;
   stallCooldownMs?: number;
   stallNoopRetryMs?: number;
-  bus?: { commitments?: { semantic?: "compat" | "strict" }; transport?: "mixed" | "typed-only" };
+  bus?: {
+    commitments?: {
+      semantic?: "compat" | "strict";
+      /** Deadline for an outstanding ask. 0 / unset means asks never expire. */
+      ttlMs?: number;
+      /** Per-role override of `ttlMs`, keyed by role name. */
+      ttlMsByRole?: Record<string, number>;
+    };
+    transport?: "mixed" | "typed-only";
+  };
 }
 
 /**
@@ -82,6 +91,36 @@ export function evidenceContent(subject: string): string {
     "Notes: this fixture body exists to clear the mandatory-evidence floor deliberately,",
     "because a one-word artifact is exactly the stub the evidence gate is meant to reject.",
   ].join("\n");
+}
+
+export /**
+ * The `bus.commitments` block, or "" when nothing about it was asked for.
+ *
+ * Built as a function rather than inline so an omitted key stays OMITTED:
+ * writing `ttl_ms: undefined` into the YAML is not the same as leaving it out
+ * (the resolver's default only applies to an absent key), and that difference
+ * decides whether asks in a fixture can expire at all.
+ */
+/**
+ * The whole `bus:` block, or "" when it would be empty.
+ *
+ * A bare `bus:` with nothing under it parses as null, and the schema rejects
+ * it with `/bus: must be object` -- so passing `{ commitments: {} }` to ask
+ * for defaults has to produce no block at all, not an empty one.
+ */
+function busYaml(bus: TestMeshOptions["bus"]): string {
+  if (!bus) return "";
+  const body = busCommitmentsYaml(bus.commitments) + (bus.transport ? `  transport: ${bus.transport}\n` : "");
+  return body ? `bus:\n${body}` : "";
+}
+
+function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"]): string {
+  if (!c) return "";
+  const parts: string[] = [];
+  if (c.semantic) parts.push(`semantic: ${c.semantic}`);
+  if (c.ttlMs !== undefined) parts.push(`ttl_ms: ${c.ttlMs}`);
+  if (c.ttlMsByRole !== undefined) parts.push(`ttl_ms_by_role: ${JSON.stringify(c.ttlMsByRole)}`);
+  return parts.length ? `  commitments: { ${parts.join(", ")} }\n` : "";
 }
 
 export function testConfigYaml(opts: TestMeshOptions): string {
@@ -148,7 +187,7 @@ budgets:
   thread: { tokens: ${opts.threadTokens ?? 1000000} }
 ${opts.autoRaise ? `  auto_raise: { enabled: ${opts.autoRaise.enabled ?? true}${opts.autoRaise.factor !== undefined ? `, factor: ${opts.autoRaise.factor}` : ""}${opts.autoRaise.maxMultiple !== undefined ? `, max_multiple: ${opts.autoRaise.maxMultiple}` : ""} }` : ""}
 
-${opts.bus ? `bus:\n${opts.bus.commitments?.semantic ? `  commitments: { semantic: ${opts.bus.commitments.semantic} }\n` : ""}${opts.bus.transport ? `  transport: ${opts.bus.transport}\n` : ""}` : ""}
+${busYaml(opts.bus)}
 scheduling:
   mode: event-driven
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}

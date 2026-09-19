@@ -22,6 +22,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeStatus,
   type AgentSession,
+  type RotationPendingInfo,
   type DesignerPromptOptions,
   type DesignerRuntime,
   type DesignerStreamDelta,
@@ -109,6 +110,17 @@ export interface ClaudeAdapterOptions {
    * `confirmAlive`.
    */
   spawnFailureGraceMs?: number;
+  /**
+   * The mesh's `bus.transport`. Under `"typed-only"` the prose-op parser stops
+   * rewriting invented op names and message types.
+   *
+   * It changes nothing about which ops run — a parsed op is already refused
+   * wholesale under typed-only, before it reaches `executeOp`. What it buys is
+   * an honest alias counter: without it, every refused prose turn still
+   * incremented `aliasStats()`, so the one number that says whether the alias
+   * table is still load-bearing was inflated by turns that landed nothing.
+   */
+  transport?: "mixed" | "typed-only";
   /** Extra SDK options merged last, for escape hatches and tests. */
   extraOptions?: Partial<Options>;
   /**
@@ -129,6 +141,23 @@ export interface ClaudeAdapterOptions {
    * transport, not the configuration.
    */
   queryFn?: typeof query;
+  /**
+   * Observer for a seat whose mesh MCP bridge did not attach.
+   *
+   * The bridge is how an agent calls back into the mesh. Without it the seat
+   * still starts, still gets scheduled and still bills tokens, but every
+   * operation it tries to perform goes nowhere — it is mute rather than dead,
+   * which is the harder failure to spot. Fired at most once per session, from
+   * the backend's own `init` frame, so it lands on turn 1 instead of after a
+   * stall timeout.
+   */
+  onMuteSuspected?: (info: {
+    agentId: string;
+    meshSessionId: string;
+    sdkSessionId: string;
+    servers: Array<{ name: string; status: string }>;
+    meshBridgeAttached: boolean;
+  }) => void;
   /** Observer for session rotations, so the supervisor can audit them. */
   onRotate?: (info: {
     agentId: string;
@@ -516,6 +545,16 @@ interface TurnState {
    * that will ever answer.
    */
   sawFrame: boolean;
+  /**
+   * Set when the MESH aborted this turn (`AgentRuntime.interrupt`), i.e. the
+   * stall watchdog or an operator stop — never when the CLI failed on its own.
+   * It exists because the CLI answers an abort with an ordinary error result,
+   * which the pump would otherwise report as this turn's own failure: the
+   * supervisor classifies agents on that error, so a stop the mesh itself
+   * ordered was charged to the agent's restart budget as a crash. See the
+   * `result` branch in `pump`.
+   */
+  interrupted?: boolean;
 }
 
 /**
@@ -530,6 +569,77 @@ interface ResultMessage {
   session_id: string;
   num_turns?: number;
   usage?: ClaudeTurnUsage;
+  /**
+   * WHY the turn failed, as the CLI reports it. `SDKResultError` declares this
+   * field as required, and for most failures it is the only place the real
+   * cause appears: `subtype` is a four-value enum that names a CATEGORY
+   * ("the turn errored"), not a fault. Without this, every crash collapsed to
+   * the bare string `claude turn failed: error_during_execution` — which, in a
+   * live run, left the turn record, the `agent.failed` event and the dashboard
+   * all equally mute while the operator paid for the failed turn and for the
+   * restart it triggered.
+   */
+  errors?: string[];
+  /**
+   * Structured stop cause (`prompt_too_long`, `budget_exhausted`,
+   * `malformed_tool_use_exhausted`, `turn_setup_failed`, …). Strictly more
+   * specific than `subtype` and, unlike it, *discriminating*: it separates a
+   * wedged backend from a rejected prompt from a spent budget, which is the
+   * distinction the supervisor currently cannot make and so must treat as one
+   * generic restart. Absent from older CLIs.
+   */
+  terminal_reason?: string;
+  /**
+   * Tools the CLI refused to run. The authoritative record of a permission
+   * wall, and the failure that most needs naming: a seat that hits one goes
+   * silent for as long as the CLI waits for an approval no headless turn can
+   * give, so from the outside it is indistinguishable from a hung backend.
+   */
+  permission_denials?: Array<{ tool_name?: string; tool_use_id?: string }>;
+}
+
+/**
+ * The most informative sentence available for a failed turn.
+ *
+ * Ordered by specificity, because the old fallback was a lie by omission: it
+ * reported the SDK's `subtype` and nothing else, and a subtype is a category,
+ * not a fault. "claude turn failed: error_during_execution" is equally true of
+ * a crashed CLI, a prompt the provider refused as too long, a spent budget and
+ * a denied tool — four different bugs with four different fixes, which the
+ * supervisor could only treat as one generic restart.
+ *
+ * The subtype always leads, so the message stays greppable and every existing
+ * classification that reads it keeps working; the specifics follow.
+ */
+function turnFailureReason(result: ResultMessage): string {
+  const groups: string[] = [];
+  const prose = (result.result ?? "").trim();
+  if (prose) groups.push(prose);
+  for (const e of result.errors ?? []) {
+    const line = String(e).trim();
+    if (line) groups.push(line);
+  }
+  const denied = result.permission_denials ?? [];
+  if (denied.length > 0) {
+    const tools = [...new Set(denied.map((d) => String(d.tool_name ?? "tool")))];
+    groups.push(`denied by permissions: ${tools.join(", ")}`);
+  }
+  const terminal = result.terminal_reason;
+  if (typeof terminal === "string" && terminal !== "" && terminal !== "completed") {
+    groups.push(`terminated: ${terminal}`);
+  }
+  // The CLI frequently reports one fault twice — once as the turn's result text
+  // and again in `errors` — and a message that repeats itself reads as two
+  // faults. Keep the first spelling of each distinct one; the containment test
+  // is what catches a short result text that the errors array quotes verbatim.
+  const kept: string[] = [];
+  for (const g of groups) {
+    const lower = g.toLowerCase();
+    if (kept.some((k) => k.toLowerCase().includes(lower) || lower.includes(k.toLowerCase()))) continue;
+    kept.push(g);
+  }
+  const detail = kept.join(" — ");
+  return detail ? `claude turn failed: ${result.subtype} — ${detail}` : `claude turn failed: ${result.subtype}`;
 }
 
 /** Live half of a session — never persisted, rebuilt on restore. */
@@ -552,6 +662,8 @@ interface LiveSession {
   settledReady: boolean;
   /** MCP servers the CLI reported at init, used to detect a mute mesh seat. */
   mcpStatus?: Array<{ name: string; status: string }>;
+  /** Whether the mute warning already fired, so a reconnect does not re-alarm. */
+  mutedReported?: boolean;
   /** Model the assistant frames actually reported. Authoritative when present. */
   lastModel?: string;
   /** Model we asked for, used until the backend tells us what it really ran. */
@@ -714,7 +826,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // it: it is what the backend reported it actually ran, and the window
     // belongs to that model, not to the one we asked for.
     const rotateAt = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
-    if (s.contextTokens >= rotateAt) {
+    // `suppressRotation` buys exactly one turn on the old transcript, for the
+    // handover. It cannot wedge a seat permanently over the threshold: the
+    // supervisor sets it only when it is asking for a continuity record, and
+    // the very next turn comes in without it and rotates.
+    if (s.contextTokens >= rotateAt && !input.suppressRotation) {
       s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
     }
     const live = s;
@@ -808,9 +924,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     const held = [...s.heldTools];
     s.heldTools.clear();
     const text = result.result ?? "";
-    const operations: MeshOp[] = parseMeshOps(text);
+    const operations: MeshOp[] = parseMeshOps(text, { aliases: this.options.transport !== "typed-only" });
     const declared = extractDeclaredSummary(operations);
-    const error = result.is_error ? (text || `claude turn failed: ${result.subtype}`) : undefined;
+    const error = result.is_error ? turnFailureReason(result) : undefined;
     // Same contract as the opencode adapter: `summary` stays the prose scrape
     // it has always been, and `declaredSummary` carries the agent's own `done`
     // summary when it gave one. Ops here are parsed out of prose, never typed:
@@ -834,6 +950,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   async interrupt(session: AgentSession): Promise<void> {
     const s = this.live.get(session.sessionId);
     if (!s || s.closed) return;
+    // Mark before asking, so a result frame already in flight cannot slip past
+    // the pump's interrupted check.
+    if (s.pending) s.pending.interrupted = true;
     await s.q.interrupt().catch(() => undefined);
   }
 
@@ -1037,6 +1156,52 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
    * correct outcome here rather than a bug to route around: a fresh session is
    * what rotation produces anyway, and projections refill it.
    */
+  /**
+   * Decide from the init frame whether this seat can reach the mesh at all.
+   *
+   * `mesh` is the bridge registered in `meshMcpServer`; any other server the
+   * CLI happens to have loaded is irrelevant to whether the agent can act.
+   * A server the backend lists with a non-connected status counts as absent,
+   * because a bridge that failed to authenticate is as mute as one that was
+   * never configured.
+   *
+   * Reports once per session. A rotation stands up a fresh `LiveSession`, so a
+   * replacement that comes up equally mute does re-report — which is correct:
+   * that is a new seat failing, not the same one being re-announced.
+   */
+  private reportMuteIfBridgeMissing(s: LiveSession): void {
+    if (s.mutedReported) return;
+    const servers = s.mcpStatus ?? [];
+    const bridge = servers.find((m) => m.name === "mesh");
+    const attached = bridge !== undefined && bridge.status === "connected";
+    if (attached) return;
+    s.mutedReported = true;
+    this.options.onMuteSuspected?.({
+      agentId: s.agent.id,
+      meshSessionId: s.meshSessionId,
+      sdkSessionId: s.sdkSessionId,
+      servers,
+      meshBridgeAttached: false,
+    });
+  }
+
+  /**
+   * Would the next `stream()` call rotate this session?
+   *
+   * Reads the same two numbers the rotation decision itself reads, from the
+   * same place, so the supervisor's answer and the adapter's cannot disagree.
+   * Deliberately NOT a prediction of the next turn's size: `contextTokens` is
+   * last turn's measurement, which is exactly what the threshold test at the
+   * top of `stream` compares against.
+   */
+  rotationPending(session: AgentSession): RotationPendingInfo | null {
+    const s = this.live.get(session.sessionId);
+    if (!s || s.closed) return null;
+    const thresholdTokens = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
+    if (s.contextTokens < thresholdTokens) return null;
+    return { transcriptTokens: s.contextTokens, thresholdTokens };
+  }
+
   private async rotate(s: LiveSession, reason: string): Promise<LiveSession> {
     const previousId = s.sdkSessionId;
     const rotations = s.rotations + 1;
@@ -1267,6 +1432,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // failed to load can still talk, but cannot act, so it is recorded
           // here rather than discovered as silence.
           s.mcpStatus = msg.mcp_servers;
+          this.reportMuteIfBridgeMissing(s);
           if (typeof msg.model === "string") s.lastModel = msg.model;
           if (!s.settledReady) {
             s.settledReady = true;
@@ -1301,7 +1467,37 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             s.pending?.events.push({ kind: "agent_message_chunk", delta: ev.delta.text });
           }
         } else if (msg.type === "result") {
-          s.pending?.settle({ ok: true, msg: msg as unknown as ResultMessage });
+          const pending = s.pending;
+          const result = msg as unknown as ResultMessage;
+          if (pending?.interrupted && result.is_error) {
+            // We stopped this turn on purpose and the CLI reported the abort as
+            // an error (`error_during_execution`). Taking that at face value is
+            // what made a deliberate stop indistinguishable from a crashed
+            // backend: `handleAgentFailure` classifies on this error, so it
+            // restarted the agent and spent its restart budget on a turn the
+            // mesh itself had just ended — the scar the stall watchdog's own
+            // doc comment promises not to leave ("isTimeoutError → slow").
+            //
+            // The supervisor force-settles an unanswered interrupt with exactly
+            // this AbortError after a 2s grace, but the CLI answers far faster
+            // than that (measured: 27ms), so the grace is a race the real frame
+            // always wins. Deciding it here removes the race. A result that is
+            // NOT an error is left alone: that is the CLI completing the turn
+            // as we aborted, and its ops are legitimate work.
+            pending.settle({
+              ok: false,
+              err: new DOMException("turn interrupted by the mesh before the backend answered", "AbortError"),
+            });
+            // Every failure marks the seat UNREACHABLE, which `ensureSession`
+            // reads as "discard this session and rebuild it". The abort left the
+            // session exactly as a per-turn abort always leaves it — alive,
+            // between turns, ready for the retry the supervisor is about to
+            // schedule — so say IDLE rather than spend a resume on a seat that
+            // never went anywhere.
+            this.statuses.set(agentId, "IDLE");
+          } else {
+            pending?.settle({ ok: true, msg: result });
+          }
         }
       }
       // Generator completed: the CLI exited. Any turn still waiting will never

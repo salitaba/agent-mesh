@@ -121,7 +121,21 @@ export class PolicyEngine implements PolicyEvaluator {
     if (!has) {
       const rule = this.matchRule(ctx, { actorId, authority: required });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `authority '${required}' missing; rule '${rule.id}' escalates`, ruleId: rule.id };
-      return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'`, ruleId: "authority" };
+      // Name who CAN. This is the same remedy-legibility rule the criterion
+      // accept path already follows when it names both authorities it tried:
+      // a refusal that says only what is missing leaves the seat no move, so it
+      // retries the same op or — worse, and observed live — narrates success
+      // and ends its turn while the requester waits for a verdict that was
+      // never recorded. Naming the holder turns a dead end into a route.
+      // The human seat is excluded: it holds `*` by design, so including it
+      // would append "held by: human" to every denial and name a target the
+      // mesh cannot schedule.
+      const holders = [...ctx.projections.agents.values()]
+        .filter((r) => r.definition.id !== HUMAN_AGENT_ID)
+        .filter((r) => holdsAuthority(r.definition.authority, subject, kind))
+        .map((r) => r.definition.id);
+      const remedy = holders.length > 0 ? ` — held by: ${holders.join(", ")}` : ` — no agent seat holds it`;
+      return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}`, ruleId: "authority" };
     }
     const rule = this.matchRule(ctx, { actorId, authority: required });
     if (rule && (rule.deny?.capabilities?.length ?? 0) > 0) {
@@ -248,8 +262,18 @@ export class PolicyEngine implements PolicyEvaluator {
     if (goal && goal.status === "COMPLETED" && event.type === "message.sent") {
       return ALLOW;
     }
-    if (goal && (goal.status === "ESCALATED" || goal.status === "COMPLETED" || goal.status === "FAILED")) {
-      const why = goal.status === "ESCALATED" ? "mission is escalated — respond to the open escalation first" : `mission is ${goal.status.toLowerCase()}`;
+    // BLOCKED belongs here with ESCALATED: `haltedGoalStatus` treats every
+    // non-running status as halted, so the op guard freezes a BLOCKED mission
+    // and `runTurn` breaks its op loop — but without this row the activation
+    // still passed, so the turn paid for a full model call and then died at
+    // that break with nothing but an audit line. Denying it here is what makes
+    // the refusal carry `goal-halted` to the operator instead.
+    if (goal && (goal.status === "ESCALATED" || goal.status === "BLOCKED" || goal.status === "COMPLETED" || goal.status === "FAILED")) {
+      // Same sentence `haltReasonText` gives BLOCKED, so the activation layer
+      // and the op layer do not describe one halt two different ways.
+      const why = goal.status === "ESCALATED" || goal.status === "BLOCKED"
+        ? "mission is escalated — respond to the open escalation first"
+        : `mission is ${goal.status.toLowerCase()}`;
       return { decision: "DENY", reason: why, ruleId: "goal-halted" };
     }
     return ALLOW;

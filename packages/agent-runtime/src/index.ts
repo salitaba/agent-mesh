@@ -9,8 +9,9 @@ import type {
   AgentSession,
   MeshOp,
   RuntimeContext,
+  RotationPendingInfo,
 } from "../../protocol/src/index";
-import { newAgentSessionId, aliasTextOp } from "../../protocol/src/index";
+import { newAgentSessionId, aliasTextOp, type AliasOptions } from "../../protocol/src/index";
 
 export type StubScript = (input: AgentInput, turnIndex: number, session: AgentSession) => StubTurn | Promise<StubTurn>;
 
@@ -82,6 +83,31 @@ export class StubRuntime implements AgentRuntime {
 
   resetTurns(agentId: string): void {
     this.turnIndex.delete(agentId);
+  }
+
+  /**
+   * Seats whose next turn should be treated as a handover.
+   *
+   * The stub has no context window, so there is nothing for `rotationPending`
+   * to measure — a test arms it directly. Kept as a one-shot per arming rather
+   * than a permanent flag so a test can assert the handover happens ONCE:
+   * the supervisor's own once-per-transcript guard is the thing under test,
+   * and a stub that answered "pending" forever would hide a bug in it.
+   */
+  private armedRotation = new Map<string, RotationPendingInfo>();
+
+  /** Make the next `rotationPending` for this seat report a full transcript. */
+  armRotation(agentId: string, info: RotationPendingInfo = { transcriptTokens: 600_000, thresholdTokens: 600_000 }): void {
+    this.armedRotation.set(agentId, info);
+  }
+
+  rotationPending(session: AgentSession): RotationPendingInfo | null {
+    return this.armedRotation.get(session.agentId) ?? null;
+  }
+
+  /** Model the rotation itself: the transcript is gone and the seat is fresh. */
+  clearRotation(agentId: string): void {
+    this.armedRotation.delete(agentId);
   }
 
   async start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession> {
@@ -354,7 +380,7 @@ export async function collectAgentOutput(
 // only falls back here, which is why `typedOps` can be trusted on that path.
 const OPS_BLOCK = /```(?:mesh-json|json)?\s*\n?([\s\S]*?)```/g;
 
-export function parseMeshOps(text: string): MeshOp[] {
+export function parseMeshOps(text: string, opts: AliasOptions = {}): MeshOp[] {
   const candidates: string[] = [];
   let m: RegExpExecArray | null;
   const re = new RegExp(OPS_BLOCK.source, "g");
@@ -364,7 +390,7 @@ export function parseMeshOps(text: string): MeshOp[] {
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate);
-      const ops = normalizeOps(parsed);
+      const ops = normalizeOps(parsed, opts);
       if (ops) return ops;
     } catch {
       continue;
@@ -373,7 +399,7 @@ export function parseMeshOps(text: string): MeshOp[] {
   // Salvage path: small models sometimes emit YAML-ish blocks (```mesh-op
   // with `op:` lines) instead of JSON. Only runs when JSON found nothing.
   for (const candidate of candidates) {
-    const op = parseYamlishOp(candidate);
+    const op = parseYamlishOp(candidate, opts);
     if (op) return [op];
   }
   return [];
@@ -384,7 +410,7 @@ export function parseMeshOps(text: string): MeshOp[] {
  * fenced content starting an `op:` key qualifies, multi-line values continue
  * until the next `key:` line. Anything JSON-shaped is left alone.
  */
-export function parseYamlishOp(content: string): MeshOp | null {
+export function parseYamlishOp(content: string, opts: AliasOptions = {}): MeshOp | null {
   if (/^\s*[{[]/.test(content)) return null;
   if (!/^\s*op\s*:/m.test(content)) return null;
   const out: Record<string, unknown> = {};
@@ -401,7 +427,7 @@ export function parseYamlishOp(content: string): MeshOp | null {
     }
   }
   if (!started) return null;
-  const aliased = aliasTextOp(out);
+  const aliased = aliasTextOp(out, opts);
   if (!aliased || typeof aliased.op !== "string") return null;
   return aliased as unknown as MeshOp;
 }
@@ -413,9 +439,9 @@ function stripQuotes(s: string): string {
   return s;
 }
 
-function normalizeOps(parsed: unknown): MeshOp[] | null {
+function normalizeOps(parsed: unknown, opts: AliasOptions = {}): MeshOp[] | null {
   const aliased = (x: unknown): MeshOp | null => {
-    const a = aliasTextOp(x);
+    const a = aliasTextOp(x, opts);
     return a && typeof a.op === "string" ? (a as unknown as MeshOp) : null;
   };
   if (Array.isArray(parsed)) {

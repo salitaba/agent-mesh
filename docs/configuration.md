@@ -179,22 +179,103 @@ rejection log under `server.state_dir`.
 
 ```yaml
 bus:
-  commitments: { semantic: strict }   # or omit for "compat"
-  transport: typed-only                # or omit for "mixed"
+  commitments:
+    semantic: compat        # or omit for "strict"
+    ttl_ms: 1800000         # omit (or 0) for no deadline
+    ttl_ms_by_role: { security: 7200000 }
+  transport: typed-only     # or omit for "mixed"
 ```
 
-- `commitments.semantic: compat` (default): an ask leaves the ledger on exact
-  signals (`replyTo`, `discharge`, operator answer/drop, review verdict,
-  supersede, deadlock break, task completion) **or** inference (a response in
-  the ask's thread addressed to the asker, artifact-pointer matches).
-- `commitments.semantic: strict`: inference is off. A response without
-  `replyTo` delivers content and wakes the asker but discharges **nothing**;
-  only the exact signals close the ask. Exception: the worker-result contract
-  (`REQUEST_EXECUTION` taskId == `HANDOFF` taskId) works in both modes.
-  Strict trades more nudges/re-asks for zero falsely-closed asks. Note strict
-  also tightens the worker contract: cross-taskId answers no longer discharge
-  (previously any `REQUEST*` matched any taskId-carrying response).
+### commitments.semantic
+
+- `strict` (**default**): inference is off. A response without `replyTo`
+  delivers content and wakes the asker but discharges **nothing**; only the
+  exact signals close the ask (`replyTo`, `discharge`, operator answer/drop,
+  review verdict, supersede, deadlock break, expiry, task completion).
+  Exception: the worker-result contract (`REQUEST_EXECUTION` taskId ==
+  `HANDOFF` taskId) works in both modes.
+- `compat`: the exact signals **plus** inference — a response in the ask's
+  thread addressed to the asker, or an artifact-pointer match, closes the ask.
+
+Strict is the default because the two failure modes are not symmetric. A wrong
+inference closes an ask nobody answered, and does it silently: the asker's open
+loop is marked done, nudging stops, and no event records that a guess was made.
+A missing inference leaves the ask open, which is *visible* — the asker is
+nudged, the ledger shows the debt, and with a TTL set it expires with a reason.
+A missing discharge costs a re-ask; a wrong one costs work nobody noticed was
+never done. Set `compat` for a mesh whose agents cannot be relied on to set
+`replyTo` and which would rather over-close than stall. Note that `compat` also
+loosens the worker contract: any `REQUEST*` matches any taskId-carrying
+response, not only the one its `REQUEST_EXECUTION` minted.
+
+### commitments.ttl_ms
+
+How long an ask may go unanswered before the runtime closes it with
+`expired`. Omitted or `0` means no deadline, which is how every mesh behaved
+before this key existed — expiry is opt-in, not inherited from an upgrade.
+
+The deadline belongs to the **debtor**, not the asker: an ask addressed to
+several agents gets the longest of their roles' TTLs, so a slow role is never
+cut off because a fast one was also on the list. `ttl_ms_by_role` overrides
+`ttl_ms` per debtor role — a security review and a one-line fact lookup are not
+the same kind of wait, and a single global deadline has to be set for the
+slowest of them, at which point it stops bounding the fast ones at all.
+
+Expiry is checked on the stall watch's wall clock rather than on event traffic,
+because a mesh where everyone is waiting on an unanswerable ask produces no
+events at all — precisely when a deadline needs to fire. An expiry is emitted
+as `commitment.discharged` (reason `expired`, naming who was late), so it
+survives replay, and an ask an **open** escalation points at is never expired
+out from under the operator answering it.
+
+### Capacity
+
+The ledger is capacity-bounded, and a full ledger **refuses the new ask**
+rather than evicting an old one: the refusal is recorded with reason
+`refused_cap` and the asker gets one immediate, visible failure. The message
+itself is still delivered — the cap bounds the obligation ledger, not the bus.
 - `transport: typed-only`: turns whose ops came from prose parsing are refused
   (visible warning in the turn summary, counts toward the circuit breaker);
   only MCP `mesh_*` tool calls execute. Use when models are strong enough to
   reliably call tools and you want the text-parsing lottery off entirely.
+
+Under `typed-only` two further things change, both about vocabulary rather than
+delivery:
+
+- The advertised tool manifest drops the four tools a contract fully covers
+  (`mesh_request`, `mesh_request_review`, `mesh_research_request`,
+  `mesh_escalate`). This is **advertisement only** — a seat that names a hidden
+  tool still gets it, so nothing can be stranded by the filter. `mesh_send`
+  stays, because no contract covers answering or the message types the
+  catalogue does not name.
+- The invented-name tables in `op-aliases.ts` stop firing, so an op name or
+  message type a model made up is refused **by name** instead of being quietly
+  rewritten into the nearest real one.
+
+### Contracts
+
+A contract is a named ask with a request schema, a set of refusals it may come
+back with, and an SLA. Two ops use them:
+
+- `contracts` — list what this mesh knows how to route, each with its request
+  shape, its refusals, the capability it needs, and which seats can currently
+  answer it (resolved live against capabilities *and* the communication policy,
+  so discovery never points a seat at someone it may not contact).
+- `call` — raise one. The request is validated against the contract schema
+  **before any recipient is woken**, so a malformed ask costs nobody a turn,
+  and an unknown contract name is refused with the list of real ones.
+
+`call` is sugar: every contract desugars to a typed op (`send`,
+`request_review`, `request_research`, `escalate`) and is re-entered through the
+ordinary op path, so it can reach nothing a typed op could not and every gate
+applies to it unchanged.
+
+The built-ins are `review.artifact`, `research.question`, `info.question`,
+`artifact.produce`, `execution.run`, `work.request`, `decision.challenge` and
+`decision.escalate`.
+
+A contract's `slaMs` **narrows an existing deadline regime and never creates
+one**: with no `bus.commitments.ttl_ms` configured, a contract ask has no
+deadline, because deadlines drive expiry and expiry discharges debt — a
+catalogue that invented one would silently forgive asks you told the mesh to
+keep. A `ttl_ms_by_role` entry still outranks the contract.

@@ -135,6 +135,9 @@ test("stale-resolve: TEST_RESULT with payload.artifact (not artifactId) clears t
       { id: "qa", role: "qa", capabilities: ["test.execute"], interests: [] },
     ],
     mayContact: { dev: ["qa"], qa: ["dev"] },
+    // Inference, not an exact signal: this is the behaviour `compat` exists
+    // for, so it opts in rather than riding on whatever the default is.
+    bus: { commitments: { semantic: "compat" as const } },
   });
   const pub = await m.supervisor.createArtifact({ actorId: "dev", name: "p1", type: "CodePatch", content: "diff" });
   assert.ok("artifact" in pub);

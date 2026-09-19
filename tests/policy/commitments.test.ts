@@ -13,7 +13,12 @@ import type { MeshOp } from "../../packages/protocol/src/index";
  * closed and the "replay is equivalent" invariant silently did not hold.
  */
 
-async function twoAgentMesh(opts?: { strict?: boolean }) {
+/**
+ * `semantic` is named rather than defaulted-away because the default flipped
+ * to "strict": a test that needs inference now has to say so, and a test that
+ * needs it OFF no longer has to say anything.
+ */
+async function twoAgentMesh(opts?: { semantic?: "compat" | "strict" }) {
   return makeMesh({
     agents: [
       { id: "architect", role: "architect", capabilities: ["review.design"], interests: [] },
@@ -21,7 +26,7 @@ async function twoAgentMesh(opts?: { strict?: boolean }) {
     ],
     mayContact: { architect: ["dev"], dev: ["architect"] },
     mode: "parked",
-    ...(opts?.strict ? { bus: { commitments: { semantic: "strict" as const } } } : {}),
+    ...(opts?.semantic ? { bus: { commitments: { semantic: opts.semantic } } } : {}),
   });
 }
 
@@ -56,7 +61,7 @@ test("commitments: replyTo is recorded as an exact discharge, not a guess", asyn
 });
 
 test("commitments: an inferred discharge is labelled as inferred", async () => {
-  const m = await twoAgentMesh();
+  const m = await twoAgentMesh({ semantic: "compat" });
   const ask = await m.supervisor.sendMessage({
     from: "architect", to: ["dev"], type: "REQUEST",
     newThread: { subject: "which db?" }, payload: { q: "which db?" },
@@ -153,8 +158,9 @@ test("commitments: an agent can decline a request instead of stalling silently",
   assert.ok(notice!.to.includes("architect"));
   assert.match(String((notice!.payload as Record<string, unknown>).reason), /not mine/);
 
-  // Declining is exact, not inference.
-  assert.equal(m.kernel.state.discharged.find((d) => d.messageId === ask.messageId)?.reason, "reply");
+  // Declining is exact, not inference -- and it is labelled as a refusal, not as
+  // an answer. "reply" would tell a reader of the log that the review happened.
+  assert.equal(m.kernel.state.discharged.find((d) => d.messageId === ask.messageId)?.reason, "refused");
   assert.equal(
     replayed(m, await m.store.read()).pendingRequests.has(ask.messageId!),
     false,
@@ -209,7 +215,7 @@ test("commitments: a declined request stops nudging instead of escalating a fals
 });
 
 test("commitments/strict: inference is off — a reply-looking message discharges nothing", async () => {
-  const m = await twoAgentMesh({ strict: true });
+  const m = await twoAgentMesh({ semantic: "strict" });
   assert.equal(m.config.bus.commitmentSemantic, "strict", "fixture must run strict");
   const ask = await m.supervisor.sendMessage({
     from: "architect", to: ["dev"], type: "REQUEST",
@@ -276,7 +282,7 @@ test("commitments/strict: review verdict still discharges the review ask", async
 });
 
 test("commitments/strict: replay agrees with live under strict semantics", async () => {
-  const m = await twoAgentMesh({ strict: true });
+  const m = await twoAgentMesh({ semantic: "strict" });
   const ask = await m.supervisor.sendMessage({
     from: "architect", to: ["dev"], type: "REQUEST",
     newThread: { subject: "replay check" }, payload: {},
@@ -426,7 +432,7 @@ test("transport/typed-only: three prose turns in a row park the agent", async ()
 
 test("commitments: /status exposes ledger health so inference is measurable", async () => {
   const { createHttpServer } = await import("../../apps/mesh-server/src/index");
-  const m = await twoAgentMesh();
+  const m = await twoAgentMesh({ semantic: "compat" });
   const server = createHttpServer(m, { dashboardDir: undefined });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

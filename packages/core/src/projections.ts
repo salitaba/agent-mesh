@@ -1,5 +1,5 @@
 import type { MeshEvent } from "../../protocol/src/index";
-import type { Projections } from "./state";
+import type { CommitmentTtlConfig, Projections } from "./state";
 import { applyGoalEvent } from "./projections-goal";
 import { applyAgentEvent } from "./projections-agent";
 import { applyMessagingEvent } from "./projections-messaging";
@@ -37,14 +37,30 @@ export interface ProjectionConfig {
   /**
    * Commitment semantic for ask discharge.
    *
-   * - "compat" (default): exact signals plus inference (same-thread, taskId,
+   * - "compat": exact signals plus inference (same-thread, taskId,
    *   artifact-pointer matches).
    * - "strict": exact signals only — `replyTo`, `discharge`, operator,
-   *   review verdicts, supersede, deadlock break, task completion. Inference
-   *   is disabled: a response that only *looks* like an answer delivers
-   *   content and wakes the asker, but discharges nothing.
+   *   review verdicts, supersede, deadlock break, expiry, task completion.
+   *   Inference is disabled: a response that only *looks* like an answer
+   *   delivers content and wakes the asker, but discharges nothing.
+   *
+   * The resolved config defaults this to "strict" (`packages/config`). This
+   * field stays optional, and an ABSENT config still reduces as "compat", for
+   * one reason: every production caller passes a config (the kernel its
+   * `gates`, the supervisor its `projectionConfig()`), so the only callers
+   * that omit it are tests replaying a handful of events, and changing the
+   * fallback would silently re-derive their expectations. Anything replaying
+   * a real log must pass the mesh's own config or it rebuilds a different
+   * history than the live mesh ran.
    */
   commitmentSemantic?: "compat" | "strict";
+  /**
+   * Deadline an ask opens with, by debtor role. Absent means no deadline.
+   * Part of the projection config rather than a supervisor concern because
+   * `dueBy` is written at open time inside the reducer — a deadline applied
+   * afterwards would not survive replay.
+   */
+  commitmentTtl?: CommitmentTtlConfig;
 }
 
 export function isStrictCommitments(config?: ProjectionConfig): boolean {
@@ -63,7 +79,9 @@ export function applyEvent(state: Projections, event: MeshEvent, config?: Projec
     // Unknown / no-op event types (patch.created, release.candidate, etc.)
   }
 
-  state.lastEventSeq = event.seq ?? state.lastEventSeq;
+  // Monotonic for the same reason as the kernel's writer: this is the
+  // watermark a snapshot publishes as throughSeq, so it must never regress.
+  state.lastEventSeq = Math.max(state.lastEventSeq, event.seq ?? state.lastEventSeq);
   state.lastEventAt = event.timestamp;
   state.eventCount++;
   if (event.actorId) {

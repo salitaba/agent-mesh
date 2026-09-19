@@ -20,6 +20,23 @@ export const MISSION_HALTED_ALLOW_OPS: ReadonlySet<MeshOp["op"]> = new Set([
   "read_artifact",
 ]);
 
+/**
+ * A handover turn writes the record and stops. Nothing else.
+ *
+ * The seat is one turn from losing its transcript, so anything it starts here
+ * it cannot finish — and worse, the successor would inherit a half-done action
+ * it has no memory of taking. `done` is in the set because a turn has to be
+ * able to end; `read_artifact` because re-reading what you are about to
+ * describe is the one thing that makes the record more accurate rather than
+ * less.
+ */
+export const HANDOVER_ALLOW_OPS: ReadonlySet<MeshOp["op"]> = new Set([
+  "write_continuity",
+  "read_artifact",
+  "done",
+  "wait",
+]);
+
 /** After the mission is over, only reads (and local memory notes) make sense. */
 export const MISSION_OVER_ALLOW_OPS: ReadonlySet<MeshOp["op"]> = new Set([
   "remember",
