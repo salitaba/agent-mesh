@@ -10,7 +10,7 @@
  * ---------------------------------------------------------------------- */
 
 import { useEffect, useState } from "react";
-import { dur, fmt, plainEvent, HEALTH_CLS } from "./format";
+import { dur, fmt, plainEvent, HEALTH_CLS, type OpHead } from "./format";
 import { PHASE_PLAIN, deviation, phaseLegs, slowestLeg, type Baseline, type OpTiming, type PhaseLeg, type TurnError, type TurnPhases, type Vitals } from "./vitals";
 import type { TimelineEvent, TurnStep } from "./store";
 
@@ -305,7 +305,7 @@ export function OpLatency({ timings }: { timings?: OpTiming[] }): React.JSX.Elem
 export function LiveOps({ ops, writing, heads }: {
   ops: any[];
   writing: boolean;
-  heads: (o: any) => { title: string; detail: string };
+  heads: (o: any) => OpHead;
 }): React.JSX.Element | null {
   if (!ops.length && !writing) return null;
   return (
@@ -318,7 +318,11 @@ export function LiveOps({ ops, writing, heads }: {
         return (
           <div className="op op-live" key={i}>
             <div className="op-head"><span className="op-name">{h.title}</span><span className="op-pending" title="written by the model, not applied yet">pending</span></div>
-            {h.detail ? <div className="op-detail">{h.detail}</div> : null}
+            {h.detail
+          ? <div className="op-detail">{h.detail}</div>
+          : h.facts.length
+            ? <div className="op-detail muted">{h.facts.map((f) => `${f.k}: ${f.v}`).join(" \u00b7 ")}</div>
+            : null}
           </div>
         );
       })}

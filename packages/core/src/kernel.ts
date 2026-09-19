@@ -266,6 +266,24 @@ export class Kernel {
     return events.length;
   }
 
+  /**
+   * Rebuild projections from the log as it now stands on disk, replacing
+   * whatever this kernel was holding. Used by mission restore, where the log is
+   * swapped underneath a live kernel.
+   *
+   * The clear is the whole point. `replayFromStore` on a cold boot imports the
+   * snapshot over a state that was never populated, so it has no reason to wipe
+   * first; here the kernel still holds the pre-restore mission, and importing
+   * over it would leave that mission's goals and agents in the projections
+   * alongside the restored ones.
+   */
+  async reloadFromStore(): Promise<number> {
+    return this.serialized(async () => {
+      await this.rebuild([]);
+      this.emitCount = 0;
+      return this.replayFromStore();
+    });
+  }
 
   activeGoal(): GoalId | null {
     return this.state.activeGoalId;

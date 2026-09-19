@@ -10,6 +10,7 @@ import { startServer } from "../../mesh-server/src/index";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
 import { DEFAULT_HOST_PORT, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand } from "./projects";
+import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -44,6 +45,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "staging",
   "json",
   "settled",
+  "keep-sessions",
 ]);
 
 /** Literals a flag author would use to spell a boolean explicitly. */
@@ -281,6 +283,11 @@ usage:
     git flags force every child on/off; without them each child obeys its own mesh.workspace.git
   mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
+  mesh backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
+  mesh restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
+    a reset writes one set of archives under one stamp: the state dir (the only
+    restorable one), the product checkout, and the agent worktrees. The archive
+    is copied, never consumed, so the same stamp keeps working.
   any --bus command also takes --project <id> to address one project through a host
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
   designer-mcp                             (internal) stdio MCP server for the config designer
@@ -437,6 +444,20 @@ export async function main(argv: string[]): Promise<number> {
       case "project":
       case "projects": {
         return runProjectCommand(args.positional, args.flags);
+      }
+      case "backups":
+      case "restore": {
+        // Offline: both take a mesh.yaml directly and never talk to a host, so
+        // they work on a mesh that is stopped — which is the only state a
+        // restore is safe in, and the state an operator is in when they want
+        // one.
+        if (args.flags.help) {
+          console.log(args.command === "backups" ? BACKUPS_HELP : RESTORE_HELP);
+          return 0;
+        }
+        return args.command === "backups"
+          ? runBackupsCommand(args.positional, args.flags)
+          : runRestoreCommand(args.positional, args.flags);
       }
       case "init": {
         const dir = path.resolve(args.positional[0] ?? ".");

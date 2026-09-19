@@ -91,6 +91,14 @@ export function Prose({ children, dim }: { children: React.ReactNode; dim?: bool
 
 /* ---------- op ledger ---------- */
 
+/** Terse badge copy; the full sentence lives in the tooltip. Three lowercase
+ *  words tracked uppercase at 9.5px competed with the row's actual content. */
+const FX: Record<"ok" | "miss" | "na", { label: string; hint: string }> = {
+  ok: { label: "recorded", hint: "the matching event was found in the log" },
+  miss: { label: "not recorded", hint: "no matching event was found — this action may not have landed" },
+  na: { label: "n/a", hint: "this action produces nothing observable in the event log" },
+};
+
 export function OpLedger({ rows, sel, onSelect }: {
   rows: OpRow[];
   sel: Sel;
@@ -115,11 +123,21 @@ export function OpLedger({ rows, sel, onSelect }: {
             onKeyDown={rowKey(pick)}
           >
             <span className="sv-op-i mono" aria-hidden="true">{i + 1}</span>
-            <span className="sv-op-t">{r.head.title}</span>
-            {r.head.detail ? <span className="sv-op-d">{r.head.detail}</span> : null}
-            <span className={`sv-op-fx sv-op-fx-${cls}`}>
-              {r.fx === undefined ? "no effect expected" : r.fx ? "recorded" : "not recorded"}
-            </span>
+            {/* Title and labelled parameters on the first line, the op's own
+                prose on the second — rather than one run-on line where the
+                detail was a truncated JSON blob squeezed to nothing. */}
+            <div className="sv-op-main">
+              <div className="sv-op-r1">
+                <span className="sv-op-t">{r.head.title}</span>
+                {r.head.facts.map((f) => (
+                  <span className="sv-op-f" key={f.k} title={`${f.k}: ${f.v}`}>
+                    <b>{f.k}</b>{f.v}
+                  </span>
+                ))}
+              </div>
+              {r.head.detail ? <span className="sv-op-d" title={r.head.detail}>{r.head.detail}</span> : null}
+            </div>
+            <span className={`sv-op-fx sv-op-fx-${cls}`} title={FX[cls].hint}>{FX[cls].label}</span>
           </div>
         );
       })}

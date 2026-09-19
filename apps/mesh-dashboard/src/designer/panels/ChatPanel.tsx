@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { parse as parseYaml } from "yaml";
 import type { StagedMutation } from "@mesh/protocol";
 import { summarizeDiff } from "../model";
-import { CONFIRM_WORD, destructiveKindsIn, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
+import { confirmationFor, confirmationSatisfied, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
@@ -92,7 +92,12 @@ export default function ChatPanel(): React.JSX.Element {
    * to the server, which re-checks every refusal in front of the operator. */
   const applyToRun = async (i: number, mutations: StagedMutation[]) => {
     setRunApply((s) => ({ ...s, [i]: { busy: true, msg: "" } }));
-    const res = await client.post("/designer/staged/apply", { mutations });
+    // `confirmId` is what the server checks for a `mission.reset`, and the only
+    // thing it can check: the reason on that mutation is written by the agent,
+    // so it distinguishes a proposal from a stray replay and nothing more. The
+    // card asked for the mesh id; hand over exactly what was typed rather than
+    // re-deriving it, so the two comparisons can never disagree.
+    const res = await client.post("/designer/staged/apply", { mutations, confirmId: confirmText[i] ?? "" });
     const report = res.json;
     const ok = res.status === 200 && report?.ok === true;
     /* Report the server's own sentences, not an HTTP code: a refusal here is a
@@ -139,8 +144,8 @@ export default function ChatPanel(): React.JSX.Element {
           const diff = showText ? proposalDiff(e.proposed, getDraftSnapshot()) : [];
           const draftLines = split.draft.flatMap((m) => summarizeMutation(m, ctx));
           const runLines = split.server.flatMap((m) => summarizeMutation(m, ctx));
-          const runDestructive = destructiveKindsIn(split.server);
-          const confirmed = !runDestructive.length || (confirmText[i] ?? "").trim().toLowerCase() === CONFIRM_WORD;
+          const runConfirmation = confirmationFor(split.server, String(status?.meshId ?? ""));
+          const confirmed = confirmationSatisfied(runConfirmation, confirmText[i] ?? "");
           const changes = diff.length + draftLines.length + runLines.length;
           const cards = (showText ? 1 : 0) + (split.draft.length ? 1 : 0) + (split.server.length ? 1 : 0);
           const run = runApply[i];
@@ -203,14 +208,14 @@ export default function ChatPanel(): React.JSX.Element {
                         <div className="ms-chat-card server">
                           <div className="verdict warn">Live run change — applies to the running mesh now, with no Save step.</div>
                           <ul className="diff-list">{runLines.map((d, k) => <li key={`s${k}-${d}`}>{d}</li>)}</ul>
-                          {runDestructive.length ? (
+                          {runConfirmation ? (
                             <div className="ms-chat-confirm">
-                              <div className="verdict bad">destructive: {runDestructive.join(", ")}. type “{CONFIRM_WORD}” to confirm.</div>
+                              <div className="verdict bad">{runConfirmation.prompt}</div>
                               <Input
                                 value={confirmText[i] ?? ""}
                                 onChange={(ev) => setConfirmText((c) => ({ ...c, [i]: ev.target.value }))}
-                                placeholder={CONFIRM_WORD}
-                                aria-label={`type ${CONFIRM_WORD} to confirm a destructive change`}
+                                placeholder={runConfirmation.word}
+                                aria-label={`type ${runConfirmation.word} to confirm a destructive change`}
                               />
                             </div>
                           ) : null}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
-import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
+import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortUri, shortTurn, MESSAGE_PLAIN, RUNNING, type OpFact, type OpHead, type OutcomeInput } from "./format";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { StatusPill, LifecyclePill, StepMini, OutcomePill, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, Tabs, TextArea, agentColor } from "./components";
@@ -152,22 +152,36 @@ export function ApprovalDrawer(): React.JSX.Element {
   );
 }
 
+/**
+ * The prose a payload carries, if it carries any.
+ *
+ * Deliberately returns "" when no known prose key is present. The old version
+ * fell back to `JSON.stringify(payload)`, so any payload made of identifiers
+ * rendered as a cut-off JSON blob on the ledger row.
+ */
 function msgSnippet(payload: unknown, max = 140): string {
   if (payload === null || payload === undefined) return "";
-  if (typeof payload === "string") return payload.slice(0, max);
+  if (typeof payload === "string") return clip(payload, max);
   if (typeof payload === "object") {
     const p = payload as Record<string, unknown>;
-    for (const k of ["question", "summary", "note", "reason", "text", "response"]) {
-      if (typeof p[k] === "string" && (p[k] as string).length > 0) return (p[k] as string).slice(0, max);
-    }
-    try {
-      return JSON.stringify(payload).slice(0, max);
-    } catch {
-      return "";
+    for (const k of ["question", "summary", "note", "reason", "text", "response", "body", "content"]) {
+      if (typeof p[k] === "string" && (p[k] as string).length > 0) return clip(p[k] as string, max);
     }
   }
-  return String(payload).slice(0, max);
+  return "";
 }
+
+/** One line, with an ellipsis that admits it was cut. The bare `slice` this
+ *  replaces produced text indistinguishable from a complete value. */
+function clip(s: string, max: number): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
+/** A recipient/assignee field: arrays read as a comma list. */
+const list = (v: unknown): string => (Array.isArray(v) ? v.join(", ") : String(v ?? ""));
+
+const fact = (k: string, v: unknown, max = 60): OpFact => ({ k, v: clip(list(v), max) });
 
 type AgentTab = "now" | "work" | "comms" | "memory" | "config";
 
@@ -530,48 +544,87 @@ function displayOpName(raw: unknown): string {
   return m[o] ?? o;
 }
 
-function opHead(o: any): { title: string; detail: string } {
+/**
+ * One written op, split into what it did, which parameters identify it, and
+ * what it said. `detail` is prose only — parameters live in `facts` so the
+ * ledger can label them instead of printing a JSON blob.
+ */
+function opHead(o: any): OpHead {
   const op = displayOpName(o.op);
-  const to = (v: unknown): string => (Array.isArray(v) ? v.join(", ") : String(v ?? ""));
   switch (op) {
     case "send":
     case "broadcast":
     case "respond": {
-      const recips = to(o.to) || "—";
-      const note = msgSnippet(o.payload ?? o.body, 150);
-      return { title: `${String(o.type || "message")} → ${recips}`, detail: note };
+      // Recipients are already the title; the second line is the note, and
+      // any artifact or task the message points at becomes a chip — otherwise
+      // a message whose payload is pure references showed a title and nothing.
+      const art = o.artifactId || o.artifact || o.artifactUri;
+      return {
+        title: `${String(o.type || "message")} → ${list(o.to) || "—"}`,
+        detail: msgSnippet(o.payload ?? o.body),
+        facts: [...(art ? [fact("artifact", shortUri(art))] : []), ...(o.taskId ? [fact("task", clip(String(o.taskId), 20))] : [])],
+      };
     }
     case "publish_artifact": {
       const len = typeof o.content === "string" ? o.content.length : 0;
-      return { title: `Published ${String(o.name || "artifact")}`, detail: `${String(o.type || o.kind || "")}${len ? ` · ${len} chars` : ""}` };
+      const kind = String(o.type || o.kind || "");
+      return {
+        title: `Published ${String(o.name || "artifact")}`,
+        detail: "",
+        facts: [...(kind ? [fact("kind", kind)] : []), ...(len ? [fact("size", `${len} chars`)] : [])],
+      };
     }
     case "request_review": {
       const art = String(o.artifactId || o.artifact || o.artifactUri || "?").split("/").pop() || "?";
-      return { title: `Review requested: ${art}`, detail: `reviewers: ${to(o.reviewers || o.to) || "—"}` };
+      return {
+        title: `Review requested: ${art}`,
+        detail: msgSnippet(o.note ?? o.comment),
+        facts: o.reviewers || o.to ? [fact("reviewers", o.reviewers || o.to)] : [],
+      };
     }
     case "propose_decision":
-      return { title: `Proposed: ${String(o.topic || o.summary || o.id || "decision").slice(0, 90)}`, detail: msgSnippet(o.decision ?? o.summary, 150) };
+      return { title: `Proposed: ${clip(String(o.topic || o.summary || o.id || "decision"), 90)}`, detail: msgSnippet(o.decision ?? o.summary), facts: [] };
     case "ratify_decision":
-      return { title: `Ratified ${String(o.decisionId || o.id || "").slice(0, 20)}`, detail: "" };
+      return { title: `Ratified ${clip(String(o.decisionId || o.id || ""), 20)}`, detail: "", facts: [] };
     case "escalate":
-      return { title: `Escalated: ${String(o.reason || "").slice(0, 90)}`, detail: msgSnippet(o.detail, 150) };
+      return { title: `Escalated: ${clip(String(o.reason || ""), 90)}`, detail: msgSnippet(o.detail), facts: [] };
     case "create_task":
-      return { title: `Task: ${String(o.title || "").slice(0, 90)}`, detail: o.assignedTo ? `→ ${o.assignedTo}` : "" };
+      return {
+        title: `Task: ${clip(String(o.title || ""), 90)}`,
+        detail: msgSnippet(o.summary ?? o.note),
+        facts: o.assignedTo ? [fact("assignee", o.assignedTo)] : [],
+      };
     case "claim_task":
     case "complete_task":
-      return { title: `${op === "claim_task" ? "Claimed" : "Completed"} ${String(o.taskId || o.task || "").slice(0, 20)}`, detail: msgSnippet(o.summary, 140) };
+      return { title: `${op === "claim_task" ? "Claimed" : "Completed"} ${clip(String(o.taskId || o.task || ""), 20)}`, detail: msgSnippet(o.summary), facts: [] };
     case "delegate":
-      return { title: `Delegated to ${String(o.to || "")}: ${String(o.title || "").slice(0, 70)}`, detail: "" };
+      return { title: `Delegated to ${String(o.to || "")}: ${clip(String(o.title || ""), 70)}`, detail: msgSnippet(o.summary ?? o.note), facts: [] };
     case "wait":
-      return { title: "Waiting", detail: String(o.reason || "") };
+      return { title: "Waiting", detail: msgSnippet(o.reason), facts: [] };
     case "done":
-      return { title: "Done", detail: msgSnippet(o.summary, 140) };
+      return { title: "Done", detail: msgSnippet(o.summary), facts: [] };
     case "remember":
-      return { title: `Remembered ${String(o.key || "")}`, detail: String(o.value || "").slice(0, 140) };
+      return {
+        title: `Remembered ${clip(String(o.key || ""), 40)}`,
+        detail: typeof o.value === "string" ? msgSnippet(o.value) : "",
+        facts: o.value !== undefined && typeof o.value !== "string" ? [fact("value", JSON.stringify(o.value))] : [],
+      };
     case "transition_artifact":
-      return { title: `Moved → ${String(o.to || "")}`, detail: String(o.artifactId || o.artifact || "") };
-    default:
-      return { title: op, detail: msgSnippet(o, 150) };
+      return {
+        title: `Moved → ${String(o.to || "")}`,
+        detail: "",
+        facts: o.artifactId || o.artifact ? [fact("artifact", shortUri(o.artifactId || o.artifact))] : [],
+      };
+    default: {
+      // No recipe for this op kind. Show the scalars it actually carries
+      // rather than stringifying the whole op; nested objects and the full
+      // payload are still under Raw and in the inspector.
+      const facts = Object.entries(o as Record<string, unknown>)
+        .filter(([k, v]) => k !== "op" && typeof v !== "object" && v !== null && v !== undefined && v !== "")
+        .slice(0, 3)
+        .map(([k, v]) => fact(k, v));
+      return { title: op, detail: "", facts };
+    }
   }
 }
 
@@ -595,7 +648,7 @@ const OP_EFFECT_TYPES: Record<string, string[]> = {
 
 export interface OpRow {
   op: any;
-  head: { title: string; detail: string };
+  head: OpHead;
   /** The landed effect, `null` when none was found, `undefined` when the op has none to find. */
   fx: any | null | undefined;
 }
@@ -753,6 +806,13 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const outcome = outcomeOf(outcomeInput);
   const produced = opsSummary(outcomeInput);
   const state = stateMeta(outcome, t.status || "running", produced);
+  // The drawer answered "did this turn do anything?" twice from two unrelated
+  // facts: Reasoning read the ops block, Outcome read `t.text`. On a turn that
+  // messaged and decided without writing ops, both empty states fired and
+  // contradicted each other under a header reading "produced". Neither
+  // question is about `t.text`, so both now read these two signals.
+  const wroteOps = Boolean(opRows?.length) || Boolean(partial?.ops?.length);
+  const leftEffects = producedCount(outcomeInput) > 0;
   const why = (typeof t.reason?.note === "string" && t.reason.note.trim())
     ? t.reason.note.trim()
     : (summaryIsOps ? "" : (typeof t.summary === "string" ? t.summary.trim() : ""))
@@ -835,7 +895,11 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
               <div className="sv-sec-h"><h4>Reasoning</h4><span className="sv-sec-n">narration · not verified</span></div>
               {partial?.prose ? <Prose>{partial.prose.slice(-2000)}</Prose> : null}
               {t.summary && !summaryIsOps ? <Prose>{t.summary}</Prose> : null}
-              {!partial?.prose && (!t.summary || summaryIsOps) ? <Prose dim>The model wrote no prose for this turn — only operations. Its output is under Raw.</Prose> : null}
+              {!partial?.prose && (!t.summary || summaryIsOps)
+                ? <Prose dim>{wroteOps
+                    ? "The model wrote no prose for this turn — only operations. Its output is under Raw."
+                    : "The model left no narration for this turn. Its output is under Raw."}</Prose>
+                : null}
             </section>
           ) : null}
 
@@ -849,9 +913,11 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
               ? <OpLedger rows={opRows} sel={sel} onSelect={setSel} />
               : (
                 <div className="step-empty">
-                  {t.text
-                    ? <><b>This output isn't an ops block.</b><span>The model wrote prose instead of operations, so nothing could be applied.</span></>
-                    : <><b>No operations were recorded.</b><span>This step ended without attempting anything, or it left the recent-turn window.</span></>}
+                  {leftEffects
+                    ? <><b>No ops block in this output.</b><span>This turn still produced {produced} — recorded from the event log below rather than written as operations.</span></>
+                    : t.text
+                      ? <><b>This output isn't an ops block.</b><span>The model wrote prose instead of operations, so nothing could be applied.</span></>
+                      : <><b>No operations were recorded.</b><span>This step ended without attempting anything, or it left the recent-turn window.</span></>}
                 </div>
               )}
             <OpLatency timings={t.opTimings ?? listStep?.opTimings} />

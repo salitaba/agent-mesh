@@ -4,6 +4,7 @@ import type { MeshEvent } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
 
 export * from "./state-lock";
+import { STATE_LOCK_FILENAME } from "./state-lock";
 
 export interface SessionRecord {
   agentId: string;
@@ -50,6 +51,16 @@ export class FileSessionRegistry {
     this.load();
     this.records.delete(agentId);
     this.flush();
+  }
+
+  /**
+   * Drop the in-memory cache so the next read comes from disk. Restore
+   * replaces the state dir underneath this registry, and `loaded` would
+   * otherwise pin it to the pre-restore file for the life of the process.
+   */
+  reload(): void {
+    this.records = new Map();
+    this.loaded = false;
   }
 
   private flush(): void {
@@ -427,6 +438,254 @@ export function archiveStateDir(
     if (fs.existsSync(from)) fs.cpSync(from, layout.artifacts, { recursive: true });
   }
   return { archivedTo, layout };
+}
+
+export type MeshArchiveKind = "state" | "product" | "worktrees" | "bundle" | "other";
+
+export interface MeshArchiveEntry {
+  /** The stamp shared by every archive the reset that produced this one wrote. */
+  stamp: string;
+  kind: MeshArchiveKind;
+  /** Name as it sits on disk, suffix and collision number included. */
+  name: string;
+  path: string;
+  /** Recursive size in bytes. A bundle is a file, so this is its length. */
+  bytes: number;
+  mtime: string;
+  /**
+   * Whether the archive carries a readable event log, i.e. whether it can be
+   * restored to. Only `kind: "state"` archives ever do.
+   */
+  hasEvents: boolean;
+}
+
+const ARCHIVE_NAME = /^(.+?)\.bak-(\d{8}-\d{6})(?:-\d+)?$/;
+
+function dirSize(target: string): number {
+  let total = 0;
+  const walk = (p: string): void => {
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(p);
+    } catch {
+      return;
+    }
+    if (st.isDirectory()) {
+      for (const entry of fs.readdirSync(p)) walk(path.join(p, entry));
+      return;
+    }
+    total += st.size;
+  };
+  walk(target);
+  return total;
+}
+
+/**
+ * Every archive under `archiveRoot`, newest first.
+ *
+ * `kind` is read from the name because that is what a reset controls, with the
+ * state archive confirmed structurally instead: the state dir's own name is
+ * configurable, so `logs/events.jsonl` is the only thing that can be trusted to
+ * identify one. Anything unrecognised is `"other"` rather than an error — a
+ * directory full of archives is not the place to fail hard.
+ */
+export function listArchives(archiveRoot: string): MeshArchiveEntry[] {
+  const root = path.resolve(archiveRoot);
+  let names: string[];
+  try {
+    names = fs.readdirSync(root);
+  } catch {
+    return [];
+  }
+  const entries: MeshArchiveEntry[] = [];
+  for (const name of names) {
+    const match = ARCHIVE_NAME.exec(name);
+    if (!match) continue;
+    const target = path.join(root, name);
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(target);
+    } catch {
+      continue;
+    }
+    const hasEvents = st.isDirectory() && fs.existsSync(path.join(target, "logs", "events.jsonl"));
+    const base = match[1];
+    const kind: MeshArchiveKind = name.endsWith(".bundle")
+      ? "bundle"
+      : hasEvents
+        ? "state"
+        : base.startsWith("worktrees")
+          ? "worktrees"
+          : base.startsWith("main")
+            ? "product"
+            : "other";
+    entries.push({
+      stamp: match[2],
+      kind,
+      name,
+      path: target,
+      bytes: st.isDirectory() ? dirSize(target) : st.size,
+      mtime: st.mtime.toISOString(),
+      hasEvents,
+    });
+  }
+  // Stamp is the operation identity, so sort on it rather than mtime: the
+  // archives of one reset are written seconds apart but belong together.
+  return entries.sort((a, b) => (a.stamp === b.stamp ? a.name.localeCompare(b.name) : a.stamp < b.stamp ? 1 : -1));
+}
+
+/**
+ * The `seq` of the last complete event in a JSONL log, or null when the log is
+ * missing, empty, or has no parseable line.
+ *
+ * Reads only a tail window rather than the whole file: the log is the largest
+ * thing in a state dir and this exists to answer one question about its end.
+ * Both edges of the window can cut a line, so it walks backwards and returns
+ * the first line that parses with a numeric `seq` — which also makes it
+ * tolerant of a torn final append, the same failure the store repairs on load.
+ */
+export function readLogTailSeq(logFile: string): number | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(logFile, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const size = fs.fstatSync(fd).size;
+    if (size === 0) return null;
+    const window = Math.min(size, 64 * 1024);
+    const buf = Buffer.allocUnsafe(window);
+    fs.readSync(fd, buf, 0, window, size - window);
+    const lines = buf.toString("utf8").split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line.length === 0) continue;
+      try {
+        const seq = (JSON.parse(line) as { seq?: unknown }).seq;
+        if (typeof seq === "number") return seq;
+      } catch {
+        /* a window edge cut this line, or a torn final write */
+      }
+    }
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Newline count — each event is written as one terminated line. */
+function countLogEvents(logFile: string): number {
+  let fd: number;
+  try {
+    fd = fs.openSync(logFile, "r");
+  } catch {
+    return 0;
+  }
+  try {
+    const buf = Buffer.allocUnsafe(1 << 20);
+    let read = 0;
+    let count = 0;
+    while ((read = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      for (let i = 0; i < read; i++) if (buf[i] === 0x0a) count++;
+    }
+    return count;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+export interface RestoreStateResult {
+  /** Where the pre-restore state was moved, null when there was none to move. */
+  previousArchivedTo: string | null;
+  /**
+   * True when the archive's snapshot claimed to be newer than its log and was
+   * dropped — see `restoreStateDir`.
+   */
+  snapshotDropped: boolean;
+  /** Events in the restored log. */
+  events: number;
+  /** True when `sessions.json` was left behind rather than restored. */
+  sessionsDropped: boolean;
+}
+
+/**
+ * Replace the state dir at `to` with a copy of the state archive at `from`.
+ *
+ * Three properties this is built around:
+ *
+ * 1. **Reversible.** The current state dir is archived first, to `archiveRoot`
+ *    under the same stamp as the rest of the operation, so restoring the wrong
+ *    archive is itself undoable.
+ * 2. **Repeatable.** The archive is COPIED, never moved, so the same stamp can
+ *    be restored twice and a failed restore leaves the archive intact.
+ * 3. **Not poisoned by its own fast path.** `Kernel.replayFromStore` trusts a
+ *    snapshot's `throughSeq` and fast-forwards from it without checking the log,
+ *    so a snapshot from a later mission would resurrect goals the restored log
+ *    never mentions. Any snapshot newer than the restored log's tail is dropped
+ *    rather than restored into a kernel that will believe it.
+ *
+ * `sessions.json` is dropped by default: the session ids in it point at
+ * runtimes on the other side of a reset, and `FileSessionRegistry` caches what
+ * it loads, so a stale one fails mid-turn rather than at boot. The sqlite index
+ * is never carried over at all — replay rebuilds it, and a stale index would
+ * double-count.
+ *
+ * The caller must hold no open handles into `to` (JSONL store, sqlite index)
+ * and must refresh its state lock afterwards: the lock file travels with the
+ * archived dir, so the copy can land a foreign one in its place.
+ */
+export function restoreStateDir(
+  from: string,
+  to: string,
+  opts: { archiveRoot?: string; stamp?: string; keepSessions?: boolean } = {},
+): RestoreStateResult {
+  const source = path.resolve(from);
+  const target = path.resolve(to);
+  if (!fs.existsSync(path.join(source, "logs", "events.jsonl"))) {
+    throw new Error(`not a restorable state archive (no logs/events.jsonl): ${source}`);
+  }
+  const previousArchivedTo = fs.existsSync(target) ? archiveDir(target, { archiveRoot: opts.archiveRoot, stamp: opts.stamp }) : null;
+  fs.mkdirSync(target, { recursive: true });
+  fs.cpSync(source, target, { recursive: true });
+
+  // The lock file names the process that held the dir when the archive was
+  // taken — dead, or a different mesh entirely. The caller rewrites it; a
+  // stale one must not survive even if it forgets to.
+  fs.rmSync(path.join(target, STATE_LOCK_FILENAME), { force: true });
+  // Rebuilt by replay. Restoring it would index the pre-restore log alongside
+  // the restored one.
+  for (const suffix of ["", "-wal", "-shm"]) {
+    fs.rmSync(path.join(target, "events", `events-index.sqlite${suffix}`), { force: true });
+  }
+
+  const logFile = path.join(target, "logs", "events.jsonl");
+  const tail = readLogTailSeq(logFile);
+  let snapshotDropped = false;
+  for (const name of fs.readdirSync(target)) {
+    if (!/^snapshot-.*\.json$/.test(name)) continue;
+    const file = path.join(target, name);
+    let throughSeq: number | null = null;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { throughSeq?: unknown };
+      throughSeq = typeof parsed.throughSeq === "number" ? parsed.throughSeq : null;
+    } catch {
+      throughSeq = null;
+    }
+    // An unreadable snapshot is as dangerous as a stale one: `replayFromStore`
+    // falls back to a full replay on a parse error, but leaving it in place
+    // means the next boot retries a file that is known to be broken.
+    if (throughSeq === null || tail === null || throughSeq > tail) {
+      fs.rmSync(file, { force: true });
+      snapshotDropped = true;
+    }
+  }
+
+  const sessionsFile = path.join(target, "sessions.json");
+  const sessionsDropped = opts.keepSessions !== true && fs.existsSync(sessionsFile);
+  if (sessionsDropped) fs.rmSync(sessionsFile, { force: true });
+
+  return { previousArchivedTo, snapshotDropped, events: countLogEvents(logFile), sessionsDropped };
 }
 
 export class EventTailer {

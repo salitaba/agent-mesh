@@ -166,7 +166,6 @@ test("reset: leaves the fresh product checkout as its own git repo", { skip: !ha
   }
 });
 
-
 /**
  * Reset archived `main/` and nothing else, so a stranded product at the
  * workspace root — the layout `agentWorkspace` used to hand every read-only

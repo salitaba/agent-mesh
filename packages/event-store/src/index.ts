@@ -34,6 +34,15 @@ export interface EventStore {
    */
   reset?(): Promise<void> | void;
   /**
+   * Re-read the log from disk, discarding every in-memory index. The counterpart
+   * to `reset` for the restore path: the file was replaced by an archive rather
+   * than truncated, so the cache has to be rebuilt from it, not merely cleared.
+   *
+   * Callers must have stopped the mesh: anything appended concurrently would be
+   * sequenced into a log that does not contain its predecessors.
+   */
+  reload?(): Promise<MeshEvent[]>;
+  /**
    * Follow the log as it grows: `handler` runs for every event appended after
    * the call, in append order, and the returned function detaches it.
    *
@@ -156,6 +165,15 @@ export class MemoryEventStore implements EventStore {
     this.seq = 0;
   }
 
+  /**
+   * There is no file to re-read, so this is `reset` by another name. Present
+   * only so callers that reload a store do not have to special-case memory;
+   * restore itself refuses an in-memory mesh outright.
+   */
+  async reload(): Promise<MeshEvent[]> {
+    this.reset();
+    return [];
+  }
 
   async lastSeq(): Promise<number> {
     return this.seq;
@@ -415,6 +433,29 @@ export class JsonlEventStore implements EventStore {
     this.loaded = true;
   }
 
+  /**
+   * Re-read the log from disk, discarding every in-memory index.
+   *
+   * Distinct from `reset()` in what happens to the file: reset truncates it,
+   * this one leaves it alone and rebuilds the cache from whatever is now there.
+   * Going through `load()` is deliberate rather than a bare re-read — a state
+   * dir restored from an archive can carry a torn final append, and `load()`
+   * is where that repair already lives.
+   */
+  async reload(): Promise<MeshEvent[]> {
+    await this.close();
+    this.cache = [];
+    this.byId = new Map();
+    this.byCorrelation = new Map();
+    this.seq = 0;
+    this.sinceSync = 0;
+    this.truncatedTail = 0;
+    this.corruptLines = 0;
+    this.writeChain = Promise.resolve();
+    this.loaded = false;
+    this.load();
+    return this.cache.map((e) => ({ ...e }));
+  }
 
   path(): string {
     return this.filePath;

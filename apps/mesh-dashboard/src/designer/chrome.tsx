@@ -4,7 +4,7 @@
  * via props from the Designer. */
 
 import { tabOfError } from "./model";
-import { CONFIRM_WORD, destructiveKindsIn, summarizeMutation } from "./mutations";
+import { confirmationFor, confirmationSatisfied, summarizeMutation } from "./mutations";
 import { Button, Input, TextArea } from "../components";
 import type { StagedMutation } from "@mesh/protocol";
 import type { SourceState } from "./model";
@@ -259,14 +259,16 @@ export interface SyncCardProps {
   result: { ok: boolean; msg: string } | null;
   confirmText: string;
   setConfirmText: (s: string) => void;
+  /** This mesh's id, for the kinds whose confirmation is the id itself. */
+  meshId: string;
   onApply: () => void;
   onDismiss: () => void;
 }
 
-export function SyncCard({ mutations, problems, busy, result, confirmText, setConfirmText, onApply, onDismiss }: SyncCardProps): React.JSX.Element {
+export function SyncCard({ mutations, problems, busy, result, confirmText, setConfirmText, meshId, onApply, onDismiss }: SyncCardProps): React.JSX.Element {
   const lines = mutations.flatMap((m) => summarizeMutation(m, { model: null }));
-  const destructive = destructiveKindsIn(mutations);
-  const confirmed = !destructive.length || confirmText.trim().toLowerCase() === CONFIRM_WORD;
+  const confirmation = confirmationFor(mutations, meshId);
+  const confirmed = confirmationSatisfied(confirmation, confirmText);
   return (
     <section className="card save-sync" aria-label="bring the running mission in line">
       <div className="wb-sec-head"><h3>The running mission still differs</h3></div>
@@ -282,14 +284,14 @@ export function SyncCard({ mutations, problems, busy, result, confirmText, setCo
           <ul className="diff-list">{problems.map((t) => <li key={t}>{t}</li>)}</ul>
         </>
       ) : null}
-      {destructive.length ? (
+      {confirmation ? (
         <div className="ms-chat-confirm">
-          <div className="verdict bad">destructive: {destructive.join(", ")}. type “{CONFIRM_WORD}” to confirm.</div>
+          <div className="verdict bad">{confirmation.prompt}</div>
           <Input
             value={confirmText}
             onChange={(ev) => setConfirmText(ev.target.value)}
-            placeholder={CONFIRM_WORD}
-            aria-label={`type ${CONFIRM_WORD} to confirm a destructive change`}
+            placeholder={confirmation.word}
+            aria-label={`type ${confirmation.word} to confirm a destructive change`}
           />
         </div>
       ) : null}

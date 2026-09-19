@@ -27,9 +27,12 @@ export async function confirmResume(confirm: ConfirmFn, status: any, action = "r
 }
 
 /**
- * Reset is irreversible from the console's point of view (the archive is only
- * recoverable from a shell), so a plain confirm() is not enough — the operator
- * types the mesh name, the same guard pattern used for deleting a repo.
+ * Reset destroys the live mission, so a plain confirm() is not enough — the
+ * operator types the mesh name, the same guard pattern used for deleting a repo.
+ *
+ * The typed id is not only a speed bump in the dialog: it goes to the server as
+ * `confirmId` and that is what the route checks. A guard that lives only in the
+ * console is a guard against typos, not against anything that can POST.
  */
 export function useResetMission(): { busy: boolean; resetMission: () => Promise<void> } {
   const { status, toast, refreshStatus, client, confirm } = useMesh();
@@ -42,8 +45,9 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
     const typed = await confirm({
       title: "Reset the mission to zero?",
       body: [
-        "Every event, agent session, budget and step goes away, every git worktree from the old run is deleted, and the goal restarts from zero.",
-        "The old state is archived outside the agent workspace (.mesh-backups/<mesh-id>/) — the console cannot restore it, but it stays on disk for manual recovery.",
+        "Everything the running mission produced goes away: every event, agent session, budget and step, and the goal restarts from zero.",
+        "Three things are archived first, together under one stamp in .mesh-backups/<mesh-id>/ — the state directory holding the mission log, the product checkout, and the agent worktrees (their uncommitted files, plus a git bundle of their branches).",
+        "This console cannot restore them. Run `mesh backups <mesh.yaml>` to list the stamps and `mesh restore <mesh.yaml> <stamp>` to put one back.",
       ],
       danger: true,
       confirmLabel: "Reset to zero",
@@ -52,7 +56,7 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
     if (typed === null) return;
     setBusy(true);
     try {
-      const { status: code, json } = await client.post("/mission/reset", { confirm: true });
+      const { status: code, json } = await client.post("/mission/reset", { confirm: true, confirmId: name });
       toast(
         code === 200 ? "mission reset to zero" : "could not reset",
         json?.note ?? json?.error ?? "",

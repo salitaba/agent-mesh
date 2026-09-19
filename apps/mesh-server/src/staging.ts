@@ -40,6 +40,36 @@ export interface StagedApplyReport {
   results: StagedApplyResult[];
 }
 
+export interface ApplyContext {
+  /**
+   * The mesh id the operator typed, for the mutations whose blast radius is the
+   * whole mission. Checked here, at apply time, and not when the mutation was
+   * staged: a guard at admission binds the agent, which can supply any field it
+   * is handed, while this one binds whoever presses Apply — and pressing Apply
+   * is the only thing that makes the reset happen.
+   */
+  confirmId?: string;
+}
+
+/**
+ * Whether a typed confirmation answers the mesh id.
+ *
+ * Three doors ask for this string — `POST /mission/reset`, `POST /mission/restore`,
+ * and a `mission.reset` arriving on the staged-apply route — and the console
+ * card arms on the same value. They share this one comparison so that the
+ * string a card accepts is never refused a moment later by the route behind
+ * it, which reads as a bug rather than as a guard.
+ *
+ * Trimmed and case-folded, but empty never matches: an unset `meshId` on either
+ * side would otherwise compare equal to an unset other side and quietly arm
+ * the door this exists to close.
+ */
+export function matchesMeshId(typed: unknown, meshId: string): boolean {
+  const typedId = String(typed ?? "").trim().toLowerCase();
+  const actual = String(meshId ?? "").trim().toLowerCase();
+  return typedId.length > 0 && typedId === actual;
+}
+
 const ok = (kind: StagedMutation["kind"], detail: string): StagedApplyResult => ({ kind, ok: true, detail });
 const no = (kind: StagedMutation["kind"], detail: string): StagedApplyResult => ({ kind, ok: false, detail });
 
@@ -52,7 +82,11 @@ function statedReason(m: StagedMutation): string {
   return typeof r === "string" ? r.trim() : "";
 }
 
-export async function applyStagedMutation(m: StagedMutation, instance: MeshInstance): Promise<StagedApplyResult> {
+export async function applyStagedMutation(
+  m: StagedMutation,
+  instance: MeshInstance,
+  ctx: ApplyContext = {},
+): Promise<StagedApplyResult> {
   const supervisor = instance.supervisor;
   const state = instance.kernel.state;
 
@@ -168,11 +202,23 @@ export async function applyStagedMutation(m: StagedMutation, instance: MeshInsta
       return ok(m.kind, `mission reopened; ${r.unsatisfied?.length ?? 0} criteria back to UNSATISFIED, revived: ${r.revived?.join(", ") || "(none)"}`);
     }
 
-    // The most destructive thing the surface can do. The operator pressing
-    // Apply is the confirmation `POST /mission/reset` takes as `confirm:true`;
-    // the required reason above is what distinguishes it from a stray replay
-    // of an old proposal.
+    // The most destructive thing the surface can do. The required reason above
+    // distinguishes a proposal from a stray replay, but it cannot distinguish
+    // an operator from anything else that can POST: the agent writes the
+    // reason, so a reason-only guard is one the agent satisfies by existing.
+    //
+    // The typed mesh id is the half the agent cannot supply — it is asked for
+    // at Apply, by the console, after the operator has read what this will
+    // delete. An agent-proposed reset still works: it stages as it always did,
+    // the card asks for the id, and Apply carries it.
     case "mission.reset": {
+      if (!matchesMeshId(ctx.confirmId, instance.config.meshId)) {
+        return no(
+          m.kind,
+          `mission.reset requires the operator to type this mesh's id ("${instance.config.meshId}") before applying — ` +
+            `the reason alone is not a confirmation`,
+        );
+      }
       const report = await instance.reset({});
       return ok(m.kind, report.archivedTo
         ? `mission reset to zero; previous state archived at ${report.archivedTo}. Mesh is parked.`
@@ -186,10 +232,14 @@ export async function applyStagedMutation(m: StagedMutation, instance: MeshInsta
   }
 }
 
-export async function applyStagedProposal(mutations: StagedMutation[], instance: MeshInstance): Promise<StagedApplyReport> {
+export async function applyStagedProposal(
+  mutations: StagedMutation[],
+  instance: MeshInstance,
+  ctx: ApplyContext = {},
+): Promise<StagedApplyReport> {
   const results: StagedApplyResult[] = [];
   for (const m of mutations) {
-    const r = await applyStagedMutation(m, instance);
+    const r = await applyStagedMutation(m, instance, ctx);
     results.push(r);
     if (!r.ok) break;
   }

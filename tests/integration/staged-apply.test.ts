@@ -161,6 +161,47 @@ test("staged apply: destructive kinds are refused without a stated reason", asyn
 });
 
 /**
+ * The reason the protocol requires on a destructive kind is authored by the
+ * AGENT, so on the one mutation whose blast radius is the whole mission it
+ * cannot also be the guard: an agent that can stage a reset can write a reason
+ * for it. The typed mesh id is the half it cannot supply.
+ *
+ * Checked at APPLY and not at staging, deliberately. A guard at admission
+ * binds the agent — which can satisfy any field it is handed — while this one
+ * binds whoever presses Apply, and pressing Apply is the only thing that makes
+ * the reset happen.
+ */
+test("staged apply: mission.reset needs a confirmation the agent cannot write", async () => {
+  const h = await harness({ agents: [DEV], mode: "parked", goal: "Build a payment API.", criteria: TWO });
+  const meshId = h.m.config.meshId;
+  const reset = { kind: "mission.reset", reason: "start the run over" } as StagedMutation;
+  const withConfirm = (confirmId: string) => h.apply({ id: "sp-reset", createdAt: new Date().toISOString(), mutations: [reset], problems: [], confirmId });
+  try {
+    // The reason alone — everything the agent is able to supply — is refused,
+    // and the refusal names the string that would work.
+    const bare = await h.propose(reset);
+    assert.equal(bare.status, 409);
+    assert.match(bare.json.results[0].detail, new RegExp(meshId));
+    assert.ok(goalOf(h.m), "a refused reset must leave the mission standing");
+
+    // The shared confirm word is the OTHER destructive kinds' guard. It must not
+    // release this one.
+    const shared = await withConfirm("apply");
+    assert.equal(shared.status, 409);
+    assert.ok(goalOf(h.m));
+
+    // Accepted trimmed and case-folded, the way the console's card accepts it —
+    // a string the card arms on cannot come back refused by the route behind it.
+    const ok = await withConfirm(`  ${meshId.toUpperCase()}  `);
+    assert.equal(ok.status, 200, JSON.stringify(ok.json));
+    assert.equal(ok.json.applied, 1);
+    assert.match(ok.json.results[0].detail, /reset to zero/, "the reset itself must actually have run");
+  } finally {
+    await h.close();
+  }
+});
+
+/**
  * Staging happens a turn or more before applying and the mesh moves in
  * between. `suspendAgent`/`resumeAgent` return void and refuse internally on a
  * retired seat, so a route that called them blind would answer 200 while

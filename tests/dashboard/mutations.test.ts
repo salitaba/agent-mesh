@@ -4,6 +4,8 @@ import { DESTRUCTIVE_KINDS, type StagedMutation, type StagedProposal } from "../
 import {
   CONFIRM_WORD,
   MUTATION_HANDLERS,
+  confirmationFor,
+  confirmationSatisfied,
   destructiveKindsIn,
   goalDriftWarning,
   isDestructive,
@@ -117,6 +119,54 @@ test("the text proposal is hidden exactly when the buffer carries a config.repla
 test("the confirm word is a stable literal the card can prompt for", () => {
   assert.equal(typeof CONFIRM_WORD, "string");
   assert.ok(CONFIRM_WORD.length > 0);
+});
+
+/* ------------------------------------------------- typed confirmation
+ * `reason` is agent-authored, so on the one kind whose blast radius is the whole
+ * mission it cannot also be the guard. The card escalates that case to the mesh
+ * id; the server checks the same string independently. */
+
+test("nothing destructive needs no confirmation at all", () => {
+  assert.equal(confirmationFor([{ kind: "run.pause" }, { kind: "seat.wake", agentId: "a" }], "skill-panel"), null);
+  assert.equal(confirmationSatisfied(null, ""), true, "an undestructive apply must not be blocked by an empty box");
+});
+
+test("other destructive kinds keep the shared word", () => {
+  const c = confirmationFor([{ kind: "seat.retire", agentId: "a", reason: "idle" }], "skill-panel");
+  assert.equal(c?.word, CONFIRM_WORD);
+  assert.ok(c?.prompt.includes(CONFIRM_WORD));
+  assert.equal(confirmationSatisfied(c, CONFIRM_WORD), true);
+});
+
+/* The escalation has to survive sitting in a set with other destructive kinds:
+ * a proposal that retires a seat AND resets is still a reset. */
+test("mission.reset escalates the word to the mesh id, mixed in with anything else", () => {
+  const c = confirmationFor(
+    [{ kind: "seat.retire", agentId: "a", reason: "idle" }, { kind: "mission.reset", reason: "start over" }],
+    "skill-panel",
+  );
+  assert.equal(c?.word, "skill-panel");
+  assert.ok(c?.prompt.includes("skill-panel"), "the prompt must name the id to type");
+  assert.notEqual(c?.word, CONFIRM_WORD, "the shared word must no longer release a reset");
+  assert.equal(confirmationSatisfied(c, CONFIRM_WORD), false);
+  assert.equal(confirmationSatisfied(c, "skill-panel"), true);
+});
+
+test("the typed id is accepted trimmed and case-insensitively, as the server accepts it", () => {
+  const c = confirmationFor([{ kind: "mission.reset", reason: "start over" }], "skill-panel");
+  assert.equal(confirmationSatisfied(c, "  skill-panel  "), true);
+  assert.equal(confirmationSatisfied(c, "Skill-Panel"), true);
+  assert.equal(confirmationSatisfied(c, "skill-pane"), false);
+  assert.equal(confirmationSatisfied(c, ""), false);
+});
+
+/* Fail closed. An id that had not loaded reaches the card as "" — and an empty
+ * word that matched an empty box would arm the one door this guard exists for. */
+test("an unloaded mesh id never reads as already confirmed", () => {
+  const c = confirmationFor([{ kind: "mission.reset", reason: "start over" }], "");
+  assert.equal(c?.word, "");
+  assert.equal(confirmationSatisfied(c, ""), false);
+  assert.equal(confirmationSatisfied(c, "  "), false);
 });
 
 /* ---------------------------------------------------------- goal drift

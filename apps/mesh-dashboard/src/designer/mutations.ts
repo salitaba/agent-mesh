@@ -212,6 +212,61 @@ export function destructiveKindsIn(mutations: StagedMutation[]): string[] {
 /** The word an operator types to confirm a destructive server apply. */
 export const CONFIRM_WORD = "apply";
 
+export interface Confirmation {
+  /** The exact string the operator must type. */
+  word: string;
+  /** One sentence naming what is destructive, and what to type. */
+  prompt: string;
+  /** The destructive kinds this covers. */
+  kinds: string[];
+}
+
+/**
+ * What must be typed to release a destructive server-side apply, or null when
+ * nothing in the set is destructive.
+ *
+ * Most kinds keep the shared word: one word is enough to stop a click from
+ * being a reflex, which is all they need. `mission.reset` escalates to the mesh
+ * id, because it is the one kind an AGENT can propose — the `reason` the
+ * protocol requires on it is written by the agent, so a reason-based guard is
+ * one the agent satisfies by existing. The mesh id is the half it cannot
+ * supply. The server checks the same value independently (see the
+ * `mission.reset` case in apps/mesh-server/src/staging.ts), so a client that
+ * skips this escalation gets a refusal rather than a wiped mission.
+ */
+export function confirmationFor(mutations: StagedMutation[], meshId: string): Confirmation | null {
+  const kinds = destructiveKindsIn(mutations);
+  if (kinds.length === 0) return null;
+  if (kinds.includes("mission.reset")) {
+    return {
+      word: meshId,
+      prompt: `destructive: ${kinds.join(", ")} — this discards the whole run. Type the mesh id “${meshId}” to confirm.`,
+      kinds,
+    };
+  }
+  return {
+    word: CONFIRM_WORD,
+    prompt: `destructive: ${kinds.join(", ")}. type “${CONFIRM_WORD}” to confirm.`,
+    kinds,
+  };
+}
+
+/**
+ * Whether `typed` releases the apply.
+ *
+ * Case-insensitive to match the server's own comparison: a case-sensitive
+ * client would enable the button and then have the server refuse the very same
+ * string, which reads as a bug rather than as a guard.
+ */
+export function confirmationSatisfied(confirmation: Confirmation | null, typed: string): boolean {
+  if (!confirmation) return true;
+  const word = confirmation.word.trim().toLowerCase();
+  // Nothing to type means the mesh id had not loaded when the card rendered.
+  // That is a bug upstream, and it must not read as "already confirmed".
+  if (!word) return false;
+  return typed.trim().toLowerCase() === word;
+}
+
 /**
  * For one release the designer's `final` frame carries BOTH a staged proposal
  * and the older text-extracted `proposedConfig`. Rendering both would put two

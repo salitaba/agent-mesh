@@ -1631,7 +1631,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 /* --- op ledger --- */
 .sv-ops { display: flex; flex-direction: column; gap: var(--s1-5); margin-bottom: var(--s3); }
 .sv-op {
-  display: grid; grid-template-columns: 20px minmax(0, auto) minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: baseline; gap: var(--s2-5); cursor: pointer;
   padding: 8px var(--s2-5); border: 1px solid var(--line); border-left-width: 3px;
   border-radius: var(--r-sm); background: var(--bg-2);
@@ -1643,7 +1643,15 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-op-miss { border-left-color: var(--warn); }
 .sv-op-na { border-left-color: var(--line-strong); }
 .sv-op-i { font-size: 10.5px; color: var(--muted); }
+.sv-op-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sv-op-r1 { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
 .sv-op-t { font: 600 13px var(--sans); letter-spacing: -.005em; }
+.sv-op-f {
+  display: inline-flex; align-items: baseline; gap: var(--s1); max-width: 100%;
+  padding: 1px 6px; border-radius: var(--r-sm); background: var(--raised);
+  font: 11px var(--mono); color: var(--text-dim); white-space: nowrap;
+}
+.sv-op-f b { font: 600 9px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sv-op-d { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-op-fx { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: var(--r-sm); white-space: nowrap; }
 .sv-op-fx-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }

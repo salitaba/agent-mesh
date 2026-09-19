@@ -24,8 +24,12 @@ import {
   archiveStateDir,
   archiveStamp,
   copyDir,
+  listArchives,
   meshArchiveRoot,
+  readLogTailSeq,
+  restoreStateDir,
   acquireStateLock,
+  type MeshArchiveEntry,
   type StateLockHandle,
 } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
@@ -44,7 +48,7 @@ import {
   SseHub,
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
-import { applyStagedProposal } from "./staging";
+import { applyStagedProposal, matchesMeshId } from "./staging";
 import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { mergeTurnSteps } from "./steps-view";
@@ -166,6 +170,14 @@ export interface MeshInstance {
    * workspace root, state dir excluded); always lands parked.
    */
   reset(opts?: ResetOptions): Promise<ResetReport>;
+  /**
+   * Replace the live mission with a state archive left behind by an earlier
+   * reset. The mesh is left parked on the restored mission, so the operator
+   * decides when it resumes.
+   */
+  restore(archivePath: string, opts?: RestoreOptions): Promise<RestoreReport>;
+  /** Every archive this mesh has written, newest first. */
+  backups(): MeshArchiveEntry[];
   close(): Promise<void>;
 }
 
@@ -216,6 +228,33 @@ export interface ResetReport {
   mode: ServerMode;
 }
 
+export interface RestoreOptions {
+  /**
+   * Carry `sessions.json` over from the archive. Off by default: the session
+   * ids in it belong to runtimes on the other side of a reset, and a restored
+   * session that no longer exists fails mid-turn rather than at boot.
+   */
+  keepSessions?: boolean;
+}
+
+export interface RestoreReport {
+  ok: boolean;
+  /** The archive directory the state was read from. Left untouched. */
+  restoredFrom: string;
+  /** Stamp shared by every archive of the reset that produced it. */
+  stamp: string;
+  /** Where the pre-restore state was moved, so this restore is itself undoable. */
+  previousArchivedTo: string | null;
+  /** Events in the restored log. */
+  events: number;
+  /** Goal the restored mission is running under, null when it has none. */
+  goalId: string | null;
+  /** True when the archive's snapshot was newer than its log and was dropped. */
+  snapshotDropped: boolean;
+  /** True when `sessions.json` was left behind rather than restored. */
+  sessionsDropped: boolean;
+  mode: ServerMode;
+}
 
 export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInstance> {
   const config = resolveConfig(options.configPath);
@@ -676,6 +715,67 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         worktreeBundleTo,
         strayRootArchivedTo,
         goalId: kernel.state.activeGoalId ?? null,
+        mode: self.mode,
+      };
+    },
+    backups() {
+      return listArchives(meshArchiveRoot(config.dir, config.meshId));
+    },
+    async restore(archivePath: string, restoreOpts: RestoreOptions = {}) {
+      const self = this as MeshInstance;
+      if (options.inMemory) {
+        // There is no state dir to replace and no archive to read.
+        throw new Error("an in-memory mesh has no state dir to restore into");
+      }
+      const source = path.resolve(archivePath);
+      const stamp = /\.bak-(\d{8}-\d{6})(?:-\d+)?$/.exec(path.basename(source))?.[1] ?? "";
+      // Park first even though the route refuses a live mesh: the copy below
+      // swaps the log out from under anything still writing to it. Park is
+      // idempotent, so an already-parked mesh pays nothing.
+      await self.park();
+      // Same reset the destructive path does: no agent may carry a turn or a
+      // budget across the boundary, because the events that established them
+      // are no longer in the log.
+      await supervisor.resetMission();
+      scheduler.resetMissionState();
+      // Release the index before the directory is replaced: on POSIX an open
+      // handle keeps writing into the inode that is about to be moved aside.
+      closeIndex();
+      const result = restoreStateDir(source, config.stateDir, {
+        archiveRoot: meshArchiveRoot(config.dir, config.meshId),
+        keepSessions: restoreOpts.keepSessions,
+      });
+      // The archive carried the lock file of whichever process wrote it. Ours
+      // is gone with the directory we just moved aside, so rewrite it before
+      // anything else can decide the directory is unclaimed.
+      stateLock?.refresh();
+      // The registry caches what it loaded, so it would otherwise keep serving
+      // the pre-restore file for the life of this process.
+      sessionRegistry?.reload();
+      // Rebuild the store's in-memory cache from the log now on disk before the
+      // kernel reads it, or the kernel would replay the log we just replaced.
+      const restoredEvents = (await store.reload?.()) ?? [];
+      // The index is rebuilt by re-ingesting the restored log, never by copying
+      // the archived sqlite file: a stale index would count those events a
+      // second time.
+      if (!options.inMemory) openIndex(restoredEvents);
+      await kernel.reloadFromStore();
+      // resume:true is the deliberate opposite of reset — the whole point is to
+      // get the archived mission back rather than to mint a new goal.
+      await supervisor.boot({ resume: true, mode: "parked" });
+      scheduler.rebuildInterestRegistry();
+      // Step 1 parked the scheduler and boot left it parked, so `mode`/`uiOnly`
+      // already read "parked".
+      self.startedAt = Date.now();
+      return {
+        ok: true,
+        restoredFrom: source,
+        stamp,
+        previousArchivedTo: result.previousArchivedTo,
+        events: result.events,
+        goalId: kernel.state.activeGoalId ?? null,
+        snapshotDropped: result.snapshotDropped,
+        sessionsDropped: result.sessionsDropped,
         mode: self.mode,
       };
     },
@@ -1864,12 +1964,26 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // run produced is archived first — state dir, product checkout, worktrees
       // and their branches — so the operation is recoverable, but the live mesh
       // loses every agent session, event, budget and artifact link.
-      // `confirm: true` is mandatory so a stray POST from a retry, a crawler,
-      // or a mistyped curl can never nuke a running mission.
+      //
+      // Both `confirm:true` and a typed `confirmId` are mandatory. The boolean
+      // alone is a constant: it stops an accident, not a caller. See the guard
+      // below for why that distinction matters on this route in particular.
       if (parts[0] === "mission" && parts[1] === "reset" && req.method === "POST") {
         const b = await body();
         if (b?.confirm !== true) {
           return json(400, { ok: false, error: "reset requires confirm:true — this wipes the whole mission" });
+        }
+        // `confirm:true` is a constant, and this route is reachable without a
+        // token when MESH_API_TOKEN is unset — so on its own it let
+        // `curl -d '{"confirm":true}'` wipe a running mission. Typing the mesh
+        // id is the part a stray retry, a crawler, or a pasted shell history
+        // entry cannot supply.
+        if (!matchesMeshId(b.confirmId, config.meshId)) {
+          return json(409, {
+            ok: false,
+            error: `reset requires confirmId set to this mesh's id — type "${config.meshId}"`,
+            meshId: config.meshId,
+          });
         }
         const report = await instance.reset({ keepArtifacts: b.keepArtifacts === true });
         const cleaned = report.worktreesRemoved.length ? `${report.worktreesRemoved.length} worktree(s) removed; ` : "";
@@ -1879,6 +1993,74 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           note: report.archivedTo
             ? `mission reset to zero; ${cleaned}${product}previous state archived outside the workspace at ${report.archivedTo}. Mesh is parked — press continue to start the new run.`
             : `mission reset to zero; ${cleaned}${product}mesh is parked — press continue to start the new run.`,
+        });
+      }
+      // The archives reset has left behind, newest first. Read-only, and the
+      // only way to discover a stamp to restore.
+      if (parts[0] === "mission" && parts[1] === "backups" && req.method === "GET") {
+        return json(200, { meshId: config.meshId, backups: instance.backups() });
+      }
+      // The inverse of reset: put an archived mission back. Deliberately does
+      // NOT park for you — reset may park because it is about to destroy
+      // things, but a restore harms nothing by waiting, and silently stopping
+      // a running mission in order to restore over it is how an operator loses
+      // a run they meant to keep.
+      if (parts[0] === "mission" && parts[1] === "restore" && req.method === "POST") {
+        const b = await body();
+        if (instance.inMemory) {
+          return json(409, { ok: false, error: "an in-memory mesh has no state dir to restore into" });
+        }
+        if (!matchesMeshId(b?.confirmId, instance.config.meshId)) {
+          return json(409, {
+            ok: false,
+            error: `restore requires confirmId set to this mesh's id — type "${config.meshId}"`,
+            meshId: config.meshId,
+          });
+        }
+        if (instance.mode !== "parked") {
+          return json(409, {
+            ok: false,
+            error: "restore needs the mission parked — stop it first. Nothing is lost by waiting, so this refuses rather than parking for you.",
+          });
+        }
+        const stamp = typeof b?.stamp === "string" ? b.stamp.trim() : "";
+        if (!stamp) {
+          return json(400, { ok: false, error: "restore requires a stamp — list them with GET /mission/backups" });
+        }
+        const withStamp = instance.backups().filter((a) => a.stamp === stamp);
+        if (withStamp.length === 0) {
+          return json(404, { ok: false, error: `no backup with stamp ${stamp}` });
+        }
+        const chosen = withStamp.find((a) => a.hasEvents);
+        if (!chosen) {
+          return json(400, {
+            ok: false,
+            error:
+              `stamp ${stamp} has no state archive (found: ${withStamp.map((a) => a.kind).join(", ")}). ` +
+              `Only the state archive carries the mission log; the product checkout and the agent worktrees cannot be restored — ` +
+              `reading them back over a live product would overwrite work with no way to merge.`,
+          });
+        }
+        if (readLogTailSeq(path.join(chosen.path, "logs", "events.jsonl")) === null) {
+          return json(404, {
+            ok: false,
+            error: `backup ${chosen.name} holds no events — it is the archive of an empty mission, and restoring it would change nothing.`,
+          });
+        }
+        const report = await instance.restore(chosen.path, { keepSessions: b?.keepSessions === true });
+        return json(200, {
+          ...report,
+          note: [
+            `mission restored from ${chosen.name}`,
+            `${report.events} event(s)`,
+            report.goalId ? `goal ${report.goalId}` : "no goal in the restored log",
+            report.previousArchivedTo ? `the state it replaced was archived at ${report.previousArchivedTo}` : null,
+            report.snapshotDropped ? "the archive's snapshot was newer than its log and was dropped" : null,
+            report.sessionsDropped ? "agent sessions were not carried over, so every seat starts a fresh turn" : null,
+            "mesh is parked — press continue to start the restored run",
+          ]
+            .filter(Boolean)
+            .join("; "),
         });
       }
       // Operator raise of mission caps (event count / wall clock). Stored on
@@ -2062,7 +2244,12 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const mutations = Array.isArray(b?.mutations) ? b.mutations : Array.isArray(b) ? b : null;
         if (!mutations) return json(400, { ok: false, error: "expected a StagedProposal with a `mutations` array" });
         if (mutations.length === 0) return json(400, { ok: false, error: "proposal contains no mutations" });
-        const report = await applyStagedProposal(mutations as StagedMutation[], instance);
+        // A typed mesh id, for the mutations that wipe the mission. The
+        // executor re-checks it against the config, so this body field is a
+        // transport of the operator's confirmation, not the guard itself.
+        const report = await applyStagedProposal(mutations as StagedMutation[], instance, {
+          confirmId: typeof b?.confirmId === "string" ? b.confirmId : undefined,
+        });
         // 409, not 400: the proposal was well-formed and the mesh refused it.
         // And not 500 — a refusal is the guard working, not the server failing.
         // `results` is shorter than `mutations` when one failed; `applied` is

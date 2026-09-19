@@ -143,6 +143,25 @@ test("git workspace: no mesh branches means no bundle, not a failed one", { skip
   }
 });
 
+test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
+  const sh = (args: string[], cwd = dir): string =>
+    require("child_process").execFileSync("git", args, { cwd }).toString().trim();
+  // Brownfield layout: the product repo sits at the workspace root, so
+  // `main/` is nested inside it. Adoption here made main an empty phantom
+  // while merges landed at the root — the reset bug.
+  sh(["init", "-b", "main"]);
+  sh(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "seed"]);
+
+  const ws = new GitWorkspace(dir);
+  await ws.ensureRepo();
+
+  const toplevel = sh(["rev-parse", "--show-toplevel"], ws.mainPath);
+  assert.equal(fs.realpathSync(toplevel), fs.realpathSync(ws.mainPath), "main must be its own repo");
+  assert.ok(fs.existsSync(path.join(ws.mainPath, "README.md")), "main got a fresh initial commit");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 /**
  * `Supervisor.agentWorkspace` hands every seat without `repository.write` the
  * `mainPath` of this port rather than the workspace root. The branch itself is
@@ -191,26 +210,6 @@ test("git workspace: main is a working tree and the root is not", { skip: !hasGi
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-
-test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
-  const sh = (args: string[], cwd = dir): string =>
-    require("child_process").execFileSync("git", args, { cwd }).toString().trim();
-  // Brownfield layout: the product repo sits at the workspace root, so
-  // `main/` is nested inside it. Adoption here made main an empty phantom
-  // while merges landed at the root — the reset bug.
-  sh(["init", "-b", "main"]);
-  sh(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "seed"]);
-
-  const ws = new GitWorkspace(dir);
-  await ws.ensureRepo();
-
-  const toplevel = sh(["rev-parse", "--show-toplevel"], ws.mainPath);
-  assert.equal(fs.realpathSync(toplevel), fs.realpathSync(ws.mainPath), "main must be its own repo");
-  assert.ok(fs.existsSync(path.join(ws.mainPath, "README.md")), "main got a fresh initial commit");
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
 
 test("git workspace: removeMain wipes the checkout and ensureRepo re-initializes", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-main-reset-"));

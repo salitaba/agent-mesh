@@ -65,7 +65,7 @@ function sourceChipText(kind: SourceStateKind, n: number): string {
 }
 
 export default function Designer(): React.JSX.Element {
-  const { vocab, toast, setView, client } = useMesh();
+  const { vocab, toast, setView, client, status: meshStatus } = useMesh();
   // Shell-owned (WS9): this component only paints the mode onto its regions.
   const { focusMode } = useFocusMode();
   const draft = useDraft();
@@ -849,7 +849,12 @@ export default function Designer(): React.JSX.Element {
     setSyncing(true);
     setSyncResult(null);
     try {
-      const { status, json } = await client.post("/designer/staged/apply", { mutations: drift.mutations });
+      // The card's typed confirmation goes to the server as `confirmId`. Today's
+      // drift proposals never carry a `mission.reset`, so it is inert here — but
+      // the card renders whatever the proposal contains, and a confirmation that
+      // never reaches the check it was collected for is a guard that only looks
+      // like one.
+      const { status, json } = await client.post("/designer/staged/apply", { mutations: drift.mutations, confirmId: syncConfirm });
       const ok = status === 200 && json?.ok === true;
       const failed: string[] = Array.isArray(json?.results)
         ? json.results.filter((r: any) => r && r.ok === false).map((r: any) => `${r.kind}: ${r.detail}`)
@@ -1123,6 +1128,7 @@ export default function Designer(): React.JSX.Element {
             result={syncResult}
             confirmText={syncConfirm}
             setConfirmText={setSyncConfirm}
+            meshId={String(meshStatus?.meshId ?? "")}
             onApply={() => void applySync()}
             onDismiss={() => setDrift(null)}
           />

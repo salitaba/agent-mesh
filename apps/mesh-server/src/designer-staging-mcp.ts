@@ -276,7 +276,7 @@ export const STAGING_TOOLS: McpToolDefinition[] = [
   {
     name: "mesh_stage_mission_reset",
     description:
-      "Stage a full mission reset to zero. DESTRUCTIVE and `reason` is required: it archives all state and parks the mesh. This is the most destructive thing you can propose — prefer anything else.",
+      "Stage a full mission reset to zero. DESTRUCTIVE and `reason` is required: it archives all state and parks the mesh. Because a `reason` is written by you and not by the operator, the card adds a second step you cannot supply — the operator must type the mesh id before Apply will go through. Tell them that when you stage it, and tell them the mesh id. This is the most destructive thing you can propose — prefer anything else.",
     inputSchema: { type: "object", required: ["reason"], properties: { reason: str("why; required, shown to the operator") }, additionalProperties: false },
   },
   {

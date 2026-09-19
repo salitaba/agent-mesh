@@ -172,18 +172,42 @@ export const OUTCOME_META: Record<Outcome, { label: string; hint: string; cls: s
   crashed: { label: "crashed", hint: "the runtime failed mid-turn", cls: "o-crash" },
 };
 
+/**
+ * A labelled parameter on a ledger row: a chip, not prose. The value is one
+ * clipped line; the untruncated text stays in the row's tooltip.
+ */
+export interface OpFact { k: string; v: string }
+
+/**
+ * One written op as a reader wants it: what it did (title), which parameters
+ * identify it (facts), and what it actually said (detail).
+ *
+ * `detail` is prose only. A payload with no prose key yields "" rather than a
+ * JSON dump, so parameters must be carried in `facts`.
+ */
+export interface OpHead { title: string; detail: string; facts: OpFact[] }
+
 /** Ops the kernel refused, in the order they were attempted. */
 export function refusedOps(s: OutcomeInput): { op: string; reason?: string }[] {
   return (s.opTimings ?? []).filter((t) => t.ok === false);
+}
+
+/**
+ * Effects the turn left behind, across every ledger category. A turn can leave
+ * these without ever writing an ops block — messages and decisions are counted
+ * from the event log either way — so this is the test for "produced nothing",
+ * and `parseOpsBlock` returning null is not.
+ */
+export function producedCount(s: OutcomeInput): number {
+  const o = s.ops;
+  return o ? o.messages + o.artifacts + o.tasks + o.decisions : 0;
 }
 
 export function outcomeOf(s: OutcomeInput): Outcome {
   if (s.status === "running") return "live";
   if (s.status === "failed") return "crashed";
   if (s.status === "blocked") return "blocked";
-  const o = s.ops;
-  const produced = o ? o.messages + o.artifacts + o.tasks + o.decisions : 0;
-  if (produced > 0) return "shipped";
+  if (producedCount(s) > 0) return "shipped";
   // A turn that wrote nothing because the kernel refused every op is not the
   // same failure as a turn that had nothing to say: "no output" reads as an
   // idle wake-up, hiding a policy refusal the operator has to act on.
