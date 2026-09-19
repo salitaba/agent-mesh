@@ -203,6 +203,14 @@ export interface ResetReport {
    * `git fetch <bundle> 'refs/heads/*:refs/heads/restored/*'`.
    */
   worktreeBundleTo: string | null;
+  /**
+   * Absolute path of the archived stray entries found at the workspace root in
+   * git mode, null when there were none. Git mode owns only `main/` and
+   * `worktrees/` there, so anything else is a file no repository tracks —
+   * archiving it is what makes the reset actually return to zero, instead of
+   * leaving a layout the next boot refuses.
+   */
+  strayRootArchivedTo: string | null;
   /** Goal id minted for the fresh mission. */
   goalId: string | null;
   mode: ServerMode;
@@ -274,6 +282,13 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   // Leaving it defined would flip `deps.workspace` from undefined to an
   // uninitialised store and quietly move every commit onto the git path.
   const useGit = !options.inMemory && resolveUseGit(gitMode, config.workspaceGit);
+  // Before the GitWorkspace is constructed, because constructing one against an
+  // incoherent root is what mints the second repo. Projects predating the
+  // `git:` key are the population that reaches here with a workspace already
+  // full of product files: git moves the checkout into main/ without moving
+  // anything already there, and the stderr warning this replaced was not enough
+  // to stop a mission spending its budget on uncitable commits.
+  if (!options.inMemory) assertWorkspaceCoherent(config.workspacePath, useGit, config.stateDir);
   const workspace = useGit ? new GitWorkspace(config.workspacePath) : undefined;
   if (workspace && !options.inMemory) await workspace.ensureRepo();
   const sessionRegistry = options.inMemory ? undefined : new FileSessionRegistry(config.stateDir);
@@ -539,8 +554,25 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       //    dir lives inside the workspace by default and step 6 archives it
       //    separately, so exclude it here instead of double-archiving.
       let productArchivedTo: string | null = null;
+      let strayRootArchivedTo: string | null = null;
       if (workspace && !options.inMemory) {
         productArchivedTo = archiveDir(workspace.mainPath, { archiveRoot, stamp });
+        // Anything at the root other than what git mode owns is untracked by
+        // every repo here, so `removeMain` below would leave it behind and the
+        // next boot would refuse the layout (see `assertWorkspaceCoherent`). A
+        // root `.git` is deliberately NOT excluded: a workspace that is its own
+        // repository is the other half of that refusal, and reset is exactly
+        // when it should stop being one.
+        strayRootArchivedTo = archiveDir(config.workspacePath, {
+          archiveRoot,
+          stamp,
+          exclude: [
+            workspace.mainPath,
+            path.join(config.workspacePath, WORKTREES_DIRNAME),
+            path.join(config.workspacePath, ".mesh"),
+            config.stateDir,
+          ],
+        });
         workspace.removeMain();
         await workspace.ensureRepo();
       } else if (!options.inMemory) {
@@ -593,6 +625,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         worktreesRemoved,
         worktreesArchivedTo,
         worktreeBundleTo,
+        strayRootArchivedTo,
         goalId: kernel.state.activeGoalId ?? null,
         mode: self.mode,
       };
@@ -2687,6 +2720,108 @@ export function initProductRepo(root: string, stateDir?: string): boolean {
   }
 }
 
+/**
+ * True when `dir` is the toplevel of its own git repository.
+ *
+ * Fail closed. `git rev-parse` answers from the nearest ENCLOSING repo, so a
+ * directory that merely sits inside someone else's checkout reports that repo
+ * — which is how a workspace nested in a product repo passes a naive "is this
+ * a repo" test. Only an exact toplevel match counts; anything else, including
+ * an unreadable path or no git at all, is false.
+ *
+ * `GitWorkspace.ensureRepo` makes the same distinction against `main/`, in
+ * async form. This is the sync copy the server paths need.
+ */
+export function ownsGitRepo(dir: string): boolean {
+  let toplevel: string | null = null;
+  try {
+    const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8", timeout: 4000 });
+    toplevel = r.status === 0 && !r.error ? r.stdout.trim() : null;
+  } catch {
+    return false;
+  }
+  if (!toplevel) return false;
+  try {
+    return fs.realpathSync(toplevel) === fs.realpathSync(dir);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The subdirectory of a git-mode workspace that holds the agent worktrees.
+ *
+ * Named because two places have to agree on it: the entry allow-list below, and
+ * reset's exclusion list, which must not archive the worktrees it is about to
+ * delete. `GitWorkspace` derives the same path from its base directory.
+ */
+const WORKTREES_DIRNAME = "worktrees";
+
+/**
+ * Entries git mode owns at the workspace root. Everything else there is a file
+ * no repository tracks — see {@link assertWorkspaceCoherent}.
+ */
+const GIT_MODE_ROOT_ENTRIES = new Set(["main", WORKTREES_DIRNAME, ".mesh-state", ".mesh", ".git"]);
+
+/**
+ * Refuse to boot a git-mode mesh whose workspace root holds product files.
+ *
+ * In git mode the product lives in `main/` and the root is scaffolding. Two
+ * ways it stops being that, both observed live:
+ *
+ *  - The root is its own repository. A mesh that ran with git OFF materializes
+ *    the product into the root and a reset git-inits it there; flipping git ON
+ *    then leaves `ensureRepo` unable to adopt it (correctly — `main/` would be
+ *    a nested phantom), so the mission gets a second, empty repo and commits
+ *    into a branch the product was never in.
+ *  - The root holds stray files. Anything written there is tracked by nothing,
+ *    survives a reset that only archives `main/`, and is invisible to every
+ *    reviewer reading the product checkout.
+ *
+ * This throws rather than warning because the warning it replaces was already
+ * there and was not enough: it went to stderr while agents spent a mission's
+ * budget producing commits that could never cite a revision. A mesh that
+ * cannot land its product is not degraded, it is broken, and the cheapest
+ * moment to say so is before the first turn.
+ */
+export function assertWorkspaceCoherent(workspacePath: string, useGit: boolean, stateDir?: string): void {
+  if (!useGit) return;
+  if (!fs.existsSync(workspacePath)) return;
+  const problems: string[] = [];
+  if (ownsGitRepo(workspacePath)) {
+    problems.push(
+      `${workspacePath} is itself a git repository, but git mode keeps the product in ${path.join(workspacePath, "main")}. ` +
+        `Commits would land in a repo the product is not in.`,
+    );
+  }
+  const allowed = new Set(GIT_MODE_ROOT_ENTRIES);
+  // The state dir is configurable and only defaults to inside the workspace.
+  if (stateDir) {
+    const rel = path.relative(workspacePath, stateDir);
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) allowed.add(rel.split(path.sep)[0]);
+  }
+  let strays: string[] = [];
+  try {
+    strays = fs.readdirSync(workspacePath).filter((e) => !allowed.has(e));
+  } catch {
+    return;
+  }
+  if (strays.length > 0) {
+    const shown = strays.slice(0, 10).join(", ");
+    problems.push(
+      `${workspacePath} holds files that no repository tracks: ${shown}${strays.length > 10 ? `, +${strays.length - 10} more` : ""}. ` +
+        `In git mode the product belongs in ${path.join(workspacePath, "main")}.`,
+    );
+  }
+  if (problems.length === 0) return;
+  throw new ConfigError([
+    ...problems,
+    `To keep this layout, set mesh.workspace.git: false (or pass --no-git) — product files then live in the workspace root.`,
+    `To use git worktrees, move those files into ${path.join(workspacePath, "main")} and commit them there, ` +
+      `or point mesh.workspace.path at an empty directory.`,
+  ]);
+}
+
 export function gitFacts(root: string): Record<string, string> {
   const sh = (...args: string[]): string | null => {
     try {
@@ -2696,23 +2831,10 @@ export function gitFacts(root: string): Record<string, string> {
       return null;
     }
   };
-  // Fail closed. `git status` answers from the nearest ENCLOSING repo, so a
-  // workspace that merely sits inside someone else's checkout would report
-  // that repo's branch and cleanliness as if they were the product's — and a
-  // workspace with no repo at all would report an empty status, which the old
-  // `length === 0` test read as a clean tree. Only an exact toplevel match
-  // counts as "this directory is the repository"; anything else is no repo,
-  // and no repo is unknown, never clean.
-  const toplevel = sh("rev-parse", "--show-toplevel");
-  let ownsRepo = false;
-  if (toplevel) {
-    try {
-      ownsRepo = fs.realpathSync(toplevel) === fs.realpathSync(root);
-    } catch {
-      ownsRepo = false;
-    }
-  }
-  if (!ownsRepo) return { gitRepo: "false", gitBranch: "", gitHead: "", gitClean: "unknown", gitLog: "" };
+  // An unowned repo is unknown, never clean: `git status` from a nested
+  // directory answers for the enclosing checkout, and an empty status from no
+  // repo at all used to read as a clean tree.
+  if (!ownsGitRepo(root)) return { gitRepo: "false", gitBranch: "", gitHead: "", gitClean: "unknown", gitLog: "" };
   const status = sh("status", "--porcelain");
   return {
     gitRepo: "true",

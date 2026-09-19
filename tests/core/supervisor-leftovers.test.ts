@@ -854,10 +854,15 @@ test("a wall-clock raise below the current cap is refused, above it is applied",
 
 // --- agentWorkspace: a worktree only for agents that can write ----------
 
-test("only an agent with repository.write gets its own worktree", async () => {
+test("only an agent that may write gets its own worktree", async () => {
   const m = await makeMesh({
     agents: [
       { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      // The scaffolded architect's exact grant. The runtime gate lets this seat
+      // use Write/Edit, so it must have a worktree to write into: with only
+      // `repository.write` earning one, its files went to the workspace root,
+      // outside every repository.
+      { id: "architect", role: "architect", capabilities: ["architecture.write"], interests: [] },
       { id: "qa", role: "qa", interests: [] },
     ],
     mode: "parked",
@@ -865,13 +870,24 @@ test("only an agent with repository.write gets its own worktree", async () => {
   const saved = m.supervisor.deps.workspace;
   try {
     m.supervisor.deps.workspace = {
+      mainPath: "/tmp/product-main",
       ensureWorktree: async (agentId: string) => `/tmp/worktree-${agentId}`,
       commitWorktree: async () => ({ commit: "abc1234", diffDigest: "sha256:fake", diff: "" }),
       mergeWorktree: async () => ({ commit: "abc1234" }),
     } as never;
     assert.equal(await m.supervisor.agentWorkspace("dev"), "/tmp/worktree-dev");
-    // A read-only agent shares the mesh workspace: no branch of its own.
-    assert.notEqual(await m.supervisor.agentWorkspace("qa"), "/tmp/worktree-qa");
+    assert.equal(
+      await m.supervisor.agentWorkspace("architect"),
+      "/tmp/worktree-architect",
+      "a seat the permission gate lets write needs somewhere committable to write",
+    );
+    // A genuinely read-only agent gets no branch of its own — but it still has
+    // to land INSIDE the repository. Asserted by value, not by `notEqual`: the
+    // bug this pins returned the workspace root, which is not any worktree's
+    // path and so satisfied a `notEqual` check while being exactly wrong. It
+    // must also not be a worktree: nothing would ever merge it, and untracked
+    // files there are invisible to every reviewer.
+    assert.equal(await m.supervisor.agentWorkspace("qa"), "/tmp/product-main");
   } finally {
     m.supervisor.deps.workspace = saved;
     await m.cleanup();

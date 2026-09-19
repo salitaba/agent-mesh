@@ -12,6 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   BackendUnreachableError,
+  EDIT_CAPABILITIES,
   normalizeCapability,
   type AgentDefinition,
   type AgentEvent,
@@ -412,7 +413,7 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
   // Normalized here as well as at config load: capabilityGrants also arrive
   // from direct AgentDefinition construction (tests, bench harnesses).
   const caps = new Set(capabilities.map(normalizeCapability));
-  const canEdit = caps.has("repository.write") || caps.has("architecture.write") || caps.has("test.write");
+  const canEdit = EDIT_CAPABILITIES.some((t) => caps.has(t));
   const canExec = caps.has("shell.execute") || caps.has("test.execute");
   const canFetch = caps.has("network.request");
   // `git.commit` once bought blanket exec: opencode rendered it as bash:"ask",

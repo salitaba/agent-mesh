@@ -55,7 +55,7 @@ import {
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
-import { ARTIFACT_SCOPES } from "../../protocol/src/index";
+import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
@@ -4341,11 +4341,37 @@ export class Supervisor {
     };
   }
 
+  /**
+   * The directory a seat's runtime runs in.
+   *
+   * In git mode this must never be the workspace ROOT. The root holds `main/`
+   * and `worktrees/` and is itself part of no repository, so a seat placed
+   * there writes files that no commit path can reach — untracked, invisible to
+   * every reviewer, and left behind by a reset that only archives `main/`. That
+   * is not hypothetical: the scaffolded architect holds `architecture.write`
+   * and not `repository.write`, so it wrote its design straight into the root
+   * and the mission could never cite a revision for it.
+   *
+   * So the fork is over which view of the repo a seat gets, never whether it is
+   * in one: seats that may write get an isolated worktree, and seats that may
+   * not read the product checkout. Without a workspace at all (no-git mode) the
+   * root IS the product, and it stays correct.
+   *
+   * The fork asks `EDIT_CAPABILITIES`, the same list the runtime gate asks to
+   * decide whether the seat may use Write/Edit at all, so a seat can never be
+   * permitted to write yet placed somewhere its writes cannot land. Keying on
+   * `repository.write` alone was that mismatch. It also has to be this list and
+   * not a looser one: a seat that can write but has no worktree would write
+   * untracked files into `main/`, where a path collision aborts the very
+   * `git merge` that lands the mission's work.
+   */
   async agentWorkspace(agentId: string): Promise<string> {
-    if (this.deps.workspace && (this.config.agents[agentId]?.capabilities.includes("repository.write") ?? false)) {
+    if (!this.deps.workspace) return this.config.workspacePath;
+    const caps = this.config.agents[agentId]?.capabilities ?? [];
+    if (EDIT_CAPABILITIES.some((token) => caps.includes(token))) {
       return this.deps.workspace.ensureWorktree(agentId);
     }
-    return this.config.workspacePath;
+    return this.deps.workspace.mainPath;
   }
 
   // ------------------------------------------------------ tool approvals

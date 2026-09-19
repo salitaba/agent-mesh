@@ -50,6 +50,14 @@ export interface ArtifactContentStore {
 }
 
 export interface WorkspacePort {
+  /**
+   * The product checkout. On the port rather than only on `GitWorkspace`
+   * because it is the read-only seats' working directory: in git mode the
+   * workspace ROOT is not part of any repository, so a seat pointed there
+   * writes files nothing can commit and reads a directory that is not the
+   * product. See `Supervisor.agentWorkspace`.
+   */
+  readonly mainPath: string;
   ensureRepo(): Promise<void>;
   ensureWorktree(agentId: string): Promise<string>;
   commitWorktree(agentId: string, message: string, files?: string[]): Promise<{ commit: string; diffDigest: string; diff: string }>;

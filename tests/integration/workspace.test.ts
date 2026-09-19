@@ -143,6 +143,55 @@ test("git workspace: no mesh branches means no bundle, not a failed one", { skip
   }
 });
 
+/**
+ * `Supervisor.agentWorkspace` hands every seat without `repository.write` the
+ * `mainPath` of this port rather than the workspace root. The branch itself is
+ * pinned against a stub in `tests/core/supervisor-leftovers.test.ts`; what a
+ * stub cannot show is the difference between the two paths, which is the whole
+ * reason the branch exists. Against the real workspace: `main` is a working
+ * tree that git answers for, and the root is in no repository at all — so a
+ * seat pointed at the root writes files no commit can ever cite.
+ */
+test("git workspace: main is a working tree and the root is not", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-readonly-seat-"));
+  try {
+    const ws = new GitWorkspace(dir);
+    await ws.ensureRepo();
+    assert.notEqual(ws.mainPath, dir, "the read-only seats' cwd must not be the workspace root");
+
+    const sh = (args: string[], cwd: string): string =>
+      require("child_process").execFileSync("git", args, { cwd }).toString().trim();
+    assert.equal(fs.realpathSync(sh(["rev-parse", "--show-toplevel"], ws.mainPath)), fs.realpathSync(ws.mainPath));
+
+    // What a seat reads and writes there is the product, tracked: `git status`
+    // sees the file, so a committing seat can pick it up.
+    fs.writeFileSync(path.join(ws.mainPath, "NOTES.md"), "read by qa, tech-lead, architect\n", "utf8");
+    assert.match(sh(["status", "--porcelain"], ws.mainPath), /NOTES\.md/, "main's contents are inside the repo");
+
+    // The root is the old destination. Nothing claims it, so nothing here is
+    // reviewable, mergeable or citable — it is lost work that looks like work.
+    // Asked as "is the root its own toplevel" rather than "does rev-parse
+    // fail": if the temp dir itself sits inside some repository the command
+    // succeeds and names that ancestor, which is not ownership.
+    let rootToplevel: string | null = null;
+    try {
+      // stderr swallowed: the expected outcome here is git's "not a git
+      // repository" fatal, and a passing run must not print one.
+      rootToplevel = fs.realpathSync(
+        require("child_process")
+          .execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim(),
+      );
+    } catch {
+      rootToplevel = null;
+    }
+    assert.notEqual(rootToplevel, fs.realpathSync(dir), "the workspace root must not be a repository of its own");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
   const sh = (args: string[], cwd = dir): string =>

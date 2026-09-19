@@ -504,6 +504,20 @@ export const CAPABILITY_TOKENS: string[] = [
 ];
 
 /**
+ * The tokens that let a seat write files, as the runtime permission gate
+ * defines it (`buildPermissionGate`'s `canEdit`).
+ *
+ * Shared with `Supervisor.agentWorkspace`, which must hand exactly these seats
+ * a worktree of their own. The two answers have to come from one list: when
+ * only `repository.write` earned a worktree, a seat holding `architecture.write`
+ * was permitted to write but had nowhere committable to write TO, and its output
+ * landed outside every repository. Any token added here widens both at once —
+ * which is the point, since granting the ability to write without the place to
+ * write is what produced that bug.
+ */
+export const EDIT_CAPABILITIES: string[] = ["repository.write", "architecture.write", "test.write"];
+
+/**
  * Capability tokens treated as "hard actions" when an agent opts in and does
  * not name its own list.
  *

@@ -167,6 +167,64 @@ test("reset: leaves the fresh product checkout as its own git repo", { skip: !ha
 });
 
 
+/**
+ * Reset archived `main/` and nothing else, so a stranded product at the
+ * workspace root — the layout `agentWorkspace` used to hand every read-only
+ * seat — survived reset-to-zero untouched and greeted the next boot. Since
+ * that boot now refuses the layout outright, a reset that leaves it behind
+ * would turn the corruption into an unstartable project.
+ */
+test("reset: archives a product stranded at the workspace root", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-stray-"));
+  let m = await boot(dir, { useGit: true });
+  try {
+    const root = path.dirname(m.productPath);
+    fs.writeFileSync(path.join(root, "pom.xml"), "<project/>", "utf8");
+    fs.mkdirSync(path.join(root, "core-domain"), { recursive: true });
+    fs.writeFileSync(path.join(root, "core-domain", "Payment.java"), "class Payment {}", "utf8");
+
+    const report = await m.reset({});
+
+    assert.ok(report.strayRootArchivedTo, "stray root files must be archived, not deleted and not left in place");
+    assert.ok(
+      report.strayRootArchivedTo!.startsWith(path.join(dir, ".mesh-backups")),
+      "the archive must land outside the workspace it is clearing",
+    );
+    assert.ok(fs.existsSync(path.join(report.strayRootArchivedTo!, "pom.xml")), "the archive must hold the stray file");
+    assert.ok(
+      fs.existsSync(path.join(report.strayRootArchivedTo!, "core-domain", "Payment.java")),
+      "the archive must hold stray directories whole",
+    );
+    assert.ok(!fs.existsSync(path.join(root, "pom.xml")), "reset must return to zero, not preserve the layout");
+    assert.ok(!fs.existsSync(path.join(root, "core-domain")));
+    assert.ok(fs.existsSync(m.productPath), "the product checkout must still be there for the next mission");
+
+    // The claim that matters: the state reset leaves behind is one the next
+    // boot accepts. Asserted by actually booting it, because the refusal is
+    // what an operator hits, not a predicate.
+    await m.close();
+    m = await boot(dir, { useGit: true });
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset: a healthy git workspace reports no stray archive", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-nostray-"));
+  const m = await boot(dir, { useGit: true });
+  try {
+    // `main/`, `worktrees/` and the state dir are the layout, not strays: an
+    // archive here would mean reset was moving the mesh's own directories.
+    await m.supervisor.deps.workspace!.ensureWorktree("a");
+    const report = await m.reset({});
+    assert.equal(report.strayRootArchivedTo, null, "nothing at the root is stray in a healthy git workspace");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("boot: defaults to git mode when mesh.workspace.git is absent", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-boot-git-default-"));
   // No flag, no config key. This is the case that used to leave
