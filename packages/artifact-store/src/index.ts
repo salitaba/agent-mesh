@@ -70,6 +70,11 @@ export class GitWorkspace implements WorkspacePort {
     return this.mainDir;
   }
 
+  /** The directory holding the agent worktrees, one subdirectory per agent. */
+  get worktreesPath(): string {
+    return this.worktreesDir;
+  }
+
   worktreePath(agentId: string): string {
     return path.join(this.worktreesDir, agentId.replace(/[#/]/g, "-"));
   }
@@ -190,11 +195,43 @@ export class GitWorkspace implements WorkspacePort {
       removed.push(entry);
     }
     await this.git(["worktree", "prune"]).catch(() => undefined);
-    const branches = await this.git(["branch", "--list", "mesh/*", "--format=%(refname:short)"]).catch(() => "");
-    for (const branch of branches.split("\n").map((b) => b.trim()).filter(Boolean)) {
+    // Same list `bundleWorktreeBranches` packs. Whatever wants these commits to
+    // outlive the reset has to have bundled them before this point.
+    for (const branch of await this.listWorktreeBranches()) {
       await this.git(["branch", "-D", branch]).catch(() => undefined);
     }
     return removed;
+  }
+
+  /**
+   * The throwaway `mesh/*` branches currently cut, one per agent worktree.
+   * `removeAllWorktrees` deletes these, so anything that wants them to outlive
+   * a reset has to read them first.
+   */
+  async listWorktreeBranches(): Promise<string[]> {
+    const out = await this.git(["branch", "--list", "mesh/*", "--format=%(refname:short)"]).catch(() => "");
+    return out.split("\n").map((b) => b.trim()).filter(Boolean);
+  }
+
+  /**
+   * Write every `mesh/*` branch to a git bundle at `destFile` so the commits
+   * survive the reset that deletes the branches. Returns null when there is
+   * nothing to bundle — `git bundle create` refuses an empty bundle outright,
+   * so the check has to happen before the call, not as its error.
+   *
+   * The bundle is deliberately self-contained (no `--not main`): it packs the
+   * full history reachable from those branches, which makes recovery
+   * independent of the archived product repo but costs tens of MB on a busy
+   * mission. `--branches=mesh/*` also leaves the refs under `refs/heads/`, so
+   * `git fetch <bundle> 'refs/heads/*:refs/heads/restored/*'` restores them
+   * without a detour through a detached HEAD.
+   */
+  async bundleWorktreeBranches(destFile: string): Promise<{ path: string; refs: string[] } | null> {
+    const refs = await this.listWorktreeBranches();
+    if (refs.length === 0) return null;
+    fs.mkdirSync(path.dirname(destFile), { recursive: true });
+    await this.git(["bundle", "create", destFile, "--branches=mesh/*"]);
+    return { path: destFile, refs };
   }
 
   /**

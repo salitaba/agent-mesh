@@ -92,7 +92,10 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
     port: 0,
     mode: env.MESH_CHILD_MODE === "live" ? "live" : "parked",
     uiOnly: env.MESH_CHILD_MODE !== "live",
-    useGit: env.MESH_CHILD_GIT === "1",
+    // "" (the host had no opinion) is distinct from "0" (the host forced it
+    // off): the first defers to this project's mesh.workspace.git, the second
+    // overrides it.
+    gitMode: env.MESH_CHILD_GIT === "1" ? "on" : env.MESH_CHILD_GIT === "0" ? "off" : "auto",
   });
 
   const ready: ChildReady = {

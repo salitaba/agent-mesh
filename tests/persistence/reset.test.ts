@@ -166,9 +166,28 @@ test("reset: leaves the fresh product checkout as its own git repo", { skip: !ha
   }
 });
 
+
+test("boot: defaults to git mode when mesh.workspace.git is absent", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-boot-git-default-"));
+  // No flag, no config key. This is the case that used to leave
+  // `deps.workspace` undefined, refusing every mesh_commit — so no criterion
+  // requiring landed code could ever be evidenced.
+  const m = await boot(dir);
+  try {
+    assert.equal(m.useGit, true, "an absent workspace.git must default ON");
+    assert.equal(m.productPath, path.join(dir, "workspace", "main"), "git mode owns the workspace/main checkout");
+    assert.ok(fs.existsSync(m.productPath), "the product checkout must exist on disk");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("reset: archives and wipes the non-git product workspace", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-product-nogit-"));
-  const m = await boot(dir);
+  // Explicit: a bare `boot(dir)` is git mode, because an absent
+  // `mesh.workspace.git` means ON. This test is about the other branch.
+  const m = await boot(dir, { useGit: false });
   try {
     const root = m.productPath;
     assert.equal(root, path.join(dir, "workspace"), "non-git product root is the configured workspace");
@@ -206,7 +225,7 @@ test("reset: archives and wipes the non-git product workspace", async () => {
 
 test("reset: git-inits the fresh non-git product workspace", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-nogit-init-"));
-  const m = await boot(dir);
+  const m = await boot(dir, { useGit: false });
   try {
     const root = m.productPath;
     fs.writeFileSync(path.join(root, "PRODUCT.txt"), "shipped by the old mission", "utf8");
@@ -245,6 +264,108 @@ test("reset: git-inits the fresh non-git product workspace", { skip: !hasGit && 
       .toString()
       .trim();
     assert.equal(status, "", "the fresh workspace is clean — mesh state must not count as product work");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** The `<stamp>` out of a `.bak-<stamp>` archive name. */
+function stampOf(archivePath: string | null): string | null {
+  if (archivePath === null) return null;
+  return /\.bak-(.+)$/.exec(archivePath)?.[1] ?? null;
+}
+
+function gitIn(cwd: string, args: string[]): string {
+  return require("child_process")
+    .execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] })
+    .toString()
+    .trim();
+}
+
+test("reset: archives worktree work and bundles the branches before deleting them", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-worktrees-"));
+  const m = await boot(dir);
+  try {
+    const workspace = m.supervisor.deps.workspace;
+    assert.ok(workspace, "git mode must expose a workspace");
+    const wt = await workspace.ensureWorktree("a");
+    // Committed: once the branch is deleted this sha is unreachable, and
+    // `git gc` is free to collect it. Only the bundle can bring it back.
+    const { commit } = await workspace.commitWorktree("a", "agent a: half-finished work");
+    assert.ok(commit, "the worktree must have a commit to protect");
+    // Uncommitted, and written after the commit so it is genuinely not in the
+    // bundle: this file exists nowhere else, and deleting the worktree without
+    // copying it first destroys it.
+    fs.writeFileSync(path.join(wt, "scrap.txt"), "uncommitted scratch work", "utf8");
+
+    const report = await m.reset({});
+
+    assert.deepEqual(report.worktreesRemoved, ["a"], "the worktrees are still deleted");
+    assert.ok(report.worktreesArchivedTo, "the worktrees must be copied aside first");
+    assert.ok(
+      fs.existsSync(path.join(report.worktreesArchivedTo!, "a", "scrap.txt")),
+      "uncommitted worktree work must survive in the archive",
+    );
+
+    // The bundle is the only path back to the commit: prove it verifies and
+    // that fetching it actually yields that sha.
+    assert.ok(report.worktreeBundleTo, "the mesh/* branches must be bundled");
+    assert.match(
+      gitIn(m.productPath, ["bundle", "verify", report.worktreeBundleTo!]),
+      /mesh\/a/,
+      "the bundle must carry the mesh branch",
+    );
+    gitIn(m.productPath, ["fetch", report.worktreeBundleTo!, "refs/heads/*:refs/heads/restored/*"]);
+    assert.equal(
+      gitIn(m.productPath, ["rev-parse", "refs/heads/restored/mesh/a"]),
+      commit,
+      "the deleted commit must be recoverable from the bundle",
+    );
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset: every archive it produces shares one stamp", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-stamp-"));
+  const m = await boot(dir);
+  try {
+    const workspace = m.supervisor.deps.workspace;
+    assert.ok(workspace, "git mode must expose a workspace");
+    await workspace.ensureWorktree("a");
+    await workspace.commitWorktree("a", "agent a: work");
+
+    const report = await m.reset({});
+
+    const stamp = stampOf(report.archivedTo);
+    assert.ok(stamp, "the state archive must carry a stamp");
+    // One reset, one set of backups: a stamp that differs between them makes
+    // "restore what was there before this reset" ambiguous.
+    assert.equal(stampOf(report.productArchivedTo), stamp, "the product archive must share the stamp");
+    assert.equal(stampOf(report.worktreesArchivedTo), stamp, "the worktree archive must share the stamp");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset: archiveWorktrees:false deletes without copying", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-noarchive-"));
+  const m = await boot(dir);
+  try {
+    const workspace = m.supervisor.deps.workspace;
+    assert.ok(workspace, "git mode must expose a workspace");
+    const wt = await workspace.ensureWorktree("a");
+    fs.writeFileSync(path.join(wt, "scrap.txt"), "uncommitted scratch work", "utf8");
+
+    const report = await m.reset({ archiveWorktrees: false });
+
+    assert.deepEqual(report.worktreesRemoved, ["a"], "the escape hatch must not disable the deletion");
+    assert.equal(report.worktreesArchivedTo, null, "no copy when the caller opted out");
+    assert.equal(report.worktreeBundleTo, null, "no bundle when the caller opted out");
+    assert.ok(!fs.existsSync(wt), "the worktree is still removed");
   } finally {
     await m.close();
     fs.rmSync(dir, { recursive: true, force: true });

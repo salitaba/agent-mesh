@@ -7,11 +7,13 @@ import { CHILD_READY_PREFIX } from "../../packages/projects/src/index";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
 import {
   DEFAULT_HOST_PORT,
+  gitModeFromFlags,
   hostOptionsFromFlags,
   hostUrlFrom,
   resolveBus,
   runProjectCommand,
 } from "../../apps/mesh-cli/src/projects";
+import { parseArgs } from "../../apps/mesh-cli/src/index";
 import { testConfigYaml } from "../helpers";
 
 const AGENTS = { agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } };
@@ -100,7 +102,9 @@ test("hostOptionsFromFlags: defaults parked, installs signal handlers, resolves 
   const base = hostOptionsFromFlags({});
   assert.equal(base.port, DEFAULT_HOST_PORT);
   assert.equal(base.childMode, "parked");
-  assert.equal(base.useGit, false);
+  // "auto", not "off": the host expresses no opinion and each child resolves
+  // against its own mesh.workspace.git, which defaults to ON.
+  assert.equal(base.gitMode, "auto");
   // Without this the host process exits on Ctrl-C leaving children stranded.
   assert.equal(base.handleSignals, true);
   assert.equal("home" in base, false);
@@ -108,10 +112,56 @@ test("hostOptionsFromFlags: defaults parked, installs signal handlers, resolves 
   const full = hostOptionsFromFlags({ port: "9000", live: true, git: true, memory: "256", home: "rel-home", bind: "0.0.0.0" });
   assert.equal(full.port, 9000);
   assert.equal(full.childMode, "live");
-  assert.equal(full.useGit, true);
+  assert.equal(full.gitMode, "on");
   assert.equal(full.projectMemoryMb, 256);
   assert.equal(full.home, path.resolve("rel-home"));
   assert.equal(full.host, "0.0.0.0");
+});
+
+test("gitModeFromFlags: absent means auto, never off", () => {
+  // The whole point of the tri-state. Reading absence as "off" would let an
+  // unrelated command line silently override a project's `git: true`.
+  assert.equal(gitModeFromFlags({}).mode, "auto");
+  assert.equal(gitModeFromFlags({ port: "7420" }).mode, "auto");
+});
+
+test("gitModeFromFlags: --git=false means OFF", () => {
+  // The bug this replaces: `--git=false` parses to the STRING "false", and
+  // Boolean("false") is true, so the flag that read as "disable git" enabled it.
+  assert.equal(gitModeFromFlags({ git: "false" }).mode, "off");
+  assert.equal(gitModeFromFlags({ git: "0" }).mode, "off");
+  assert.equal(gitModeFromFlags({ git: "off" }).mode, "off");
+  assert.equal(gitModeFromFlags({ git: "true" }).mode, "on");
+  assert.equal(gitModeFromFlags({ git: true }).mode, "on");
+  assert.equal(gitModeFromFlags({ git: "ON" }).mode, "on");
+});
+
+test("gitModeFromFlags: --no-git wins over --git, and says so", () => {
+  const both = gitModeFromFlags({ git: true, "no-git": true });
+  assert.equal(both.mode, "off");
+  assert.match(both.warnings.join(" "), /--no-git wins/);
+  assert.equal(gitModeFromFlags({ "no-git": true }).mode, "off");
+  assert.deepEqual(gitModeFromFlags({ "no-git": true }).warnings, []);
+});
+
+test("gitModeFromFlags: an unparseable value throws rather than guessing", () => {
+  assert.throws(() => gitModeFromFlags({ git: "banana" }), /--git expects a boolean/);
+});
+
+test("parseArgs: a boolean flag does not swallow the positional after it", () => {
+  // `mesh run --git mesh.yaml` used to bind "mesh.yaml" as the VALUE of --git,
+  // leaving positional empty and reporting a usage error for correct input.
+  const a = parseArgs(["run", "--git", "mesh.yaml"]);
+  assert.deepEqual(a.positional, ["mesh.yaml"]);
+  assert.equal(a.flags.git, true);
+  // An explicit boolean literal is still consumed, so this is not a stray path.
+  const b = parseArgs(["run", "--git", "false", "mesh.yaml"]);
+  assert.deepEqual(b.positional, ["mesh.yaml"]);
+  assert.equal(b.flags.git, "false");
+  // Value-taking flags are unaffected.
+  const c = parseArgs(["run", "mesh.yaml", "--port", "7420"]);
+  assert.equal(c.flags.port, "7420");
+  assert.deepEqual(c.positional, ["mesh.yaml"]);
 });
 
 test("project list/add/remove work with no host, against the registry file", async () => {

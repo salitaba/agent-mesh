@@ -89,6 +89,9 @@
           "properties": {
             "path": {
               "type": "string"
+            },
+            "git": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false

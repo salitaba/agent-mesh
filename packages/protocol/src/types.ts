@@ -13,6 +13,18 @@ export const PROTOCOL_VERSION = "1.0";
 
 export type RuntimeTypeName = string;
 
+/**
+ * Operator intent for a project's artifact-storage mode, carried verbatim from
+ * argv through the host to the child process.
+ *
+ * Three-valued on purpose. "auto" means the operator expressed no preference
+ * and `mesh.workspace.git` decides; collapsing it to a boolean anywhere before
+ * boot would turn "unspecified" into "off" and silently disable git for every
+ * project whose config leaves the key out. The default is applied once, in
+ * `bootstrapMesh`, by `resolveUseGit`.
+ */
+export type GitMode = "on" | "off" | "auto";
+
 export type AgentMode = "peer" | "service";
 
 /**

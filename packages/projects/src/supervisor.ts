@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { randomBytes } from "crypto";
 import { spawn, type ChildProcess } from "child_process";
+import type { GitMode } from "../../protocol/src/index";
 import type { ProjectRef, ProjectStatus, ProjectSupervisor } from "./types";
 
 /**
@@ -37,7 +38,13 @@ export interface ChildProcessSupervisorOptions {
   stopGraceMs?: number;
   /** `parked` mirrors `mesh console`; `live` runs the scheduler. */
   mode?: "parked" | "live";
-  useGit?: boolean;
+  /**
+   * Operator's git preference, forwarded verbatim as `MESH_CHILD_GIT`. "auto"
+   * (the default) means the host expresses no opinion and each child obeys its
+   * own `mesh.workspace.git` — one host can therefore run a git project and a
+   * non-git one side by side.
+   */
+  gitMode?: GitMode;
   /** Override the compiled child entrypoint. Tests use it; nothing else should. */
   childScript?: string;
   execPath?: string;
@@ -177,16 +184,20 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
   readonly hostId = `${process.pid}-${randomBytes(8).toString("hex")}`;
   private children = new Map<string, RunningChild>();
   private stopping = new Set<string>();
-  private readonly opts: Required<Pick<ChildProcessSupervisorOptions, "readyTimeoutMs" | "stopGraceMs" | "mode" | "useGit">> &
+  private readonly opts: Required<Pick<ChildProcessSupervisorOptions, "readyTimeoutMs" | "stopGraceMs" | "mode" | "gitMode">> &
     ChildProcessSupervisorOptions;
 
   constructor(options: ChildProcessSupervisorOptions = {}) {
     this.opts = {
+      // Spread FIRST. It used to come last, so any caller passing an explicit
+      // `undefined` for one of the keys below overwrote the computed default
+      // with `undefined` again — the defaults were decorative for exactly the
+      // callers that named the key.
+      ...options,
       readyTimeoutMs: options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
       stopGraceMs: options.stopGraceMs ?? DEFAULT_STOP_GRACE_MS,
       mode: options.mode ?? "parked",
-      useGit: options.useGit ?? false,
-      ...options,
+      gitMode: options.gitMode ?? "auto",
     };
   }
 
@@ -277,7 +288,10 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
         MESH_CHILD_CONFIG: ref.configPath,
         MESH_CHILD_PROJECT_ID: ref.id,
         MESH_CHILD_MODE: this.opts.mode,
-        MESH_CHILD_GIT: this.opts.useGit ? "1" : "0",
+        // Never left undefined: the spread above would let a stray
+        // MESH_CHILD_GIT in the host's own environment through, which is the
+        // one way a host-wide setting could silently outrank a project's.
+        MESH_CHILD_GIT: this.opts.gitMode === "on" ? "1" : this.opts.gitMode === "off" ? "0" : "",
         // The child must not inherit the host's bus URL and start talking to it.
         MESH_BUS_URL: "",
       },

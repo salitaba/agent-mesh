@@ -71,6 +71,78 @@ test("git workspace: removeAllWorktrees drops worktrees and mesh branches", { sk
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * The reset path copies the worktrees aside and then DELETES them, branches
+ * included. `mesh/*` refs that were not packed first survive only as dangling
+ * objects, which `git gc` is free to collect — so the bundle is the whole
+ * difference between "archived" and "gone", and the two ways it can be wrong
+ * (an empty bundle, a bundle that needs the repo it was cut from) are what
+ * these assert.
+ */
+test("git workspace: the branch bundle restores what removeAllWorktrees deletes", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-bundle-"));
+  const sh = (args: string[], cwd: string): string =>
+    require("child_process").execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  const has = (sha: string, cwd: string): boolean => {
+    try {
+      sh(["cat-file", "-e", `${sha}^{commit}`], cwd);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    const ws = new GitWorkspace(dir);
+    await ws.ensureRepo();
+    await ws.ensureWorktree("a");
+    fs.writeFileSync(path.join(ws.worktreePath("a"), "W.txt"), "work in progress", "utf8");
+    const commit = await ws.commitWorktree("a", "a work", ["W.txt"]);
+
+    assert.deepEqual(await ws.listWorktreeBranches(), ["mesh/a"], "one branch per worktree");
+    const bundle = await ws.bundleWorktreeBranches(path.join(dir, "out", "mesh-branches.bundle"));
+    assert.ok(bundle, "a bundle must be written when there are branches to pack");
+    assert.deepEqual(bundle.refs, ["mesh/a"]);
+
+    await ws.removeAllWorktrees();
+    assert.deepEqual(await ws.listWorktreeBranches(), [], "the branches the bundle names are gone");
+    // Deleting the branch does not delete the objects on its own — they linger
+    // as garbage until a gc collects them, which is precisely the hazard: the
+    // window is invisible and the loss arrives later. Reproduce the collection
+    // so the test asserts the loss rather than the state that precedes it.
+    sh(["gc", "--prune=now", "--quiet"], ws.mainPath);
+    assert.equal(has(commit.commit, ws.mainPath), false, "the branch was all that held these commits");
+
+    // Restored into a repository that has never seen either repo — that is the
+    // point of packing self-contained rather than subtracting main.
+    const fresh = path.join(dir, "fresh");
+    fs.mkdirSync(fresh, { recursive: true });
+    sh(["init", "-q", "-b", "main"], fresh);
+    sh(["fetch", bundle.path, "refs/heads/*:refs/heads/restored/*"], fresh);
+    assert.equal(has(commit.commit, fresh), true, "the bundled sha must come back, in full");
+    assert.equal(sh(["show", "-s", "--format=%s", "restored/mesh/a"], fresh), "a work");
+    assert.deepEqual(sh(["branch", "--list", "restored/*", "--format=%(refname:short)"], fresh).split("\n"), ["restored/mesh/a"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/* `git bundle create` refuses an empty bundle, so the guard has to be a return
+ * value and not the command's error: reset() has to tell "nothing to archive"
+ * apart from "the archive failed" before it deletes anything. */
+test("git workspace: no mesh branches means no bundle, not a failed one", { skip: !hasGit && "git unavailable" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nobundle-"));
+  try {
+    const ws = new GitWorkspace(dir);
+    await ws.ensureRepo();
+    assert.deepEqual(await ws.listWorktreeBranches(), []);
+    const dest = path.join(dir, "mesh-branches.bundle");
+    assert.equal(await ws.bundleWorktreeBranches(dest), null);
+    assert.ok(!fs.existsSync(dest), "a failed bundle must not leave a file behind for restore to find");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
   const sh = (args: string[], cwd = dir): string =>
@@ -89,6 +161,7 @@ test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it"
   assert.ok(fs.existsSync(path.join(ws.mainPath, "README.md")), "main got a fresh initial commit");
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
 
 test("git workspace: removeMain wipes the checkout and ensureRepo re-initializes", { skip: !hasGit && "git unavailable" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-main-reset-"));

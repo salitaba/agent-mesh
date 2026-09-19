@@ -2,14 +2,14 @@
 import * as path from "path";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
 import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
-import { SCHEMAS, isSettledArtifactStatus } from "../../../packages/protocol/src/index";
+import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
-import { DEFAULT_HOST_PORT, resolveBus, runHostCommand, runProjectCommand } from "./projects";
+import { DEFAULT_HOST_PORT, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand } from "./projects";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -19,7 +19,51 @@ interface Args {
   flags: Record<string, string | boolean>;
 }
 
-function parseArgs(argv: string[]): Args {
+/**
+ * Flags that never take a value.
+ *
+ * Without this, `mesh run --git mesh.yaml` binds "mesh.yaml" as the *value* of
+ * `--git` and leaves `positional` empty, so an ordinary invocation reports a
+ * usage error naming the command the operator just typed. Listed rather than
+ * derived: the alternative is a denylist of value-taking flags, which fails
+ * open the moment someone adds one.
+ */
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  "git",
+  "no-git",
+  "fresh",
+  "resume",
+  "live",
+  "parked",
+  "ui-only",
+  "tui",
+  "no-tui",
+  "no-demo",
+  "help",
+  "read-only",
+  "staging",
+  "json",
+  "settled",
+]);
+
+/** Literals a flag author would use to spell a boolean explicitly. */
+const BOOLEAN_LITERALS: ReadonlySet<string> = new Set(["true", "false", "1", "0", "on", "off", "yes", "no"]);
+
+/**
+ * Whether `--<name>` should consume `next` as its value.
+ *
+ * A flag in BOOLEAN_FLAGS normally takes none, so `--git mesh.yaml` leaves the
+ * path positional. An explicit boolean literal is still consumed, so
+ * `--git false` means what it says instead of leaving "false" behind as a
+ * stray positional bound for the config path.
+ */
+function takesValue(name: string, next: string): boolean {
+  if (next.startsWith("--")) return false;
+  if (!BOOLEAN_FLAGS.has(name)) return true;
+  return BOOLEAN_LITERALS.has(next.trim().toLowerCase());
+}
+
+export function parseArgs(argv: string[]): Args {
   const [command = "help", ...rest] = argv;
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
@@ -29,7 +73,7 @@ function parseArgs(argv: string[]): Args {
       const eq = token.indexOf("=");
       if (eq >= 0) {
         flags[token.slice(2, eq)] = token.slice(eq + 1);
-      } else if (i + 1 < rest.length && !rest[i + 1].startsWith("--")) {
+      } else if (i + 1 < rest.length && takesValue(token.slice(2), rest[i + 1])) {
         flags[token.slice(2)] = rest[++i];
       } else {
         flags[token.slice(2)] = true;
@@ -208,9 +252,13 @@ usage:
   mesh init [dir]                          scaffold mesh.yaml + roles
   mesh validate <mesh.yaml>                schema + cross-field validation
   mesh emit-schemas [dir]                  write canonical JSON schemas
-  mesh run <mesh.yaml> [--port n] [--no-tui] [--git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
-  mesh serve <mesh.yaml> [--port n] [--git]                      live + dashboard (alias: up; same as run --no-tui)
-  mesh console <mesh.yaml> [--port n] [--git]                    parked stepper console (alias: ui)
+  mesh run <mesh.yaml> [--port n] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
+  mesh serve <mesh.yaml> [--port n] [--git|--no-git]             live + dashboard (alias: up; same as run --no-tui)
+  mesh console <mesh.yaml> [--port n] [--git|--no-git]           parked stepper console (alias: ui)
+    git: writing agents commit through worktrees. Default comes from
+    mesh.workspace.git, which is ON when the key is absent. With git off
+    every mesh_commit is refused, so criteria needing landed code never
+    satisfy.
     parked: dashboard+designer, nothing runs on its own.
     send with "wake after send" (or wake buttons) steps single turns;
     ▶ start mission (POST /mission/start) flips parked -> live.
@@ -228,8 +276,9 @@ usage:
   mesh reject --subject s [--artifact id] [--comment text]
   mesh respond <escalationId> <text>       human escalation response
   mesh artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
-  mesh host [--port n] [--home dir] [--memory mb] [--live]
+  mesh host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git]
     multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
+    git flags force every child on/off; without them each child obeys its own mesh.workspace.git
   mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
   any --bus command also takes --project <id> to address one project through a host
@@ -272,7 +321,8 @@ async function launchMesh(opts: {
   port?: number;
   fresh?: boolean;
   allowResume?: boolean;
-  useGit?: boolean;
+  /** Operator intent; "auto" (or absent) defers to `mesh.workspace.git`. */
+  gitMode?: GitMode;
   withTui?: boolean;
   noDemo?: boolean;
 }): Promise<number> {
@@ -293,7 +343,7 @@ async function launchMesh(opts: {
   const handle = await startServer({
     configPath: file,
     port: opts.port,
-    useGit: Boolean(opts.useGit),
+    gitMode: opts.gitMode,
     mode: opts.mode,
     // backward compat for any external startServer caller reading uiOnly
     uiOnly: opts.mode === "parked",
@@ -431,6 +481,8 @@ export async function main(argv: string[]): Promise<number> {
         if (!file) throw new Error(`usage: mesh ${args.command} <mesh.yaml>`);
         const { mode, warnings } = resolveLaunchMode(args.command, args.flags);
         for (const w of warnings) console.warn(`warn: ${w}`);
+        const { mode: gitMode, warnings: gitWarnings } = gitModeFromFlags(args.flags);
+        for (const w of gitWarnings) console.warn(`warn: ${w}`);
         const noTui = Boolean(args.flags["no-tui"]);
         const wantTui = Boolean(args.flags["tui"]);
         // run: TUI when TTY unless disabled. serve/up/ui/console: dashboard-first.
@@ -447,7 +499,7 @@ export async function main(argv: string[]): Promise<number> {
           port: args.flags.port ? Number(args.flags.port) : undefined,
           fresh: Boolean(args.flags.fresh),
           allowResume: Boolean(args.flags.resume),
-          useGit: Boolean(args.flags.git),
+          gitMode,
           withTui,
           noDemo: Boolean(args.flags["no-demo"]),
         });

@@ -1,5 +1,7 @@
 import * as path from "path";
 import { FileProjectRegistry } from "../../../packages/projects/src/index";
+import { ConfigError } from "../../../packages/config/src/index";
+import type { GitMode } from "../../../packages/protocol/src/index";
 
 /** Where `mesh host` listens by default; children never get a fixed port. */
 export const DEFAULT_HOST_PORT = 7420;
@@ -10,6 +12,44 @@ export function defaultHostUrl(): string {
 }
 
 export type Flags = Record<string, string | boolean>;
+
+const GIT_TRUE = new Set(["true", "1", "on", "yes"]);
+const GIT_FALSE = new Set(["false", "0", "off", "no"]);
+
+/**
+ * argv -> GitMode, the only place the CLI interprets git flags.
+ *
+ * Lives here rather than in `index.ts` because both the single-mesh launcher
+ * and `hostOptionsFromFlags` need it, and `index.ts` already imports from this
+ * module — the reverse import would be a cycle.
+ *
+ * Replaces `Boolean(flags.git)`, which read `--git=false` as the string
+ * "false" — and `Boolean("false")` is `true`, so the flag meant to disable git
+ * turned it on. An absent flag yields "auto", NOT "off": the command line must
+ * not silently override a project's own `mesh.workspace.git`, and "auto" is
+ * what lets `resolveUseGit` tell "no preference" from "explicitly off".
+ *
+ * Throws `ConfigError` on an unparseable value rather than guessing, so
+ * `--git=banana` exits 2 with a readable message instead of picking a mode.
+ */
+export function gitModeFromFlags(flags: Flags): { mode: GitMode; warnings: string[] } {
+  const warnings: string[] = [];
+  const raw = flags["git"];
+  let mode: GitMode = "auto";
+  if (raw === true) {
+    mode = "on";
+  } else if (raw !== undefined) {
+    const value = String(raw).trim().toLowerCase();
+    if (GIT_TRUE.has(value)) mode = "on";
+    else if (GIT_FALSE.has(value)) mode = "off";
+    else throw new ConfigError([`--git expects a boolean (got '${raw}')`]);
+  }
+  if (flags["no-git"] !== undefined) {
+    if (mode === "on") warnings.push("--git and --no-git conflict; --no-git wins");
+    mode = "off";
+  }
+  return { mode, warnings };
+}
 
 function flagString(flags: Flags, key: string): string | undefined {
   const v = flags[key];
@@ -234,13 +274,17 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
 }
 
 export const HOST_HELP = `usage:
-  mesh host [--port n] [--home dir] [--memory mb] [--live] [--git] [--dashboard dir]
+  mesh host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git] [--dashboard dir]
     supervises every open project as a child process and serves the dashboard.
     --port       default ${DEFAULT_HOST_PORT}
     --home       registry home (default $MESH_HOME or ~/.agent-mesh)
     --memory     per-child --max-old-space-size in MB
     --live       children boot live; default is parked, like 'mesh console'
-    --git        children use git worktrees for artifacts
+    --git        force git worktrees on for every child
+    --no-git     force them off for every child
+                 neither flag: each child obeys its own mesh.workspace.git,
+                 which defaults to ON. Git decides whether mesh_commit can
+                 land at all — with it off every commit is refused.
 
   resource policy lives in <home>/host.yaml (all keys optional):
     host:
@@ -255,7 +299,10 @@ export function hostOptionsFromFlags(flags: Flags): Record<string, unknown> {
   const opts: Record<string, unknown> = {
     port: flags.port ? Number(flags.port) : DEFAULT_HOST_PORT,
     childMode: flags.live ? "live" : "parked",
-    useGit: Boolean(flags.git),
+    // What the operator asked for, NOT what the children will do: each child
+    // resolves this against its own `mesh.workspace.git`, so one host can run
+    // a git project and a non-git one side by side.
+    gitMode: gitModeFromFlags(flags).mode,
     // The host outlives the command, so it — not the CLI — owns the signal
     // path: SIGTERM must drain every child before the process goes away.
     handleSignals: true,
@@ -275,6 +322,7 @@ export async function runHostCommand(flags: Flags): Promise<number> {
     console.log(HOST_HELP);
     return 0;
   }
+  for (const w of gitModeFromFlags(flags).warnings) console.warn(`warn: ${w}`);
   const { startHostServer } = await import("../../mesh-server/src/host");
   const handle = await startHostServer(hostOptionsFromFlags(flags) as Parameters<typeof startHostServer>[0]);
   const open = handle.registry.openIds();

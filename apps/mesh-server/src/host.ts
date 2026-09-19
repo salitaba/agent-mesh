@@ -42,6 +42,7 @@ import {
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
 import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
+import type { GitMode } from "../../../packages/protocol/src/index";
 import {
   MultiplexHub,
   SseDecoder,
@@ -118,7 +119,12 @@ export interface HostOptions {
   hostConfig?: HostConfig;
   /** Children boot parked by default, mirroring `mesh console`. */
   childMode?: "parked" | "live";
-  useGit?: boolean;
+  /**
+   * Host-wide git override for every child. Omit (or "auto") to let each
+   * project decide from its own `mesh.workspace.git` — the default, and the
+   * reason one host can mix git and non-git projects.
+   */
+  gitMode?: GitMode;
   /** Override the compiled child entrypoint. Tests use it; nothing else should. */
   childScript?: string;
   readyTimeoutMs?: number;
@@ -1125,7 +1131,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
 
   const supervisorOptions: ConstructorParameters<typeof ChildProcessSupervisor>[0] = {
     mode: options.childMode ?? "parked",
-    useGit: options.useGit ?? false,
+    gitMode: options.gitMode ?? "auto",
   };
   if (memoryMb) supervisorOptions.memoryMb = memoryMb;
   if (options.childScript) supervisorOptions.childScript = options.childScript;

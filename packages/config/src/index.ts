@@ -19,6 +19,7 @@ import {
   type DelegationPolicy,
   type MeshEvent,
   type EventType,
+  type GitMode,
 } from "../../protocol/src/index";
 
 /**
@@ -37,6 +38,25 @@ import {
  * ("claude-opus-5", "claude-sonnet-5") — a dated suffix is an older convention.
  */
 export const DEFAULT_CRITERIA_MODEL = "claude-haiku-4-5";
+
+/**
+ * The single place a project's artifact-storage mode is decided.
+ *
+ * Precedence is CLI flag > `mesh.workspace.git` > ON. The default being ON is
+ * the point: without a git workspace `deps.workspace` is undefined and every
+ * `mesh_commit` is refused, so a mission can never evidence a criterion that
+ * requires landed code. A mode that silently can't commit is not a supported
+ * configuration, it is a broken one, so it is now opt-in rather than default.
+ *
+ * `meshKey` is deliberately `boolean | undefined` rather than defaulted at the
+ * call site: absent means "no opinion", and only this function may collapse
+ * that into a boolean. Callers must not pre-default it to `false`.
+ */
+export function resolveUseGit(override: GitMode | undefined, meshKey: boolean | undefined): boolean {
+  if (override === "on") return true;
+  if (override === "off") return false;
+  return meshKey ?? true;
+}
 
 export interface RawMeshFile {
   version: number;
@@ -69,7 +89,14 @@ export interface RawMeshFile {
      * agents' default and must stay on a model that can hold a mission.
      */
     criteria_model?: string;
-    workspace?: { path?: string };
+    /**
+     * `git` selects the artifact-storage mode for this project. It is
+     * deliberately tri-state at this layer: the key being ABSENT is not the
+     * same as it being `false`. Absent means "no opinion", and the default
+     * applied at boot is ON (see `resolveUseGit`). Present-and-false is an
+     * explicit opt-out, and nothing may override it except the CLI flag.
+     */
+    workspace?: { path?: string; git?: boolean };
     runtime?: { default?: string; model?: string; variant?: string; requires_approval?: string[] };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
   };
@@ -283,6 +310,12 @@ export interface ResolvedMeshConfig {
   criteriaModel: string;
   workspacePath: string;
   stateDir: string;
+  /**
+   * `mesh.workspace.git` verbatim. `undefined` means the key was absent, which
+   * is NOT the same as `false` — absent defers to the default (ON), while
+   * `false` is an explicit opt-out. Only `resolveUseGit` may collapse the two.
+   */
+  workspaceGit?: boolean;
   defaultRuntime: string;
   /** Mesh-wide model applied to agents that leave `model` blank. */
   defaultModel?: string;
@@ -603,6 +636,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     criteriaModel: raw.mesh.criteria_model?.trim() || DEFAULT_CRITERIA_MODEL,
     workspacePath,
     stateDir,
+    workspaceGit: raw.mesh.workspace?.git,
     defaultRuntime,
     defaultModel,
     defaultVariant,
@@ -1189,6 +1223,12 @@ mesh:
     Describe the mission goal here.
   workspace:
     path: ./workspace
+    # Writing agents commit through git worktrees, and the product lives in
+    # ./workspace/main. Set this to false (or run with --no-git) to write
+    # product files straight into the workspace root instead — but note that
+    # without a workspace every mesh_commit is refused, so a mission whose
+    # criteria require landed code can never satisfy them.
+    git: true
   runtime:
     default: ${defaultRuntime}
 

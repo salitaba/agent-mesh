@@ -273,6 +273,76 @@ export interface StateArchiveResult {
   layout: { events: string; artifacts: string; logs: string };
 }
 
+export interface ArchiveOptions {
+  /** Parent directory for the archive. Defaults to the directory's own parent. */
+  archiveRoot?: string;
+  /** Keep these subtrees in place — see `archiveDir` for the exact semantics. */
+  exclude?: string[];
+  /**
+   * Reuse a stamp another archive of the same operation already used, so one
+   * reset reads as one set of backups. Defaults to the current time.
+   */
+  stamp?: string;
+}
+
+/**
+ * Timestamp used in archive names: `YYYYMMDD-HHMMSS`, second resolution in UTC.
+ * Shared so a single operation can stamp every archive it produces alike.
+ */
+export function archiveStamp(now: Date = new Date()): string {
+  return now.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
+}
+
+/**
+ * Where a mesh's archives live: side by side under the config dir, never inside
+ * the agent workspace — the next run's agents must not be able to read the
+ * previous mission out of their working tree.
+ */
+export function meshArchiveRoot(configDir: string, meshId: string): string {
+  return path.join(path.resolve(configDir), ".mesh-backups", meshId);
+}
+
+/**
+ * Resolve the archive path for `dir`, adding a `-1`, `-2`, ... suffix while it
+ * is taken. Two resets inside the same second must not clobber the first.
+ */
+function nextArchivePath(dir: string, opts: ArchiveOptions): string {
+  const resolved = path.resolve(dir);
+  const stamp = opts.stamp ?? archiveStamp();
+  const root = opts.archiveRoot ? path.resolve(opts.archiveRoot) : path.dirname(resolved);
+  const base = path.basename(resolved);
+  fs.mkdirSync(root, { recursive: true });
+  let target = path.join(root, `${base}.bak-${stamp}`);
+  let n = 1;
+  while (fs.existsSync(target)) target = path.join(root, `${base}.bak-${stamp}-${n++}`);
+  return target;
+}
+
+/** Move a file or directory, falling back to copy + delete across devices. */
+function transfer(from: string, to: string): void {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    // Different filesystem (e.g. a state_dir on another mount): rename
+    // cannot cross devices, so fall back to a copy + delete.
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+    fs.cpSync(from, to, { recursive: true });
+    fs.rmSync(from, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Top-level entries of `dir` that survive `excludes`, or null when an exclusion
+ * IS `dir` itself and there is therefore nothing to archive.
+ */
+function survivingEntries(dir: string, excludes: string[]): string[] | null {
+  if (excludes.some((ex) => ex === dir)) return null;
+  return fs.readdirSync(dir).filter((name) => {
+    const entry = path.join(dir, name);
+    return !excludes.some((ex) => ex === entry || ex.startsWith(entry + path.sep));
+  });
+}
+
 /**
  * Move `dir` to a timestamped archive path: `<archiveRoot>/<name>.bak-<stamp>`
  * when `archiveRoot` is given, otherwise beside the directory. The rename is
@@ -285,41 +355,43 @@ export interface StateArchiveResult {
  * whole; an exclusion that IS `dir` archives nothing. Returns null when
  * nothing survived the exclusions.
  */
-export function archiveDir(dir: string, opts: { archiveRoot?: string; exclude?: string[] } = {}): string | null {
+export function archiveDir(dir: string, opts: ArchiveOptions = {}): string | null {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) return null;
   const excludes = (opts.exclude ?? []).map((e) => path.resolve(e));
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "-");
-  const root = opts.archiveRoot ? path.resolve(opts.archiveRoot) : path.dirname(resolved);
-  const base = path.basename(resolved);
-  fs.mkdirSync(root, { recursive: true });
-  let target = path.join(root, `${base}.bak-${stamp}`);
-  // Two resets inside the same second must not clobber the first archive.
-  let n = 1;
-  while (fs.existsSync(target)) target = path.join(root, `${base}.bak-${stamp}-${n++}`);
-  const move = (from: string, to: string): void => {
-    try {
-      fs.renameSync(from, to);
-    } catch (err) {
-      // Different filesystem (e.g. a state_dir on another mount): rename
-      // cannot cross devices, so fall back to a copy + delete.
-      if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
-      fs.cpSync(from, to, { recursive: true });
-      fs.rmSync(from, { recursive: true, force: true });
-    }
-  };
+  const target = nextArchivePath(resolved, opts);
   if (excludes.length === 0) {
-    move(resolved, target);
+    transfer(resolved, target);
     return target;
   }
-  if (excludes.some((ex) => ex === resolved)) return null;
-  const entries = fs.readdirSync(resolved).filter((name) => {
-    const entry = path.join(resolved, name);
-    return !excludes.some((ex) => ex === entry || ex.startsWith(entry + path.sep));
-  });
-  if (entries.length === 0) return null;
+  const entries = survivingEntries(resolved, excludes);
+  if (entries === null || entries.length === 0) return null;
   fs.mkdirSync(target, { recursive: true });
-  for (const name of entries) move(path.join(resolved, name), path.join(target, name));
+  for (const name of entries) transfer(path.join(resolved, name), path.join(target, name));
+  return target;
+}
+
+/**
+ * Copy `dir` to a timestamped archive path, leaving the original in place.
+ *
+ * The counterpart to `archiveDir` for things that must survive the operation
+ * that archives them: agent worktrees are removed milliseconds later by
+ * `removeAllWorktrees`, which would leave the archive empty if this moved.
+ * The copy is per top-level entry — same `exclude` semantics as `archiveDir`,
+ * same non-atomicity — and the source is never modified, so a repeated call is
+ * safe.
+ */
+export function copyDir(dir: string, opts: ArchiveOptions = {}): string | null {
+  const resolved = path.resolve(dir);
+  if (!fs.existsSync(resolved)) return null;
+  const excludes = (opts.exclude ?? []).map((e) => path.resolve(e));
+  const entries = excludes.length === 0 ? fs.readdirSync(resolved) : survivingEntries(resolved, excludes);
+  if (entries === null || entries.length === 0) return null;
+  const target = nextArchivePath(resolved, opts);
+  fs.mkdirSync(target, { recursive: true });
+  for (const name of entries) {
+    fs.cpSync(path.join(resolved, name), path.join(target, name), { recursive: true });
+  }
   return target;
 }
 
@@ -340,7 +412,10 @@ export function archiveDir(dir: string, opts: { archiveRoot?: string; exclude?: 
  * index) before calling and reopen after: on Windows an open handle blocks
  * the rename, and on POSIX the handle would keep writing into the archived inode.
  */
-export function archiveStateDir(stateDir: string, opts: { keepArtifacts?: boolean; archiveRoot?: string } = {}): StateArchiveResult {
+export function archiveStateDir(
+  stateDir: string,
+  opts: { keepArtifacts?: boolean } & ArchiveOptions = {},
+): StateArchiveResult {
   const resolved = path.resolve(stateDir);
   const archivedTo = archiveDir(resolved, opts);
   const layout = ensureStateLayout(resolved);

@@ -240,7 +240,15 @@ export const meshConfigSchema = {
         criteria_model: { type: "string", maxLength: 200 },
         workspace: {
           type: "object",
-          properties: { path: { type: "string" } },
+          properties: {
+            path: { type: "string" },
+            // Tri-state by absence: a missing `git` key defers to the default
+            // (ON), while an explicit `false` is an opt-out. `additionalProperties:
+            // false` means a project that sets this before the key exists here
+            // fails to LOAD rather than being ignored — never add it to the TS
+            // type or the scaffold template ahead of this schema.
+            git: { type: "boolean" },
+          },
           additionalProperties: false,
         },
         runtime: {

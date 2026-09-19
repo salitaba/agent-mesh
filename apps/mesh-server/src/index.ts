@@ -5,7 +5,7 @@ import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { URL } from "url";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal } from "../../../packages/protocol/src/index";
-import { resolveConfig, loadMeshFile, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
+import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
 import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
@@ -15,9 +15,21 @@ import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-
 import { Scheduler, type TriageModel } from "../../../packages/scheduler/src/index";
 import { StubRuntime, StaticRuntimeResolver } from "../../../packages/agent-runtime/src/index";
 import { FileSystemArtifactStore, GitWorkspace, InMemoryArtifactStore } from "../../../packages/artifact-store/src/index";
-import { FileSessionRegistry, ensureStateLayout, openSqliteIndex, SnapshotStore, archiveDir, archiveStateDir, acquireStateLock, type StateLockHandle } from "../../../packages/persistence/src/index";
+import {
+  FileSessionRegistry,
+  ensureStateLayout,
+  openSqliteIndex,
+  SnapshotStore,
+  archiveDir,
+  archiveStateDir,
+  archiveStamp,
+  copyDir,
+  meshArchiveRoot,
+  acquireStateLock,
+  type StateLockHandle,
+} from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
-import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON } from "../../../packages/protocol/src/index";
+import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, type GitMode } from "../../../packages/protocol/src/index";
 import {
   buildMeshGraph,
   buildCostReport,
@@ -47,6 +59,15 @@ export type ServerMode = "parked" | "live";
 export interface BootstrapOptions {
   configPath: string;
   runtimeOverrides?: Record<string, StubRuntime>;
+  /**
+   * Operator's git preference, before this project's own config is consulted.
+   * "auto" (or absent) defers to `mesh.workspace.git`, whose default is ON.
+   */
+  gitMode?: GitMode;
+  /**
+   * Legacy boolean form of `gitMode`, kept because tests and older callers
+   * pass it. Read as a hard "on"/"off"; `gitMode` wins when both are set.
+   */
   useGit?: boolean;
   inMemory?: boolean;
   /** Serve dashboard/API/SSE but never start the scheduler or activate agents. */
@@ -72,6 +93,19 @@ export interface MeshInstance {
    * migration), else the configured workspace root.
    */
   readonly productPath: string;
+  /**
+   * Resolved artifact-storage mode — the answer after flag, config and default
+   * have been reconciled. Exposed because "why is there no workspace?" is
+   * otherwise unanswerable from the dashboard, and an empty `deps.workspace`
+   * silently refuses every `mesh_commit`.
+   */
+  readonly useGit: boolean;
+  /**
+   * True when this mesh owns no files. Exposed for the same reason as `useGit`:
+   * the HTTP layer has to refuse a file-shaped operation (mission restore)
+   * with a sentence, not by reaching into bootstrap's options.
+   */
+  readonly inMemory: boolean;
   supervisor: Supervisor;
   kernel: Kernel;
   store: EventStore;
@@ -131,8 +165,19 @@ export interface MeshInstance {
    * old run's product tree (git: `workspace/main`; non-git: the configured
    * workspace root, state dir excluded); always lands parked.
    */
-  reset(opts?: { keepArtifacts?: boolean }): Promise<ResetReport>;
+  reset(opts?: ResetOptions): Promise<ResetReport>;
   close(): Promise<void>;
+}
+
+export interface ResetOptions {
+  /** Carry produced documents over into the fresh state dir. */
+  keepArtifacts?: boolean;
+  /**
+   * Copy the agent worktrees aside before deleting them. On by default; the
+   * escape hatch exists because a worktree can be large and reset is called
+   * from paths (tests, scripted teardown) that do not want the I/O.
+   */
+  archiveWorktrees?: boolean;
 }
 
 export interface ResetReport {
@@ -143,10 +188,26 @@ export interface ResetReport {
   productArchivedTo: string | null;
   /** Worktree directory names that were deleted (empty when git mode is off). */
   worktreesRemoved: string[];
+  /**
+   * Absolute path of the archived copy of the worktrees, null when git mode is
+   * off, there were no worktrees, or `archiveWorktrees` was false. This holds
+   * the uncommitted work that `worktreesRemoved` deleted — but note its `.git`
+   * files point into a repo that is re-initialized below, so only the plain
+   * files are readable from here. The commits are in `worktreeBundleTo`.
+   */
+  worktreesArchivedTo: string | null;
+  /**
+   * Absolute path of the git bundle holding every `mesh/*` branch as it was
+   * immediately before `removeAllWorktrees` deleted them, null when there was
+   * nothing to bundle. Restore a commit with:
+   * `git fetch <bundle> 'refs/heads/*:refs/heads/restored/*'`.
+   */
+  worktreeBundleTo: string | null;
   /** Goal id minted for the fresh mission. */
   goalId: string | null;
   mode: ServerMode;
 }
+
 
 export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInstance> {
   const config = resolveConfig(options.configPath);
@@ -202,7 +263,18 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   const content = options.inMemory
     ? new InMemoryArtifactStore()
     : new FileSystemArtifactStore(path.join(layout.artifacts));
-  const workspace = options.useGit ? new GitWorkspace(config.workspacePath) : undefined;
+  // The one place a project's git mode is decided. Everything upstream — argv,
+  // the host, the child's environment — carries the operator's intent verbatim
+  // so that "no preference" stays distinguishable from "explicitly off" until
+  // here, where the project's own config is finally in scope to break the tie.
+  const gitMode: GitMode = options.gitMode ?? (options.useGit === undefined ? "auto" : options.useGit ? "on" : "off");
+  // `!inMemory` is not a preference, it is a constraint: an in-memory boot has
+  // no workspace on disk, so a GitWorkspace could only ever be a handle to a
+  // repo that was never created (ensureRepo below is skipped for in-memory).
+  // Leaving it defined would flip `deps.workspace` from undefined to an
+  // uninitialised store and quietly move every commit onto the git path.
+  const useGit = !options.inMemory && resolveUseGit(gitMode, config.workspaceGit);
+  const workspace = useGit ? new GitWorkspace(config.workspacePath) : undefined;
   if (workspace && !options.inMemory) await workspace.ensureRepo();
   const sessionRegistry = options.inMemory ? undefined : new FileSessionRegistry(config.stateDir);
 
@@ -316,15 +388,37 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   });
 
   let indexRef: { flush(): void; close(): void } | undefined;
-  // NOTE: `!options.inMemory` (not `=== false`) — every other branch above
-  // treats an omitted flag as file mode, and the CLI never passes the flag.
-  if (!options.inMemory) {
+  let indexUnsub: (() => void) | undefined;
+  /**
+   * Drop the sqlite index and its kernel subscription.
+   *
+   * The unsubscribe is not optional housekeeping: `kernel.subscribe` keeps the
+   * listener forever, and every mission reset reopens the index. Without it
+   * each swap leaves a listener closed over the dead index, which goes on
+   * ingesting into a released handle for the life of the process.
+   */
+  const closeIndex = (): void => {
+    indexUnsub?.();
+    indexUnsub = undefined;
+    try {
+      indexRef?.flush();
+      indexRef?.close();
+    } catch {
+      /* best-effort index */
+    }
+    indexRef = undefined;
+  };
+  /** Open the index over `events` and route subsequent events into it. */
+  const openIndex = (events: MeshEvent[]): void => {
+    closeIndex();
     const index = openSqliteIndex(path.join(layout.events, "events-index.sqlite"));
     indexRef = index;
-    const events = await store.read();
     index.ingest(events);
-    kernel.subscribe((e) => index.ingest([e]));
-  }
+    indexUnsub = kernel.subscribe((e) => index.ingest([e]));
+  };
+  // NOTE: `!options.inMemory` (not `=== false`) — every other branch above
+  // treats an omitted flag as file mode, and the CLI never passes the flag.
+  if (!options.inMemory) openIndex(await store.read());
 
   await kernel.replayFromStore();
   const resume = kernel.state.eventCount > 0;
@@ -343,6 +437,8 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       : fs.existsSync(mainProductPath)
         ? mainProductPath
         : config.workspacePath,
+    useGit,
+    inMemory: options.inMemory === true,
     supervisor,
     kernel,
     store,
@@ -399,36 +495,58 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       supervisor.setLiveMode(false);
       // `mode`/`uiOnly` follow `scheduler.isRunning()`; stopping IS parking.
     },
-    async reset(resetOpts = {}) {
+    async reset(resetOpts: ResetOptions = {}) {
       const self = this as MeshInstance;
       // 1. Stop everything first. Order matters: the scheduler must not be
       //    able to start a turn while the log underneath it is being replaced.
       await self.park();
       await supervisor.resetMission();
       scheduler.resetMissionState();
-      // 2. Worktrees are disposable mission scratch space: delete them (and
-      //    their mesh/* branches) so the next run cannot read the previous
-      //    run's files. Sessions are already stopped, so no process is using
-      //    them.
+      // Every archive this reset produces shares one stamp, so the backups read
+      // as one set rather than as unrelated snapshots taken seconds apart.
+      const archiveRoot = meshArchiveRoot(config.dir, config.meshId);
+      const stamp = archiveStamp();
+      // 2. Copy the worktrees aside BEFORE deleting them. They are not
+      //    disposable: an agent's uncommitted edits live only in its worktree,
+      //    and `removeAllWorktrees` deletes the branch as well, which leaves
+      //    any commits as unreachable objects for `git gc` to collect. Both
+      //    copies are taken here, while the branches still exist.
+      let worktreesArchivedTo: string | null = null;
+      let worktreeBundleTo: string | null = null;
+      if (workspace && !options.inMemory && resetOpts.archiveWorktrees !== false) {
+        worktreesArchivedTo = copyDir(workspace.worktreesPath, { archiveRoot, stamp });
+        // Walking away from a failed copy would delete the only copy, so a
+        // throw here aborts the reset with the worktrees still intact.
+        const bundle = await workspace.bundleWorktreeBranches(
+          // Inside the worktree archive when there is one, so a stamp resolves
+          // to a single directory; otherwise beside it under the same stamp.
+          worktreesArchivedTo
+            ? path.join(worktreesArchivedTo, "mesh-branches.bundle")
+            : path.join(archiveRoot, `mesh-branches.bak-${stamp}.bundle`),
+        );
+        worktreeBundleTo = bundle?.path ?? null;
+      }
+      // 3. Now it is safe to delete them (and their mesh/* branches) so the
+      //    next run cannot read the previous run's files. Sessions are already
+      //    stopped, so no process is using them.
       const worktreesRemoved = workspace ? await workspace.removeAllWorktrees() : [];
-      // 3. The product checkout is mission scratch too: archive it outside the
+      // 4. The product checkout is mission scratch: archive it outside the
       //    workspace, then leave an empty product root so the Product page
       //    (and the next run) sees no files from the previous mission. Git
       //    mode owns the dedicated `main/` checkout. Without git the mission
       //    materializes product files (and the playground build) straight into
       //    the workspace root, so that root is what gets archived. The state
-      //    dir lives inside the workspace by default and step 5 archives it
+      //    dir lives inside the workspace by default and step 6 archives it
       //    separately, so exclude it here instead of double-archiving.
       let productArchivedTo: string | null = null;
       if (workspace && !options.inMemory) {
-        productArchivedTo = archiveDir(workspace.mainPath, {
-          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
-        });
+        productArchivedTo = archiveDir(workspace.mainPath, { archiveRoot, stamp });
         workspace.removeMain();
         await workspace.ensureRepo();
       } else if (!options.inMemory) {
         productArchivedTo = archiveDir(config.workspacePath, {
-          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
+          archiveRoot,
+          stamp,
           exclude: [config.stateDir],
         });
         fs.mkdirSync(config.workspacePath, { recursive: true });
@@ -438,58 +556,49 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         // from nothing) for the rest of the run.
         initProductRepo(config.workspacePath, config.stateDir);
       }
-      // 4. Release the sqlite index handle before the directory moves; an open
+      // 5. Release the sqlite index handle before the directory moves; an open
       //    handle would keep writing into the archived copy.
-      try {
-        indexRef?.flush();
-        indexRef?.close();
-      } catch {
-        /* best-effort index */
-      }
-      indexRef = undefined;
-      // 5. Archive-then-recreate the state dir (atomic rename, recoverable).
+      closeIndex();
+      // 6. Archive-then-recreate the state dir (atomic rename, recoverable).
       //    The archive lives outside `workspace/` so new agents cannot read
       //    it from their working tree.
       let archivedTo: string | null = null;
       if (!options.inMemory) {
         archivedTo = archiveStateDir(config.stateDir, {
           keepArtifacts: resetOpts.keepArtifacts,
-          archiveRoot: path.join(config.dir, ".mesh-backups", config.meshId),
+          archiveRoot,
+          stamp,
         }).archivedTo;
         // The rename moved the lock file into the archive with everything
         // else, leaving the recreated directory unclaimed. Rewrite it, or a
         // second process could open the state dir this one is still using.
         stateLock?.refresh();
       }
-      // 6. Empty the log + projections + snapshot in place, preserving object
+      // 7. Empty the log + projections + snapshot in place, preserving object
       //    identity so every route handler's closure stays valid.
       await kernel.resetToEmpty();
-      // 7. Reopen the index against the fresh (empty) directory.
-      if (!options.inMemory) {
-        const index = openSqliteIndex(path.join(layout.events, "events-index.sqlite"));
-        indexRef = index;
-        kernel.subscribe((e) => index.ingest([e]));
-      }
-      // 8. Boot a brand-new mission from the config. resume:false forces a new
+      // 8. Reopen the index against the fresh (empty) directory.
+      if (!options.inMemory) openIndex([]);
+      // 9. Boot a brand-new mission from the config. resume:false forces a new
       //    goal rather than resurrecting the one we just deleted.
       await supervisor.boot({ resume: false, mode: "parked" });
       scheduler.rebuildInterestRegistry();
       // Step 1 parked the scheduler and `boot({mode:"parked"})` left it that
       // way, so the derived `mode`/`uiOnly` already read "parked".
       self.startedAt = Date.now();
-      return { ok: true, archivedTo, productArchivedTo, worktreesRemoved, goalId: kernel.state.activeGoalId ?? null, mode: self.mode };
+      return {
+        ok: true,
+        archivedTo,
+        productArchivedTo,
+        worktreesRemoved,
+        worktreesArchivedTo,
+        worktreeBundleTo,
+        goalId: kernel.state.activeGoalId ?? null,
+        mode: self.mode,
+      };
     },
     async close() {
-      try {
-        indexRef?.flush();
-      } catch {
-        /* best-effort index */
-      }
-      try {
-        indexRef?.close();
-      } catch {
-        /* best-effort index */
-      }
+      closeIndex();
       // Shut the runtime down BEFORE snapshotting: shutdown emits its own
       // events (turns aborted, agents stopped), and a snapshot taken first
       // would exclude them and be replayed over on the next boot anyway.
@@ -575,6 +684,7 @@ const DESIGNER_SYSTEM_PROMPT = [
   "- You NEVER execute any of these. Staging shows the operator a review card; they press Apply. Say what you staged and why — never say a change has been made, is now in effect, or has taken effect.",
   "- Look before you stage. Call mesh_run_status or mesh_agent_activity first so a retirement lands on a seat that is actually idle and an edit names a criterion that actually exists. A tool that refuses tells you why — fix the call, do not argue with it in prose.",
   "- Destructive proposals (mesh_stage_criteria_delete, _seat_retire, _run_reopen, _mission_reset) require a `reason`, and the operator sees it. Retirement is TERMINAL: a retired seat can never be resumed or woken, so propose mesh_stage_seat_suspend unless the seat should be gone for good.",
+  "- mesh_stage_mission_reset asks the operator for one more thing the `reason` cannot stand in for: they must type the mesh id on the card before Apply is accepted. You write the reason, so a reason-only guard would be one you satisfy by existing; the id is the half you cannot supply. Say so when you stage it, and give them the id — otherwise a reset you staged looks like it did nothing.",
   "- Removing a criterion shrinks what completion is measured over and can end the run. Propose it only when the operator asked for it, and say so plainly.",
   "- Config and live-run changes are different things: mesh_stage_config_replace edits the operator's local mesh.yaml draft (they still have to Save), every other kind applies to the running mesh. Do not describe them as one change.",
   "- mesh.yaml seeds the goal and its acceptance criteria only at BOOT, so rewriting them with mesh_stage_config_replace does not change a mission that is already running — it changes what the next boot would start, and the operator's Overview keeps showing the old mission. To change the goal or criteria of the RUNNING mission use mesh_stage_goal_description and mesh_stage_criteria_add / _edit / _delete. Reach for config replacement only when the operator is editing the file for a future run, or when they ask for both — and then say plainly that it is two changes.",
@@ -1668,11 +1778,12 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           ].join("; "),
         });
       }
-      // Destructive: wipes the mission back to tick zero. The previous state
-      // dir is archived (renamed, not deleted), so this stays recoverable —
-      // but every agent session, event, budget and artifact link is gone from
-      // the live mesh. `confirm: true` is mandatory so a stray POST from a
-      // retry, a crawler, or a mistyped curl can never nuke a running mission.
+      // Destructive: wipes the mission back to tick zero. Everything the old
+      // run produced is archived first — state dir, product checkout, worktrees
+      // and their branches — so the operation is recoverable, but the live mesh
+      // loses every agent session, event, budget and artifact link.
+      // `confirm: true` is mandatory so a stray POST from a retry, a crawler,
+      // or a mistyped curl can never nuke a running mission.
       if (parts[0] === "mission" && parts[1] === "reset" && req.method === "POST") {
         const b = await body();
         if (b?.confirm !== true) {
