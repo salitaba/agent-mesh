@@ -1364,6 +1364,26 @@ export interface MeshOpDischarge {
   messageId: MessageId;
   /** Why it will not be answered — recorded and shown to the asker. */
   reason: string;
+  /**
+   * WHICH "no" this is, named from the contract's closed `refusals` set.
+   *
+   * Optional, and its absence is the pre-existing behaviour: a discharge with
+   * only prose settles the ask exactly as it always did. Present, it must be
+   * one of the names the ask's contract declares, or the op is refused at the
+   * edge with the legitimate ones listed -- the same "getting it wrong teaches
+   * you the right one in the same breath" contract `unknownContractReason`
+   * makes for contract names.
+   *
+   * The reason this is a separate field rather than a convention for `reason`
+   * is that the asker is supposed to BRANCH on it. `contracts.ts` says the
+   * closed set exists so a refusal can be told apart as "I am the wrong seat"
+   * (re-route) from "your ask is incomplete" (re-ask) from "I disagree"
+   * (escalate) -- three situations that free text makes indistinguishable.
+   * Deriving that from prose would mean the mesh guessing at a sentence, which
+   * is the failure mode the whole typed-envelope design exists to avoid. So
+   * the kind is stated as a value or it is not stated at all.
+   */
+  refusal?: string;
 }
 
 /**

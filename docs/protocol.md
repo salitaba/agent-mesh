@@ -104,6 +104,16 @@ answer. Three properties matter:
    Broadcasting an ask would open an obligation on every qualified seat for
    work only one of them needs to do.
 
+4. **The refusals bind.** A debtor may discharge an ask with prose alone, which
+   is what it always did, or with `refusal: <name>` taken from the set its
+   contract declares. A name outside that set is refused at the edge, before any
+   event exists, listing the legitimate ones — the same teaching failure as an
+   unknown contract name. The asker receives the name as a value beside the
+   prose, which is the point of a closed set: "wrong seat" (re-route), "bad ask"
+   (re-ask) and "I disagree" (escalate) are three different responses, and free
+   text makes them one. The set is rendered on the ask's own line in the
+   debtor's prompt, because a closed set nobody can read is not closed.
+
 A contract's SLA narrows an existing deadline regime and never creates one; see
 `docs/configuration.md`.
 

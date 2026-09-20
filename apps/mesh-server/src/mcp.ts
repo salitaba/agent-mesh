@@ -316,7 +316,7 @@ export class McpToolset {
       case "mesh_respond":
         return { op: "respond", messageId: a.messageId, type: a.type as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
       case "mesh_discharge":
-        return { op: "discharge", messageId: a.messageId, reason: a.reason };
+        return { op: "discharge", messageId: a.messageId, reason: a.reason, refusal: a.refusal };
       case "mesh_withdraw":
         return { op: "withdraw", messageId: a.messageId, reason: a.reason };
       // `INFORM` is hard-coded, and that is the point rather than a shortcut:
@@ -737,7 +737,7 @@ export class McpToolset {
       // manifest entirely under `bus.vocabulary: "contracts"`.
       { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority") }, additionalProperties: false } },
       { name: "mesh_respond", description: "Respond to a specific received message.", inputSchema: { type: "object", required: ["messageId", "type"], properties: { messageId: str("message being answered"), type: msgType("response message type"), payload: obj("payload"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
-      { name: "mesh_discharge", description: "Close a request addressed to you that you will NOT answer, stating why. Use instead of staying silent: an unanswered request nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId", "reason"], properties: { messageId: str("the request you are closing"), reason: str("why it will not be answered (wrong recipient, out of scope, already covered elsewhere, blocked on something else)") }, additionalProperties: false } },
+      { name: "mesh_discharge", description: "Close a request addressed to you that you will NOT answer, stating why. Use instead of staying silent: an unanswered request nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId", "reason"], properties: { messageId: str("the request you are closing"), reason: str("why it will not be answered, in your own words — the asker reads this"), refusal: str("WHICH no this is, named from the contract's refusal set. The ask's mail line lists the names its contract admits; passing one lets the asker tell 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your prose. Omit it and nothing is checked — prose alone still settles the ask.") }, additionalProperties: false } },
       // The mirror of `mesh_discharge`, and it exists because the asker had
       // no move that reaches this state at all: a request that stopped being
       // worth answering could only be waited on or CHASED, and a chase is an

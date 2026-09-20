@@ -5288,6 +5288,33 @@ export class Supervisor {
               reason: `only ${outstandingDebtors(pending).join(", ")} may discharge this request`,
             };
           }
+          /**
+           * The refusal KIND, checked at the edge against the ask's own contract.
+           *
+           * `refusals` has been a declared closed set since contracts shipped and
+           * was read by nothing: a debtor said no in prose and the asker had to
+           * interpret the sentence to tell "wrong seat" from "bad ask" from "I
+           * disagree" -- the three cases the set was introduced to separate.
+           * Checking it here rather than at discharge-inference time keeps the
+           * judgement out of the reducer: an invalid kind is refused before any
+           * event exists, exactly as a malformed `request` is, and the refusal
+           * names the legitimate ones so the next attempt is informed.
+           *
+           * Fail-open in every direction that is not a wrong name. No `refusal`
+           * at all is the old behaviour and stays legal -- prose still settles an
+           * ask. An ask with no contract, or a contract declaring an empty set
+           * (`decision.escalate`, which no peer answers), has nothing to check
+           * against and is accepted as given.
+           */
+          const askContract = pending.contract ? findContract(pending.contract) : undefined;
+          const refusal = op.refusal?.trim() || undefined;
+          if (refusal && askContract?.refusals.length && !askContract.refusals.includes(refusal)) {
+            return {
+              ok: false,
+              op: op.op,
+              reason: `'${refusal}' is not a refusal ${askContract.name} admits. Use one of: ${askContract.refusals.join(", ")}. Keep 'reason' for your own words — the asker reads both.`,
+            };
+          }
           // Close FIRST, then notify. The order matters and it used to be the
           // other way round, which made the decline unrecordable: the notice
           // carries `replyTo`, so the reducer discharged the ask as `reply`
@@ -5299,7 +5326,11 @@ export class Supervisor {
           // The asker is not left hanging by the reorder: `dischargeCommitment`
           // wakes it with a reason of its own before this returns, and the
           // notice below follows with the agent's own words.
-          const closed = await this.dischargeCommitment(op.messageId, "refused", actorId, { declined: true, note: op.reason });
+          const closed = await this.dischargeCommitment(op.messageId, "refused", actorId, {
+            declined: true,
+            note: op.reason,
+            ...(refusal ? { refusal } : {}),
+          });
           if (!closed) {
             // The discharge event did not reach the log, so the ask is still
             // open. Say so rather than sending a notice that claims otherwise.
@@ -5312,7 +5343,9 @@ export class Supervisor {
             threadId: this.state.threads.has(pending.threadId) ? pending.threadId : undefined,
             newThread: this.state.threads.has(pending.threadId) ? undefined : { subject: `cannot answer ${op.messageId}` },
             replyTo: this.state.messages.has(op.messageId) ? op.messageId : undefined,
-            payload: { declined: true, request: op.messageId, reason: op.reason },
+            // `refusal` rides the notice as data, which is the whole point: the
+            // asker can act on the KIND without parsing the sentence beside it.
+            payload: { declined: true, request: op.messageId, reason: op.reason, ...(refusal ? { refusal } : {}) },
             priority: "HIGH",
           });
           turn.sentOps++;

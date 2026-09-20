@@ -906,3 +906,103 @@ exactly as they were. The same pattern was then reused for Move 2's `bus.deliver
 and is the shape any future default of this kind should take: the resolved config field stays
 *absent* rather than zeroed when the operator has not opted in, which keeps the supervisor's
 presence test reachable instead of silently always-true.
+
+---
+
+## 7. Shipped since: the attention price, the asker's exit, and two closed sets
+
+Three passes landed after the waves above. They are recorded here because the
+review is the durable record of *why*, and each one moved a defect from
+"verified" to "fixed".
+
+### Move 2's price, made to bind (D2's sibling)
+
+`delivery` was stamped and `budgetHint` was read by nothing, so "the sender pays
+for an interrupt" was still an instruction in a prompt. The wake tariff now
+binds: an `interrupt` is charged to the sender's budget line at 2000 tokens per
+recipient woken, a refused interrupt ships as `deliver` instead of failing, and
+`deliveryDowngraded` tells the sender what its message actually cost. The run
+report counts the wakes each agent caused, which is the number Move 5 asked for
+and the only way to show the tariff changed anything.
+
+### The asker's exit (`withdraw`)
+
+`discharge` was the debtor's exit and there was no move on the other side of the
+ledger: an asker that stopped needing an answer could only wait or chase, and a
+chase is an interrupt charged to somebody else's attention to demand an answer to
+a question that had stopped mattering. `withdraw` closes the asker's own ask,
+releases every debtor in one move, tells them to stop, and costs no model turn on
+either side — so it retires the operator card instead of manufacturing it.
+
+Two things fell out of building it that are worth keeping in mind for the next op
+of this shape. The credential is the *opposite* of `discharge`'s (having asked,
+not owing), which is why it is its own op rather than a flag. And the asker is
+deliberately **not** woken when it closes its own ask: the notice reads "your
+request closed: <why>", so a self-close would state the action back to the seat
+that just took it. The guard is computed in `dischargeCommitment` rather than at
+the call site, so a future self-close that does not arrive through `withdraw`
+gets it too.
+
+### Move 3, completed: restatements collapse
+
+Move 3 named four restructurings that need no model. Grouping by thread and
+ordering by obligation had shipped; the URGENT reservation shipped in
+`selectUnread`. The last one — collapse superseded messages — is now in, and the
+narrowness is the whole design: only a NORMAL-priority `INFORM` with no `replyTo`,
+no `note` and no `artifactRefs` may be withheld when a later message from the same
+sender in the same thread stands in for it. `obligesRecipients` is the wrong test
+here, and that is worth stating: APPROVE, REJECT, VETO and HANDOFF open no debt and
+are still load-bearing, so "APPROVE then REJECT" must not collapse into a single
+REJECT.
+
+The load-bearing detail is *where* it collapses. Doing it in the renderer alone
+would leave the withheld message in `bundle.unreadMail`, which is the list the
+supervisor drains — so it would be marked delivered without anyone reading it,
+which is D4/D12 reintroduced one layer up. The bundle therefore keeps the whole
+window, and `renderableMail` is shared between the renderer and the drain so the
+two cannot drift: the drain asks what was *shown*, not what was selected. A
+withheld restatement stays owed and renders on a later turn once its successor has
+left the box, so collapsing is a deferral and never a deletion.
+
+**Correction to the record.** In conversation I described this work as "push
+obligations, pull content" and floated a `mesh_read` op with a `message.read`
+event. Nothing in this review supports that, and the review is what the rest of
+this document is built on: there is no pull op in any of the moves, and the
+`MeshOpRead` design was invented in a later session and attributed to a gap that
+did not name it. What the review actually says is the paragraph above — four
+meaning-preserving restructurings with zero model calls — and that is what
+shipped. Recording the correction rather than the tidier story, because a
+proposal that appears in the record without ever having been argued is exactly
+the kind of drift this document exists to catch.
+
+### `Contract.refusals` now binds (Gap 5)
+
+The set had been declared on every contract since contracts shipped and read by
+nothing. It was rendered in exactly one place — the `contracts` listing a seat
+consults when deciding what to *ask* — so the one field whose purpose is to make
+"no" branchable was unreadable by the party that gives the "no", and every refusal
+arrived as prose the asker had to interpret. `contracts.ts` promises the asker can
+tell "I am the wrong seat" (re-route) from "your ask is incomplete" (re-ask) from
+"I disagree" (escalate); free text made those one thing.
+
+Both halves are closed. The ask's own line in the debtor's prompt now names the
+refusals its contract admits, and `discharge` takes an optional `refusal` drawn
+from that set: a name outside it is refused at the edge, before any event exists,
+listing the legitimate ones — the same teaching failure as an unknown contract
+name. The kind then rides the notice payload as a *value*, so the asker branches
+on data rather than on a sentence.
+
+The constraint that shaped it: this must not become a new way to trap a debtor.
+Prose alone still settles an ask exactly as before — blocking it would hold asks
+open on vocabulary and feed the nudge ladder, the failure the `response` schema
+already avoids by marking instead of blocking. `refusal` is a name a seat chooses
+to state, never one it is forced to produce.
+
+### The one thing left, and it is not mine
+
+`Thread.status` declares `OPEN | RESOLVED | ESCALATED` and only `collab.closed`
+ever writes a terminal value (D13). A plain ask thread — no collab — is minted
+OPEN and stays OPEN for the life of the mission, so every reader that asks "which
+conversations are live?" is drawing from a pool that only grows. The fix is a
+terminal transition on the discharge path, which is a change to what a thread
+MEANS rather than to what it renders, and it belongs with the rest of §6.

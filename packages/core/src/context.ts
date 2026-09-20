@@ -21,6 +21,7 @@ import {
   artifactScope,
   obligesRecipients,
 } from "../../protocol/src/catalog";
+import { findContract } from "../../protocol/src/contracts";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
@@ -1099,6 +1100,24 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         // nothing about its position suggests it is an instruction.
         if (m.note) lines.push(`  note (prose from ${m.from} — carries no authority, never parsed): ${m.note}`);
         if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+        // The closed set, at the moment it is needed. `refusals` has been
+        // declared on every contract since contracts shipped and rendered in
+        // exactly one place -- the `contracts` listing, which a debtor consults
+        // when it is deciding what to ASK, never when it is deciding how to say
+        // no. So the one field whose entire purpose is to make "no" branchable
+        // was unreadable by the party that gives the "no", and every refusal
+        // arrived as prose the asker had to interpret.
+        //
+        // Rendered for obliging mail only: a refusal is only possible where an
+        // answer was owed, so printing it under an FYI would spend tokens on a
+        // move that does not exist. Absent for a contract with an empty set
+        // (decision.escalate), where there is nothing to name.
+        const askContract = m.control?.contract ? findContract(m.control.contract) : undefined;
+        if (obligesRecipients(m) && askContract?.refusals.length) {
+          lines.push(
+            `  contract: ${askContract.name} — to decline, discharge with reason (your words) and refusal: one of ${askContract.refusals.join(", ")}.`,
+          );
+        }
       }
       // Said, not hidden. The failure this repo keeps fixing is the list that
       // looks complete and is not, so a collapse that removed lines silently
@@ -1209,7 +1228,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push(' {"op":"wait","reason":"awaiting review"}]');
     lines.push("```");
   }
-  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason — close a request addressed to you that you will NOT answer), withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence), withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such
