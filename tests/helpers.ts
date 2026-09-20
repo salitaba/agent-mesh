@@ -69,8 +69,23 @@ export interface TestMeshOptions {
       ttlMsByRole?: Record<string, number>;
     };
     transport?: "mixed" | "typed-only";
+    /**
+     * Which comms vocabulary the mesh advertises to its seats.
+     *
+     * `"typed"` is emitted LITERALLY rather than folded away here, even though
+     * `resolveBusVocabulary` folds it back to absent: that fold is the thing a
+     * fixture has to be able to prove, and it cannot if the builder quietly
+     * performs it first.
+     */
+    vocabulary?: "typed" | "contracts";
     /** Bounds a collab session opens with. Unset means the shipped defaults. */
     collab?: { boxMs?: number; maxExchanges?: number };
+    /**
+     * Price attention. Omitting the block entirely is not the same as setting
+     * `classes: false` -- absent is the behaviour of every mesh that never
+     * opted in, and most suites here depend on getting exactly that.
+     */
+    delivery?: { classes?: boolean; coalesceMs?: number; interruptCostTokens?: number };
   };
 }
 
@@ -95,7 +110,31 @@ export function evidenceContent(subject: string): string {
   ].join("\n");
 }
 
-export /**
+/**
+ * The whole `bus:` block, or "" when it would be empty.
+ *
+ * A bare `bus:` with nothing under it parses as null, and the schema rejects
+ * it with `/bus: must be object` -- so passing `{ commitments: {} }` to ask
+ * for defaults has to produce no block at all, not an empty one. Every
+ * sub-block below therefore contributes to `body` and returns "" when it has
+ * nothing to say, and this function decides on the header afterwards.
+ *
+ * Key order matches `schemas/mesh.schema.json`. It is not load-bearing --
+ * YAML mappings are unordered -- but a generated fixture that reads like the
+ * file an operator would have written is easier to check by eye.
+ */
+function busYaml(bus: TestMeshOptions["bus"]): string {
+  if (!bus) return "";
+  const body =
+    busCommitmentsYaml(bus.commitments) +
+    (bus.transport ? `  transport: ${bus.transport}\n` : "") +
+    busVocabularyYaml(bus.vocabulary) +
+    busCollabYaml(bus.collab) +
+    busDeliveryYaml(bus.delivery);
+  return body ? `bus:\n${body}` : "";
+}
+
+/**
  * The `bus.commitments` block, or "" when nothing about it was asked for.
  *
  * Built as a function rather than inline so an omitted key stays OMITTED:
@@ -103,22 +142,6 @@ export /**
  * (the resolver's default only applies to an absent key), and that difference
  * decides whether asks in a fixture can expire at all.
  */
-/**
- * The whole `bus:` block, or "" when it would be empty.
- *
- * A bare `bus:` with nothing under it parses as null, and the schema rejects
- * it with `/bus: must be object` -- so passing `{ commitments: {} }` to ask
- * for defaults has to produce no block at all, not an empty one.
- */
-function busYaml(bus: TestMeshOptions["bus"]): string {
-  if (!bus) return "";
-  const body =
-    busCommitmentsYaml(bus.commitments) +
-    (bus.transport ? `  transport: ${bus.transport}\n` : "") +
-    busCollabYaml(bus.collab);
-  return body ? `bus:\n${body}` : "";
-}
-
 function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"]): string {
   if (!c) return "";
   const parts: string[] = [];
@@ -134,6 +157,34 @@ function busCollabYaml(c: NonNullable<TestMeshOptions["bus"]>["collab"]): string
   if (c.boxMs !== undefined) parts.push(`box_ms: ${c.boxMs}`);
   if (c.maxExchanges !== undefined) parts.push(`max_exchanges: ${c.maxExchanges}`);
   return parts.length ? `  collab: { ${parts.join(", ")} }\n` : "";
+}
+
+/** The `bus.vocabulary` line, or "" when the fixture did not choose one. */
+function busVocabularyYaml(v: NonNullable<TestMeshOptions["bus"]>["vocabulary"]): string {
+  return v ? `  vocabulary: ${v}\n` : "";
+}
+
+/**
+ * The `bus.delivery` block, or "" when the fixture wants no delivery regime.
+ *
+ * `classes` defaults to TRUE when the block is present at all, which is the
+ * one place this builder supplies a value the config would not. The reason is
+ * `resolveDeliveryClasses`: it returns undefined unless `classes` is truthy,
+ * so a block carrying only `coalesce_ms` resolves to no regime and the key
+ * that was set is silently discarded. Defaulting it means "I wrote a delivery
+ * block" and "I want the regime" cannot come apart by omission, while an
+ * explicit `classes: false` still says the other thing.
+ *
+ * `!== undefined` rather than truthiness on the numbers, because
+ * `interrupt_cost_tokens: 0` is a real tariff -- the free-interrupt case --
+ * and not a request for the shipped default.
+ */
+function busDeliveryYaml(d: NonNullable<TestMeshOptions["bus"]>["delivery"]): string {
+  if (!d) return "";
+  const parts = [`classes: ${d.classes ?? true}`];
+  if (d.coalesceMs !== undefined) parts.push(`coalesce_ms: ${d.coalesceMs}`);
+  if (d.interruptCostTokens !== undefined) parts.push(`interrupt_cost_tokens: ${d.interruptCostTokens}`);
+  return `  delivery: { ${parts.join(", ")} }\n`;
 }
 
 export function testConfigYaml(opts: TestMeshOptions): string {

@@ -96,8 +96,7 @@ test("the class is runtime-owned: agent input cannot carry one", () => {
   const cleaned = sanitizeAgentMessageInput({
     payload: { delivery: "accrue", mode: "broadcast", note: "kept" },
     control: { delivery: "accrue" } as MessageControl,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
+  });
   assert.equal(cleaned.control, undefined, "control is stripped wholesale");
   // The payload copy matters even though nothing reads it: a seat that could
   // leave `delivery: "accrue"` there has written the one class nobody is

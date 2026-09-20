@@ -652,10 +652,37 @@ writing down. Three things must be true first, and the full argument now lives a
 (1) and (2) are independent — a mesh can collapse its vocabulary and still accept prose — so
 the ordering is "measure, flip the flag everywhere, then delete", not "delete".
 
-Which leaves one honest gap: `context.ts:975-991` still enumerates all 24 `MESSAGE_TYPES` in
-the prose ops-block contract. That is precondition (2) restated, and it is deliberately out of
-scope here: the prose contract is governed by `bus.transport`, not `bus.vocabulary`. **This is
-the next piece of work if the alias tables are ever to go.**
+Which left one honest gap, now closed. The prose ops-block contract enumerated all 24
+`MESSAGE_TYPES` unconditionally and told every seat to emit a `mesh-json` block. Under
+`transport: "typed-only"` the supervisor parses that block and then refuses every op in it
+(`supervisor.ts`, the `typedOnlyRefusal` branch) — so the most emphatic section of the prompt
+was teaching a turn that cannot land, and the seat paid a full turn to discover it. Both are
+now gated on a `typedOpsOnly` flag on the context bundle, derived from `bus.transport`: the
+same **never advertise a rule that cannot fire** discipline as `delegationEnabled` and
+`criterionAcceptanceEnabled`, one channel over.
+
+The enum is *gated* rather than deleted because its original argument is about **prose
+specifically**. That channel has no schema at its edge: an invented type builds a plausible
+message that travels, fails validation elsewhere and is dropped silently — 23 of 30 messages in
+one live run. Every type-taking tool carries `enum: [...MESSAGE_TYPES]` (`mcp.ts`), so a typed
+seat is already holding the same closed set and a wrong value comes back refused *at the call*,
+with the field named. Repeating it there is ~40 tokens every turn for something the seat
+already had.
+
+What is deliberately **not** gated is the ops catalogue. The fenced-block syntax is
+prose-specific; the list of moves is the only place a seat learns a move exists, and that is
+true on either channel — gating the whole section would re-run the 18-undocumented-ops failure
+at the top of this document. Nor is the typed branch allowed to say "prefix the op names": the
+tools are not `mesh_` plus the op (`close_collab` is `mesh_collab_close`, answering a request is
+`mesh_reply`), so a seat told to prefix would invent tools that do not exist — the prose failure
+mode moved rather than removed. The manifest stays authoritative for names.
+
+That closes precondition (2) for the **contract**, not for the meshes: a `mixed` mesh still
+parses prose and still gets the full block, which is the whole point of the gate. Precondition
+(3), meanwhile, turns out to be unobservable as written — `aliasStats()` has no production
+caller anywhere in the tree, so "reports zero across a real run" cannot currently be measured by
+anyone. **Wiring those counters to something that reports is the next piece of work if the alias
+tables are ever to go.**
 
 ### Move 2 as shipped, and the two refinements the tests forced
 

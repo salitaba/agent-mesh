@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
-import { renderContextInstructions } from "../../packages/core/src/context";
+import { renderContextInstructions, buildAgentContext } from "../../packages/core/src/context";
 import type { AgentContextBundle } from "../../packages/protocol/src/index";
+import { makeMesh } from "../helpers";
 
 /**
  * The ops block in the agent context is the ONLY place an agent learns what
@@ -118,4 +119,71 @@ test("ops contract: the ops block still shows an exact, parseable example", () =
   const parsed = JSON.parse(block.trim()) as Array<{ op: string }>;
   assert.ok(Array.isArray(parsed) && parsed.length > 0, "the documented example must itself be valid JSON");
   for (const op of parsed) assert.ok(implementedOps().has(op.op), `example uses a non-existent op: ${op.op}`);
+});
+
+// --------------------------------------------------------- typed-only ------
+
+/**
+ * Under `bus.transport: "typed-only"` the supervisor parses a `mesh-json`
+ * block and then REFUSES every op in it (`supervisor.ts`, the
+ * `typedOnlyRefusal` branch). Until this gate existed the contract above told
+ * every such seat to emit one anyway -- so the prompt taught, in its most
+ * emphatic section, the one thing the runtime is guaranteed to throw away, and
+ * the seat spent a full turn to be told so.
+ *
+ * The tests come in pairs on purpose. A render that branches on a flag nobody
+ * sets is dead code that reads like a feature, so the wiring is asserted from
+ * a booted mesh, and the prose is asserted from a hand-made bundle.
+ */
+
+const FENCE = "```mesh-json";
+/** The tail of the 24-name enum line, chosen because no other line carries it. */
+const ENUM_LINE = "`send` type MUST be exactly one of:";
+
+test("typed-only: the config reaches the bundle, not just the renderer", async () => {
+  const agents = [
+    { id: "architect", role: "architect", interests: [] },
+    { id: "dev", role: "developer", interests: [] },
+  ];
+  const typed = await makeMesh({ agents, mode: "parked" as const, bus: { transport: "typed-only" as const } });
+  const mixed = await makeMesh({ agents, mode: "parked" as const });
+  try {
+    assert.equal(mixed.config.bus.transport, "mixed", "precondition: the default mesh must not be typed-only");
+    assert.equal(
+      buildAgentContext({ config: typed.config, kernel: typed.kernel }, "dev").typedOpsOnly,
+      true,
+      "bus.transport never reached the bundle, so the gate below can never fire",
+    );
+    assert.equal(buildAgentContext({ config: mixed.config, kernel: mixed.kernel }, "dev").typedOpsOnly, false);
+  } finally {
+    await typed.cleanup();
+    await mixed.cleanup();
+  }
+});
+
+test("typed-only: the prose block contract and the type enum are withheld", () => {
+  const prose = renderContextInstructions(emptyBundle());
+  // Precondition. Without it this test passes just as well against a renderer
+  // that stopped emitting the block for everyone.
+  assert.ok(prose.includes(FENCE), "precondition: a mixed mesh must still be shown the mesh-json block");
+  assert.ok(prose.includes(ENUM_LINE), "precondition: a mixed mesh must still be shown the closed type enum");
+
+  const typed = renderContextInstructions(emptyBundle({ typedOpsOnly: true }));
+  assert.ok(!typed.includes(FENCE), "a typed-only seat was told to emit a block whose ops are refused");
+  assert.ok(
+    !typed.includes(ENUM_LINE),
+    "the enum is ~40 tokens a turn that every type-taking tool already carries as `enum: [...MESSAGE_TYPES]`",
+  );
+  assert.match(typed, /parsed and then REFUSED/, "and it must be told why, or it will keep writing blocks");
+});
+
+test("typed-only: withholding the block does not withhold the ops", () => {
+  // The failure this guards is the obvious over-correction: gating the whole
+  // section rather than the half of it that is about prose syntax. The ops
+  // catalogue is the ONLY place a seat learns a move exists, and that is true
+  // on either channel -- see the 18-undocumented-ops mission at the top.
+  const typed = renderContextInstructions(emptyBundle({ typedOpsOnly: true }));
+  const missing = [...implementedOps()].filter((op) => !DELEGATION_OPS.has(op) && !typed.includes(op)).sort();
+  assert.deepEqual(missing, [], `typed-only seats lost ops from their contract: ${missing.join(", ")}`);
+  assert.ok(typed.includes("## Ops block contract"), "the section anchor is load-bearing for other suites");
 });

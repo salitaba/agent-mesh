@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { bootstrapMesh, type MeshInstance } from "../../apps/mesh-server/src/index";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
-import { testConfigYaml, type TestMeshOptions } from "../helpers";
+import { makeMesh } from "../helpers";
 import { parseMeshSource, resolveBusVocabulary, writeDefaultMeshYaml } from "../../packages/config/src/index";
 import { MESSAGE_TYPES, shortHash, validateMeshConfig } from "../../packages/protocol/src/index";
 
@@ -85,53 +84,31 @@ test("the mesh schema closes the vocabulary enum", () => {
 // ------------------------------------------------------------ the manifest
 
 /**
- * `bus.vocabulary` written into the generated fixture config.
+ * A three-seat mesh at the given vocabulary, or at whatever a mesh that never
+ * named one gets.
  *
- * Injected as YAML rather than added to `TestMeshOptions` for the reason the
- * delivery-class fixture does the same: the shared builder is used by every
- * suite in the repo and does not need widening for a key two files set. It
- * also keeps the test honest about the path that matters -- the resolver
- * reading a file an operator could have written.
+ * `vocabulary` goes through the shared builder rather than being spliced into
+ * its output, so what these tests exercise is the same `bus:` emitter every
+ * other suite uses -- and, more to the point, the resolver reading a file an
+ * operator could have written. `undefined` omits the key entirely, which is
+ * the third case under test and is NOT the same as writing `typed`.
  */
-function withVocabulary(yaml: string, vocabulary: "typed" | "contracts" | undefined): string {
-  if (!vocabulary) return yaml;
-  const line = `  vocabulary: ${vocabulary}\n`;
-  return yaml.includes("\nbus:\n")
-    ? yaml.replace("\nbus:\n", `\nbus:\n${line}`)
-    : yaml.replace("\nscheduling:\n", `\nbus:\n${line}\nscheduling:\n`);
-}
-
-interface VocabMeshOptions extends TestMeshOptions {
-  vocabulary?: "typed" | "contracts";
-}
-
-async function makeVocabMesh(opts: VocabMeshOptions): Promise<MeshInstance & { cleanup(): Promise<void> }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-vocab-"));
-  const configPath = path.join(dir, "mesh.yaml");
-  fs.writeFileSync(configPath, withVocabulary(testConfigYaml(opts), opts.vocabulary), "utf8");
-  const mode = opts.mode ?? "parked";
-  const instance = await bootstrapMesh({ configPath, inMemory: true, mode, uiOnly: mode === "parked" });
-  return Object.assign(instance, {
-    async cleanup() {
-      await instance.close();
-      fs.rmSync(dir, { recursive: true, force: true });
-    },
-  });
-}
-
 function pair(vocabulary?: "typed" | "contracts") {
-  return makeVocabMesh({
+  return makeMesh({
+    // Parked: these tests read manifests and call tools directly, and never
+    // want the scheduler taking turns underneath them.
+    mode: "parked",
+    bus: { vocabulary },
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
       { id: "qa", role: "qa", interests: [] },
     ],
     mayContact: { architect: ["dev", "qa"], dev: ["architect", "qa"], qa: ["architect", "dev"] },
-    vocabulary,
   });
 }
 
-type Mesh = Awaited<ReturnType<typeof makeVocabMesh>>;
+type Mesh = Awaited<ReturnType<typeof makeMesh>>;
 
 function mcpReq(method: string, params: unknown, id = 1) {
   return { jsonrpc: "2.0", id, method, params };

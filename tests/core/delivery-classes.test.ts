@@ -1,10 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
-import { bootstrapMesh, type MeshInstance } from "../../apps/mesh-server/src/index";
-import { testConfigYaml, stub, waitFor, type TestMeshOptions } from "../helpers";
+import type { MeshInstance } from "../../apps/mesh-server/src/index";
+import { makeMesh, stub, waitFor } from "../helpers";
 import { agentKey } from "../../packages/core/src/budgets";
 import type { MeshOp, MessageControl } from "../../packages/protocol/src/index";
 
@@ -23,44 +20,6 @@ import type { MeshOp, MessageControl } from "../../packages/protocol/src/index";
  * for this regime must behave exactly as it did before, byte for byte. Hence
  * the first test, which is the same send as the second with the block absent.
  */
-
-interface DeliveryMeshOptions extends TestMeshOptions {
-  delivery?: { classes?: boolean; coalesceMs?: number; interruptCostTokens?: number };
-}
-
-/**
- * `bus.delivery` written into the generated fixture config.
- *
- * Injected here rather than added to `TestMeshOptions` because the shared
- * fixture builder is used by every suite in the repo, and a block that only
- * these tests set does not need to widen it. Written as YAML for the same
- * reason the rest of the fixture is: the point is to prove the resolver reads
- * the file operators actually write.
- */
-function withDelivery(yaml: string, d: DeliveryMeshOptions["delivery"]): string {
-  if (!d) return yaml;
-  const parts = [`classes: ${d.classes ?? true}`];
-  if (d.coalesceMs !== undefined) parts.push(`coalesce_ms: ${d.coalesceMs}`);
-  if (d.interruptCostTokens !== undefined) parts.push(`interrupt_cost_tokens: ${d.interruptCostTokens}`);
-  const line = `  delivery: { ${parts.join(", ")} }\n`;
-  return yaml.includes("\nbus:\n")
-    ? yaml.replace("\nbus:\n", `\nbus:\n${line}`)
-    : yaml.replace("\nscheduling:\n", `\nbus:\n${line}\nscheduling:\n`);
-}
-
-async function makeDeliveryMesh(opts: DeliveryMeshOptions): Promise<MeshInstance & { cleanup(): Promise<void> }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-delivery-"));
-  const configPath = path.join(dir, "mesh.yaml");
-  fs.writeFileSync(configPath, withDelivery(testConfigYaml(opts), opts.delivery), "utf8");
-  const mode = opts.mode ?? "live";
-  const instance = await bootstrapMesh({ configPath, inMemory: true, mode, uiOnly: mode === "parked" });
-  return Object.assign(instance, {
-    async cleanup() {
-      await instance.close();
-      fs.rmSync(dir, { recursive: true, force: true });
-    },
-  });
-}
 
 function fakeTurn(agentId: string) {
   return {
@@ -93,7 +52,7 @@ async function interruptCharges(m: MeshInstance) {
 }
 
 test("no regime: an INFORM is unclassed and wakes its recipient, exactly as before", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
@@ -124,7 +83,7 @@ test("no regime: an INFORM is unclassed and wakes its recipient, exactly as befo
 });
 
 test("accrue: chatter is delivered, never woken for, and never nudged back", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
@@ -134,7 +93,7 @@ test("accrue: chatter is delivered, never woken for, and never nudged back", asy
     // test, so a seat that is going to be resurfaced by the nudge has every
     // chance to be.
     waitWakeupMs: 200,
-    delivery: { classes: true, coalesceMs: 60_000 },
+    bus: { delivery: { classes: true, coalesceMs: 60_000 } },
   });
   try {
     quietRuntimes(m, ["architect", "dev"]);
@@ -172,14 +131,14 @@ test("accrue: chatter is delivered, never woken for, and never nudged back", asy
 });
 
 test("deliver: a burst of service asks is gathered, then costs one wake", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
     ],
     mayContact: { architect: ["dev"] },
     waitWakeupMs: 200,
-    delivery: { classes: true, coalesceMs: 900 },
+    bus: { delivery: { classes: true, coalesceMs: 900 } },
   });
   try {
     quietRuntimes(m, ["architect", "dev"]);
@@ -215,14 +174,14 @@ test("deliver: a burst of service asks is gathered, then costs one wake", async 
 });
 
 test("interrupt: URGENT wakes now, and the sender is billed for every turn it bought", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
       { id: "qa", role: "qa", interests: [] },
     ],
     mayContact: { architect: ["dev", "qa"] },
-    delivery: { classes: true, interruptCostTokens: 2000 },
+    bus: { delivery: { classes: true, interruptCostTokens: 2000 } },
   });
   try {
     quietRuntimes(m, ["architect", "dev", "qa"]);
@@ -264,14 +223,14 @@ test("interrupt: URGENT wakes now, and the sender is billed for every turn it bo
 });
 
 test("the operator is never billed, and a cheap class is never billed", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
     ],
     mayContact: { architect: ["dev"] },
     mode: "parked",
-    delivery: { classes: true, interruptCostTokens: 2000 },
+    bus: { delivery: { classes: true, interruptCostTokens: 2000 } },
   });
   try {
     // An operator's interrupt is the operator's prerogative, and there is no
@@ -303,14 +262,14 @@ test("the operator is never billed, and a cheap class is never billed", async ()
 });
 
 test("a chase is an interrupt, a new question is not, and the answer always is", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
     ],
     mayContact: { architect: ["dev"], dev: ["architect"] },
     mode: "parked",
-    delivery: { classes: true },
+    bus: { delivery: { classes: true } },
   });
   try {
     const ask = await m.supervisor.sendMessage({
@@ -368,14 +327,14 @@ test("a chase is an interrupt, a new question is not, and the answer always is",
 });
 
 test("a broadcast keeps its own gate: the regime does not class it", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "watcher", role: "qa", interests: ["message.*"] },
     ],
     mayContact: { architect: ["watcher"] },
     mode: "parked",
-    delivery: { classes: true },
+    bus: { delivery: { classes: true } },
   });
   try {
     const bc = await m.supervisor.executeOp(
@@ -400,14 +359,14 @@ test("a broadcast keeps its own gate: the regime does not class it", async () =>
 });
 
 test("a seat cannot class its own message, in control or in payload", async () => {
-  const m = await makeDeliveryMesh({
+  const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [] },
       { id: "dev", role: "developer", interests: [] },
     ],
     mayContact: { architect: ["dev"] },
     mode: "parked",
-    delivery: { classes: true, interruptCostTokens: 2000 },
+    bus: { delivery: { classes: true, interruptCostTokens: 2000 } },
   });
   try {
     // A forged envelope arriving at the one door every send goes through.
@@ -421,8 +380,11 @@ test("a seat cannot class its own message, in control or in payload", async () =
       newThread: { subject: "prod is down" },
       payload: { note: "now" },
       control: { delivery: "accrue" } as MessageControl,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+      // `control` is a SEPARATE second argument to `sendMessage`, precisely so
+      // that no forged value can ride in the object the sanitiser screens. The
+      // signature therefore already rejects this line -- which is the forgery
+      // under test, so it is cast in as if a caller had smuggled it past.
+    } as unknown as Parameters<typeof m.supervisor.sendMessage>[0]);
     assert.equal(forged.accepted, true, forged.reason);
     assert.equal(classOf(m, forged.messageId!), "interrupt", "the runtime classes it, not the sender");
     assert.equal((await interruptCharges(m)).length, 1, "and the bill is raised anyway");

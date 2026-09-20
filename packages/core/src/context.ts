@@ -518,6 +518,12 @@ export function buildAgentContext(
     criterionAcceptanceEnabled:
       holdsAuthority(config.agents[agentId]?.authority, "requirements", "accept") ||
       holdsAuthority(config.agents[agentId]?.authority, "requirements", "approve"),
+    /* The same discipline one channel over, and the first thing in this
+     * contract that reads the bus rather than the seat. Under typed-only the
+     * supervisor refuses every prose-parsed op, so the block contract below
+     * describes a turn that cannot land -- it is not merely redundant there,
+     * it is wrong, and the seat pays a whole turn to find out. */
+    typedOpsOnly: config.bus.transport === "typed-only",
     /* Same "never advertise a rule that cannot fire" discipline as
      * delegationEnabled above. The declared capability list is narrowed twice
      * before it reaches the prompt:
@@ -973,12 +979,26 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // than kept "for safety": duplicating an instruction doesn't make it more
   // likely to be followed, just more expensive to say.
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
-  lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
-  lines.push("```mesh-json");
-  lines.push('[{"op":"send","type":"REQUEST","to":["tech-lead"],"newThread":{"subject":"review X"},"payload":{"question":"please review"}},');
-  lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
-  lines.push(' {"op":"wait","reason":"awaiting review"}]');
-  lines.push("```");
+  // Heading kept identical across both branches on purpose: it is the anchor
+  // `tests/core/context-degradation.test.ts` and NOTES-prompt-audit.md locate
+  // this section by, and under typed-only it is still the ops contract — what
+  // changes is which channel carries an op, not that there is a contract.
+  if (bundle.typedOpsOnly) {
+    // The tool names are NOT `mesh_` plus the op name, and saying so is the
+    // point of this line: `close_collab` is reached through mesh_collab_close,
+    // `respond` through mesh_reply, `broadcast` through mesh_announce. A seat
+    // told to prefix would invent tools that do not exist, which is the prose
+    // failure mode moved rather than removed. So the catalogue below is framed
+    // as what the seat can DO and the manifest stays authoritative for names.
+    lines.push("Every op is issued as an MCP TOOL CALL. A fenced `mesh-json` block is parsed and then REFUSED — none of its ops execute, and the turn lands zero side effects. Your tool list is authoritative for names and arguments; the ops named below say what you can DO, and the tool that performs one is not always `mesh_` plus its name (`close_collab` is `mesh_collab_close`, answering a request is `mesh_reply`).");
+  } else {
+    lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
+    lines.push("```mesh-json");
+    lines.push('[{"op":"send","type":"REQUEST","to":["tech-lead"],"newThread":{"subject":"review X"},"payload":{"question":"please review"}},');
+    lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
+    lines.push(' {"op":"wait","reason":"awaiting review"}]');
+    lines.push("```");
+  }
   lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
@@ -987,7 +1007,18 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // never woken. In one live run 23 of 30 messages died this way. Listing the
   // enum costs ~40 tokens per turn and removes the single largest source of
   // wasted turns in the mesh.
-  lines.push(`\`send\` type MUST be exactly one of: ${MESSAGE_TYPES.join(", ")}. Any other value is rejected and your message is never delivered. Answering someone? Use INFORM in their thread — there is no RESULT/RESPONSE/REPLY type.`);
+  //
+  // That argument is about PROSE specifically, which is why the line is gated
+  // rather than unconditional. What made an invented type expensive is that
+  // this channel has no schema at its edge: the message is built, travels,
+  // fails validation somewhere else and is dropped silently. Every type-taking
+  // TOOL carries `enum: [...MESSAGE_TYPES]` (`mcp.ts`), so a typed seat is
+  // already holding the same closed set and a wrong value comes back refused
+  // at the call with the field named. Repeating it costs a typed-only seat the
+  // same ~40 tokens every turn and buys it nothing it did not already have.
+  if (!bundle.typedOpsOnly) {
+    lines.push(`\`send\` type MUST be exactly one of: ${MESSAGE_TYPES.join(", ")}. Any other value is rejected and your message is never delivered. Answering someone? Use INFORM in their thread — there is no RESULT/RESPONSE/REPLY type.`);
+  }
   lines.push("");
   // Everything below was implemented but absent from this contract, so agents
   // could not use it: 18 of 30 ops were undocumented. The costly one is

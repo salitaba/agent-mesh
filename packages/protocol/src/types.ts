@@ -2188,6 +2188,17 @@ export interface AgentContextBundle {
    */
   criterionAcceptanceEnabled?: boolean;
   /**
+   * Whether this mesh refuses ops parsed out of prose (`bus.transport:
+   * "typed-only"`).
+   *
+   * Same "never advertise a rule that cannot fire" discipline as the two
+   * flags above, one channel over. Under typed-only the supervisor parses a
+   * `mesh-json` block and then refuses every op in it, so the contract that
+   * teaches a seat to emit one is teaching a turn that cannot land -- and the
+   * seat is charged a full turn to discover it.
+   */
+  typedOpsOnly?: boolean;
+  /**
    * Effective hard-action policy for this agent: `capabilities` is already
    * intersected with what the agent actually holds AND with the tokens the op
    * layer can enforce, so the prompt never threatens a rule that cannot fire.
