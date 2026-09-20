@@ -84,8 +84,25 @@ interface Supervised {
   /** Suppresses the restart path for an operator-initiated stop. */
   intentional: boolean;
   detail?: string;
-  /** Start of the current life, as the watchdog's t0 before the first beat. */
+  /** Start of the current life, stamped before the child is spawned. */
   startedAt: number;
+  /**
+   * When this life became READY, or undefined while it is still booting.
+   *
+   * The watchdog's t0 before the first beat, and the reason it is not
+   * `startedAt`: `startedAt` is stamped immediately BEFORE the child is
+   * spawned, so it includes the child's whole boot. Measured from there, a
+   * machine under load spends the heartbeat budget on `node` starting up, and a
+   * child that has just come up — one that has had no chance to beat at all —
+   * is already most of the way to being declared wedged. A child that fails to
+   * BOOT is `readyTimeoutMs`'s business, not this one's; they are two failures
+   * with two clocks, and conflating them made one of each.
+   *
+   * It only ever matters for a child that has never beaten, which is the
+   * fallback case below: a beating child is measured from its last `receivedAt`
+   * as it always was.
+   */
+  readyAt?: number;
   /**
    * Consecutive health polls that have found this child silent.
    *
@@ -322,8 +339,10 @@ export class SupervisionTree {
     this.setStatus(entry, "booting");
     entry.startedAt = this.now();
     // A new life starts with a clean slate: silence counted against the previous
-    // process must not carry over and shorten this one's grace.
+    // process must not carry over and shorten this one's grace, and this
+    // process's boot is not its health record.
     entry.staleChecks = 0;
+    entry.readyAt = undefined;
     const pending = this.supervisor.launch(ref);
     this.inFlight.add(pending);
     let result: Awaited<typeof pending>;
@@ -344,6 +363,7 @@ export class SupervisionTree {
     }
 
     if (result.status === "open") {
+      entry.readyAt = this.now();
       this.setStatus(entry, "open");
       return result;
     }
@@ -419,7 +439,7 @@ export class SupervisionTree {
       if (entry.status !== "open" || entry.intentional) continue;
       const child = this.supervisor.running(entry.ref.id);
       if (!child) continue;
-      const last = child.lastHeartbeat?.receivedAt ?? entry.startedAt;
+      const last = child.lastHeartbeat?.receivedAt ?? entry.readyAt ?? entry.startedAt;
       const verdict = heartbeatVerdict(at - last, this.opts.heartbeatTimeoutMs, entry.staleChecks);
       entry.staleChecks = verdict.nextChecks;
       if (!verdict.stop) continue;
