@@ -86,6 +86,67 @@ interface Supervised {
   detail?: string;
   /** Start of the current life, as the watchdog's t0 before the first beat. */
   startedAt: number;
+  /**
+   * Consecutive health polls that have found this child silent.
+   *
+   * The watchdog used to kill on the FIRST stale reading, which made one late
+   * poll indistinguishable from a wedged child. It is not: heartbeats arrive on
+   * the child's stdout, and this process can only observe them when its own
+   * event loop comes back around. A host blocked for longer than the timeout --
+   * a long synchronous operation, a paused GC, a machine under load -- leaves
+   * the beats sitting unread in the pipe, so the next poll measures a gap that
+   * never existed and stops a child that was beating the whole time. That is the
+   * worst outcome the health check can produce: it kills a working project
+   * mid-mission, and it does so from a measurement artefact rather than from a
+   * fault.
+   *
+   * Requiring the silence to survive a SECOND poll costs one poll interval of
+   * detection latency (2s at the default) and removes the artefact, because the
+   * next poll runs after the pipe has drained and reads a fresh `receivedAt`.
+   * A child that is genuinely wedged stays silent through both and is killed
+   * exactly as before.
+   */
+  staleChecks: number;
+}
+
+/**
+ * How many consecutive stale polls a silent child gets before it is stopped.
+ *
+ * Two, not one. See `heartbeatVerdict` for why a single reading cannot be
+ * trusted, and `Supervised.staleChecks` for the field it advances.
+ */
+export const STALE_POLLS_BEFORE_STOP = 2;
+
+/**
+ * The watchdog's verdict for ONE child at ONE poll.
+ *
+ * Pure and exported so the rule can be tested directly. It was inline in
+ * `checkHealth` before, where the only way to exercise it was to race a real
+ * child process against a real event loop -- which is exactly the scheduling
+ * noise the rule exists to be robust against, so the test would have been
+ * unable to tell the rule working from the noise it absorbs.
+ *
+ * A single stale reading means "the last heartbeat is older than the timeout",
+ * which is NOT the same as "the child is wedged". Heartbeats arrive on stdout
+ * and this process only observes them when its event loop comes back around, so
+ * a host blocked past the timeout leaves beats sitting unread in the pipe: the
+ * poll that runs before the drain measures a gap that never existed. Requiring
+ * the silence to survive the NEXT poll costs one poll interval of detection
+ * latency and removes the artefact, because by then the pipe has drained and
+ * the reading is fresh. A genuinely wedged child stays silent through both.
+ *
+ * `staleChecks` is the count carried between polls, and a fresh reading resets
+ * it to zero so a stall that has resolved can never be completed by a later,
+ * unrelated one.
+ */
+export function heartbeatVerdict(
+  silentMs: number,
+  timeoutMs: number,
+  staleChecks: number,
+): { stale: boolean; stop: boolean; nextChecks: number } {
+  if (silentMs < timeoutMs) return { stale: false, stop: false, nextChecks: 0 };
+  const nextChecks = staleChecks + 1;
+  return { stale: true, stop: nextChecks >= STALE_POLLS_BEFORE_STOP, nextChecks };
 }
 
 export class SupervisionTree {
@@ -248,6 +309,7 @@ export class SupervisionTree {
       tripped: false,
       intentional: false,
       startedAt: this.now(),
+      staleChecks: 0,
     };
     this.tracked.set(ref.id, entry);
     return entry;
@@ -259,6 +321,9 @@ export class SupervisionTree {
   ): Promise<{ status: ProjectStatus; error?: { reason: string; detail?: string } }> {
     this.setStatus(entry, "booting");
     entry.startedAt = this.now();
+    // A new life starts with a clean slate: silence counted against the previous
+    // process must not carry over and shorten this one's grace.
+    entry.staleChecks = 0;
     const pending = this.supervisor.launch(ref);
     this.inFlight.add(pending);
     let result: Awaited<typeof pending>;
@@ -355,7 +420,9 @@ export class SupervisionTree {
       const child = this.supervisor.running(entry.ref.id);
       if (!child) continue;
       const last = child.lastHeartbeat?.receivedAt ?? entry.startedAt;
-      if (at - last < this.opts.heartbeatTimeoutMs) continue;
+      const verdict = heartbeatVerdict(at - last, this.opts.heartbeatTimeoutMs, entry.staleChecks);
+      entry.staleChecks = verdict.nextChecks;
+      if (!verdict.stop) continue;
       const silentFor = Math.round((at - last) / 1000);
       // Stop it first: the restart path assumes the old process is gone, and
       // the state lock will not be free until it is.
@@ -367,6 +434,7 @@ export class SupervisionTree {
       // Prevents the next poll from firing on the same child while the stop is
       // still in flight, which would double-count the crash toward the breaker.
       entry.status = "booting";
+      entry.staleChecks = 0;
     }
   }
 

@@ -9,8 +9,10 @@ import {
   CHILD_READY_PREFIX,
   ChildProcessSupervisor,
   PIDFILE_NAME,
+  STALE_POLLS_BEFORE_STOP,
   SupervisionTree,
   backoffDelayMs,
+  heartbeatVerdict,
   statusForFailure,
   type ProjectRef,
   type SupervisionEvent,
@@ -347,6 +349,44 @@ test("a child that stops heartbeating is killed and restarted", async () => {
   }
 });
 
+/**
+ * The rule that decides a child is wedged, tested directly.
+ *
+ * It lives in a pure function because the failure it guards against is a
+ * SCHEDULING artefact: heartbeats arrive on stdout and the host only observes
+ * them when its event loop comes back around, so a poll that runs before the
+ * pipe drains measures a silence that never happened. Any test driving that
+ * through a real child and a real event loop is racing the same noise the rule
+ * exists to absorb, and so could not tell the rule working from the noise.
+ */
+test("one stale reading is not a verdict: a child is stopped on the second consecutive one", () => {
+  const TIMEOUT = 300;
+
+  // Fresh: nothing to decide, and the count resets so a stall that has resolved
+  // can never be completed by a later, unrelated one.
+  assert.deepEqual(heartbeatVerdict(299, TIMEOUT, 0), { stale: false, stop: false, nextChecks: 0 });
+  assert.deepEqual(heartbeatVerdict(0, TIMEOUT, 1), { stale: false, stop: false, nextChecks: 0 }, "a beat clears the count");
+
+  // The boundary is inclusive: exactly at the timeout is stale, as before.
+  assert.equal(heartbeatVerdict(TIMEOUT, TIMEOUT, 0).stale, true);
+
+  // The case this exists for: one long reading, not yet a verdict.
+  const first = heartbeatVerdict(5_000, TIMEOUT, 0);
+  assert.equal(first.stale, true);
+  assert.equal(first.stop, false, "a single stale poll must not kill a child that may have been beating all along");
+  assert.equal(first.nextChecks, 1);
+
+  // Sustained silence: the second poll confirms it, and only then is it wedged.
+  const second = heartbeatVerdict(5_025, TIMEOUT, first.nextChecks);
+  assert.equal(second.stop, true);
+  assert.equal(second.nextChecks, STALE_POLLS_BEFORE_STOP);
+
+  // And the verdict cannot be reached by accumulating unrelated readings: a
+  // fresh poll in between resets it, so two stale polls must be CONSECUTIVE.
+  const interrupted = heartbeatVerdict(5_000, TIMEOUT, heartbeatVerdict(10, TIMEOUT, 1).nextChecks);
+  assert.equal(interrupted.stop, false, "a resolved stall must not count toward the next one");
+});
+
 test("a healthy child is never restarted by the watchdog", async () => {
   const base = tmpRoot();
   const ref = makeProject(base, "steady", "steady");
@@ -356,6 +396,14 @@ test("a healthy child is never restarted by the watchdog", async () => {
     await tree.open(ref);
     // Several watchdog cycles: a false positive here kills a working project
     // mid-mission, which is the worst outcome the health check can produce.
+    //
+    // The margin is 6x the child's 50ms beat, and it stays that way rather than
+    // being widened: the point of this test is the real 300ms timeout, and a
+    // fixture tuned until it cannot fail would stop testing anything. What made
+    // it flake under a loaded suite was not a tight margin but the single-poll
+    // rule -- one poll landing before the pipe drained read as a wedge -- so the
+    // rule is what changed (see `heartbeatVerdict`). This test is the
+    // end-to-end guard that the two-poll rule still lets a healthy child live.
     await new Promise((r) => setTimeout(r, 700));
     assert.equal(events.filter((e) => e.status === "booting").length, 1);
     assert.equal(tree.status("steady"), "open");
