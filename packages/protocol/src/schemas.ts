@@ -49,7 +49,13 @@ export const messageSchema = {
       description:
         "Runtime-owned delivery control. Agents cannot set this: sanitizeAgentMessageInput strips it from every send, and the closed property set means a forged field fails validation instead of being ignored.",
       type: "object",
-      properties: { cacheServed: { type: "boolean" } },
+      properties: {
+        cacheServed: { type: "boolean" },
+        contract: { type: "string" },
+        contractVersion: { type: "number" },
+        mode: { type: "string", enum: ["service", "collab", "broadcast"] },
+        delivery: { type: "string", enum: ["interrupt", "deliver", "accrue"] },
+      },
       additionalProperties: false,
     },
     priority: { type: "string", enum: ["LOW", "NORMAL", "HIGH", "URGENT"] },
@@ -347,6 +353,24 @@ export const meshConfigSchema = {
           additionalProperties: false,
         },
         transport: { type: "string", enum: ["mixed", "typed-only"] },
+        vocabulary: { type: "string", enum: ["typed", "contracts"] },
+        collab: {
+          type: "object",
+          properties: {
+            box_ms: { type: "number", minimum: 0 },
+            max_exchanges: { type: "number", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        delivery: {
+          type: "object",
+          properties: {
+            classes: { type: "boolean" },
+            coalesce_ms: { type: "number", minimum: 0 },
+            interrupt_cost_tokens: { type: "number", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },

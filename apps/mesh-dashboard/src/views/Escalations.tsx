@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ago, fmt, fmtBudget, roundNice } from "../format";
+import { applyAdvisoryTone, PAUSED_CLAUSE, RESUMES, RESUMES_AND_WAKES } from "../escalation-tone";
 import { useMesh } from "../store";
 import { Button, Card, ErrorState, Input } from "../components";
 import { AgentDrawer, ArtifactDrawer } from "../drawers";
@@ -186,7 +187,16 @@ function stuckInfoOf(e: any, msgs?: Map<string, any>): StuckInfo {
   };
 }
 
-function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false): { title: string; what: string; next: string; placeholder: string; budget?: BudgetInfo } {
+type EscPlain = { title: string; what: string; next: string; placeholder: string; budget?: BudgetInfo };
+
+/** Reason-specific wording, then the advisory correction. Split in two so no
+    arm has to remember which of the two kinds of card it is being asked for;
+    see escalation-tone.ts for why the correction is not an arm's business. */
+function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false): EscPlain {
+  return applyAdvisoryTone(escPlainBody(e, status, msgs, parked), e?.advisory === true);
+}
+
+function escPlainBody(e: any, status: any, msgs?: Map<string, any>, parked = false): EscPlain {
   const d = (e.detail && typeof e.detail === "object" ? e.detail : {}) as Record<string, any>;
   const failed: string[] = d.failedAgents || (d.agentId ? [d.agentId] : []);
   const err = d.error ? String(d.error).slice(0, 220) : "";
@@ -196,8 +206,8 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
     case "runtime_failure":
       return {
         title: verdictText("runtime_failure", { agents: failed }).title,
-        what: `${who} detected a runtime failure${failed.length ? ` in ${failed.join(", ")}` : ""}${err ? ` — ${err}` : ""}. The mission is paused; nothing else will run until you decide.`,
-        next: "Check the agent's last step for the error, then tell the mesh how to proceed (retry, skip, or reassign). Responding resumes the mission and wakes the affected agents.",
+        what: `${who} detected a runtime failure${failed.length ? ` in ${failed.join(", ")}` : ""}${err ? ` — ${err}` : ""}. ${PAUSED_CLAUSE}`,
+        next: `Check the agent's last step for the error, then tell the mesh how to proceed (retry, skip, or reassign). ${RESUMES_AND_WAKES}`,
         placeholder: failed.length ? `e.g. retry ${failed[0]} once, else skip and continue` : "e.g. retry once, else skip and continue",
       };
     case "backend_unreachable": {
@@ -257,6 +267,22 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
       };
     }
     default:
+      if (String(e.reason || "").startsWith("collab_overrun:")) {
+        const why = String(e.reason).slice("collab_overrun:".length);
+        const topic = typeof d.topic === "string" && d.topic ? d.topic : "";
+        const parts = Array.isArray(d.participants) ? d.participants.filter((x: any) => typeof x === "string" && x) : [];
+        const n = Number(d.exchanges);
+        const cap = Number(d.maxExchanges);
+        const meter = Number.isFinite(n) ? ` after ${n}${cap > 0 ? `/${cap}` : ""} exchange${n === 1 ? "" : "s"}` : "";
+        return {
+          title: topic ? `A conversation ran long: ${topic}` : "A conversation ran long",
+          what: `${parts.length ? parts.join(" and ") : "Two agents"} were still talking when ${
+            why === "expired" ? "their time box ran out" : "they hit their message limit"
+          }${meter}, so the mesh closed the conversation.`,
+          next: "If the topic still needs settling, tell them the answer, or say which one of them has the call.",
+          placeholder: "e.g. go with v2; stop debating it",
+        };
+      }
       if (String(e.reason || "").startsWith("deadlock:")) {
         const desc = typeof d.description === "string" ? d.description.trim() : "";
         return {
@@ -270,8 +296,8 @@ function escPlain(e: any, status: any, msgs?: Map<string, any>, parked = false):
       }
       return {
         title: e.reason || "Needs a human decision",
-        what: `${who} needs you to decide. The mission is paused until you respond.`,
-        next: "Read the context below, then respond with the decision. Responding resumes the mission.",
+        what: `${who} needs you to decide. ${PAUSED_CLAUSE}`,
+        next: `Read the context below, then respond with the decision. ${RESUMES}`,
         placeholder: "e.g. decided: …",
       };
   }

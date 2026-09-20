@@ -2,6 +2,7 @@
 import * as path from "path";
 import type { MeshEvent } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
+import type { exportState } from "../../core/src/state";
 
 export * from "./state-lock";
 import { STATE_LOCK_FILENAME } from "./state-lock";
@@ -76,20 +77,23 @@ export interface SnapshotEnvelope {
   meshId: string;
   takenAt: string;
   throughSeq: number;
-  data: {
-    goals: unknown[];
-    agents: unknown[];
-    artifacts: unknown[];
-    threads: unknown[];
-    messages: unknown[];
-    tasks: unknown[];
-    decisions: unknown[];
-    approvals: unknown[];
-    escalations: unknown[];
-    budgets: unknown[];
-    leases: unknown[];
-    memory: unknown[];
-  };
+  /**
+   * Exactly what `exportState` produced, rather than a second hand-written
+   * list of keys.
+   *
+   * The list that used to stand here named twelve keys, fewer than half of
+   * what the codec writes. Nothing made that wrong at compile time, so this
+   * type went on describing a snapshot shape the runtime had left behind --
+   * and a type that documents a lie is worse than no type, because it is read
+   * as the contract.
+   * Tying it to the codec means a field added to the codec arrives here for
+   * free and a field dropped from it cannot go unnoticed.
+   *
+   * `import type` is erased, so this records a coupling that already exists in
+   * fact -- a snapshot file is an `exportState` result and nothing else --
+   * without giving persistence a runtime dependency on core.
+   */
+  data: ReturnType<typeof exportState>;
 }
 
 export class SnapshotStore {

@@ -521,6 +521,11 @@ input.search { min-width: 220px; }
 .track { height: 9px; background: var(--line); border-radius: var(--r-sm); overflow: hidden; }
 .track > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: var(--r-sm); transform-origin: left center; transition: transform .6s; }
 .bar-row .num { font: 12px var(--mono); color: var(--muted); text-align: right; }
+/* A track that is filling toward something bad rather than just filling. The
+   accent gradient reads as neutral progress, which is wrong for a meter whose
+   far end closes a session. */
+.track.warn > div { background: var(--warn); }
+.track.bad > div { background: var(--bad); }
 
 /* ---------- criteria ---------- */
 .crit { display: flex; align-items: center; gap: var(--s2-5); padding: var(--s1-5) var(--s0); border-bottom: 1px dashed var(--line); }
@@ -1935,6 +1940,19 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto;
 }
 .jt-raw { max-height: 420px; }
+
+/* ---------- collaborations ---------- */
+/* One open agent-to-agent session: who is in the room and how much of the box
+   is left. No transcript — the thread view already owns the conversation. */
+.collab-row { padding: var(--s3) 0; border-bottom: 1px dashed var(--line); }
+.collab-row:first-child { padding-top: var(--s1); }
+.collab-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.collab-head { display: flex; align-items: center; gap: var(--s2); }
+/* The topic is a free-text line from the opening agent, so it is held to one
+   line rather than allowed to push the meters down the card. */
+.collab-topic { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collab-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin: var(--s1-5) 0 var(--s2); font-size: 12px; }
+.collab-who .mono { color: var(--text-dim); }
 
 /* ---------- events console, narrow ---------- */
 

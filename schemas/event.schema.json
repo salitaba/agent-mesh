@@ -91,6 +91,8 @@
         "escalation.auto_resolved",
         "deadlock.auto_resolved",
         "commitment.discharged",
+        "collab.opened",
+        "collab.closed",
         "human.input",
         "lease.acquired",
         "lease.released",

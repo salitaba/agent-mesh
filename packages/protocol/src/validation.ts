@@ -126,7 +126,7 @@ export function validateMeshConfig(config: unknown): ValidationResult {
 const contractValidators = new Map<string, ValidateFunction>();
 
 export function validateContractRequest(contract: Contract, request: unknown): ValidationResult {
-  const key = `${contract.name}@${contract.version}`;
+  const key = `${contract.name}@${contract.version}#request`;
   let v = contractValidators.get(key);
   if (!v) {
     v = ajv.compile(contract.request as object);
@@ -136,5 +136,35 @@ export function validateContractRequest(contract: Contract, request: unknown): V
   // reports that as a bare type error naming no field, which tells the seat
   // nothing about what it left out.
   const ok = v(request ?? {});
+  return { valid: ok === true, errors: ok ? [] : (v.errors || []).map(fmt) };
+}
+
+/**
+ * Validate a reply against its contract's `response` schema.
+ *
+ * Called from the projection reducer at discharge, so it has to be PURE in the
+ * sense replay depends on: same contract + same payload => same verdict,
+ * forever. It is. The catalogue is frozen and compiled in, the schema is
+ * immutable, Ajv's compile is deterministic, and the cache below is keyed by
+ * name+version so it cannot serve a stale validator for a changed schema.
+ * Rebuilding state from the log therefore re-derives the same marks rather
+ * than inventing new ones -- which is the bar every other reducer-time
+ * decision in this repo has to clear.
+ *
+ * Returns `valid: true` for a contract with no response schema: "unspecified"
+ * must not read as "failed", or `decision.escalate` and every pre-existing ask
+ * would be marked thin the moment this shipped.
+ */
+export function validateContractResponse(contract: Contract, response: unknown): ValidationResult {
+  if (!contract.response) return { valid: true, errors: [] };
+  const key = `${contract.name}@${contract.version}#response`;
+  let v = contractValidators.get(key);
+  if (!v) {
+    v = ajv.compile(contract.response as object);
+    contractValidators.set(key, v);
+  }
+  // A reply with no payload at all is the exact case this catches, and Ajv
+  // needs an object to say anything useful about it.
+  const ok = v(response ?? {});
   return { valid: ok === true, errors: ok ? [] : (v.errors || []).map(fmt) };
 }

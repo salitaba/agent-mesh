@@ -62,12 +62,13 @@ import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../.
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
-import { BUILTIN_CONTRACTS, findContract, unknownContractReason } from "../../protocol/src/index";
+import { BUILTIN_CONTRACTS, findContract, isObligingType, unknownContractReason } from "../../protocol/src/index";
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
+import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
@@ -135,6 +136,8 @@ export interface OpResult {
   artifactId?: string;
   artifactUri?: string;
   taskId?: string;
+  /** Set by the collab ops: the thread the session owns. */
+  threadId?: string;
   reason?: string;
   artifact?: Artifact;
   escalationId?: string;
@@ -168,8 +171,19 @@ export interface ContractListing {
  * The contract fields a desugared op carries, or nothing. Spread into a
  * message payload so `contractSlaOf` can find the SLA on replay.
  */
-function contractStamp(op: { contract?: string; contractVersion?: number }): Record<string, unknown> {
-  return op.contract ? { contract: op.contract, contractVersion: op.contractVersion } : {};
+/**
+ * The contract stamp for a desugared op, as runtime-owned envelope control.
+ *
+ * Two things changed here and both are load-bearing. It returns `control`
+ * rather than payload keys, so the commitment ledger routes on the envelope
+ * and never on verbatim agent input; and it resolves the name against the
+ * catalogue first, so a stamp that reaches a message is always a real
+ * contract. An unresolvable name yields nothing rather than a stamp the
+ * reducer will look up and silently drop -- same outcome, stated at the edge.
+ */
+function contractStamp(op: { contract?: string; contractVersion?: number }): MessageControl | undefined {
+  if (!op.contract || !findContract(op.contract)) return undefined;
+  return { contract: op.contract, contractVersion: op.contractVersion };
 }
 
 function asIdList(v: unknown): string[] | undefined {
@@ -808,7 +822,7 @@ export class Supervisor {
   projectionConfig(): {
     transitionGates: Record<string, string[]>;
     commitmentSemantic: "compat" | "strict";
-    commitmentTtl: { defaultMs: number; byRole: Record<string, number> };
+    commitmentTtl?: { defaultMs: number; byRole: Record<string, number> };
   } {
     return {
       transitionGates: this.config.transitionGates,
@@ -1302,6 +1316,129 @@ export class Supervisor {
     await this.registerAgent(human);
   }
 
+  /**
+   * What this message's delivery is allowed to cost its recipients.
+   *
+   * Runs inside `sendMessage` so every path — agent op, MCP tool, HTTP API —
+   * is classed by the same rule, and after `sanitizeAgentMessageInput` so the
+   * class is never something a sender wrote. See `MessageControl.delivery`
+   * for what the three classes mean and why they are orthogonal to `mode`.
+   *
+   * Returns `undefined` whenever the mesh has no delivery regime configured,
+   * which is the default. An unclassed message takes the wake path it always
+   * took: absence is today's behaviour, never a cheaper default applied to a
+   * mesh that never asked for one.
+   */
+  private classifyDelivery(message: MeshMessage, cacheHit: boolean): DeliveryClass | undefined {
+    if (!this.config.bus.deliveryClasses) return undefined;
+    // A cached research answer is a log record, not mail: `cacheServed`
+    // already suppresses both the delivery and the wake, so pricing it would
+    // bill a sender for an interrupt no seat ever receives.
+    if (cacheHit) return undefined;
+    const control = message.control;
+    // A caller that stamped a class has already decided. Nothing does today;
+    // the guard is here so a deliberate runtime stamp can never be silently
+    // replaced by a derived one.
+    if (control?.delivery) return undefined;
+    // Broadcasts keep their own gate. The seats a broadcast wakes are the
+    // ones an operator wrote an `interests:` entry for, and a class derived
+    // from an envelope must not overrule a decision taken in config.
+    if (control?.mode === "broadcast") return undefined;
+    if (message.priority === "URGENT") return "interrupt";
+    // An answer to an ask the recipient is parked on. This is the one wake
+    // that is unarguably worth its turn: the creditor cannot proceed until it
+    // lands, so holding it in a coalesce window would make the cheap class
+    // the expensive one.
+    if (message.replyTo) {
+      const pending = this.state.pendingRequests.get(message.replyTo);
+      if (pending && message.to.includes(pending.from)) return "interrupt";
+    }
+    // The obligation rule itself, imported rather than restated. A delivery
+    // class has to be derived from the SAME predicate the commitment ledger
+    // runs on, or a mesh prices a wake as chatter while the ledger is
+    // recording a debt for it -- the class would then be cheapest exactly
+    // where the obligation is real. This used to be a local copy, which made
+    // four; `projections-messaging`, `context` and this site now all call the
+    // catalogue's one.
+    //
+    // Type-only is the right half here: `obligesRecipients` also gates on
+    // `control.mode`, and this function has already returned for `broadcast`
+    // above and handles `collab` below, so mode is settled by the time we
+    // ask. (`REQUEST_TYPES` is not the thing to reach for either -- it is
+    // `@deprecated`, and it is this same type-only question wearing a name
+    // that promises the whole answer.)
+    const obliging = isObligingType(message.type);
+    // Chasing a debt that is already open: this recipient owes this sender an
+    // answer IN THIS THREAD and is being asked again. Worth a turn, and worth
+    // a bill — the pairing is what makes a chase a decision instead of a
+    // reflex.
+    //
+    // Thread-scoped deliberately, and it is not a detail. Without the thread
+    // test, "this seat owes me something, anything" made every subsequent ask
+    // an interrupt: three unrelated questions to one busy colleague classed
+    // one `deliver` and two `interrupt`, so in a mesh where seats habitually
+    // owe each other work the expensive class becomes the default and the
+    // pricing inverts — which is the failure this whole move exists to close.
+    // A different question is a new ask; the same thread asked twice is a
+    // chase.
+    if (obliging) {
+      for (const pending of this.state.pendingRequests.values()) {
+        if (pending.from !== message.from) continue;
+        if (pending.threadId !== message.threadId) continue;
+        if (message.to.some((t) => stillOwes(pending, t))) return "interrupt";
+      }
+    }
+    // A collab is bounded at open and dies on its box. An accrued collab is a
+    // discussion nobody is ever woken to continue, so every session would run
+    // to its edge and raise an overrun card — D1's failure reached by another
+    // route. Coalescing keeps the conversation moving and still prices it: a
+    // burst of chatter costs one turn instead of one per line.
+    if (control?.mode === "collab") return "deliver";
+    if (obliging) return "deliver";
+    return "accrue";
+  }
+
+  /**
+   * Bill the sender for the turns its interrupt just bought.
+   *
+   * The asymmetry this closes: a send costs the sender nothing and costs each
+   * recipient a full model turn, so the cheapest act in the mesh spends the
+   * most expensive resource another seat has and no ledger anywhere records
+   * it. Priced per recipient woken, because an interrupt addressed to three
+   * seats buys three turns.
+   *
+   * On the sender's agent line only. The mission line is the record of what
+   * the mission actually spent, and a tariff added there would make that
+   * number a fiction; the recipient's real turn is still charged where it is
+   * really spent, when it runs.
+   *
+   * Deliberately NOT priced from `message.budgetHint`, the one envelope field
+   * that already gestures at the cost of a send. `budgetHint` arrives in
+   * `input`, is agent-written, and is not among the reserved keys — so a
+   * sender that set the price of its own interrupt could set it to zero.
+   * (It stays declared and, as before this change, read by nothing on the
+   * message envelope; the identically-named field on delegate/create_task is
+   * a different thing and still read.)
+   */
+  private async chargeInterrupt(message: MeshMessage, goalId: GoalId, correlationId?: string): Promise<void> {
+    if (message.control?.delivery !== "interrupt") return;
+    const price = this.config.bus.deliveryClasses?.interruptCostTokens ?? 0;
+    if (price <= 0) return;
+    // An operator's interrupt is the operator's prerogative and has no agent
+    // line to land on.
+    if (message.from === HUMAN_AGENT_ID) return;
+    const woken = message.to.filter((t) => t !== message.from && t !== HUMAN_AGENT_ID);
+    if (woken.length === 0) return;
+    await this.deps.budget.consume(
+      agentKey(goalId, message.from),
+      "tokens",
+      price * woken.length,
+      undefined,
+      { reason: "interrupt", messageId: message.id, messageType: message.type, woke: woken, unitTokens: price },
+      { actorId: message.from, goalId, correlationId },
+    );
+  }
+
   async sendMessage(input: {
     from: string;
     to: string[];
@@ -1318,7 +1455,16 @@ export class Supervisor {
     correlationId?: string;
     requires?: { id: string; text: string }[];
     budgetHint?: { maxTokens?: number; maxTurns?: number };
-  }): Promise<SendResult> {
+  },
+  /**
+   * Envelope fields only the runtime may set. Deliberately a SEPARATE
+   * argument rather than a field on `input`: everything in `input` goes
+   * through `sanitizeAgentMessageInput` on the next line, which is what makes
+   * forgery structurally impossible, so a runtime-owned value cannot travel
+   * in the same object it is being protected from.
+   */
+  runtime?: { control?: MessageControl },
+  ): Promise<SendResult> {
     // Every send — agent turn, MCP tool, HTTP API — funnels through here, so
     // this is the one place runtime-owned fields must be stripped off caller
     // input. Structural: after this line no forged `control` (or a forged
@@ -1428,8 +1574,28 @@ export class Supervisor {
           ? { source: "human", trustLevel: 100 }
           : { source: "agent", trustLevel: 50 },
     };
+    if (runtime?.control) {
+      // Applied here: after `sanitizeAgentMessageInput` stripped whatever the
+      // caller supplied, and before `validateMessage`, so the closed `control`
+      // property set in the message schema actually covers these fields.
+      message.control = { ...(message.control ?? {}), ...runtime.control };
+    }
+    // Derived here, on the same seam and for the same reason: after the
+    // caller's `control` is gone and before `validateMessage`, so the closed
+    // property set covers the class too. It reads `mode`, so it must follow
+    // the merge above rather than precede it.
+    const delivery = this.classifyDelivery(message, !!cacheHit);
+    if (delivery) message.control = { ...(message.control ?? {}), delivery };
     if (message.replyTo && !this.state.messages.has(message.replyTo)) {
       return { accepted: false, reason: `replyTo ${message.replyTo} not found` };
+    }
+    if (message.replyTo && this.state.messages.get(message.replyTo)?.control?.mode === "broadcast") {
+      // A broadcast is an announcement, not an ask: it opens no commitment,
+      // so a reply to one has nothing to discharge and no deadline to meet.
+      // Refused rather than quietly re-typed, because N seats each replying
+      // to one announcement is precisely the N-way chatter this mode exists
+      // to avoid. A seat with something to say opens its own ask.
+      return { accepted: false, reason: "cannot reply to a broadcast; open a request instead" };
     }
     const validation = validateMessage(message);
     if (!validation.valid) {
@@ -1461,6 +1627,10 @@ export class Supervisor {
       { message },
       { actorId: input.from, goalId, causationId: input.causationId, correlationId },
     );
+    // After the send is a fact, never before: a charge raised on a message
+    // that then failed validation or a policy gate would bill a sender for an
+    // interrupt that woke nobody.
+    await this.chargeInterrupt(message, goalId, correlationId);
 
     if (cacheHit) {
       await this.deps.kernel.emit("research.completed", { cached: true, artifactRef: cacheHit, messageId: message.id }, { actorId: input.from, goalId, causationId: evt.id });
@@ -3763,23 +3933,10 @@ export class Supervisor {
       const session = await this.ensureSession(agentId);
       const handover = await this.openHandover(agentId, session, turnId, activationEvt.id);
       if (handover) handoverReactivation = reason;
-      // build context from undelivered mail first, then drain via delivery events
+      // build context from undelivered mail; the drain is emitted after the
+      // model has actually read it (see the delivery loop below the runtime call)
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
       const rawBundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
-      // Delivery is bookkeeping: the agent only ever reads the first
-      // MAX_UNREAD (12) in context. Cap per-turn fan-out so a deep backlog
-      // (hundreds/thousands queued) can't turn one turn into thousands of
-      // emits — each emit wakes the watchdog, scheduler matching, the sqlite
-      // index and SSE broadcast. The remainder stays queued and drains over
-      // following turns (notifyTurnFinished re-queues while unread > 0).
-      const unread = [...(this.state.unread.get(agentId) ?? [])].slice(0, MAX_DELIVERED_PER_TURN);
-      for (const mid of unread) {
-        await this.deps.kernel.emit(
-          "message.delivered",
-          { agentId, messageId: mid, turnId },
-          { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
-        );
-      }
       const renderTurn = (b: AgentContextBundle): string =>
         renderContextInstructions(b) +
         `\n\n## Why you were woken\n${handover ? HANDOVER_INSTRUCTION(handover) : describeReason(reason)}\n\nEmit your reply as mesh operations.`;
@@ -3950,6 +4107,59 @@ export class Supervisor {
         this.toolRequests.set(agentId, held);
       }
       if (output.error) throw new RuntimeFailure(output.error);
+
+      /**
+       * Drain the mailbox now that a model has actually been handed it, and
+       * only for the mail that model was actually shown.
+       *
+       * The reducer splices the id straight out of `state.unread` on
+       * `message.delivered` and nothing ever puts it back, so this emit is the
+       * single point where mail stops being owed. It used to run before
+       * `callRuntimeWithTimeout`, over the first MAX_DELIVERED_PER_TURN (100)
+       * QUEUED ids, which got both halves of that wrong.
+       *
+       * Wrong in time: a turn that then timed out, lost its backend or crashed
+       * had permanently eaten messages no agent had seen — silently, because an
+       * empty mailbox is indistinguishable from a read one, and because
+       * `notifyTurnFinished` only re-queues while `unread > 0`, which the drain
+       * had just made false. The mail did not go unanswered; it ceased to exist.
+       *
+       * Wrong in extent: the bundle renders at most `maxUnread` of them (12,
+       * and as few as 2 once the tier ladder degrades), so a backlog of 100 or
+       * fewer had up to 88 messages marked delivered that were never put in
+       * front of anyone — while `omitted.unread` told the agent they were still
+       * queued until a later turn showed them. Degradation made it worse: the
+       * rebuild below re-read an already-drained box and rendered no mail at
+       * all, which is precisely when an agent can least afford to lose its asks.
+       *
+       * Both halves collapse into one rule: delivered means rendered AND
+       * answered; everything else stays owed. That can show the same message
+       * twice (the runtime answered, the op loop below then threw), which is the
+       * right trade — re-reading a message costs a paragraph of context, losing
+       * one costs the exchange it belonged to.
+       *
+       * It cannot spin. `state.unread` only ever holds ids that `message.sent`
+       * also put in `state.messages`, nothing deletes from there, and every tier
+       * renders at least two, so a non-empty box always renders something and
+       * therefore always shrinks. A deep backlog now drains over more turns
+       * instead of being discarded in one. The pre-model failures that leave
+       * mail queued are each already attempt-counted by `handleAgentFailure`
+       * (3 restarts, 5 slow retries) before the seat is SUSPENDED and refused
+       * activation.
+       *
+       * Placed before the op loop rather than at the end of the turn because
+       * once the model has read the mail it may have ACTED on it, and
+       * re-delivering after a half-applied turn would invite it to act twice.
+       */
+      const delivered = bundle.unreadMail.slice(0, MAX_DELIVERED_PER_TURN);
+      for (const msg of delivered) {
+        await this.deps.kernel.emit(
+          "message.delivered",
+          { agentId, messageId: msg.id, turnId },
+          { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+        );
+      }
+
       // Record BEFORE the op loop: the ops below are where an agent accepts a
       // criterion, and `markCriterionEvidence` has to know whether this turn
       // actually checked anything or is just asserting it did.
@@ -4685,15 +4895,82 @@ export class Supervisor {
             taskId: op.taskId,
             requires: op.requires,
             budgetHint: op.budgetHint,
-          });
+          }, { control: contractStamp(op) });
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, eventId: res.eventId } : { ok: false, op: op.op, reason: res.reason };
         }
         case "broadcast": {
           const targets = [...this.state.agents.keys()].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
-          const res = await this.sendMessage({ from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, artifactRefs: op.artifactRefs });
+          const res = await this.sendMessage(
+            { from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, artifactRefs: op.artifactRefs },
+            // Stamped by the runtime, not the agent, because three separate
+            // behaviours key off it and all three must be unforgeable: the
+            // reducer opens no commitment for a broadcast, `sendMessage`
+            // refuses replies to one, and the scheduler wakes only the seats
+            // that declared an interest instead of the whole roster.
+            { control: { mode: "broadcast" } },
+          );
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+        }
+        case "collab": {
+          const peers = [...new Set(op.with ?? [])].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
+          if (peers.length === 0) return { ok: false, op: op.op, reason: "collab needs at least one other participant" };
+          const topic = (op.topic ?? "").trim();
+          if (!topic) return { ok: false, op: op.op, reason: "collab needs a topic (it names the box on the overrun card)" };
+          const box = this.config.bus.collab;
+          // Clamp, never widen. An agent may shorten its own leash — that is
+          // a useful thing to let it do — but a box an agent could lengthen
+          // is not a box, and this op is the one place a request for more
+          // room would arrive.
+          const boxMs = Math.max(1, Math.min(op.boxMs && op.boxMs > 0 ? op.boxMs : box.boxMs, box.boxMs));
+          const maxExchanges = Math.max(
+            1,
+            Math.min(op.maxExchanges && op.maxExchanges > 0 ? op.maxExchanges : box.maxExchanges, box.maxExchanges),
+          );
+          const res = await this.sendMessage(
+            { from: actorId, to: peers, type: "INFORM", newThread: { subject: `collab: ${topic}` }, payload: op.payload ?? { topic }, artifactRefs: op.artifactRefs },
+            { control: { mode: "collab" } },
+          );
+          if (!res.accepted) return { ok: false, op: op.op, reason: res.reason };
+          turn.sentOps++;
+          const opened = this.state.messages.get(res.messageId!);
+          const threadId = opened!.threadId;
+          const openedAt = this.deps.kernel.clock.iso();
+          const session: CollabSession = {
+            threadId,
+            goalId: this.state.activeGoalId ?? undefined,
+            openedBy: actorId,
+            participants: [actorId, ...peers],
+            topic,
+            openedAt,
+            // Computed HERE and carried in the event, not derived at sweep
+            // time: a mesh that edits `bus.collab` mid-mission must not
+            // retroactively move the edge of a session already running, and a
+            // replay has to reproduce the expiry the live run actually used.
+            expiresAt: new Date(Date.parse(openedAt) + boxMs).toISOString(),
+            maxExchanges,
+            // The opening message is the OPEN, not an exchange — the session
+            // does not exist when the reducer sees it, so it is not metered,
+            // and that is the intended reading.
+            exchanges: 0,
+            budgetKey: this.state.activeGoalId ? `thread:${this.state.activeGoalId}/${threadId}` : undefined,
+            status: "OPEN",
+          };
+          await this.deps.kernel.emit("collab.opened", { session }, { actorId, goalId: session.goalId });
+          return { ok: true, op: op.op, messageId: res.messageId, threadId };
+        }
+        case "close_collab": {
+          const cs = this.state.collabSessions.get(op.threadId as never);
+          if (!cs) return { ok: false, op: op.op, reason: `no collab session on thread ${op.threadId}` };
+          if (cs.status !== "OPEN") return { ok: false, op: op.op, reason: `collab on ${op.threadId} already ${cs.status.toLowerCase()}` };
+          if (!cs.participants.includes(actorId)) return { ok: false, op: op.op, reason: "only a participant may close a collab" };
+          await this.deps.kernel.emit(
+            "collab.closed",
+            { threadId: cs.threadId, reason: "closed", closedBy: actorId, outcome: op.outcome, exchanges: cs.exchanges, maxExchanges: cs.maxExchanges },
+            { actorId, goalId: cs.goalId },
+          );
+          return { ok: true, op: op.op, threadId: cs.threadId };
         }
         case "request_research": {
           const cache = this.researchCache(op.question);
@@ -4715,8 +4992,8 @@ export class Supervisor {
             type: "REQUEST_RESEARCH",
             newThread: { subject: `research: ${op.question.slice(0, 80)}`, artifactRefs: op.artifactRefs },
             artifactRefs: op.artifactRefs,
-            payload: { question: op.question, ...contractStamp(op) },
-          });
+            payload: { question: op.question },
+          }, { control: contractStamp(op) });
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
         }
@@ -4849,8 +5126,8 @@ export class Supervisor {
             type: "REQUEST_REVIEW",
             newThread: { subject: `review ${a.name}`, artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }] },
             artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }],
-            payload: { question: `Review ${a.type} ${a.name} v${a.version}`, ...contractStamp(op) },
-          });
+            payload: { question: `Review ${a.type} ${a.name} v${a.version}` },
+          }, { control: contractStamp(op) });
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
         }
@@ -5593,9 +5870,12 @@ export class Supervisor {
       targets = [resolved[0]];
     }
 
-    // The contract name travels in the payload so the commitment ledger can
-    // read its SLA on replay, and so a reader can tell what was asked without
-    // re-deriving it from prose.
+    // The contract name travels on the envelope's runtime-owned `control`, not
+    // in the payload: the ledger reads it to draw the ask's deadline and to
+    // judge the answer, and both are decisions about obligations that an agent
+    // must not be able to make for the kernel by writing a key into free-form
+    // JSON. `contractStamp` re-checks the name against the catalogue, so a
+    // stamp on the wire always means "this ask passed its request schema".
     switch (contract.desugarsTo) {
       case "request_review":
         return this.executeOp(actorId, {
@@ -5624,7 +5904,9 @@ export class Supervisor {
           type: contract.messageType,
           to: targets,
           newThread: { subject },
-          payload: { ...request, contract: contract.name, contractVersion: contract.version },
+          contract: contract.name,
+          contractVersion: contract.version,
+          payload: { ...request },
         }, turn);
       }
     }
@@ -6187,6 +6469,71 @@ export class Supervisor {
     }
   }
 
+  /**
+   * Close collaborations that ran past their box, and raise a card for each.
+   *
+   * Wall clock for the same reason `sweepExpiredCommitments` is: a collab
+   * that has gone quiet emits no events, and a quiet session past its edge is
+   * the exact case worth catching — two agents that stopped talking without
+   * ever deciding they were done, holding a thread budget open.
+   *
+   * The card is ADVISORY. An overrun is not a fault that should halt a
+   * mission or block its completion; it is a bill. It names what the session
+   * spent and which budget line to read it on, and the operator decides
+   * whether that was worth it.
+   */
+  private async sweepCollabOverruns(nowMs: number): Promise<void> {
+    for (const cs of this.state.collabSessions.values()) {
+      if (cs.status !== "OPEN") continue;
+      const expired = Date.parse(cs.expiresAt) <= nowMs;
+      const spent = cs.exchanges >= cs.maxExchanges;
+      if (!expired && !spent) continue;
+      // Clock first when both are true: a session that sat past its deadline
+      // is a different diagnosis from one that talked itself out, and the
+      // deadline is the bound the operator actually set.
+      const reason = expired ? "expired" : "exchanges_exhausted";
+      const spentMs = nowMs - Date.parse(cs.openedAt);
+      await this.deps.kernel
+        .emit(
+          "collab.closed",
+          { threadId: cs.threadId, reason, exchanges: cs.exchanges, maxExchanges: cs.maxExchanges, openedAt: cs.openedAt, expiresAt: cs.expiresAt, spentMs },
+          { actorId: "system", goalId: cs.goalId },
+        )
+        .catch((err) => {
+          this.auditLine(`collab close of ${cs.threadId} failed: ${(err as Error).message}`);
+          return null;
+        });
+      await this.escalate({
+        reason: `collab_overrun:${reason}`,
+        raisedBy: "collab-watchdog",
+        // Stable, so a session cannot raise a fresh card on every tick. The
+        // reducer has already marked it OVERRUN, which is what actually stops
+        // the loop; this is the second belt.
+        conflictKey: `collab:${cs.threadId}`,
+        threadId: cs.threadId,
+        participants: cs.participants,
+        advisory: true,
+        detail: {
+          topic: cs.topic,
+          openedBy: cs.openedBy,
+          participants: cs.participants,
+          exchanges: cs.exchanges,
+          maxExchanges: cs.maxExchanges,
+          openedAt: cs.openedAt,
+          expiresAt: cs.expiresAt,
+          spentMs,
+          budgetKey: cs.budgetKey,
+        },
+      }).catch((err) => {
+        this.auditLine(`collab overrun card for ${cs.threadId} failed: ${(err as Error).message}`);
+        return null;
+      });
+      this.auditLine(
+        `collab "${cs.topic}" on ${cs.threadId} (${cs.participants.join(", ")}) ${reason} after ${Math.round(spentMs / 1000)}s and ${cs.exchanges}/${cs.maxExchanges} exchanges`,
+      );
+    }
+  }
+
   /** Expiries emitted per stall-watch tick. See `sweepExpiredCommitments`. */
   private static readonly MAX_EXPIRIES_PER_SWEEP = 50;
 
@@ -6210,6 +6557,10 @@ export class Supervisor {
     // returns further down are about whether to NUDGE, which is a different
     // question from whether an ask is overdue.
     await this.sweepExpiredCommitments(now);
+    // Same argument, same tick: a box that expires while a turn is in flight
+    // has still expired, so this sits with the commitment sweep ahead of the
+    // mission-quiet gates rather than below them.
+    await this.sweepCollabOverruns(now);
     // The silence check runs FIRST, before every mission-level guard: a stream
     // frozen after its first token is a stall regardless of goal status and
     // regardless of other scheduler work. Ordered after those guards it was

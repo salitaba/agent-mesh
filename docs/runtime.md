@@ -16,12 +16,21 @@ A single `runTurn`:
 2. `agent.awakened` → `OBSERVING`
 3. ensure the runtime session (start or **restore** the persistent session id)
 4. build the agent context (§29) — **never** the whole transcript
-5. deliver queued mail (`message.delivered`)
-6. `THINKING` → call the runtime adapter with a turn timeout
+5. `THINKING` → call the runtime adapter with a turn timeout
+6. mark the mail the turn actually read as delivered (`message.delivered`)
 7. apply the returned **mesh operations** (each re-checked by policy)
 8. consume budget (`budget.consumed`, with model/tool-call audit for replay)
 9. derive the end lifecycle (`WAITING` if it has an outstanding request, else
    `IDLE`/`BLOCKED`)
+
+Steps 5 and 6 are in that order deliberately, and both halves matter. Mail is
+marked delivered **after** the adapter returns, so a turn that crashes or times
+out leaves the mailbox owed rather than emptied — a crash used to consume the
+mail it never showed anyone. And it marks the messages the context builder
+actually **rendered**, not everything that was queued: the context has a per-turn
+unread budget (§29), so a deep backlog is drained over several turns instead of
+being marked read in one. Delivered means *rendered and answered*; anything else
+stays owed.
 
 Every turn's inputs/outputs/model/tokens are appended to `turn-audit.jsonl` so
 the **orchestration** layer is deterministic and replayable even though the LLM
@@ -63,6 +72,15 @@ agents, and future A2A agents all plug in without touching the domain model.
 Note: OpenCode registers MCP tools with the server name as a prefix, so the bus
 tools surface to the model as `mesh_mesh_send`, `mesh_mesh_approve`, … (server
 `mesh`). Agents are told to look for `mesh_*`.
+
+Note: *which* bus tools an adapter is handed is a property of the mesh, not of
+the adapter. `tools/list` is filtered per seat -- by the agent's capabilities,
+by `bus.transport`, and by `bus.vocabulary`, which under `contracts` replaces
+`mesh_send`/`mesh_broadcast`/`mesh_respond` with the contract verbs
+(`mesh_call`, `mesh_reply`, `mesh_announce`, …). The filtering is
+advertisement-only: every adapter can still *call* a tool that was not listed,
+so an op parsed out of prose, or a name a model remembers from another mesh,
+keeps working. See `docs/configuration.md` § bus.
 
 ### `runtime-claude`
 - Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that

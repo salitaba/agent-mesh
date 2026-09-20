@@ -175,15 +175,20 @@ Budgets are hierarchical: `mission → agent/task/thread/tool`. Overrun emits
 halt). `mesh run` writes `events.jsonl`, snapshots, turn audit, and a projection
 rejection log under `server.state_dir`.
 
-## bus: commitments & transport
+## bus: commitments, transport, vocabulary & delivery
 
 ```yaml
 bus:
   commitments:
     semantic: compat        # or omit for "strict"
-    ttl_ms: 1800000         # omit (or 0) for no deadline
+    ttl_ms: 1800000         # 30 min, and what `mesh init` writes; omit (or 0) for no deadline
     ttl_ms_by_role: { security: 7200000 }
   transport: typed-only     # or omit for "mixed"
+  vocabulary: contracts     # and what `mesh init` writes; omit (or "typed") for the full manifest
+  delivery:
+    classes: true           # omit for "every message wakes its recipients"
+    coalesce_ms: 60000      # how long a `deliver` burst gathers before one wake
+    interrupt_cost_tokens: 2000   # what one interrupt costs its sender, per seat woken
 ```
 
 ### commitments.semantic
@@ -213,6 +218,21 @@ response, not only the one its `REQUEST_EXECUTION` minted.
 How long an ask may go unanswered before the runtime closes it with
 `expired`. Omitted or `0` means no deadline, which is how every mesh behaved
 before this key existed — expiry is opt-in, not inherited from an upgrade.
+
+`mesh init` writes `ttl_ms: 1800000` (30 minutes) into the `bus.commitments`
+block of a freshly scaffolded mesh, so a new mesh has deadlines from its first
+run rather than obligations that never close on their own. Without a TTL the
+debtor is still nudged and a request that stays stuck still raises an operator
+card, but `overdueCommitments` is always empty and the expiry sweep never
+fires, so the ask sits on the ledger until someone answers it.
+
+The scaffold is the **only** place that default is applied. The resolver still
+reads an absent `bus:` block as "no deadline regime", so a mesh that already
+exists keeps exactly the behaviour it has today and cannot acquire deadlines by
+being upgraded — the new default is opt-in by new mesh, deliberately, because
+turning expiry on under a running mission would start closing asks its operator
+never put a clock on. Delete the key from the scaffolded file, or set it to
+`0`, to opt back out.
 
 The deadline belongs to the **debtor**, not the asker: an ask addressed to
 several agents gets the longest of their roles' TTLs, so a slow role is never
@@ -251,6 +271,142 @@ delivery:
 - The invented-name tables in `op-aliases.ts` stop firing, so an op name or
   message type a model made up is refused **by name** instead of being quietly
   rewritten into the nearest real one.
+
+### vocabulary
+
+Which comms vocabulary a seat's tool manifest advertises. `contracts` collapses
+it to the named asks; omitted (or `typed`) is the manifest every mesh has had.
+
+Under `vocabulary: contracts` the comms manifest is seven tools, and **not one
+of them asks for a message type**:
+
+| tool | what it is for |
+|---|---|
+| `mesh_contracts` | what can I ask for |
+| `mesh_call` | the ask |
+| `mesh_reply` | the answer |
+| `mesh_discharge` | the refusal |
+| `mesh_announce` | saying something that obliges nobody |
+| `mesh_collab` / `mesh_collab_close` | the bounded discussion |
+
+`mesh_send`, `mesh_broadcast` and `mesh_respond` leave the advertised list,
+along with the four `typed-only` already drops. `mesh_reply` answers with the
+message id and the answer itself; `mesh_announce` broadcasts when you omit `to`
+and tells named seats when you give it. Both send `INFORM`, which the seat never
+writes — what settles an ask is `replyTo`, not the type.
+
+As with `typed-only`, hiding is **advertisement only**: `mesh_send` with a
+hand-written type still works for a model that reaches for it, so collapsing the
+vocabulary can never take a capability away from a seat or strand a mission.
+`MessageType` is untouched on the wire and stays what it should always have
+been — a rendering and telemetry detail.
+
+Be honest about the payoff: the token saving is small (the manifest shrink
+measured **−96 tokens/turn** when `typed-only` dropped four tools, and this
+drops three more while adding two). The real win is that a seat can no longer
+invent `RESULT`, because the manifest offers no field to invent it in — which is
+the entire reason `op-aliases.ts` exists (56 name aliases, 31 type aliases,
+thirteen words for "here is your answer" folded onto `INFORM`). An alias table
+is what you build when a surface cannot be learned; this shrinks the surface.
+
+`mesh init` writes `vocabulary: contracts` into a freshly scaffolded mesh, and
+that scaffold is the **only** place the default is applied — exactly like
+`commitments.ttl_ms` and `delivery.classes`. The resolver reads an absent key as
+"keep the full manifest", so a mesh that already exists advertises the same tool
+list it did before, tool for tool, and cannot acquire a different vocabulary by
+being upgraded. Set `vocabulary: typed`, or delete the key, to opt back out.
+
+This is independent of `transport`, although operators will usually set both.
+`transport` decides *how* an op may arrive (a typed tool call, or ops parsed out
+of prose); `vocabulary` decides *what* the typed surface offers. In particular
+the `op-aliases.ts` tables are still live under `vocabulary: contracts` with
+`transport: mixed`, because hiding a tool does not unteach its name to a model
+writing prose.
+
+### delivery.classes
+
+The mesh is asynchronous in its transport and synchronous in its attention.
+Nothing blocks — `wait` ends a turn, it does not await anything — but inbound
+mail **wakes** its recipients, a wake is a turn, and a turn is a model call. So
+the cheapest act in the system (writing a sentence) unilaterally spends the
+most expensive resource another seat has, and nothing anywhere records it.
+Every message is an interrupt with a bill attached, and the sender pays none of
+it.
+
+`classes: true` puts a **delivery class** on the message envelope, which
+separates *delivery* (the message lands in the mailbox) from *wake* (the
+recipient is activated now, burning a turn). The runtime stamps it; an agent
+cannot — the field is stripped from every send and the envelope's property set
+is closed, so a forged one fails validation rather than being ignored. The
+three classes all deliver, and differ only in what the delivery may cost:
+
+| class | wakes | charged | derived for |
+|---|---|---|---|
+| `interrupt` | now, as mail always has | yes, per seat woken | an `URGENT`; an answer to an ask the recipient is parked on; a re-ask in the thread of a debt that seat still owes the sender |
+| `deliver` | once per `coalesce_ms` burst, or not at all if the seat takes a turn for another reason first | no | asks (`REQUEST*`, `ESCALATE`, `CHALLENGE`) and collab chatter |
+| `accrue` | never | no | everything else — announcements, FYI, unsolicited `INFORM` |
+
+**No class is a suppressed delivery.** The reducer puts the message in every
+recipient's mailbox before the scheduler ever sees the event, so an unwoken
+seat reads it on its next natural activation — exactly as an uninterested seat
+already does with a broadcast. Nothing is lost; it is just not paid for twice.
+The only thing that suppresses delivery is the research cache, which is a
+different mechanism and not a class.
+
+**An absent class is today's behaviour, not a cheap default.** With no
+`bus.delivery` block nothing is classed and every message wakes every
+recipient, exactly as before this key existed. `mesh init` writes the block
+into a freshly scaffolded mesh so a new mesh is priced from its first run; an
+existing mesh keeps the behaviour it has and opts in by hand. This mirrors
+`commitments.ttl_ms` and for the same reason — re-routing wakes under a running
+mission would stop waking agents whose operator expects them to be woken.
+Replay honours the class on the envelope rather than the config of the day, so
+a run replays as it ran.
+
+**Classes are orthogonal to `control.mode`.** `mode` decides what an exchange
+obliges and therefore who is a candidate for a wake at all; the class decides
+whether being a candidate is worth a turn right now. Broadcasts are left
+deliberately unclassed: the seats a broadcast wakes are the ones an operator
+named in an `interests:` list, and a class derived from an envelope must not
+overrule a decision taken in config.
+
+`interrupt_cost_tokens` is charged to the **sender's** agent budget line
+(`agent:<goal>/<sender>`), once per recipient woken, as an ordinary
+`budget.consumed` entry. It is a tariff, not a transfer: the recipient's real
+turn is still charged where it is really spent, and the charge stays off the
+mission line so that line keeps reporting what the mission actually cost.
+Against the 200k default agent line, the 2000 default lets a seat raise a
+hundred interrupts before its own budget is what stops it. Set `0` to record
+the classes and charge nothing; the class is what the scheduler reads, so
+pricing and routing can be adopted separately. A message from the human
+operator is never charged — there is no agent line to charge, and an operator's
+interrupt is the operator's prerogative.
+
+`coalesce_ms` is measured from the **first** message of a burst, not the last:
+a window that restarted on every arrival would never close under a steady
+stream, which is the traffic it exists to price. It is checked on the
+wait-wakeup sweep, so a value below `scheduling.timeouts.wait_wakeup_ms` buys
+nothing.
+
+`deliver` and `accrue` mail is excluded from that sweep's mail-pressure nudge,
+exactly as broadcasts already are, and a seat with an open gathering window is
+skipped by the sweep entirely until the window closes. Both for the same
+reason: counting the mail, or chasing the ask it carried, would have the timer
+undo the class one tick later — the seat correctly not woken by the message,
+then woken by the sweep for the same message, at the same cost. The defaults
+make that concrete, since the window and the sweep are both 60s.
+
+Nothing else about the sweep changes. The skip is bounded by `coalesce_ms` from
+the first message of the burst and every window closes in a real activation, so
+an unanswered ask is still nudged and still escalates into a stalemate
+escalation, whatever class carried it.
+
+A re-ask counts as a chase only inside the thread of the ask it is chasing. A
+different question to a colleague who happens to owe you something is a new
+ask, not a chase: without that scoping, one open debt would make every later
+ask to that seat an `interrupt`, and in a mesh where seats habitually owe each
+other work the expensive class becomes the default — the inversion this key
+exists to correct.
 
 ### Contracts
 

@@ -15,6 +15,7 @@ import type {
   Task,
   Thread,
   ThreadId,
+  CollabSession,
   WorkspaceLease,
   AgentMemoryNote,
   ContinuityRecord,
@@ -142,6 +143,15 @@ export interface PendingRequest {
    * "how patient is the asker?".
    */
   dueBy?: string;
+  /**
+   * The contract this ask was opened under, when it was opened through one.
+   *
+   * Recorded at open time because the answer is checked at DISCHARGE, and by
+   * then the asking message is the only place the contract name survives --
+   * re-deriving it from the reply would mean trusting the responder to say
+   * what it was answering.
+   */
+  contract?: string;
   goalId?: string;
   /** Artifact URIs referenced by the request (used to clear reviews on approve/merge). */
   artifactUris?: string[];
@@ -185,6 +195,90 @@ export interface DischargeRecord {
   partial?: boolean;
   /** Debtors who still owe an answer after this discharge. */
   remaining?: string[];
+  /**
+   * Did the answer match the contract's `response` schema?
+   *
+   * `false` means the ask was settled by a reply that did not answer it --
+   * empty, or missing every field the contract said an answer carries. The
+   * debt is discharged either way (see `Contract.response` for why this fails
+   * open), so this mark is the ONLY record that the settlement was thin.
+   *
+   * Absent means not checked: no contract, or a contract with no response
+   * schema. Absent is not a failure, and consumers must not read it as one.
+   */
+  responseValid?: boolean;
+  /** Why it did not match, at most a few entries. Present only when false. */
+  responseIssues?: string[];
+}
+
+/**
+ * A send that never happened, kept so the refusal is visible to an operator.
+ *
+ * The sender already learns of this synchronously — `sendMessage` returns
+ * `{ accepted: false, reason }` and the op path hands that back as the op's
+ * failure — so this record exists for the OTHER reader: the operator or the
+ * run report asking "what did this mesh try to say and get stopped from
+ * saying?". Without it a policy that refuses every send looks, in every
+ * projection, exactly like a mesh whose agents chose not to talk.
+ *
+ * The refused `payload` is deliberately NOT kept. It is verbatim agent input
+ * of unbounded size, it rides into every snapshot, and the three facts that
+ * identify a refusal — who, to whom, and why — are all here already. The
+ * event log still holds the payload for anyone who needs the body itself.
+ */
+export interface RefusedSend {
+  from: string;
+  to: string[];
+  type: string;
+  reason: string;
+  /** The policy rule that refused it; absent when validation did. */
+  ruleId?: string;
+  at: string;
+}
+
+/**
+ * One thing an agent was stopped from DOING, as `Supervisor.denied` records it.
+ *
+ * The other half of the overloaded `message.rejected` event. A send refusal
+ * names recipients and a message type and becomes a {@link RefusedSend}; this
+ * one names an `action` and no `to` at all — a denied op (`claim task
+ * (missing capability test.execute)`, `publish_artifact`) or a denied
+ * activation (`activate (mail)`), routed through the same event type because
+ * both are the policy engine saying no.
+ *
+ * It is a different QUESTION — "what was I stopped from doing?" rather than
+ * "what did the mesh try to say?" — which is why it gets its own ring with its
+ * own cap instead of sharing `refusedSends`. One misconfigured op rule can
+ * deny on every tick, and a shared ring would let that storm evict the record
+ * of a message that never left the building.
+ *
+ * Like `RefusedSend`, this keeps the identifying facts and not the body: the
+ * event log holds the full payload for anyone who needs it, and this rides
+ * into every snapshot.
+ */
+export interface DeniedAction {
+  /** The agent the denial was issued against. */
+  agentId: string;
+  /** What it was stopped from doing, in the supervisor's own words. */
+  action: string;
+  /** What the action named — a task id, an artifact id — when it named one. */
+  subject?: string;
+  reason: string;
+  /** The policy rule that refused it, when the decision carried one. */
+  ruleId?: string;
+  /**
+   * `DENY` or `DEFER`, verbatim from the policy decision. The distinction is
+   * the first thing an operator needs: a DEFER clears itself when the budget
+   * or the goal moves, a DENY does not and waiting for it is the trap.
+   */
+  decision?: string;
+  at: string;
+}
+
+/** The verdict on one answer, as recorded by {@link dischargeCommitment}. */
+export interface ResponseCheck {
+  responseValid: boolean;
+  responseIssues?: string[];
 }
 
 export interface ConflictRecord {
@@ -249,11 +343,61 @@ export interface Projections {
   sessionOrdinal: Map<string, number>;
   pendingRequests: Map<MessageId, PendingRequest>;
   /**
+   * Time-boxed collaborations, keyed by the thread each one owns. See
+   * CollabSession. Not part of the commitment ledger on purpose: a collab
+   * obliges nobody, so it must never be nudged, chased for an answer, or
+   * counted in `inferredRatio`. Its only enforcement is its own clock.
+   */
+  collabSessions: Map<ThreadId, CollabSession>;
+  /**
    * Recently discharged asks, newest last. Bounded ring: this is an
    * explanation buffer for operators and for the "was it answered or merely
    * assumed answered?" question, not a second source of truth.
    */
   discharged: DischargeRecord[];
+  /**
+   * Sends policy or protocol validation turned away, newest last. Bounded
+   * ring, like `discharged`, and for the same reason: an explanation buffer,
+   * not a second source of truth — the event log is that.
+   *
+   * Holds only refusals that had RECIPIENTS. `message.rejected` is overloaded:
+   * the same event type also carries op and activation denials, which name an
+   * `action` instead of a `to`. Those are already aggregated for the operator
+   * from the log, and letting a burst of them share this ring would evict the
+   * record of a message that never left the building.
+   */
+  refusedSends: RefusedSend[];
+  /**
+   * Ops and activations policy turned away, newest last. Bounded ring, with
+   * its OWN cap rather than a share of `refusedSends`.
+   *
+   * Holds exactly the half of `message.rejected` that `refusedSends` refuses:
+   * the denials that name an `action` and no recipients. Until this existed
+   * they were projected nowhere, so "what was this agent stopped from doing?"
+   * could only be answered by folding the raw event log — which the MCP
+   * failure digest does, and nothing built on projections could.
+   *
+   * Two rings rather than one because the ring is also a blast radius. Op
+   * denials arrive in storms (one misconfigured rule denies on every tick);
+   * sends refused by policy are comparatively rare. Sharing would let the
+   * first silently delete the record of the second.
+   */
+  deniedActions: DeniedAction[];
+  /**
+   * How many unread messages the `MAX_UNREAD_PER_AGENT` cap has dropped for
+   * each agent, keyed by agent id.
+   *
+   * The cap is oldest-first and silent: mail simply stopped existing, and
+   * nothing downstream could tell a seat that read everything from a seat that
+   * was flooded past its box. A counter cannot bring the messages back, but it
+   * makes the loss countable, which is the difference between mail that
+   * vanished and mail that is known to have vanished.
+   *
+   * A count rather than an event on purpose: a reducer that emits is a reducer
+   * whose output depends on more than the log, and this number has to be
+   * re-derivable by replaying it.
+   */
+  mailOverflowDropped: Map<string, number>;
   conflicts: Map<string, ConflictRecord>;
   reviewRounds: Map<ArtifactId, number>;
   messageFingerprints: Map<ThreadId, Set<string>>;
@@ -310,7 +454,11 @@ export function createInitialState(): Projections {
     continuity: new Map(),
     sessionOrdinal: new Map(),
     pendingRequests: new Map(),
+    collabSessions: new Map(),
     discharged: [],
+    refusedSends: [],
+    deniedActions: [],
+    mailOverflowDropped: new Map(),
     conflicts: new Map(),
     reviewRounds: new Map(),
     messageFingerprints: new Map(),
@@ -361,6 +509,22 @@ export const MAX_PENDING_REQUESTS = 1000;
 export const MAX_ARTIFACT_HISTORY = 100;
 export const MAX_CONFLICTS = 500;
 export const MAX_DISCHARGE_HISTORY = 500;
+/**
+ * Tighter than `MAX_DISCHARGE_HISTORY` because refusals arrive in storms, not
+ * in ones: the shape that fills this ring is a misconfigured rule denying
+ * every send a seat attempts, and the two hundredth identical refusal tells an
+ * operator nothing the second did not.
+ */
+export const MAX_REFUSED_SENDS = 200;
+
+/**
+ * Independent of `MAX_REFUSED_SENDS` on purpose, even though the two happen to
+ * be equal today. They bound different rings holding different questions, and
+ * the reason one of them is tight — refusals arrive in storms — applies harder
+ * here: an op rule that denies every turn fills this in minutes. Tuning one
+ * must never be a decision about the other.
+ */
+export const MAX_DENIED_ACTIONS = 200;
 
 /**
  * L2 memory was the one projection missing from the caps above, and the only
@@ -465,6 +629,12 @@ export function dischargeCommitment(
   by: string,
   at: string,
   viaMessageId?: MessageId,
+  /**
+   * Verdict on the answering payload, when there was an answer to judge.
+   * Computed by the caller (the reducer holds the reply message; this
+   * function holds only ids) and recorded verbatim.
+   */
+  response?: ResponseCheck,
 ): DischargeRecord | null {
   const pr = state.pendingRequests.get(messageId);
   if (!pr) return null;
@@ -496,13 +666,14 @@ export function dischargeCommitment(
     pr.outstanding = remaining;
     const partial: DischargeRecord = {
       messageId, from: pr.from, to: pr.to, type: pr.type, reason, by, at, viaMessageId, partial: true, remaining: [...remaining],
+      ...response,
     };
     pushBounded(state.discharged, partial, MAX_DISCHARGE_HISTORY);
     return partial;
   }
 
   state.pendingRequests.delete(messageId);
-  const record: DischargeRecord = { messageId, from: pr.from, to: pr.to, type: pr.type, reason, by, at, viaMessageId };
+  const record: DischargeRecord = { messageId, from: pr.from, to: pr.to, type: pr.type, reason, by, at, viaMessageId, ...response };
   pushBounded(state.discharged, record, MAX_DISCHARGE_HISTORY);
   return record;
 }
@@ -717,6 +888,72 @@ export function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number):
   map.set(key, value);
 }
 
+/**
+ * How many messages one snapshot carries.
+ *
+ * A hard ceiling on the exported array rather than a floor under the tail:
+ * `exportMessages` spends this budget on owed mail first and fills the rest
+ * with the newest messages, so the array is never longer than this however
+ * deep the mailboxes are.
+ */
+export const MAX_SNAPSHOT_MESSAGES = 2000;
+
+/**
+ * The newest `MAX_SNAPSHOT_MESSAGES` messages, plus every older message still
+ * sitting in somebody's mailbox.
+ *
+ * A plain tail slice loses the BODY of any unread message older than the tail,
+ * while `unread` is carried verbatim -- so that id comes back pointing at
+ * nothing. The dangling id is not sticky: the supervisor emits
+ * `message.delivered` for every id in the box without resolving it first, and
+ * `buildAgentContext` drops ids it cannot resolve from the rendered inbox. But
+ * until that next turn the agent's `mailbox=N` over-counts by the dangling
+ * ids, and the mail itself is simply gone -- a message somebody was owed,
+ * deleted by the restart that was supposed to preserve it.
+ *
+ * Owed mail therefore outranks mere recency WITHIN the same budget instead of
+ * being added on top of it. The union has to stay bounded: a box is capped per
+ * agent (`MAX_UNREAD_PER_AGENT`) but the agent count is not, so "the tail plus
+ * everything owed" grows with the size of the mesh. Paying for the old owed
+ * messages with the oldest of the tail is near-free -- outside the
+ * pathological case the trade costs a handful of the least recent messages
+ * nobody is waiting on, and when nothing is owed from outside the tail the
+ * result is byte-for-byte the tail slice this replaced.
+ *
+ * When the boxes alone exceed the whole budget (upwards of ten agents each
+ * sitting on a full 200-deep box), the newest owed mail wins and the oldest
+ * owed mail is dropped: the same oldest-first rule `MAX_UNREAD_PER_AGENT`
+ * already applies to the box itself, so the overflow degrades to the
+ * dangling-id behaviour that was the status quo rather than to an unbounded
+ * snapshot.
+ */
+function exportMessages(state: Projections): MeshMessage[] {
+  const all = [...state.messages.values()];
+  if (all.length <= MAX_SNAPSHOT_MESSAGES) return all;
+
+  const owedIds = new Set<MessageId>();
+  for (const ids of state.unread.values()) for (const id of ids) owedIds.add(id);
+
+  const owed: MeshMessage[] = [];
+  const rest: MeshMessage[] = [];
+  for (const m of all) (owedIds.has(m.id) ? owed : rest).push(m);
+
+  const keptOwed = owed.slice(-MAX_SNAPSHOT_MESSAGES);
+  const restBudget = MAX_SNAPSHOT_MESSAGES - keptOwed.length;
+  // Guarded rather than `slice(-restBudget)`: `slice(-0)` is `slice(0)`, which
+  // would return the entire history precisely when there is no room for any of
+  // it.
+  const keptRest = restBudget > 0 ? rest.slice(-restBudget) : [];
+
+  const keep = new Set<MessageId>();
+  for (const m of keptOwed) keep.add(m.id);
+  for (const m of keptRest) keep.add(m.id);
+  // One filtering pass over the history, so the export keeps insertion order
+  // and cannot duplicate an owed message that was inside the tail already:
+  // `messages` is keyed by id, so each message lands in exactly one partition.
+  return all.filter((m) => keep.has(m.id));
+}
+
 /** Plain-object snapshot of Projections (Maps -> arrays) for SnapshotStore. */
 export function exportState(state: Projections): {
   goals: unknown[];
@@ -725,6 +962,7 @@ export function exportState(state: Projections): {
   artifacts: unknown[];
   threads: unknown[];
   messages: unknown[];
+  unread: unknown[];
   tasks: unknown[];
   decisions: unknown[];
   approvals: unknown[];
@@ -735,7 +973,11 @@ export function exportState(state: Projections): {
   continuity: unknown[];
   sessionOrdinal: unknown[];
   pendingRequests: unknown[];
+  collabSessions: unknown[];
   discharged: unknown[];
+  refusedSends: unknown[];
+  deniedActions: unknown[];
+  mailOverflowDropped: unknown[];
   reviewRounds: unknown[];
   conflicts: unknown[];
   modelSpend: unknown[];
@@ -748,7 +990,16 @@ export function exportState(state: Projections): {
     agents: [...state.agents.values()],
     artifacts: [...state.artifacts.values()],
     threads: [...state.threads.values()],
-    messages: [...state.messages.values()].slice(-2000),
+    // The newest messages, plus the body of anything still owed. See
+    // `exportMessages`: a mailbox id whose body missed the cut is mail nobody
+    // can ever be handed again.
+    messages: exportMessages(state),
+    // Carried rather than rebuilt, because there is nothing left to rebuild it
+    // from: the tail replay after a restore starts STRICTLY above `throughSeq`,
+    // so every `message.sent` at or below the cut is never applied again. A box
+    // left out of the snapshot is an agent whose unread mail is silently
+    // deleted by the restart that was supposed to preserve it.
+    unread: [...state.unread.entries()],
     tasks: [...state.tasks.values()],
     decisions: [...state.decisions.values()],
     approvals: [...state.approvals.values()],
@@ -759,7 +1010,18 @@ export function exportState(state: Projections): {
     continuity: [...state.continuity.values()],
     sessionOrdinal: [...state.sessionOrdinal.entries()],
     pendingRequests: [...state.pendingRequests.values()],
+    collabSessions: [...state.collabSessions.values()],
     discharged: [...state.discharged],
+    refusedSends: [...state.refusedSends],
+    // Carried for the same reason `refusedSends` is: a restart that forgets
+    // what policy refused makes a mesh strangled by its own rules look like a
+    // mesh with nothing to do, and the restart is exactly when an operator is
+    // looking.
+    deniedActions: [...state.deniedActions],
+    // A cap-dropped count that does not survive a restart is a cap-dropped
+    // count that resets to zero every time the mesh is resumed, which would
+    // make a flooded mailbox look clean in exactly the run that flooded it.
+    mailOverflowDropped: [...state.mailOverflowDropped.entries()],
     reviewRounds: [...state.reviewRounds.entries()],
     conflicts: [...state.conflicts.values()],
     // Sets do not survive JSON; the agent list is small and worth keeping.
@@ -776,6 +1038,7 @@ export function importState(state: Projections, data: {
   artifacts?: unknown[];
   threads?: unknown[];
   messages?: unknown[];
+  unread?: Array<[string, string[]]>;
   tasks?: unknown[];
   decisions?: unknown[];
   approvals?: unknown[];
@@ -786,7 +1049,11 @@ export function importState(state: Projections, data: {
   continuity?: unknown[];
   sessionOrdinal?: Array<[string, number]>;
   pendingRequests?: unknown[];
+  collabSessions?: unknown[];
   discharged?: unknown[];
+  refusedSends?: unknown[];
+  deniedActions?: unknown[];
+  mailOverflowDropped?: Array<[string, number]>;
   reviewRounds?: unknown[];
   conflicts?: unknown[];
   modelSpend?: unknown[];
@@ -805,6 +1072,40 @@ export function importState(state: Projections, data: {
   }
   for (const t of (data.threads ?? []) as Array<{ id: string }>) state.threads.set(t.id as never, t as never);
   for (const m of (data.messages ?? []) as Array<{ id: string }>) state.messages.set(m.id as never, m as never);
+  // Screened like `sessionOrdinal` below: a snapshot written before this field
+  // existed has no entries at all, and a corrupt one must not be able to put a
+  // number or an object where a MessageId belongs -- an id that is not a string
+  // resolves to no message, so it would sit in the box inflating the depth
+  // until a turn delivered it away.
+  //
+  // Screened against `messages` as well, and that half is not about corruption:
+  // `exportMessages` caps the history at MAX_SNAPSHOT_MESSAGES and partitions
+  // by what is OWED first, but `keptOwed` is itself a `slice(-cap)` — with
+  // enough seats at MAX_UNREAD_PER_AGENT each, owed mail alone overruns the
+  // budget and the codec drops some. Those ids come back pointing at nothing.
+  // Keeping them does not recover the mail; it only makes `mailboxDepth` lie,
+  // and a box of nothing but danglers buys a wake for a turn that renders zero
+  // messages. So drop them — and COUNT them, into the same counter the
+  // MAX_UNREAD_PER_AGENT cap uses, because this is the same event: mail that
+  // ceased to exist with nobody told. An uncounted drop here would be the one
+  // silent-loss path left in the delivery chain.
+  //
+  // Requires `messages` to be loaded first, which it is, immediately above.
+  for (const [agentId, ids] of (data.unread ?? []) as Array<[string, string[]]>) {
+    if (typeof agentId !== "string" || !Array.isArray(ids)) continue;
+    const kept = ids.filter((id) => typeof id === "string" && state.messages.has(id as never));
+    const lost = ids.length - kept.length;
+    if (lost > 0) state.mailOverflowDropped.set(agentId, (state.mailOverflowDropped.get(agentId) ?? 0) + lost);
+    state.unread.set(agentId, kept as never);
+  }
+  // `mailboxDepth` is not its own key: it rides along inside each exported
+  // agent record, so it comes back saying whatever the live mesh last wrote.
+  // Re-deriving it from the box restored above is what stops the two from
+  // disagreeing -- an older snapshot carries depths with no mail behind them,
+  // and that number is what the agent is shown as `mailbox=N` in its prompt.
+  for (const [agentId, rec] of state.agents) {
+    if (rec?.state) rec.state.mailboxDepth = state.unread.get(agentId)?.length ?? 0;
+  }
   for (const t of (data.tasks ?? []) as Array<{ id: string } & { id: string }>) state.tasks.set((t as { id: string }).id, t as never);
   for (const d of (data.decisions ?? []) as Array<{ id: string }>) state.decisions.set(d.id, d as never);
   for (const list of (data.approvals ?? []) as Array<Array<{ subject: string; kind: string }>>) {
@@ -817,6 +1118,19 @@ export function importState(state: Projections, data: {
     state.budgets.set(rec.key, { ...(rec as object), reservations: new Map(rec.reservations ?? []) } as never);
   }
   for (const l of (data.leases ?? []) as Array<{ id: string }>) state.leases.set(l.id as never, l as never);
+  // Derived rather than exported, the way `artifactByName` is: this map is only
+  // ever an index into `leases`, which the snapshot already carries in full.
+  // Rebuilding it here is what keeps a restore from dropping the single-writer
+  // invariant -- an unreleased lease that no index points at is a lease
+  // `lease.acquired` cannot see, so the next agent to ask for that artifact is
+  // handed it while someone else is still holding it. `releasedAt` is the
+  // release marker for both exits (an explicit `lease.released` and the
+  // implicit one when an artifact reaches MERGED), and a later entry wins
+  // because the reducer's index is last-acquire-wins too.
+  for (const lease of state.leases.values()) {
+    if (lease.releasedAt) continue;
+    state.activeLeaseByArtifact.set(lease.artifactId, lease.id);
+  }
   for (const [k, entries] of (data.memory ?? [])) state.memory.set(k, new Map(entries as Array<[string, never]>));
   for (const r of (data.continuity ?? []) as ContinuityRecord[]) {
     if (r && typeof r.agentId === "string") state.continuity.set(r.agentId, r);
@@ -828,7 +1142,27 @@ export function importState(state: Projections, data: {
   for (const pr of (data.pendingRequests ?? []) as Array<{ messageId: string }>) {
     state.pendingRequests.set((pr as { messageId: string }).messageId as never, pr as never);
   }
+  // Restored like every other map: a snapshot that dropped these would let a
+  // restarted mission hold an unbounded collab that no sweep can ever find.
+  for (const cs of (data.collabSessions ?? []) as Array<{ threadId: string }>) {
+    state.collabSessions.set(cs.threadId as never, cs as never);
+  }
   state.discharged = [...((data.discharged ?? []) as DischargeRecord[])];
+  state.refusedSends = [...((data.refusedSends ?? []) as RefusedSend[])];
+  state.deniedActions = [...((data.deniedActions ?? []) as DeniedAction[])];
+  // Screened like `sessionOrdinal` above: a snapshot written before this field
+  // existed has no entries, and a corrupt one must not put NaN where a count
+  // belongs — a NaN drop count poisons every sum a report takes of it.
+  // Added to rather than assigned: the unread screen above runs first and may
+  // already have counted danglers this same restore dropped. `importState`
+  // normally fills a state straight out of `createInitialState`, so every
+  // other key here is 0 and this reads as a plain assignment -- it differs
+  // only in the one case where it must.
+  for (const [k, n] of (data.mailOverflowDropped ?? []) as Array<[string, number]>) {
+    if (typeof k === "string" && Number.isFinite(n)) {
+      state.mailOverflowDropped.set(k, (state.mailOverflowDropped.get(k) ?? 0) + n);
+    }
+  }
   for (const [k, v] of (data.reviewRounds ?? []) as Array<[string, number]>) state.reviewRounds.set(k as never, v as never);
   for (const c of (data.conflicts ?? []) as Array<{ key: string }>) state.conflicts.set((c as { key: string }).key as never, c as never);
   for (const m of (data.modelSpend ?? []) as Array<Record<string, unknown>>) {

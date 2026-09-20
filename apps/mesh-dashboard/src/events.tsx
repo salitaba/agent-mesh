@@ -1,4 +1,4 @@
-import { fmt, friendlyBudgetKey, MESSAGE_PLAIN, plainArtifact, plainEvent, plainLifecycle, plainReason } from "./format";
+import { COLLAB_CLOSE_PLAIN, fmt, friendlyBudgetKey, MESSAGE_PLAIN, plainArtifact, plainEvent, plainLifecycle, plainReason } from "./format";
 import type { TimelineEvent } from "./store";
 // Deep import, not the package barrel: `packages/protocol/src/index` star-exports
 // the AJV-backed validators and schemas, and none of that belongs in a browser
@@ -22,6 +22,12 @@ export function evClass(type: string): string {
       authentication: "t-artifact", authorization: "t-artifact", research: "t-artifact",
       implementation: "t-review", decision: "t-review", memory: "t-agent", human: "t-message",
       plan: type === "plan.gate_rejected" ? "t-bad" : "t-task",
+      // A collaboration is a conversation, so it reads in the same tone as one.
+      // `collab.closed` is deliberately not t-bad even when the watchdog is the
+      // one closing it: an overrun is worth noticing, and the Overview card is
+      // where it gets noticed. A red line for every expiry would cry wolf over
+      // a session that merely ran to the end of its box.
+      collab: "t-message",
     }[p] || ""
   );
 }
@@ -142,6 +148,31 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
       return <>editing unlocked</>;
     case "thread.created":
       return <>{String(p.thread?.subject || "new chat").slice(0, 70)}</>;
+    case "collab.opened": {
+      const s = p.session || {};
+      const by = String(s.openedBy || "");
+      // The opener is in its own participant list. Naming it on both sides of
+      // "talking to" would read as an agent talking to itself.
+      const others = (Array.isArray(s.participants) ? s.participants : []).filter(
+        (x: unknown): x is string => typeof x === "string" && !!x && x !== by,
+      );
+      const topic = String(s.topic || "").slice(0, 60);
+      return (
+        <>
+          <b>{by}</b>
+          {others.length ? <> started talking to {others.join(", ")}</> : <> opened a conversation</>}
+          {topic ? ` — ${topic}` : ""}
+        </>
+      );
+    }
+    case "collab.closed": {
+      const n = Number(p.exchanges);
+      const cap = Number(p.maxExchanges);
+      const count =
+        Number.isFinite(n) && n >= 0 ? ` after ${n}${cap > 0 ? `/${cap}` : ""} exchange${n === 1 ? "" : "s"}` : "";
+      const outcome = typeof p.outcome === "string" && p.outcome ? ` — ${p.outcome.slice(0, 60)}` : "";
+      return <>{COLLAB_CLOSE_PLAIN[String(p.reason || "")] || "ended"}{count}{outcome}</>;
+    }
     default:
       return <>{e.actorId ? plainEvent(e.type) || e.actorId : plainEvent(e.type)}</>;
   }

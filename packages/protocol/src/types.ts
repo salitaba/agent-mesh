@@ -254,10 +254,189 @@ export interface MessageControl {
    * not mail. Suppresses mailbox delivery and interest activation.
    */
   cacheServed?: boolean;
+  /**
+   * The contract this ask was opened under.
+   *
+   * Lives here rather than in `payload` for the reason stated above, and this
+   * field is the concrete case that motivated the rule. The commitment ledger
+   * reads it twice: once at open, to draw the ask's deadline from the
+   * contract's `slaMs`, and once at discharge, to judge the answer against the
+   * contract's `response` schema. Both are runtime decisions about an agent's
+   * obligations, and while the stamp sat in `payload` -- verbatim agent input,
+   * stripped of nothing but `cacheServed` -- a seat could hand-write a
+   * contract name into a raw `send` and set its own creditor's clock without
+   * its request ever meeting that contract's schema.
+   *
+   * Written only by the supervisor, and only after `validateContractRequest`
+   * has passed, so the stamp's presence is itself the evidence that the ask
+   * was checked.
+   */
+  contract?: string;
+  contractVersion?: number;
+  /**
+   * Interaction mode, and the field that DETERMINES this exchange's obligation
+   * semantics rather than describing them.
+   *
+   * Until now every exchange was the same kind of thing and its blocking
+   * semantics were inferred from a type-string prefix: anything beginning
+   * `REQUEST` opened a debt, everything else did not. That inference is wrong
+   * in both directions. A `broadcast` of a REQUEST type opened an obligation
+   * on EVERY seat in the mesh -- an ask nobody in particular owed, which no
+   * single reply could honestly discharge. And open-ended discussion had no
+   * representation at all, so it happened inside service asks, untracked and
+   * unbounded.
+   *
+   * - `service` (default): one obligation per recipient, answered against a
+   *   published contract. This is X-as-a-Service -- a narrow ask, no ongoing
+   *   chatter -- and it is what a seat gets when it does not say otherwise.
+   * - `collab`: no obligation, but TIME-BOXED at open and metered. Discovery
+   *   genuinely needs it; the point is that a seat cannot enter it by accident
+   *   and cannot stay in it quietly.
+   * - `broadcast`: no obligation, and cannot be replied to. Wakes only
+   *   declared interests.
+   *
+   * Runtime-owned for the same reason as `contract`: an agent choosing its own
+   * obligation semantics is an agent deciding whether it owes anything.
+   */
+  mode?: InteractionMode;
+  /**
+   * What landing in the mailbox is allowed to COST the recipient.
+   *
+   * The mesh is asynchronous in its transport and synchronous in its
+   * attention. Nothing blocks, but inbound mail wakes the recipient, a wake is
+   * a turn, and a turn is a model call -- so every message is an interrupt
+   * with a bill attached and the sender pays none of it. Delivery and wake
+   * were fused for everything except broadcast, which means the cheapest
+   * possible act in the system (writing a sentence) unilaterally spends the
+   * most expensive resource another seat has.
+   *
+   * This field separates the two. Every class DELIVERS -- the reducer puts the
+   * message in every recipient's mailbox before the scheduler ever sees it, so
+   * an unwoken seat reads it on its next natural activation. They differ only
+   * in whether and when the delivery also buys a turn:
+   *
+   * - `interrupt`: wake now, as mail has always done, and CHARGE the sender's
+   *   budget line for it. Reserved for the wakes that are worth a turn: an
+   *   URGENT, and an answer a seat is parked in WAITING for.
+   * - `deliver`: no wake at send; the scheduler coalesces a burst and wakes
+   *   once after `bus.delivery.coalesce_ms`, or not at all if the seat takes a
+   *   turn for any other reason first. A service ask still gets answered, just
+   *   not by a turn bought per message.
+   * - `accrue`: never wakes and never counts as mail pressure. It rides the
+   *   next turn the seat takes for its own reasons.
+   *
+   * ABSENT is not a fourth class and not a cheap default: it is today's wake
+   * path, unchanged. Classes are stamped only where `bus.delivery.classes` is
+   * configured, so no existing mesh changes behaviour, and a message that
+   * predates the regime replays exactly as it ran.
+   *
+   * ORTHOGONAL TO `mode`, deliberately. `mode` answers what the exchange
+   * obliges and therefore who is a candidate for a wake at all; `delivery`
+   * answers whether being a candidate is worth a turn right now. The two could
+   * have been collapsed -- `broadcast` already behaves like `accrue` -- and
+   * they are not, because a broadcast's narrowing to declared interests is an
+   * operator's decision written in config (`interests:`), and a class derived
+   * from an envelope must never overrule it. So the deriver leaves broadcasts
+   * unclassed and they keep their own gate; the class rides on top of the
+   * recipient set `mode` chose, never widening it.
+   *
+   * Runtime-owned for the same reason as `mode`: a delivery class a sender
+   * could set is a sender silencing its own interrupt, or handing itself the
+   * one class nobody is charged for.
+   */
+  delivery?: DeliveryClass;
 }
 
-/** Payload keys the runtime once trusted, now reserved and stripped on input. */
-export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed"];
+/**
+ * Whether a delivered message also buys the recipient a turn. See
+ * `MessageControl.delivery`, which carries the reasoning.
+ */
+export type DeliveryClass = "interrupt" | "deliver" | "accrue";
+
+export const DELIVERY_CLASSES: readonly DeliveryClass[] = ["interrupt", "deliver", "accrue"];
+
+/**
+ * How an exchange is conducted, and therefore what it obliges.
+ *
+ * `service` is the default because it is the cheap one: a narrow published
+ * ask, one answer, done. `collab` stays available because discovery needs it,
+ * but it must be DECLARED and it is bounded -- that is the whole low-contact
+ * mechanism. High-bandwidth interaction remains possible, becomes visible,
+ * and becomes expensive.
+ */
+export type InteractionMode = "service" | "collab" | "broadcast";
+
+export const INTERACTION_MODES: readonly InteractionMode[] = ["service", "collab", "broadcast"];
+
+/**
+ * An open-ended exchange, made expensive on purpose.
+ *
+ * `service` asks are cheap because they are narrow and self-closing. Real
+ * discovery is not narrow, and before this existed it happened ANYWAY --
+ * inside service asks, as a thread that kept going after the ask it opened
+ * with had been answered. That traffic was invisible: no deadline could fire
+ * (the ask was discharged), no ledger entry existed, and the only thing that
+ * ever stopped it was a thread token budget running dry, which reads to an
+ * operator as a budget fault rather than as two agents talking in circles.
+ *
+ * A collab session is that conversation, declared. It obliges nobody -- there
+ * is no debt, no nudge, no stalemate -- but it is BOUNDED at the moment it
+ * opens, by a wall clock and by a count of exchanges, and it is metered
+ * against the thread budget line it runs on. When it overruns, an operator
+ * gets a card naming what was spent, not a silent stall.
+ *
+ * Bounds are stamped at OPEN, into the event, rather than read from config at
+ * sweep time: a mission that edits its box mid-flight must not retroactively
+ * lengthen a session already running, and replay has to reproduce the same
+ * expiry it originally produced.
+ */
+export interface CollabSession {
+  /** The thread the session owns. One session per thread, at most. */
+  threadId: ThreadId;
+  goalId?: GoalId;
+  openedBy: AgentId;
+  participants: AgentId[];
+  /** What it is for. Shown on the overrun card. */
+  topic: string;
+  openedAt: string;
+  /** ISO-8601. The wall-clock edge of the box, fixed at open. */
+  expiresAt: string;
+  /** Messages in this thread before the box is considered overrun. */
+  maxExchanges: number;
+  /** Messages seen in this thread since the session opened. */
+  exchanges: number;
+  /**
+   * The budget ledger key this session's tokens land on. Not a second meter:
+   * every turn in the thread already charges `thread:<goalId>/<threadId>`,
+   * so this records WHERE to read the spend rather than re-counting it.
+   */
+  budgetKey?: string;
+  status: "OPEN" | "CLOSED" | "OVERRUN";
+  /** Why it ended: `closed`, `expired`, or `exchanges_exhausted`. */
+  closedReason?: string;
+  closedAt?: string;
+}
+
+/**
+ * Payload keys the runtime once trusted, now reserved and stripped on input.
+ *
+ * The list is the payload-side mirror of `MessageControl`, and it has to stay
+ * that way. `sanitizeAgentMessageInput` deletes `control` wholesale, so a
+ * runtime-owned field is already unforgeable in its real home; what this list
+ * closes is the second copy an agent can leave in `payload`, which nothing
+ * reads today but a legacy reader — or a future one — would find. A key that
+ * exists on `control` and is missing here is that hole standing open.
+ *
+ * `mode` is the one that had drifted out of the mirror. It decides whether an
+ * exchange obliges anyone at all, which is exactly the judgement an agent must
+ * not be allowed to make about its own message.
+ *
+ * `delivery` is the same judgement about cost rather than obligation: it says
+ * whether this message may spend a recipient's turn, and whether the sender is
+ * billed for spending it. A seat that could write either key into `payload`
+ * could price its own interrupts at zero.
+ */
+export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed", "contract", "contractVersion", "mode", "delivery"];
 
 /**
  * Remove runtime-owned fields from agent-supplied message input.
@@ -388,6 +567,14 @@ export type EventType =
    * a commitment leaves the ledger, so replay reproduces it exactly.
    */
   | "commitment.discharged"
+  /**
+   * A time-boxed collaboration opened. Carries the bounds it was opened with,
+   * so replay reproduces the same expiry rather than re-deriving one from
+   * whatever the config says now.
+   */
+  | "collab.opened"
+  /** It ended -- by choice, by its clock, or by exhausting its exchanges. */
+  | "collab.closed"
   | "human.input"
   | "lease.acquired"
   | "lease.released"
@@ -1018,6 +1205,14 @@ export interface ActivationReason {
 
 export interface MeshOpSend {
   op: "send";
+  /**
+   * Contract this send desugared from. Set by `callContract` after the
+   * request schema has passed; carried onto the envelope's `control`, never
+   * into `payload`. Mirrors the same pair on the request_review and
+   * request_research ops.
+   */
+  contract?: string;
+  contractVersion?: number;
   type: MessageType;
   to: AgentId[];
   threadId?: ThreadId;
@@ -1036,6 +1231,44 @@ export interface MeshOpBroadcast {
   type: MessageType;
   payload?: unknown;
   artifactRefs?: ArtifactRef[];
+}
+
+/**
+ * Open a time-boxed, metered collaboration. See CollabSession.
+ *
+ * Deliberately a DECLARED op rather than a flag on `send`: entering an
+ * open-ended exchange is a decision with a cost, and a seat should not be
+ * able to drift into one. The box comes from mesh config unless overridden
+ * here, and an override may only SHORTEN it -- an agent cannot vote itself a
+ * longer leash.
+ */
+export interface MeshOpCollab {
+  op: "collab";
+  /** Who is in the room. */
+  with: AgentId[];
+  /** What it is for. Becomes the thread subject and the card's title. */
+  topic: string;
+  /** Opening message. */
+  payload?: unknown;
+  /** Shorten the wall-clock box. Ignored if longer than the configured one. */
+  boxMs?: number;
+  /** Shorten the exchange budget. Ignored if larger than the configured one. */
+  maxExchanges?: number;
+  artifactRefs?: ArtifactRef[];
+}
+
+/**
+ * Close a collaboration you opened, before its box runs out.
+ *
+ * The cheap exit. A session that ends here costs no card; one that runs to
+ * its edge always raises one, because an exchange nobody chose to end is the
+ * failure mode this whole mode exists to make visible.
+ */
+export interface MeshOpCloseCollab {
+  op: "close_collab";
+  threadId: ThreadId;
+  /** What came of it. Recorded on the session and shown to participants. */
+  outcome: string;
 }
 
 export interface MeshOpRequestResearch {
@@ -1347,6 +1580,8 @@ export interface MeshOpSpawnWorker {
 export type MeshOp =
   | MeshOpSend
   | MeshOpBroadcast
+  | MeshOpCollab
+  | MeshOpCloseCollab
   | MeshOpRequestResearch
   | MeshOpRespond
   | MeshOpDischarge

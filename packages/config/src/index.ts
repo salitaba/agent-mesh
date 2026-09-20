@@ -201,6 +201,84 @@ export interface RawMeshFile {
      *   prose-only turn reports `unproductive` to the circuit breaker.
      */
     transport?: "mixed" | "typed-only";
+    /**
+     * Which comms vocabulary a seat's MCP manifest advertises.
+     *
+     * - absent, or "typed" (the default): the manifest every mesh has had.
+     *   `mesh_send`, `mesh_broadcast` and `mesh_respond` each carry the full
+     *   24-name `MessageType` enum, and a seat picks a speech act out of it.
+     * - "contracts": the comms manifest collapses to the named asks.
+     *   `mesh_contracts` lists what can be asked for, `mesh_call` raises one,
+     *   `mesh_reply` answers one, `mesh_discharge` refuses one,
+     *   `mesh_announce` says something that obliges nobody, and
+     *   `mesh_collab`/`mesh_collab_close` bound a discussion. None of the
+     *   seven names a message type, so there is no vocabulary to memorise and
+     *   nothing to invent.
+     *
+     * The type-carrying tools are dropped from the ADVERTISED list only. They
+     * stay callable — `callTool` resolves against the unfiltered map — so
+     * collapsing the vocabulary can never take a capability away from a seat,
+     * and a model that reaches for `mesh_send` still gets it.
+     *
+     * Deliberately independent of `transport`, although an operator will
+     * usually set both. `transport` decides HOW an op may arrive (a typed
+     * tool call, or ops parsed out of prose); this decides WHAT the typed
+     * surface offers. A mesh can collapse the vocabulary while still
+     * accepting prose, and a `typed-only` mesh can keep the full manifest —
+     * which is exactly what every mesh written before this key existed does.
+     */
+    vocabulary?: "typed" | "contracts";
+    /**
+     * Bounds every collaboration opens with. See CollabSession.
+     *
+     * Unlike `commitments`, this has real defaults rather than an absent
+     * regime: a collab is opened by an explicit op that did not exist before,
+     * so no mesh inherits new behaviour from an upgrade, and "time-boxed at
+     * open" is not optional -- an unbounded one is the thing this mode was
+     * built to stop.
+     */
+    collab?: {
+      /** Wall-clock box, ms. */
+      box_ms?: number;
+      /** Messages in the thread before the box is spent. */
+      max_exchanges?: number;
+    };
+    /**
+     * Whether a delivered message is allowed to spend the recipient's turn,
+     * and what that costs the sender. See `MessageControl.delivery`.
+     *
+     * Absent means no regime: nothing is classed, every message wakes its
+     * recipients exactly as it always has, and no send is charged. Like
+     * `commitments`, and for the same reason -- attention is spent by turns
+     * that are already running, so a mesh must not acquire a new pricing
+     * model by being upgraded. `mesh init` writes the block into new meshes;
+     * an existing one opts in by hand.
+     */
+    delivery?: {
+      /**
+       * The switch. `true` turns on envelope classing and the wake rules it
+       * implies; absent or `false` is the pre-existing behaviour.
+       */
+      classes?: boolean;
+      /**
+       * How long a `deliver`-class burst gathers before it costs one wake,
+       * in milliseconds. Measured from the FIRST message of the burst, not
+       * the last: a window that restarts on every arrival never closes under
+       * a steady stream, which is the exact traffic this exists to price.
+       *
+       * The scheduler checks it on the wait-wakeup tick, so a value below
+       * `scheduling.timeouts.wait_wakeup_ms` buys nothing.
+       */
+      coalesce_ms?: number;
+      /**
+       * What one `interrupt` costs its SENDER, in tokens, per recipient
+       * woken. A tariff rather than a transfer: the recipient's own line is
+       * still charged for the turn it actually runs, and this lands only on
+       * the sender's agent line so the mission ledger keeps reporting real
+       * spend. `0` records the class and charges nothing.
+       */
+      interrupt_cost_tokens?: number;
+    };
   };
   scheduling?: {
     mode?: "event-driven";
@@ -388,11 +466,42 @@ export interface ResolvedMeshConfig {
     commitmentSemantic: "compat" | "strict";
     /**
      * Deadline an ask opens with, by debtor role. See RawMeshFile.bus.
-     * `defaultMs: 0` (the default) means asks never expire.
+     *
+     * ABSENT means no deadline regime exists and asks never expire — which is
+     * the default. It is deliberately not `{ defaultMs: 0 }`: `computeDueBy`
+     * decides whether this mesh has deadlines AT ALL by testing this object's
+     * presence, so handing it an always-present literal made that test
+     * unreachable and let a contract's `slaMs` create deadlines on a mesh the
+     * operator had never given any.
      */
-    commitmentTtl: { defaultMs: number; byRole: Record<string, number> };
+    commitmentTtl?: { defaultMs: number; byRole: Record<string, number> };
     /** How agent turns may issue ops. See RawMeshFile.bus. */
     transport: "mixed" | "typed-only";
+    /**
+     * The collapsed contract vocabulary, or ABSENT when this mesh advertises
+     * the full typed manifest. See RawMeshFile.bus.vocabulary.
+     *
+     * Absent rather than a resolved `"typed"` literal, for the same reason
+     * `commitmentTtl` and `deliveryClasses` are absent: a manifest is what a
+     * model is TAUGHT it may do, and a mesh must not acquire a different
+     * vocabulary by being upgraded into the code. Every consumer therefore
+     * asks `=== "contracts"`, and an absent field is the behaviour every
+     * existing mesh already has, tool for tool.
+     */
+    vocabulary?: "contracts";
+    /** Bounds a collaboration opens with. See RawMeshFile.bus. */
+    collab: { boxMs: number; maxExchanges: number };
+    /**
+     * The delivery-class regime, or ABSENT when this mesh has none. See
+     * RawMeshFile.bus.delivery and `MessageControl.delivery`.
+     *
+     * Absent rather than a zeroed literal for the same reason as
+     * `commitmentTtl`: the supervisor decides whether to stamp a class at all
+     * by testing this object's presence, so an always-present default would
+     * make that test unreachable and start re-routing wakes on every mesh
+     * that upgraded into the code.
+     */
+    deliveryClasses?: { coalesceMs: number; interruptCostTokens: number };
   };
   scheduling: {
     mode: "event-driven";
@@ -478,6 +587,127 @@ export function analyzeMeshConfig(input: unknown, baseDir: string = process.cwd(
   }
   const raw = input as RawMeshFile;
   return { raw, resolved: buildResolved(raw, path.resolve(baseDir)) };
+}
+
+/**
+ * Bounds a collaboration opens with, floored so a box can never be disabled.
+ *
+ * `0` and a negative are both read as "use the default", NOT as "unbounded":
+ * an unbounded collab is exactly the untracked open-ended chatter the mode
+ * replaces, so there is deliberately no way to spell it in config. An
+ * operator who wants long sessions writes a long box and sees it on the card.
+ */
+export function resolveCollabBox(
+  collab: NonNullable<RawMeshFile["bus"]>["collab"],
+): { boxMs: number; maxExchanges: number } {
+  const boxMs = collab?.box_ms && collab.box_ms > 0 ? collab.box_ms : DEFAULT_COLLAB_BOX_MS;
+  const maxExchanges =
+    collab?.max_exchanges && collab.max_exchanges > 0 ? collab.max_exchanges : DEFAULT_COLLAB_EXCHANGES;
+  return { boxMs, maxExchanges };
+}
+
+/** 15 minutes: long enough for real discovery, short enough to notice. */
+const DEFAULT_COLLAB_BOX_MS = 900_000;
+/**
+ * 20 messages. Two seats trading ten turns each is a substantial
+ * conversation; past that they are either done or stuck, and both deserve a
+ * look.
+ */
+const DEFAULT_COLLAB_EXCHANGES = 20;
+
+/**
+ * The commitment deadline regime, or `undefined` when this mesh has none.
+ *
+ * Returning `undefined` rather than `{ defaultMs: 0, byRole: {} }` is the whole
+ * point of this function, and it is load-bearing.
+ *
+ * `computeDueBy` opens with `if (!ttl) return undefined` to enforce a decision
+ * taken three times in this repo: expiry is an operator's choice, a contract's
+ * `slaMs` may NARROW an existing regime but must never create one, and a mesh
+ * must not inherit deadlines from an upgrade. That guard tests the OBJECT's
+ * presence — so while this resolver returned an unconditional object literal,
+ * the guard was unreachable and the decision it encodes was never enforced.
+ * Every ask opened through a contract carrying an SLA (7 of the 8 built-ins,
+ * 10 to 45 minutes) silently received a `dueBy` the operator never configured,
+ * and no shipped example sets a TTL, so that was every default mesh.
+ *
+ * `ttl_ms: 0` stays indistinguishable from silence on purpose: zero is how an
+ * operator writes "no deadline", and it should not conjure a regime either.
+ */
+export function resolveCommitmentTtl(
+  commitments: NonNullable<RawMeshFile["bus"]>["commitments"],
+): { defaultMs: number; byRole: Record<string, number> } | undefined {
+  const defaultMs = commitments?.ttl_ms ?? 0;
+  const byRole = commitments?.ttl_ms_by_role ?? {};
+  // A per-role entry is itself a regime: it says "these seats have a clock",
+  // which lets a contract SLA apply to the seats it does not name.
+  if (defaultMs <= 0 && Object.keys(byRole).length === 0) return undefined;
+  return { defaultMs, byRole };
+}
+
+/** One wait-wakeup tick's worth of gathering, matched to the sweep that drains it. */
+const DEFAULT_COALESCE_MS = 60_000;
+/**
+ * 2000 tokens per recipient woken.
+ *
+ * Sized against the 200k default agent line: a seat can raise a hundred
+ * interrupts before its own budget is the thing that stops it, which is high
+ * enough that a genuinely urgent mission is never rationed and low enough that
+ * a seat which interrupts by habit runs out of line before the mission runs
+ * out of tokens. It is NOT an estimate of what the recipient's turn costs --
+ * that is charged where it is spent, on the recipient's own line.
+ */
+const DEFAULT_INTERRUPT_COST_TOKENS = 2000;
+
+/**
+ * The delivery-class regime, or `undefined` when this mesh has none.
+ *
+ * Returning `undefined` for an absent or false `classes` is the whole point,
+ * exactly as it is in `resolveCommitmentTtl`. Delivery classes decide which
+ * messages are still allowed to wake a seat and which sends are billed, and
+ * both of those are live behaviour on a running mission: a mesh that acquired
+ * them from an upgrade would quietly stop waking agents its operator expected
+ * to be woken, and start charging a budget line nobody had priced.
+ *
+ * `classes: false` is therefore identical to silence, not a third state, and
+ * the two numeric keys are inert without it -- writing a `coalesce_ms` is not
+ * a way to switch the regime on by accident.
+ */
+export function resolveDeliveryClasses(
+  delivery: NonNullable<RawMeshFile["bus"]>["delivery"],
+): { coalesceMs: number; interruptCostTokens: number } | undefined {
+  if (!delivery?.classes) return undefined;
+  const coalesceMs = delivery.coalesce_ms !== undefined && delivery.coalesce_ms > 0 ? delivery.coalesce_ms : DEFAULT_COALESCE_MS;
+  // Zero is a real answer here (record the class, charge nothing), unlike the
+  // window above where zero would mean "coalesce nothing" and make `deliver`
+  // an `interrupt` by another name.
+  const interruptCostTokens =
+    delivery.interrupt_cost_tokens !== undefined && delivery.interrupt_cost_tokens >= 0
+      ? delivery.interrupt_cost_tokens
+      : DEFAULT_INTERRUPT_COST_TOKENS;
+  return { coalesceMs, interruptCostTokens };
+}
+
+/**
+ * The collapsed contract vocabulary, or `undefined` when this mesh keeps the
+ * manifest it has always advertised.
+ *
+ * `"typed"` resolves to `undefined` rather than to itself. It is a NAME for
+ * the default, written down so an operator can say "I looked at this and chose
+ * the old surface", and folding it back to absence leaves exactly one
+ * representation of "not opted in" for consumers to test — the same discipline
+ * `resolveCommitmentTtl` and `resolveDeliveryClasses` keep, and for the same
+ * reason: a presence test that has two false-y shapes is a presence test that
+ * will eventually be written wrong.
+ *
+ * Unlike those two this cannot be switched on by accident, because there is no
+ * neighbouring numeric key that implies it: the manifest either collapses or it
+ * does not, and the only way to say so is this word.
+ */
+export function resolveBusVocabulary(
+  vocabulary: NonNullable<RawMeshFile["bus"]>["vocabulary"],
+): "contracts" | undefined {
+  return vocabulary === "contracts" ? "contracts" : undefined;
 }
 
 function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
@@ -691,11 +921,16 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       // Defaults to "no deadline" on purpose. Expiry closes asks that would
       // otherwise stay open, so turning it on is a behaviour change an
       // operator should choose for a mission, not inherit from an upgrade.
-      commitmentTtl: {
-        defaultMs: raw.bus?.commitments?.ttl_ms ?? 0,
-        byRole: raw.bus?.commitments?.ttl_ms_by_role ?? {},
-      },
+      commitmentTtl: resolveCommitmentTtl(raw.bus?.commitments),
       transport: raw.bus?.transport ?? "mixed",
+      // Absent by default, like `commitmentTtl` and `deliveryClasses`: this
+      // one changes the tool list a model is shown, so it is opted into per
+      // mesh rather than inherited from an upgrade.
+      vocabulary: resolveBusVocabulary(raw.bus?.vocabulary),
+      collab: resolveCollabBox(raw.bus?.collab),
+      // Absent by default, like `commitmentTtl` and for the same reason: this
+      // one re-routes wakes and bills sends, so it is opted into per mesh.
+      deliveryClasses: resolveDeliveryClasses(raw.bus?.delivery),
     },
     budgets: {
       mission: {
@@ -1310,6 +1545,47 @@ budgets:
     tokens: 2000000
     wall_clock_minutes: 240
     max_events: 10000
+
+bus:
+  # Which comms vocabulary this mesh advertises to its agents. With
+  # "contracts" a seat's tool list is the named asks — mesh_contracts to see
+  # them, mesh_call to raise one, mesh_reply to answer one, mesh_discharge to
+  # refuse one, mesh_announce to say something nobody owes an answer to, and
+  # mesh_collab for a bounded discussion — and not one of those tools asks for
+  # a message type. Set this to "typed" (or remove the key) for the older
+  # surface, where mesh_send, mesh_broadcast and mesh_respond each ask the
+  # agent to pick one of 24 speech-act names. The tools "contracts" hides are
+  # still callable by name, so nothing a seat could do becomes impossible —
+  # and a mesh written before this key existed keeps the full list, so
+  # upgrading changes nobody's manifest.
+  vocabulary: contracts
+  commitments:
+    # How long an unanswered ask may sit before the runtime closes it as
+    # expired, in milliseconds (30 minutes here). Without a deadline an ask
+    # never leaves the ledger on its own: the debtor is nudged a few times and
+    # a request that stays stuck raises an operator card, but the obligation
+    # itself stays open for the rest of the mission. Remove this key, or set it
+    # to 0, to switch deadlines off entirely — that is how a mesh with no bus
+    # block behaves, so meshes written before this default existed keep their
+    # old behaviour untouched.
+    ttl_ms: 1800000
+  delivery:
+    # Price attention. Without this block every message wakes each of its
+    # recipients the instant it is sent, and a wake is a full model turn — so
+    # sending costs the sender nothing and costs the recipient everything.
+    # With it, the runtime stamps each message with what its delivery may
+    # spend: interrupt wakes now and charges the sender, deliver gathers a
+    # burst into one wake, accrue never wakes and rides the next turn the
+    # recipient takes anyway. Every class still lands in the mailbox; only the
+    # wake differs. Remove this block, or set classes to false, to go back to
+    # waking on every message — that is how a mesh with no bus block behaves,
+    # so meshes written before this default existed keep their old behaviour.
+    classes: true
+    # How long a deliver burst gathers before it costs one turn.
+    coalesce_ms: 60000
+    # What one interrupt costs its sender, per recipient woken. 0 records
+    # the class and charges nothing.
+    interrupt_cost_tokens: 2000
 
 scheduling:
   mode: event-driven

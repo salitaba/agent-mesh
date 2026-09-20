@@ -7,6 +7,7 @@ import type {
   GoalStatus,
   HardActionsPolicy,
   MeshOp,
+  InteractionMode,
   LifecycleState,
   MessageType,
   Severity,
@@ -82,6 +83,8 @@ export const EVENT_TYPES: EventType[] = [
   // An outstanding ask stopped being outstanding (answered, superseded,
   // withdrawn, or voided). The only event-sourced exit from the ledger.
   "commitment.discharged",
+  "collab.opened",
+  "collab.closed",
   "human.input",
   "lease.acquired",
   "lease.released",
@@ -226,6 +229,10 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   // operator debugging a run wants to know the runtime had to break a cycle.
   "deadlock.auto_resolved": "alert",
   "commitment.discharged": "notice",
+  "collab.opened": "notice",
+  // Notice, not alert: the OVERRUN raises an escalation card of its own, and
+  // most closes are an agent ending its own session on time.
+  "collab.closed": "notice",
 
   "human.input": "notice",
 
@@ -276,15 +283,110 @@ export const MESSAGE_TYPES: MessageType[] = [
   "DONE",
 ];
 
-export const REQUEST_TYPES: MessageType[] = [
-  "REQUEST",
-  "REQUEST_INFO",
-  "REQUEST_REVIEW",
-  "REQUEST_ARTIFACT",
-  "REQUEST_RESEARCH",
-  "REQUEST_EXECUTION",
-  "ESCALATE",
-];
+/**
+ * The envelope fields the obligation predicate reads, and only those.
+ *
+ * Structural rather than `MeshMessage`, for the same reason `VerdictEscalation`
+ * further down is: naming the two fields that decide the answer is itself the
+ * documentation, and a caller holding a half-assembled envelope can still ask.
+ */
+export interface ObligationEnvelope {
+  type: MessageType;
+  control?: { mode?: InteractionMode };
+}
+
+/**
+ * The TYPE half of {@link obligesRecipients}: is this speech act one that
+ * creates a debt at all?
+ *
+ * Prefix-matched rather than enumerated, deliberately. The enumerated version
+ * — `REQUEST_TYPES` as it was written — silently omitted any `REQUEST_*` name
+ * added to `MESSAGE_TYPES` after it, and a list that quietly stops being
+ * complete is worse than one that is obviously partial.
+ *
+ * Not the whole answer on its own: mode decides too. A caller holding a
+ * message wants `obligesRecipients`, not this.
+ */
+export function isObligingType(type: string): boolean {
+  return type.startsWith("REQUEST") || type === "ESCALATE" || type === "CHALLENGE";
+}
+
+/**
+ * Every message type that creates a debt when it is sent in `service` mode.
+ *
+ * Derived from `MESSAGE_TYPES` through `isObligingType` rather than written
+ * out, so it cannot fall out of step with the predicate the commitment ledger
+ * actually runs.
+ */
+export const OBLIGING_MESSAGE_TYPES: MessageType[] = MESSAGE_TYPES.filter(isObligingType);
+
+/**
+ * Does this message put the agents it is addressed to under an obligation?
+ *
+ * The ONE answer. It used to be three, and they disagreed: this predicate's
+ * ancestor in `core/src/context.ts`, a hand-copy of it inside the
+ * `message.sent` case of `core/src/projections-messaging.ts` — held in step by
+ * a comment saying it was a hand-copy — and `REQUEST_TYPES` below, which was
+ * the only *exported* one and the only one that was wrong. Both core sites now
+ * call this, so the prompt's obligation band and the commitment ledger cannot
+ * drift apart again.
+ *
+ * It lives in the catalog because the catalog is the one shared table every
+ * consumer may take a *value* import from: it imports nothing but types, and
+ * this predicate keeps that property (see the import-weight note at the top of
+ * `core/src/run-report.ts`, which depends on it).
+ *
+ * Reading the type names alone is wrong in BOTH directions, which is what made
+ * three copies possible in the first place:
+ *
+ *   - `CHALLENGE` creates a real debt and is not a `REQUEST_*` name. A
+ *     CHALLENGE raised through `mesh_request` really does open a
+ *     `state.pendingRequests` entry, so a list omitting it under-counts the
+ *     ledger — and constraining an ask tool's schema to that list would make a
+ *     debt-creating ask unrepresentable.
+ *   - The very same REQUEST type obliges NOBODY when its interaction mode is
+ *     `broadcast` or `collab`. A REQUEST-typed broadcast addresses every seat
+ *     in the mesh, so it used to open one entry owed by everyone at once, and
+ *     `outstandingDebtors` then treated the whole roster as debtors: the first
+ *     reply left every other seat owing an answer nobody was tracking, while
+ *     nudges and stalemate detection pointed at agents who were never
+ *     individually asked. An announcement is not an ask. A `collab` is bounded
+ *     by its own clock rather than by a per-recipient debt — that is what "no
+ *     obligation, but time-boxed" means, and putting it on the ledger would
+ *     make it exactly the open-ended chatter it exists to replace.
+ *
+ * Read off `control`, never `payload`: `payload` is verbatim agent input, and
+ * a sender able to set its own obligation band could promote its chatter above
+ * everybody else's real asks. An absent mode reads as `service`, which is what
+ * every message written before the field existed was, so replaying an old log
+ * is unchanged.
+ *
+ * A statement about the ENVELOPE rather than a lookup in
+ * `state.pendingRequests`, on purpose. An agent can only discharge mail it has
+ * been shown, so an ask still sitting unread is still owed; keeping it pure is
+ * what lets the whole inbox ordering be tested without standing up a kernel,
+ * and what lets the reducer use this same call to DECIDE the ledger entry it
+ * would otherwise have to consult.
+ */
+export function obligesRecipients(m: ObligationEnvelope): boolean {
+  if ((m.control?.mode ?? "service") !== "service") return false;
+  return isObligingType(m.type);
+}
+
+/**
+ * @deprecated The name reads like the answer to "does this oblige anyone?" and
+ * it is not: it knows nothing about `control.mode`, so a `broadcast`-mode
+ * REQUEST is in it and obliges nobody. Ask {@link obligesRecipients} with the
+ * message; for a list, take {@link OBLIGING_MESSAGE_TYPES}, which this is now
+ * a copy of.
+ *
+ * Kept rather than deleted because it is re-exported from the package index
+ * and removing it is a public API break for no in-repo gain — it has zero
+ * runtime consumers. Derived rather than corrected in place so the two lists
+ * can never disagree again: as written it enumerated six REQUEST names plus
+ * ESCALATE and omitted CHALLENGE, which creates a debt.
+ */
+export const REQUEST_TYPES: MessageType[] = [...OBLIGING_MESSAGE_TYPES];
 
 export const RESPONSE_TYPES: MessageType[] = [
   "APPROVE",

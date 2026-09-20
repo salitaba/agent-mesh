@@ -110,6 +110,13 @@ export class DeadlockDetector {
   private scanThreadDepth(state: Projections, goalId: GoalId): DeadlockFinding[] {
     const out: DeadlockFinding[] = [];
     for (const thread of state.threads.values()) {
+      // This guard used to be unreachable-by-omission: nothing wrote a
+      // terminal Thread status, so every thread was OPEN forever and a deep
+      // one kept qualifying as a deadlock long after its conversation ended.
+      // `collab.closed` now writes RESOLVED (or ESCALATED on an overrun), so a
+      // closed collab stops being scanned — which is the reading the guard
+      // always intended: a finished discussion cannot be a live deadlock, and
+      // the overrun already raised its own card.
       if (thread.status !== "OPEN") continue;
       if (thread.depth > this.config.escalation.threadMaxDepth) {
         out.push({
@@ -370,6 +377,14 @@ export class TerminationManager {
     // normal and self-correcting (agents open a fresh thread).
     const deadThreads = [...state.budgets.values()].filter((b) => b.exceeded && b.key.startsWith(`thread:${goalId}`));
     if (deadThreads.length > 0) {
+      // "Live" now means what it says. Before `collab.closed` wrote a terminal
+      // Thread status, a closed collab still counted as a live thread and
+      // suppressed this escalation, so a mission whose only remaining threads
+      // were finished discussions with exhausted budgets stalled in silence —
+      // precisely the failure this check exists to catch. Closing a collab can
+      // therefore now let this fire where it previously could not, and that is
+      // the correction, not a regression: work cannot continue in a thread
+      // nobody may speak in.
       const liveThread = [...state.threads.values()].some((t) => {
         if (t.status !== "OPEN") return false;
         const ledger = state.budgets.get(threadKey(goalId, t.id));

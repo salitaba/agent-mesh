@@ -126,6 +126,28 @@
       "properties": {
         "cacheServed": {
           "type": "boolean"
+        },
+        "contract": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "number"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "service",
+            "collab",
+            "broadcast"
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "interrupt",
+            "deliver",
+            "accrue"
+          ]
         }
       },
       "additionalProperties": false

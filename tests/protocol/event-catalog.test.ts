@@ -81,6 +81,8 @@ test("event catalog: EVENT_TYPES and the EventType union are the same set", () =
     "escalation.auto_resolved": true,
     "deadlock.auto_resolved": true,
     "commitment.discharged": true,
+    "collab.opened": true,
+    "collab.closed": true,
     "human.input": true,
     "lease.acquired": true,
     "lease.released": true,

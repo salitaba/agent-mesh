@@ -69,6 +69,8 @@ export interface TestMeshOptions {
       ttlMsByRole?: Record<string, number>;
     };
     transport?: "mixed" | "typed-only";
+    /** Bounds a collab session opens with. Unset means the shipped defaults. */
+    collab?: { boxMs?: number; maxExchanges?: number };
   };
 }
 
@@ -110,7 +112,10 @@ export /**
  */
 function busYaml(bus: TestMeshOptions["bus"]): string {
   if (!bus) return "";
-  const body = busCommitmentsYaml(bus.commitments) + (bus.transport ? `  transport: ${bus.transport}\n` : "");
+  const body =
+    busCommitmentsYaml(bus.commitments) +
+    (bus.transport ? `  transport: ${bus.transport}\n` : "") +
+    busCollabYaml(bus.collab);
   return body ? `bus:\n${body}` : "";
 }
 
@@ -121,6 +126,14 @@ function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"
   if (c.ttlMs !== undefined) parts.push(`ttl_ms: ${c.ttlMs}`);
   if (c.ttlMsByRole !== undefined) parts.push(`ttl_ms_by_role: ${JSON.stringify(c.ttlMsByRole)}`);
   return parts.length ? `  commitments: { ${parts.join(", ")} }\n` : "";
+}
+
+function busCollabYaml(c: NonNullable<TestMeshOptions["bus"]>["collab"]): string {
+  if (!c) return "";
+  const parts: string[] = [];
+  if (c.boxMs !== undefined) parts.push(`box_ms: ${c.boxMs}`);
+  if (c.maxExchanges !== undefined) parts.push(`max_exchanges: ${c.maxExchanges}`);
+  return parts.length ? `  collab: { ${parts.join(", ")} }\n` : "";
 }
 
 export function testConfigYaml(opts: TestMeshOptions): string {

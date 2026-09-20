@@ -2,6 +2,48 @@ import { ARTIFACT_SCOPES, ARTIFACT_TYPES, MESSAGE_TYPES } from "./catalog";
 import type { ArtifactScope, ArtifactType, MessageType } from "./types";
 
 /**
+ * WHEN THIS FILE CAN BE DELETED — and why it is still here.
+ *
+ * These tables exist for one reason: the vocabulary they denoise cannot be
+ * learned. 56 op-name aliases and 31 type aliases, `TYPE_ALIASES` alone
+ * folding thirteen different words for "here is your answer" (RESULT,
+ * RESPONSE, REPLY, ANSWER, ACK, …) onto INFORM. The file is the system
+ * telling us its own surface is noise.
+ *
+ * `bus.vocabulary: "contracts"` removes the field those inventions are made
+ * in. Under it the advertised manifest carries no `MessageType` enum at all —
+ * `mesh_call` names the ASK, `mesh_reply` answers one and `mesh_announce`
+ * tells, and none of the three has a `type` to guess wrong. So the tables
+ * become unnecessary for a seat on that manifest, which is the payoff Move 1
+ * was actually bought for.
+ *
+ * That is not the same as deletable, and the difference is the whole reason
+ * this file survives the move. Three things have to be true first:
+ *
+ *  1. **Every mesh in the wild runs `vocabulary: "contracts"`.** Only meshes
+ *     scaffolded by `mesh init` get it (`writeDefaultMeshYaml`); an existing
+ *     `mesh.yaml` resolves to absent and keeps the full typed manifest, by
+ *     design. Until that is no longer true, deleting these tables changes the
+ *     behaviour of meshes that never opted into anything.
+ *  2. **The prose channel is gone, or every mesh is `transport: "typed-only"`.**
+ *     These tables translate `mesh-json` blocks, which the manifest never
+ *     touches. A `transport: "mixed"` mesh still parses prose ops, and a model
+ *     writing prose writes `mesh_send` — because the role prompt taught it the
+ *     tool names — no matter what the manifest advertises. Hiding a tool does
+ *     not unteach its name.
+ *  3. **`aliasStats()` reports zero across a real run.** The counters were
+ *     added (Stage 4.5) for exactly this decision. Retiring a safety net on
+ *     the strength of a design argument rather than a measurement is how the
+ *     vocabulary got this large in the first place.
+ *
+ * Note that (1) and (2) are independent: a mesh can collapse its vocabulary
+ * and still accept prose. `AliasOptions.aliases` already lets the runtime
+ * retire the tables per mesh, which is the safe intermediate and what
+ * `typed-only` does today — so the ordering is "measure, then flip the flag
+ * everywhere, then delete", not "delete".
+ */
+
+/**
  * Translate model-invented op names/fields into canonical MeshOps.
  *
  * Role prompts teach the `mesh_*` MCP-tool vocabulary, so models (especially
@@ -17,6 +59,13 @@ const NAME_ALIASES: Record<string, string> = {
   message_send: "send",
   "message.send": "send",
   mesh_broadcast: "broadcast",
+  mesh_collab: "collab",
+  open_collab: "collab",
+  collaborate: "collab",
+  discuss: "collab",
+  mesh_collab_close: "close_collab",
+  end_collab: "close_collab",
+  collab_close: "close_collab",
   mesh_request: "send",
   mesh_respond: "respond",
   mesh_discharge: "discharge",

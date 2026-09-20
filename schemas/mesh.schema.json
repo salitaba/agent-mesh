@@ -448,6 +448,44 @@
             "mixed",
             "typed-only"
           ]
+        },
+        "vocabulary": {
+          "type": "string",
+          "enum": [
+            "typed",
+            "contracts"
+          ]
+        },
+        "collab": {
+          "type": "object",
+          "properties": {
+            "box_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_exchanges": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "delivery": {
+          "type": "object",
+          "properties": {
+            "classes": {
+              "type": "boolean"
+            },
+            "coalesce_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "interrupt_cost_tokens": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

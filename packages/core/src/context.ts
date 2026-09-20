@@ -18,6 +18,7 @@ import {
   HARD_OP_CAPABILITY,
   effectiveHardActions,
   artifactScope,
+  obligesRecipients,
 } from "../../protocol/src/catalog";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
@@ -39,12 +40,138 @@ const MAX_OUTSTANDING = 10;
 const MAX_MEMORY = 20;
 
 /**
+ * How many conversations the "Open threads" section may name.
+ *
+ * Fixed rather than scaled down the degradation ladder, unlike every cap above
+ * it. The ladder exists to shrink sections whose per-item size is unbounded —
+ * a mail payload, a decision blob — and this one renders a single short line
+ * per thread, so six of them cost less than one mail item.
+ *
+ * The cap itself is not optional, though. A collab thread now reaches a
+ * terminal status when its session closes (`collab.closed` moves it to
+ * RESOLVED, or ESCALATED on an overrun), but that is the only exit any thread
+ * has: an ordinary service thread is minted OPEN and nothing ever closes it,
+ * so the pool still grows for the life of the mission wherever agents are not
+ * collaborating.
+ */
+const MAX_OPEN_THREADS = 6;
+
+/**
  * Per-item clamp on a rendered decision blob, mirroring the 400 chars mail
  * payloads already get. An item COUNT alone is only a proxy for size: ten
  * ratified decisions carrying large JSON bodies outweigh twelve capped mail
  * items, so the count cap above was load-bearing for the wrong quantity.
  */
 const MAX_DECISION_CHARS = 600;
+
+/**
+ * Message priority as a number, mirroring the scheduler's `PRIORITY_BY_MESSAGE`.
+ *
+ * Copied rather than imported, and that is the lesser of two evils: the
+ * dependency runs scheduler → core, so core cannot import it back, and the
+ * constant is module-private in `packages/scheduler/src/index.ts` besides. The
+ * `?? 4` fallback below is the scheduler's too, so a priority neither side
+ * recognises sorts as NORMAL in both rather than at one end or the other.
+ */
+const PRIORITY_RANK: Record<string, number> = { URGENT: 9, HIGH: 6, NORMAL: 4, LOW: 2 };
+
+/**
+ * Does this message put the agents it is addressed to under an obligation?
+ *
+ * Re-exported, not re-implemented. This was a hand-copy — term for term — of
+ * the predicate inside the `message.sent` case of `projections-messaging.ts`,
+ * kept in step by a comment that said so, which is exactly how the catalog's
+ * `REQUEST_TYPES` came to be a third answer disagreeing with both. The one
+ * definition and the whole argument for it now live in
+ * `protocol/src/catalog.ts`; read it there before changing what the band means
+ * here, because the ledger reads the same call.
+ */
+export { obligesRecipients };
+
+/**
+ * Mail order: obligation band first, then priority, then recency.
+ *
+ * The band leads because the two classes answer different questions. An
+ * unanswered ask is work the reader owes a named agent who is parked waiting
+ * for it; everything else is news. A reader that spends its turn on news while
+ * an ask sits ten lines below has not been badly informed, it has been
+ * mis-prompted — and the asker waits another whole turn for the answer.
+ *
+ * Priority is compared INSIDE a band rather than ahead of it, which is what
+ * makes the URGENT reservation in `selectUnread` necessary rather than
+ * redundant.
+ */
+function byObligationThenPriority(a: MeshMessage, b: MeshMessage): number {
+  const band = (obligesRecipients(a) ? 0 : 1) - (obligesRecipients(b) ? 0 : 1);
+  if (band !== 0) return band;
+  const priority = (PRIORITY_RANK[b.priority] ?? 4) - (PRIORITY_RANK[a.priority] ?? 4);
+  if (priority !== 0) return priority;
+  return b.timestamp.localeCompare(a.timestamp);
+}
+
+/**
+ * Choose `cap` messages out of the mailbox, with URGENT guaranteed a seat.
+ *
+ * This replaces `unreadIds.slice(0, cap)` — the OLDEST `cap`, which is not the
+ * FIFO fairness it reads as. The supervisor emits `message.delivered` for up to
+ * MAX_DELIVERED_PER_TURN (100) queued ids on every turn, whether or not the
+ * context actually showed them, so a message outside this window is not "shown
+ * on a later turn", it is gone from the mailbox unseen. The window decides what
+ * the agent ever reads, which is why a thirteenth-arriving URGENT message could
+ * lose permanently to twelve pieces of chatter.
+ *
+ * URGENT is reserved rather than left to the comparator because the comparator
+ * ranks priority within a band: an URGENT INFORM sorts below every ordinary
+ * REQUEST, so a mailbox holding `cap` routine asks would bury it exactly as
+ * arrival order did. The reservation is capped by `cap` itself — there is no
+ * guarantee to be made beyond the size of the window.
+ */
+export function selectUnread(mail: MeshMessage[], cap: number): MeshMessage[] {
+  if (mail.length <= cap) return mail;
+  const ranked = [...mail].sort(byObligationThenPriority);
+  const kept = new Set<MeshMessage>(ranked.filter((m) => m.priority === "URGENT").slice(0, cap));
+  for (const m of ranked) {
+    if (kept.size >= cap) break;
+    kept.add(m);
+  }
+  return ranked.filter((m) => kept.has(m));
+}
+
+/**
+ * Group the chosen mail into conversations, best conversation first and each
+ * one read in the direction it was written.
+ *
+ * Interleaved by arrival, a three-message exchange renders as three unrelated
+ * lines with other people's mail between them, and the reader has to
+ * reconstruct the conversation before it can answer — or, more usually,
+ * answers the first line without having noticed the last two.
+ *
+ * A thread takes the rank of its most consequential message, so an URGENT ask
+ * drags the rest of its own exchange up with it. That is the trade this makes
+ * on purpose: the context an ask needs is the thread it sits in, and splitting
+ * the two to keep a strict priority order would put the answer to the ask
+ * somewhere further down the page.
+ *
+ * Inside a thread the order is oldest-first, because that is the direction a
+ * conversation happened in. The comparator's recency tiebreak decides between
+ * threads, never within one.
+ *
+ * Both sorts are stable and `Map` preserves insertion order, so messages that
+ * tie on every key keep the arrival order they came in with.
+ */
+export function groupMailByThread(mail: MeshMessage[]): MeshMessage[][] {
+  const groups = new Map<string, MeshMessage[]>();
+  for (const m of mail) {
+    const existing = groups.get(m.threadId);
+    if (existing) existing.push(m);
+    else groups.set(m.threadId, [m]);
+  }
+  const best = (g: MeshMessage[]): MeshMessage =>
+    g.reduce((top, m) => (byObligationThenPriority(m, top) < 0 ? m : top));
+  return [...groups.values()]
+    .sort((a, b) => byObligationThenPriority(best(a), best(b)))
+    .map((g) => [...g].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+}
 
 /**
  * Words too common to carry a signal. Kept deliberately short: a long stop list
@@ -168,8 +295,15 @@ export function buildAgentContext(
    */
   const missionText = goal?.description?.trim() || config.goalText;
 
+  // The whole mailbox is materialised before anything is chosen, because the
+  // choice now depends on what is IN it. That is bounded work, not a scan:
+  // `state.unread` is capped at MAX_UNREAD_PER_AGENT (200) by the reducer, and
+  // each id is a Map lookup.
   const unreadIds = state.unread.get(agentId) ?? [];
-  const unread: MeshMessage[] = unreadIds.slice(0, maxUnread).map((id) => state.messages.get(id)!).filter(Boolean);
+  const inbox = unreadIds
+    .map((id) => state.messages.get(id))
+    .filter((m): m is MeshMessage => Boolean(m));
+  const unread: MeshMessage[] = groupMailByThread(selectUnread(inbox, maxUnread)).flat();
 
   /**
    * Counts what this turn had available but did not show, per section.
@@ -281,9 +415,31 @@ export function buildAgentContext(
   const goalForEpisode = state.goals.get(goalId);
   const episode = goalForEpisode ? episodeOf(goalForEpisode) : undefined;
 
-  const openThreads = [...state.threads.values()].filter(
-    (t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId),
-  );
+  /**
+   * Conversations this agent is in that are still live.
+   *
+   * Newest first, because only ONE kind of thread has an exit. `collab.closed`
+   * now moves a collab's thread out of OPEN, but an ordinary service thread is
+   * still written once — at creation, as OPEN — and nothing ever moves it. So
+   * "open threads" still means, for most of them, "every thread the mission
+   * opened that this agent was party to": a list that only grows, which is why
+   * whatever the renderer caps has to be the fresh end of it.
+   *
+   * The session screen on the second line is now REDUNDANT for any collab
+   * closed by this build, and it stays anyway. It is not belt-and-braces for
+   * its own sake: a snapshot written before the reducer learned to close the
+   * thread brings the thread back OPEN and the session back CLOSED, and the
+   * tail replay starts strictly above `throughSeq`, so the `collab.closed`
+   * that would fix it is never applied again. Without this line every mesh
+   * restored from an existing snapshot would hand its agents back discussions
+   * they had deliberately ended, every turn, for the rest of the mission. A
+   * thread with no session reads as open, which is what every ordinary thread
+   * is.
+   */
+  const openThreads = [...state.threads.values()]
+    .filter((t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId))
+    .filter((t) => (state.collabSessions.get(t.id)?.status ?? "OPEN") === "OPEN")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const agentBudget = state.budgets.get(agentKey(goalId, agentId));
   const missionBudget = state.budgets.get(missionKey(goalId));
@@ -713,14 +869,68 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     }
     lines.push("");
   }
+  // Thread subjects live on the Thread, not on the message, and this is the
+  // only place both are in hand.
+  const threadSubjects = new Map(bundle.openThreads.map((t) => [t.id, t.subject]));
   if (bundle.unreadMail.length > 0) {
-    lines.push("## Unread mail");
-    for (const m of bundle.unreadMail) {
-      lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type} (thread ${m.threadId})`);
-      lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
-      if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+    // Re-grouped here rather than trusted from the bundle. The builder already
+    // emits `unreadMail` in this order, and the operation is idempotent on an
+    // ordered list, but the renderer is also called on bundles assembled
+    // elsewhere (runtime adapters, tests) and a section whose whole point is
+    // the grouping must not depend on its caller having done it.
+    lines.push("## Unread mail (what you owe an answer to first, then by priority, grouped into conversations)");
+    for (const group of groupMailByThread(bundle.unreadMail)) {
+      const threadId = group[0]!.threadId;
+      const subject = threadSubjects.get(threadId);
+      lines.push(`### thread ${threadId}${subject ? ` — ${subject}` : ""}`);
+      for (const m of group) {
+        // Marked per message, not stated once for the section, because a
+        // conversation is ordered as a whole: an ask and a bare FYI sit in the
+        // same block, and position alone no longer says which is which.
+        const marks: string[] = [];
+        if (obligesRecipients(m)) marks.push("ANSWER OWED");
+        if (m.priority !== "NORMAL") marks.push(m.priority);
+        lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type}${marks.length ? ` — ${marks.join(", ")}` : ""}`);
+        lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
+        if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+      }
     }
     partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");
+    lines.push("");
+  }
+  /**
+   * Conversations the reader is in that nothing else in this prompt shows.
+   *
+   * The gap this closes is in the messaging reducer, and the reducer is right:
+   * `projections-messaging.ts` skips the sender's own mailbox
+   * (`if (target === m.from) continue;`) because nobody should be handed their
+   * own mail. The consequence is that the agent which OPENS a thread has no
+   * record of it anywhere in its context. `collab` is the sharp case — the op
+   * sends exactly one INFORM and creates the session, so the discussion appears
+   * in every peer's mail and nowhere at all for the agent running it. It then
+   * re-opens the same discussion, or lets the box expire into an overrun card
+   * that costs a human a decision.
+   *
+   * Threads that already carry unread mail are skipped: they are rendered above
+   * in full, and naming them twice spends tokens to repeat the section above.
+   * What is left is exactly the quiet half the reader could not otherwise see.
+   */
+  const mailedThreads = new Set(bundle.unreadMail.map((m) => m.threadId));
+  const quietThreads = bundle.openThreads.filter((t) => !mailedThreads.has(t.id));
+  if (quietThreads.length > 0) {
+    const me = bundle.agentState.agentId;
+    lines.push("## Open threads (you are in these; no new mail in them this turn)");
+    for (const t of quietThreads.slice(0, MAX_OPEN_THREADS)) {
+      const others = t.participants.filter((p) => p !== me);
+      lines.push(
+        `- [${t.id}] ${t.subject} — with ${others.join(", ") || "(nobody else)"}, ${t.messageIds.length} message(s)${t.initiator === me ? ", opened by you" : ""}`,
+      );
+    }
+    partial(
+      quietThreads.length - Math.min(quietThreads.length, MAX_OPEN_THREADS),
+      "open thread(s)",
+      "the newest are shown; an older one is not closed just because it is absent",
+    );
     lines.push("");
   }
   if (bundle.recentOwnActivity.length > 0) {
@@ -769,7 +979,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
   lines.push(' {"op":"wait","reason":"awaiting review"}]');
   lines.push("```");
-  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such

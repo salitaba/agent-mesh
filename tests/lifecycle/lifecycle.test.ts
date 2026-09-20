@@ -188,9 +188,13 @@ test("lifecycle: terminal debtor failure notifies the asker, parks the corpse, k
     return { operations: [{ op: "done" }] as MeshOp[] };
   });
   s.setScript("dev", async () => { throw new Error("backend died"); });
-  // NOTE: pending==0 is vacuously true before the ask exists — wait for the
-  // ask to land first, then for its discharge.
-  await waitFor("ask pending", () => m.kernel.state.pendingRequests.size === 1, 8000);
+  // NOTE: pending==0 is vacuously true before the ask exists, so the ask has to
+  // land before waiting on its discharge means anything. Wait for it to have
+  // HAPPENED rather than to still be open: `dev` dies on its first turn and the
+  // mesh races to discharge the debt, so `pendingRequests.size === 1` is a
+  // transient that a 25ms poll can step straight over. Same reasoning, and the
+  // same shape, as the sibling test above.
+  await waitFor("ask sent", () => askerTurns >= 1 && m.kernel.state.messages.size >= 1, 8000);
   await waitFor("ask discharged", () => m.kernel.state.pendingRequests.size === 0, 12000);
   // The corpse is parked, not left FAILED where the termination verdict would trip on it.
   assert.equal(m.kernel.state.agents.get("dev")?.state.lifecycle, "SUSPENDED");
