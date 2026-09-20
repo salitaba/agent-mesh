@@ -278,6 +278,29 @@ export interface RawMeshFile {
        * spend. `0` records the class and charges nothing.
        */
       interrupt_cost_tokens?: number;
+      /**
+       * What a seat may spend buying other seats' attention, in tokens,
+       * before its interrupts stop being interrupts.
+       *
+       * Absent means no attention line at all: the tariff keeps landing on
+       * the sender's agent line exactly as it did before this key existed,
+       * which is what makes this a strictly-additive change. A mesh that
+       * enabled `classes` and never wrote this key behaves byte for byte as
+       * it did, including the accidental backstop that the agent line
+       * provided -- a seat that interrupts a hundred times runs out of its
+       * own budget and stops being activated.
+       *
+       * Written, it moves the tariff to a line of its own (`attention:<goal>/<agent>`)
+       * and makes it a real price: when the line cannot cover the interrupt,
+       * the message still ships and still lands in the mailbox, but it ships
+       * as `deliver`, so the wake it asked for is not bought. Nothing is ever
+       * suppressed; only the wake is refused.
+       *
+       * `0` is a real and useful answer: it is a mesh that never buys an
+       * interrupt, where every one degrades to mail. That is the low-contact
+       * setting, stated exactly.
+       */
+      attention_tokens?: number;
     };
   };
   scheduling?: {
@@ -501,7 +524,7 @@ export interface ResolvedMeshConfig {
      * make that test unreachable and start re-routing wakes on every mesh
      * that upgraded into the code.
      */
-    deliveryClasses?: { coalesceMs: number; interruptCostTokens: number };
+    deliveryClasses?: { coalesceMs: number; interruptCostTokens: number; attentionTokens?: number };
   };
   scheduling: {
     mode: "event-driven";
@@ -675,7 +698,7 @@ const DEFAULT_INTERRUPT_COST_TOKENS = 2000;
  */
 export function resolveDeliveryClasses(
   delivery: NonNullable<RawMeshFile["bus"]>["delivery"],
-): { coalesceMs: number; interruptCostTokens: number } | undefined {
+): { coalesceMs: number; interruptCostTokens: number; attentionTokens?: number } | undefined {
   if (!delivery?.classes) return undefined;
   const coalesceMs = delivery.coalesce_ms !== undefined && delivery.coalesce_ms > 0 ? delivery.coalesce_ms : DEFAULT_COALESCE_MS;
   // Zero is a real answer here (record the class, charge nothing), unlike the
@@ -685,7 +708,18 @@ export function resolveDeliveryClasses(
     delivery.interrupt_cost_tokens !== undefined && delivery.interrupt_cost_tokens >= 0
       ? delivery.interrupt_cost_tokens
       : DEFAULT_INTERRUPT_COST_TOKENS;
-  return { coalesceMs, interruptCostTokens };
+  // Unlike the two above, this one has NO default. Absent stays absent, so the
+  // presence test in `chargeInterrupt` and in the pre-flight check stays
+  // reachable instead of silently always-true -- the discipline the commitment
+  // TTL established and that `docs/configuration.md` records as the shape any
+  // future default of this kind should take. A default here would move every
+  // existing interrupt onto a new ledger line and start downgrading wakes in
+  // meshes whose operators never asked for a price they could not pay.
+  const attentionTokens =
+    delivery.attention_tokens !== undefined && delivery.attention_tokens >= 0
+      ? delivery.attention_tokens
+      : undefined;
+  return { coalesceMs, interruptCostTokens, attentionTokens };
 }
 
 /**
@@ -1586,6 +1620,13 @@ bus:
     # What one interrupt costs its sender, per recipient woken. 0 records
     # the class and charges nothing.
     interrupt_cost_tokens: 2000
+    # What a seat may spend buying other seats' attention before its
+    # interrupts stop being interrupts. Separate from the agent token line on
+    # purpose: over-interrupting costs a seat its influence, not its ability
+    # to work. Sized to the same rationing the agent line gave by accident --
+    # 200000 / 2000 is a hundred interrupts -- but now landing on the wake.
+    # 0 means this mesh never buys one; every interrupt degrades to mail.
+    attention_tokens: 200000
 
 scheduling:
   mode: event-driven

@@ -276,6 +276,19 @@ export class McpToolset {
     // its box edge and raise an operator card nobody needed.
     if (result.threadId) out.threadId = result.threadId;
     if (result.escalationId) out.escalationId = result.escalationId;
+    // A send that SUCCEEDED while getting less than it asked for. `ok` stays
+    // true and no `error` is set, because the message did land -- but a seat
+    // that reads the missing wake as a failed send will send the same thing
+    // again, which costs the same unaffordable price twice. The refusal is
+    // therefore reported as data about the send, in the same voice as
+    // `truncated` on a partial artifact read.
+    if (result.deliveryDowngraded) {
+      out.deliveryDowngraded = true;
+      out.note =
+        `Sent, but it did not wake anyone: ${result.deliveryDowngraded}. ` +
+        `The message IS delivered and is in the recipient's mailbox -- they will read it on their next turn. ` +
+        `Do not send it again; if it truly cannot wait, say so to the operator instead.`;
+    }
     if (!result.ok && result.reason) out.error = result.reason;
     if (result.op === "publish_artifact" && result.artifact) out.artifact = { id: result.artifact.id, version: result.artifact.version, status: result.artifact.status };
     return out;

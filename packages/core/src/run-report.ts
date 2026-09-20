@@ -269,6 +269,64 @@ export interface RunReportComms {
    * is where anything measuring across runs should read it.
    */
   aliases?: AliasStats;
+  /**
+   * What the mesh spent buying turns, and who spent it.
+   *
+   * The delivery-class regime was built to move exactly one number -- how many
+   * model turns the mesh buys in order to say something -- and until this field
+   * existed nothing the mesh emitted could answer it. Every other number in
+   * this section is a SHAPE (how many messages, of what mode, still unread),
+   * and a shape cannot falsify a claim about cost. `volume.total` in particular
+   * is the trap: a mesh that cut its wakes in half by moving chatter from
+   * `interrupt` to `accrue` sends exactly the same number of messages.
+   *
+   * Global rather than goal-scoped, like `spend.byModel` and unlike `volume`.
+   * The counters live on the projection, which knows one active goal and does
+   * not re-key them per goal; a report over an old goal in a long log reads
+   * cumulative wake counts and should say so rather than implying otherwise.
+   */
+  wakes: RunReportWakes;
+}
+
+/**
+ * The wake ledger: what bought turns, and who bought them.
+ *
+ * Four readings, in the order they are worth looking at:
+ *
+ * 1. `downgraded` non-empty means the attention price BOUND -- senders asked
+ *    for wakes they could not pay for and got mail instead. That is the
+ *    regime doing its job, and it is invisible everywhere else in the system,
+ *    because a downgraded message ships as `deliver` and looks like any other
+ *    coalesced send.
+ * 2. `commsWakes` against `byKind`'s total answers "was this mission mostly
+ *    talking?". The mesh has never been able to say this, and it is the
+ *    headline the low-contact work exists to move.
+ * 3. `byClass` with `unclassed` at zero means the classifier ran on every
+ *    send. An all-`unclassed` mix in a mesh that enabled `classes` is the
+ *    opposite finding: the regime is configured and never fired.
+ * 4. `interruptsBySender` names who spends other seats' attention. Read
+ *    against `volume.heaviestPair`, it separates a pair that talks a lot from
+ *    a pair that talks expensively -- which are different problems with
+ *    different fixes.
+ */
+export interface RunReportWakes {
+  /** Every activation, split by what asked for it. `unknown` for an old log. */
+  byKind: Array<{ kind: string; count: number }>;
+  /**
+   * The part of `byKind` that was bought by communication.
+   *
+   * `message` and `interest_event` are the two activation kinds a colleague's
+   * act can cause. `startup`, `timer`, `manual` and `recovery` are the mesh's
+   * own machinery, and counting them here would let a seat that a stall
+   * watchdog keeps poking look like a seat its peers keep interrupting.
+   */
+  commsWakes: number;
+  /** Sends by delivery class; `unclassed` is a mesh with no regime. */
+  byClass: Array<{ deliveryClass: string; count: number }>;
+  /** Interrupts bought, per sender, most first. */
+  interruptsBySender: Array<{ agent: string; interrupts: number }>;
+  /** Interrupts refused their class, per sender, most first. */
+  downgraded: Array<{ agent: string; refused: number }>;
 }
 
 export interface RunReportSpend {
@@ -532,6 +590,21 @@ function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasSt
     .filter((d) => UNANSWERED_DISCHARGE_REASONS.has(d.reason))
     .map((d) => ({ id: d.messageId, from: d.from, to: d.to, type: d.type, reason: d.reason }));
 
+  const byKind = [...state.comms.wakesByKind.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
+  const COMMS_WAKE_KINDS = new Set(["message", "interest_event"]);
+  const commsWakes = byKind.reduce((n, k) => (COMMS_WAKE_KINDS.has(k.kind) ? n + k.count : n), 0);
+  const byClass = [...state.comms.sendsByClass.entries()]
+    .map(([deliveryClass, count]) => ({ deliveryClass, count }))
+    .sort((a, b) => b.count - a.count || a.deliveryClass.localeCompare(b.deliveryClass));
+
+  const counters = (m: Map<string, number>) =>
+    [...m.entries()]
+      .map(([agent, n]) => ({ agent, n }))
+      .filter((e) => e.n > 0)
+      .sort((a, b) => b.n - a.n || a.agent.localeCompare(b.agent));
+
   return {
     volume: {
       total: messages.length,
@@ -545,6 +618,13 @@ function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasSt
     refused,
     lostAsks,
     ...(aliases ? { aliases } : {}),
+    wakes: {
+      byKind,
+      commsWakes,
+      byClass,
+      interruptsBySender: counters(state.comms.interruptsBySender).map((e) => ({ agent: e.agent, interrupts: e.n })),
+      downgraded: counters(state.comms.downgradedInterrupts).map((e) => ({ agent: e.agent, refused: e.n })),
+    },
   };
 }
 
@@ -800,6 +880,11 @@ export function renderRunReport(report: RunReport): string {
     comms.dropped.length +
     comms.refused.length +
     comms.lostAsks.length +
+    // A refused interrupt is a finding and the class mix is not, which is the
+    // same line `volume` sits on. "The regime is on and these seats spent
+    // their attention" is something an operator can act on; "nine sends were
+    // coalesced" is a working system reporting that it worked.
+    comms.wakes.downgraded.length +
     (comms.aliases && comms.aliases.total > 0 ? 1 : 0);
   if (commsFindings > 0) {
     out.push("");
@@ -817,6 +902,23 @@ export function renderRunReport(report: RunReport): string {
     if (comms.dropped.length > 0) {
       const boxes = comms.dropped.map((d) => `${d.agent} ${d.messages}`).join(", ");
       out.push(bullet(`· destroyed by the mailbox cap: ${boxes} — those messages are gone, not queued`));
+    }
+    // Rendered when the section is open for any other reason, so a mesh whose
+    // regime bound also shows what the mix was -- the ratio is the evidence
+    // for whether the refusal was a correction or a wall.
+    const { byClass, interruptsBySender, downgraded } = comms.wakes;
+    if (byClass.length > 0) {
+      const mix = byClass.map((c) => `${c.count} ${c.deliveryClass}`).join(", ");
+      const talk = comms.wakes.byKind.length > 0 ? `; ${comms.wakes.commsWakes} of ${comms.wakes.byKind.reduce((n, k) => n + k.count, 0)} wakes were bought by communication` : "";
+      out.push(bullet(`· sends by delivery class: ${mix}${talk}`));
+    }
+    if (downgraded.length > 0) {
+      const who = downgraded.map((d) => `${d.agent} ${d.refused}`).join(", ");
+      out.push(bullet(`· interrupts refused their wake, shipped as mail: ${who} — the attention price bound`));
+    }
+    if (interruptsBySender.length > 0) {
+      const who = interruptsBySender.slice(0, 4).map((i) => `${i.agent} ${i.interrupts}`).join(", ");
+      out.push(bullet(`· interrupts bought, by sender: ${who}`));
     }
     if (comms.aliases && comms.aliases.total > 0) {
       const { total, byRewrite } = comms.aliases;

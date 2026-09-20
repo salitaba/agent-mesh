@@ -48,11 +48,39 @@ test("no delivery block is no regime: an upgraded mesh must not acquire one", ()
   assert.equal(resolveDeliveryClasses({ classes: false, coalesce_ms: 500 }), undefined);
 });
 
+test("an attention count is a real cap, and zero is a real answer", () => {
+  // Absent and zero are different answers and both must survive resolution.
+  assert.equal(
+    resolveDeliveryClasses({ classes: true, interrupt_cost_tokens: 2000 })!.attentionTokens,
+    undefined,
+    "an unwritten cap must stay unwritten -- defaulting it here would put every existing mesh on a budget it never agreed to",
+  );
+  assert.equal(
+    resolveDeliveryClasses({ classes: true, interrupt_cost_tokens: 2000, attention_tokens: 0 })!.attentionTokens,
+    0,
+    "zero means never buy an interrupt; it is not a missing value",
+  );
+  assert.equal(resolveDeliveryClasses({ classes: true, attention_tokens: 50_000 })!.attentionTokens, 50_000);
+  // Negative is nonsense and must not resolve into a permanently-refusing cap.
+  assert.notEqual(resolveDeliveryClasses({ classes: true, attention_tokens: -1 })!.attentionTokens, -1);
+});
+
 test("classes: true takes the shipped tariff; explicit numbers win", () => {
-  assert.deepEqual(resolveDeliveryClasses({ classes: true }), { coalesceMs: 60_000, interruptCostTokens: 2000 });
+  assert.deepEqual(resolveDeliveryClasses({ classes: true }), {
+    coalesceMs: 60_000,
+    interruptCostTokens: 2000,
+    // Absent, not defaulted, and the difference is load-bearing. No attention
+    // token count means no cap and the tariff stays on the sender's own
+    // `agent:` line -- byte-for-byte the behaviour of every mesh that predates
+    // the option. Only a mesh that writes a number gets a separate line, and
+    // with it the pre-flight refusal that can send a message as `deliver`
+    // against the sender's request.
+    attentionTokens: undefined,
+  });
   assert.deepEqual(resolveDeliveryClasses({ classes: true, coalesce_ms: 5000, interrupt_cost_tokens: 250 }), {
     coalesceMs: 5000,
     interruptCostTokens: 250,
+    attentionTokens: undefined,
   });
   // A zero window would make `deliver` an `interrupt` by another name (gather,
   // then release on the very next tick), so zero falls back to the default.
@@ -71,7 +99,16 @@ test("mesh init scaffolds the regime, and the scaffold validates", () => {
     // config its own schema rejects.
     const v = validateMeshConfig(raw);
     assert.equal(v.valid, true, JSON.stringify(v.errors));
-    assert.deepEqual(resolveDeliveryClasses(raw.bus?.delivery), { coalesceMs: 60_000, interruptCostTokens: 2000 });
+    assert.deepEqual(resolveDeliveryClasses(raw.bus?.delivery), {
+    coalesceMs: 60_000,
+    interruptCostTokens: 2000,
+    // The scaffold ships a cap as well as a tariff. A new mesh should be born
+    // with attention priced, because the failure mode without it is silent:
+    // the tariff is charged to the sender's own line, so an interrupt-happy
+    // seat stops being able to *work* long before it stops being able to
+    // *talk*, and the degradation lands on the wrong agent.
+    attentionTokens: 200_000,
+  });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -115,6 +152,7 @@ test("RESERVED_PAYLOAD_KEYS still mirrors every control field", () => {
     contractVersion: 1,
     mode: "service",
     delivery: "accrue",
+    downgraded: "attention budget exhausted (2000/2000); 2000 tokens needed to wake 1 seat(s)",
   };
   for (const key of Object.keys(everyControlField)) {
     assert.ok(RESERVED_PAYLOAD_KEYS.includes(key), `${key} is runtime-owned but not reserved in payload`);

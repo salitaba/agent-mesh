@@ -85,7 +85,7 @@ export interface TestMeshOptions {
      * `classes: false` -- absent is the behaviour of every mesh that never
      * opted in, and most suites here depend on getting exactly that.
      */
-    delivery?: { classes?: boolean; coalesceMs?: number; interruptCostTokens?: number };
+    delivery?: { classes?: boolean; coalesceMs?: number; interruptCostTokens?: number; attentionTokens?: number };
   };
 }
 
@@ -184,6 +184,12 @@ function busDeliveryYaml(d: NonNullable<TestMeshOptions["bus"]>["delivery"]): st
   const parts = [`classes: ${d.classes ?? true}`];
   if (d.coalesceMs !== undefined) parts.push(`coalesce_ms: ${d.coalesceMs}`);
   if (d.interruptCostTokens !== undefined) parts.push(`interrupt_cost_tokens: ${d.interruptCostTokens}`);
+  // Same rule as the tariff above, and `0` is again the case that matters:
+  // `attention_tokens: 0` means "never buy a wake", which is a real policy and
+  // the sharpest way for a test to exhaust a cap. Written only when the caller
+  // asked for it, because an absent count is what keeps every mesh that
+  // predates this key on its own agent line.
+  if (d.attentionTokens !== undefined) parts.push(`attention_tokens: ${d.attentionTokens}`);
   return `  delivery: { ${parts.join(", ")} }\n`;
 }
 

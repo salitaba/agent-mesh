@@ -419,6 +419,72 @@ export interface Projections {
    * by ~3x (the same bug that once made an agent appear to be over budget).
    */
   modelSpend: Map<string, ModelSpend>;
+  /**
+   * What the comms layer actually did, in counts.
+   *
+   * This exists because the branch that prices a wake could not answer whether
+   * pricing it changed anything. Every other comms field in the run report is a
+   * *shape* -- how many messages, of what mode, still unread -- and none of them
+   * is the number the delivery-class regime was built to move: how many model
+   * turns the mesh bought in order to say something.
+   *
+   * Counters rather than a derived scan of `messages`, for two reasons. A scan
+   * is bounded by whatever the message table happens to hold, so a long run
+   * would silently report the tail as if it were the total; and `wakesByKind`
+   * has no message to derive from at all, because a wake is not a message.
+   *
+   * Counts, not events: a reducer that emits is a reducer whose output depends
+   * on more than the log, and every number here has to be re-derivable by
+   * replaying it. Same discipline as `mailOverflowDropped`.
+   */
+  comms: CommsCounters;
+}
+
+/**
+ * The numbers that answer "did any of this reduce contact?".
+ *
+ * Four questions, and each is the one no other projection in the mesh can
+ * answer:
+ *
+ * - `wakesByKind` -- activations split by what asked for them. `activations`
+ *   already counts every wake, but it counts a startup kick, an operator
+ *   nudge and an inbound message as the same event, so it cannot say how much
+ *   of a seat's spend was *communication* rather than the mission's own
+ *   machinery. Kind `message` and `interest_event` are the comms half.
+ * - `sendsByClass` -- what the classifier decided. Without it the delivery
+ *   regime is unfalsifiable: a mesh where every send is `accrue` and a mesh
+ *   where the classifier never ran look identical everywhere else.
+ * - `interruptsBySender` -- who is spending other seats' attention. This is
+ *   the number the tariff is meant to move, and the one worth pairing with
+ *   `heavyestPair` traffic: a pair that talks a lot and interrupts never is
+ *   the low-contact behaviour working.
+ * - `downgradedInterrupts` -- interrupts asked for and refused. A downgrade is
+ *   invisible on the envelope (the message ships as `deliver`, which is the
+ *   point), so without this count the mesh cannot distinguish "nobody
+ *   interrupts" from "everybody's interrupts are being refused", which are
+ *   opposite findings about the same silence.
+ */
+export interface CommsCounters {
+  /** ActivationReasonKind -> how many wakes it bought. */
+  wakesByKind: Map<string, number>;
+  /** DeliveryClass, or "unclassed" when no regime configured -> sends. */
+  sendsByClass: Map<string, number>;
+  /** Sender agent id -> interrupts it bought. */
+  interruptsBySender: Map<string, number>;
+  /** Sender agent id -> interrupts it asked for and did not get. */
+  downgradedInterrupts: Map<string, number>;
+}
+
+/**
+ * Increment one comms counter.
+ *
+ * Every consumer wants "add one to this key", and writing that out at each
+ * site is how one of them ends up assigning instead of adding — which for a
+ * counter is indistinguishable from a correct zero until the run is long
+ * enough to have counted something twice.
+ */
+export function bumpComms(counter: Map<string, number>, key: string): void {
+  counter.set(key, (counter.get(key) ?? 0) + 1);
 }
 
 export interface ModelSpend {
@@ -471,6 +537,12 @@ export function createInitialState(): Projections {
     progress: new Map(),
     turnAudit: new Map(),
     modelSpend: new Map(),
+    comms: {
+      wakesByKind: new Map(),
+      sendsByClass: new Map(),
+      interruptsBySender: new Map(),
+      downgradedInterrupts: new Map(),
+    },
   };
 }
 
@@ -1023,6 +1095,12 @@ export function exportState(state: Projections): {
   reviewRounds: unknown[];
   conflicts: unknown[];
   modelSpend: unknown[];
+  comms?: {
+    wakesByKind?: unknown[];
+    sendsByClass?: unknown[];
+    interruptsBySender?: unknown[];
+    downgradedInterrupts?: unknown[];
+  };
   eventCount: number;
   throughSeq: number;
 } {
@@ -1068,6 +1146,16 @@ export function exportState(state: Projections): {
     conflicts: [...state.conflicts.values()],
     // Sets do not survive JSON; the agent list is small and worth keeping.
     modelSpend: [...state.modelSpend.values()].map((m) => ({ ...m, agents: [...m.agents] })),
+    // Carried for the same reason `mailOverflowDropped` is: a counter that
+    // resets on every restart would make the run that resumed the most look
+    // like the run that talked the least. The savepoint is mid-mission, which
+    // is exactly when these are non-zero and exactly when they matter.
+    comms: {
+      wakesByKind: [...state.comms.wakesByKind.entries()],
+      sendsByClass: [...state.comms.sendsByClass.entries()],
+      interruptsBySender: [...state.comms.interruptsBySender.entries()],
+      downgradedInterrupts: [...state.comms.downgradedInterrupts.entries()],
+    },
     eventCount: state.eventCount,
     throughSeq: state.lastEventSeq,
   };
@@ -1099,6 +1187,12 @@ export function importState(state: Projections, data: {
   reviewRounds?: unknown[];
   conflicts?: unknown[];
   modelSpend?: unknown[];
+  comms?: {
+    wakesByKind?: Array<[string, number]>;
+    sendsByClass?: Array<[string, number]>;
+    interruptsBySender?: Array<[string, number]>;
+    downgradedInterrupts?: Array<[string, number]>;
+  };
   eventCount?: number;
   throughSeq?: number;
 }): void {
@@ -1219,6 +1313,18 @@ export function importState(state: Projections, data: {
       turns: Number(m.turns ?? 0),
       agents: new Set((m.agents ?? []) as string[]),
     });
+  }
+  // Screened exactly like `mailOverflowDropped`, and for the same reason: a
+  // snapshot written before this field existed has no entries, and a corrupt
+  // one must not put a NaN where a count belongs. Added to rather than
+  // assigned so a restore that already bumped something above is not undone.
+  for (const field of ["wakesByKind", "sendsByClass", "interruptsBySender", "downgradedInterrupts"] as const) {
+    for (const [k, n] of (data.comms?.[field] ?? []) as Array<[string, number]>) {
+      if (typeof k === "string" && Number.isFinite(n)) {
+        const m = state.comms[field];
+        m.set(k, (m.get(k) ?? 0) + n);
+      }
+    }
   }
   if (typeof data.eventCount === "number" && Number.isFinite(data.eventCount)) state.eventCount = data.eventCount;
   if (data.throughSeq !== undefined) state.lastEventSeq = data.throughSeq;

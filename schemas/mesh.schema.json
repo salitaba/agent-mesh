@@ -483,6 +483,10 @@
             "interrupt_cost_tokens": {
               "type": "number",
               "minimum": 0
+            },
+            "attention_tokens": {
+              "type": "number",
+              "minimum": 0
             }
           },
           "additionalProperties": false

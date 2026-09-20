@@ -15,6 +15,7 @@ import {
   MAX_REFUSED_SENDS,
   MAX_UNREAD_PER_AGENT,
   MAX_FINGERPRINTS_PER_THREAD,
+  bumpComms,
   computeDueBy,
   dischargeCommitment,
   evictOverflowingPendingRequests,
@@ -145,6 +146,29 @@ export function applyMessagingEvent(
     case "message.sent": {
       const m = p.message as MeshMessage;
       state.messages.set(m.id, m);
+      // What the classifier decided, recorded in the reducer so a replay
+      // reaches it too. `unclassed` is a real answer and not a missing one: it
+      // is what a mesh with no delivery regime stamps, and folding it in with
+      // any of the three classes would leave a report unable to tell "nobody
+      // chose a class" (no regime) from "the cheapest class was chosen"
+      // (a regime working). Those are opposite findings.
+      bumpComms(state.comms.sendsByClass, m.control?.delivery ?? "unclassed");
+      // Who is spending other seats' attention. Counted from the envelope, not
+      // from the budget ledger, so it stays true even when the tariff is zero
+      // or the charge was skipped -- this answers "how often does this seat
+      // interrupt", which is a question about behaviour, not about spend. The
+      // operator is counted like anybody else and gets its own row: it really
+      // does interrupt, it usually interrupts the most, and `chargeInterrupt`
+      // skipping it is a statement about billing rather than about contact.
+      if (m.control?.delivery === "interrupt") {
+        bumpComms(state.comms.interruptsBySender, m.from);
+      }
+      // An interrupt that was asked for and refused. Invisible on the envelope
+      // by design (it ships as `deliver`), so this counter is the only place
+      // the refusal is recorded.
+      if (typeof m.control?.downgraded === "string") {
+        bumpComms(state.comms.downgradedInterrupts, m.from);
+      }
       const thread = state.threads.get(m.threadId);
       if (thread) {
         if (!thread.messageIds.includes(m.id)) thread.messageIds.push(m.id);

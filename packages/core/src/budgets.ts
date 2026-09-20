@@ -11,6 +11,28 @@ export function missionKey(goalId: string): BudgetKey {
 export function agentKey(goalId: string, agentId: string): BudgetKey {
   return `agent:${goalId}/${agentId}`;
 }
+/**
+ * What a seat may spend buying other seats' attention.
+ *
+ * A line of its own rather than a share of the agent's token line, because the
+ * two answer different questions and the mesh was asking them of one number.
+ * The agent line is "what may this seat spend thinking"; an interrupt is
+ * "what may this seat spend making someone ELSE think". Charging the second to
+ * the first conflated them in a way that was invisible until it bound: a seat
+ * that interrupted forty times had spent 80k of the budget it needed to do its
+ * own work, and nothing could tell that from a seat that had simply thought
+ * hard for 80k. Worse, the consequence landed on the wrong party -- the
+ * punishment for over-interrupting was losing the ability to work, when the
+ * thing that should stop is the interrupting.
+ *
+ * Kept separate, `budget.exceeded` on this key means exactly one thing, and
+ * the pre-flight check in `sendMessage` can read it before a wake is bought
+ * rather than discovering it afterwards on the wrong ledger.
+ */
+export function attentionKey(goalId: string, agentId: string): BudgetKey {
+  return `attention:${goalId}/${agentId}`;
+}
+
 export function threadKey(goalId: string, threadId: string): BudgetKey {
   return `thread:${goalId}/${threadId}`;
 }

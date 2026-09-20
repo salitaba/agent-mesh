@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MeshInstance } from "../../apps/mesh-server/src/index";
 import { makeMesh, stub, waitFor } from "../helpers";
-import { agentKey } from "../../packages/core/src/budgets";
+import { agentKey, attentionKey } from "../../packages/core/src/budgets";
 import type { MeshOp, MessageControl } from "../../packages/protocol/src/index";
 
 /**
@@ -407,6 +407,160 @@ test("a seat cannot class its own message, in control or in payload", async () =
     const msg = m.kernel.state.messages.get(op.messageId!)!;
     assert.equal(msg.control?.delivery, "interrupt");
     assert.equal("delivery" in (msg.payload as Record<string, unknown>), false, "the payload copy is stripped");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("an interrupt the sender cannot afford ships as mail, uncharged, and says so", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { architect: ["dev"] },
+    // `attention_tokens: 0` is the sharpest form of the question. The class is
+    // still computed, the tariff is still 2000, and the sender may never buy a
+    // turn with either of them. Nothing else about the mesh changes.
+    bus: { delivery: { classes: true, interruptCostTokens: 2000, attentionTokens: 0 } },
+  });
+  try {
+    quietRuntimes(m, ["architect", "dev"]);
+    const before = acts(m, "dev");
+    const sent = await m.supervisor.sendMessage({
+      from: "architect",
+      to: ["dev"],
+      type: "INFORM",
+      priority: "URGENT",
+      newThread: { subject: "prod is down" },
+      payload: { note: "stop what you are doing" },
+    });
+
+    // The send SUCCEEDED, and that is the design rather than a lenient edge.
+    // Nothing in this mesh suppresses a delivery: an unaffordable interrupt is
+    // a message whose CLASS changed, never a message that failed.
+    assert.equal(sent.accepted, true, sent.reason);
+    assert.equal(typeof sent.deliveryDowngraded, "string", "the sender must be told, or it will simply resend");
+    assert.match(sent.deliveryDowngraded!, /0\/0/, "the refusal quotes what was spent against the cap");
+
+    // Downgraded to `deliver`, NOT to `accrue`. The sender asked for a wake and
+    // the mail is genuinely urgent-ish; `accrue` never wakes at all, so
+    // downgrading there would quietly turn "cannot pay for this now" into
+    // "never", which is a lost ask wearing the costume of a cheap one.
+    assert.equal(classOf(m, sent.messageId!), "deliver");
+    assert.ok(
+      (m.kernel.state.unread.get("dev") ?? []).includes(sent.messageId!),
+      "delivered, in the mailbox, waiting for a turn",
+    );
+    // The reason rides the envelope too, so a reader that never saw the
+    // SendResult -- a replay, the dashboard, the recipient -- can still tell
+    // this apart from a message that was only ever worth coalescing.
+    assert.ok(m.kernel.state.messages.get(sent.messageId!)!.control?.downgraded);
+
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(await interruptCharges(m), [], "a tariff that collects on a wake it refused is a receipt for nothing");
+    assert.equal(acts(m, "dev") - before, 0, "and no turn was bought: the coalesce window is still open");
+    assert.equal(m.kernel.state.comms.downgradedInterrupts.get("architect"), 1, "the refusal is counted where the report can find it");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("attention is its own ledger line: what a seat may spend talking is not what it may spend working", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { architect: ["dev"] },
+    bus: { delivery: { classes: true, interruptCostTokens: 2000, attentionTokens: 100_000 } },
+  });
+  try {
+    quietRuntimes(m, ["architect", "dev"]);
+    const goalId = m.kernel.state.activeGoalId!;
+    const line = m.kernel.state.budgets.get(attentionKey(goalId, "architect"));
+    assert.equal(line?.limit, 100_000, "the cap is declared at boot, not discovered on the first spend");
+    assert.equal(line?.consumed, 0);
+
+    const sent = await m.supervisor.sendMessage({
+      from: "architect",
+      to: ["dev"],
+      type: "INFORM",
+      priority: "URGENT",
+      newThread: { subject: "prod is down" },
+      payload: { note: "stop what you are doing" },
+    });
+    assert.equal(sent.deliveryDowngraded, undefined, "an affordable interrupt is not refused");
+
+    const charges = await interruptCharges(m);
+    assert.equal(charges.length, 1);
+    // The move, in one assertion. Before the attention line existed the tariff
+    // landed on the sender's own `agent:` line, so an interrupt-happy seat
+    // exhausted the budget it needed to THINK and stopped being able to work
+    // -- the degradation landed on the seat doing the talking, and on the
+    // wrong resource. The mission line stays clean for the same reason it
+    // always did: the recipients' real turns are charged where they are
+    // really spent, when they run.
+    assert.equal(charges[0]!.key, attentionKey(goalId, "architect"));
+    assert.equal(m.kernel.state.budgets.get(attentionKey(goalId, "architect"))!.consumed, 2000);
+    assert.ok(
+      !charges.some((c) => c.key === agentKey(goalId, "architect")),
+      "the seat's ability to work is untouched by what it spends interrupting",
+    );
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("the mesh counts the wakes it bought, and who bought them", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { architect: ["dev"] },
+    bus: { delivery: { classes: true, interruptCostTokens: 2000, attentionTokens: 100_000 } },
+  });
+  try {
+    quietRuntimes(m, ["architect", "dev"]);
+    await m.supervisor.sendMessage({
+      from: "architect",
+      to: ["dev"],
+      type: "INFORM",
+      newThread: { subject: "fyi" },
+      payload: { note: "no rush" },
+    });
+    await m.supervisor.sendMessage({
+      from: "architect",
+      to: ["dev"],
+      type: "INFORM",
+      priority: "URGENT",
+      newThread: { subject: "prod is down" },
+      payload: { note: "now" },
+    });
+
+    // The wake is asynchronous with respect to the send, so wait for it: the
+    // counters are bumped by the reducer on `agent.awakened`, which is a later
+    // event than the `message.sent` that caused it.
+    await waitFor("the interrupt's wake lands", () => (m.kernel.state.comms.wakesByKind.get("message") ?? 0) >= 1);
+
+    const { comms } = m.kernel.state;
+    // The counter the whole delivery-class move is judged by. `volume` cannot
+    // answer it: a mesh that halved its wakes by moving chatter from
+    // `interrupt` to `accrue` sends exactly the same number of messages.
+    assert.equal(comms.sendsByClass.get("accrue"), 1);
+    assert.equal(comms.sendsByClass.get("interrupt"), 1);
+    assert.equal(comms.sendsByClass.get("unclassed"), undefined, "a classed mesh classes every send");
+    assert.equal(comms.interruptsBySender.get("architect"), 1);
+    assert.equal(comms.downgradedInterrupts.get("architect"), undefined, "nothing was refused here");
+    // Exactly one: the accrued send bought no turn, and the wait-timer does
+    // not manufacture one out of unread mail -- the same suppression the
+    // `accrue` test above proves from the other side.
+    assert.equal(
+      comms.wakesByKind.get("message"),
+      1,
+      "the one wake was the interrupt, and it is attributed to mail rather than to the mesh's own machinery",
+    );
   } finally {
     await m.cleanup();
   }

@@ -77,7 +77,7 @@ import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-file
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
 import type { BudgetManager, BudgetKey } from "./budgets";
-import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
+import { agentKey, attentionKey, missionKey, taskKey, threadKey } from "./budgets";
 import type {
   ArtifactContentStore,
   CriteriaGeneratorPort,
@@ -141,6 +141,15 @@ export interface OpResult {
   reason?: string;
   artifact?: Artifact;
   escalationId?: string;
+  /**
+   * Set when the sender asked for a wake it could not pay for, so the message
+   * was reclassified to `deliver`. The send SUCCEEDED -- `ok` is true and the
+   * mail landed -- but the seat asked for an interrupt and did not get one,
+   * and a seat that cannot tell those apart will read silence as a delivery
+   * failure and send the same thing again, at the same price it cannot pay.
+   * The string is the reason, phrased for the sender.
+   */
+  deliveryDowngraded?: string;
   /**
    * Set on a `read_artifact` that returned only a slice. An agent that cannot
    * tell a partial document from a whole one will reason confidently over the
@@ -1010,6 +1019,20 @@ export class Supervisor {
     for (const id of this.config.agentOrder) {
       this.deps.budget.declare(agentKey(goalId, id), "tokens", this.config.agents[id].budget.tokens ?? null);
     }
+    // The attention line, declared only for a mesh that asked for one, and for
+    // exactly the seats an agent line is declared for -- a spawned worker's
+    // token line is undeclared today, so mirroring that is consistent rather
+    // than a new gap. The pre-flight check reads the LIMIT FROM CONFIG, not
+    // from this ledger, so a seat missing a declaration can still have its
+    // interrupts refused; what the declaration buys is `budget.exceeded` on
+    // the attention key, which is the one event an operator can watch for
+    // "this seat has run out of influence".
+    const attentionLimit = this.config.bus.deliveryClasses?.attentionTokens;
+    if (attentionLimit !== undefined) {
+      for (const id of this.config.agentOrder) {
+        this.deps.budget.declare(attentionKey(goalId, id), "tokens", attentionLimit);
+      }
+    }
     // 8b. close turns abandoned by a previous process lifetime: anything the
     // log still shows as running can never finish (in-memory traces are gone
     // with the old process), and would otherwise read as "running" forever in
@@ -1399,6 +1422,51 @@ export class Supervisor {
   }
 
   /**
+   * Why this sender cannot buy the wake it is asking for, or `undefined` when
+   * it can.
+   *
+   * Read before the send is a fact, unlike the charge it guards, because this
+   * one has to change the ENVELOPE -- it is the difference between a price and
+   * a receipt. See the call site in `sendMessage` for why the refusal lands on
+   * the class rather than on the message.
+   *
+   * Returns a sentence rather than a boolean because the sender reads it: an
+   * exhausted line and a mis-set `interrupt_cost_tokens` call for opposite
+   * responses from whoever sees it, and a `false` cannot tell them apart.
+   *
+   * Not a reservation. Nothing is held against the line here, and the charge
+   * still lands in `chargeInterrupt` after the send succeeds -- so a message
+   * that fails validation or a policy gate still bills nobody, which is the
+   * property the post-emit charge exists to protect. The window between the
+   * two is one turn of one seat; two interrupts racing inside it can both be
+   * refused or both allowed against the same headroom, which costs at most one
+   * interrupt and never a message.
+   */
+  private interruptUnaffordable(from: string, goalId: GoalId, recipients: string[]): string | undefined {
+    const regime = this.config.bus.deliveryClasses;
+    // No regime, or a regime with no attention line: nothing to refuse
+    // against. This is the branch that keeps the change additive -- a mesh
+    // that enabled `classes` and never wrote `attention_tokens` behaves as it
+    // did, including the tariff landing on the agent line.
+    if (!regime || regime.attentionTokens === undefined) return undefined;
+    // Free interrupts are not rationed: at a price of zero the line can never
+    // run out, and a check that could still refuse would make `0` mean the
+    // opposite of what `interrupt_cost_tokens: 0` has always meant.
+    if (regime.interruptCostTokens <= 0) return undefined;
+    // An operator's interrupt is the operator's prerogative. It has no agent
+    // line to land on, so it has no attention line to be refused by.
+    if (from === HUMAN_AGENT_ID) return undefined;
+    const woken = recipients.filter((t) => t !== from && t !== HUMAN_AGENT_ID);
+    if (woken.length === 0) return undefined;
+    const cost = regime.interruptCostTokens * woken.length;
+    const limit = regime.attentionTokens;
+    const ledger = this.state.budgets.get(attentionKey(goalId, from));
+    const spent = (ledger?.consumed ?? 0) + (ledger?.reserved ?? 0);
+    if (limit - spent >= cost) return undefined;
+    return `attention budget exhausted (${spent}/${limit}); ${cost} tokens needed to wake ${woken.length} seat(s)`;
+  }
+
+  /**
    * Bill the sender for the turns its interrupt just bought.
    *
    * The asymmetry this closes: a send costs the sender nothing and costs each
@@ -1407,10 +1475,16 @@ export class Supervisor {
    * it. Priced per recipient woken, because an interrupt addressed to three
    * seats buys three turns.
    *
-   * On the sender's agent line only. The mission line is the record of what
-   * the mission actually spent, and a tariff added there would make that
-   * number a fiction; the recipient's real turn is still charged where it is
-   * really spent, when it runs.
+   * Never on the mission line: that is the record of what the mission really
+   * spent, and a tariff added there would make that number a fiction. The
+   * recipient's real turn is still charged where it is really spent, when it
+   * runs.
+   *
+   * On the sender's ATTENTION line when the mesh declared one, and on its
+   * agent line when it did not. What a seat may spend thinking and what it may
+   * spend making someone else think are different budgets: charged to the same
+   * line, an interrupt-happy seat exhausts the budget it needs to work, so the
+   * degradation lands on the wrong resource and the wrong party.
    *
    * Deliberately NOT priced from `message.budgetHint`, the one envelope field
    * that already gestures at the cost of a send. `budgetHint` arrives in
@@ -1429,8 +1503,17 @@ export class Supervisor {
     if (message.from === HUMAN_AGENT_ID) return;
     const woken = message.to.filter((t) => t !== message.from && t !== HUMAN_AGENT_ID);
     if (woken.length === 0) return;
+    // Where the tariff lands. With an attention line configured it goes there
+    // and only there: what a seat may spend thinking and what it may spend
+    // making someone ELSE think are different budgets, and charging the second
+    // to the first is what made an over-interrupting seat unable to work.
+    // Without one, the agent line, exactly as before this key existed.
+    const line =
+      this.config.bus.deliveryClasses?.attentionTokens !== undefined
+        ? attentionKey(goalId, message.from)
+        : agentKey(goalId, message.from);
     await this.deps.budget.consume(
-      agentKey(goalId, message.from),
+      line,
       "tokens",
       price * woken.length,
       undefined,
@@ -1594,8 +1677,35 @@ export class Supervisor {
     // caller's `control` is gone and before `validateMessage`, so the closed
     // property set covers the class too. It reads `mode`, so it must follow
     // the merge above rather than precede it.
-    const delivery = this.classifyDelivery(message, !!cacheHit);
+    let delivery = this.classifyDelivery(message, !!cacheHit);
+    // The price, applied while it can still change the envelope.
+    //
+    // `chargeInterrupt` below runs after the send is a fact, and deliberately
+    // so -- but a charge that can only be levied after the wake was already
+    // bought is a receipt, not a price. Every mesh with a tariff therefore had
+    // exactly one way to stop a seat interrupting by habit: the seat would
+    // exhaust its own agent line and the `budget` rule would stop activating
+    // IT. That worked, and punished the wrong thing -- the seat lost the
+    // ability to work rather than the ability to interrupt, and nothing could
+    // tell those apart on one ledger.
+    //
+    // So the refusal happens here, before the emit, and it refuses the WAKE
+    // rather than the message. Nothing in this mesh is a suppressed delivery:
+    // the envelope ships, the mail lands, the commitment opens, the recipient
+    // reads it on its next turn for any other reason. Only the class changes.
+    let downgraded: string | undefined;
+    if (delivery === "interrupt") {
+      const afford = this.interruptUnaffordable(input.from, goalId, recipients);
+      if (afford) {
+        downgraded = afford;
+        delivery = "deliver";
+      }
+    }
     if (delivery) message.control = { ...(message.control ?? {}), delivery };
+    // Stamped after `delivery` so the closed schema covers it, and only on the
+    // refusal path -- an absent field is the normal case, and a boolean would
+    // have made every message carry the answer to a question nobody asked.
+    if (downgraded) message.control = { ...(message.control ?? {}), downgraded };
     if (message.replyTo && !this.state.messages.has(message.replyTo)) {
       return { accepted: false, reason: `replyTo ${message.replyTo} not found` };
     }
@@ -1653,12 +1763,18 @@ export class Supervisor {
         artifactRefs: [cacheHit],
         payload: { summary: "answer served from explorer cache (no model invoked)", cached: true },
       });
-      return { accepted: true, messageId: message.id, eventId: evt.id };
+      return { accepted: true, messageId: message.id, eventId: evt.id, deliveryDowngraded: downgraded };
     }
 
     // derived semantic events
     await this.deriveSemantic(input.from, message, evt.id, correlationId);
-    return { accepted: true, messageId: message.id, eventId: evt.id, redirectedTo: policy.decision === "REDIRECT" ? recipients : undefined };
+    return {
+      accepted: true,
+      messageId: message.id,
+      eventId: evt.id,
+      redirectedTo: policy.decision === "REDIRECT" ? recipients : undefined,
+      deliveryDowngraded: downgraded,
+    };
   }
 
   private async deriveSemantic(from: string, m: MeshMessage, causationId: string, correlationId?: string): Promise<void> {
@@ -4358,9 +4474,25 @@ export class Supervisor {
       // closer to done. Without this warning the agent reads a clean turn,
       // concludes the criterion is closed, and never revisits it. Appended
       // rather than branched, so it survives alongside a rejection warning.
+      //
+      // A refused wake belongs here for the same reason and with the same
+      // shape: the send returned ok and the mail landed, so every other signal
+      // in this turn says it worked, and the only thing that did not happen is
+      // the one thing the seat asked for. Left unsaid, a seat reads the
+      // missing wake as a delivery that failed and sends the same message
+      // again — paying the same price it could not pay the first time.
       const caveats = turn.results
-        .filter((r) => r.ok && r.reason)
-        .map((r) => `${r.op}: ${r.reason}`)
+        .flatMap((r) => {
+          if (!r.ok) return [];
+          const lines: string[] = [];
+          if (r.reason) lines.push(`${r.op}: ${r.reason}`);
+          if (r.deliveryDowngraded) {
+            lines.push(
+              `${r.op}: SENT, but it did not wake anyone (${r.deliveryDowngraded}). The message is delivered and sits in the recipient's mailbox — they will see it on their next turn. Do not send it again; escalate to the operator if it truly cannot wait.`,
+            );
+          }
+          return lines;
+        })
         .join("; ")
         .slice(0, 400);
       if (caveats) {
@@ -4908,7 +5040,9 @@ export class Supervisor {
             budgetHint: op.budgetHint,
           }, { control: contractStamp(op) });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, eventId: res.eventId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted
+            ? { ok: true, op: op.op, messageId: res.messageId, eventId: res.eventId, deliveryDowngraded: res.deliveryDowngraded }
+            : { ok: false, op: op.op, reason: res.reason };
         }
         case "broadcast": {
           const targets = [...this.state.agents.keys()].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
@@ -4922,7 +5056,7 @@ export class Supervisor {
             { control: { mode: "broadcast" } },
           );
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "collab": {
           const peers = [...new Set(op.with ?? [])].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
@@ -5006,7 +5140,7 @@ export class Supervisor {
             payload: { question: op.question },
           }, { control: contractStamp(op) });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "respond": {
           const original = this.state.messages.get(op.messageId);
@@ -5021,7 +5155,7 @@ export class Supervisor {
             payload: op.payload,
           });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "discharge": {
           const pending = this.state.pendingRequests.get(op.messageId);
@@ -5140,7 +5274,7 @@ export class Supervisor {
             payload: { question: `Review ${a.type} ${a.name} v${a.version}` },
           }, { control: contractStamp(op) });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "approve": {
           const res = await this.recordDecision(actorId, op.kind === "pass" ? "pass" : "approve", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment);
@@ -5260,7 +5394,7 @@ export class Supervisor {
             payload: { artifactId: a.id, comment: op.comment ?? "ready to commit" },
           });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "merge": {
           return this.opMerge(actorId, op.artifactId, op.comment, op.artifactUri);

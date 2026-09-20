@@ -153,6 +153,9 @@
             "deliver",
             "accrue"
           ]
+        },
+        "downgraded": {
+          "type": "string"
         }
       },
       "additionalProperties": false

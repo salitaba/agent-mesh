@@ -96,6 +96,13 @@ test("a mission with no traffic at all still produces a well-formed empty sectio
   assert.deepEqual(comms.dropped, []);
   assert.deepEqual(comms.refused, []);
   assert.deepEqual(comms.lostAsks, []);
+  assert.deepEqual(comms.wakes, {
+    byKind: [],
+    commsWakes: 0,
+    byClass: [],
+    interruptsBySender: [],
+    downgraded: [],
+  });
 });
 
 // --- volume ----------------------------------------------------------------
@@ -194,6 +201,79 @@ test("any one finding alone is enough to print the section", () => {
     seed(state);
     assert.ok(renderRunReport(buildRunReport(state)).includes("  COMMS"));
   }
+});
+
+// --- the wake ledger -------------------------------------------------------
+
+test("the class mix alone does not print the section, and a refusal does", () => {
+  // The rule the rest of this section already lives on: the report prints what
+  // an operator can act on, and "nine sends were coalesced" is a working
+  // system reporting that it worked. A refused interrupt is the opposite --
+  // the attention price BOUND -- and it is invisible in every other number
+  // here, because a downgraded message ships as an ordinary `deliver` and
+  // leaves no other trace.
+  const clean = createInitialState();
+  seedGoal(clean);
+  clean.comms.sendsByClass.set("accrue", 6);
+  clean.comms.sendsByClass.set("deliver", 3);
+  clean.comms.wakesByKind.set("message", 3);
+  assert.equal(
+    renderRunReport(buildRunReport(clean)).includes("COMMS"),
+    false,
+    "a regime that is working is not a finding",
+  );
+
+  const bound = createInitialState();
+  seedGoal(bound);
+  bound.comms.sendsByClass.set("deliver", 1);
+  bound.comms.downgradedInterrupts.set("lead", 2);
+  const text = renderRunReport(buildRunReport(bound));
+  assert.ok(text.includes("  COMMS"));
+  assert.ok(text.includes("sends by delivery class: 1 deliver"), text);
+  assert.ok(text.includes("interrupts refused their wake, shipped as mail: lead 2"), text);
+});
+
+test("the wake ledger separates talking from the mesh's own machinery", () => {
+  const state = createInitialState();
+  seedGoal(state);
+  state.comms.wakesByKind.set("message", 7);
+  state.comms.wakesByKind.set("interest_event", 2);
+  state.comms.wakesByKind.set("timer", 30);
+  state.comms.wakesByKind.set("startup", 4);
+
+  const { comms } = buildRunReport(state);
+
+  // The number the low-contact work exists to move, and the reason it is not
+  // simply `byKind`'s total: a seat the wait-timer keeps poking is not a seat
+  // its peers keep interrupting, and folding `timer` in would make a stalling
+  // mesh read as a chatty one.
+  assert.equal(comms.wakes.commsWakes, 9);
+  assert.deepEqual(comms.wakes.byKind[0], { kind: "timer", count: 30 }, "biggest first");
+  assert.equal(comms.wakes.byKind.reduce((n, k) => n + k.count, 0), 43);
+});
+
+test("the report names who spends other seats' attention", () => {
+  const state = createInitialState();
+  seedGoal(state);
+  state.comms.sendsByClass.set("interrupt", 5);
+  state.comms.interruptsBySender.set("lead", 4);
+  state.comms.interruptsBySender.set("dev", 1);
+  state.comms.downgradedInterrupts.set("qa", 3);
+  state.discharged.push(discharge({ reason: "expired" })); // opens the section
+
+  const { comms } = buildRunReport(state);
+  assert.deepEqual(comms.wakes.interruptsBySender, [
+    { agent: "lead", interrupts: 4 },
+    { agent: "dev", interrupts: 1 },
+  ]);
+  assert.deepEqual(comms.wakes.downgraded, [{ agent: "qa", refused: 3 }]);
+
+  const text = renderRunReport(buildRunReport(state));
+  // Read against `heaviestPair`, these two lines separate a pair that talks a
+  // lot from a pair that talks expensively -- different problems, different
+  // fixes, and until now indistinguishable in the report.
+  assert.ok(text.includes("interrupts bought, by sender: lead 4, dev 1"), text);
+  assert.ok(text.includes("interrupts refused their wake, shipped as mail: qa 3"), text);
 });
 
 // --- policy vs protocol ----------------------------------------------------

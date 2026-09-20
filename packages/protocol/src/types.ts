@@ -366,6 +366,28 @@ export interface MessageControl {
    * one class nobody is charged for.
    */
   delivery?: DeliveryClass;
+  /**
+   * Why this interrupt did not get its class, when it did not.
+   *
+   * The tariff's whole purpose is to be a price, and a price that cannot
+   * refuse is a receipt. When a sender has spent its attention line, the
+   * message still ships and its mail still lands -- nothing in this mesh is a
+   * suppressed delivery -- but it ships as `deliver` instead of `interrupt`,
+   * so the wake it asked for is not bought. This records why, in the sender's
+   * own words when it reads its tool result and in the log for everyone else.
+   *
+   * A sentence rather than a boolean because "refused" has more than one
+   * cause, and they call for different answers from the sender: an exhausted
+   * attention line means stop interrupting and let the backlog clear, while
+   * an operator's `interrupt_cost_tokens` set past what any sender can afford
+   * means the configuration is wrong, not the sender.
+   *
+   * Runtime-owned, reserved, and closed in the schema, exactly like
+   * `delivery` itself: a sender that could write this could claim a refusal
+   * that never happened, and `downgradedInterrupts` in the run report would
+   * stop being evidence of anything.
+   */
+  downgraded?: string;
 }
 
 /**
@@ -457,7 +479,7 @@ export interface CollabSession {
  * billed for spending it. A seat that could write either key into `payload`
  * could price its own interrupts at zero.
  */
-export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed", "contract", "contractVersion", "mode", "delivery"];
+export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed", "contract", "contractVersion", "mode", "delivery", "downgraded"];
 
 /**
  * Remove runtime-owned fields from agent-supplied message input.
@@ -2249,6 +2271,17 @@ export interface SendResult {
   reason?: string;
   redirectedTo?: AgentId[];
   escalated?: EscalationId;
+  /**
+   * Why this send did not get the delivery class it asked for.
+   *
+   * Present only when an `interrupt` was refused its wake and shipped as
+   * `deliver` instead. The send SUCCEEDED -- `accepted` is still true, the
+   * message has an id, and the recipient will read it -- so this is not a
+   * failure and must not be reported as one. It is the sender being told what
+   * its message actually cost, which is the whole difference between a tariff
+   * the sender can respond to and a ledger entry nobody reads.
+   */
+  deliveryDowngraded?: string;
 }
 
 export interface ReplayState {
