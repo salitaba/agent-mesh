@@ -79,6 +79,28 @@ reply carrying `replyTo` closes it. This is what lets an agent go to `WAITING`
 and be woken on the response, instead of blocking on a call — messages are
 **not RPC**.
 
+### A thread has an ending
+
+A thread is a conversation: `goal + artifact + interaction`. It is minted
+`OPEN`, and it reaches `RESOLVED` or `ESCALATED` — a thread opened by an ask
+ends when its **last** ask leaves the ledger, which is the one place in the
+runtime that can know the conversation is over.
+
+Which terminal value is read off *why* the ask left. A discharge that settled
+the ask resolves the thread; one of the four that mean **gone, not answered**
+(`evicted_cap`, `deadlock_break`, `expired`, `refused_cap`) escalates it,
+because something went wrong in that conversation and a record that called it
+`RESOLVED` would be lying in the same place an operator looks for the truth.
+
+Three things deliberately do **not** end a thread. A thread that never opened a
+commitment — a notice, a broadcast, a collab's own discussion — has no ending
+to detect. A live collab owns its own ending (`collab.closed` knows whether the
+discussion was closed or overran). And a thread that keeps receiving messages
+after it is terminal stays terminal: the ending is a fact about the ask, not a
+liveness heuristic. A new **ask** in a terminal thread is the exception, and it
+revives a `RESOLVED` one, because a follow-up belongs in the thread that raised
+it. `ESCALATED` is sticky.
+
 ### Contracts: named asks over guessed type strings
 
 24 type strings is a small vocabulary for a human and a large one for a model

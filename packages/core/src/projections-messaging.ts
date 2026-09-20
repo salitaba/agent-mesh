@@ -238,6 +238,26 @@ export function applyMessagingEvent(
         };
         pushBounded(state.discharged, refusal, MAX_DISCHARGE_HISTORY);
       } else if (isRequest) {
+        /**
+         * A fresh ask makes an answered thread live again (D13).
+         *
+         * `settleThread` ends a thread when its last ask settles, and the MCP
+         * send surface advertises `threadId` precisely so a follow-up ask
+         * lands in the thread that raised it ("without them every request
+         * opened a fresh thread, which split one exchange"). Without this
+         * line that follow-up would open a real commitment inside a
+         * conversation that no liveness reader can see: never in the prompt's
+         * open-threads section, never scanned for depth, never counted by the
+         * thread-budget stall check, and never resolvable again either.
+         *
+         * Only from RESOLVED. An ESCALATED thread is not relabelled by new
+         * traffic, because escalation says something went wrong here and a
+         * human may still be holding a card -- a new ask is not a retraction,
+         * and quietly moving the thread back to OPEN would hide the card's
+         * subject from every reader that shows status.
+         */
+        const revived = state.threads.get(m.threadId);
+        if (revived && revived.status === "RESOLVED") revived.status = "OPEN";
         state.pendingRequests.set(m.id, {
           messageId: m.id,
           from: m.from,

@@ -235,6 +235,30 @@ test("deadlock: detector flags repeated conflict and review-round overflow; esca
   await m.cleanup();
 });
 
+test("deadlock: a conversation that is over is not a depth problem (D13)", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
+    mayContact: { dev: [] },
+    criteria: [{ id: "x", description: "x", mandatory: true }],
+  });
+  const state = m.kernel.state;
+  const ts = new Date().toISOString();
+  // Same depth, same everything, one field apart. The scan reads `status`, so a
+  // settled thread must drop out of it: an ask that was answered at depth 9 is a
+  // conversation that went deep, not a chain of delegation still running away.
+  for (const [id, status] of [["deep-open", "OPEN"], ["deep-done", "RESOLVED"]] as const) {
+    await m.kernel.emit(
+      "thread.created",
+      { thread: { id, goalId: state.activeGoalId, subject: "s", initiator: "dev", artifactRefs: [], participants: ["dev"], depth: 9, messageIds: [], status, budget: {}, createdAt: ts } },
+      { actorId: "dev" },
+    );
+  }
+  const findings = new DeadlockDetector(m.config).scan(state);
+  const depth = findings.filter((f) => f.kind === "thread_depth");
+  assert.equal(depth.length, 1, "one open chain is over the ceiling; the settled one is not a chain at all");
+  await m.cleanup();
+});
+
 test("deadlock: review rounds escalate only past the cap, and settle with the artifact", async () => {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],

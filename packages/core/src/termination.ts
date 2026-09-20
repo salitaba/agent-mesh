@@ -385,13 +385,23 @@ export class TerminationManager {
       // therefore now let this fire where it previously could not, and that is
       // the correction, not a regression: work cannot continue in a thread
       // nobody may speak in.
-      const liveThread = [...state.threads.values()].some((t) => {
-        if (t.status !== "OPEN") return false;
+      //
+      // The same reasoning reaches further now that a settled ASK also ends its
+      // thread (D13), and one clause is added to keep it honest. The check
+      // asks "is every thread we could still work in dead?" — and a mission
+      // with no open thread at all is not a stall from thread budgets, it is a
+      // mission with nothing running, so demanding a candidate before firing
+      // keeps this from claiming an exhaustion it cannot point at. Without
+      // that clause, an ordinary mission whose asks were all answered would
+      // read as "thread budgets exhausted" the moment the last agent went
+      // idle, which is a false card on a healthy finish.
+      const openThreadsNow = [...state.threads.values()].filter((t) => t.status === "OPEN");
+      const liveThread = openThreadsNow.some((t) => {
         const ledger = state.budgets.get(threadKey(goalId, t.id));
         return !ledger || !ledger.exceeded;
       });
       const busy = [...state.agents.values()].some((a) => !["IDLE", "WAITING", "DONE", "FAILED", "RETIRED"].includes(a.state.lifecycle));
-      if (!liveThread && !busy) {
+      if (openThreadsNow.length > 0 && !liveThread && !busy) {
         return {
           kind: "escalate",
           reason: "thread_budgets_exhausted",

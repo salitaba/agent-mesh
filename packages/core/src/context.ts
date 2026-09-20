@@ -557,12 +557,16 @@ export function buildAgentContext(
   /**
    * Conversations this agent is in that are still live.
    *
-   * Newest first, because only ONE kind of thread has an exit. `collab.closed`
-   * now moves a collab's thread out of OPEN, but an ordinary service thread is
-   * still written once — at creation, as OPEN — and nothing ever moves it. So
-   * "open threads" still means, for most of them, "every thread the mission
-   * opened that this agent was party to": a list that only grows, which is why
-   * whatever the renderer caps has to be the fresh end of it.
+   * Newest first, because threads of a given mission are opened far faster
+   * than they are answered, so the list is dominated by its fresh end and that
+   * is the end the renderer must show.
+   *
+   * A thread leaves this list two ways now: a collab's `collab.closed`, and —
+   * since D13 — a settled ask, which ends the thread its conversation was for.
+   * A thread that never opened a commitment (an INFORM, a broadcast, a
+   * collab's own chatter) still has no ending at all, so for those "open"
+   * really does mean "every thread the mission opened that this agent was
+   * party to". Either way the list is capped at the renderer, never here.
    *
    * The session screen on the second line is now REDUNDANT for any collab
    * closed by this build, and it stays anyway. It is not belt-and-braces for
@@ -633,6 +637,13 @@ export function buildAgentContext(
     episode,
     omitted,
     openThreads,
+    // Every conversation the mail names, plus every live one. Computed from
+    // the STATE rather than from `openThreads`, because a thread that settled
+    // this turn is not in `openThreads` and its answer is in `unread`.
+    threadSubjects: Object.fromEntries([
+      ...unread.map((m) => [m.threadId, state.threads.get(m.threadId)?.subject] as const),
+      ...openThreads.map((t) => [t.id, t.subject] as const),
+    ].filter((pair): pair is readonly [string, string] => Boolean(pair[1]))),
     budgetSnapshot: {
       agentTokensUsed: agentBudget?.consumed ?? record.state.tokensConsumed,
       agentTokenBudget: agentBudget?.limit ?? config.agents[agentId]?.budget.tokens ?? 0,
@@ -1059,8 +1070,15 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push("");
   }
   // Thread subjects live on the Thread, not on the message, and this is the
-  // only place both are in hand.
-  const threadSubjects = new Map(bundle.openThreads.map((t) => [t.id, t.subject]));
+  // only place both are in hand. Read from the bundle's own map when it has
+  // one: the live set and the mailed set no longer coincide, and a thread that
+  // settled this turn is missing from `openThreads` while the answer that
+  // settled it is still in `unreadMail`.
+  const threadSubjects = new Map<string, string>(
+    bundle.threadSubjects
+      ? Object.entries(bundle.threadSubjects)
+      : bundle.openThreads.map((t) => [t.id, t.subject] as [string, string]),
+  );
   if (bundle.unreadMail.length > 0) {
     // Re-grouped here rather than trusted from the bundle. The builder already
     // emits `unreadMail` in this order, and the operation is idempotent on an
@@ -1164,7 +1182,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     partial(
       quietThreads.length - Math.min(quietThreads.length, MAX_OPEN_THREADS),
       "open thread(s)",
-      "the newest are shown; an older one is not closed just because it is absent",
+      "the newest are shown; absence from this page is not a closure",
     );
     lines.push("");
   }

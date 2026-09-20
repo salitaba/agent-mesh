@@ -778,9 +778,75 @@ export function dischargeCommitment(
   }
 
   state.pendingRequests.delete(messageId);
+  // The ask is gone. If it was the last one this thread was holding, the thread
+  // is over -- the one place in the runtime that can know that, reached by
+  // every discharge path there is.
+  settleThread(state, pr.threadId, reason);
   const record: DischargeRecord = { messageId, from: pr.from, to: pr.to, type: pr.type, reason, by, at, viaMessageId, ...response };
   pushBounded(state.discharged, record, MAX_DISCHARGE_HISTORY);
   return record;
+}
+
+/**
+ * Does anything in this thread still owe an answer?
+ *
+ * There is no `threadId -> commitments` index, and there deliberately is not
+ * one. `pendingRequests` is capped (`MAX_PENDING_REQUESTS`), a single pass over
+ * it is what `buildAgentContext` already pays every turn, and a second index
+ * into the ledger is a second thing that can disagree with the ledger about
+ * what is owed.
+ */
+export function threadOwesAnything(state: Projections, threadId: ThreadId): boolean {
+  for (const pr of state.pendingRequests.values()) {
+    if (pr.threadId === threadId) return true;
+  }
+  return false;
+}
+
+/**
+ * The last ask in a thread just left the ledger: the thread is over (D13).
+ *
+ * `Thread.status` declared `OPEN | RESOLVED | ESCALATED` and, until this
+ * function, an ordinary service thread was written once -- at creation, as
+ * OPEN -- and nothing ever moved it. Only a collab had an ending. So "which
+ * conversations are live?" was, for every conversation that was not a collab,
+ * "every thread the mission ever opened", a pool that only grew, and the
+ * prompt, the deadlock depth scan and the thread-budget stall check all drew
+ * from it.
+ *
+ * This is the discharge path, because that is where the fact is. A thread
+ * opened by an ask is a question; when its last question is answered the
+ * conversation it was for is over, and the instant the ledger stops naming the
+ * thread is exactly that instant.
+ *
+ * Three deliberate narrowings:
+ *
+ *  - A thread that NEVER opened a commitment is untouched. An INFORM, a
+ *    broadcast, an acknowledgement, and every collab are notices rather than
+ *    questions, and a notice has no ending to detect. This is also what the
+ *    contract with the rest of the runtime requires: `openThreads` and the
+ *    depth scan both assume ordinary traffic keeps its thread.
+ *  - A live collab owns its own ending (`collab.closed`, which knows whether
+ *    the discussion was closed or overrun), so the ledger does not speak for
+ *    it. The session is checked rather than the thread, because the two can
+ *    disagree when a snapshot predates the reducer learning to close one.
+ *  - WHICH ending is read off the reason. `UNANSWERED_DISCHARGE_REASONS` are
+ *    the exits that mean "gone, not answered" -- an eviction, a broken
+ *    deadlock, a passed deadline -- and those threads read ESCALATED, because
+ *    something went wrong in them. Everything else settled the ask, and reads
+ *    RESOLVED.
+ *
+ * Guarded on OPEN so a replayed log is idempotent and an ESCALATED thread is
+ * never quietly relabelled. Idempotence is not incidental here: the call sits
+ * on the ledger's single exit, and every discharge path in four reducer files
+ * funnels through it.
+ */
+export function settleThread(state: Projections, threadId: ThreadId, reason: DischargeReason): void {
+  const thread = state.threads.get(threadId);
+  if (!thread || thread.status !== "OPEN") return;
+  if (state.collabSessions.get(threadId)?.status === "OPEN") return;
+  if (threadOwesAnything(state, threadId)) return;
+  thread.status = UNANSWERED_DISCHARGE_REASONS.has(reason) ? "ESCALATED" : "RESOLVED";
 }
 
 /**

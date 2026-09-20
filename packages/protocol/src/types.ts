@@ -2243,6 +2243,20 @@ export interface AgentContextBundle {
     memory?: number;
   };
   openThreads: Thread[];
+  /**
+   * Subject for every conversation this bundle's mail mentions, plus every
+   * open thread. Absent from bundles assembled by hand (fixtures, adapters
+   * that stub a bundle rather than build one), where `openThreads` is the
+   * fallback.
+   *
+   * It exists because the two lists no longer coincide. `openThreads` is the
+   * LIVE set, and a settled thread leaves it the moment its last ask is
+   * answered (D13) — which is the same moment the answer is sitting unread in
+   * a mailbox. Deriving the mail section's titles from the live set therefore
+   * dropped the heading off the one conversation whose subject the reader most
+   * needs, on the turn the reply arrived.
+   */
+  threadSubjects?: Record<string, string>;
   budgetSnapshot: { agentTokensUsed: number; agentTokenBudget: number; missionTokensUsed: number; missionTokenBudget: number };
   /**
    * What this agent is still owed, and what it still owes.

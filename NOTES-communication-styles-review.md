@@ -998,11 +998,61 @@ open on vocabulary and feed the nudge ladder, the failure the `response` schema
 already avoids by marking instead of blocking. `refusal` is a name a seat chooses
 to state, never one it is forced to produce.
 
-### The one thing left, and it is not mine
+### D13 finished: an ask thread ends with its ask
 
-`Thread.status` declares `OPEN | RESOLVED | ESCALATED` and only `collab.closed`
-ever writes a terminal value (D13). A plain ask thread — no collab — is minted
-OPEN and stays OPEN for the life of the mission, so every reader that asks "which
-conversations are live?" is drawing from a pool that only grows. The fix is a
-terminal transition on the discharge path, which is a change to what a thread
-MEANS rather than to what it renders, and it belongs with the rest of §6.
+The last item, and the one §6 predicted would be a change to what a thread
+MEANS rather than to what it renders. `Thread.status` declares
+`OPEN | RESOLVED | ESCALATED`, and until now only `collab.closed` ever wrote a
+terminal value, so a plain ask thread was minted OPEN and stayed OPEN for the
+life of the mission — a pool that only grew, which the prompt, the deadlock
+depth scan and the thread-budget stall check all drew from.
+
+**The ending is on the discharge path**, which is where the fact lives. A
+thread opened by an ask is a question; when its last question is settled the
+conversation it was opened for is over, and the instant the ledger stops naming
+the thread is exactly that instant. `dischargeCommitment` is the ledger's single
+exit, reached by all four reducer files, so one call site covers every way an
+ask can end — including the ones that are not answers.
+
+Four narrowings, each of which is a test:
+
+- **A thread that never asked anything is untouched.** `settleThread` is only
+  reachable from the ledger, and a notice — an INFORM, a broadcast, a collab's
+  own chatter — never puts anything on it. This is also what the rest of the
+  runtime requires: nine INFORM threads in one existing test must still read
+  OPEN, and `collab-sessions.test.ts` asserts outright that "a thread that never
+  hosted a session must still be OPEN — the cap on open threads in the prompt,
+  and the deadlock scan, both still depend on that being true of normal
+  traffic."
+- **WHICH ending is read off the reason.** The four
+  `UNANSWERED_DISCHARGE_REASONS` — an eviction, a broken deadlock, a passed
+  deadline — read `ESCALATED`, because something went wrong in that thread.
+  Everything that settled the ask reads `RESOLVED`. A thread that called an
+  expired ask `RESOLVED` would put the lie in the same record an operator reads
+  to find out what happened.
+- **A live collab keeps its own ending.** Checked as the session, not the
+  thread, for the snapshot reason the `openThreads` filter already carries.
+- **A follow-up ask revives a resolved thread.** The MCP send surface
+  advertises `threadId` precisely so a follow-up lands in the thread that raised
+  it; without the revive, that ask would open a real commitment inside a
+  conversation no liveness reader could see. Only from `RESOLVED` — an
+  ESCALATED thread is not relabelled by new traffic, because escalation says a
+  human may be holding a card and a new ask is not a retraction.
+
+Two consequences worth recording, because neither was obvious:
+
+- **The thread-budget stall check needed a guard.** It asks "is every thread we
+  could still work in dead?" and fired when no open thread had budget left.
+  Resolving threads made "no open thread at all" reachable, which is a FINISHED
+  mission, not an exhausted one — so it now demands a candidate before it fires.
+  Without that, an ordinary healthy finish would read as
+  `thread_budgets_exhausted` the moment the last agent went idle.
+- **The mail section needed its own titles.** Settled threads leaving
+  `openThreads` is the point, but the mail that settled one is still unread on
+  exactly that turn, and deriving `### thread … — subject` from the live set
+  dropped the heading off the one conversation whose subject the reader most
+  needs. The bundle now carries `threadSubjects` for the mail it carries, with
+  `openThreads` as the fallback for hand-built bundles.
+
+The depth scan and the `openThreads` filter needed no change: both already read
+`status`, which is the whole reason a terminal value was worth producing.
