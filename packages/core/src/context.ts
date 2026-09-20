@@ -63,6 +63,15 @@ const MAX_OPEN_THREADS = 6;
  * items, so the count cap above was load-bearing for the wrong quantity.
  */
 const MAX_DECISION_CHARS = 600;
+/**
+ * One payload, budgeted in characters before it is expanded and in LINES once
+ * it is -- because the two cases have different units. A payload that fits
+ * stays a single compact line, which is what almost every payload is; only a
+ * payload too big to fit is worth spending field boundaries on, and then the
+ * field, not the character, is the unit the reader needs.
+ */
+const MAX_PAYLOAD_LINE_CHARS = 400;
+const MAX_PAYLOAD_LINES = 20;
 
 /**
  * Message priority as a number, mirroring the scheduler's `PRIORITY_BY_MESSAGE`.
@@ -583,6 +592,50 @@ export function isRelevantArtifact(a: Artifact, agentId: string, unread: MeshMes
   return false;
 }
 
+/**
+ * A message payload, as JSON the reader can parse and skim.
+ *
+ * This was `JSON.stringify(payload).slice(0, 400)` -- one line, cut at an
+ * arbitrary character. For the small payload that is almost all of them the
+ * two agree exactly, byte for byte, which is why the compact form is kept: the
+ * blob was only ever wrong about the case it could not fit.
+ *
+ * That case is bad in three ways at once. The model cannot parse it, because
+ * it is truncated mid-token; it cannot skim it either, because it is one long
+ * line with no field boundaries; and the cut is positional, so a payload whose
+ * first key holds a paragraph spends the whole budget and buries every later
+ * field -- including the one the reader is being asked for.
+ *
+ * Deliberately still JSON, and specifically NOT `key: value`. A JSON string
+ * escapes its newlines, so no value can forge a line of its own; a value
+ * rendered raw can end with `ANSWER OWED` on a line of its own and mint a mark
+ * the reader believes. Indenting keeps that property and adds the one thing
+ * the blob lacked.
+ *
+ * Both budgets SAY what they dropped. A silently shortened payload is worse
+ * than a short one: a reader cannot tell a field that was never sent from a
+ * field the renderer ate, and will answer the question it can still see.
+ */
+function renderMailPayload(payload: unknown): string[] {
+  // `JSON.stringify` returns `undefined` only for `undefined` and functions,
+  // which no payload is -- but it is typed `string`, so the guard is stated
+  // for the reader rather than for the compiler.
+  const compact = JSON.stringify(payload) as string | undefined;
+  if (compact === undefined) return [];
+  if (compact.length <= MAX_PAYLOAD_LINE_CHARS) return [`  ${compact}`];
+
+  const pretty = (JSON.stringify(payload, null, 2) as string).split("\n");
+  const kept = pretty.slice(0, MAX_PAYLOAD_LINES);
+  if (pretty.length > kept.length) {
+    kept.push(`… ${pretty.length - kept.length} more line(s) of this payload omitted`);
+  }
+  return kept.map((line) =>
+    line.length > MAX_PAYLOAD_LINE_CHARS
+      ? `  ${line.slice(0, MAX_PAYLOAD_LINE_CHARS)}… ${line.length - MAX_PAYLOAD_LINE_CHARS} more character(s) on this line omitted`
+      : `  ${line}`,
+  );
+}
+
 function summarizePayload(m: MeshMessage): string {
   const p = m.payload;
   if (typeof p === "string") return p.slice(0, 120);
@@ -898,7 +951,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         if (obligesRecipients(m)) marks.push("ANSWER OWED");
         if (m.priority !== "NORMAL") marks.push(m.priority);
         lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type}${marks.length ? ` — ${marks.join(", ")}` : ""}`);
-        lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
+        lines.push(...renderMailPayload(m.payload));
         // Labelled, and NOT folded into the payload line above. That line is
         // verbatim JSON and is the reason this field exists: a fenced block
         // sitting in a payload is rendered as if it were structure, and a model
