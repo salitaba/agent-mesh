@@ -40,6 +40,18 @@ export const messageSchema = {
     },
     payload: {},
     /**
+     * Prose for the recipient. Never parsed by the mesh.
+     *
+     * Optional and closed like every other envelope field: a `note` that is not
+     * declared here is REJECTED by `additionalProperties: false`, not ignored,
+     * so a message carrying one fails loudly at send time with the path named.
+     */
+    note: {
+      description: "Free prose for the recipient. Never parsed by the mesh: no op extraction, no discharge inference, no routing. Carries no authority.",
+      type: "string",
+      maxLength: 2000,
+    },
+    /**
      * Runtime-owned delivery control. Agents cannot set this:
      * `sanitizeAgentMessageInput` strips it from every send, and the closed
      * property set means a forged field fails validation instead of being

@@ -20,6 +20,7 @@ import {
   evictOverflowingPendingRequests,
   ledgerAtCapacity,
   pushBounded,
+  readableMailDepth,
   setBounded,
   stillOwes,
 } from "./state";
@@ -175,7 +176,7 @@ export function applyMessagingEvent(
         box.push(m.id);
         state.unread.set(target, box);
         const rec = state.agents.get(target);
-        if (rec) rec.state.mailboxDepth = box.length;
+        if (rec) rec.state.mailboxDepth = readableMailDepth(state, target);
       }
       /**
        * Does this exchange oblige anybody, and therefore open a ledger entry?
@@ -430,7 +431,7 @@ export function applyMessagingEvent(
       if (idx >= 0) box.splice(idx, 1);
       state.unread.set(target, box);
       const rec = state.agents.get(target);
-      if (rec) rec.state.mailboxDepth = box.length;
+      if (rec) rec.state.mailboxDepth = readableMailDepth(state, target);
       break;
     }
     case "message.rejected": {
@@ -512,7 +513,7 @@ export function applyMessagingEvent(
     // box without re-syncing it left the agent's own state claiming a deeper
     // mailbox than exists, which the scheduler and context both surface.
     const rec = state.agents.get(agentId);
-    if (rec) rec.state.mailboxDepth = box.length;
+    if (rec) rec.state.mailboxDepth = readableMailDepth(state, agentId);
   }
   for (const [tid, set] of state.messageFingerprints) {
     if (set.size > MAX_FINGERPRINTS_PER_THREAD) {

@@ -67,10 +67,10 @@ import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
 import { planCoversHardOp } from "./projections-helpers";
-import { sanitizeAgentMessageInput } from "../../protocol/src/index";
+import { sanitizeAgentMessageInput, aliasStats } from "../../protocol/src/index";
 import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
-import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
+import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, transitionLifecycle } from "./projections";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
@@ -1138,7 +1138,7 @@ export class Supervisor {
     for (const rec of this.state.agents.values()) {
       const a = rec.state;
       if (a.agentId === HUMAN_AGENT_ID) continue;
-      if ((this.state.unread.get(a.agentId)?.length ?? 0) > 0 || a.activeTaskId || a.lifecycle === "WAITING" || a.lifecycle === "FAILED") {
+      if (readableMailDepth(this.state, a.agentId) > 0 || a.activeTaskId || a.lifecycle === "WAITING" || a.lifecycle === "FAILED") {
         out.push(a.agentId);
       }
     }
@@ -1449,6 +1449,13 @@ export class Supervisor {
     replyTo?: string;
     artifactRefs?: Array<ArtifactRef | string>;
     payload?: unknown;
+    /**
+     * Prose for the recipient, never parsed. NOT inside `payload`, because
+     * every payload key is live -- see `MeshMessage.note`. Unlike `control`
+     * this one is genuinely agent-supplied, so it travels in `input` where the
+     * sanitiser screens it rather than in the runtime-only second argument.
+     */
+    note?: string;
     priority?: MeshMessage["priority"];
     taskId?: string;
     causationId?: string;
@@ -1565,6 +1572,9 @@ export class Supervisor {
       causationId: input.causationId,
       artifactRefs: messageRefs ?? [],
       payload: input.payload ?? {},
+      // Length is already policed by the schema's `maxLength`; a note longer
+      // than the cap is REFUSED by name at validation, not quietly truncated.
+      note: input.note,
       priority: input.priority ?? (recipients.some((r) => this.config.agents[r]?.mode === "service") ? "HIGH" : "NORMAL"),
       taskId: input.taskId,
       requires: input.requires,
@@ -4891,6 +4901,7 @@ export class Supervisor {
             replyTo: op.replyTo,
             artifactRefs: op.artifactRefs,
             payload: op.payload,
+            note: op.note,
             priority: op.priority,
             taskId: op.taskId,
             requires: op.requires,
@@ -4902,7 +4913,7 @@ export class Supervisor {
         case "broadcast": {
           const targets = [...this.state.agents.keys()].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
           const res = await this.sendMessage(
-            { from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, artifactRefs: op.artifactRefs },
+            { from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, note: op.note, artifactRefs: op.artifactRefs },
             // Stamped by the runtime, not the agent, because three separate
             // behaviours key off it and all three must be unforgeable: the
             // reducer opens no commitment for a broadcast, `sendMessage`
@@ -6765,7 +6776,7 @@ export class Supervisor {
     const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
     if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet` };
     // Every criterion is evidenced. Only a concrete loose end justifies a turn.
-    const mail = [...this.state.agents.keys()].some((id) => (this.state.unread.get(id)?.length ?? 0) > 0);
+    const mail = [...this.state.agents.keys()].some((id) => readableMailDepth(this.state, id) > 0);
     if (mail) return { worth: true, why: "undelivered mail" };
     const openEscalations = [...this.state.escalations.values()].filter((e) => e.status === "OPEN");
     if (openEscalations.length > 0) return { worth: true, why: `${openEscalations.length} open escalations` };
@@ -6823,7 +6834,7 @@ export class Supervisor {
     const all = [...this.state.agents.keys()].filter(eligible);
     for (const id of all) {
       const rec = this.state.agents.get(id)!;
-      if ((this.state.unread.get(id)?.length ?? 0) > 0 || rec.state.activeTaskId) return id;
+      if (readableMailDepth(this.state, id) > 0 || rec.state.activeTaskId) return id;
     }
     const stuck = all.filter((id) => ["WAITING", "BLOCKED"].includes(this.state.agents.get(id)!.state.lifecycle)).sort(byOldest);
     if (stuck.length > 0) return stuck[0];
@@ -6986,6 +6997,25 @@ export class Supervisor {
     progress: { completed: number; total: number; ratio: number } | null;
     openEscalations: Escalation[];
     eventCount: number;
+    /**
+     * Prose alias rewrites this PROCESS has performed, and the tables that
+     * caught them.
+     *
+     * Process-scoped, not goal-scoped, because that is what the counter is:
+     * `op-aliases.ts` keeps a module-global Map and documents the choice as
+     * deliberate. Reading a deliberate aggregate as if it were per-goal would
+     * be the wrong question -- what this answers is "is anyone still writing
+     * names the alias tables exist to translate?", which is the precondition
+     * for ever retiring them.
+     *
+     * Notably it reports ZERO, which is the whole point: a run report only
+     * prints a comms section when it has a finding, so the absence of alias
+     * hits is invisible there. Here it is a number you can read.
+     *
+     * Caveat worth knowing: process restarts reset it to zero. So a zero here
+     * is evidence only for as long as this process has been up.
+     */
+    aliases: { total: number; byRewrite: Array<{ rewrite: string; count: number }> };
   }> {
     const goalId = this.state.activeGoalId;
     const goal = goalId ? this.state.goals.get(goalId) : undefined;
@@ -6996,7 +7026,7 @@ export class Supervisor {
         id: r.definition.id,
         role: r.definition.role,
         lifecycle: r.state.lifecycle,
-        mailbox: this.state.unread.get(r.definition.id)?.length ?? 0,
+        mailbox: readableMailDepth(this.state, r.definition.id),
         tokens: r.state.tokensConsumed,
         taskId: r.state.activeTaskId ?? null,
         activations: r.state.activations,
@@ -7008,6 +7038,7 @@ export class Supervisor {
       progress: progress ? { completed: progress.completed, total: progress.total, ratio: progress.ratio } : null,
       openEscalations: [...this.state.escalations.values()].filter((e) => e.status === "OPEN"),
       eventCount: this.state.eventCount,
+      aliases: aliasStats(),
     };
   }
 }

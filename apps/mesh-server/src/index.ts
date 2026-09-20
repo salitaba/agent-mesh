@@ -8,7 +8,7 @@ import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, Des
 import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
-import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
+import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, readableMailDepth, resolveUnread, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
 import { missionKey } from "../../../packages/core/src/budgets";
 import { JsonlEventStore, MemoryEventStore, type EventStore } from "../../../packages/event-store/src/index";
 import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-engine/src/index";
@@ -33,7 +33,7 @@ import {
   type StateLockHandle,
 } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
-import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, type GitMode } from "../../../packages/protocol/src/index";
+import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, aliasStats, type GitMode } from "../../../packages/protocol/src/index";
 import {
   buildMeshGraph,
   buildCostReport,
@@ -1326,7 +1326,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               code: "run_report_unavailable",
             });
           }
-          const report = await buildRunReport(kernel.state, goalId);
+          // Process-scoped, handed in rather than read inside the builder --
+          // see `RunReportComms.aliases`. Same process as this handler, so the
+          // counters are this mesh's, not some other child's.
+          const report = await buildRunReport(kernel.state, goalId, { aliases: aliasStats() });
           if (report == null) return json(404, { error: `no run report for goal ${goalId}` });
           return json(200, report);
         }
@@ -1400,7 +1403,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             return json(200, {
               definition: rec.definition,
               state: rec.state,
-              unread: kernel.state.unread.get(id) ?? [],
+              unread: resolveUnread(kernel.state, id),
               memory: [...(kernel.state.memory.get(id)?.values() ?? [])],
               session: kernel.state.sessionMap.get(id) ?? null,
             });
@@ -2634,8 +2637,17 @@ function artifactVersion(instance: MeshInstance, id: string, version: number): A
 }
 
 /** Composer for the end-of-run report, shaped like the other state-derived
- * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next. */
-type RunReportBuilder = (state: unknown, goalId: string) => unknown | Promise<unknown>;
+ * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next.
+ *
+ * The third argument is the one input that is not a projection -- the alias
+ * counters, which are process-scoped. It is optional and typed loosely here
+ * because this module is loaded by `require` and the builder may be an older
+ * one that never heard of it. */
+type RunReportBuilder = (
+  state: unknown,
+  goalId: string,
+  opts?: { aliases?: unknown },
+) => unknown | Promise<unknown>;
 
 /**
  * Resolve core's run-report composer lazily. `packages/core/src/run-report.ts`

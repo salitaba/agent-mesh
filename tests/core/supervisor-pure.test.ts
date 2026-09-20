@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
 import type { Artifact, Escalation, MessageType, Task } from "../../packages/protocol/src/index";
+import { aliasStats, aliasTextOp } from "../../packages/protocol/src/op-aliases";
 
 /**
  * The supervisor's small classifiers decide, without any agent in the loop,
@@ -291,10 +292,29 @@ test("undelivered mail outranks a finished criteria list", async () => {
   const { m, sup, goal } = await makeSupervisor();
   try {
     goal.acceptanceCriteria[0].status = "EVIDENCED";
+    // The message, not just the pointer. A box holding an id with no message
+    // behind it is not mail -- nobody can open it, so "undelivered mail" would
+    // be a lie and the wake it buys is a turn that renders an empty inbox.
+    m.kernel.state.messages.set("msg-1", { id: "msg-1", from: "human", to: ["dev"] } as never);
     m.kernel.state.unread.set("dev", ["msg-1"]);
     const v = sup.wakeValue();
     assert.equal(v.worth, true);
     assert.equal(v.why, "undelivered mail");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("a mailbox id with no message behind it is not mail", async () => {
+  const { m, sup, goal } = await makeSupervisor();
+  try {
+    goal.acceptanceCriteria[0].status = "EVIDENCED";
+    // Exactly the shape the test above used to build. It is reachable -- a box
+    // can hold a dangler, and `tests/core/state.test.ts` asserts it "must not
+    // consume a slot" -- but it is not something anyone can read, so it must
+    // not buy a turn to read it.
+    m.kernel.state.unread.set("dev", ["msg-1"]);
+    assert.equal(sup.wakeValue().worth, false, "a dangling id is not undelivered mail");
   } finally {
     await m.cleanup();
   }
@@ -358,6 +378,28 @@ test("a claimed watchdog task does not count as work in flight", async () => {
     const v = sup.wakeValue();
     assert.equal(v.worth, false, "the watchdog's own bookkeeping must never justify waking the watchdog");
     assert.match(v.why, /no claimed tasks/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("status reports the alias counters, including the zero", async () => {
+  const { m, sup } = await makeSupervisor();
+  try {
+    // The counter is process-wide and never reset in production, so the exact
+    // value depends on what ran before. What is asserted is the WIRING: the
+    // number status reports is the number the tables moved by.
+    const before = aliasStats().total;
+    const reported = (await m.supervisor.status()).aliases;
+    assert.equal(reported.total, before, "status must report the live counter, not a copy taken at boot");
+
+    aliasTextOp({ op: "mesh_send" } as never, undefined);
+    const after = (await m.supervisor.status()).aliases;
+    assert.equal(after.total, before + 1, "a prose rewrite must show up in the status an operator can read");
+    assert.ok(
+      after.byRewrite.some((b: { rewrite: string }) => b.rewrite === "op:mesh_send->send"),
+      "and it must say WHICH invented name was translated, or the count is not actionable",
+    );
   } finally {
     await m.cleanup();
   }

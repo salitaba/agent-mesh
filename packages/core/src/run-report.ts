@@ -54,6 +54,7 @@ import type {
 } from "../../protocol/src/types";
 import { outstandingDebtors, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
+import type { AliasStats } from "../../protocol/src/op-aliases";
 
 /** An artifact as the report talks about it — flattened, no content. */
 export interface RunReportArtifact {
@@ -192,9 +193,13 @@ export interface RunReportComms {
    * and read by nobody -- so the asker's nudges, its stalemate, and any
    * escalation that followed were all chasing a message that was never shown.
    *
-   * Counts message IDS, matching `AgentRuntimeState.mailboxDepth`, so an id
-   * whose body fell off the snapshot's message tail still counts: the mail
-   * was owed whether or not its body survived.
+   * Counts message IDS -- deliberately NOT `readableMailDepth`, which every
+   * other depth in the tree now uses. Those two answer different questions and
+   * this one is the accounting question: an id whose body fell off the
+   * snapshot's message tail still counts here, because the mail was owed
+   * whether or not its body survived. `readableMailDepth` answers "can this
+   * seat open it", which is what an attention signal and a wake gate need and
+   * what this report must not ask.
    */
   unread: Array<{ agent: string; messages: number }>;
   /**
@@ -248,6 +253,22 @@ export interface RunReportComms {
    * the asker heard it. That is an answer.
    */
   lostAsks: Array<{ id: string; from: string; to: string[]; type: string; reason: DischargeReason }>;
+  /**
+   * Prose alias rewrites the CALLER observed, or absent when it supplied none.
+   *
+   * The one field here that is not a projection, which is why it arrives as an
+   * argument rather than a module read: `op-aliases.ts` counts process-wide and
+   * deliberately so, and a report that quietly reached for that global would
+   * stop being pure -- and would answer a different question from the one it
+   * claims to, since the counter is not scoped to this goal.
+   *
+   * Present even when `total` is 0, because that zero is the finding that
+   * matters: it is the precondition for ever retiring the tables. The TEXT
+   * prints a line only when it is non-zero (`volume` is never the reason a
+   * section appears, and neither is this) -- the JSON always carries it, which
+   * is where anything measuring across runs should read it.
+   */
+  aliases?: AliasStats;
 }
 
 export interface RunReportSpend {
@@ -431,7 +452,7 @@ function messageMode(m: MeshMessage): InteractionMode {
  * `collabOverruns` already gives `collabSessions`, and the honest one: a
  * refusal or a destroyed message has no mission to be attributed to.
  */
-function summarizeComms(state: Projections, goal: Goal | null): RunReportComms {
+function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasStats): RunReportComms {
   const messages = [...state.messages.values()].filter((m) => !goal || m.goalId === goal.id);
 
   let service = 0;
@@ -467,6 +488,8 @@ function summarizeComms(state: Projections, goal: Goal | null): RunReportComms {
   const byCountThenName = (a: { agent: string; messages: number }, b: { agent: string; messages: number }) =>
     b.messages - a.messages || a.agent.localeCompare(b.agent);
 
+  // Raw ids, on purpose -- see this field's comment in `RunReportComms`. This
+  // is the one depth in the tree that is NOT `readableMailDepth`.
   const unread = [...state.unread.entries()]
     .map(([agent, ids]) => ({ agent, messages: ids.length }))
     .filter((u) => u.messages > 0)
@@ -521,6 +544,7 @@ function summarizeComms(state: Projections, goal: Goal | null): RunReportComms {
     dropped,
     refused,
     lostAsks,
+    ...(aliases ? { aliases } : {}),
   };
 }
 
@@ -528,11 +552,12 @@ function summarizeComms(state: Projections, goal: Goal | null): RunReportComms {
  * Compose the report for the active goal (or `goalId`, to report on an older
  * mission in the same log).
  *
- * Pure and synchronous: everything it needs is already in projections, so it
- * can be called from a shutdown path, an HTTP handler, or a test without a
- * supervisor, a content store, or an await.
+ * Pure and synchronous: everything it needs is either in projections or handed
+ * to it, so it can be called from a shutdown path, an HTTP handler, or a test
+ * without a supervisor, a content store, or an await. `opts.aliases` is the
+ * one non-projection input, passed explicitly so that stays true.
  */
-export function buildRunReport(state: Projections, goalId?: string): RunReport {
+export function buildRunReport(state: Projections, goalId?: string, opts?: { aliases?: AliasStats }): RunReport {
   const id = goalId ?? state.activeGoalId;
   const goal = (id ? state.goals.get(id) : undefined) ?? null;
   const scoped = <T extends { goalId: string }>(v: Iterable<T>): T[] =>
@@ -620,7 +645,7 @@ export function buildRunReport(state: Projections, goalId?: string): RunReport {
           reason: c.closedReason ?? "overrun",
         })),
     },
-    comms: summarizeComms(state, goal),
+    comms: summarizeComms(state, goal, opts?.aliases),
     spend: {
       tokens: byModel.reduce((n, m) => n + m.tokens, 0),
       events: state.eventCount,
@@ -766,7 +791,16 @@ export function renderRunReport(report: RunReport): string {
   // here an operator can act on, and a header over one message count is how a
   // report starts training people to skip it. The numbers stay in the JSON
   // either way, for anyone measuring across runs.
-  const commsFindings = comms.unread.length + comms.dropped.length + comms.refused.length + comms.lostAsks.length;
+  // A non-zero alias count IS a finding: a seat is inventing names the mesh has
+  // to translate, which is something an operator can act on. A ZERO is not, and
+  // must not open the section -- else every clean run prints a COMMS header over
+  // nothing, which is how a report starts training people to skip it.
+  const commsFindings =
+    comms.unread.length +
+    comms.dropped.length +
+    comms.refused.length +
+    comms.lostAsks.length +
+    (comms.aliases && comms.aliases.total > 0 ? 1 : 0);
   if (commsFindings > 0) {
     out.push("");
     out.push("  COMMS");
@@ -783,6 +817,11 @@ export function renderRunReport(report: RunReport): string {
     if (comms.dropped.length > 0) {
       const boxes = comms.dropped.map((d) => `${d.agent} ${d.messages}`).join(", ");
       out.push(bullet(`· destroyed by the mailbox cap: ${boxes} — those messages are gone, not queued`));
+    }
+    if (comms.aliases && comms.aliases.total > 0) {
+      const { total, byRewrite } = comms.aliases;
+      const worst = byRewrite.slice(0, 3).map((b) => `${b.rewrite} x${b.count}`).join(", ");
+      out.push(bullet(`· ${total} prose rewrite${total === 1 ? "" : "s"} went through the alias tables — ${worst}. A seat is inventing names; the tables are load-bearing until it stops.`));
     }
     for (const r of comms.refused) {
       const who = r.refusedBy === "policy" ? `policy rule ${r.rule} refused` : "protocol validation refused";

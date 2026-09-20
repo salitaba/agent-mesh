@@ -156,6 +156,28 @@ test("loop detection: an unanchored paraphrase is not treated as a repeat", () =
   assert.equal(fingerprintOf(first), fingerprintOf(verbatim), "a verbatim re-send is still a repeat");
 });
 
+test("loop detection: a note cannot make two identical sends distinct", () => {
+  // A `note` is envelope-level, and `fingerprintOf` reads only `m.payload`. If
+  // the note were a payload key instead, a seat could defeat loop detection by
+  // appending a word to it — the same send would fingerprint as new work every
+  // time, and `fingerprint_loop` would go permanently silent in exactly the
+  // situation it exists for. This pins the envelope choice; the schema test
+  // ("a note is an envelope field, not a payload one") pins the other side.
+  const bare = msg({ payload: { question: "is the retry policy settled?" } });
+  const noted = msg({ payload: { question: "is the retry policy settled?" }, note: "no rush, whenever" });
+
+  assert.equal(
+    fingerprintOf(bare),
+    fingerprintOf(noted),
+    "prose must not buy a distinct identity",
+  );
+
+  // And the converse, so this passes for the right reason rather than because
+  // the fingerprint ignores everything: a payload change DOES move identity.
+  const different = msg({ payload: { question: "is the caching policy settled?" } });
+  assert.notEqual(fingerprintOf(bare), fingerprintOf(different), "a different ask is different work");
+});
+
 test("loop detection: genuinely different work is not collapsed into a loop", () => {
   const onPay = msg({ artifactRefs: [{ uri: "artifact://CodePatch/pay/1" }] });
   const onAuth = msg({ artifactRefs: [{ uri: "artifact://CodePatch/auth/1" }] });

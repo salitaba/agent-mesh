@@ -2,7 +2,7 @@ import type { ActivationReason, MeshEvent, EventType, LifecycleState, PolicyDeci
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
-import { stillOwes } from "../../core/src/state";
+import { readableMailDepth, resolveUnread, stillOwes } from "../../core/src/state";
 import type { PolicyEvaluator, QueueWait, SchedulerActivationRequest, SchedulerPort, TurnOutcome } from "../../core/src/ports";
 
 export interface TurnRunner {
@@ -368,7 +368,7 @@ export class Scheduler implements SchedulerPort {
       if (p[key] === agentId) return false;
     }
     // Real work outstanding: it needs the turn regardless of the event.
-    if ((this.state.unread.get(agentId)?.length ?? 0) > 0) return false;
+    if (readableMailDepth(this.state, agentId) > 0) return false;
     const rec = this.state.agents.get(agentId);
     if (rec?.state.activeTaskId) return false;
     for (const pr of this.state.pendingRequests.values()) {
@@ -655,17 +655,20 @@ export class Scheduler implements SchedulerPort {
           explicit: deferred.explicit,
         });
       }
-    } else if (!this.stopped && (this.state.unread.get(agentId)?.length ?? 0) > 0) {
-      const unread = this.state.unread.get(agentId)!;
+    } else if (!this.stopped && readableMailDepth(this.state, agentId) > 0) {
+      const unread = resolveUnread(this.state, agentId);
       // The "mail queued while running" retry is a scheduler self-nudge, not
       // operator intent: on a finished mission it only starts dead turns for
       // stale agent mail. Human mail passes so feedback still gets answered.
-      if (!(over && !this.hasHumanMail(unread))) {
-        const oldest = unread[0];
-        const msg = this.state.messages.get(oldest);
+      if (!(over && !this.hasHumanMail(unread.map((m) => m.id)))) {
+        // The head of the box, resolved. It used to be `unread[0]` straight
+        // off the id array, so a box whose head was a dangler activated a turn
+        // citing a messageId that resolved to nothing -- the seat was woken to
+        // read a message that does not exist.
+        const msg = unread[0];
         void this.requestActivation({
           agentId,
-          reason: { kind: "message", messageId: oldest, threadId: msg?.threadId, note: "mail queued while running" },
+          reason: { kind: "message", messageId: msg.id, threadId: msg.threadId, note: "mail queued while running" },
           priority: 5,
         });
       }
@@ -777,7 +780,7 @@ export class Scheduler implements SchedulerPort {
       // no mail → nothing to do).
       if (rec.state.lifecycle === "FAILED") {
         const owed = [...this.state.pendingRequests.values()].some((pr) => stillOwes(pr, id));
-        const mail = (this.state.unread.get(id)?.length ?? 0) > 0;
+        const mail = readableMailDepth(this.state, id) > 0;
         if (!owed && !mail) continue;
       }
       // Must match the predicate `requestActivation` uses, not just
@@ -834,8 +837,12 @@ export class Scheduler implements SchedulerPort {
       // class carried it.
       const unread = (this.state.unread.get(id) ?? []).filter((mid) => {
         const m = this.state.messages.get(mid);
-        if (m?.control?.mode === "broadcast") return false;
-        if (m?.control?.delivery && m.control.delivery !== "interrupt") return false;
+        // `m?.` below let a dangler fall through both exclusions and be counted
+        // as mail worth nudging for -- a message that cannot be read, cannot be
+        // delivered, and cannot be discharged. Tested first, deliberately.
+        if (!m) return false;
+        if (m.control?.mode === "broadcast") return false;
+        if (m.control?.delivery && m.control.delivery !== "interrupt") return false;
         return true;
       }).length;
       // Oldest-first by creation time (insertion order is not a reliable clock

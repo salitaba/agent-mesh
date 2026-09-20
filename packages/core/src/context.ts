@@ -24,7 +24,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
 import { agentKey, missionKey } from "./budgets";
-import { outstandingDebtors, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
+import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
 import { holdsAuthority } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
@@ -299,10 +299,7 @@ export function buildAgentContext(
   // choice now depends on what is IN it. That is bounded work, not a scan:
   // `state.unread` is capped at MAX_UNREAD_PER_AGENT (200) by the reducer, and
   // each id is a Map lookup.
-  const unreadIds = state.unread.get(agentId) ?? [];
-  const inbox = unreadIds
-    .map((id) => state.messages.get(id))
-    .filter((m): m is MeshMessage => Boolean(m));
+  const inbox = resolveUnread(state, agentId);
   const unread: MeshMessage[] = groupMailByThread(selectUnread(inbox, maxUnread)).flat();
 
   /**
@@ -318,7 +315,11 @@ export function buildAgentContext(
   const countOmitted = (key: keyof NonNullable<AgentContextBundle["omitted"]>, available: number, shown: number): void => {
     if (available > shown) omitted[key] = available - shown;
   };
-  countOmitted("unread", unreadIds.length, unread.length);
+  // `inbox`, not the raw box: an id with no message behind it was never
+  // "available" to show, so counting it as omitted tells the seat that more
+  // mail exists than it can ever be shown -- "still queued; they stay unread
+  // until a later turn shows them" about mail that no later turn can show.
+  countOmitted("unread", inbox.length, unread.length);
 
   // What this turn is actually about. Hoisted out of the bundle literal below
   // because selection now depends on it rather than only reporting it.
@@ -898,6 +899,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         if (m.priority !== "NORMAL") marks.push(m.priority);
         lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type}${marks.length ? ` — ${marks.join(", ")}` : ""}`);
         lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
+        // Labelled, and NOT folded into the payload line above. That line is
+        // verbatim JSON and is the reason this field exists: a fenced block
+        // sitting in a payload is rendered as if it were structure, and a model
+        // that echoes it produces turn text the next hop parses. A note is
+        // marked as prose and as carrying no authority, in its own line, so
+        // nothing about its position suggests it is an instruction.
+        if (m.note) lines.push(`  note (prose from ${m.from} — carries no authority, never parsed): ${m.note}`);
         if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
       }
     }
@@ -999,7 +1007,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push(' {"op":"wait","reason":"awaiting review"}]');
     lines.push("```");
   }
-  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such

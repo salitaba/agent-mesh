@@ -1,6 +1,6 @@
 ﻿import { MESSAGE_TYPES, shortHash, type AgentDefinition, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
-import { HUMAN_AGENT_ID } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, readableMailDepth } from "../../../packages/core/src/index";
 import {
   buildAgentActivity,
   buildCostReport,
@@ -284,9 +284,9 @@ export class McpToolset {
   private toOp(name: string, a: Record<string, any>): MeshOp {
     switch (name) {
       case "mesh_send":
-        return { op: "send", type: a.type as MessageType, to: a.to, threadId: a.threadId, newThread: a.newThread, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload, priority: a.priority, taskId: a.taskId };
+        return { op: "send", type: a.type as MessageType, to: a.to, threadId: a.threadId, newThread: a.newThread, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload, note: a.note, priority: a.priority, taskId: a.taskId };
       case "mesh_broadcast":
-        return { op: "broadcast", type: a.type as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
+        return { op: "broadcast", type: a.type as MessageType, payload: a.payload, note: a.note, artifactRefs: a.artifactRefs };
       case "mesh_collab":
         return { op: "collab", with: a.with, topic: a.topic, payload: a.payload, boxMs: a.boxMs, maxExchanges: a.maxExchanges, artifactRefs: a.artifactRefs };
       case "mesh_collab_close":
@@ -298,7 +298,7 @@ export class McpToolset {
       // Passing both `threadId` and `newThread` is safe — `sendMessage`
       // resolves a live thread first and only then falls back to opening one.
       case "mesh_request":
-        return { op: "send", type: (a.requestType ?? "REQUEST") as MessageType, to: a.to, threadId: a.threadId, newThread: a.subject ? { subject: a.subject, artifactRefs: a.artifactRefs } : undefined, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload ?? {} };
+        return { op: "send", type: (a.requestType ?? "REQUEST") as MessageType, to: a.to, threadId: a.threadId, newThread: a.subject ? { subject: a.subject, artifactRefs: a.artifactRefs } : undefined, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload ?? {}, note: a.note };
       case "mesh_respond":
         return { op: "respond", messageId: a.messageId, type: a.type as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
       case "mesh_discharge":
@@ -327,8 +327,8 @@ export class McpToolset {
       // ask.
       case "mesh_announce": {
         const to = namedRecipients(a.to);
-        if (to.length === 0) return { op: "broadcast", type: "INFORM" as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
-        return { op: "send", type: "INFORM" as MessageType, to, threadId: a.threadId, payload: a.payload, artifactRefs: a.artifactRefs };
+        if (to.length === 0) return { op: "broadcast", type: "INFORM" as MessageType, payload: a.payload, note: a.note, artifactRefs: a.artifactRefs };
+        return { op: "send", type: "INFORM" as MessageType, to, threadId: a.threadId, payload: a.payload, note: a.note, artifactRefs: a.artifactRefs };
       }
       case "mesh_delegate":
         return { op: "delegate", to: a.to, title: a.title, description: a.description, requiredCapabilities: a.requiredCapabilities, artifactRefs: a.artifactRefs, budgetHint: a.budgetHint };
@@ -448,7 +448,7 @@ export class McpToolset {
         lifecycle: r.state.lifecycle,
         activations: r.state.activations,
         tokens: r.state.tokensConsumed,
-        mailbox: state.unread.get(r.definition.id)?.length ?? 0,
+        mailbox: readableMailDepth(state, r.definition.id),
         activeTaskId: r.state.activeTaskId,
         lastError: r.state.lastError,
       })),
@@ -697,8 +697,8 @@ export class McpToolset {
     // question.
     const msgType = (desc: string) => ({ ...str(desc), enum: [...MESSAGE_TYPES] });
     return [
-      { name: "mesh_send", description: "Send a typed message to agents (structured mesh protocol; never communicate outside the mesh).", inputSchema: { type: "object", required: ["type", "to"], properties: { type: msgType("message type"), to: strArr("recipient agent ids"), threadId: str("existing thread id"), newThread: obj("{subject, artifactRefs?} to open a thread"), replyTo: str("message id being answered"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("natural-language payload"), priority: str("LOW|NORMAL|HIGH|URGENT"), taskId: str("task context") }, additionalProperties: false } },
-      { name: "mesh_broadcast", description: "Broadcast an INFORM-class message to every mesh participant.", inputSchema: { type: "object", required: ["type"], properties: { type: msgType("message type"), payload: obj("payload"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
+      { name: "mesh_send", description: "Send a typed message to agents (structured mesh protocol; never communicate outside the mesh).", inputSchema: { type: "object", required: ["type", "to"], properties: { type: msgType("message type"), to: strArr("recipient agent ids"), threadId: str("existing thread id"), newThread: obj("{subject, artifactRefs?} to open a thread"), replyTo: str("message id being answered"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("natural-language payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), priority: str("LOW|NORMAL|HIGH|URGENT"), taskId: str("task context") }, additionalProperties: false } },
+      { name: "mesh_broadcast", description: "Broadcast an INFORM-class message to every mesh participant.", inputSchema: { type: "object", required: ["type"], properties: { type: msgType("message type"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_collab", description: "Open a TIME-BOXED discussion with other agents, for work too open-ended for a single request. It obliges nobody to answer, but it is bounded: it ends on a clock and on a message count, and running past either raises a card for the human. Prefer mesh_request when you can name what you want; use this only for genuine discovery, and close it with mesh_collab_close as soon as you have what you came for.", inputSchema: { type: "object", required: ["with", "topic"], properties: { with: strArr("agent ids to include"), topic: str("what this discussion is for"), payload: obj("opening message"), boxMs: { type: "number", description: "shorten the time box (ms); it can never be lengthened" }, maxExchanges: { type: "number", description: "shorten the message budget; it can never be raised" }, artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_collab_close", description: "Close a discussion you are part of, recording what came of it. Closing early costs nothing; letting it run to its edge always raises a card.", inputSchema: { type: "object", required: ["threadId", "outcome"], properties: { threadId: str("the collab thread"), outcome: str("what was decided or learned") }, additionalProperties: false } },
       // `requestType` stays a free string on purpose — but no longer for the
@@ -719,7 +719,7 @@ export class McpToolset {
       // names the ASK rather than its wire type and has its request shape
       // checked before anyone is woken — which is why this tool leaves the
       // manifest entirely under `bus.vocabulary: "contracts"`.
-      { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload") }, additionalProperties: false } },
+      { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority") }, additionalProperties: false } },
       { name: "mesh_respond", description: "Respond to a specific received message.", inputSchema: { type: "object", required: ["messageId", "type"], properties: { messageId: str("message being answered"), type: msgType("response message type"), payload: obj("payload"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_discharge", description: "Close a request addressed to you that you will NOT answer, stating why. Use instead of staying silent: an unanswered request nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId", "reason"], properties: { messageId: str("the request you are closing"), reason: str("why it will not be answered (wrong recipient, out of scope, already covered elsewhere, blocked on something else)") }, additionalProperties: false } },
       // The collapsed vocabulary's answer and its tell — the two acts no
@@ -732,7 +732,7 @@ export class McpToolset {
       // its answer, which was the single most expensive mistake in the
       // vocabulary (one agent burned 18 turns on `RESULT`).
       { name: "mesh_reply", description: "Answer a message addressed to you. This is what settles an ask: the mesh matches your answer to the request it discharges and checks it against the contract the asker used. If you will NOT answer, use mesh_discharge instead of staying silent.", inputSchema: { type: "object", required: ["messageId", "response"], properties: { messageId: str("the message you are answering"), response: obj("your answer — the fields the contract said an answer carries"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
-      { name: "mesh_announce", description: "Say something that obliges nobody to answer. Omit 'to' and every seat in the mesh hears it; name seats and only they do. Use mesh_call when you actually want something back — an announcement nobody owes an answer to is nobody's turn.", inputSchema: { type: "object", required: ["payload"], properties: { payload: obj("what you are telling them"), to: strArr("recipient agent ids; omit to tell everyone"), threadId: str("existing thread id"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
+      { name: "mesh_announce", description: "Say something that obliges nobody to answer. Omit 'to' and every seat in the mesh hears it; name seats and only they do. Use mesh_call when you actually want something back — an announcement nobody owes an answer to is nobody's turn.", inputSchema: { type: "object", required: ["payload"], properties: { payload: obj("what you are telling them"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), to: strArr("recipient agent ids; omit to tell everyone"), threadId: str("existing thread id"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_delegate", description: "Delegate a task to another agent (creates a task and a DELEGATE message).", inputSchema: { type: "object", required: ["to", "title", "description"], properties: { to: str("delegate target"), title: str("task title"), description: str("task spec"), requiredCapabilities: strArr("capabilities the target must hold"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), budgetHint: obj("{maxTokens}") }, additionalProperties: false } },
       { name: "mesh_block", description: "Exercise blocking authority (quality.block / security.block) on a subject.", inputSchema: { type: "object", required: ["subject", "reason"], properties: { subject: str("domain subject e.g. release / artifact id domain"), artifactId: str("artifact"), reason: str("blocking reason") }, additionalProperties: false } },
       { name: "mesh_approve", description: "Approve a subject domain or artifact review.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain: architecture|implementation|quality|security|requirements|release|criterion:<id>"), artifactId: str("artifact if applicable"), comment: str("rationale") }, additionalProperties: false } },

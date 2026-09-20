@@ -4,6 +4,7 @@ import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/conf
 import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
+import { aliasStats } from "../../../packages/protocol/src/op-aliases";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
@@ -390,7 +391,7 @@ async function launchMesh(opts: {
         if (reported) return;
         reported = true;
         try {
-          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
+          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state, undefined, { aliases: aliasStats() })));
         } catch (err) {
           // A report that throws must not swallow the run's outcome.
           console.log(fallback);
@@ -552,7 +553,12 @@ export async function main(argv: string[]): Promise<number> {
         console.log(`Goal:      ${st.goal?.description?.split("\n")[0]?.slice(0, 60) ?? "(none)"} [${st.goal?.status ?? "-"}]`);
         console.log(`Progress:  ${bar(st.progress?.ratio ?? 0)} ${Math.round((st.progress?.ratio ?? 0) * 100)}%`);
         const tokens = st.budgets?.find?.((b: any) => b.key.startsWith("mission:"));
-        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}`);
+        // `aliases` rides on the events line because it is the same kind of
+        // number: a process-wide diagnostic that is only interesting when it
+        // moves. It prints the zero rather than hiding it -- a zero is the
+        // answer the operator is looking for when asking whether the prose
+        // alias tables can be retired.
+        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}   aliases: ${st.aliases?.total ?? "-"}`);
         console.log("");
         for (const a of st.agents ?? []) {
           const dot = ["THINKING", "WORKING", "REQUESTING", "AWAKENED", "OBSERVING", "REVIEWING"].includes(a.lifecycle) ? "â—" : "â—‹";

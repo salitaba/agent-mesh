@@ -682,7 +682,7 @@ parses prose and still gets the full block, which is the whole point of the gate
 (3), meanwhile, turns out to be unobservable as written — `aliasStats()` has no production
 caller anywhere in the tree, so "reports zero across a real run" cannot currently be measured by
 anyone. **Wiring those counters to something that reports is the next piece of work if the alias
-tables are ever to go.**
+tables are ever to go** — done below, along with two more small ones.
 
 ### Move 2 as shipped, and the two refinements the tests forced
 
@@ -783,6 +783,112 @@ Maps, arrays and one counter map, and "arrived empty" is what a count states exa
 Negative-controlled by emptying each of the eight in turn in the compiled codec: all eight go
 red. Under the old guard, **none** of the eight did.
 
+
+---
+
+## 5b. The three small ones
+
+Three loose ends from the review, all landed together because each was cheap and each closed a
+place where the code said one thing and did another. None is a live bug; all three are the
+kind of thing that costs an hour to re-derive later.
+
+### `aliasStats()` now reports, and the zero is the point
+
+Precondition (3) of the vocabulary collapse said "the counters report zero across a real run".
+They had no production caller at all, so the condition was unfalsifiable — nobody could have
+measured it. `aliasStats()` is now:
+
+- an **explicit optional argument** to `buildRunReport(state, goalId, { aliases })`, not a
+  module read. The counters are process-scoped (`op-aliases.ts:180-192`) and the run report is
+  per-goal, so smuggling a process global into a builder that the tests drive with hand-built
+  state would have made the function's output depend on every test that ran before it, in
+  order. A caller that has the counters passes them; one that does not gets the field absent.
+- reported **always** by `supervisor.status()`, which is the one place a zero is observable.
+  That was the actual gap: a counter that only appears when non-zero cannot answer "did this
+  run go through the alias tables", which is the question the precondition asks.
+- printed in the run report **only when non-zero**, where a non-zero count is itself a finding
+  — it gates the COMMS section on, alone among the aliases' neighbours, because a seat
+  inventing `mesh_send` names is a behaviour worth surfacing and a zero is the absence of one.
+- printed in the CLI status line **including the zero**, since that line exists to be read by
+  someone about to decide whether the tables can go.
+
+The CLI and the HTTP route both supply it; the test suite's direct `buildRunReport(state, goal)`
+calls keep it absent and are unaffected.
+
+### The `note` layer, and why it is on the envelope
+
+`note` is free prose for the recipient: never parsed, no op extraction, no discharge
+inference, no routing, and no authority. It exists because the alternative a seat reaches for
+is worse — a fenced block or an op-shaped sentence parked in `payload`, which every parser in
+the tree then reads as structure. `payload.note` is *not* this field and is unaffected: it
+stays a legitimate payload key, and the reserved-key list is unchanged.
+
+**Envelope-level, deliberately.** `fingerprintOf` and `payloadDiscriminator` read only
+`m.payload` (`projections-helpers.ts:95-126`), so a note cannot alter loop-detection identity
+— two sends differing only in prose are still the same message, which is exactly the
+distinction the field is for. A `payload.note` would have changed the fingerprint and handed
+every seat a way to defeat loop detection by adding a word. Making it a reserved payload key
+would have been the other half of the same mistake from the opposite direction.
+
+The cost is a protocol change: `additionalProperties: false` sits at the message level in both
+`packages/protocol/src/schemas.ts` and `schemas/message.schema.json`, with a deepEqual parity
+test between them, so an envelope field has to be added to both copies or a carrying send is
+*rejected* rather than quietly dropped. Both were edited together.
+
+**It is inert against every parser in the repo, but it is not inert against the prompt**, and
+that is where the render matters.
+
+Six tests, and the three negative controls are the argument for the design. Removing `note`
+from the compiled schema reddens both schema tests **and** the parity test — the drift guard,
+which is the thing that makes "edit both copies" enforced rather than remembered. Rendering the
+note back into the payload JSON reddens exactly the render test and nothing else, which is the
+structural claim ("a note is not in the payload line") rather than a string match on the label.
+Adding `m.note` to `fingerprintOf` reddens exactly the identity test, which is the half that
+would otherwise only be argued in a comment. The "a message with no note renders no note line"
+test is there so that a passing render test cannot be satisfied by always printing the label,
+and the identity test carries its own converse (a payload change still moves identity) so it
+cannot pass by the fingerprint having gone constant.
+
+The envelope/`note`-in-payload split is also now pinned from both ends: the render test asserts
+the note is **absent from the payload line**, and the fingerprint test asserts a note cannot
+buy a distinct identity. Either one alone would pass if the field were in the wrong place.
+
+Tests landed in `tests/protocol/protocol.test.ts` (three), `tests/policy/envelope-authority.test.ts`
+(one), `tests/core/context-inbox-order.test.ts` (two). `context.ts` prints unread payloads as verbatim JSON; a note
+folded onto that line inherits the same reading-as-structure risk the field was added to
+remove. It gets its own labelled line instead, naming it as prose and as carrying no authority,
+which is also the line that teaches the recipient what the field is. Prose seats discover it
+from the ops catalogue's `send` entry; typed seats from the MCP manifest's `inputSchema`.
+
+### Mailbox depth now answers "can you read it", not "were you owed it"
+
+`mailboxDepth` was the raw unread list length, which counts ids that resolve to no message.
+The review found the restore path could manufacture exactly that (above), and the screen closed
+it there — but the derived counters downstream still counted the box rather than the mail.
+
+The fix was **not** uniform, because there are two questions in the tree and only one of them
+is a bug when answered the other way:
+
+- **"can you read it?"** — attention signals, wake gates, the agent's own prompt, the activity
+  and graph views, the MCP and HTTP surfaces. All now go through `readableMailDepth()` /
+  `resolveUnread()`. A box whose head is a dangler must not buy a turn: the scheduler's
+  `notifyTurnFinished` previously passed `unread[0]` off the raw id array as the activation's
+  `messageId`, so it could activate a seat citing a message that resolves to nothing.
+- **"were you owed it?"** — the run report's `unread`, which is *deliberately* raw and now
+  says so in a comment. `run-report.ts:195-197` already recorded the reasoning: the mail was
+  owed whether or not its body survived the snapshot, and a report that quietly stops counting
+  the dropped ones is a report that hides the drop.
+
+`state.ts` carries the two questions side by side with the reasoning, so the next person to
+reach for a depth has the split in front of them rather than a coin flip. Both residual
+questions — is the drop still counted, is the screen still load-bearing — are answered by
+`tests/core/state.test.ts`, which treats a dangler as supported input and asserts a dangler
+"must not consume a slot".
+
+One existing test failed and was right to: `supervisor-pure.test.ts`'s fixture for "undelivered
+mail outranks a finished criteria list" put an id in a box with no message behind it, and the
+new rule reads that as no mail. The fixture now puts the message there; the separate
+"a mailbox id with no message behind it is not mail" test pins the new behaviour on purpose.
 
 ---
 

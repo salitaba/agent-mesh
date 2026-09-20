@@ -225,6 +225,27 @@ export interface MeshMessage {
   provenance?: ContentProvenance;
   taskId?: TaskId;
   /**
+   * Prose attached to the message. NEVER parsed by the mesh.
+   *
+   * The one place a seat can write freely without the mesh reading it as
+   * anything. Deliberately an ENVELOPE field and not a payload key, because
+   * every payload key is live: `payloadDiscriminator` hashes unrecognised
+   * payloads wholesale, so a `note` inside `payload` would change a message's
+   * identity — two seats saying the same thing in different words would
+   * collide or not based on the wording — while `validateContractResponse`
+   * would reject it outright against any contract with a closed response
+   * schema. On the envelope it reaches no parser, no contract check, no
+   * discharge inference and no routing decision.
+   *
+   * Being outside `fingerprintOf` cuts both ways, and that is the intended
+   * shape: a note cannot make two otherwise-identical sends distinct, so it
+   * cannot be used to slip past loop detection.
+   *
+   * Not settable through `payload`, and stripped from `payload` like every
+   * other reserved key, so a legacy reader cannot find a forged copy there.
+   */
+  note?: string;
+  /**
    * Runtime-owned delivery control. NEVER settable by an agent.
    *
    * `payload` is verbatim agent input, so any routing decision keyed on a
@@ -1220,6 +1241,13 @@ export interface MeshOpSend {
   replyTo?: MessageId;
   artifactRefs?: ArtifactRef[];
   payload?: unknown;
+  /**
+   * Free prose for the recipient. Never parsed — see `MeshMessage.note`.
+   *
+   * Separate from `payload` on purpose: `payload` is what a contract validates
+   * and what loop detection fingerprints, and prose belongs in neither.
+   */
+  note?: string;
   priority?: MessagePriority;
   taskId?: TaskId;
   requires?: Requirement[];
@@ -1230,6 +1258,8 @@ export interface MeshOpBroadcast {
   op: "broadcast";
   type: MessageType;
   payload?: unknown;
+  /** Free prose for every recipient. Never parsed — see `MeshMessage.note`. */
+  note?: string;
   artifactRefs?: ArtifactRef[];
 }
 

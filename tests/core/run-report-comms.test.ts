@@ -281,3 +281,57 @@ test("comms is a top-level key and survives a JSON round trip", () => {
   assert.equal("comms" in report.unfinished, false);
   assert.deepEqual(JSON.parse(JSON.stringify(report)).comms, report.comms);
 });
+
+// --- alias rewrites --------------------------------------------------------
+
+/**
+ * The precondition for ever retiring the alias tables is "the counters read
+ * zero on a real mesh". Two things follow, and they pull in opposite
+ * directions on this surface:
+ *
+ *   - the JSON has to carry the number even when it is zero, or there is
+ *     nothing to measure across runs;
+ *   - the TEXT must not open a section for a zero, because a COMMS header over
+ *     nothing is how a report trains people to skip it.
+ *
+ * Hence `aliases` is a finding on the way out and not a reason to print.
+ */
+
+test("aliases: a supplied zero is carried in the JSON but prints no section", () => {
+  // The gate is `total > 0`, not "the caller supplied stats". Supplying the
+  // field is how a caller reports; it is not itself a finding.
+  const state = createInitialState();
+  seedGoal(state);
+  const report = buildRunReport(state, undefined, { aliases: { total: 0, byRewrite: [] } });
+  assert.deepEqual(report.comms.aliases, { total: 0, byRewrite: [] }, "the zero is the measurement");
+  const text = renderRunReport(report);
+  assert.ok(!text.includes("  COMMS"), "a zero rewrite count is not a finding");
+  assert.ok(!text.includes("alias"));
+});
+
+test("aliases: absent when the caller supplied none", () => {
+  const state = createInitialState();
+  seedGoal(state);
+  assert.equal(buildRunReport(state).comms.aliases, undefined, "no caller, no claim");
+});
+
+test("aliases: a non-zero count prints the tables that caught it", () => {
+  const state = createInitialState();
+  seedGoal(state);
+  const report = buildRunReport(state, undefined, {
+    aliases: { total: 3, byRewrite: [{ rewrite: "op:mesh_send->send", count: 2 }, { rewrite: "type:REPLY->INFORM", count: 1 }] },
+  });
+  const text = renderRunReport(report);
+  assert.ok(text.includes("  COMMS"), "a seat inventing names is something an operator can act on");
+  assert.ok(text.includes("3 prose rewrites"), text);
+  assert.ok(text.includes("op:mesh_send->send x2"), "the rewrite names the invented spelling, not just a count");
+});
+
+test("aliases: a round trip through JSON keeps the count", () => {
+  const state = createInitialState();
+  seedGoal(state);
+  const report = buildRunReport(state, undefined, { aliases: { total: 1, byRewrite: [{ rewrite: "op:mesh_send->send", count: 1 }] } });
+  const back = JSON.parse(JSON.stringify(report)) as typeof report;
+  assert.equal(back.comms.aliases?.total, 1);
+  assert.equal(back.comms.aliases?.byRewrite[0]?.rewrite, "op:mesh_send->send");
+});

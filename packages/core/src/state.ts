@@ -889,6 +889,48 @@ export function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number):
 }
 
 /**
+ * The messages a seat is actually holding, in box order.
+ *
+ * The one place that answers "what is in this mailbox", so that the six
+ * callers that each wrote their own `.map(get).filter(Boolean)` cannot drift
+ * apart. O(box), bounded by `MAX_UNREAD_PER_AGENT`.
+ */
+export function resolveUnread(state: Projections, agentId: string): MeshMessage[] {
+  const out: MeshMessage[] = [];
+  for (const id of state.unread.get(agentId) ?? []) {
+    const m = state.messages.get(id);
+    if (m) out.push(m);
+  }
+  return out;
+}
+
+/**
+ * How much mail a seat can actually open.
+ *
+ * NOT the same as `state.unread.get(agentId).length`, and the difference is
+ * the whole reason this function exists. A box can hold an id with no message
+ * behind it: `importState` screens for exactly that, so the snapshot can no
+ * longer *create* one, but nothing stops a projection from being handed one
+ * directly -- `tests/core/state.test.ts` asserts a box may hold a dangler and
+ * that it "must not consume a slot". Such an id is not mail: nobody can read
+ * it, nobody can discharge it, and a seat shown `mailbox=3` when it can open
+ * two has been handed a number it cannot act on.
+ *
+ * Which is why this counts, deliberately, for the question *can you read it*
+ * -- the attention signal, the wake gates, and the depth in the agent's own
+ * prompt. It is NOT the accounting question. `run-report.ts` asks *were you
+ * owed it* and counts raw ids on purpose: "the mail was owed whether or not
+ * its body survived." Both are right, about different things.
+ */
+export function readableMailDepth(state: Projections, agentId: string): number {
+  const box = state.unread.get(agentId);
+  if (!box?.length) return 0;
+  let n = 0;
+  for (const id of box) if (state.messages.has(id)) n += 1;
+  return n;
+}
+
+/**
  * How many messages one snapshot carries.
  *
  * A hard ceiling on the exported array rather than a floor under the tail:
@@ -1104,7 +1146,7 @@ export function importState(state: Projections, data: {
   // disagreeing -- an older snapshot carries depths with no mail behind them,
   // and that number is what the agent is shown as `mailbox=N` in its prompt.
   for (const [agentId, rec] of state.agents) {
-    if (rec?.state) rec.state.mailboxDepth = state.unread.get(agentId)?.length ?? 0;
+    if (rec?.state) rec.state.mailboxDepth = readableMailDepth(state, agentId);
   }
   for (const t of (data.tasks ?? []) as Array<{ id: string } & { id: string }>) state.tasks.set((t as { id: string }).id, t as never);
   for (const d of (data.decisions ?? []) as Array<{ id: string }>) state.decisions.set(d.id, d as never);
