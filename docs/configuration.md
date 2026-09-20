@@ -277,7 +277,7 @@ delivery:
 Which comms vocabulary a seat's tool manifest advertises. `contracts` collapses
 it to the named asks; omitted (or `typed`) is the manifest every mesh has had.
 
-Under `vocabulary: contracts` the comms manifest is seven tools, and **not one
+Under `vocabulary: contracts` the comms manifest is eight tools, and **not one
 of them asks for a message type**:
 
 | tool | what it is for |
@@ -286,8 +286,19 @@ of them asks for a message type**:
 | `mesh_call` | the ask |
 | `mesh_reply` | the answer |
 | `mesh_discharge` | the refusal |
+| `mesh_withdraw` | taking the ask back |
 | `mesh_announce` | saying something that obliges nobody |
 | `mesh_collab` / `mesh_collab_close` | the bounded discussion |
+
+`mesh_withdraw` is the one member that is not a vocabulary act, and it is the
+exception in the table for a reason worth knowing: a mesh that does not collapse
+its vocabulary gets it too. `mesh_reply` and `mesh_announce` exist *only* to
+carry the collapsed surface, so they stay hidden from a manifest that did not
+ask for it; `mesh_withdraw` is a capability the mesh was missing at every
+vocabulary setting. It closes an ask its own sender raised, releasing every
+agent who still owed an answer — the asker's counterpart to `mesh_discharge`,
+which is authorized by *owing* the answer rather than by having asked the
+question.
 
 `mesh_send`, `mesh_broadcast` and `mesh_respond` leave the advertised list,
 along with the four `typed-only` already drops. `mesh_reply` answers with the
@@ -305,7 +316,7 @@ Be honest about the payoff: the token saving is small (the manifest shrink
 measured **−96 tokens/turn** when `typed-only` dropped four tools, and this
 drops three more while adding two). The real win is that a seat can no longer
 invent `RESULT`, because the manifest offers no field to invent it in — which is
-the entire reason `op-aliases.ts` exists (56 name aliases, 31 type aliases,
+the entire reason `op-aliases.ts` exists (60 name aliases, 31 type aliases,
 thirteen words for "here is your answer" folded onto `INFORM`). An alias table
 is what you build when a surface cannot be learned; this shrinks the surface.
 

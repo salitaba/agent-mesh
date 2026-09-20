@@ -129,10 +129,20 @@ everyone at once.
 ### Asks leave the ledger exactly one way
 
 Every exit is a recorded discharge with a reason, so "how did this ask
-disappear?" always has an answer. Two reasons mean **gone, not answered**
-(`evicted_cap`, `deadlock_break`); consumers must consult the reason before
-concluding an ask resolved, and escalation cards pointing at such an ask stay
-open rather than auto-closing with a false claim.
+disappear?" always has an answer. Four reasons mean **gone, not answered**
+(`evicted_cap`, `deadlock_break`, `expired`, `refused_cap`); consumers must
+consult the reason before concluding an ask resolved, and escalation cards
+pointing at such an ask stay open rather than auto-closing with a false claim.
+
+`withdrawn_by_sender` is deliberately *not* one of those four, and the
+distinction is the whole point of it. The asker closed its own ask before
+anyone answered, which is a real decision by a party to the ask, so the record
+is a settlement rather than a loss: the debtors are released and told, and the
+escalation card that the stuck ask raised auto-closes instead of keeping a
+human's queue open over a question nobody wants answered. It is the asker's
+counterpart to `refused` — authorized by having *asked* the question, exactly
+where `refused` is authorized by *owing* the answer — and it is the one exit
+whose purpose is to remove an interrupt rather than manufacture one.
 
 ## Event envelope (`schemas/event.schema.json`)
 

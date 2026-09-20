@@ -9,7 +9,7 @@ import type { MessageType } from "./types";
  * and HANDOFF and COMMIT are written by the kernel and never read by identity.
  * Exactly one — DONE — carries a semantic distinction anything acts on, and
  * that is an observability edge label. So a seat guesses among 24 names of
- * which 7 mean something, gets it wrong, and `op-aliases.ts` (56 name aliases,
+ * which 7 mean something, gets it wrong, and `op-aliases.ts` (60 name aliases,
  * 31 type aliases) exists to catch the guesses. One agent burned 18 turns on
  * `RESULT`.
  *

@@ -15,12 +15,12 @@ import { MESSAGE_TYPES, shortHash, validateMeshConfig } from "../../packages/pro
  * `mesh_call` AND `mesh_send` AND its 24-name `MessageType` enum, and went on
  * guessing. This mode removes the guess from the SURFACE: under it the comms
  * tools are `mesh_contracts`, `mesh_call`, `mesh_reply`, `mesh_discharge`,
- * `mesh_announce` and `mesh_collab`/`_close`, and not one of them has a field
- * a message type could be typed into.
+ * `mesh_withdraw`, `mesh_announce` and `mesh_collab`/`_close`, and not one of
+ * them has a field a message type could be typed into.
  *
  * The payoff is not tokens (the measured saving was -96 a turn, and saying
  * otherwise would be a lie this file is in a position to tell). It is that
- * `op-aliases.ts` -- 56 name aliases and 31 type aliases papering over a
+ * `op-aliases.ts` -- 60 name aliases and 31 type aliases papering over a
  * vocabulary nobody could learn -- stops being load-bearing. So the tests
  * here defend the two things that has to rest on:
  *
@@ -139,7 +139,7 @@ function bus(m: Mesh, agentId: string) {
   };
 }
 
-const COLLAPSED = ["mesh_contracts", "mesh_call", "mesh_reply", "mesh_discharge", "mesh_announce", "mesh_collab", "mesh_collab_close"];
+const COLLAPSED = ["mesh_contracts", "mesh_call", "mesh_reply", "mesh_discharge", "mesh_withdraw", "mesh_announce", "mesh_collab", "mesh_collab_close"];
 const TYPED = ["mesh_send", "mesh_broadcast", "mesh_respond", "mesh_request", "mesh_request_review", "mesh_research_request", "mesh_escalate"];
 
 test("manifest: a mesh with no vocabulary key is advertised exactly what it always was", async () => {
@@ -344,6 +344,58 @@ test("mesh_announce is one act over two ops: everyone, or the seats you name", a
     // targeted note to the entire mesh.
     const coerced = await architect.call("mesh_announce", { to: "qa" as unknown as string[], payload: { note: "rerun the suite" } });
     assert.deepEqual(m.kernel.state.messages.get(coerced.messageId)?.to, ["qa"]);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("mesh_withdraw: a missing capability, not a vocabulary act, so every manifest carries it", async () => {
+  const m = await pair();
+  try {
+    // `mesh_reply` and `mesh_announce` exist ONLY to carry the collapsed
+    // surface, so a mesh that did not ask for it must not see them -- that is
+    // the whole reason CONTRACT_VOCABULARY_TOOLS is gated. `mesh_withdraw` is
+    // the opposite case and the distinction is worth a test, because the two
+    // arrive looking identical: it is a capability the mesh never had, and
+    // gating it would leave the asker without a cheap exit in exactly the
+    // meshes that still run the nudge ladder and the stalemate card.
+    const names = await bus(m, "architect").names();
+    assert.ok(names.includes("mesh_withdraw"), "mesh_withdraw must be advertised in an unconfigured mesh");
+    assert.ok(!names.includes("mesh_reply"), "and this is the contrast: mesh_reply stays hidden");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("mesh_withdraw: the tool reaches the op, closes the ask and releases the debtors", async () => {
+  const m = await pair();
+  try {
+    const ask = await m.supervisor.sendMessage({
+      from: "architect",
+      to: ["dev", "qa"],
+      type: "REQUEST_REVIEW",
+      newThread: { subject: "review please" },
+      payload: { q: "review" },
+    });
+    assert.ok(ask.messageId);
+    assert.deepEqual(m.kernel.state.pendingRequests.get(ask.messageId!)?.outstanding, ["dev", "qa"]);
+
+    // Through the tool, not the op, so the definition and the `toOp` case are
+    // both exercised: they are the wiring that a unit test on the supervisor
+    // cannot see, and a tool whose name reaches no op fails silently at the
+    // far end of a model turn.
+    const out = await bus(m, "architect").call("mesh_withdraw", { messageId: ask.messageId!, reason: "shipped the old design" });
+    assert.equal(out.ok, true, JSON.stringify(out));
+    assert.equal(m.kernel.state.pendingRequests.has(ask.messageId!), false, "the ask is closed");
+    assert.equal(m.kernel.state.discharged.find((d) => d.messageId === ask.messageId)?.reason, "withdrawn_by_sender");
+
+    // And the debtors were told, which is the half a closed ledger entry does
+    // not imply: a released debtor mid-review keeps working unless it is told.
+    const told = [...m.kernel.state.messages.values()].filter(
+      (x) => (x.payload as Record<string, unknown>)?.withdrawn === true,
+    );
+    assert.equal(told.length, 1);
+    assert.deepEqual([...told[0]!.to].sort(), ["dev", "qa"]);
   } finally {
     await m.cleanup();
   }

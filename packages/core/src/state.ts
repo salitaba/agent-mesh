@@ -87,6 +87,33 @@ export type DischargeReason =
    */
   | "expired"
   /**
+   * The AGENT THAT ASKED closed its own ask before anyone answered it.
+   *
+   * The creditor's counterpart to `refused`, and it closes the same asymmetry
+   * from the other side. A debtor that will not answer could say so; an asker
+   * that no longer NEEDS an answer had no move at all. Its only options were
+   * to keep waiting, or to chase -- and a chase is an interrupt, priced in
+   * someone else's attention, to demand an answer to a question it had
+   * already stopped needing. Failing that, the ask aged into the nudge ladder
+   * and raised a card, so the operator was woken to arbitrate a question
+   * nobody wanted answered.
+   *
+   * Withdrawing is therefore the cheap exit from exactly the situation the
+   * escalation ladder is worst at. It says "stop working on this" in one
+   * logged move, costs no model turn on either side, and retires the card
+   * instead of manufacturing it.
+   *
+   * NOT a loss, and deliberately absent from `UNANSWERED_DISCHARGE_REASONS`:
+   * the one party whose answer mattered is the party that chose to stop
+   * wanting it. It is also absent from `PER_DEBTOR_DISCHARGE_REASONS` -- the
+   * asker speaks for the whole ask, so one withdrawal releases every debtor,
+   * and the released set is the record's own `to`, complete rather than
+   * partial. The reason the asker gave lives on the `commitment.discharged`
+   * event payload and in the notice the debtors receive; it is deliberately
+   * NOT a `DischargeRecord` field, whose shape is fixed.
+   */
+  | "withdrawn_by_sender"
+  /**
    * The bounded-state cap forced it out. NOT an answer: the ask is simply
    * gone, and everything downstream of the ledger (wait-cycle detection,
    * `owedByYou` context, stuck-request escalations) loses it. Recorded so
@@ -120,6 +147,12 @@ export const UNANSWERED_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Se
   "expired",
   // Never opened, so certainly never answered.
   "refused_cap",
+  // `withdrawn_by_sender` is absent for the same reason as `refused`, and the
+  // membership is what retires the operator's card. A card raised for
+  // `stalemate:unanswered_request` exists because a question was stuck; once
+  // the asker withdraws it there is no question, no stalemate, and nobody for
+  // the operator to arbitrate between. Leaving it in this set would keep the
+  // card OPEN and the mission frozen over an ask that no longer exists.
 ]);
 
 export interface PendingRequest {
@@ -755,8 +788,14 @@ export function dischargeCommitment(
  *
  * These are all "an agent responded" paths. Everything else — an operator
  * answering or dropping it, a newer artifact version superseding the review,
- * the task completing, a deadlock break, ledger capacity — is a decision
- * about the ask itself and closes it for every debtor at once.
+ * the task completing, a deadlock break, ledger capacity, the asker
+ * withdrawing — is a decision about the ask itself and closes it for every
+ * debtor at once.
+ *
+ * `withdrawn_by_sender` belongs to that second group and is absent below: an
+ * asker closing its own ask is a statement about the ask, not one debtor's
+ * share of it, so it must release the reviewers who have not answered as
+ * surely as the one who did.
  */
 export const PER_DEBTOR_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Set<DischargeReason>([
   "reply",

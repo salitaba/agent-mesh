@@ -39,6 +39,7 @@ import {
   type MeshEvent,
   type MeshMessage,
   type MeshOp,
+  type MeshOpWithdraw,
   type MessageType,
   type ReplayState,
   type RuntimeContext,
@@ -1973,6 +1974,13 @@ export class Supervisor {
     // WAITING forever — the "no active agents" stall. A `respond`/`reply`
     // already notifies via its answer message; the extra wake is harmless
     // (deduped by isBusy/queue) but keep it anyway: uniform beats clever.
+    // The one exception to all of the above: the actor closed its OWN ask.
+    // Waking the asker to tell it what it just did is pure cost -- and worse
+    // than noise, because the note below reads "your request closed: <why>",
+    // so a self-close would state the action back to the seat that took it.
+    // Computed here rather than guarded at the call site so every self-close
+    // gets it, including a future one that does not arrive through `withdraw`.
+    const selfClosed = by === pending.from;
     if (partial) {
       // One of several debtors answered. The ask is NOT closed, so telling the
       // asker it was would send it off to plan a next step while it is still
@@ -1985,7 +1993,7 @@ export class Supervisor {
       }
       return true;
     }
-    if (pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
+    if (!selfClosed && pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
       const why =
         reason === "reply" ? "it was answered"
         : reason === "superseded" ? "a newer artifact version replaced what was under review"
@@ -1997,6 +2005,13 @@ export class Supervisor {
         : reason === "task" ? "its task was answered"
         : reason === "in_thread" ? "an in-thread answer arrived"
         : reason === "refused" ? `${by} declined it — do not re-ask the same agent; route it elsewhere or proceed without it`
+        // Naming `by` rather than "the asker", because those are the same
+        // seat only in the case that never reaches here: the asker closing its
+        // own ask is `selfClosed` above, so the only withdrawal that wakes an
+        // asker is one an operator performed on its behalf. Hard-coding "the
+        // agent that asked for it" would then tell the asker it withdrew an
+        // ask it is in fact waiting on.
+        : reason === "withdrawn_by_sender" ? `${by} withdrew it — stop working on it; nobody owes an answer`
         : reason === "expired" ? "its deadline passed with no answer — treat it as UNANSWERED and decide without it or re-ask"
         : reason === "refused_cap" ? "the ask ledger was full so it was never opened — re-ask once outstanding work drains"
         : "it was closed";
@@ -2006,6 +2021,92 @@ export class Supervisor {
       }).catch(() => undefined);
     }
     return true;
+  }
+
+  /**
+   * Close an ask the actor itself raised.
+   *
+   * The credential is the exact opposite of `discharge`'s, which is why this is
+   * its own op rather than a flag on that one: a refusal is authorized by OWING
+   * the answer, a withdrawal by having ASKED the question. Requiring
+   * `pending.from === actorId` is what stops a bystander voiding a colleague's
+   * question -- the same abuse the debtor check exists to prevent, arriving
+   * from the other end.
+   *
+   * The ledger work is `dischargeCommitment`'s, like every other exit. What is
+   * NOT shared is who gets told: that path wakes the ASKER, and here the actor
+   * is the asker, so it would be waking a seat to inform it of its own act.
+   * The seat that needs the message is the DEBTOR, for whom "stop working on
+   * this" is information it cannot get any other way -- a reviewer mid-review
+   * on a withdrawn question is spending turns on cancelled work.
+   */
+  private async opWithdraw(actorId: string, op: MeshOpWithdraw, turn: TurnState): Promise<OpResult> {
+    const pending = this.state.pendingRequests.get(op.messageId);
+    if (!pending) {
+      return { ok: false, op: op.op, reason: `no outstanding request '${op.messageId}' (already answered, or never existed)` };
+    }
+    if (pending.from !== actorId && actorId !== HUMAN_AGENT_ID) {
+      // Names the creditor, not the debtors. The seat that tried this needs to
+      // know WHOSE ask it was trying to close; who owed an answer has nothing
+      // to do with why it was refused, and listing them invites the reading
+      // that it is a dispute about the answer.
+      return { ok: false, op: op.op, reason: `only ${pending.from}, who raised ${op.messageId}, may withdraw it` };
+    }
+    // Read the debtors BEFORE the discharge: that call deletes the entry this
+    // reads from, and `released` is what the notice below is addressed to.
+    const released = outstandingDebtors(pending).filter((d) => d !== HUMAN_AGENT_ID);
+    // No `detail`, deliberately. Extra keys would ride into the
+    // `commitment.discharged` event payload and stop there: the reducer builds
+    // a `DischargeRecord` from a FIXED field list (`state.dischargeCommitment`),
+    // so `note` and a `released` list would look persisted while nothing could
+    // ever read them back. Both facts already have durable homes -- the reason
+    // is on the event payload and in the notice below, and the released set is
+    // `rec.to`, which for a whole-ask close IS the list of debtors let go.
+    const closed = await this.dischargeCommitment(op.messageId, "withdrawn_by_sender", actorId);
+    if (!closed) {
+      // The discharge event did not reach the log, so the ask is still open.
+      // Say so rather than sending a "stop working on this" notice for work
+      // that is still owed.
+      return { ok: false, op: op.op, reason: `could not close '${op.messageId}' — it is still open` };
+    }
+    if (released.length === 0) return { ok: true, op: op.op, reason: op.reason };
+
+    // Stamped `accrue`, and this is a deliberate override rather than a
+    // derivation. A retraction is a DE-escalation: the asker has decided the
+    // answer does not matter, which is the one thing a wake is for, so buying
+    // a turn per debtor to say "never mind" would make the cheap exit the most
+    // expensive move in the exchange. The class suppresses the WAKEUP and never
+    // the delivery -- the notice lands in every released debtor's mailbox and
+    // is read on its next turn for any other reason, the same guarantee every
+    // other class carries.
+    const notice = await this.sendMessage(
+      {
+        from: actorId,
+        to: released,
+        type: "INFORM",
+        // Both, deliberately, and this is the documented-safe combination:
+        // `sendMessage` resolves a live thread first and only falls back to
+        // opening one, so the notice lands in the thread that raised the ask
+        // and still has a subject if that thread is somehow gone.
+        threadId: pending.threadId,
+        newThread: { subject: `withdrawn: ${pending.type} ${op.messageId}` },
+        // `causationId` and NOT `replyTo`. They read alike and mean opposite
+        // things: `replyTo` is what DISCHARGES an ask (the reducer looks the
+        // id up in `pendingRequests` and settles the debt), so a retraction
+        // carrying it would claim to be the answer to the question it is
+        // cancelling. `causationId` says only that this message happens
+        // because of that one, which is exactly true.
+        causationId: op.messageId,
+        payload: { withdrawn: true, request: op.messageId, requestType: pending.type, from: actorId, reason: op.reason },
+        priority: "NORMAL",
+      },
+      // Runtime-owned control, the same door `broadcast` and `collab` use to
+      // stamp `mode`: an agent cannot set this, and the scheduler reads it off
+      // the envelope rather than out of agent-written JSON.
+      actorId === HUMAN_AGENT_ID ? undefined : { control: { delivery: "accrue" } },
+    );
+    turn.sentOps++;
+    return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
   }
 
   /**
@@ -5157,6 +5258,8 @@ export class Supervisor {
           turn.sentOps++;
           return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
+        case "withdraw":
+          return this.opWithdraw(actorId, op, turn);
         case "discharge": {
           const pending = this.state.pendingRequests.get(op.messageId);
           if (!pending) return { ok: false, op: op.op, reason: `no outstanding request '${op.messageId}' (already answered, or never existed)` };

@@ -73,16 +73,31 @@ test("haltReasonText: any other status falls through to a generic sentence", () 
   assert.equal(haltReasonText("FAILED"), "mission is FAILED");
 });
 
-test("MISSION_HALTED_ALLOW_OPS: escape hatches only, no mutation of shared state", () => {
-  for (const op of ["escalate", "send", "wait", "done", "remember", "read_artifact"] as const) {
+test("MISSION_HALTED_ALLOW_OPS: escape hatches only, no op that MOVES work", () => {
+  for (const op of ["escalate", "send", "wait", "done", "remember", "read_artifact", "withdraw"] as const) {
     assert.equal(MISSION_HALTED_ALLOW_OPS.has(op), true, op);
   }
-  assert.equal(MISSION_HALTED_ALLOW_OPS.size, 6);
+  assert.equal(MISSION_HALTED_ALLOW_OPS.size, 7);
   // `send` talks; these move work. A halt that let any of them through would
   // hand the operator a changed mission to come back to.
   for (const op of ["message", "commit", "publish_artifact", "propose_decision", "write_artifact"] as const) {
     assert.equal(MISSION_HALTED_ALLOW_OPS.has(op as never), false, op);
   }
+  // `withdraw` is the one that needs its reasoning stated rather than its name
+  // listed, because it is the only member that CHANGES shared state: closing
+  // an ask deletes a commitment every debtor can see. The rule it has to pass
+  // is not "mutates nothing" -- it is "cannot move WORK", and ending a debt is
+  // the opposite of moving work: it releases seats that were holding still.
+  // The case that forces it is the halt it must survive: an unanswered ask is
+  // what raises the operator's stalemate card, and the asker is the only seat
+  // that can say whether the answer is still wanted. Excluding it would let a
+  // stale question hold the mission frozen for as long as the operator is away
+  // -- and the operator it is waiting for is the one person who cannot ask.
+  assert.equal(MISSION_HALTED_ALLOW_OPS.has("withdraw"), true);
+  // Still frozen: withdrawing releases a debt, it does not settle one. A
+  // debtor must not be able to answer its way out of a halt.
+  assert.equal(MISSION_HALTED_ALLOW_OPS.has("discharge" as never), false);
+  assert.equal(MISSION_HALTED_ALLOW_OPS.has("respond" as never), false);
 });
 
 test("MISSION_OVER_ALLOW_OPS: strictly narrower than the halted set", () => {

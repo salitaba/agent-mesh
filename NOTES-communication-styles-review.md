@@ -41,7 +41,7 @@ Communication is expressed through four independent surfaces:
 Plus 8 named contracts (`contracts.ts:135-305`).
 
 The design doc already found that seven of the 24 types "have **zero semantics in any file
-in the repo**". The live proof is `op-aliases.ts`: 56 name aliases and 31 type aliases,
+in the repo**". The live proof is `op-aliases.ts`: 60 name aliases and 31 type aliases,
 existing solely because the vocabulary cannot be learned. `TYPE_ALIASES` collapses thirteen
 different words for "here is your answer" — `RESULT, RESPONSE, REPLY, ANSWER, ACK, UPDATE,
 STATUS, REPORT, NOTIFY, RESEARCH_REPORT, RESEARCH_RESULT, FINDINGS, reply` — onto `INFORM`.
@@ -316,13 +316,14 @@ I would put the effort.
 ### Move 1 — Collapse the agent-facing vocabulary to contracts
 
 Make contracts the surface and demote `MessageType` to a rendering and telemetry detail. An
-agent's comms manifest becomes seven tools:
+agent's comms manifest becomes eight tools:
 
 ```
 mesh_contracts()                      what can I ask for
 mesh_call(contract, request)          the ask
 mesh_reply(messageId, response)       the answer
 mesh_discharge(messageId, reason)     the refusal
+mesh_withdraw(messageId, reason)      taking the ask back  [the asker's exit]
 mesh_announce(payload)                the broadcast
 mesh_collab(with, topic) / _close     the bounded discussion
 ```

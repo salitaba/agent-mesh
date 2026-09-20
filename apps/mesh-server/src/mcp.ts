@@ -76,19 +76,20 @@ const SUPERSEDED_BY_CONTRACT: Record<string, string> = {
  * could say anything, and the measurement came in at −96 tokens a turn. The
  * saving was never the point and it showed.
  *
- * Under the collapsed vocabulary the comms manifest is seven tools and not
+ * Under the collapsed vocabulary the comms manifest is eight tools and not
  * one of them asks for a type:
  *
  *   mesh_contracts        what can I ask for
  *   mesh_call             the ask
  *   mesh_reply            the answer
  *   mesh_discharge        the refusal
+ *   mesh_withdraw         taking the ask back
  *   mesh_announce         saying something that obliges nobody
  *   mesh_collab/_close    the bounded discussion
  *
  * The honest payoff is not tokens either. It is that a seat can no longer
  * invent `RESULT`, because the manifest offers no field to invent it in —
- * which is the entire reason `op-aliases.ts` exists (56 name aliases, 31 type
+ * which is the entire reason `op-aliases.ts` exists (60 name aliases, 31 type
  * aliases, thirteen words for "here is your answer" folded onto INFORM). An
  * alias table is what you build when the surface cannot be learned; this
  * shrinks the surface instead. See the deletion note at the top of
@@ -316,6 +317,8 @@ export class McpToolset {
         return { op: "respond", messageId: a.messageId, type: a.type as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
       case "mesh_discharge":
         return { op: "discharge", messageId: a.messageId, reason: a.reason };
+      case "mesh_withdraw":
+        return { op: "withdraw", messageId: a.messageId, reason: a.reason };
       // `INFORM` is hard-coded, and that is the point rather than a shortcut:
       // the collapsed vocabulary's whole claim is that a seat never types a
       // message type. INFORM is the type the catalogue already reserves for
@@ -735,6 +738,17 @@ export class McpToolset {
       { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority") }, additionalProperties: false } },
       { name: "mesh_respond", description: "Respond to a specific received message.", inputSchema: { type: "object", required: ["messageId", "type"], properties: { messageId: str("message being answered"), type: msgType("response message type"), payload: obj("payload"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_discharge", description: "Close a request addressed to you that you will NOT answer, stating why. Use instead of staying silent: an unanswered request nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId", "reason"], properties: { messageId: str("the request you are closing"), reason: str("why it will not be answered (wrong recipient, out of scope, already covered elsewhere, blocked on something else)") }, additionalProperties: false } },
+      // The mirror of `mesh_discharge`, and it exists because the asker had
+      // no move that reaches this state at all: a request that stopped being
+      // worth answering could only be waited on or CHASED, and a chase is an
+      // interrupt charged to someone else's attention, demanding an answer to
+      // a question the asker no longer needs. Failing both, the ask aged into
+      // the nudge ladder and raised an operator card — a human woken to
+      // arbitrate a question nobody wanted answered. The credential is the
+      // ask's own `from`, which is the exact opposite of `mesh_discharge`'s:
+      // a refusal is authorized by OWING the answer, a retraction by having
+      // ASKED the question.
+      { name: "mesh_withdraw", description: "Close a request that YOU raised, because you no longer need the answer. Every agent who still owes you one is told to stop and released from the debt. Use it instead of waiting or chasing for an answer that stopped mattering: an abandoned ask nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId"], properties: { messageId: str("the request you raised and no longer want"), reason: str("why it is no longer wanted; recorded and shown to the agents released by it") }, additionalProperties: false } },
       // The collapsed vocabulary's answer and its tell — the two acts no
       // contract can name, because neither of them is an ask. Advertised only
       // under `bus.vocabulary: "contracts"` and registered always; see

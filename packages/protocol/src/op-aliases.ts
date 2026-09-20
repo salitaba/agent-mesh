@@ -5,7 +5,7 @@ import type { ArtifactScope, ArtifactType, MessageType } from "./types";
  * WHEN THIS FILE CAN BE DELETED — and why it is still here.
  *
  * These tables exist for one reason: the vocabulary they denoise cannot be
- * learned. 56 op-name aliases and 31 type aliases, `TYPE_ALIASES` alone
+ * learned. 60 op-name aliases and 31 type aliases, `TYPE_ALIASES` alone
  * folding thirteen different words for "here is your answer" (RESULT,
  * RESPONSE, REPLY, ANSWER, ACK, …) onto INFORM. The file is the system
  * telling us its own surface is noise.
@@ -71,6 +71,14 @@ const NAME_ALIASES: Record<string, string> = {
   mesh_discharge: "discharge",
   decline: "discharge",
   decline_request: "discharge",
+  // The creditor's move, versus the three above which are the debtor's. Kept
+  // apart deliberately: a seat asked to stop waiting and a seat asked to stop
+  // answering are opposite instructions, and an alias table that folded them
+  // together would let one seat's retraction look like another's refusal.
+  mesh_withdraw: "withdraw",
+  withdraw: "withdraw",
+  retract: "withdraw",
+  cancel_request: "withdraw",
   mesh_delegate: "delegate",
   mesh_block: "block",
   mesh_approve: "approve",

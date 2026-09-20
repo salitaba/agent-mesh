@@ -1366,6 +1366,34 @@ export interface MeshOpDischarge {
   reason: string;
 }
 
+/**
+ * Close an ask YOU raised, before anyone answers it.
+ *
+ * The creditor's mirror of `discharge`, and the move that was missing from the
+ * same asymmetry. A debtor that will not answer can now say so; an asker that
+ * no longer NEEDS an answer could only stay quiet and keep waiting. Its
+ * alternatives were both bad. A chase is an interrupt -- priced in another
+ * seat's attention -- sent to demand an answer to a question the asker had
+ * already stopped needing. And silence fed the nudge ladder, so the ask aged
+ * into a `stalemate:unanswered_request` card and the operator was woken to
+ * arbitrate a question nobody wanted answered.
+ *
+ * This is the cheap exit from exactly that. It is also the only move that
+ * releases a DEBTOR: "stop working on this" is information the debtor cannot
+ * otherwise get, and a seat mid-review on a withdrawn question is burning
+ * turns on work that has been cancelled.
+ *
+ * Addressed by message id and authorized by the ask's own `from`, so it needs
+ * no recipient list and cannot be aimed at someone else's ask.
+ */
+export interface MeshOpWithdraw {
+  op: "withdraw";
+  /** The ask being retracted. Only its original sender may withdraw it. */
+  messageId: MessageId;
+  /** Why it is no longer wanted -- recorded, and shown to the debtors. */
+  reason?: string;
+}
+
 export interface MeshOpPublishArtifact {
   op: "publish_artifact";
   name: string;
@@ -1637,6 +1665,7 @@ export type MeshOp =
   | MeshOpRequestResearch
   | MeshOpRespond
   | MeshOpDischarge
+  | MeshOpWithdraw
   | MeshOpPublishArtifact
   | MeshOpReadArtifact
   | MeshOpTransitionArtifact
