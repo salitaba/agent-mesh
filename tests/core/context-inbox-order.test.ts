@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildAgentContext,
+  collapseSuperseded,
   groupMailByThread,
+  renderableMail,
   obligesRecipients,
   renderContextInstructions,
   selectUnread,
@@ -634,4 +636,183 @@ test("the open-threads list is capped, says so, and shows the newest", async () 
   assert.match(section, /thread number 8/, "the newest survives the cap");
 
   await m.cleanup();
+});
+
+/* ------------------------------------------------------------------ *
+ * Collapse: a restatement stands for what it made stale               *
+ * ------------------------------------------------------------------ */
+
+/**
+ * "A digest, not a queue" — the one part of that idea which removes a message
+ * from the page rather than reordering it, and therefore the only part that has
+ * to justify itself.
+ *
+ * The two properties worth pinning are the ones a naive implementation gets
+ * wrong in opposite directions. Too eager, and the page drops a verdict or an
+ * answer, which is mail somebody is waiting on. Too timid, and the section is a
+ * queue with a nicer header. And underneath both: a withheld message must NOT be
+ * marked delivered, or the collapse becomes the silent deletion that
+ * `supervisor.ts` drains mail on the success path specifically to prevent.
+ */
+test("collapseSuperseded: the latest INFORM from a sender stands for the earlier ones, which are named not hidden", () => {
+  const first = msg({ threadId: "t-1", from: "architect", payload: { status: "starting" } });
+  const other = msg({ threadId: "t-1", from: "qa", payload: { status: "waiting" } });
+  const second = msg({ threadId: "t-1", from: "architect", payload: { status: "done" } });
+
+  const { shown, withheld } = collapseSuperseded([first, other, second]);
+
+  // The current restatement renders; the other seat's message is not the same
+  // sender's story and is untouched by it.
+  assert.deepEqual(ids(shown), [other.id, second.id]);
+  assert.equal(withheld.length, 1, "one sender restated itself, so there is one run");
+  assert.equal(withheld[0]!.threadId, "t-1");
+  assert.equal(withheld[0]!.from, "architect");
+  assert.deepEqual(ids(withheld[0]!.messages), [first.id], "oldest first, and only the superseded one");
+});
+
+test("collapseSuperseded: a run covers every stale restatement, not just the one before the latest", () => {
+  const a = msg({ threadId: "t-1", from: "dev", payload: { status: "1" } });
+  const b = msg({ threadId: "t-1", from: "dev", payload: { status: "2" } });
+  const c = msg({ threadId: "t-1", from: "dev", payload: { status: "3" } });
+
+  const { shown, withheld } = collapseSuperseded([a, b, c]);
+
+  assert.deepEqual(ids(shown), [c.id], "three restatements, one page entry");
+  assert.deepEqual(ids(withheld[0]!.messages), [a.id, b.id], "both stale ones are counted, not only the adjacent one");
+});
+
+test("collapseSuperseded: it never withholds something that is not pure news", () => {
+  // Each of these is NORMAL, non-obliging and from one sender, so a collapse
+  // keyed on "does this open a debt" would eat every one of them. The narrowness
+  // is the design: a reversal, an answer, an urgency and a unique word are all
+  // things a later restatement does NOT stand in for.
+  const cases: Array<[string, MeshMessage]> = [
+    ["a reply settles a commitment, so it is not redundant news", msg({ threadId: "t-1", type: "INFORM", replyTo: "ask-1" })],
+    ["an URGENT INFORM is the one class the window reserves a seat for", msg({ threadId: "t-1", type: "INFORM", priority: "URGENT" })],
+    ["a note is the sender's own prose, not a restated field", msg({ threadId: "t-1", type: "INFORM", note: "the reason the earlier note gave no longer holds" })],
+    ["an artifact ref is a pointer somebody still needs", msg({ threadId: "t-1", type: "INFORM", artifactRefs: [{ uri: "artifact://x", type: "doc" } as never] })],
+    ["APPROVE then REJECT is a reversal, not a stale announcement", msg({ threadId: "t-1", type: "APPROVE" })],
+    ["a REQUEST moves work, and is not news at all", msg({ threadId: "t-1", type: "REQUEST", priority: "NORMAL" })],
+  ];
+
+  for (const [why, protectedMsg] of cases) {
+    const latest = msg({ threadId: "t-1", payload: { status: "latest" } });
+    const { withheld } = collapseSuperseded([protectedMsg, latest]);
+    assert.equal(withheld.length, 0, why);
+  }
+});
+
+test("collapseSuperseded: one message, or one sender, withholds nothing", () => {
+  const single = msg({ threadId: "t-1" });
+  assert.deepEqual(ids(collapseSuperseded([single]).shown), [single.id]);
+  assert.equal(collapseSuperseded([single]).withheld.length, 0, "there is nothing to supersede it");
+
+  const fromA = msg({ threadId: "t-1", from: "architect" });
+  const fromB = msg({ threadId: "t-1", from: "qa" });
+  const { shown, withheld } = collapseSuperseded([fromA, fromB]);
+  assert.deepEqual(ids(shown), [fromA.id, fromB.id], "two seats saying one thing each is two items");
+  assert.equal(withheld.length, 0);
+});
+
+/**
+ * Through the real builder, the real reducer and the real renderer — because the
+ * property that matters most here is not the text, it is WHERE the collapse
+ * happens. A collapse in the renderer alone would leave the withheld message in
+ * `bundle.unreadMail`, and `bundle.unreadMail` is the list the supervisor drains.
+ */
+test("the withheld restatement stays owed, and surfaces once its successor is delivered", async () => {
+  const m = await mesh();
+  const thread = await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "INFORM",
+    newThread: { subject: "migration status" }, payload: { status: "one of three tables done" },
+  });
+  const first = thread.messageId!;
+  const threadId = m.kernel.state.messages.get(first)!.threadId;
+
+  // Same sender, SAME thread: a `newThread` here would make it a new
+  // conversation, which is the case that must NOT collapse.
+  const second = (await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "INFORM",
+    threadId, payload: { status: "all three tables done" },
+  })).messageId!;
+
+  const built = () => buildAgentContext({ config: m.config, kernel: m.kernel }, "dev");
+  let bundle = built();
+  // The bundle still carries the whole WINDOW -- the selection is unchanged, and
+  // `omitted.unread` keeps meaning "kept out by capacity". What the page shows is
+  // `renderableMail`'s answer, which is the same function the drain asks.
+  assert.deepEqual(bundle.unreadMail.map((x) => x.id), [first, second], "both are selected");
+  assert.deepEqual(renderableMail(bundle.unreadMail).shown.map((x) => x.id), [second], "only the current restatement is on the page");
+
+  const mail = renderContextInstructions(bundle).slice(
+    renderContextInstructions(bundle).indexOf("## Unread mail"),
+  );
+  assert.match(mail, /all three tables done/, "the latest is rendered");
+  assert.doesNotMatch(mail, /one of three tables done/, "the stale one is not rendered as if it were current");
+  assert.match(
+    mail,
+    new RegExp(`not shown — 1 earlier INFORM\\(s\\) from architect \\(\\[${first}\\]\\), superseded by the message above`),
+    "and the reader is told what it is not seeing, by id",
+  );
+
+  // The load-bearing half. The supervisor drains exactly `bundle.unreadMail`, so
+  // a withheld message that still appeared there would be marked delivered
+  // without anyone having read it -- silently, since an empty mailbox and a read
+  // one look identical.
+  assert.ok(
+    m.kernel.state.unread.get("dev")?.includes(first),
+    "the superseded message is still in the mailbox, so it is still owed",
+  );
+  for (const x of renderableMail(bundle.unreadMail).shown) {
+    await m.kernel.emit("message.delivered", { agentId: "dev", messageId: x.id }, { actorId: "dev" });
+  }
+  assert.ok(m.kernel.state.unread.get("dev")?.includes(first), "the drain skipped it, so it is still owed");
+
+  // Once its successor has left the box nothing supersedes it, so it renders --
+  // and it says which one it is rather than appearing as a duplicate.
+  bundle = built();
+  assert.deepEqual(renderableMail(bundle.unreadMail).shown.map((x) => x.id), [first], "the collapse is a deferral, never a deletion");
+  const later = renderContextInstructions(bundle).slice(
+    renderContextInstructions(bundle).indexOf("## Unread mail"),
+  );
+  assert.match(later, /one of three tables done/);
+  assert.doesNotMatch(later, /not shown/, "nothing is withheld this time");
+
+  await m.cleanup();
+});
+
+test("a collapsed thread does not inflate the omission count, because capacity did not drop it", async () => {
+  const m = await mesh();
+  const t = await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "INFORM",
+    newThread: { subject: "status" }, payload: { status: "a" },
+  });
+  await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "INFORM",
+    threadId: m.kernel.state.messages.get(t.messageId!)!.threadId, payload: { status: "b" },
+  });
+
+  const bundle = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev");
+  assert.equal(bundle.omitted?.unread, undefined, "2 waiting, both admitted by the window — nothing was kept out by capacity");
+  const { shown, withheld } = renderableMail(bundle.unreadMail);
+  assert.equal(shown.length, 1, "and one of them is standing in for the other");
+  assert.equal(withheld[0]!.messages.length, 1, "counted in the thread it happened in, not as an omission");
+
+  await m.cleanup();
+});
+
+/**
+ * The point of the exercise is fewer tokens, so say by how much rather than
+ * asserting that it is "shorter". A restatement carrying a real payload costs a
+ * line plus its JSON; the marker that replaces N of them costs one line total.
+ */
+test("collapsing restatements actually saves lines on a chatty thread", () => {
+  const runs = Array.from({ length: 6 }, (_, i) =>
+    msg({ threadId: "t-1", from: "dev", payload: { status: `step ${i + 1} of 6 finished`, detail: "the migration is proceeding on schedule" } }));
+  const { shown, withheld } = collapseSuperseded(runs);
+
+  const rendered = shown.length + withheld.length; // one entry + one marker line
+  assert.ok(rendered < runs.length, `${runs.length} restatements rendered as ${rendered} lines`);
+  assert.deepEqual(ids(shown), [runs[5]!.id], "the current state of the thread is what is shown");
+  assert.equal(withheld[0]!.messages.length, 5, "and the five it replaced are all accounted for");
 });

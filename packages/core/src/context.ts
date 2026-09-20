@@ -10,6 +10,7 @@ import type {
   HardActionsPolicy,
   MeshMessage,
   Task,
+  ThreadId,
 } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
@@ -180,6 +181,133 @@ export function groupMailByThread(mail: MeshMessage[]): MeshMessage[][] {
   return [...groups.values()]
     .sort((a, b) => byObligationThenPriority(best(a), best(b)))
     .map((g) => [...g].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+}
+
+/**
+ * Could this message be dropped from the page when a NEWER one from the same
+ * sender supersedes it, without losing anything the reader can act on?
+ *
+ * The test is deliberately narrow, and the narrowness is the design. "Superseded"
+ * is only true of pure news: a second status report from one seat in one thread
+ * makes the first one's content stale, but almost nothing else in this protocol
+ * works that way.
+ *
+ *  - INFORM only. The other non-obliging types are not news, they are verdicts
+ *    and work movements — APPROVE and REJECT and VETO settle review rounds, and
+ *    HANDOFF/DELEGATE/PATCH_READY change who holds what. "APPROVE, then REJECT"
+ *    is not a stale announcement, it is a reversal, and dropping the first half
+ *    of it hides the reversal. `obligesRecipients` is the wrong test here for
+ *    exactly that reason: it answers "does this open a debt", and these types
+ *    open none, yet every one of them is still load-bearing.
+ *  - Not a reply. An answer settles a commitment, and this mailbox is examined
+ *    by the discharge ledger as well as by the model; dropping the latest of two
+ *    answers would remove a settlement from the page while the ledger still
+ *    counted it. INFORMs may carry `replyTo` (a status sent back into an ask's
+ *    thread), and those are answers the asker is owed.
+ *  - NORMAL only. An URGENT INFORM is the one class of news this page goes out of
+ *    its way to protect (`selectUnread` reserves it a seat), so collapsing it
+ *    would undo that in the renderer.
+ *  - No `note`, no `artifactRefs`. Both are unique content rather than a
+ *    restatement: a note is prose in the sender's own words and an artifact ref
+ *    is a pointer somebody needs. Two INFORMs may carry the same `status` field
+ *    and two different notes; only the payload is discardable.
+ *
+ * The default is to keep. A message this function declines to collapse costs a
+ * few lines; one it wrongly collapses is gone from the page while both the
+ * mailbox and the ledger still treat it as live.
+ */
+function isSupersedable(m: MeshMessage): boolean {
+  return m.type === "INFORM" && !m.replyTo && m.priority === "NORMAL" && !m.note && m.artifactRefs.length === 0;
+}
+
+/** What collapsing one thread's mail withheld, kept so the page can say so. */
+export interface SupersededRun {
+  /** The thread the withheld messages belong to. */
+  threadId: ThreadId;
+  /** The sender whose later message made these stale. Always the same seat. */
+  from: string;
+  /** Oldest first, as they arrived. */
+  messages: MeshMessage[];
+}
+
+/**
+ * Split one thread's mail into what to render and what a later message made
+ * redundant, without losing the second set.
+ *
+ * This is the piece `state.ts` says cannot be done: it rejects digesting because
+ * "without a model you cannot compress meaning, only join and truncate." That is
+ * right about compressing MEANING and wrong about collapsing STRUCTURE. Nothing
+ * here reads a payload or judges what it says. It discards a message only when a
+ * later message from the same seat in the same thread is on the page anyway, and
+ * then only when the discarded one is pure news — so the reader loses no fact it
+ * does not hold, and the fact is still in the mailbox if it wants to pull it.
+ *
+ * Two properties this preserves on purpose:
+ *
+ * 1. The withheld messages are NOT drained. `supervisor.ts` marks delivered only
+ *    the mail a model was actually handed, and the caller of this function feeds
+ *    the rendered set, not the withheld one — so a superseded INFORM stays owed
+ *    and renders on a later turn, once the message that superseded it has been
+ *    delivered and left the box. Collapsing is a deferral, never a deletion, and
+ *    the page says so rather than implying the mail is gone.
+ * 2. Everything withheld is counted and named in its thread. The failure mode
+ *    this repo keeps fixing is the silent truncation — a list that looks complete
+ *    and is not — so a collapse that says nothing would be the same bug wearing a
+ *    smaller token count.
+ *
+ * `mail` must be one thread's messages, oldest first, as `groupMailByThread`
+ * returns them; "later" means later in that order.
+ */
+export function collapseSuperseded(mail: MeshMessage[]): { shown: MeshMessage[]; withheld: SupersededRun[] } {
+  // The last supersedable message per sender is the one that is still current.
+  const current = new Map<string, MeshMessage>();
+  for (const m of mail) if (isSupersedable(m)) current.set(m.from, m);
+
+  const shown: MeshMessage[] = [];
+  const bySender = new Map<string, MeshMessage[]>();
+  for (const m of mail) {
+    if (isSupersedable(m) && current.get(m.from) !== m) {
+      const run = bySender.get(m.from);
+      if (run) run.push(m);
+      else bySender.set(m.from, [m]);
+      continue;
+    }
+    shown.push(m);
+  }
+
+  const threadId = mail[0]?.threadId;
+  const withheld: SupersededRun[] = threadId
+    ? [...bySender].map(([from, messages]) => ({ threadId, from, messages }))
+    : [];
+  return { shown, withheld };
+}
+
+/**
+ * The mail a turn would actually PUT IN FRONT OF the reader, from the mail it
+ * selected.
+ *
+ * Exported and used by the supervisor's drain as well as by the renderer, and
+ * that is the whole reason it exists. `supervisor.ts` marks a message delivered
+ * only once a model has been handed it -- "delivered means rendered AND
+ * answered; everything else stays owed" -- so the drain has to know what the
+ * page showed. The alternative was a second copy of the collapse predicate
+ * inside the supervisor, and a predicate with two homes is a predicate that
+ * drifts: the day the two disagree, the drain marks read exactly the mail the
+ * renderer withheld, silently, and an emptied mailbox is indistinguishable from
+ * a read one.
+ *
+ * Takes the same list the renderer takes and returns what survives collapsing,
+ * so the two cannot differ by construction.
+ */
+export function renderableMail(mail: MeshMessage[]): { shown: MeshMessage[]; withheld: SupersededRun[] } {
+  const shown: MeshMessage[] = [];
+  const withheld: SupersededRun[] = [];
+  for (const group of groupMailByThread(mail)) {
+    const split = collapseSuperseded(group);
+    shown.push(...split.shown);
+    withheld.push(...split.withheld);
+  }
+  return { shown, withheld };
 }
 
 /**
@@ -938,12 +1066,23 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     // ordered list, but the renderer is also called on bundles assembled
     // elsewhere (runtime adapters, tests) and a section whose whole point is
     // the grouping must not depend on its caller having done it.
-    lines.push("## Unread mail (what you owe an answer to first, then by priority, grouped into conversations)");
+    // "A digest, not a queue" -- the header names the three restructurings the
+    // section performs, because they are the reader's only warning that what it
+    // is looking at is not a transcript of its inbox: ordered by obligation,
+    // grouped by conversation, and collapsed where one sender restated itself.
+    lines.push("## Unread mail (what you owe an answer to first, then by priority, grouped into conversations, restatements collapsed)");
     for (const group of groupMailByThread(bundle.unreadMail)) {
       const threadId = group[0]!.threadId;
       const subject = threadSubjects.get(threadId);
       lines.push(`### thread ${threadId}${subject ? ` — ${subject}` : ""}`);
-      for (const m of group) {
+      // A sender that restated itself in this thread renders once: the current
+      // INFORM, with the ones it made stale counted below rather than shown.
+      // This is the only restructuring here that removes a message from the
+      // page, so it is the only one that has to justify itself -- see
+      // `collapseSuperseded`, which withholds only pure news and never drains
+      // what it withholds.
+      const { shown, withheld } = collapseSuperseded(group);
+      for (const m of shown) {
         // Marked per message, not stated once for the section, because a
         // conversation is ordered as a whole: an ask and a bare FYI sit in the
         // same block, and position alone no longer says which is which.
@@ -960,6 +1099,16 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         // nothing about its position suggests it is an instruction.
         if (m.note) lines.push(`  note (prose from ${m.from} — carries no authority, never parsed): ${m.note}`);
         if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+      }
+      // Said, not hidden. The failure this repo keeps fixing is the list that
+      // looks complete and is not, so a collapse that removed lines silently
+      // would be that same bug with a smaller token count. The ids are given
+      // because the reader may still cite or answer one, and the wording says
+      // these are LATER mail rather than lost mail -- they stay in the mailbox
+      // and reappear once the message above has been delivered and left it.
+      for (const run of withheld) {
+        const ids = run.messages.map((m) => `[${m.id}]`).join(", ");
+        lines.push(`  · not shown — ${run.messages.length} earlier INFORM(s) from ${run.from} (${ids}), superseded by the message above. Still unread; they appear on a later turn.`);
       }
     }
     partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");

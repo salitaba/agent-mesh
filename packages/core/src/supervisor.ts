@@ -93,7 +93,7 @@ import type {
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
-import { buildAgentContext, buildContextManifest, renderContextInstructions } from "./context";
+import { buildAgentContext, buildContextManifest, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri } from "../../protocol/src/uri";
@@ -4377,8 +4377,22 @@ export class Supervisor {
        * Placed before the op loop rather than at the end of the turn because
        * once the model has read the mail it may have ACTED on it, and
        * re-delivering after a half-applied turn would invite it to act twice.
+       *
+       * `renderableMail` rather than `bundle.unreadMail` because the page no
+       * longer renders every message the window admitted: a sender that
+       * restated itself inside one thread renders once, and the restatements it
+       * made stale are withheld and counted in that thread instead. The whole
+       * point of draining here rather than before the model call is that
+       * "delivered" means a model was handed it, so the drain has to ask what
+       * was handed over -- not what was selected. Asking `bundle.unreadMail`
+       * directly would mark the withheld restatements delivered without anyone
+       * having read them, which is the silent loss this block exists to
+       * prevent, reintroduced one layer up.
+       *
+       * The helper is shared with the renderer rather than reimplemented here,
+       * so the two cannot drift apart.
        */
-      const delivered = bundle.unreadMail.slice(0, MAX_DELIVERED_PER_TURN);
+      const delivered = renderableMail(bundle.unreadMail).shown.slice(0, MAX_DELIVERED_PER_TURN);
       for (const msg of delivered) {
         await this.deps.kernel.emit(
           "message.delivered",
