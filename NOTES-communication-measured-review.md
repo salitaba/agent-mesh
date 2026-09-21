@@ -880,3 +880,35 @@ prefix and a wasted turn. **Two candidate repairs, and the choice is the operato
 Under either, the docs in (1) and the sentence in (2) are wrong today and want changing regardless —
 they are the parts with no trade-off in them.
 
+**11j. The token split: a seam either side of a bar that turned out to be alive.** Checking whether
+the drawer's in/out bar (`drawers.tsx:777`) could ever render, I expected a dead branch — a
+`TurnStep` field that nothing writes. It is not dead: `t` is `json.turn`, the **un-projected**
+`TurnRecord` from `GET /turns/:id` (`drawers.tsx:745`), and `TurnRecord` carries the split
+(`turn-tracker.ts:126-144`, written at `supervisor.ts:4622` and mirrored at `:4785`). The near-miss
+is worth recording because the same question, asked one surface over, does have the dead-field
+answer — twice:
+
+- **The log had it and read one field.** `buildTurnSteps` (`steps.ts:170`) took `p.amount` from
+  `budget.consumed` and discarded `input`/`output`/`cacheRead`, which the kernel puts in the consume
+  detail (`supervisor.ts:4462-4466`) and `budgets.ts:103` spreads onto the event. A replayed turn
+  could have shown its split all along.
+- **The merge had it and dropped it.** `mergeTurnSteps` (`steps-view.ts:31`) carried `tokens` alone,
+  though its `live: TurnRecord[]` input has the split — so `GET /steps`, the Steps list, `listStep`
+  and `buildAgentActivity` never had it, including the drawer's own fallback path for a turn that has
+  aged out of the 200-record ring, where `json.turn` is null and `listStep` is all there is.
+
+Both fixed under 11h's discipline — a consume that reports no split leaves the fields **absent, not
+zero**, because "reported nothing" and "read nothing uncached" are different claims, and this is the
+third time that distinction has mattered. The three fields are carried live-wins/prev-survives
+through the merge, and the drawer now falls back to the log-derived step and prints a `cached N%`
+figure beside the bar: the one number that says whether a seat is re-reading its transcript or
+starting cold, which §11e could previously answer only per mission, by hand.
+
+The dashboard mirrors `TurnStep` in `store.tsx:26` instead of importing it, so this needed four files
+and only `typecheck` caught the mismatch — the duplication is the reason the drift is possible.
+
+6 new tests (4 on the log path, 2 on the merge), negative-controlled against the compiled files:
+removing the accumulation reddens exactly the five split assertions and leaves the absence test
+green, which is the shape a correct control should have. Suite **1650 pass / 0 fail**; both
+`typecheck` projects clean; `eslint` 0 errors; the dashboard builds.
+
