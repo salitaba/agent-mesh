@@ -138,6 +138,18 @@ discipline already exists is `ContinuityRecord`'s `Belief.basis`, which *require
 That instinct — a claim carries its evidence — is not generalised to the thing the mesh exists
 for, which is answering questions.
 
+> **Half of this is now stale, in the direction that matters least.** "Prose and nothing else" is
+> still true of *settlement* — the answer check is deliberately fail-open, so any reply discharges
+> the ask (`protocol/contracts.ts:75-80`). It is no longer true of *checking*: `response` schema
+> landed in `a75d2b5` (22 hours before this file's first commit, so §3a's `checkResponse`-returns-
+> `undefined` line describes a state that no longer exists either), 7 of the 8 built-in contracts
+> carry one, and a thin answer is now validated and recorded as `responseValid: false`
+> (`core/projections-messaging.ts:67-79`, `state.ts:242`, surfaced in the run report). What is
+> unchanged is the finding itself: **no contract's `response` requires a citation or a basis** —
+> `sources` and `artifactId` are alternatives inside an `anyOf`, never requirements — so the
+> `Belief.basis` instinct is still ungeneralised. §6's M4 ("consider generalising it") remains the
+> open item, and remains not done.
+
 **3c. The reference bus is documented but unenforced.** *(Fixed — `dc5e38d`, refined later.)*
 `docs/protocol.md:196` once said "Messages reference URIs, never paste content — the bus is a
 reference bus", as though something enforced it. Nothing does, and now the doc says so: the
@@ -879,9 +891,12 @@ prefix and a wasted turn. **Two candidate repairs, and the choice is the operato
 
 Under either, the docs in (1) want changing regardless — and are now **fixed**: `transcriptSize` and
 `LiveSession.contextTokens` state that they are a per-turn cost sum rather than a context size, and
-name the three places that compare them to a window. The sentence in (2) is the remaining
-no-trade-off item, and it stays open because its replacement text depends on which repair is chosen —
-telling the model a true number requires having one, which is (a).
+name the three places that compare them to a window. The sentence in (2) is **fixed too, and did not
+need the decision**: it now says what the number is — "its last turn read N tokens across its model
+calls, past the M rotation threshold" — so it stops claiming a window occupancy while the instruction
+and the trigger are unchanged. The audit line said "is at N/M context tokens"; it now says the same
+truthful thing. What remains the operator's call is the *trigger*, which is what (a) and (b) above are
+about.
 
 **11j. The token split: a seam either side of a bar that turned out to be alive.** Checking whether
 the drawer's in/out bar (`drawers.tsx:777`) could ever render, I expected a dead branch — a
@@ -914,4 +929,44 @@ and only `typecheck` caught the mismatch — the duplication is the reason the d
 removing the accumulation reddens exactly the five split assertions and leaves the absence test
 green, which is the shape a correct control should have. Suite **1650 pass / 0 fail**; both
 `typecheck` projects clean; `eslint` 0 errors; the dashboard builds.
+
+**11k. The record checked against HEAD: one false comment, no false claims, and one gap worth
+knowing.** This section has twice gone looking for a defect and found the notes had already moved on
+(§11g's rotation bullet, §11j's premise), so I swept §3b and §10 against the code rather than trust
+either end. Every citation in this section was then re-read against HEAD, and four of them landed
+wrong — two a few lines off, one inside the wrong type, one that answered the right question about
+the wrong unit — so the paragraphs below carry the corrected ones.
+
+- **§10's claims all hold.** Seventeen named-identifier claims checked one at a time — `mesh_inbox` as
+  the 47th MCP tool (`mcp.ts:869`, `READ_TOOLS` at `:32`), `MeshMessage.ttl` deleted,
+  `notifyMailDelivered` gone, `when.event` now a load error (`config/src/index.ts:1807`),
+  `defersMail` honoured at its three call sites (`scheduler/src/index.ts:270`, `:396`, `:989` — the
+  fourth occurrence, `:244`, is the declaration), the per-agent `wake` schema with
+  `mesh.defaults.wake` refused, `idleQuietPeriodMs` arming a timer, the 20-line × 400-char payload
+  caps (`core/context.ts:75-76`) — none contradicted. A falsifiable negative, and it came back clean.
+- **§3b needed the correction above** — its "prose and nothing else" describes settlement, not
+  checking, since `a75d2b5`.
+- **The three things I went looking for were not there.** `response` schema, deadline guard and
+  contract-in-payload are not §3b/§10 claims; they are from an earlier round, and all three are
+  consistent with HEAD. The contract travels on runtime-owned `control` (`MeshMessage.control`,
+  `protocol/types.ts:263` — the interface itself at `:208`), is stripped from both `control` and
+  `payload` on the way in
+  (`RESERVED_PAYLOAD_KEYS`, `types.ts:481`), and survives in `payload` only as a **replay fallback
+  read** for pre-move logs (`core/projections-messaging.ts:43-48`) — the opposite of the story the
+  comment there told, which is the next point.
+- **One false comment, now deleted.** `supervisor.ts:179-193` carried three stacked doc comments: one
+  belonging to `asIdList` twelve lines below, one describing the deleted payload path ("Spread into a
+  message payload so `contractSlaOf` can find the SLA on replay"), and the real one for
+  `contractStamp`. The orphan contradicted the function directly under it. Deleted, and the
+  `asIdList` comment moved home — the same class as §11i's doc comments: prose asserting behaviour
+  the code had already changed.
+- **The gap §10 does not cover.** `writeDefaultMeshYaml` writes `ttl_ms: 1800000`
+  (`config/src/index.ts:2033`), so every `mesh init` scaffold has a 30-minute deadline regime and the
+  expiry sweep is live on it: `checkStall` (`supervisor.ts:6851`) calls it at `:6858`, above its
+  early returns, and the sweep itself is at `:6742`. No in-tree example mesh sets `ttl_ms`, and
+  **nothing tells the debtor it has a clock**: `core/context.ts` contains no `dueBy`, `deadline` or
+  `expires`, and the only agent-facing mention is to the *asker* after the fact
+  (`supervisor.ts:2017`). So a scaffolded mesh expires asks on a clock the agent being asked is never
+  shown — a contract-fairness gap, not a bug, and the one place in this sweep worth someone's
+  decision.
 
