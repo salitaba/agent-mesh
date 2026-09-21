@@ -970,3 +970,39 @@ the wrong unit — so the paragraphs below carry the corrected ones.
   shown — a contract-fairness gap, not a bug, and the one place in this sweep worth someone's
   decision.
 
+**11l. The clock reaches the seat, and four dead-code claims, three of them true.** The gap §11k
+ends on is closed, and the dead set §11g left open is resolved.
+
+- **The debtor can read its clock.** `dueBy` was computed at open
+  (`computeDueBy`, `state.ts:920`), stored on `PendingRequest` (`state.ts:178`), and read by exactly
+  three consumers — the sweep, `overdueCommitments`, and the operator's audit line. Now it reaches
+  the three surfaces the agent itself reads: the turn prompt's `## Open loops` (debtor line: "due by
+  `<ISO>`, after which it closes unanswered and `<asker>` decides without you"; asker line: "(closes
+  `<ISO>` if unanswered)"), `mesh_inbox`'s per-message view, read from the same ledger key the sweep
+  reads, and the nudge that wakes the debtor about that ask, which named a counter and not the clock.
+  The bundle type carries it (`AgentContextBundle.outstanding`, `protocol/types.ts:2332`) because
+  `renderContextInstructions` has no `state` handle. Absence stays absence — no TTL regime, no
+  deadline, and the prompt claims none — which is the third time that distinction has decided a fix
+  in this document.
+- **3 tests** (both directions of the prompt, the queue, the no-TTL case), negative-controlled
+  against the compiled build: dropping the field reddens exactly the two positive assertions and
+  leaves the absence test green. Suite **1653 pass / 0 fail**; typecheck ok; eslint 0 errors.
+- **`EventTailer` was dead and is deleted.** Nothing constructed it, its only method was static, and
+  its constructor opened with `void this.store;` to silence an unused-field warning. The lesson it
+  was kept for already lives on `EventStore.subscribe`'s doc comment (`event-store/src/index.ts:45`),
+  so deleting it lost nothing but the trap.
+- **`SessionRotated.continuityRecordId` was dead and is deleted** — but §11g's premise was wrong
+  about where the event comes from. The supervisor emits `session.rotation_pending`
+  (`supervisor.ts:6020`); the single production `session.rotated` is the server's `onRotate` hook
+  (`apps/mesh-server/src/index.ts:393-409`), which never filled the field. Since no write site ever
+  existed, no log line can carry it and removal is replay-safe.
+- **`EventStore.subscribe` is unreachable in production and stays.** The kernel keeps its own
+  listener array, so nothing calls it — but it is the store's documented push extension point,
+  written to replace the tailer's at-most-once path, and deleting it re-opens the gap it closed.
+- **`transcriptTokensDiscarded` is write-only and stays, with its doc comment corrected.** It is
+  written on every rotation (`apps/mesh-server/src/index.ts:404`) and read by nothing. It is the only
+  record of how much context a rotation destroyed, so it needs a reader rather than a funeral — a
+  projection field, which is a state-and-snapshot change and is left open here.
+
+Each commit was built and its affected suites run in an isolated worktree, so neither depends on the
+other's changes to compile.
