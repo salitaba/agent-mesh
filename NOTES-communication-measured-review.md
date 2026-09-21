@@ -13,6 +13,11 @@ format and architect"*
 
 ## 1. The finding, first
 
+> **Partly superseded — see §11.** §11 re-measured this on the mission's full 307 turns (not the
+> 200-record cut read here) and against the SDK's own per-call transcripts. The concentration in
+> **1a replicates**; the mechanism in **1c does not**; **1b's "29:1" is mostly a call count** and is
+> 54:46 in money. The text below is left as written so the correction has something to point at.
+
 I measured one real mission — `examples/line-follower-sim`, 200 traced turns, 4,353,277 fresh
 input tokens, 149,117 output tokens. Three facts, in order of how much they matter:
 
@@ -453,6 +458,12 @@ fixed.
    concentration holds, M1b is the highest-value change in the repo and everything else here is
    secondary. If it does not hold, §1 is a property of this mission's 24 restart/replace events
    and M1 shrinks accordingly. **I would not build M1b before this.**
+
+   **Answered in §11, without a new mission** — the per-turn `cacheRead` this item asked for was
+   already on disk, in `turn-audit.jsonl` and `modelSpend`. The concentration replicated, so M1b was
+   not built on nothing. But §11c shows the number M1b thresholds on is not a context size, and §11d
+   shows the cold prefix it defends is **1.9%** of that seat's bill. M1b is not falsified; it is
+   mispriced, and §11f says where the money actually is.
 2. ~~**M2's split point**~~ — withdrawn in §6; there is no split point to choose.
 3. **M4's strength** — require a contract for obliging types (clean, breaks meshes that rely on
    bare REQUESTs), or make the absence explicit and visible (safe, slower). **Resolved in §10 the
@@ -680,4 +691,192 @@ millisecond differ only in their random suffix. Nine sends in a tight loop there
 yields first — while the test asserts "the newest survives the cap". Real threads are seconds
 apart; only the fixture could collide. Fixed in the fixture (a real millisecond between sends) so
 the property the test asserts is one it establishes, and re-run 12 times clean.
+
+---
+
+## 11. §1 re-measured — the answer to §8.1
+
+§8.1 asked for one more mission with `cacheRead` recorded per turn before treating §1 as settled.
+**No new mission was needed.** Per-turn cache data was already on disk for two real missions — in
+`logs/turn-audit.jsonl`, which records `output.tokensUsed` whole (so `cacheRead` is in it) — and
+`budget.consumed` carries the same figures into `modelSpend`. M1a's value is confirmed to have
+been recorded all along; what §1 could not see was a *reader*. The measurements below come from
+those files.
+
+**11a. The concentration replicates.** `examples/line-follower-sim`, all **307** traced turns (not
+200 — `turns.jsonl` is a 200-record ring, so §1's 4,353,277 fresh / 149,117 output / "7 turns =
+77.5%" are its last-200 cut; over all 307, top-10 by fresh input = **70.1%**, top-3 = 33.2%).
+Fresh input 5,732,792; cache read **77,181,397** (13.5× fresh); output 215,145. **14 turns carry
+`cacheRead == 0` — 4.6% of turns — and hold 55.6% of all fresh input.** A small number of turns
+holding most of the uncached bill is real, replicated, and worth acting on.
+
+**11b. §1c's mechanism does not survive contact with the field it was reconstructed without.**
+Bucketing each of the 10 whales by the gap since that seat's own previous turn *end*: 7 of 10
+follow gaps of **0.3–1.8 min**, and the 10–30 min bucket's median fresh input is **3,834** with
+cache warm. The idle gap explains at most 3 of 10. §9 already recorded a corrected version of this
+(median gap 5.4 s); §1c's table is the part that was never repaired, and it is the part M1b's
+thresholds were derived from.
+
+**11c. `input + cache_read` is not a context size — measured against the SDK's own transcripts.**
+The backend seat of the `skill-panel` mission wrote **954 model calls**; per call the largest
+prompt was **165,129** tokens, the median 69,600, and **none over 200k**. The mesh's per-turn rows
+for that same seat report **5,219,210** and **6,189,695**. A turn's `cacheRead` is therefore the
+**sum over that turn's tool-loop calls**, i.e. `context × calls`. Two consequences:
+
+- §1b's "reads 29 tokens for every one it writes" is mostly a **call count**, not a context size.
+  In money at published Anthropic ratios it is not 29:1 at all — see 11d.
+- `transcriptSize()` (`(t?.input ?? 0) + (t?.cacheRead ?? 0)`) is documented in
+  `runtime-claude` as "the transcript's current size" and computes that sum. It feeds the rotation
+  threshold, the `staleFloorTokens` test, and `transcriptTokens` in the handover decision. On a
+  150-call turn it overstates the context by roughly the call count.
+
+**11d. On the live adapter, the bill is not what §1 says it is.** Backend seat — the backend
+worktree's **12 session transcripts / 954 model calls**, summed per call, which is a different unit
+from a per-turn audit row (§11c) — token-weighted at published Anthropic ratios (cache read 0.1×,
+output 5×):
+
+| component | tokens | share of cost |
+|---|---|---|
+| output | 1,921,180 | **46.1%** |
+| cache read | 71,820,160 | 34.5% |
+| fresh input | 4,034,912 | 19.4% |
+| the cold prefix — the first call of every session (391,101 fresh, all `cacheRead == 0`) | | **1.9%** |
+
+So the input side and the output side are **54:46 in money**, not 29:1, and the single largest
+line is what the agents *write*. Note the shape underneath: the cached-read total is (context per
+call) × (calls), with a median of **79 calls per turn** — long agentic turns are expensive chiefly
+because of how many times they re-read, not because any one read is large.
+
+**11e. Every turn starts cold, and the four ad-hoc levers are all aimed elsewhere.** Each of the 12
+sessions in that worktree begins with a **30–34k fully-fresh prompt, `cacheRead = 0`, `cacheWrite
+= 0`**, and no session's prefix is reused by the next; the transcripts go 32k → 64k–150k within a
+turn and are discarded. That is cross-turn continuity measured as absent, which is M1b's whole
+subject — and it is **1.9%** of the bill. Against that, M1/M1b (cache warmth), §1d's mail-path work
+(mail = 0.2% of input), and the per-turn briefing block (10.5% of *input*, ~2% of cost) are all
+optimising rounding errors next to output and call count.
+
+**11f. So the answer to §8.5 changes.** "Aim the next round at §1" was right in direction and wrong
+in target: §1 named the cold cache, and the cold cache is not where the money is. The two levers
+the measurements actually point at are **output tokens** (46%, untouched by every round so far) and
+**calls per turn** (median 79, which multiplies the cached-read side and re-reads every token an
+agent writes). Both are communication-shape questions — how much a seat says, how long it works
+before it yields — and neither is a mail-path question. `mesh ledger` (below) is the instrument
+that makes them visible per turn instead of per mission.
+
+**11g. Caveats, stated as limits on what the above can support.**
+
+- **No recorded turn anywhere ran on an Anthropic model.** Mission A ran
+  `ocg/muse-spark-1.3-contributor` through the **opencode adapter deleted in `ac8a36f`** — §1
+  measured a runtime that no longer exists — and mission B ran `deepseek-v4.1-flash` through the
+  Claude adapter. So 11d's weighting is a **unit**, not dollars, and M1b's 5-minute/1-hour cache
+  assumptions remain unvalidated on the platform they were written for.
+- `cacheWrite` is **0 on all 954 calls** in mission B: that gateway reports hits and not creations,
+  so the write term is unmeasurable there and the cold-prefix cost in 11d is if anything an
+  underestimate.
+- 11d is **one seat of one mission**; 11a/11b are one mission; 11c is one seat. The direction of
+  all three is consistent, and none of them is a substitute for the fleet-wide reading that
+  `mesh ledger` now makes cheap.
+- **Why a session ended cannot be read from this mission's log — and must be, next time.** Mission
+  B's 1,407 events contain no `session.rotated`, `session.rotation_pending` or `continuity.recorded`
+  event, because the mission predates the wiring that emits them (`session.rotated` from
+  `onRotate` at `apps/mesh-server/src/index.ts:392`, `session.rotation_pending` from `openHandover`
+  at `core/supervisor.ts:6017`; both types are in `protocol/catalog.ts:45-47`, and `types.ts:555`
+  records that rotation used to be invisible). So 11e's "one session per turn" is measured from the
+  SDK transcripts, and this mission cannot say whether those sessions ended by rotation, handover or
+  restart. The next mission can: `session.rotation_pending` carries `transcriptTokens`,
+  `thresholdTokens` and a `correlationId: turnId`, so a spurious rotation — the failure 11c makes
+  possible — becomes countable from the log. Two joins are still missing and are worth naming
+  rather than rediscovering: neither `TurnRecord` nor `turn-audit.jsonl` records a session id (so
+  turn→session attribution is temporal except on handover turns), and
+  `SessionRotated.continuityRecordId` is declared in `protocol/types.ts:1205` with **no write site**,
+  so the log holds both halves of a rotation and no link between them.
+
+**11h. The instrument ships, so none of the above needs a session again.** `mesh ledger [mesh.yaml]
+[--top n] [--json]` reads `logs/turn-audit.jsonl` offline — no bus, no running mesh, works on an
+archived state dir — and prints the split (`fresh input / cache read / written`), each line's share
+of the bill in fresh-input units, concentration, the cold-turn share, fresh input by gap since a
+seat last finished, and the most expensive turns. It is `packages/observability/src/ledger.ts`
+plus a CLI case, 10 tests in `tests/observability/ledger.test.ts`, suite **1644 pass / 0 fail**,
+`typecheck` clean, `eslint` 0 errors on the touched files. A config path that does not resolve is
+refused rather than quietly falling back to `./mesh.yaml` — the reading would otherwise be real and
+about a different mission.
+
+It reproduces both measurements above by command: mission A prints **307 turns**, **cold turns 14 of
+307 (4.6%) holding 55.6% of fresh input**, top-10 at 70.1%, and its `<2 min` bucket carrying the
+691,420-token whale while `10-30 min` has a median of 3,834 — 11b's refutation of §1c, on demand,
+and 11a's figures to the decimal. Mission B (the live `skill-panel` state dir: 53 turns, 9 seats)
+prints **output 48.4% / cached 30.7% / fresh 20.9%**, against 11d's 46.1 / 34.5 / 19.4 — the same
+shape again, from a worktree read a different way (§11c), so the concentration and the bill are
+neither one-file nor one-seat artefacts.
+
+Two properties it fixes on the way, both of which would have made it lie:
+
+- **A missing `cacheRead` is unmeasured, not cold.** Older records have no such field, and counting
+  that absence as "this turn re-read everything uncached" is §1e's blind spot in code. Pinned by a
+  test; negative-controlled by patching the *compiled* parser to `?? 0`, which reddens exactly the
+  two unmeasured-vs-cold tests and leaves the other seven green.
+- **The audit file carries two shapes under one timestamp prefix** — `<ts> {json}` turn records and
+  `<ts> prose` audit lines, which can themselves span physical lines when they quote a rendered
+  artifact. A first cut reported those as unreadable and told me mission A had 25 bad lines; it has
+  none. The parser now separates `other` (prose, older record shapes), `unstamped` (continuations
+  and foreign content) and `damaged` (a stamped record that opens and never closes), and the command
+  reports only the third. Also negative-controlled: making a continuation count as damage reddens
+  exactly the classification test.
+- **Zero is a figure.** The first cut tested `!input`, so a turn reporting `input: 0` was filed as
+  "a line with no token figures" and dropped. Mission A therefore printed **305** turns and **12**
+  cold turns against the file's 307 and §11a's hand-counted 14 — and only the *counts* moved, because
+  the two missing turns were cold and worth no fresh input, so the 55.6% share was unaffected and
+  nothing looked wrong. `input === undefined` is the test. After it, rows equal traced turns in all
+  **14** audit files on this machine, and the command's figures match §11a and §11b exactly. The same
+  error, one layer apart, twice: absence in this file has to be tested, never inferred from
+  falsiness — and the reconciliation against §11a is what caught it.
+
+Both compiled patches were restored byte-for-byte (sha256 checked) and re-run green.
+
+**11i. The defect 11c opens, and why it is a decision rather than a fix.** `transcriptSize()` is
+documented as "the transcript's current size" and feeds the rotation trigger, the `staleFloorTokens`
+test, and `transcriptTokens`. On a multi-call turn it is the turn's total read. Three consequences,
+in increasing order of what they cost:
+
+1. **The doc comments are false** — `runtime-claude` on `transcriptSize` and on
+   `LiveSession.contextTokens` ("a measurement, not an estimate… the only honest signal for how big
+   has this conversation become"), and `supervisor.auditLine`'s "is at N/M context tokens"
+   (`supervisor.ts:6028`).
+2. **The model is told a false number.** `HANDOVER_INSTRUCTION` (`supervisor.ts:543`, the sentence
+   at `:545`) renders "Your backend session is full (${info.transcriptTokens} of
+   ${info.thresholdTokens} context tokens) and will be replaced before your next turn." On mission
+   B's backend seat that sentence would have read *"full (5,219,210 of 600,000 context tokens)"*
+   when the largest prompt any call read was 165,129.
+3. **It may spend a turn on nearly every rotation.** `rotateAt` defaults to the 120k floor for a
+   model id it does not recognise, and mission B's turns aggregated 1.2M–6.2M — so *every* turn
+   crosses it, each crossing mints a new session ordinal, and each new ordinal is good for one
+   handover turn. `openHandover` (`supervisor.ts:5998-6030`) is only the decide-and-announce half —
+   the pending check at `:6013`, the `session.rotation_pending` emit at `:6017-6027` — and the turn
+   it buys is what costs: `HANDOVER_INSTRUCTION` in its instructions (`:4169`), `suppressRotation`
+   (`:4274`), every op outside `HANDOVER_ALLOW_OPS` refused (`:5112`, the set in
+   `mission-guards.ts:42`), and the consumed activation re-queued (`:4691`). Work is deferred rather
+   than lost, but the seat yields a turn to write a continuity record it did not need. **This is
+   reasoned from the code plus the recorded aggregates, not observed**: mission B ran before the
+   handover wiring existed, and no mission has run since with a multi-call runtime.
+
+**And the repair is a trade-off, not a bug fix.** The per-call measurement is available for free —
+the adapter already handles `assistant` frames and narrows `msg.message` to `{ model, content }`
+(`runtime-claude:1544`), discarding `message.usage` — so making `contextTokens` the last call's
+prompt size is a small change to the stream loop. It would end 1, 2 and 3 at once. But it would also
+make sessions live far longer, and the recurring cost of this runtime is (context per call) ×
+(79 calls a turn): rotation is what resets the context, so the mis-measure is *accidentally*
+functioning as a cost-driven rotation that the nominal rule does not express. Fixing the measure
+plausibly raises the cached-read line — 30.7% of mission B's bill — while removing a 1.9% cold
+prefix and a wasted turn. **Two candidate repairs, and the choice is the operator's:**
+
+- **(a) Measure the context, keep one trigger.** `contextTokens` becomes the last call's prompt;
+  rotation and handover both fire when the context is genuinely near the window. Honest, and the
+  handover becomes rare — at the price of longer sessions and a bigger cached-read line.
+- **(b) Keep the aggregate as the cost trigger, split the handover off it.** Rotation stays cheap
+  and frequent; the *continuity turn* is asked for only when the true context is near the window, so
+  a cost-driven rotation costs a session and not a turn. This preserves the behaviour that is
+  currently paying for itself and removes the wasted turn and the false claim.
+
+Under either, the docs in (1) and the sentence in (2) are wrong today and want changing regardless —
+they are the parts with no trade-off in them.
 
