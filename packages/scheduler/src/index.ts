@@ -1039,7 +1039,16 @@ export class Scheduler implements SchedulerPort {
       // and escalate on those too so a permanent block cannot hang silently.
       void this.requestActivation({
         agentId: id,
-        reason: { kind: "timer", note: `follow up on unanswered request ${oldestPending.messageId} (nudge ${count}/${MAX_NUDGES})` },
+        reason: {
+          kind: "timer",
+          // The nudge names the deadline as well as the counter: this wake is
+          // about one specific ask, and the seat that has to answer it should
+          // not have to ask how long it has left — §11k of
+          // `NOTES-communication-measured-review.md`.
+          note: `follow up on unanswered request ${oldestPending.messageId} (nudge ${count}/${MAX_NUDGES})${
+            oldestPending.dueBy ? ` — due by ${oldestPending.dueBy}` : ""
+          }`,
+        },
         priority: 3,
       }).then((ok) => {
         if (ok) {

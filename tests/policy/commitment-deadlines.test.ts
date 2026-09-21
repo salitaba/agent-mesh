@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor } from "../helpers";
+import { buildAgentContext, renderContextInstructions } from "../../packages/core/src/context";
 import { createInitialState } from "../../packages/core/src/state";
 import { applyEvent } from "../../packages/core/src/projections";
 import type { Escalation, MeshOp } from "../../packages/protocol/src/index";
@@ -342,6 +343,70 @@ test("refusals: a refusal survives replay as a refusal", async () => {
       "refused",
       "the decline notice carries replyTo, so a replay that ordered these wrong would relabel it 'reply'",
     );
+  } finally {
+    await m.cleanup();
+  }
+});
+
+// --- the clock reaches the seat -------------------------------------------
+
+/**
+ * The deadline was computed at open, stored on the ledger, and read only by the
+ * sweep and the operator's audit file. The seat that gets timed out was never
+ * shown it, so an ask could close as "decided without you" for an answer that
+ * was never late on any screen the debtor could read.
+ */
+test("deadlines: the seat that will be timed out reads its own clock", async () => {
+  const m = await deadlineMesh({ ttlMs: 600_000 });
+  try {
+    nobodyAnswers(m);
+    const ask = await m.supervisor.sendMessage({
+      from: "architect", to: ["dev"], type: "REQUEST",
+      newThread: { subject: "which db?" }, payload: { q: "which db?" },
+    });
+    await quiet(m);
+    const due = m.kernel.state.pendingRequests.get(ask.messageId!)!.dueBy!;
+    const deps = { config: m.config, kernel: m.kernel };
+
+    // Debtor: the loop it owes, carrying the deadline the sweep will use.
+    const debtor = buildAgentContext(deps, "dev");
+    assert.equal(debtor.outstanding.owedByYou[0]?.dueBy, due);
+    const debtorText = renderContextInstructions(debtor);
+    assert.match(debtorText, /YOU OWE architect an answer/);
+    assert.ok(
+      debtorText.includes(`due by ${due}`),
+      "the prompt must name the deadline, not just how long the ask has been open",
+    );
+
+    // Asker: the same clock from the other side, so "is it stale" is answerable
+    // from the loop instead of by guessing.
+    const askerText = renderContextInstructions(buildAgentContext(deps, "architect"));
+    assert.ok(askerText.includes(`closes ${due} if unanswered`));
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("deadlines: no TTL regime means no clock, and the prompt claims none", async () => {
+  const m = await deadlineMesh({});
+  try {
+    nobodyAnswers(m);
+    await m.supervisor.sendMessage({
+      from: "architect", to: ["dev"], type: "REQUEST",
+      newThread: { subject: "which db?" }, payload: { q: "which db?" },
+    });
+    await quiet(m);
+    const deps = { config: m.config, kernel: m.kernel };
+
+    const debtor = buildAgentContext(deps, "dev");
+    assert.equal(
+      debtor.outstanding.owedByYou[0]?.dueBy,
+      undefined,
+      "no deadline is absent, which is a different statement from one that passed",
+    );
+    const text = renderContextInstructions(debtor);
+    assert.match(text, /YOU OWE architect an answer/);
+    assert.doesNotMatch(text, /due by/, "an ask with no clock must not be given one");
   } finally {
     await m.cleanup();
   }

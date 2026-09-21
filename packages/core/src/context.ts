@@ -597,9 +597,20 @@ export function buildAgentContext(
       // Report who is STILL silent, not everyone originally addressed: after
       // one of three reviewers answers, telling the asker it is waiting on all
       // three sends it chasing agents that already replied.
-      awaitingResponse.push({ messageId: pr.messageId, to: outstandingDebtors(pr), type: pr.type, since: pr.createdAt });
+      awaitingResponse.push({
+        messageId: pr.messageId,
+        to: outstandingDebtors(pr),
+        type: pr.type,
+        since: pr.createdAt,
+        dueBy: pr.dueBy,
+      });
     } else if (stillOwes(pr, agentId)) {
-      owedByYou.push({ messageId: pr.messageId, from: pr.from, type: pr.type, since: pr.createdAt });
+      // The clock travels with the obligation. `dueBy` was computed at open and
+      // read only by the sweep and the operator's audit file, so the seat being
+      // asked could be timed out on a deadline it was never shown — §11k of
+      // `NOTES-communication-measured-review.md`. Absent stays absent: a mesh
+      // with no TTL regime has no deadline, and `undefined` says that.
+      owedByYou.push({ messageId: pr.messageId, from: pr.from, type: pr.type, since: pr.createdAt, dueBy: pr.dueBy });
     }
   }
   const byAge = <T extends { since: string }>(list: T[]): T[] =>
@@ -1256,10 +1267,21 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       // How to clear this (replyTo / discharge) is covered once, below, under
       // "## Answering" — restating it per loop here duplicated with every
       // additional owed message instead of just once.
-      lines.push(`- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since}.`);
+      //
+      // The deadline is the exception: it is per-ask, and it is the one fact
+      // the seat cannot derive from `since`. Without it the mesh could time the
+      // ask out on a clock the debtor was never shown, and close it as
+      // "decided without you" for an answer that was never late on any screen
+      // the debtor could read.
+      const due = o.dueBy ? ` — due by ${o.dueBy}, after which it closes unanswered and ${o.from} decides without you` : "";
+      lines.push(`- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since}${due}.`);
     }
     for (const a of awaitingResponse) {
-      lines.push(`- WAITING on ${a.to.join(",")} for your ${a.type} [${a.messageId}] since ${a.since} — already sent; do NOT send it again. Follow up only if it is stale, otherwise 'wait'.`);
+      // Same clock, other side: the asker is told when its ask stops being
+      // waited on, so "is it stale" is answerable from the loop rather than by
+      // guessing or re-sending.
+      const due = a.dueBy ? ` (closes ${a.dueBy} if unanswered)` : "";
+      lines.push(`- WAITING on ${a.to.join(",")} for your ${a.type} [${a.messageId}] since ${a.since}${due} — already sent; do NOT send it again. Follow up only if it is stale, otherwise 'wait'.`);
     }
     partial(
       bundle.omitted?.outstanding,

@@ -2333,10 +2333,16 @@ export interface AgentContextBundle {
    * unavoidable.
    */
   outstanding: {
-    /** Asks this agent made that nobody has answered yet. */
-    awaitingResponse: Array<{ messageId: string; to: string[]; type: string; since: string }>;
-    /** Asks addressed to this agent that it has not discharged. */
-    owedByYou: Array<{ messageId: string; from: string; type: string; since: string }>;
+    /**
+     * Asks this agent made that nobody has answered yet.
+     *
+     * `dueBy` is the ask's own clock, copied from the ledger entry the reducer
+     * opened it with — absent when no TTL regime is configured, which is a
+     * different statement from a deadline that has passed.
+     */
+    awaitingResponse: Array<{ messageId: string; to: string[]; type: string; since: string; dueBy?: string }>;
+    /** Asks addressed to this agent that it has not discharged. `dueBy` as above. */
+    owedByYou: Array<{ messageId: string; from: string; type: string; since: string; dueBy?: string }>;
   };
   /**
    * THIS goal's acceptance criteria, verbatim from the goal record.

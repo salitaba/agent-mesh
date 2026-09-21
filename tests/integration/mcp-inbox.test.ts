@@ -61,6 +61,11 @@ test("mcp bus: mesh_inbox shows the caller's queue and does not drain it", async
   assert.equal(owed.length, 1, "only the ask owes an answer — an FYI is not a debt");
   assert.equal(owed[0].type, "REQUEST");
   assert.equal(owed[0].payload.please, "review", "the body comes with it, which is the point of a reader");
+  assert.equal(
+    owed[0].dueBy,
+    undefined,
+    "this mesh sets no TTL, so the ask has no clock — absent, not a deadline that passed",
+  );
   assert.ok(box.messages.some((msg: any) => msg.subject), "thread subjects are resolved for the queue");
 
   // The load-bearing half: a view must not be a receipt. `message.delivered` is
@@ -90,6 +95,36 @@ test("mcp bus: mesh_inbox shows the caller's queue and does not drain it", async
     new Set([...page.messages, ...rest.messages].map((msg: any) => msg.id)).size,
     3,
     "the two pages together are the box, with no message seen twice",
+  );
+
+  await m.cleanup();
+});
+
+test("mcp bus: an ask's deadline is readable from the queue", async () => {
+  const m = await makeMesh({
+    mode: "parked",
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "qa", role: "qa", capabilities: ["test.write"], interests: [] },
+    ],
+    mayContact: { dev: ["qa"], qa: ["dev"] },
+    bus: { commitments: { ttlMs: 600_000 } },
+  });
+  const tok = (id: string) => `${m.config.meshId}:${id}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const mcp = createMcpToolset(m.supervisor);
+
+  const ask = await m.supervisor.sendMessage({ from: "qa", to: ["dev"], type: "REQUEST", payload: { please: "review" } });
+  const due = m.kernel.state.pendingRequests.get(ask.messageId!)!.dueBy!;
+  assert.ok(due, "a configured TTL stamps a deadline at open");
+
+  const res = (await mcp.handle("dev", tok("dev"), mcpReq("tools/call", { name: "mesh_inbox", arguments: {} }))) as {
+    result: { content: Array<{ text: string }> };
+  };
+  const box = JSON.parse(res.result.content[0].text) as any;
+  assert.equal(
+    box.messages[0].dueBy,
+    due,
+    "the queue must name the same deadline the sweep will close the ask on",
   );
 
   await m.cleanup();
