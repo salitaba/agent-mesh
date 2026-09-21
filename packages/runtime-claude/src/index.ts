@@ -346,12 +346,21 @@ export function rotateAtFor(model: string | undefined): number {
 const SEAT_EFFORT = "high" as const;
 
 /**
- * How much conversation the model loaded for a turn.
+ * How much conversation the model loaded across a turn's calls.
  *
  * `input + cache_read`, because a cached prefix is still context the model read
  * — it is only cheaper, not absent. Reading `input` alone would report a
  * 150k-token transcript as a few hundred tokens once the prefix caches, which
  * is exactly the blind spot that let the transcript grow unnoticed.
+ *
+ * A **cost** signal, not a context size. The backend reports `usage` once per
+ * model call, so a turn that loops N times reports N reads of a context that may
+ * never have approached the window — measured on a live mission: 954 calls whose
+ * largest prompt was 165,129 tokens, against turn figures of 5,219,210 and
+ * 6,189,695 (`NOTES-communication-measured-review.md` §11c). Everything that
+ * compares this to a window — the rotation threshold, `staleFloorTokens`, and the
+ * handover prompt's "session is full (N of M)" — is comparing a per-turn sum to a
+ * per-call limit.
  */
 export function transcriptSize(t: AgentOutput["tokensUsed"] | undefined): number {
   return (t?.input ?? 0) + (t?.cacheRead ?? 0);
@@ -712,10 +721,13 @@ interface LiveSession {
   agent: AgentDefinition;
   context: RuntimeContext;
   /**
-   * Size of the transcript the model actually read on the last turn
-   * (`input + cache_read`). This is a measurement, not an estimate: it is what
-   * the backend reported it had loaded, and it is the only honest signal for
-   * "how big has this conversation become".
+   * What the last turn's model calls read, summed (`input + cache_read`).
+   *
+   * A measurement, not an estimate — but of **cost, not size**: usage arrives
+   * once per model call, so a turn that loops N times reports N reads of a
+   * context that may never have approached the window. Comparing it to a window
+   * size, as the rotation threshold and the handover prompt both do, compares a
+   * per-turn sum to a per-call limit; see `transcriptSize` above.
    */
   contextTokens: number;
   /** Turns served by the CURRENT sdk session, and rotations so far. */

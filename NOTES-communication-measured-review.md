@@ -877,8 +877,11 @@ prefix and a wasted turn. **Two candidate repairs, and the choice is the operato
   a cost-driven rotation costs a session and not a turn. This preserves the behaviour that is
   currently paying for itself and removes the wasted turn and the false claim.
 
-Under either, the docs in (1) and the sentence in (2) are wrong today and want changing regardless —
-they are the parts with no trade-off in them.
+Under either, the docs in (1) want changing regardless — and are now **fixed**: `transcriptSize` and
+`LiveSession.contextTokens` state that they are a per-turn cost sum rather than a context size, and
+name the three places that compare them to a window. The sentence in (2) is the remaining
+no-trade-off item, and it stays open because its replacement text depends on which repair is chosen —
+telling the model a true number requires having one, which is (a).
 
 **11j. The token split: a seam either side of a bar that turned out to be alive.** Checking whether
 the drawer's in/out bar (`drawers.tsx:777`) could ever render, I expected a dead branch — a
