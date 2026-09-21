@@ -1006,3 +1006,53 @@ ends on is closed, and the dead set §11g left open is resolved.
 
 Each commit was built and its affected suites run in an isolated worktree, so neither depends on the
 other's changes to compile.
+
+**11m. The four open decisions, taken; and the rotation trigger now measures the thing it is named
+for.** §11i framed the `transcriptSize` defect as a decision rather than a fix, and §8 still carried
+three questions. Asked to choose, I chose, and the reasoning matters more than the choices:
+
+- **§11i: repair (a), measure the real thing — not (b), relabel the number.** (b) was cheaper and
+  honest about the prompt, but it leaves the *decision* wrong: a seat would still be rotated for
+  having worked hard. The per-call usage was not missing, it was being discarded — `msg.message` was
+  cast to `{ model?, content? }` in the pump, and the `usage` beside them fell off the cast. So
+  `promptSize` reads it, per the SDK's own arithmetic (`input_tokens + cache_creation_input_tokens +
+  cache_read_input_tokens`), and the turn keeps the **max** across its frames rather than the last:
+  the CLI emits one frame per content block and documents their usage as "not final", so a max
+  ignores a partial frame's zeros without inventing tokens, and a turn's largest prompt is its last
+  call, whose frame is final. `transcriptSize` survives as the **fallback** for a backend reporting
+  no per-call usage, which is the safe direction to fall back in — it over-states, so such a seat
+  rotates early and pays a cache prefix instead of running past its window. That is exactly what the
+  twelve pre-existing rotation tests pin, and they passed unchanged.
+- **The cache-write term was a third silent drop.** `cache_creation_input_tokens` has no field on
+  `AgentOutput["tokensUsed"]` — it rides into `usageToTokens`'s `total` and nowhere else — so a
+  prompt written to cache rather than read from it was uncounted by anything that could see it. That
+  is why `promptSize` is computed at the frame, off raw `ClaudeTurnUsage`, and not from `tokensUsed`.
+  While there: `ClaudeTurnUsage`'s cache fields are now `number | null`, which is what
+  `@anthropic-ai/sdk` declares. They were typed `number | undefined`, which made the existing `?? 0`
+  guards read as defensive when they were load-bearing.
+- **The prose the fix makes true.** §11i had corrected the handover sentence to describe a *cost*
+  ("its last turn read N tokens across its model calls") because that was all the number honestly
+  supported. It now supports the original claim, so the sentence says "it is holding N tokens of
+  context" again — and this time by construction, not by assertion. Same for the operator audit line,
+  and `SessionRotationPending.transcriptTokens` / `RotationPendingInfo` now state their unit, since a
+  reader of either could not previously tell which of the two quantities it had.
+- **The constants did not need recalibrating; they needed the fix.** `SESSION_CONTEXT_ROTATE_TOKENS`
+  (120k, = 60% of a 200k window) and `SESSION_STALE_ROTATE_FLOOR_TOKENS` (40k) were always written as
+  window fractions. Under the old measure the floor admitted an eight-call turn over a 5k transcript;
+  under the new one it means what it says. Nothing moved.
+- **5 tests**, three of them regressions stated as the failure itself: a turn whose calls sum to
+  400k but whose largest prompt is 10k must not rotate at a 50k threshold; the largest single call is
+  what trips it *and* what the handover reports; and staleness measures the transcript, not the turn.
+  Negative-controlled against the compiled build both ways — reverting the settle path reddens
+  exactly the three new tests and leaves the twelve old ones green; dropping the cache-write term
+  reddens the unit test and the integration assertion. Restored byte-for-byte, sha256 verified.
+  Suite **1658 pass / 0 fail**; typecheck ok; eslint 0 errors.
+- **§8.3 / M4's second half: declined.** M4's first half (an obligation that fails open) was resolved
+  in §10 "the second way: the safe one". Its second half asked for a *required* `basis` field on
+  every discharge. Required is the operative word: it breaks every existing discharge on the log and
+  every caller, to buy a field whose absence is already legible from `reason` (`replied`, `refused`,
+  `expired`). The same compatibility argument that settled the first half settles this one against it.
+- **§11l's two survivors: both get readers, not funerals.** `transcriptTokensDiscarded` is the only
+  record of how much context a rotation destroyed, and `EventStore.flush()` — Stage 1.4's deviation —
+  has zero production callers, which means no receipt this process hands out is backed by a durable
+  log. Both are open at the time of writing and are the next thing.
