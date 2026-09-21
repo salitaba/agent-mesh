@@ -186,10 +186,123 @@ test("a row built by hand is usable without the parser", () => {
   // has; the ledger must not depend on the file it was first written for.
   const row: TurnLedgerRow = {
     at: "2026-09-19T13:00:00.000Z", turnId: "t", agentId: "a", kind: "timer",
-    input: 10, output: 2, cacheRead: null, ops: 0, toolCalls: 0,
+    input: 10, output: 2, cacheRead: null, thinking: null, ops: 0, toolCalls: 0,
   };
   const led = buildCacheLedger([row]);
   assert.equal(led.turns, 1);
   assert.equal(led.unmeasured, 1);
   assert.equal(led.units.output, 10);
+  // A row with no publish figures is counted as unmeasured, not as a turn that
+  // published nothing inline — the same rule `cacheRead` keeps one field up.
+  assert.equal(led.written.publishUnmeasured, 1);
+  assert.equal(led.written.thinking, null);
+});
+
+/**
+ * The written column.
+ *
+ * `output` is billed at five times fresh input and was, for every round of this
+ * work, a single number with nothing under it: a turn that wrote 26k tokens
+ * could have been thinking hard or retyping a design doc, and those two want
+ * opposite fixes. These tests pin the two things the ledger can now say about
+ * it — and, harder, the two things it must refuse to say.
+ */
+test("thinking is summed where reported and left null where nobody reported it", () => {
+  const silent = parseTurnAudit(
+    [
+      line("2026-09-19T13:00:00.000Z", record({ tokens: { input: 10, output: 500, total: 510, cacheRead: 0 } })),
+      line("2026-09-19T13:01:00.000Z", record({ turnId: "t2", tokens: { input: 10, output: 500, total: 510, cacheRead: 0 } })),
+    ].join("\n"),
+  ).rows;
+  const led = buildCacheLedger(silent);
+  // The whole point. This backend does not report the split; a 0 here would be
+  // read as a mission that wrote 1000 tokens without thinking once.
+  assert.equal(led.written.thinking, null, "unreported thinking must read as unknown, never as none");
+  assert.equal(led.written.thinkingUnmeasured, 2);
+  assert.equal(led.written.output, 1000);
+
+  const mixed = parseTurnAudit(
+    [
+      line("2026-09-19T13:00:00.000Z", record({ tokens: { input: 10, output: 500, total: 510, cacheRead: 0, thinking: 300 } })),
+      line("2026-09-19T13:01:00.000Z", record({ turnId: "t2", tokens: { input: 10, output: 500, total: 510, cacheRead: 0 } })),
+    ].join("\n"),
+  ).rows;
+  const led2 = buildCacheLedger(mixed);
+  // Summed over what reported, and the rest counted rather than defaulted: 300
+  // of 1000, with one turn's share unknown — not 300 of 1000 with the other
+  // turn asserted to have thought nothing.
+  assert.equal(led2.written.thinking, 300);
+  assert.equal(led2.written.thinkingUnmeasured, 1);
+});
+
+test("inline publish bodies are counted from the recorded tool call, by-reference ones are not", () => {
+  const rows = parseTurnAudit(
+    [
+      line("2026-09-19T13:00:00.000Z", record({
+        // The MCP prefix is what the real audit carries; the bare op name is
+        // what the json-block path writes. Both are the same publish.
+        toolCalls: [{ name: "mcp__mesh__mesh_artifact_publish", args: { name: "d", type: "ADR", content: "x".repeat(3500) } }],
+        tokens: { input: 10, output: 2000, total: 2010, cacheRead: 0 },
+      })),
+      line("2026-09-19T13:01:00.000Z", record({
+        turnId: "t2",
+        toolCalls: [{ name: "publish_artifact", args: { name: "e", type: "ADR", fromPath: "docs/e.md" } }],
+        tokens: { input: 10, output: 50, total: 60, cacheRead: 0 },
+      })),
+    ].join("\n"),
+  ).rows;
+
+  const led = buildCacheLedger(rows);
+  assert.equal(led.written.publishCalls, 2);
+  assert.equal(led.written.publishByRef, 1);
+  // Only the inline one costs anything: the file the second published never
+  // passed through the model at all.
+  assert.equal(led.written.publishChars, 3500);
+  assert.equal(led.written.estPublishTokens, 1000, "3500 chars at 3.5 chars/token");
+  assert.equal(led.written.publishOutputShare, 1000 / 2050);
+  assert.equal(led.written.publishUnmeasured, 0, "the audit path always measures publishes, even at zero");
+});
+
+test("a mission that published nothing inline reports zero, not silence", () => {
+  const rows = parseTurnAudit(line("2026-09-19T13:00:00.000Z", record())).rows;
+  const led = buildCacheLedger(rows);
+  // The opposite of the unmeasured case, and the reason both exist: this record
+  // HAS tool calls and none of them is a publish, so 0 is a measurement.
+  assert.equal(led.written.publishCalls, 0);
+  assert.equal(led.written.publishChars, 0);
+  assert.equal(led.written.publishUnmeasured, 0);
+  assert.equal(led.written.publishOutputShare, 0);
+});
+
+test("thinking reported as 0 on every turn is flagged as a shape, not read as a finding", () => {
+  // The third state. Absence-vs-zero catches a backend that says nothing; this
+  // catches one that says `thinking: 0` on every call — which is what the
+  // mission this was built against actually did, while billing three times more
+  // output than its transcript contained. A bare 0 would have let a reader
+  // conclude the mesh never deliberated.
+  const rows = parseTurnAudit(
+    [
+      line("2026-09-19T13:00:00.000Z", record({ tokens: { input: 10, output: 500, total: 510, cacheRead: 0, thinking: 0 } })),
+      line("2026-09-19T13:01:00.000Z", record({ turnId: "t2", tokens: { input: 10, output: 900, total: 910, cacheRead: 0, thinking: 0 } })),
+    ].join("\n"),
+  ).rows;
+  const led = buildCacheLedger(rows);
+  assert.equal(led.written.thinking, 0);
+  assert.equal(led.written.thinkingUnmeasured, 0, "the field WAS reported — that is the whole problem");
+  assert.equal(led.written.thinkingZeroThroughout, true);
+
+  // One real figure anywhere and the pattern is gone: this is a backend that
+  // fills the field, and its zeros are measurements.
+  const mixed = parseTurnAudit(
+    [
+      line("2026-09-19T13:00:00.000Z", record({ tokens: { input: 10, output: 500, total: 510, cacheRead: 0, thinking: 0 } })),
+      line("2026-09-19T13:01:00.000Z", record({ turnId: "t2", tokens: { input: 10, output: 900, total: 910, cacheRead: 0, thinking: 400 } })),
+    ].join("\n"),
+  ).rows;
+  assert.equal(buildCacheLedger(mixed).written.thinkingZeroThroughout, false);
+
+  // And silence is not a pattern: with nothing reported there is nothing to
+  // call uniform.
+  const silent = parseTurnAudit(line("2026-09-19T13:00:00.000Z", record())).rows;
+  assert.equal(buildCacheLedger(silent).written.thinkingZeroThroughout, false);
 });

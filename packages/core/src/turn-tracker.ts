@@ -142,6 +142,22 @@ export interface TurnRecord {
    * tokensOutput` and stays derivable.
    */
   tokensCacheRead?: number;
+  /**
+   * The part of `tokensOutput` the backend spent thinking rather than saying.
+   *
+   * Billed identically to any other output token — which is the most expensive
+   * rate the mesh pays — and until this field existed it was billed invisibly:
+   * `tokensOutput` said a turn wrote 26k tokens, and nothing said whether that
+   * was a long artifact or a long deliberation. Those two want opposite fixes,
+   * so collapsing them made the output column unactionable.
+   *
+   * Absent means UNMEASURED, not zero. Not every backend reports the split, and
+   * a gateway that omits the detail must not be read as a model that did no
+   * thinking — the same discipline `tokensCacheRead` keeps, where a missing
+   * value is unknown rather than cold. Readers: check `=== undefined` before
+   * arithmetic, never `?? 0`.
+   */
+  tokensThinking?: number;
   model?: string;
   ops?: string[];
   toolCalls?: number;

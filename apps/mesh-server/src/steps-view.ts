@@ -35,6 +35,7 @@ export function mergeTurnSteps(fromLog: TurnStep[], live: TurnRecord[]): TurnSte
       tokensInput: t.tokensInput ?? prev?.tokensInput,
       tokensOutput: t.tokensOutput ?? prev?.tokensOutput,
       tokensCacheRead: t.tokensCacheRead ?? prev?.tokensCacheRead,
+      tokensThinking: t.tokensThinking ?? prev?.tokensThinking,
       model: t.model ?? prev?.model,
       error: t.error ?? prev?.error,
       seqStart: prev?.seqStart ?? 0,

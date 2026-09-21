@@ -9,16 +9,33 @@
  * file, and §11 re-measured it; this is that reconstruction as code, so the next
  * mission costs a command instead of a session.
  *
- * Two readings are deliberately kept apart:
+ * Three readings are deliberately kept apart:
  *
  * - **fresh input** (`input`) is what the provider billed uncached;
- * - **cache read** (`cacheRead`) is transcript replayed at the cache price.
+ * - **cache read** (`cacheRead`) is transcript replayed at the cache price;
+ * - **written** (`output`) is what the model emitted, billed at 5x fresh — the
+ *   largest share of the missions measured so far, and the one no round of
+ *   communication work had touched, because nothing here could say what it was
+ *   spent ON. `written` splits it two ways: `thinking`, which the backend may
+ *   or may not report, and inline artifact bodies, which the audit records in
+ *   full because the publish tool call carries them as arguments.
  *
  * A turn whose audit record carries **no** `cacheRead` is *unknown*, not cold —
  * older records predate the field, and counting them as cold is exactly how a
  * handful of catastrophic re-reads stayed invisible (§1e). `CacheLedger.turns`
- * counts what could be read; `unmeasured` counts what could not.
+ * counts what could be read; `unmeasured` counts what could not. The same rule
+ * governs `thinking`: a record with no thinking figure is a backend that did
+ * not report the split, not a turn that did no thinking, and it is counted in
+ * `written.thinkingUnmeasured` rather than folded into the total as a zero.
  */
+
+/**
+ * Characters per token, for turning a recorded character count into the token
+ * figure the provider billed. The supervisor's own estimate uses the same
+ * number, so the two readings of one mission stay comparable; both are
+ * estimates and both say so.
+ */
+const CHARS_PER_TOKEN = 3.5;
 
 /** Published Anthropic ratios, as units of one fresh input token. */
 export const TOKEN_COST_RATIO = { fresh: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5 } as const;
@@ -35,6 +52,25 @@ export interface TurnLedgerRow {
   output: number;
   /** `null` when the record has no such field: not cold, unmeasured. */
   cacheRead: number | null;
+  /**
+   * The thinking part of `output`. `null` when the record carries no such
+   * field: unmeasured, not zero — most gateways omit the detail, and reading
+   * their silence as "thought nothing" would make the split look free.
+   */
+  thinking: number | null;
+  /**
+   * Publish tool calls on this turn, whatever body they used.
+   *
+   * Optional, and absence again means unmeasured: these come from the audit's
+   * recorded tool-call arguments, and a caller feeding rows from a source
+   * without them has no publish figure rather than a zero one. `written`
+   * counts such rows in `publishUnmeasured`.
+   */
+  publishCalls?: number;
+  /** Characters this turn sent inline as a publish `content` argument. */
+  publishChars?: number;
+  /** Publish calls that sent `fromPath` or `edits` instead of a body. */
+  publishByRef?: number;
   total?: number;
   instructionsChars?: number;
   estInputTokens?: number;
@@ -49,6 +85,54 @@ export interface GapBucket {
   maxFresh: number;
 }
 
+/**
+ * What a mission's output tokens were spent on.
+ *
+ * Output is billed at five times fresh input, so this is usually the biggest
+ * line on the bill and was, until this existed, a single undifferentiated
+ * number. The two components it separates want opposite fixes: thinking is
+ * bought with `effort`, and inline artifact bodies are avoided outright by
+ * publishing from a path or as edits.
+ */
+export interface WrittenLedger {
+  /** Every output token across readable turns, thinking included. */
+  output: number;
+  /** Reported thinking tokens; `null` when NO readable turn reported the split. */
+  thinking: number | null;
+  /** Readable turns carrying no thinking figure. Unmeasured, never zero. */
+  thinkingUnmeasured: number;
+  /**
+   * Every turn that reported the split reported exactly 0.
+   *
+   * The third state, and the one absence-vs-zero alone does not catch: a
+   * gateway that emits `thinking: 0` on every call is reporting the FIELD
+   * without filling it, and that is indistinguishable from a model that
+   * genuinely never thinks — unless the ledger says which shape it saw. On the
+   * mission this was built against, all 53 turns reported 0 while billed output
+   * ran three times the visible transcript, so the zeros were plainly the
+   * gateway's and not the model's.
+   *
+   * `false` when nothing reported at all: with no reports there is no pattern.
+   */
+  thinkingZeroThroughout: boolean;
+  /** Publish tool calls seen in the audit. */
+  publishCalls: number;
+  /** Rows that carried no publish figures at all. Unmeasured, never zero. */
+  publishUnmeasured: number;
+  /** Of those, the ones that sent a reference instead of a body. */
+  publishByRef: number;
+  /** Characters sent inline as publish bodies. */
+  publishChars: number;
+  /**
+   * `publishChars` as output tokens, at the same `CHARS_PER_TOKEN` the
+   * supervisor uses for its own estimates — an estimate, and named one, because
+   * the provider bills a tokenizer this reader does not run.
+   */
+  estPublishTokens: number;
+  /** `estPublishTokens / output`, 0..1. `null` when nothing was written. */
+  publishOutputShare: number | null;
+}
+
 export interface CacheLedger {
   /** Turns whose audit record could be read as a cache ledger. */
   turns: number;
@@ -58,6 +142,8 @@ export interface CacheLedger {
   cacheRead: number;
   output: number;
   units: { freshInput: number; cachedRead: number; output: number };
+  /** What the `output` figure was spent on. */
+  written: WrittenLedger;
   /** Most expensive turns by fresh input, first. */
   top: TurnLedgerRow[];
   /** Share of all fresh input held by `top`, 0..1. */
@@ -133,6 +219,22 @@ export function parseTurnAudit(text: string): {
       continue;
     }
     const activation = rec.activation as Record<string, unknown> | undefined;
+    // The audit keeps tool calls whole — arguments included — which is the only
+    // reason an inline publish body can be counted at all after the fact. Match
+    // on the suffix: the same op arrives as `mesh_artifact_publish` from the
+    // json-block path and `mcp__mesh__mesh_artifact_publish` over MCP.
+    let publishChars = 0;
+    let publishCalls = 0;
+    let publishByRef = 0;
+    for (const call of Array.isArray(rec.toolCalls) ? rec.toolCalls : []) {
+      const c = call as { name?: unknown; args?: unknown } | null;
+      const name = typeof c?.name === "string" ? c.name : "";
+      if (!name.endsWith("mesh_artifact_publish") && !name.endsWith("publish_artifact")) continue;
+      publishCalls++;
+      const args = (c?.args ?? {}) as Record<string, unknown>;
+      if (typeof args.content === "string") publishChars += args.content.length;
+      if (args.fromPath !== undefined || args.edits !== undefined) publishByRef++;
+    }
     rows.push({
       at: prefix[1]!,
       turnId: String(rec.turnId ?? ""),
@@ -142,6 +244,10 @@ export function parseTurnAudit(text: string): {
       input: input ?? 0,
       output: num(tokens?.output) ?? 0,
       cacheRead: cacheRead ?? null,
+      thinking: num(tokens?.thinking) ?? null,
+      publishCalls,
+      publishChars,
+      publishByRef,
       total: num(tokens?.total),
       instructionsChars: num(rec.instructionsChars),
       estInputTokens: num(rec.estInputTokens),
@@ -180,6 +286,28 @@ export function buildCacheLedger(rows: TurnLedgerRow[], top = 10): CacheLedger {
   const topRows = byFresh.slice(0, top);
   const topFresh = topRows.reduce((a, r) => a + r.input, 0);
 
+  // Thinking is summed over the turns that reported it and the rest are counted,
+  // never defaulted: a mission where two of fifty turns report thinking has a
+  // thinking figure for two turns, not a mission that barely thought. `null`
+  // when not one turn reported it — the honest answer there is "unknown", and a
+  // 0 would read as "measured, and none".
+  const withThinking = rows.filter((r) => r.thinking !== null);
+  const thinking = withThinking.length ? withThinking.reduce((a, r) => a + (r.thinking ?? 0), 0) : null;
+  const publishChars = rows.reduce((a, r) => a + (r.publishChars ?? 0), 0);
+  const estPublishTokens = Math.round(publishChars / CHARS_PER_TOKEN);
+  const written: WrittenLedger = {
+    output,
+    thinking,
+    thinkingUnmeasured: rows.length - withThinking.length,
+    thinkingZeroThroughout: withThinking.length > 0 && withThinking.every((r) => r.thinking === 0),
+    publishCalls: rows.reduce((a, r) => a + (r.publishCalls ?? 0), 0),
+    publishUnmeasured: rows.filter((r) => r.publishCalls === undefined).length,
+    publishByRef: rows.reduce((a, r) => a + (r.publishByRef ?? 0), 0),
+    publishChars,
+    estPublishTokens,
+    publishOutputShare: output ? estPublishTokens / output : null,
+  };
+
   const measured = rows.filter((r) => r.cacheRead !== null);
   const cold = measured.filter((r) => r.cacheRead === 0);
   const coldFresh = cold.reduce((a, r) => a + r.input, 0);
@@ -214,6 +342,7 @@ export function buildCacheLedger(rows: TurnLedgerRow[], top = 10): CacheLedger {
       cachedRead: cacheRead * TOKEN_COST_RATIO.cacheRead,
       output: output * TOKEN_COST_RATIO.output,
     },
+    written,
     top: topRows,
     topFreshShare: freshInput ? topFresh / freshInput : 0,
     coldTurns: cold.length,

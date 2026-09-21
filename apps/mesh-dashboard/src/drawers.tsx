@@ -782,6 +782,11 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const tokIn = typeof t.tokensInput === "number" ? t.tokensInput : listStep?.tokensInput;
   const tokOut = typeof t.tokensOutput === "number" ? t.tokensOutput : listStep?.tokensOutput;
   const tokCached = typeof t.tokensCacheRead === "number" ? t.tokensCacheRead : listStep?.tokensCacheRead;
+  // Thinking is billed inside `out` at the same rate as text the seat actually
+  // said, so a turn that looks expensive to WRITE may have been expensive to
+  // DECIDE — opposite fixes. Rendered only where the backend reported it;
+  // absent it simply does not appear, rather than showing a 0 nobody measured.
+  const tokThinking = typeof t.tokensThinking === "number" ? t.tokensThinking : listStep?.tokensThinking;
   const showSplit = typeof tokIn === "number" && typeof tokOut === "number"
     && tokIn >= 100 && (tokIn + tokOut) >= (t.tokens ?? listStep?.tokens ?? 0) * 0.3;
   // Phase marks are live-only; a turn evicted from the server's ring has none,
@@ -876,7 +881,7 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
         <div className="sv-metrics">
           <span title="wall clock for this turn">{durText}</span>
           <span title={showSplit
-            ? `in ${fmt(tokIn ?? 0)} fresh · out ${fmt(tokOut ?? 0)}${tokCached ? ` · ${fmt(tokCached)} replayed from cache` : ""}`
+            ? `in ${fmt(tokIn ?? 0)} fresh · out ${fmt(tokOut ?? 0)}${typeof tokThinking === "number" ? ` (${fmt(tokThinking)} thinking)` : ""}${tokCached ? ` · ${fmt(tokCached)} replayed from cache` : ""}`
             : "total tokens"}>
             {t.tokens != null ? `${fmt(t.tokens)} tok` : "— tok"}
             {inShare !== null ? <i className="sv-split" aria-hidden="true"><b style={{ width: `${inShare}%` }} /></i> : null}

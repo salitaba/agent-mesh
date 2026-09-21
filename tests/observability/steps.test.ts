@@ -40,6 +40,19 @@ test("a replayed turn carries the split the consume event recorded", () => {
   assert.equal(s.model, "claude-opus-5");
 });
 
+test("the thinking share of a turn's output survives the log, and its absence survives too", () => {
+  // Thinking is billed inside `output`, so a step that shows 100 written tokens
+  // cannot say whether the seat wrote or deliberated. When the backend reports
+  // the split it rides the same consume payload as the rest.
+  const told = buildTurnSteps([awakened(), consume(2, { input: 1000, output: 100, cacheRead: 7000, thinking: 60 })]);
+  assert.equal(told[0]!.tokensThinking, 60);
+
+  // And when it does not, the field stays absent. A 0 here would assert a turn
+  // deliberated for free, which is a claim no measurement supports.
+  const silent = buildTurnSteps([awakened(), consume(2, { input: 1000, output: 100, cacheRead: 7000 })]);
+  assert.equal(silent[0]!.tokensThinking, undefined);
+});
+
 test("a consume that reports no split leaves the fields absent, not zero", () => {
   // A backend that says nothing must not read as "this turn read nothing
   // uncached" — the same absence discipline the ledger parser needs.

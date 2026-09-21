@@ -26,6 +26,12 @@ export interface TurnStep {
   tokensInput?: number;
   tokensOutput?: number;
   tokensCacheRead?: number;
+  /**
+   * The thinking part of `tokensOutput`, when the backend reported it. Absent
+   * is unmeasured: most gateways omit the detail, and a 0 here would claim a
+   * turn deliberated for free.
+   */
+  tokensThinking?: number;
   model?: string;
   error?: string;
   seqStart: number;
@@ -190,6 +196,7 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
           if (typeof p.input === "number") s.tokensInput = (s.tokensInput ?? 0) + p.input;
           if (typeof p.output === "number") s.tokensOutput = (s.tokensOutput ?? 0) + p.output;
           if (typeof p.cacheRead === "number") s.tokensCacheRead = (s.tokensCacheRead ?? 0) + p.cacheRead;
+          if (typeof p.thinking === "number") s.tokensThinking = (s.tokensThinking ?? 0) + p.thinking;
           if (p.model) s.model = String(p.model);
         }
         s.seqEnd = Math.max(s.seqEnd, seq);

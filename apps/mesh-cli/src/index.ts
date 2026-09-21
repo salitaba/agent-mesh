@@ -280,7 +280,7 @@ usage:
   mesh respond <escalationId> <text>       human escalation response
   mesh artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
   mesh budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
-  mesh ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached
+  mesh ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written
     vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
     Offline: reads logs/turn-audit.jsonl, needs no running mesh. Ratios are published Anthropic
     units (cache read 0.1x, write 1.25x, output 5x) — a comparable unit, not a price.
@@ -785,7 +785,8 @@ async function offlineEvents(args: Args, limit: number, type?: string): Promise<
 }
 
 /**
- * `mesh ledger` — what each settled turn cost, from the audit file.
+ * `mesh ledger` — what each settled turn cost, from the audit file, and since
+ * the written column got a breakdown, what the most expensive line was spent on.
  *
  * Offline on purpose: `logs/turn-audit.jsonl` is append-only and independent of
  * the live store, so this reads a mission that has stopped, a mission on another
@@ -841,6 +842,37 @@ async function offlineLedger(args: Args): Promise<number> {
   console.log(`  fresh input ${fmt(led.freshInput).padStart(12)}     ${share(led.units.freshInput).padStart(6)}`);
   console.log(`  cache read  ${fmt(led.cacheRead).padStart(12)}     ${share(led.units.cachedRead).padStart(6)}  at 0.1x`);
   console.log(`  written     ${fmt(led.output).padStart(12)}     ${share(led.units.output).padStart(6)}  at 5x`);
+
+  // The written line is usually the biggest on the bill and was, until this
+  // block existed, the only one with nothing under it. Both sub-lines are
+  // printed as "of written", not as a share of the whole, so a reader cannot
+  // mistake an estimate for the billed total.
+  const w = led.written;
+  const ofWritten = (n: number) => (led.output ? `${((100 * n) / led.output).toFixed(1)}% of written` : "—");
+  if (w.thinking === null) {
+    // Said out loud rather than printed as 0: this backend does not report the
+    // split, and a zero here would be read as a mission that did no thinking.
+    console.log(`    thinking    ${"unmeasured".padStart(12)}             (no turn reported the split)`);
+  } else if (w.thinkingZeroThroughout) {
+    // Not the same as unmeasured, and not a finding either: the backend sent
+    // the field and put 0 in it every time. Printing a bare 0 would let a
+    // reader conclude the mission never deliberated, which this figure cannot
+    // support — so say what was seen and leave the conclusion open.
+    console.log(`    thinking    ${"0 every turn".padStart(12)}             (a backend that reports the field but never fills it looks exactly like this)`);
+  } else {
+    const caveat = w.thinkingUnmeasured ? `, ${fmt(w.thinkingUnmeasured)} turns unmeasured` : "";
+    console.log(`    thinking    ${fmt(w.thinking).padStart(12)}     ${ofWritten(w.thinking).padStart(17)}${caveat}`);
+  }
+  if (w.publishCalls) {
+    const est = `~${fmt(w.estPublishTokens)}`;
+    console.log(
+      `    inline bodies ${est.padStart(10)}     ${ofWritten(w.estPublishTokens).padStart(17)}` +
+        `  (${fmt(w.publishChars)} chars over ${fmt(w.publishCalls - w.publishByRef)} of ${fmt(w.publishCalls)} publishes, est.)`,
+    );
+    if (w.publishByRef) {
+      console.log(`                                                  ${fmt(w.publishByRef)} published by reference, costing nothing`);
+    }
+  }
   console.log("");
   console.log(`  concentration  top ${led.top.length} turns hold ${(100 * led.topFreshShare).toFixed(1)}% of fresh input`);
   if (led.coldTurns) {

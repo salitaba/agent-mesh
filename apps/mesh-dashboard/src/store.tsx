@@ -46,6 +46,7 @@ export interface TurnStep {
   tokensInput?: number;
   tokensOutput?: number;
   tokensCacheRead?: number;
+  tokensThinking?: number;
   model?: string;
   error?: string;
   seqStart: number;

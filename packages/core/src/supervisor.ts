@@ -4492,6 +4492,11 @@ export class Supervisor {
         // Recorded but NOT billed: the replayed transcript on a persistent
         // session. Kept on the event so cost reports can still show it.
         cacheRead: output.tokensUsed?.cacheRead,
+        // Billed inside `output`, not beside it — this rides along so a replayed
+        // mission can say what the output went ON, which is the one question
+        // the largest line on the bill could not answer. Undefined when the
+        // backend reports no split, and read as unknown, not as none.
+        thinking: output.tokensUsed?.thinking,
         toolCalls: output.toolCalls?.length ?? 0,
         turnId,
       }, { actorId: agentId, correlationId: turnId });
@@ -4650,6 +4655,10 @@ export class Supervisor {
         tokensInput: output.tokensUsed?.input,
         tokensOutput: output.tokensUsed?.output,
         tokensCacheRead: output.tokensUsed?.cacheRead,
+        // Optional all the way down on purpose: a backend that does not report
+        // the split leaves this undefined, and every reader must keep reading
+        // it as unmeasured rather than as a turn that thought for nothing.
+        tokensThinking: output.tokensUsed?.thinking,
         model: output.model,
         // Executed ops only (not merely planned): if the mission flipped
         // mid-turn and the loop stopped early, the trace must not claim the
@@ -4813,6 +4822,7 @@ export class Supervisor {
       tokensInput: output.tokensUsed?.input,
       tokensOutput: output.tokensUsed?.output,
       tokensCacheRead: output.tokensUsed?.cacheRead,
+      tokensThinking: output.tokensUsed?.thinking,
       summary: declaredTurnSummary(output)?.slice(0, 500),
       text: (output.text ?? "").slice(0, MAX_TRACE_TEXT_CHARS),
       instructions: input.instructions?.slice(0, MAX_TRACE_INSTRUCTIONS_CHARS),
