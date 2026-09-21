@@ -243,6 +243,36 @@ remainder omitted. The rule itself is carried by the role prompts, which
 `docs/architecture.md` classes as layer 1 (prompt awareness) — a rule the agent
 is told, not one the runtime enforces.
 
+### Publishing a body: three ways, one of them expensive
+
+`publish_artifact` takes exactly one of `content`, `fromPath` or `edits`, and
+the choice is the largest cost decision in a turn. `content` is typed by the
+model and billed at the output rate — five times fresh input — so a document
+moved that way is paid for at the most expensive rate the mesh has. Measured on
+one real mission: 44 inline publishes carried 1,178,479 characters, about 17% of
+everything written, and most of it was already a file on disk or a previous
+version being retyped to change a paragraph.
+
+- `fromPath` — a path inside the seat's own workspace (`agentWorkspace`,
+  the same directory its Write/Edit tools land in). The runtime reads the file,
+  so the body never passes through the model. Resolved on the real path and
+  refused if it escapes that root, so `../` and a symlink out are the same
+  refusal.
+- `edits` — `[{old, new}]` against the version named by `asVersionOf`. Same
+  contract as the Edit tool: each `old` must appear exactly once, and if any
+  one fails, nothing is written. An artifact version is immutable and gets
+  cited as evidence, so a half-applied revision is worse than a refused one.
+- `content` — inline, for a document that was never a file. Capped at 48,000
+  characters, below the 60,000 a single `read_artifact` returns, so anything
+  publishable in one call is readable in one call. Over the cap the publish is
+  **refused and the refusal names the other two fields** — never truncated, since
+  a truncated artifact still digests, versions and satisfies gates.
+
+This is the one place the reference-bus discipline became a runtime rule rather
+than prompt advice — and note what it corrects: telling agents "never paste into
+messages, publish an artifact instead" moved the paste out of the cheapest
+channel (mail, which is ~0.2% of input) and into the most expensive one.
+
 ## Typed state machines
 
 - **code**: `DRAFT → READY_FOR_REVIEW → UNDER_REVIEW → APPROVED → VERIFIED →

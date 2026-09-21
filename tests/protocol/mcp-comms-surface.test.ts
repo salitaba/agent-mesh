@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
@@ -54,12 +56,16 @@ function bus(m: Mesh, agentId: string) {
       return JSON.parse(res.result.content[0].text);
     },
     async schemaFor(name: string): Promise<any> {
+      return (await this.toolFor(name)).inputSchema;
+    },
+    /** The whole descriptor. The prose lives here, not on the input schema. */
+    async toolFor(name: string): Promise<any> {
       const list = (await mcp.handle(agentId, tok, mcpReq("tools/list", {}))) as {
         result: { tools: Array<{ name: string; inputSchema: any }> };
       };
       const tool = list.result.tools.find((t) => t.name === name);
       assert.ok(tool, `${name} is not advertised to ${agentId}`);
-      return tool!.inputSchema;
+      return tool!;
     },
   };
 }
@@ -219,6 +225,60 @@ test("mcp: a request can continue the thread it follows up on", async () => {
     const separate = m.kernel.state.messages.get(fresh.messageId)!;
     assert.notEqual(separate.threadId, seeded.threadId, "no thread id means a new thread, as before");
     assert.equal(m.kernel.state.threads.get(separate.threadId)!.subject, "unrelated ask");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("mcp: a seat can publish from a path it wrote, and the tool says so before it tries", async () => {
+  const m = await pair();
+  try {
+    const dev = bus(m, "dev");
+
+    // The schema is the only place a model learns the field exists. `content`
+    // must not be required any more — requiring it is what made the expensive
+    // body the only advertised one.
+    const tool = await dev.toolFor("mesh_artifact_publish");
+    assert.deepEqual(tool.inputSchema.required, ["name", "type"]);
+    for (const field of ["content", "fromPath", "edits"]) {
+      assert.ok(tool.inputSchema.properties[field], `${field} is not advertised, so no seat will ever use it`);
+    }
+    // The prose is where the cheap path gets chosen or missed: a seat picks a
+    // body by reading this sentence, not by reading the supervisor.
+    assert.match(tool.description, /fromPath/);
+
+    const ws = await m.supervisor.agentWorkspace("dev");
+    fs.mkdirSync(ws, { recursive: true });
+    const written = "# Notes\n\nwritten with Write, published by reference\n";
+    fs.writeFileSync(path.join(ws, "notes.md"), written, "utf8");
+
+    const res = await dev.call("mesh_artifact_publish", { name: "Notes", type: "ResearchReport", fromPath: "notes.md" });
+    assert.equal(res.ok, true, res.error);
+    assert.ok(res.artifactUri, "an artifact the seat cannot name is one it cannot cite in a message");
+
+    // And the round trip proves `toOp` copied `fromPath` at all. That copy is
+    // the rot this file watches for: delete it and the op arrives bodiless,
+    // with no type error and no log line -- just a seat refused for omitting
+    // the very field it sent.
+    const stored = await dev.call("mesh_artifact_read", { artifactRef: res.artifactUri });
+    assert.equal(stored.content, written, "the file's bytes are the artifact body, unaltered");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("mcp: an oversized inline body comes back as an error the seat can act on", async () => {
+  const m = await pair();
+  try {
+    const dev = bus(m, "dev");
+    const res = await dev.call("mesh_artifact_publish", {
+      name: "Huge", type: "RequirementsDoc", content: "x".repeat(60_000),
+    });
+    assert.equal(res.ok, false);
+    // Reached through `out.error`, which is the only field of the result a
+    // model reliably reads. A refusal it cannot see is a turn it repeats.
+    assert.match(String(res.error), /fromPath/);
+    assert.match(String(res.error), /edits/);
   } finally {
     await m.cleanup();
   }

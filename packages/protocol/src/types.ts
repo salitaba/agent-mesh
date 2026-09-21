@@ -1484,12 +1484,67 @@ export interface MeshOpWithdraw {
   reason?: string;
 }
 
+/**
+ * One exact replacement against an artifact's previous version.
+ *
+ * Deliberately the same contract as the Edit tool: no regex, no fuzzy match, no
+ * line numbers. `old` either appears exactly once or the publish is refused,
+ * because a replacement that silently hit the wrong occurrence would corrupt an
+ * immutable version that reviewers will cite.
+ */
+export interface ArtifactEdit {
+  /** Text to replace. Must occur exactly once in the previous version. */
+  old: string;
+  /** What replaces it. Empty string deletes. */
+  new: string;
+}
+
 export interface MeshOpPublishArtifact {
   op: "publish_artifact";
   name: string;
   type: ArtifactType;
   status?: ArtifactStatus;
-  content: string;
+  /**
+   * The document, by value.
+   *
+   * Exactly one of `content`, `fromPath` or `edits` must be given. This one is
+   * the expensive way and stays the default only because it is the only way to
+   * publish something that was never a file: every character here is emitted by
+   * the model, and output is the priciest token a mesh buys.
+   *
+   * Measured on one real mission: 44 publishes carried 1,178,479 characters
+   * inline — 17% of everything the mission wrote, from 44 tool calls — while
+   * the same seats' `commit` path published from the worktree for a few dozen
+   * tokens. The role prompts say "never paste documents into messages, publish
+   * an artifact instead", which was sound advice that moved the paste out of
+   * the cheap channel and into this one.
+   */
+  content?: string;
+  /**
+   * The document, by reference: a path inside the seat's own workspace.
+   *
+   * The runtime reads the file, so the content never passes through the model
+   * at all. This is the right field whenever the thing being published already
+   * exists on disk — which is the common case, because a seat writes a design
+   * doc or a source tree with Write/Edit and then has to publish it.
+   *
+   * Resolved against {@link Supervisor.agentWorkspace}, never against the
+   * process cwd, and refused if it escapes that directory: a seat may publish
+   * what it wrote, not what it can reach.
+   */
+  fromPath?: string;
+  /**
+   * The document, by difference: exact string replacements against the version
+   * named by `asVersionOf`.
+   *
+   * Revising by value means re-emitting the whole document to change a
+   * paragraph, and the cost grows with every revision — one artifact on the
+   * measured mission went 7,154 → 9,692 → 27,727 characters, each version
+   * re-typing all of its predecessor. These are applied exactly like the Edit
+   * tool a seat already uses: `old` must appear exactly once, or nothing is
+   * written and the publish is refused.
+   */
+  edits?: ArtifactEdit[];
   /**
    * Overrides the type-derived default. An agent publishing something the whole
    * mesh should keep in view says so here rather than hoping its type is on a

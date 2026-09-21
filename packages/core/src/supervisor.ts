@@ -25,6 +25,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeStatus,
   type Artifact,
+  type ArtifactEdit,
   type ArtifactRef,
   type ArtifactScope,
   type ArtifactStatus,
@@ -333,6 +334,29 @@ const INSTRUCTIONS_SOFT_CAP_TOKENS = 9000;
  * log, a patch — not to make reading artifacts feel rationed.
  */
 const ARTIFACT_READ_MAX_CHARS = 60000;
+
+/**
+ * Ceiling on an inline `publish_artifact` body, in characters.
+ *
+ * Deliberately below {@link ARTIFACT_READ_MAX_CHARS}: anything a seat can
+ * publish in one inline call, a reader can get back in one un-paged read. The
+ * asymmetry that existed before — 60k in, unbounded out — was the wrong way
+ * round, because the unbounded side is the one billed at output rates.
+ *
+ * Over the limit the publish is refused, never truncated, and the refusal names
+ * `fromPath` and `edits`. A big document is not the problem; re-typing one
+ * through the model is.
+ */
+const ARTIFACT_PUBLISH_MAX_CHARS = 48000;
+
+/**
+ * Ceiling on a `fromPath` publish, in bytes.
+ *
+ * Higher than the inline cap because these bytes cost nothing to publish — the
+ * runtime reads the file — but not unbounded, because they still have to be
+ * readable afterwards, and `read_artifact` pages at 60k a turn.
+ */
+const ARTIFACT_PUBLISH_MAX_BYTES = 2_000_000;
 
 /**
  * The two degradation tiers, shared by the thread-budget path and the
@@ -5019,6 +5043,137 @@ export class Supervisor {
     return this.deps.workspace.mainPath;
   }
 
+  // ------------------------------------------------------ artifact bodies
+
+  /**
+   * Turn a publish op into the bytes to store.
+   *
+   * Three ways in, and the ordering of the checks is the policy: exactly one
+   * source, or the op is refused with the name of the field that would have
+   * worked. Refusing-and-teaching rather than guessing, because a publish that
+   * silently picked one of two given bodies would produce an immutable version
+   * whose provenance nobody can reconstruct.
+   *
+   * The reason these exist at all is a cost the mesh was paying invisibly.
+   * `content` is emitted by the model, and output tokens are the most expensive
+   * thing a mission buys. On the mission this was measured against, 44 inline
+   * publishes carried 1.18M characters — about 17% of everything written — and
+   * most of it already existed as a file the runtime could have read for free,
+   * or as a previous version the new one re-typed in full.
+   */
+  private async resolveArtifactBody(
+    actorId: string,
+    op: { content?: string; fromPath?: string; edits?: ArtifactEdit[]; asVersionOf?: string },
+  ): Promise<{ content: string } | { error: string }> {
+    const given = [
+      op.content !== undefined ? "content" : undefined,
+      op.fromPath !== undefined ? "fromPath" : undefined,
+      op.edits !== undefined ? "edits" : undefined,
+    ].filter((v): v is string => v !== undefined);
+    if (given.length > 1) {
+      return { error: `give exactly one of content, fromPath or edits — got ${given.join(" and ")}` };
+    }
+    if (given.length === 0) {
+      return { error: "no body: give content (inline), fromPath (a file in your workspace) or edits (changes to asVersionOf)" };
+    }
+
+    if (op.fromPath !== undefined) return this.readArtifactBodyFromPath(actorId, op.fromPath);
+    if (op.edits !== undefined) return this.applyArtifactEdits(op.edits, op.asVersionOf);
+
+    const content = String(op.content ?? "");
+    // The read side has had a ceiling since the day an agent could flood its own
+    // window with one `read_artifact`; the write side had none, and one measured
+    // publish arrived at 106,021 characters. Refuse rather than truncate: a
+    // truncated artifact is a corrupt document that still digests, versions and
+    // passes gates, which is worse than no artifact at all. The refusal names
+    // the two cheap ways out, because a model that just spent 26k output tokens
+    // on a body needs to be told where those tokens should have gone.
+    if (content.length > ARTIFACT_PUBLISH_MAX_CHARS) {
+      return {
+        error:
+          `inline content is ${content.length} chars, over the ${ARTIFACT_PUBLISH_MAX_CHARS} limit. ` +
+          `Write the document to a file in your workspace and publish with fromPath, ` +
+          `or if this revises an existing artifact, send edits with asVersionOf instead of the whole body.`,
+      };
+    }
+    return { content };
+  }
+
+  /**
+   * Read a publish body off disk.
+   *
+   * Anchored on {@link agentWorkspace} — the same directory the seat's own
+   * Write/Edit tools land in — so "publish what I just wrote" is one relative
+   * path and nothing else in the filesystem is reachable. The containment check
+   * is done on the resolved real path, not the string, because `../` and a
+   * symlink out of the worktree are the same escape wearing two hats.
+   */
+  private async readArtifactBodyFromPath(actorId: string, fromPath: string): Promise<{ content: string } | { error: string }> {
+    const root = await this.agentWorkspace(actorId);
+    const rootReal = await fs.promises.realpath(root).catch(() => path.resolve(root));
+    const abs = path.resolve(rootReal, fromPath);
+    const real = await fs.promises.realpath(abs).catch(() => abs);
+    const rel = path.relative(rootReal, real);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      return { error: `fromPath '${fromPath}' resolves outside your workspace — publish a file you wrote, using a path relative to your workspace root` };
+    }
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(real);
+    } catch {
+      return { error: `fromPath '${fromPath}' does not exist in your workspace (looked in ${rootReal})` };
+    }
+    if (!stat.isFile()) {
+      return { error: `fromPath '${fromPath}' is not a file` };
+    }
+    // Same ceiling as inline, for a different reason: the bytes are free to
+    // publish but not free to read back — `read_artifact` pages at 60k, and a
+    // 10MB file would page for forty turns. The limit is generous enough that
+    // any hand-written document clears it; what it stops is a seat publishing
+    // a build output or a log by accident.
+    if (stat.size > ARTIFACT_PUBLISH_MAX_BYTES) {
+      return { error: `fromPath '${fromPath}' is ${stat.size} bytes, over the ${ARTIFACT_PUBLISH_MAX_BYTES} limit for a published artifact` };
+    }
+    const content = await fs.promises.readFile(real, "utf8");
+    return { content };
+  }
+
+  /**
+   * Apply exact replacements to the previous version of an artifact.
+   *
+   * The same contract as the Edit tool a seat already knows: each `old` must
+   * appear exactly once, and if any one of them does not, nothing is written.
+   * All-or-nothing matters more here than in a working file — an artifact
+   * version is immutable and gets cited as evidence, so a half-applied revision
+   * would be a document that claims to say something it does not.
+   */
+  private async applyArtifactEdits(edits: ArtifactEdit[], asVersionOf?: string): Promise<{ content: string } | { error: string }> {
+    if (!asVersionOf) {
+      return { error: "edits need asVersionOf: they are changes to a specific previous version, so say which one" };
+    }
+    if (edits.length === 0) {
+      return { error: "edits is empty — a version that changes nothing is not a version" };
+    }
+    const current = this.state.artifacts.get(asVersionOf);
+    if (!current) return { error: `unknown artifact ${asVersionOf}` };
+    let content = await this.deps.content.read(current.contentRef);
+    for (const [i, edit] of edits.entries()) {
+      const target = String(edit?.old ?? "");
+      if (target.length === 0) {
+        return { error: `edits[${i}].old is empty — give the exact text to replace` };
+      }
+      const first = content.indexOf(target);
+      if (first === -1) {
+        return { error: `edits[${i}].old not found in ${current.type}:${current.name} v${current.version} — read the artifact and quote it exactly` };
+      }
+      if (content.indexOf(target, first + target.length) !== -1) {
+        return { error: `edits[${i}].old appears more than once in ${current.type}:${current.name} v${current.version} — include enough surrounding text to make it unique` };
+      }
+      content = content.slice(0, first) + String(edit?.new ?? "") + content.slice(first + target.length);
+    }
+    return { content };
+  }
+
   // ------------------------------------------------------ tool approvals
 
   /**
@@ -5358,11 +5513,13 @@ export class Supervisor {
           return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
         }
         case "publish_artifact": {
+          const body = await this.resolveArtifactBody(actorId, op);
+          if ("error" in body) return { ok: false, op: op.op, reason: body.error };
           const res = await this.createArtifact({
             actorId,
             name: op.name,
             type: op.type,
-            content: op.content,
+            content: body.content,
             status: op.status,
             scope: op.scope,
             metadata: op.metadata,

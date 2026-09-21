@@ -363,7 +363,27 @@ export class McpToolset {
       case "mesh_escalate":
         return { op: "escalate", reason: a.reason, detail: a.detail, conflictKey: a.conflictKey };
       case "mesh_artifact_publish":
-        return { op: "publish_artifact", name: a.name, type: a.type, content: a.content, status: a.status, scope: a.scope, metadata: a.metadata, asVersionOf: a.asVersionOf, parentArtifactId: a.parentArtifactId };
+        // The supervisor decides "exactly one of three" by counting which
+        // bodies are not `undefined`, so a key the caller never sent must not
+        // arrive carrying a value. Spreading conditionally keeps the op literal
+        // to the fields actually sent; it is not what makes the count correct
+        // (an explicit `content: undefined` counts the same as an absent one),
+        // so the rule to protect is that each field is COPIED AT ALL. Drop one
+        // and the publish arrives bodiless -- no type error, and a seat told
+        // only that it gave "no body" for a body it did give.
+        return {
+          op: "publish_artifact",
+          name: a.name,
+          type: a.type,
+          ...(a.content !== undefined ? { content: a.content } : {}),
+          ...(a.fromPath !== undefined ? { fromPath: a.fromPath } : {}),
+          ...(a.edits !== undefined ? { edits: a.edits } : {}),
+          status: a.status,
+          scope: a.scope,
+          metadata: a.metadata,
+          asVersionOf: a.asVersionOf,
+          parentArtifactId: a.parentArtifactId,
+        };
       case "mesh_artifact_read":
         return { op: "read_artifact", artifactRef: a.artifactRef, offset: a.offset };
       case "mesh_artifact_transition":
@@ -836,7 +856,13 @@ export class McpToolset {
       { name: "mesh_reject", description: "Reject a subject domain or artifact review.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_veto", description: "Veto an action (requires explicit veto authority in the subject domain).", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_escalate", description: "Escalate a disagreement or blocker to the human seat.", inputSchema: { type: "object", required: ["reason"], properties: { reason: str("escalation reason"), detail: obj("structured detail"), conflictKey: str("stable key for repeated conflicts") }, additionalProperties: false } },
-      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content.", inputSchema: { type: "object", required: ["name", "type", "content"], properties: { name: str("artifact name"), type: str("ArtifactType"), content: str("full content"), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
+      // Three bodies, one rule: exactly one of content/fromPath/edits. The
+      // description leads with the cheap two because the expensive one is what
+      // a model reaches for unprompted — it already has the document in its
+      // head and typing it out feels like the shortest path. It is the longest:
+      // output is billed at five times fresh input, and on the mission this was
+      // measured against, inline publishes were 17% of everything written.
+      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content. Give exactly ONE body: fromPath (a file you already wrote — cheapest, the mesh reads it), edits (changes to a previous version, with asVersionOf), or content (inline — only for something that was never a file).", inputSchema: { type: "object", required: ["name", "type"], properties: { name: str("artifact name"), type: str("ArtifactType"), fromPath: str("path to a file in YOUR workspace, relative to its root. Prefer this: the mesh reads the file, so the content costs you nothing to publish."), edits: { type: "array", description: "exact replacements against the version named by asVersionOf — use instead of re-sending a whole revised document", items: { type: "object", required: ["old", "new"], properties: { old: str("text to replace; must appear exactly once in the previous version"), new: str("what replaces it; empty string deletes") }, additionalProperties: false } }, content: str("full content, inline. Only when the document is not already a file and does not revise one."), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
       { name: "mesh_artifact_read", description: "Read the content of an artifact version by URI or id. Large artifacts come back in parts: if the result says truncated, call again with the offset it gives you.", inputSchema: { type: "object", required: ["artifactRef"], properties: { artifactRef: str("artifact:// URI or artifact id"), offset: { type: "number", description: "character offset to resume from, taken from a previous truncated result's nextOffset" } }, additionalProperties: false } },
       { name: "mesh_artifact_transition", description: "Request an artifact state-machine transition (runtime-enforced gates apply).", inputSchema: { type: "object", required: ["artifactId", "to"], properties: { artifactId: str("artifact id"), to: str("target ArtifactStatus"), evidence: str("evidence description") }, additionalProperties: false } },
       { name: "mesh_request_review", description: "Move an artifact to review and request reviewers.", inputSchema: { type: "object", required: ["artifactId", "reviewers"], properties: { artifactId: str("artifact id"), reviewers: strArr("reviewer agent ids") }, additionalProperties: false } },
