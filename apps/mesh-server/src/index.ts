@@ -1227,11 +1227,49 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   async function route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const u = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const parts = u.pathname.split("/").filter((p) => p.length > 0);
-    const json = (code: number, body: unknown) => {
+    const send = (code: number, body: unknown): void => {
       res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
       // Compact serialization: pretty-printing roughly doubles large payloads
       // (timelines, traces) for zero client benefit — every consumer parses.
       res.end(JSON.stringify(body));
+    };
+    /**
+     * Every JSON response, with a durability barrier in front of the ones that
+     * are receipts.
+     *
+     * `EventStore.append` returns before the line reaches disk — a deliberate
+     * throughput trade, with the crash window bounded by an fsync every
+     * SYNC_EVERY appends rather than closed. That trade is right nearly
+     * everywhere and wrong at one moment: when we hand an id back over the
+     * wire. From then on something outside this process treats the event as
+     * having happened, and it has no way to ever learn otherwise — so a crash
+     * inside the window does not lose an event, it turns a 202 into a lie.
+     *
+     * The barrier is per receipt, not per append, which is the distinction
+     * `flush()`'s contract asks for: a turn that emits forty events pays one
+     * fsync, on the reply that mentions them. Reads skip it entirely, and
+     * `flush()` costs nothing on a store with no pending write, so the
+     * read-only MCP tool calls that share this path stay free.
+     *
+     * A flush that throws becomes a 500 rather than the 2xx it was going to
+     * be: learning that the write failed is the whole reason to wait for it.
+     * The event is still in memory and still applied, so this is not a
+     * retryable failure — it reports that the log behind this mesh has
+     * stopped accepting writes, and a retry would only re-apply the action.
+     */
+    const json = async (code: number, body: unknown): Promise<void> => {
+      if (req.method !== "GET" && code >= 200 && code < 300) {
+        try {
+          await store.flush?.();
+        } catch (err) {
+          return send(500, {
+            error: `event log write failed: ${(err as Error).message}`,
+            code: "event_log_not_durable",
+            retryable: false,
+          });
+        }
+      }
+      send(code, body);
     };
     const body = async (): Promise<Record<string, any>> => {
       const chunks: Buffer[] = [];
@@ -1488,7 +1526,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // removed, i.e. a whole-file rewrite that never happened.
           const beforeRead: ContentRead = from && fromN !== toN ? await readContentResult(instance, from.contentRef) : { ok: true, text: "" };
           const afterRead: ContentRead = await readContentResult(instance, to.contentRef);
-          const unreadable = (reason: string, version: number): void =>
+          const unreadable = (reason: string, version: number): Promise<void> =>
             json(503, {
               error: `artifact content is unreadable: ${reason}`,
               code: "artifact_content_unreadable",
@@ -2523,9 +2561,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
       }
 
-      json(404, { error: `no route: ${req.method} ${u.pathname}` });
+      return json(404, { error: `no route: ${req.method} ${u.pathname}` });
     } catch (err) {
-      json(500, { error: (err as Error).message });
+      return json(500, { error: (err as Error).message });
     }
   }
 

@@ -218,6 +218,20 @@ export class JsonlEventStore implements EventStore {
   private handlePromise: Promise<fs.promises.FileHandle> | null = null;
   private writeError: unknown = null;
   private sinceSync = 0;
+  /**
+   * Is there an append the queue has not yet fsynced?
+   *
+   * This exists so the receipt barrier can be cheap enough to sit on every
+   * mutating response. `flush()` on a clean store must cost nothing, or the
+   * read-only traffic sharing that path (the MCP bridge POSTs a tool call per
+   * agent action, most of which append nothing) would pay an fsync each.
+   *
+   * Set on every append and cleared only by a completed `flush()`. The
+   * ambient `SYNC_EVERY` sync does NOT clear it: that sync happens inside the
+   * write chain, and appends queued behind it would be covered by a flag the
+   * earlier sync had already cleared.
+   */
+  private dirty = false;
   private truncatedTail = 0;
   private corruptLines = 0;
   private static readonly SYNC_EVERY = 50;
@@ -308,6 +322,7 @@ export class JsonlEventStore implements EventStore {
     this.sinceSync++;
     const needSync = this.sinceSync >= JsonlEventStore.SYNC_EVERY;
     if (needSync) this.sinceSync = 0;
+    this.dirty = true;
     this.writeChain = this.writeChain
       .then(async () => {
         const h = await this.openHandle();
@@ -340,6 +355,11 @@ export class JsonlEventStore implements EventStore {
    * that the write failed, and it needs to keep appending afterwards.
    */
   async flush(): Promise<void> {
+    // Nothing appended since the last barrier: no queue to drain, no error to
+    // surface (a failed write set `dirty` and only a completed flush clears
+    // it, so a poisoned store is never clean). Returning here is what makes
+    // this affordable per response rather than per mutation site.
+    if (!this.dirty) return;
     await this.writeChain.catch(() => undefined);
     if (this.writeError) throw this.writeError;
     if (this.handle) {
@@ -348,6 +368,9 @@ export class JsonlEventStore implements EventStore {
       // here rather than firing again a few appends later for nothing.
       this.sinceSync = 0;
     }
+    // Cleared last: an fsync that threw above leaves the store dirty, so the
+    // next caller re-learns the failure instead of being told it is durable.
+    this.dirty = false;
   }
 
   /** Lazily opened, append-mode handle shared by all queued writes. */
@@ -407,6 +430,9 @@ export class JsonlEventStore implements EventStore {
     // Delivery failures already surface fail-fast at append time; close stays
     // best-effort so teardown (often in finally blocks) never masks results.
     this.writeError = null;
+    // Drained and synced above, and the handle is gone: there is nothing left
+    // for a later barrier to wait on.
+    this.dirty = false;
   }
 
   /**
@@ -423,6 +449,7 @@ export class JsonlEventStore implements EventStore {
     this.byCorrelation = new Map();
     this.seq = 0;
     this.sinceSync = 0;
+    this.dirty = false;
     this.truncatedTail = 0;
     this.corruptLines = 0;
     this.writeChain = Promise.resolve();
@@ -449,6 +476,7 @@ export class JsonlEventStore implements EventStore {
     this.byCorrelation = new Map();
     this.seq = 0;
     this.sinceSync = 0;
+    this.dirty = false;
     this.truncatedTail = 0;
     this.corruptLines = 0;
     this.writeChain = Promise.resolve();
