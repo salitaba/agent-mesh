@@ -74,7 +74,7 @@ export class PolicyEngine implements PolicyEvaluator {
       }
     }
     if (denied.length > 0 && allowed.length === 0) {
-      const rule = this.matchRule(ctx, { actorId: from, message: message.type });
+      const rule = this.matchRule(ctx, { actorId: from, message: message.type, recipients: to });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `contact ${from}->${denied.join(",")} forbidden by rule ${rule.id}`, ruleId: rule.id };
       return {
         decision: "DENY",
@@ -82,7 +82,10 @@ export class PolicyEngine implements PolicyEvaluator {
         ruleId: "communication",
       };
     }
-    const custom = this.matchRule(ctx, { actorId: from, message: message.type, targets: denied });
+    // `recipients` is the message's whole address list, not `denied`: a rule
+    // scoped by `when.to` is asking whether the message addresses that seat,
+    // which is a different question from whether the matrix refused it.
+    const custom = this.matchRule(ctx, { actorId: from, message: message.type, recipients: to });
     if (custom) {
       if (custom.deny?.message_types?.includes(message.type)) {
         return { decision: "DENY", reason: `denied by policy rule '${custom.id}'`, ruleId: custom.id };
@@ -291,7 +294,7 @@ export class PolicyEngine implements PolicyEvaluator {
 
   private matchRule(
     ctx: PolicyContext,
-    match: { actorId?: string; message?: string; capability?: string; authority?: string; targets?: string[] },
+    match: { actorId?: string; message?: string; capability?: string; authority?: string; recipients?: string[] },
   ): RawPolicyRule | undefined {
     for (const rule of this.rules) {
       const w = rule.when ?? {};
@@ -300,13 +303,59 @@ export class PolicyEngine implements PolicyEvaluator {
         const role = this.agentDef(ctx, match.actorId)?.role;
         if (role !== w.actor_role) continue;
       }
+      // `when.to` scopes a rule to a recipient, so it matches only an
+      // evaluation that HAS recipients and addresses that seat. An evaluation
+      // with no recipients — a capability or authority check, neither of which
+      // is addressed to anyone — therefore never matches a rule carrying one.
+      // Letting those fall through is how a rule scoped to one seat applied to
+      // every seat: `when.to` was read by nothing at all, so a rule written to
+      // bind one recipient silently bound them all.
+      //
+      // The test is "declared", not "truthy". A declared-but-empty `to` — `""`
+      // or `null`, which is what a designer writes when an operator clears the
+      // field (`Designer.tsx`) — is still an operator saying which seat this
+      // rule is about. Reading it as absent inverted the two cases: a WRONG
+      // recipient bound nobody, while an EMPTY one rebound the rule to the
+      // whole mesh, off-messaging checks included. Both now bind nobody, which
+      // is the direction that cannot widen a rule by accident.
+      if (w.to !== undefined && !isAddressed(ctx, match.recipients, w.to)) continue;
       if (w.message_type && match.message && w.message_type !== match.message) continue;
       if (w.capability && match.capability && w.capability !== match.capability) continue;
-      if (w.event && !match.message) continue;
+      // There was a `if (w.event && !match.message) continue` here, and its
+      // removal is a deliberate narrowing of what this loop ignores. The clause
+      // was never compared against anything — it was a boolean flag meaning
+      // "skip this rule unless a message is under evaluation", so it silently
+      // switched OFF capability and authority denial on any rule that also
+      // named capabilities. Config now refuses to load a rule still carrying
+      // it (`validateRemovedRuleClauses`), so no live rule reaches this point
+      // that was relying on it; deleting the guard is what makes the removal
+      // real rather than cosmetic.
       return rule;
     }
     return undefined;
   }
+}
+
+/**
+ * Does an address list reach the seat a rule's `when.to` names?
+ *
+ * Resolved the two ways the communication matrix resolves a recipient, because
+ * `when.to` is the same question the matrix answers: by the seat's id, and by
+ * its role (`may_contact: [qa]` reaches a seat whose role is `qa` whether or
+ * not its id is). A hierarchical child (`qa#1`) answers to its base id as well,
+ * which is what `configKeyFor` supplies.
+ *
+ * No recipients means no match: a rule that names a recipient is a statement
+ * about addressing, and an evaluation that addresses nobody cannot satisfy it.
+ */
+function isAddressed(ctx: PolicyContext, recipients: string[] | undefined, want: string): boolean {
+  if (!recipients) return false;
+  for (const recipient of recipients) {
+    if (recipient === want) return true;
+    if (configKeyFor(ctx, recipient) === want) return true;
+    if (ctx.projections.agents.get(recipient)?.definition.role === want) return true;
+  }
+  return false;
 }
 
 /**

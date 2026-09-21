@@ -1135,6 +1135,17 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           lines.push(
             `  contract: ${askContract.name} — to decline, discharge with reason (your words) and refusal: one of ${askContract.refusals.join(", ")}.`,
           );
+        } else if (obligesRecipients(m) && !askContract) {
+          // Naming the ABSENCE, because it is load-bearing rather than merely
+          // absent. With no contract this ask carries no request schema, no
+          // refusal set and no SLA, and the answer check fails OPEN on exactly
+          // this shape (see `checkResponse`). A debtor that cannot tell a
+          // structured ask from an unstructured one reads silence as "same
+          // bar" when the bar is lower — which is the one thing a closed set
+          // is supposed to make impossible.
+          lines.push(
+            "  contract: none — no request schema was named, so any reply that answers this settles it. Discharge it with a reason if you will not.",
+          );
         }
       }
       // Said, not hidden. The failure this repo keeps fixing is the list that

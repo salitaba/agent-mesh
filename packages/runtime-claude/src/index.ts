@@ -132,6 +132,20 @@ export interface ClaudeAdapterOptions {
    */
   rotateAtContextTokens?: number;
   /**
+   * Pin the idle gap after which a session's prompt cache counts as expired.
+   *
+   * Defaults to `SESSION_CACHE_STALE_MS`. Overridable for the same reason as
+   * `rotateAtContextTokens`: the staleness tests cannot spend ten real minutes
+   * waiting for a cache to go cold.
+   */
+  staleAfterMs?: number;
+  /**
+   * Pin the transcript size below which staleness is not worth a rotation.
+   *
+   * Defaults to `SESSION_STALE_ROTATE_FLOOR_TOKENS`.
+   */
+  staleFloorTokens?: number;
+  /**
    * Seam for the SDK's `query`. Defaults to the real one.
    *
    * Session rotation tears down a live query and stands a replacement up
@@ -238,6 +252,26 @@ const SESSION_CONTEXT_ROTATE_RATIO = 0.6;
  * `rotateAtFor`.
  */
 const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
+
+/**
+ * How long a session may sit idle before its prompt cache has certainly
+ * expired, in ms.
+ *
+ * The other half of the rotation decision, and the one that was missing: size
+ * was bounded, TIME was not. See the staleness branch in `stream` for the
+ * measurement this threshold comes from.
+ */
+const SESSION_CACHE_STALE_MS = 10 * 60_000;
+
+/**
+ * Transcript size below which staleness is not worth a rotation.
+ *
+ * Re-reading a small transcript is cheap, and the un-externalised reasoning
+ * inside it is not free to reproduce — so a quiet seat with a short
+ * conversation keeps it. Only a seat that is both idle AND large is paying more
+ * to carry its history than to rebuild from projections.
+ */
+const SESSION_STALE_ROTATE_FLOOR_TOKENS = 40_000;
 
 /**
  * Context window per model id, in tokens — the denominator of the ratio above.
@@ -688,6 +722,17 @@ interface LiveSession {
   turns: number;
   rotations: number;
   /**
+   * When this session last FINISHED a turn, in ms. The staleness half of the
+   * rotation decision: a session quiet long enough has certainly lost its
+   * prompt cache, and is then re-reading itself at full price.
+   */
+  lastTurnEndedAt?: number;
+  /**
+   * Latched once this session is judged stale, so the decision survives the
+   * turn that answers it. See `markStaleRotationDue`.
+   */
+  staleRotationDue?: boolean;
+  /**
    * Tools unlocked for this seat, held BY REFERENCE by the permission gate.
    * Mutated in place each turn from `AgentInput.approvalGranted`; assigning a
    * new set here would leave the running gate reading the old one.
@@ -830,8 +875,14 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // handover. It cannot wedge a seat permanently over the threshold: the
     // supervisor sets it only when it is asking for a continuity record, and
     // the very next turn comes in without it and rotates.
-    if (s.contextTokens >= rotateAt && !input.suppressRotation) {
-      s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
+    const stale = this.markStaleRotationDue(s);
+    if (!input.suppressRotation && (s.contextTokens >= rotateAt || stale)) {
+      s = await this.rotate(
+        s,
+        stale && s.contextTokens < rotateAt
+          ? `transcript idle past the prompt-cache lifetime: ${s.contextTokens} tokens would be re-read at full price`
+          : `context ${s.contextTokens} tokens >= ${rotateAt}`,
+      );
     }
     const live = s;
 
@@ -866,6 +917,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // than estimated anywhere else, and read by the rotation check on
           // the NEXT turn.
           live.contextTokens = transcriptSize(end.tokensUsed);
+          // When this session last finished a turn, for the staleness branch of
+          // the rotation check. Read on the NEXT turn, like `contextTokens`.
+          live.lastTurnEndedAt = Date.now();
           this.statuses.set(session.agentId, "IDLE");
           turn.events.push(end);
         } else {
@@ -1186,19 +1240,67 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
+   * Has this session's prompt cache certainly expired, and is its transcript
+   * large enough that re-reading it costs more than rebuilding from
+   * projections?
+   *
+   * The second reason to retire a session, and not a variant of the first: the
+   * size threshold bounds what a turn COSTS, this bounds what an IDLE turn
+   * costs, and that second failure was unbounded. Measured on a real mission
+   * (examples/line-follower-sim: 200 turns, 4.35M input tokens), fresh input
+   * tracks the gap since this seat's previous turn — flat at a median of 5,655
+   * tokens under ten minutes however long the conversation had grown, because
+   * the prefix was served from cache — then a median of 23,615 and a maximum
+   * of 691,420 past it, because the cache had expired and the whole transcript
+   * was billed at full price. Seven turns of that mission carried 77.5% of its
+   * entire input bill, and every one was a cold re-read.
+   *
+   * Rotating there gives up nothing that was not already lost: the cache prefix
+   * is the one thing a rotation discards, and on this path it is gone before
+   * the turn begins. Both conditions are required for that reason — a SMALL
+   * transcript is cheap to re-read and the reasoning inside it is not free to
+   * reproduce, so only a seat that is idle AND large is better off rebuilt.
+   *
+   * LATCHED, and that is the load-bearing part. The condition that triggers it
+   * is a gap between turns, so it disappears the moment the seat takes one —
+   * and the turn it triggers is a handover, which is exactly a turn taken on
+   * the old transcript. Un-latched, the rotation would be deferred for the
+   * handover and then never happen, and the seat would carry its cold
+   * transcript for the rest of the mission. `rotationPending` latches it too,
+   * so the supervisor still gets its chance to ask for a continuity record.
+   */
+  private markStaleRotationDue(s: LiveSession): boolean {
+    if (s.staleRotationDue) return true;
+    if (s.lastTurnEndedAt === undefined) return false;
+    const staleAfter = this.options.staleAfterMs ?? SESSION_CACHE_STALE_MS;
+    const floor = this.options.staleFloorTokens ?? SESSION_STALE_ROTATE_FLOOR_TOKENS;
+    if (Date.now() - s.lastTurnEndedAt < staleAfter) return false;
+    if (s.contextTokens < floor) return false;
+    s.staleRotationDue = true;
+    return true;
+  }
+
+  /**
    * Would the next `stream()` call rotate this session?
    *
-   * Reads the same two numbers the rotation decision itself reads, from the
-   * same place, so the supervisor's answer and the adapter's cannot disagree.
+   * Reads the same numbers the rotation decision itself reads, from the same
+   * place, so the supervisor's answer and the adapter's cannot disagree.
    * Deliberately NOT a prediction of the next turn's size: `contextTokens` is
    * last turn's measurement, which is exactly what the threshold test at the
    * top of `stream` compares against.
+   *
+   * Sets the staleness latch when it reports one — a query with a side effect,
+   * which the "cannot disagree" promise requires. The supervisor answers a
+   * pending rotation by asking for a continuity record, and that handover turn
+   * runs ON the old transcript, so it closes the very gap that made the session
+   * stale. Remembering the verdict here is what makes the rotation still happen
+   * on the turn after it.
    */
   rotationPending(session: AgentSession): RotationPendingInfo | null {
     const s = this.live.get(session.sessionId);
     if (!s || s.closed) return null;
     const thresholdTokens = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
-    if (s.contextTokens < thresholdTokens) return null;
+    if (s.contextTokens < thresholdTokens && !this.markStaleRotationDue(s)) return null;
     return { transcriptTokens: s.contextTokens, thresholdTokens };
   }
 

@@ -51,7 +51,6 @@ packages/
   scheduler/         interest registry, activation, mailboxes, triage
   agent-runtime/     adapter interface + StubRuntime
   artifact-store/    immutable content store + git worktree manager
-  runtime-opencode/  OpenCode server adapter
   runtime-claude/    Claude Code adapter (Agent SDK, no server)
   runtime-http/      generic HTTP agent adapter
   observability/     graph, views, metrics, SSE hub

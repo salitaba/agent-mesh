@@ -4621,6 +4621,7 @@ export class Supervisor {
         tokens,
         tokensInput: output.tokensUsed?.input,
         tokensOutput: output.tokensUsed?.output,
+        tokensCacheRead: output.tokensUsed?.cacheRead,
         model: output.model,
         // Executed ops only (not merely planned): if the mission flipped
         // mid-turn and the loop stopped early, the trace must not claim the
@@ -4783,6 +4784,7 @@ export class Supervisor {
       tokens: output.tokensUsed?.total ?? 0,
       tokensInput: output.tokensUsed?.input,
       tokensOutput: output.tokensUsed?.output,
+      tokensCacheRead: output.tokensUsed?.cacheRead,
       summary: declaredTurnSummary(output)?.slice(0, 500),
       text: (output.text ?? "").slice(0, MAX_TRACE_TEXT_CHARS),
       instructions: input.instructions?.slice(0, MAX_TRACE_INSTRUCTIONS_CHARS),
@@ -7445,14 +7447,21 @@ function reviewRoundsArtifactOf(esc: Escalation): string | null {
   return m ? m[1] : null;
 }
 
-function describeReason(reason: ActivationReason): string {
+/**
+ * The one line the seat reads to learn why it is awake, so it is load-bearing
+ * rather than cosmetic: a gathered wake that says only "new mail arrived" gets
+ * one message answered and leaves the rest owed a turn each. Exported for the
+ * same reason its neighbours below are — it is a pure function of the reason,
+ * and its wording is what the model acts on.
+ */
+export function describeReason(reason: ActivationReason): string {
   switch (reason.kind) {
     case "startup":
       // The note is the kickoff brief (goLive embeds the criteria gap here);
       // dropping it hid the "why" from the very first turn.
       return `Startup activation: begin your mission role.${reason.note ? ` ${reason.note}` : ""}`;
     case "message":
-      return `New mail arrived${reason.threadId ? ` in thread ${reason.threadId}` : ""}.`;
+      return `New mail arrived${reason.threadId ? ` in thread ${reason.threadId}` : ""}.${reason.note ? ` ${reason.note}` : ""}`;
     case "interest_event":
       return `Event matched your declared interests: ${reason.eventType ?? "unknown"} (event ${reason.eventId}).`;
     case "manual":

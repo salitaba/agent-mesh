@@ -130,6 +130,97 @@ test("accrue: chatter is delivered, never woken for, and never nudged back", asy
   }
 });
 
+/**
+ * The recipient's own rationing (`AgentDefinition.wake`). Every other wake
+ * decision in the mesh belongs to the sender or the envelope; this is the one a
+ * seat makes for itself, and it is one step MILDER than the communication
+ * matrix — `may_be_contacted_by` refuses the SEND, so the message never exists,
+ * while this refuses only the WAKE and leaves the mail in the box.
+ *
+ * The fixture deliberately has NO `bus.delivery` block: most meshes never opt
+ * into the class regime, so their messages are unclassed and wake directly.
+ * That is the common case, and a policy that only worked on classed traffic
+ * would be a policy almost nobody could use.
+ */
+test("a seat that declares it batches FYIs is not woken for one, and the mail still lands", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [], wake: { deferNonObliging: true } },
+    ],
+    mayContact: { architect: ["dev"], dev: ["architect"] },
+    // Short sweep, long wait: the timer below runs several times during this
+    // test, so a seat the send path correctly did not wake has every chance to
+    // be woken a tick later by the sweep that counts unread mail as pressure.
+    waitWakeupMs: 200,
+  });
+  try {
+    quietRuntimes(m, ["architect", "dev"]);
+    const devBefore = acts(m, "dev");
+    const archBefore = acts(m, "architect");
+
+    const toDev = await m.supervisor.sendMessage({
+      from: "architect", to: ["dev"], type: "INFORM",
+      newThread: { subject: "fyi for dev" }, payload: { note: "shipping friday" },
+    });
+    assert.equal(toDev.accepted, true, toDev.reason);
+    assert.equal(classOf(m, toDev.messageId!), undefined, "no regime: the message is unclassed, as before");
+
+    // The control in the same fixture: a seat that declared nothing is woken
+    // exactly as it was before this feature existed.
+    const toArch = await m.supervisor.sendMessage({
+      from: "dev", to: ["architect"], type: "INFORM",
+      newThread: { subject: "fyi for architect" }, payload: { note: "done" },
+    });
+    assert.equal(toArch.accepted, true, toArch.reason);
+
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(
+      acts(m, "dev") - devBefore, 0,
+      "an FYI must not buy a turn at send, nor on the sweep a tick later",
+    );
+    // Delivered, not suppressed: the reducer put it in the box before the
+    // scheduler saw the event. Refusing the wake is the whole feature; refusing
+    // the delivery would be a lost message.
+    assert.ok(
+      (m.kernel.state.unread.get("dev") ?? []).includes(toDev.messageId!),
+      "the deferred FYI is still in the mailbox, to be read on the seat's next turn",
+    );
+    await waitFor("the seat that declared nothing is still woken", () => acts(m, "architect") > archBefore, 4000);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("obligation beats the setting: an ask still wakes a seat that batches FYIs", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [], wake: { deferNonObliging: true } },
+    ],
+    mayContact: { architect: ["dev"] },
+    waitWakeupMs: 200,
+  });
+  try {
+    quietRuntimes(m, ["architect", "dev"]);
+    const before = acts(m, "dev");
+    const ask = await m.supervisor.sendMessage({
+      from: "architect", to: ["dev"], type: "REQUEST_INFO",
+      newThread: { subject: "which repo ships first?" }, payload: { q: "which repo ships first?" },
+    });
+    assert.equal(ask.accepted, true, ask.reason);
+
+    // This is the line that keeps the setting from being an escape hatch: the
+    // predicate is the same one the debt is opened with, so a message the
+    // policy defers is one that opened no `pendingRequests` entry. A mesh where
+    // a seat could quietly opt out of its own debts would not be a mesh.
+    assert.equal(m.kernel.state.pendingRequests.has(ask.messageId!), true, "the ask is still owed");
+    await waitFor("an ask wakes even a seat that batches FYIs", () => acts(m, "dev") > before, 4000);
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("deliver: a burst of service asks is gathered, then costs one wake", async () => {
   const m = await makeMesh({
     agents: [

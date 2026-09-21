@@ -442,7 +442,6 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     handleEvent: async () => undefined,
     requestActivation: async () => false,
     notifyTurnFinished: () => undefined,
-    notifyMailDelivered: () => undefined,
     pending: () => 0,
     running: () => 0,
     start: () => undefined,

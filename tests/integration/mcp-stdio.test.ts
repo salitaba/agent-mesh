@@ -90,7 +90,7 @@ test("mcp bridge: --read-only reaches the bus and exposes only observability too
     assert.ok(list, `no tools/list reply; frames: ${JSON.stringify(frames)}`);
     assert.deepEqual(
       list.result.tools.map((t: { name: string }) => t.name).sort(),
-      ["mesh_agent_activity", "mesh_failures", "mesh_query_events", "mesh_run_digest", "mesh_run_status", "mesh_steps"],
+      ["mesh_agent_activity", "mesh_failures", "mesh_inbox", "mesh_query_events", "mesh_run_digest", "mesh_run_status", "mesh_steps"],
     );
   } finally {
     await new Promise<void>((r) => server.close(() => r()));

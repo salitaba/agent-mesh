@@ -125,6 +125,23 @@ export interface TurnRecord {
   tokens?: number;
   tokensInput?: number;
   tokensOutput?: number;
+  /**
+   * Replayed prompt prefix the backend reported for this turn. Unbilled, but
+   * it is the only measurement of how big a transcript the seat is carrying.
+   *
+   * Read it against `tokensInput`: a healthy turn on a persistent session is a
+   * small fresh `tokensInput` beside a large `tokensCacheRead`, because the
+   * transcript was served from cache. A turn whose `tokensInput` is as large as
+   * its history is a COLD turn — the prefix was re-sent and billed at full
+   * price. Without this field those two cases are the same number here, which
+   * is how a handful of catastrophic cold re-reads stayed invisible while
+   * every average looked healthy.
+   *
+   * Cache writes need no field of their own: `total` is
+   * `input + output + cacheWrite`, so a write is `tokens - tokensInput -
+   * tokensOutput` and stays derivable.
+   */
+  tokensCacheRead?: number;
   model?: string;
   ops?: string[];
   toolCalls?: number;

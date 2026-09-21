@@ -658,6 +658,15 @@ export default function Designer(): React.JSX.Element {
       m.budgets.agent[nn] = m.budgets.agent[old];
       delete m.budgets.agent[old];
     }
+    // Policy rules name seats too, and a stale `when.actor` is fatal rather than
+    // cosmetic: config load refuses a rule whose actor does not exist, so a
+    // rename used to save a mesh that would not boot. `when.to` is a reference
+    // like `may_contact`, not an id that must resolve (a stale one only warns),
+    // but a renamed seat is still the seat the author meant.
+    for (const r of (m.policies?.rules || [])) {
+      if (r.when?.actor === old) r.when.actor = nn;
+      if (r.when?.to === old) r.when.to = nn;
+    }
     for (const r of (m.scheduling?.triage?.rules || [])) if (r.agent === old) r.agent = nn;
     const L = { ...layout };
     L[nn] = L[old] || { x: CX, y: CY };

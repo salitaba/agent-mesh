@@ -72,7 +72,6 @@ export const messageSchema = {
       additionalProperties: false,
     },
     priority: { type: "string", enum: ["LOW", "NORMAL", "HIGH", "URGENT"] },
-    ttl: { type: "string" },
     requires: {
       type: "array",
       items: {
@@ -199,6 +198,18 @@ const agentConfigSchema = {
         mode: { type: "string", enum: ["off", "warn", "enforce"] },
         capabilities: { type: "array", items: { type: "string" } },
       },
+      additionalProperties: false,
+    },
+    // Per-agent only. The mesh-wide version of this question is
+    // `bus.delivery.classes`, so `mesh.defaults` deliberately does NOT carry a
+    // `wake` key: a default here would give an operator a knob that looks like
+    // it turns the setting on mesh-wide while the resolver reads only the
+    // per-agent copy, and every seat would keep waking. Absent IS the default
+    // for this block (see `RawWakePolicy`), so the schema refuses it in the
+    // wrong place rather than accepting a key nothing reads.
+    wake: {
+      type: "object",
+      properties: { defer_non_obliging: { type: "boolean" } },
       additionalProperties: false,
     },
     budget: {

@@ -219,7 +219,6 @@ export interface MeshMessage {
   artifactRefs: ArtifactRef[];
   payload: unknown;
   priority: MessagePriority;
-  ttl?: string;
   requires?: Requirement[];
   budgetHint?: BudgetHint;
   provenance?: ContentProvenance;
@@ -813,6 +812,11 @@ export interface AgentDefinition {
    * behaving exactly as it did before this feature existed.
    */
   hardActions?: HardActionsPolicy;
+  /**
+   * Absent means "wake me for everything", which is what every seat did before
+   * this existed. Optional for the same reason `hardActions` is.
+   */
+  wake?: WakePolicy;
 }
 
 export type PlanStepStatus = "PENDING" | "DONE";
@@ -866,6 +870,40 @@ export interface AgentPlan {
 export interface HardActionsPolicy {
   mode: "off" | "warn" | "enforce";
   capabilities: string[];
+}
+
+/**
+ * What a seat is willing to be WOKEN for, authored by the recipient. That is
+ * the point of the block: every other rationing knob in the mesh belongs to the
+ * sender — `bus.delivery.attention_tokens` is the sender's wallet, the tariff
+ * is charged to the sender, and `interests` gates only broadcasts. This is the
+ * recipient's own answer to the same question.
+ *
+ * It is deliberately one step MILDER than `communicationPolicy.mayBeContactedBy`,
+ * the existing recipient-authored preference: that one refuses the SEND, so the
+ * message never exists. This refuses only the WAKE — the mail is delivered, sits
+ * in the mailbox, and is read on the seat's next natural activation, exactly as
+ * `accrue` already does mesh-wide. "Nothing is ever suppressed; only the wake is
+ * refused."
+ */
+export interface WakePolicy {
+  /**
+   * Never wake me for mail that obliges me nothing.
+   *
+   * Obligation is the one thing that overrides this, by construction rather than
+   * by exception: `obligesRecipients` is the same predicate the debt is opened
+   * with, so a message this setting ignores is a message that opened no
+   * `pendingRequests` entry and owes nobody an answer. An ask always wakes the
+   * seat that owes it — a mesh where a seat could quietly opt out of its own
+   * debts would not be a mesh.
+   *
+   * It does not refund the sender. An `interrupt` sent to a deferring seat was
+   * already charged to the sender's attention ledger at send time, and stays
+   * charged: the setting is part of mesh.yaml, so it is a public declaration a
+   * sender can read before spending, which is the same bargain
+   * `may_be_contacted_by` already strikes one step harder.
+   */
+  deferNonObliging?: boolean;
 }
 
 export interface AgentRuntimeState {

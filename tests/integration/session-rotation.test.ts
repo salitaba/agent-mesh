@@ -353,3 +353,117 @@ test("an explicitly injected threshold still overrides the derived one", async (
 
   await rt.stop(session);
 });
+
+/**
+ * Size bounds what a turn COSTS; staleness bounds what an IDLE turn costs. They
+ * are different failures and the second one was unbounded: a seat that went
+ * quiet for longer than the prompt cache lives re-read its whole transcript at
+ * full price, and on the mission these thresholds come from, seven such turns
+ * carried 77.5% of the entire input bill.
+ *
+ * The threshold is pinned low here because the real one is ten minutes of wall
+ * clock, and a test cannot spend ten minutes waiting for a cache to go cold.
+ */
+test("a transcript left idle past the prompt-cache lifetime is retired before the next turn", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({ cacheReadFor: () => 60_000 });
+  const rotations: unknown[] = [];
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    // High enough that the SIZE path can never fire: whatever happens below is
+    // staleness and nothing else.
+    rotateAtContextTokens: 600_000,
+    staleAfterMs: 0,
+    staleFloorTokens: 50_000,
+    onRotate: (info) => rotations.push(info),
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  assert.equal(opened.length, 1, "a session that has just run is not idle");
+
+  await rt.send(session, agentInput("turn two"));
+  assert.equal(opened.length, 2, "an idle transcript past the cache lifetime must be rebuilt, not re-read");
+  assert.deepEqual(opened[0].prompts, ["turn one"], "the cold transcript must not receive the new turn");
+  assert.deepEqual(opened[1].prompts, ["turn two"]);
+  assert.equal(rotations.length, 1);
+
+  await rt.stop(session);
+});
+
+test("staleness alone does not retire a transcript worth keeping", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({ cacheReadFor: () => 1_000 });
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 600_000,
+    staleAfterMs: 0,
+    // The floor is the whole point: re-reading a small transcript is cheap, and
+    // the un-externalised reasoning inside it is not free to reproduce.
+    staleFloorTokens: 50_000,
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 1, "a quiet seat with a short conversation keeps it");
+
+  await rt.stop(session);
+});
+
+/**
+ * The latch, and the reason it exists. Staleness is a gap BETWEEN turns, so it
+ * disappears the moment the seat takes one — and the turn it triggers is a
+ * handover, which runs on the old transcript by design (`suppressRotation`
+ * buys the seat one turn to write down what it knew). Un-latched, the rotation
+ * would be deferred for the handover and then never happen, and the seat would
+ * carry its cold transcript for the rest of the mission.
+ */
+test("the staleness verdict survives the handover turn that answers it", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({ cacheReadFor: () => 60_000 });
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 600_000,
+    staleAfterMs: 0,
+    staleFloorTokens: 50_000,
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+
+  // The handover turn: over the threshold, told to stay on the old transcript.
+  await rt.send(session, { ...agentInput("turn two (handover)"), suppressRotation: true });
+  assert.equal(opened.length, 1, "suppressRotation must still buy the handover its turn on the old session");
+
+  await rt.send(session, agentInput("turn three"));
+  assert.equal(opened.length, 2, "the deferral must not cancel the rotation it deferred");
+
+  await rt.stop(session);
+});
+
+test("rotationPending reports a stale session so the supervisor can ask for a continuity record", async () => {
+  const dir = workspace();
+  const { queryFn } = fakeQueryFactory({ cacheReadFor: () => 60_000 });
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 600_000,
+    staleAfterMs: 0,
+    staleFloorTokens: 50_000,
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  assert.equal(rt.rotationPending(session), null, "a session that has never taken a turn cannot be idle");
+
+  await rt.send(session, agentInput("turn one"));
+  const info = rt.rotationPending(session);
+  assert.ok(info, "an idle transcript past the cache lifetime is a pending rotation");
+  // The proof that this came from staleness and not from size: the report sits
+  // far below its own threshold. If the adapter ever stopped latching, this
+  // assertion is where a silent re-read would surface.
+  assert.equal(info.transcriptTokens, 60_010);
+  assert.equal(info.thresholdTokens, 600_000);
+
+  await rt.stop(session);
+});

@@ -29,6 +29,8 @@ export interface AgentSpec {
   persistent?: boolean;
   delegation?: { allow: boolean; max_depth: number; max_workers: number; worker_budget_tokens?: number };
   hardActions?: { mode: "off" | "warn" | "enforce"; capabilities?: string[] };
+  /** What this seat is willing to be woken for. Absent means "everything". */
+  wake?: { deferNonObliging?: boolean };
 }
 
 export interface TestMeshOptions {
@@ -206,6 +208,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
       if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
+      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false} }`);
       if (a.delegation) lines.push(`    delegation: { allow: ${a.delegation.allow}, max_depth: ${a.delegation.max_depth}, max_workers: ${a.delegation.max_workers}${a.delegation.worker_budget_tokens ? `, worker_budget_tokens: ${a.delegation.worker_budget_tokens}` : ""} }`);
       return lines.join("\n");
     })

@@ -169,9 +169,6 @@
         "URGENT"
       ]
     },
-    "ttl": {
-      "type": "string"
-    },
     "requires": {
       "type": "array",
       "items": {

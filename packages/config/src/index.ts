@@ -7,6 +7,7 @@ import {
   EVENT_TYPES,
   AUTHORITY_TOKENS,
   CAPABILITY_TOKENS,
+  MESSAGE_TYPES,
   DEFAULT_HARD_CAPABILITIES,
   effectiveHardActions,
   HARD_OP_CAPABILITY,
@@ -320,6 +321,24 @@ export interface RawMeshFile {
       turn_timeout_ms?: number;
       wait_wakeup_ms?: number;
       lease_ttl_ms?: number;
+      /**
+       * INERT. Declared, schema'd, resolved and defaulted, and read by no code
+       * anywhere: the scheduler declares the mesh idle on the first moment its
+       * queue and its running turns are both empty (`Scheduler.checkIdle`), so
+       * there is no quiet period for this to configure and no debounce to tune.
+       *
+       * Named `idleQuietPeriodMs` in the resolved config, which documents the
+       * same inertness. Deliberately NOT wired to a load warning like
+       * `scheduling.activation.*` is: the designer exposes this key as an
+       * editable field and `tests/helpers.ts` writes it into every fixture, so
+       * a warning would fire on essentially every config in this repo rather
+       * than on the ones that made a choice.
+       *
+       * Kept rather than deleted because it is schema'd on a block that is
+       * `additionalProperties: false`, so dropping the property would turn
+       * every config that sets it — including everything `tests/helpers.ts`
+       * writes — into a hard validation failure.
+       */
       idle_quiet_period_ms?: number;
       /** Mission-quiet threshold before the stall watchdog nudges a driver. */
       stall_idle_ms?: number;
@@ -362,6 +381,16 @@ export interface RawHardActions {
   capabilities?: string[];
 }
 
+/**
+ * The recipient's own answer to "what am I willing to be woken for", as written
+ * in `mesh.yaml`. Per-agent only, deliberately: the mesh-wide version of this
+ * setting already exists as `bus.delivery.classes`, and `mesh.defaults` would
+ * only give an operator two ways to say the same thing.
+ */
+export interface RawWakePolicy {
+  defer_non_obliging?: boolean;
+}
+
 export interface RawAgent {
   role: string;
   runtime?: string;
@@ -387,27 +416,66 @@ export interface RawAgent {
   session?: RawSessionPolicy;
   delegation?: RawDelegationPolicy;
   hard_actions?: RawHardActions;
+  /** What this seat is willing to be woken for. Absent means "everything". */
+  wake?: RawWakePolicy;
   budget?: { tokens?: number; wall_clock_minutes?: number; max_events?: number; max_activations?: number };
 }
 
 export interface RawPolicyRule {
   id: string;
+  /**
+   * The rule's scope. Every clause present must hold for the rule to apply, so
+   * a rule constrains exactly what it names.
+   *
+   * `to` names a recipient: the rule applies only to messages that address
+   * that seat. It resolves like a communication-matrix recipient — by agent
+   * id, by role, or by the base id of a hierarchical child — and it is only
+   * ever satisfied by a message. A capability or authority check addresses
+   * nobody, so a rule carrying `to` never applies to one.
+   */
   when: {
-    event?: string;
     actor_role?: string;
     actor?: string;
     to?: string;
     message_type?: string;
     capability?: string;
   };
-  requires?: {
-    approvals?: Array<{ role?: string; agent?: string; kind?: string }>;
-    evidence?: string[];
-  };
+  /**
+   * There is no `when.event` and no rule-level `requires`. Both are stranded
+   * half of an abandoned transition-rule design (`agent-mesh-runtime.md` §19)
+   * whose `when.to` named an artifact *status* — a shape since repurposed for
+   * message recipients and, as a whole, implemented by `policies.transitions`.
+   *
+   * `when.event` was the dangerous half. Its value was never compared: the only
+   * read was a guard that skipped the rule whenever there was no message under
+   * evaluation, so its real effect was "do not apply to capability or authority
+   * checks". `event: "artifact.published"` and `event: "banana"` were the same
+   * rule, and a rule written to fire on one event fired on every message send
+   * while denying *less* than it looked like it did. Deleting it therefore
+   * widens such a rule, which is why a config still carrying it is refused at
+   * load rather than ignored (`validateRemovedRuleClauses`): a mesh that cannot
+   * boot cannot silently start denying work it used to allow.
+   *
+   * Rule-level `requires` was inert in both directions — never read, and
+   * deleting it changes no behaviour — so it is warned about instead, the same
+   * bargain `deny.contact` gets below. Note that three different keys in one
+   * document were named `requires`; that is most of why this one went unread.
+   */
+  /**
+   * There is no `deny.contact`. Contact is decided in exactly one place —
+   * `policies.communication`, a per-seat default-DENY whitelist that keys on
+   * agent, role or hierarchical child — and `matchRule` never read this field,
+   * so a rule carrying it validated, booted, and restricted nobody. Every
+   * denial it could express is a `may_contact` entry removed; the
+   * recipient-scoped case is `when.to` plus `deny.message_types`. A second,
+   * weaker source of truth for contact could only disagree with the first.
+   *
+   * A config still setting the key is told so rather than obeyed — see
+   * `warnInertRuleContact`.
+   */
   deny?: {
     capabilities?: string[];
     message_types?: string[];
-    contact?: string[];
   };
   escalate?: boolean;
 }
@@ -542,6 +610,14 @@ export interface ResolvedMeshConfig {
     turnTimeoutMs: number;
     waitWakeupMs: number;
     leaseTtlMs: number;
+    /**
+     * INERT: resolved, defaulted to 30000, and read by nothing. The scheduler
+     * declares an idle moment the instant no turn is running and its queue is
+     * empty, with no dwell time before it, so setting this key changes nothing
+     * about when the mesh goes idle. See the raw key
+     * (`scheduling.timeouts.idle_quiet_period_ms`) for why it is held rather
+     * than removed.
+     */
     idleQuietPeriodMs: number;
     /** Mission-quiet threshold before the stall watchdog nudges a driver. */
     stallIdleMs: number;
@@ -842,6 +918,12 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
         maxEvents: a.budget?.max_events,
         maxActivations: a.budget?.max_activations,
       },
+      // Present only when declared. Unlike `hardActions`, whose absence still
+      // resolves to a real value ("off" is a mode), this block's absence IS its
+      // default, so materialising `{ deferNonObliging: false }` on every seat
+      // would change every resolved definition — and every fixture that
+      // deep-equals one — to say nothing new.
+      ...(a.wake ? { wake: { deferNonObliging: a.wake.defer_non_obliging ?? false } } : {}),
     };
     agents[id] = def;
     if (def.budget.tokens !== undefined) perAgentBudget[id] = def.budget.tokens;
@@ -870,10 +952,16 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     if (!agents[id]) errors.push(`policies.communication references unknown agent '${id}'`);
   }
   for (const rule of raw.policies?.rules ?? []) {
-    if (rule.when.actor && !agents[rule.when.actor]) {
+    // `rule.when` is read defensively even though the type requires it: a
+    // `policies.rules` item has no `items` schema, so a hand-written rule with
+    // no `when` at all reaches here — `matchRule` meets it with `rule.when ?? {}`,
+    // and until this was guarded it met it here with a raw TypeError.
+    if (rule.when?.actor && !agents[rule.when.actor]) {
       errors.push(`policy rule '${rule.id}' references unknown actor '${rule.when.actor}'`);
     }
   }
+  errors.push(...validateRuleClauseTokens(raw.policies?.rules ?? []));
+  errors.push(...validateRemovedRuleClauses(raw.policies?.rules ?? []));
 
   const interestErrors = validateInterestExpressions(Object.values(agents));
   errors.push(...interestErrors);
@@ -907,6 +995,18 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     configWarnings.push(w);
   }
   for (const w of warnInertActivationKeys(raw.scheduling?.activation, raw.scheduling?.triage?.mode)) {
+    configWarnings.push(w);
+  }
+  for (const w of warnInertRuleContact(raw.policies?.rules ?? [])) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnreachableRuleRecipients(raw.policies?.rules ?? [], Object.values(agents))) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnreachableRuleRoles(raw.policies?.rules ?? [], Object.values(agents))) {
+    configWarnings.push(w);
+  }
+  for (const w of warnInertRuleRequires(raw.policies?.rules ?? [])) {
     configWarnings.push(w);
   }
 
@@ -949,7 +1049,10 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       repeatedConflictThreshold: raw.policies?.escalation?.repeated_conflict?.threshold ?? 3,
       artifactReviewRoundsMax: raw.policies?.escalation?.artifact_review_rounds?.max ?? 5,
     },
-    policyRules: raw.policies?.rules ?? [],
+    // Normalized, not passed through: the engine compares a rule's capability
+    // against the CANONICAL token a seat holds, so an alias written in a rule
+    // would match nothing. See `normalizeRuleCapabilities`.
+    policyRules: normalizeRuleCapabilities(raw.policies?.rules ?? []),
     bus: {
       commitmentSemantic: raw.bus?.commitments?.semantic ?? "strict",
       // Defaults to "no deadline" on purpose. Expiry closes asks that would
@@ -1402,6 +1505,259 @@ export function warnInertActivationKeys(
     );
   }
   return warnings;
+}
+
+/**
+ * A policy rule setting `deny.contact`, which is not a policy field.
+ *
+ * The one thing an operator writing `deny` is sure of is that something is
+ * being denied, and this key denied nothing: `matchRule` never read it. A rule
+ * carrying it validated, booted, and restricted contact exactly as much as if
+ * it had been left out — the failure mode this whole family of warnings exists
+ * to end.
+ *
+ * Contact is decided in one place, `policies.communication`, and the remedy is
+ * there: drop the recipient from that seat's `may_contact`. A recipient-scoped
+ * veto is `when.to` plus `deny.message_types`. So the field is gone from
+ * `RawPolicyRule` rather than implemented — adding a second, weaker source of
+ * truth for contact could only disagree with the matrix — and a config still
+ * using it is told where the real switch is instead of being quietly obeyed.
+ *
+ * Detected on the raw rule object rather than a typed one because the key is
+ * no longer part of `RawPolicyRule`. It still reaches here: `policies.rules`
+ * items are unconstrained in the JSON schema (`rules: { type: "array" }`), so
+ * an unknown key loads without error whether or not the type declares it.
+ */
+export function warnInertRuleContact(rules: RawPolicyRule[]): string[] {
+  const offenders = rules.filter((r) => (r.deny as { contact?: unknown } | undefined)?.contact !== undefined);
+  if (offenders.length === 0) return [];
+  const named = offenders.map((r) => `'${r.id}'`).join(", ");
+  return [
+    `policy rule${offenders.length === 1 ? "" : "s"} ${named} set${offenders.length === 1 ? "s" : ""} deny.contact but it is inert — contact is decided by policies.communication (may_contact / may_be_contacted_by), never by a rule. Remove the recipient from that seat's may_contact, or scope the rule with when.to`,
+  ];
+}
+
+/**
+ * A rule scoped to a recipient no seat can be.
+ *
+ * `when.to` is the clause that makes a rule apply to one seat instead of the
+ * whole mesh, and it resolves the three ways the communication matrix resolves
+ * a recipient: by agent id, by role, and by the base id of a hierarchical
+ * child. A name that answers to none of those scopes the rule to NOBODY, so a
+ * veto written to stop one seat blocks nothing and the message it was written
+ * to stop goes through — silently, and in the permissive direction. That is the
+ * one failure mode a contact rule can have.
+ *
+ * Warned rather than errored, unlike the `when.actor` check above, and the
+ * difference is hierarchy: a child seat comes into being at runtime, so a
+ * config may legitimately name a base id this process has not seen yet.
+ * Refusing to boot over that would break working meshes, while a warning costs
+ * an operator one line of output.
+ *
+ * A declared-but-EMPTY `to` is reported too. The policy engine reads it as
+ * "nobody" (see `matchRule`), which is the right way round for a field an
+ * operator cleared — but "this rule denies nothing" is exactly what its author
+ * needs to be told, and a designer that clears the field by writing `""`
+ * rather than dropping the key would otherwise do it silently.
+ */
+export function warnUnreachableRuleRecipients(rules: RawPolicyRule[], agents: AgentDefinition[]): string[] {
+  const reachable = new Set<string>();
+  for (const a of agents) {
+    reachable.add(a.id);
+    reachable.add(a.role);
+    const hash = a.id.indexOf("#");
+    if (hash > 0) reachable.add(a.id.slice(0, hash));
+  }
+  const offenders: string[] = [];
+  for (const r of rules) {
+    const to = (r.when as { to?: unknown } | undefined)?.to;
+    if (to === undefined) continue;
+    if (typeof to === "string" && reachable.has(to)) continue;
+    offenders.push(r.id);
+  }
+  if (offenders.length === 0) return [];
+  const named = offenders.map((id) => `'${id}'`).join(", ");
+  return [
+    `policy rule${offenders.length === 1 ? "" : "s"} ${named} scope${offenders.length === 1 ? "s" : ""} when.to to a name no seat answers to, so the rule denies nothing — when.to must name an agent id, a role, or the base id of a hierarchical child`,
+  ];
+}
+
+/**
+ * A rule whose capability or message-type clause names a token that cannot exist.
+ *
+ * `deny.capabilities`, `when.capability`, `deny.message_types` and
+ * `when.message_type` are all compared by exact string equality against what the
+ * mesh produces, so a token outside the catalog matches nothing and the clause
+ * is dead: a veto that vetoes nothing, or a scope that scopes nothing. Both
+ * directions are silent, which is why this is the same class of defect as the
+ * `when.actor` check above — and why it gets the same severity.
+ *
+ * Errors rather than warnings, matching `validateCapabilityTokens` and the
+ * `when.actor` check, and for the reason the `when.to` check next door gives in
+ * reverse: a capability or a message type has no runtime-arrival escape hatch.
+ * No seat can turn up later holding `repository.writ`, and no message can arrive
+ * with a type the envelope schema would have rejected. A base id or a role can
+ * (hierarchy, delegation), which is why those two are warnings and these are not.
+ *
+ * Capability tokens are matched through `normalizeCapability`, so a legal alias
+ * is accepted here — the resolver normalizes rule clauses for exactly this
+ * reason (see `normalizeRuleCapabilities`), and erroring on a token the catalog
+ * calls legal would be telling an operator their working rule is broken.
+ */
+export function validateRuleClauseTokens(rules: RawPolicyRule[]): string[] {
+  const caps = new Set(CAPABILITY_TOKENS);
+  const types = new Set<string>(MESSAGE_TYPES);
+  const errors: string[] = [];
+  for (const r of rules) {
+    const cap = (r.when as { capability?: unknown } | undefined)?.capability;
+    if (typeof cap === "string" && !caps.has(normalizeCapability(cap))) {
+      errors.push(
+        `policy rule '${r.id}' names unknown capability '${cap}' in when.capability — the rule can never match an op (known: ${CAPABILITY_TOKENS.join(", ")})`,
+      );
+    }
+    for (const token of denyList(r, "capabilities")) {
+      if (!caps.has(normalizeCapability(token))) {
+        errors.push(
+          `policy rule '${r.id}' denies unknown capability '${token}' — the deny can never fire (known: ${CAPABILITY_TOKENS.join(", ")})`,
+        );
+      }
+    }
+    const mt = (r.when as { message_type?: unknown } | undefined)?.message_type;
+    if (typeof mt === "string" && !types.has(mt)) {
+      errors.push(
+        `policy rule '${r.id}' names unknown message type '${mt}' in when.message_type — the rule can never match a message (see schemas/message.schema.json)`,
+      );
+    }
+    for (const token of denyList(r, "message_types")) {
+      if (!types.has(token)) {
+        errors.push(
+          `policy rule '${r.id}' denies unknown message type '${token}' — the deny can never fire (see schemas/message.schema.json)`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+/** The rule's `deny.<key>` list, tolerating a hand-written config's shape. */
+function denyList(rule: RawPolicyRule, key: "capabilities" | "message_types"): string[] {
+  const list = (rule.deny as Record<string, unknown> | undefined)?.[key];
+  if (!Array.isArray(list)) return [];
+  return list.filter((t): t is string => typeof t === "string");
+}
+
+/**
+ * Rewrite rule capability clauses through the alias table, as every other
+ * capability list in a config already is.
+ *
+ * This was the one surface that skipped normalization — `agents.*.capabilities`,
+ * `requires_approval` and `hard_actions.capabilities` are all normalized during
+ * resolution — and the omission was invisible: the engine compares a rule's
+ * token against the CANONICAL token a seat holds, so `deny.capabilities:
+ * [code.write]`, a legal spelling per `CAPABILITY_ALIASES`, matched nothing and
+ * denied nothing. The rule read as live in the designer and was dead at runtime.
+ * `CAPABILITY_TOKENS`' own docstring states the contract — "the aliases below
+ * are normalized first so hand-written meshes keep working" — so normalizing is
+ * what a rule was always supposed to get.
+ *
+ * Returns new rule objects rather than editing in place: `raw` is the resolved
+ * config's copy of the document as written, and it has to keep saying what the
+ * operator typed. Only the clauses that actually change are rebuilt.
+ */
+export function normalizeRuleCapabilities(rules: RawPolicyRule[]): RawPolicyRule[] {
+  return rules.map((rule) => {
+    const when = rule.when;
+    const deny = rule.deny;
+    const nextWhen =
+      typeof when?.capability === "string" ? { ...when, capability: normalizeCapability(when.capability) } : when;
+    const nextDeny =
+      deny?.capabilities && Array.isArray(deny.capabilities)
+        ? { ...deny, capabilities: deny.capabilities.map((t) => (typeof t === "string" ? normalizeCapability(t) : t)) }
+        : deny;
+    if (nextWhen === when && nextDeny === deny) return rule;
+    return { ...rule, ...(nextWhen ? { when: nextWhen } : {}), ...(nextDeny ? { deny: nextDeny } : {}) };
+  });
+}
+
+/**
+ * A rule scoped to a role no configured seat has.
+ *
+ * `when.actor_role` is matched against the acting seat's role, so a role that
+ * does not exist scopes the rule to nobody. Warned rather than errored for the
+ * reason the transition-gate check gives above: a mesh may legitimately be
+ * written for seats a larger mesh adds later, and delegated workers and the
+ * synthesized `human` seat both arrive at runtime with roles this process never
+ * saw in the config. A hard error there would refuse to boot a working mesh.
+ */
+export function warnUnreachableRuleRoles(rules: RawPolicyRule[], agents: AgentDefinition[]): string[] {
+  const roles = new Set<string>(agents.map((a) => a.role));
+  // Synthesized at runtime, never declared — same exemption
+  // `validateTransitionGateActors` makes for the same reason.
+  roles.add("human");
+  const offenders = rules.filter((r) => {
+    const role = (r.when as { actor_role?: unknown } | undefined)?.actor_role;
+    return typeof role === "string" && role.length > 0 && !roles.has(role);
+  });
+  if (offenders.length === 0) return [];
+  const named = offenders.map((r) => `'${r.id}'`).join(", ");
+  return [
+    `policy rule${offenders.length === 1 ? "" : "s"} ${named} scope${offenders.length === 1 ? "s" : ""} when.actor_role to a role no configured seat has — the rule applies to nobody until a seat with that role exists. Expected a declared role, a delegated worker's role, or 'human'`,
+  ];
+}
+
+/**
+ * A rule still carrying `when.event`, which no longer exists.
+ *
+ * The clause was accepted and never compared: its only effect was to skip the
+ * rule whenever no message was under evaluation, which quietly *disabled*
+ * capability and authority denial on every rule that also denied capabilities.
+ * Worse than a dead clause, because it was documented as a scope: an operator
+ * wrote `when: { event: "release.transition" }` believing it narrowed the rule
+ * and got one that matched every message and denied less.
+ *
+ * An error rather than the warning a removed field usually gets, and the
+ * asymmetry with `warnInertRuleRequires` below is the whole argument: removing
+ * an inert field changes nothing, while removing this one makes the rule apply
+ * where it previously did not. A config that cannot boot cannot silently
+ * widen, so the operator is made to look — and the message says what the clause
+ * had been doing, so the edit is a decision rather than a shrug. Same bargain
+ * as the removal of `MeshMessage.ttl`.
+ *
+ * Keyed on the key's presence rather than its value, because every spelling was
+ * the same mistake: the old guard tested truthiness, so `event: "x"` and
+ * `event: ""` both meant "skip capability checks" and `event: null` meant
+ * nothing at all. Presence is the only honest test for a field that is gone.
+ */
+export function validateRemovedRuleClauses(rules: RawPolicyRule[]): string[] {
+  const errors: string[] = [];
+  for (const r of rules) {
+    const when: unknown = r.when;
+    if (typeof when !== "object" || when === null || !("event" in when)) continue;
+    errors.push(
+      `policy rule '${r.id}' sets when.event, which was removed — its value was never compared. It only stopped the rule applying to capability and authority checks, so this rule will now deny more than it did. Delete the clause, and scope the rule with when.message_type (or when.to for one recipient)`,
+    );
+  }
+  return errors;
+}
+
+/**
+ * A rule carrying a rule-level `requires`, which no longer exists.
+ *
+ * Inert in both directions — nothing ever read it, so deleting the field
+ * changes no behaviour — and therefore a warning, where `when.event` above is
+ * an error. The live `requires` is `policies.transitions.<gate>.requires`,
+ * which is what the abandoned design's `requires.approvals` became; and
+ * `MeshMessage.requires` is a third field with the same name. Three keys named
+ * `requires` in one document is most of why this one went unread, and is worth
+ * saying out loud to whoever finds the key in their yaml.
+ */
+export function warnInertRuleRequires(rules: RawPolicyRule[]): string[] {
+  const offenders = rules.filter((r) => "requires" in (r as unknown as Record<string, unknown>));
+  if (offenders.length === 0) return [];
+  const named = offenders.map((r) => `'${r.id}'`).join(", ");
+  return [
+    `policy rule${offenders.length === 1 ? "" : "s"} ${named} set${offenders.length === 1 ? "s" : ""} a rule-level requires, which no code reads — approvals and evidence are gated by policies.transitions instead. The key is ignored`,
+  ];
 }
 
 /**

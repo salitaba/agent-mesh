@@ -1,4 +1,5 @@
-import type { ActivationReason, MeshEvent, EventType, LifecycleState, PolicyDecisionResult } from "../../protocol/src/index";
+import type { ActivationReason, MeshEvent, MeshMessage, EventType, LifecycleState, PolicyDecisionResult } from "../../protocol/src/index";
+import { obligesRecipients } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
@@ -212,6 +213,51 @@ export class Scheduler implements SchedulerPort {
   }
 
   /**
+   * Does this seat's own wake policy defer this message?
+   *
+   * One function because TWO sites ask it: the send-time gate in `handleEvent`
+   * and the wait-timer sweep, which would otherwise undo the first site's
+   * decision one tick later by counting the same unread mail as pressure. That
+   * second failure has a name in this repo — the accrue test in
+   * `tests/core/delivery-classes.test.ts` pins it as "correctly not woken, then
+   * woken anyway, at the same cost" — and a policy only the send path honoured
+   * would be exactly it.
+   *
+   * Obligation beats the setting by construction rather than by exception:
+   * `obligesRecipients` is the predicate the debt is opened with, so a message
+   * deferred here is one that opened no `pendingRequests` entry and owes nobody
+   * an answer. An ask always wakes the seat that owes it.
+   */
+  private defersMail(agentId: string, m: MeshMessage): boolean {
+    if (obligesRecipients(m)) return false;
+    // Operator mail is exempt from every other rationing mechanism in the mesh
+    // (it is never billed, and it survives the mission-over gate below), and it
+    // is exempt here for a reason that is not just consistency: `hasHumanMail`
+    // decides whether post-mission feedback still gets answered, and a policy
+    // that filtered human mail out of that list would silently stop a finished
+    // mission from hearing its operator.
+    if (m.from === "human") return false;
+    return this.state.agents.get(agentId)?.definition.wake?.deferNonObliging === true;
+  }
+
+  /**
+   * Unread mail this seat is willing to be woken for, by its own declaration.
+   *
+   * The question every "does this seat have mail worth a turn" check should be
+   * asking, now that a seat can answer it for itself. `readableMailDepth` is
+   * still the right guard for "is there anything in the box at all"; this is
+   * the right one for "does it justify a turn".
+   *
+   * Not applied everywhere on purpose. The FAILED-agent recovery check keeps
+   * `readableMailDepth`: there, mail is one of two reasons a failed seat is
+   * restarted at all, and letting a wake policy make a seat unrecoverable
+   * would trade a spurious restart for a lost one.
+   */
+  private wakeableMail(agentId: string): MeshMessage[] {
+    return resolveUnread(this.state, agentId).filter((m) => !this.defersMail(agentId, m));
+  }
+
+  /**
    * Hold a `deliver` message's wake open instead of spending a turn on it.
    *
    * `armedAt` is kept from the FIRST message of a burst, deliberately. A
@@ -255,7 +301,18 @@ export class Scheduler implements SchedulerPort {
       }
       if (now - open.armedAt < window) continue;
       this.gathering.delete(agentId);
-      void this.requestActivation({ agentId, reason: open.reason, priority: open.priority });
+      // A gathered wake that says "new mail arrived" when eleven arrived is a
+      // wake that gets one message answered and leaves ten owed a turn each.
+      // The count is the one thing this buffer knows and the reason line did
+      // not say, and naming it is what lets a single delivered turn do the
+      // work of the burst -- which is the whole point of the class. Copied,
+      // never mutated in place: `open.reason` is the newest message's own
+      // reason object.
+      const reason =
+        open.count > 1
+          ? { ...open.reason, note: `${open.count} messages arrived together, not one — the others are in your mailbox below.` }
+          : open.reason;
+      void this.requestActivation({ agentId, reason, priority: open.priority });
     }
   }
 
@@ -313,6 +370,17 @@ export class Scheduler implements SchedulerPort {
         // that predates it behave identically.
         const cls = m.control?.delivery;
         if (cls === "accrue") continue;
+        // The recipient's own rationing (`AgentDefinition.wake`), which is the
+        // one wake decision in this loop that the SENDER does not own. Every
+        // other knob here — the class, the broadcast gate, the attention tariff
+        // — is either the envelope's or the sender's; a seat that wants to batch
+        // its FYIs had no way to say so, and `accrue` only did it mesh-wide.
+        //
+        // Same guarantee as the two gates above, and the reason this is safe to
+        // put here rather than at send time: it suppresses the WAKEUP, never the
+        // delivery. The reducer has already put the message in this recipient's
+        // mailbox, so a deferring seat reads it on its next natural activation.
+        if (this.defersMail(target, m)) continue;
         if (cls === "deliver") {
           this.gather(target, reason, priority);
           continue;
@@ -367,8 +435,11 @@ export class Scheduler implements SchedulerPort {
     for (const key of ["agentId", "assignedTo", "owner", "actorId"]) {
       if (p[key] === agentId) return false;
     }
-    // Real work outstanding: it needs the turn regardless of the event.
-    if (readableMailDepth(this.state, agentId) > 0) return false;
+    // Real work outstanding: it needs the turn regardless of the event. Mail the
+    // seat's own wake policy defers is not outstanding work — counting it here
+    // would wake the seat for an observational event *because* it batched an
+    // FYI, which is the leak the policy exists to close.
+    if (this.wakeableMail(agentId).length > 0) return false;
     const rec = this.state.agents.get(agentId);
     if (rec?.state.activeTaskId) return false;
     for (const pr of this.state.pendingRequests.values()) {
@@ -655,12 +726,17 @@ export class Scheduler implements SchedulerPort {
           explicit: deferred.explicit,
         });
       }
-    } else if (!this.stopped && readableMailDepth(this.state, agentId) > 0) {
-      const unread = resolveUnread(this.state, agentId);
+    } else if (!this.stopped && this.wakeableMail(agentId).length > 0) {
+      // Filtered through the same recipient policy as the send path, and before
+      // the mission-over check rather than after: a box holding only FYIs this
+      // seat declared it batches is not "mail queued while running", and letting
+      // it through here would hand the seat the turn the send path just refused
+      // it — the third site of the same failure.
+      const unread = this.wakeableMail(agentId);
       // The "mail queued while running" retry is a scheduler self-nudge, not
       // operator intent: on a finished mission it only starts dead turns for
       // stale agent mail. Human mail passes so feedback still gets answered.
-      if (!(over && !this.hasHumanMail(unread.map((m) => m.id)))) {
+      if (unread.length > 0 && !(over && !this.hasHumanMail(unread.map((m) => m.id)))) {
         // The head of the box, resolved. It used to be `unread[0]` straight
         // off the id array, so a box whose head was a dangler activated a turn
         // citing a messageId that resolved to nothing -- the seat was woken to
@@ -668,20 +744,20 @@ export class Scheduler implements SchedulerPort {
         const msg = unread[0];
         void this.requestActivation({
           agentId,
-          reason: { kind: "message", messageId: msg.id, threadId: msg.threadId, note: "mail queued while running" },
+          // The depth, not just the fact. A seat told only that mail is waiting
+          // answers the head and stops; the rest are then owed a turn each.
+          // `unread` is resolved above anyway, so naming the size is free.
+          reason: {
+            kind: "message",
+            messageId: msg.id,
+            threadId: msg.threadId,
+            note: `${unread.length} messages waiting in your mailbox.`,
+          },
           priority: 5,
         });
       }
     }
     void this.pump();
-  }
-
-  notifyMailDelivered(agentId: string): void {
-    void this.requestActivation({
-      agentId,
-      reason: { kind: "message", note: "mail delivered" },
-      priority: 4,
-    });
   }
 
   /**
@@ -843,6 +919,11 @@ export class Scheduler implements SchedulerPort {
         if (!m) return false;
         if (m.control?.mode === "broadcast") return false;
         if (m.control?.delivery && m.control.delivery !== "interrupt") return false;
+        // The same recipient policy the send path honours, for the same reason
+        // the class is honoured here: a seat that declared it batches FYIs must
+        // not be nudged for one on the next sweep, or the declaration bought
+        // nothing but a tick's delay.
+        if (this.defersMail(id, m)) return false;
         return true;
       }).length;
       // Oldest-first by creation time (insertion order is not a reliable clock

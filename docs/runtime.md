@@ -48,30 +48,22 @@ interface AgentRuntime {
 ```
 
 `AgentOutput.operations` is the vendor-neutral contract: an adapter only needs
-to produce typed mesh ops. This is how OpenCode, Claude Code, Codex, custom HTTP
-agents, and future A2A agents all plug in without touching the domain model.
+to produce typed mesh ops. This is how Claude Code, custom HTTP agents, and
+future A2A agents all plug in without touching the domain model.
 
-### `runtime-opencode`
-- writes a per-agent OpenCode config (`opencode.json`) under the agent workspace
-  with: `instructions` pointing at the role prompt (absolute path), the **mesh
-  MCP server** (`type: "local"`, spawned via `mesh mcp`, bus URL/agent id/token
-  passed through `environment`), and a `permission` block derived from the
-  agent's capabilities (`edit`/`bash`/`webfetch`/`read`)
-- spawns `opencode serve --port … --hostname 127.0.0.1` with the agent's
-  workspace as `cwd` and the per-agent file injected via `OPENCODE_CONFIG`
-  (documented custom-config path); health-gates on `GET /global/health`
-- creates a session per agent (`POST /session`), sends each activation as
-  `POST /session/:id/message` with `{parts, system, model}`, aborts via
-  `POST /session/:id/abort`, restores by `GET /session/:id`
-- parses `mesh-json` op blocks from the assistant text into `MeshOp[]`; token
-  accounting reads `info.tokens.{input,output,reasoning,cache}` from the
-  assistant message
-- reports `UNREACHABLE` on process death (the recovery manager then restarts with
-  `restoreSession`)
+### `runtime-opencode` — **removed**
 
-Note: OpenCode registers MCP tools with the server name as a prefix, so the bus
-tools surface to the model as `mesh_mesh_send`, `mesh_mesh_approve`, … (server
-`mesh`). Agents are told to look for `mesh_*`.
+There is no OpenCode adapter. The package is gone, and a config naming it fails
+to load with `runtime 'opencode' was removed; <keys> still names it` — caught at
+load rather than at activation, because an unregistered runtime name otherwise
+resolves fine at boot and fails on the first turn, long after the mesh looked
+healthy. Use `claude` (no separate install: it rides on the declared
+`@anthropic-ai/claude-agent-sdk` dependency) or `stub` (zero model calls).
+
+The transport it used — `opencode serve` on a local port, health-gated on
+`GET /global/health` — is therefore not part of any adapter in this repo. What
+survives from it is the interface above, which it was the first implementation
+of.
 
 Note: *which* bus tools an adapter is handed is a property of the mesh, not of
 the adapter. `tools/list` is filtered per seat -- by the agent's capabilities,
@@ -85,9 +77,9 @@ keeps working. See `docs/configuration.md` § bus.
 ### `runtime-claude`
 - Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that
   drives the Claude Code binary as a child process. **There is no `claude serve`**
-  — no local HTTP API, no SSE, nothing to health-probe — so none of the opencode
-  transport applies. The SDK ships its own executable, so unlike opencode there
-  is nothing for the user to install and nothing to preflight
+  — no local HTTP API, no SSE, nothing to health-probe — so there is no port to
+  gate on and no process to attach to. The SDK ships its own executable, so
+  there is nothing for the user to install and nothing to preflight
 - one **long-lived streaming `query()` per agent**, held for the agent's
   lifetime. Streaming input is not a preference: SDK control requests
   (`interrupt()`, `supportedModels()`) are only supported on a streaming query,
@@ -111,7 +103,7 @@ keeps working. See `docs/configuration.md` § bus.
   `total_cost_usd` and `modelUsage` are cumulative across a streaming session,
   so billing a turn off them would re-charge the whole conversation every turn
 - the mesh MCP bridge is wired through the SDK's `mcpServers` option, the same
-  `mesh mcp` stdio bridge opencode spawns
+  `mesh mcp` stdio bridge the other adapters spawn
 - no `reasoning` token field (Claude's usage has none), and the system prompt is
   snapshotted at a session's first request, so mid-run `ROLE.md` edits land only
   after compaction

@@ -70,7 +70,7 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 agents:
   developer:
     role: developer
-    runtime: claude                  # registered: claude | stub | none
+    runtime: claude                  # registered: claude | stub | none, plus http when a URL is set
     model: provider/model            # optional; blank = mesh.runtime.model, then backend default
     variant: high                    # inert: opencode's thinking knob, read by no registered runtime,
                                      #   and it does NOT inherit mesh.runtime.variant — setting it warns.
@@ -82,6 +82,7 @@ agents:
     session:      { persistent: true, max_context_tokens: 120000 }  # omit a key to inherit mesh.defaults.session
     delegation:   { allow: true, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }  # ditto mesh.defaults.delegation
     budget:       { tokens: 700000, wall_clock_minutes: 30, max_events: 2000, max_activations: 40 }
+    wake:         { defer_non_obliging: false }  # per-seat: never wake me for mail that obliges me nothing
 ```
 
 - `mode: service` (e.g. explorer) → activates **only** on requests, read-only,
@@ -89,6 +90,65 @@ agents:
   `metadata.questionHash`.
 - `interests` are dotted patterns; `architecture.*` matches `architecture.approved`
   but not bare `architecture`. Non-wildcard interests must be canonical event types.
+
+### wake
+
+The one wake decision a **recipient** owns. Every other rationing knob in the mesh
+belongs to the sender: `bus.delivery.attention_tokens` is the sender's wallet, the
+tariff is charged to the sender, and `interests` gates only broadcasts. This block
+is the seat's own answer to the same question.
+
+```yaml
+agents:
+  tech-lead:
+    wake: { defer_non_obliging: true }
+```
+
+- `defer_non_obliging: true` — mail that **obliges this seat nothing** never wakes
+  it. The message is still delivered and sits in the mailbox; the seat reads it on
+  its next natural activation. "Nothing is ever suppressed; only the wake is
+  refused."
+- **Obligation always wins, by construction rather than by exception.** The
+  predicate is the same one the debt is opened with (`obligesRecipients`), so a
+  message this setting ignores is a message that opened no `pendingRequests` entry.
+  An ask — `REQUEST*`/`ESCALATE`/`CHALLENGE` under `mode: service` — always wakes
+  the seat that owes it. A mesh where a seat could quietly opt out of its own debts
+  would not be a mesh.
+- **Operator mail is exempt**, as it is from every other rationing mechanism: a
+  human can always wake a seat, including a finished mission's.
+- **It does not refund the sender.** An `interrupt` sent to a deferring seat was
+  already charged to the sender's attention ledger and stays charged. The setting
+  lives in `mesh.yaml`, so it is a public declaration a sender can read before
+  spending — the same bargain `may_be_contacted_by` strikes one step harder.
+- One step **milder** than `communicationPolicy.mayBeContactedBy`: that refuses the
+  *send*, so the message never exists. This refuses only the *wake*.
+- It is honoured everywhere mail would otherwise buy a turn — the send path, the
+  wait-timer sweep, the post-turn mail retry, and the redundant-observation check
+  — because a setting the send path alone honoured would be defeated a tick later
+  by the sweep that counts unread mail as pressure. The single deliberate
+  exception is the FAILED-agent recovery check: there, mail is one of two reasons
+  a failed seat is restarted at all, and letting a wake policy make a seat
+  unrecoverable would trade a spurious restart for a lost one.
+- Per-agent only: there is deliberately no `mesh.defaults.wake`, because the
+  mesh-wide version of this setting is `bus.delivery.classes` and two ways to say
+  one thing is how they drift.
+
+### Role prompts share blocks verbatim
+
+The seven files in `roles/` are not independent documents. Two blocks are
+**shared verbatim across every role**, and the duplication is a maintenance
+hazard rather than a design:
+
+- the `## Answering requests (the mesh tracks what you owe)` block, identical in
+  all seven; and
+- the opening sentence of `## Close every turn` — *"Act through mesh tools when
+  available, else the `mesh-json` ops block — Mesh Context defines the exact
+  contract; never communicate outside the mesh."* — which each role then extends
+  with its own ending (`wait` vs `done`, and what the one-line summary says).
+
+Changing either means changing all seven, or the roles drift and the prompt
+stops describing one mesh. Edit them together; do not restructure the files
+mechanically to de-duplicate.
 
 ## policies
 
@@ -109,7 +169,83 @@ policies:
     - id: explorer-read-only
       when: { actor_role: explorer }
       deny: { capabilities: [repository.write, git.commit] }
+    - id: no-qa-chatter
+      when: { actor_role: developer, to: qa }      # `to` scopes to a recipient
+      deny: { message_types: [INFORM] }
 ```
+
+### rules
+
+A rule is `when` (scope) + `deny`/`escalate` (effect). Every `when` clause
+present must hold, so a rule constrains exactly what it names. What `matchRule`
+actually reads (`packages/policy-engine/src/index.ts`) — the authority on this,
+since a key it does not read validates, boots, and restricts nothing:
+
+| key | read as |
+|---|---|
+| `when.actor` | the acting agent's id; validated at load against the registry |
+| `when.actor_role` | the acting agent's configured role; a role no seat has is reported at load, since the rule then applies to nobody |
+| `when.to` | a recipient the message must address — by agent id, by role, or by the base id of a hierarchical child (`qa#1` answers to `qa`). Only a message evaluation has recipients, so a rule carrying `to` never applies to a capability or authority check. A `to` no seat answers to is reported at load, because the rule is then scoped to nobody and denies nothing |
+| `when.message_type` | the message type under evaluation; a token outside the catalog is a load error |
+| `when.capability` | the capability under evaluation; a token outside the catalog is a load error |
+| `deny.capabilities` | capability names to refuse; a token outside the catalog is a load error |
+| `deny.message_types` | message types to refuse; a token outside the catalog is a load error |
+| `when.event` | **removed** — a rule still carrying it is refused at load. Its value was never compared; it only stopped the rule applying to capability and authority checks, so it silently switched denials *off* |
+| `escalate` | escalate instead of deny when the rule matches |
+
+Every clause in that table is checked at load, and the severity is not a taste
+call — it follows from whether the name can still turn up at runtime. A name that
+**can never come into existence** is an **error**, because the rule can never
+fire: `when.actor` against the registry, and `when.capability` /
+`deny.capabilities` / `when.message_type` / `deny.message_types` against the
+capability and message-type catalogs, both of which are closed. No seat can turn
+up later holding `repository.writ`, and no message with a type the envelope
+schema rejects ever reaches the policy engine, so a clause naming one is
+permanently dead and the mesh refuses to boot.
+
+A name that **can arrive later** is a **warning**, because refusing to boot would
+break a working mesh: `when.to` and `when.actor_role` both name seats a
+hierarchical child, a delegated worker, or the synthesized `human` seat can
+supply after load. A config naming one this process has not seen yet is
+legitimate; it is reported so the operator knows the rule scopes to nobody until
+that seat exists.
+
+Capability tokens are matched through the alias table, so `code.write` in a rule
+is accepted and resolved to `repository.write` before the engine ever compares it
+— a rule clause is normalized like every other capability list in the config.
+Write either spelling.
+
+An absent `when.to` and a cleared one are not the same rule. Absent means
+unscoped: the rule applies mesh-wide, which is what a rule written before `to`
+existed depends on. A `to` that is declared and then emptied (`to: ""`, which is
+what clearing the field in the designer writes) names a recipient scope the
+operator emptied, so it binds **nobody** — and is warned about, since a rule that
+denies nothing is worth knowing about. Never treat the empty spelling as absent:
+that would respawn a one-seat rule as a mesh-wide one.
+
+Keys that look like they do something and do not. Each is now removed, and the
+severity of each removal follows the same rule as above — it turns on whether
+removing it changes what gets enforced:
+
+- **`when.event` was removed, and a config still setting it refuses to load.**
+  Its value was never compared: the only read was a guard that skipped the rule
+  whenever no message was under evaluation, so the clause's real effect was to
+  switch **off** capability and authority denial on any rule that also named
+  capabilities — and `event: "artifact.published"` behaved exactly like
+  `event: "banana"`. Deleting it therefore makes such a rule deny *more* than it
+  did, which is why the mesh refuses to boot rather than let that happen quietly.
+  Scope the rule with `when.message_type`, or with `when.to` for one recipient.
+- **A rule-level `requires` was removed** — `requires.approvals` and
+  `requires.evidence` on a rule. Nothing ever read it, so removing it changes no
+  behaviour and a config still setting it is warned about at load and boots
+  unchanged. Approvals and evidence are gated by `policies.transitions`, which is
+  what the abandoned `requires.approvals` became; `MeshMessage.requires` is a
+  third key with the same name and is unaffected.
+- **There is no `deny.contact`.** Contact is decided in exactly one place,
+  `policies.communication` (`may_contact` / `may_be_contacted_by`), and no rule
+  ever read this field. A config still setting it is warned about at load and
+  otherwise does nothing; remove the recipient from that seat's `may_contact`,
+  or express a recipient-scoped veto as `when.to` plus `deny.message_types`.
 
 ## hard actions (plan-before-acting)
 
@@ -189,6 +325,8 @@ bus:
     classes: true           # omit for "every message wakes its recipients"
     coalesce_ms: 60000      # how long a `deliver` burst gathers before one wake
     interrupt_cost_tokens: 2000   # what one interrupt costs its sender, per seat woken
+    attention_tokens: 200000      # what a seat may spend on wakes before they stop
+                                  #   being interrupts; 0 = never buy one (low contact)
 ```
 
 ### commitments.semantic
@@ -309,8 +447,13 @@ writes — what settles an ask is `replyTo`, not the type.
 As with `typed-only`, hiding is **advertisement only**: `mesh_send` with a
 hand-written type still works for a model that reaches for it, so collapsing the
 vocabulary can never take a capability away from a seat or strand a mission.
-`MessageType` is untouched on the wire and stays what it should always have
-been — a rendering and telemetry detail.
+This is not a convention to trust — it is what the code does: `callTool`
+resolves a tool name against the **unfiltered** map, and the hidden tools are
+filtered only out of the advertised list
+(`apps/mesh-server/src/mcp.ts`). `vocabulary: contracts` changes what a seat is
+offered, never what the mesh will accept: a hidden tool called by name still
+runs, through every gate, unchanged. `MessageType` is untouched on the wire and
+stays what it should always have been — a rendering and telemetry detail.
 
 Be honest about the payoff: the token saving is small (the manifest shrink
 measured **−96 tokens/turn** when `typed-only` dropped four tools, and this
@@ -392,6 +535,34 @@ the classes and charge nothing; the class is what the scheduler reads, so
 pricing and routing can be adopted separately. A message from the human
 operator is never charged — there is no agent line to charge, and an operator's
 interrupt is the operator's prerogative.
+
+### attention_tokens
+
+What a seat may spend buying **other seats' attention**, in tokens, before its
+interrupts stop being interrupts. It is a separate line from the agent token
+line on purpose: over-interrupting should cost a seat its influence, not its
+ability to work. Written, the tariff above moves off `agent:<goal>/<sender>` and
+onto a line of its own, `attention:<goal>/<agent>`, and becomes a real price —
+when that line cannot cover the interrupt the message still ships and still
+lands in the mailbox, but it ships as `deliver`, so the **wake** is not bought.
+Nothing is ever suppressed; only the wake is refused. A seat reading the refusal
+is told why, because an exhausted line and a mis-set `interrupt_cost_tokens`
+call for opposite responses.
+
+Absent means no attention line at all, and the tariff keeps landing on the
+sender's agent line exactly as it did before the key existed — that is what makes
+this strictly additive, including the accidental backstop the agent line
+provided (a seat that interrupts a hundred times runs out of its own budget and
+stops being activated).
+
+**`0` is a real and useful answer: it is a mesh that never buys an interrupt,
+where every one degrades to mail. That is the low-contact setting, stated
+exactly.** It is not the same as `interrupt_cost_tokens: 0`, which makes
+interrupts *free* and therefore unrationed — a line that can never run out
+cannot refuse. Free interrupts are not rationed; cheap-to-own attention is.
+`mesh init` writes `200000`, which against the `2000` default is a hundred
+interrupts — the same rationing the agent line used to give by accident, now
+landing on the wake instead.
 
 `coalesce_ms` is measured from the **first** message of a burst, not the last:
 a window that restarted on every arrival would never close under a steady

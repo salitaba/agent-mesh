@@ -1,6 +1,6 @@
-﻿import { MESSAGE_TYPES, shortHash, type AgentDefinition, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
+﻿import { MESSAGE_TYPES, obligesRecipients, shortHash, type AgentDefinition, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
-import { HUMAN_AGENT_ID, readableMailDepth } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, readableMailDepth, resolveUnread } from "../../../packages/core/src/index";
 import {
   buildAgentActivity,
   buildCostReport,
@@ -23,10 +23,13 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 const TERMINAL_ARTIFACT_STATUS = new Set(["MERGED", "ACCEPTED", "FINAL", "ARCHIVED", "REJECTED"]);
 
 /**
- * Read-only observability tools. They never pass through `executeOp`, so they
- * touch no policy gate and can be called by any token holder at any time.
+ * Read-only tools. They never pass through `executeOp`, so they touch no policy
+ * gate and can be called by any token holder at any time — which is safe
+ * precisely because none of them mutates anything. Most observe the run;
+ * `mesh_inbox` observes the caller's own mailbox, and earns the same place
+ * because reading a mailbox is not draining one (see `inboxView`).
  */
-const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest"]);
+const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest", "mesh_inbox"]);
 
 /**
  * Tools whose own description already names the capability/authority/mode
@@ -156,8 +159,9 @@ export class McpToolset {
    * them to check run status, not just external observers (see "mcp bus:
    * read-only observability tools answer run questions" in bus-api.test.ts);
    * the separate readOnly toolset (this.opts.readOnly) exists for observers
-   * who should see ONLY those 6 and nothing else, so it passes through
-   * unfiltered here. Authorization itself is unaffected — executeOp still
+   * who should see ONLY those and nothing else, so it passes through
+   * unfiltered here. (Counting them in this comment is what made it stale:
+   * it read "those 6" the moment a seventh read tool existed.) Authorization itself is unaffected — executeOp still
    * gates every op the same way it always did; this only trims what's
    * advertised.
    */
@@ -220,7 +224,7 @@ export class McpToolset {
         }
         try {
           if (READ_TOOLS.has(name)) {
-            const payload = await this.readTool(name, args);
+            const payload = await this.readTool(agentId, name, args);
             return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false } };
           }
           const op = this.toOp(name, args);
@@ -413,8 +417,10 @@ export class McpToolset {
 
   // ---------------------------------------------------- read-only observability
 
-  private async readTool(name: string, a: Record<string, any>): Promise<unknown> {
+  private async readTool(agentId: string, name: string, a: Record<string, any>): Promise<unknown> {
     switch (name) {
+      case "mesh_inbox":
+        return this.inboxView(agentId, a);
       case "mesh_run_status":
         return this.runStatus();
       case "mesh_query_events":
@@ -430,6 +436,60 @@ export class McpToolset {
       default:
         throw new Error(`unknown read tool ${name}`);
     }
+  }
+
+  /**
+   * The caller's own mailbox: mail addressed to it that it has not answered.
+   *
+   * Reads `resolveUnread`, the same projection the turn builder renders from,
+   * and deliberately does NOT emit `message.delivered`. The one rule that
+   * empties a mailbox is "delivered means rendered AND answered"
+   * (`supervisor.ts`), so a tool that drained would mark mail read that no
+   * prompt ever showed and no model ever answered — exactly the silent loss
+   * that rule was written to prevent. This only SHOWS the queue: answering what
+   * it read leaves the rest owed, and the seat is still woken for the rest.
+   *
+   * That is also what makes this different from the "pull path" proposed in the
+   * communication review, and worth stating because the two get confused. This
+   * does not replace a wake with a pull; a seat that is never woken learns
+   * nothing from it. It answers the narrower question a woken seat cannot ask
+   * today: the turn renders `selectUnread`'s top 12 and says nothing about the
+   * rest, so a burst of 40 and a burst of 2 look identical from inside the turn.
+   */
+  private inboxView(agentId: string, a: Record<string, any>): Record<string, unknown> {
+    const state = this.supervisor.state;
+    const box = resolveUnread(state, agentId);
+    const offset = Math.max(0, Math.floor(Number(a.offset)) || 0);
+    const limit = this.clampInt(a.limit, 25, MAX_UNREAD_PER_AGENT);
+    const page = box.slice(offset, offset + limit);
+    const next = offset + page.length;
+    return {
+      agentId,
+      mailbox: readableMailDepth(state, agentId),
+      total: box.length,
+      offset,
+      returned: page.length,
+      truncated: next < box.length,
+      nextOffset: next < box.length ? next : null,
+      messages: page.map((m) => ({
+        id: m.id,
+        from: m.from,
+        to: m.to,
+        type: m.type,
+        priority: m.priority,
+        threadId: m.threadId,
+        subject: state.threads.get(m.threadId)?.subject,
+        replyTo: m.replyTo,
+        timestamp: m.timestamp,
+        // The same predicate the obligation opens with, so the queue and the
+        // prompt agree about which of these the seat owes an answer to.
+        answerOwed: obligesRecipients(m),
+        delivery: m.control?.delivery,
+        note: m.note,
+        artifactRefs: m.artifactRefs.map((r) => r.uri),
+        payload: m.payload,
+      })),
+    };
   }
 
   private eventStore() {
@@ -800,6 +860,7 @@ export class McpToolset {
       { name: "mesh_failures", description: "Read-only failure report: runtime agent failures, policy denials (ops and activations policy turned away), sends policy refused, rejected ops, turns where every op was rejected, turns with zero tool calls, gate-blocked/non-terminal artifacts, open escalations. Start here when asked what went wrong. Denials and refused sends are read from projections, so they survive a restart and ignore the window; window bounds only the event-derived sections.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max rows per section (default 20, max 100)" }, window: { type: "number", description: "how many recent events to scan; bounds the event-derived sections only (default 2000, max 10000)" } }, additionalProperties: false } },
       { name: "mesh_agent_activity", description: "Read-only per-agent activity snapshot: lifecycle, running turn, mailbox depth, activations, tokens, last error. Optionally filter to one agent.", inputSchema: { type: "object", properties: { agentId: str("filter to one agent") }, additionalProperties: false } },
       { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" } }, additionalProperties: false } },
+      { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones that owe a reply. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
     ];
   }
 }

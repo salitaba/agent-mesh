@@ -175,3 +175,41 @@ test("an obliging message carrying a contract shows the debtor the noes it may g
   }
   await m.cleanup();
 });
+
+/**
+ * The other half of the same fairness, and the more dangerous one. The line
+ * above tells a debtor which noes are available; this one tells it that there
+ * is no closed set at all — because with no contract the answer check fails
+ * OPEN (`checkResponse`), so silence and "sure" and a shrug all settle the debt
+ * alike. A debtor that reads an unstructured ask as if it carried the same bar
+ * as a structured one is being misled by an omission, not by a wrong statement.
+ */
+test("an obliging message with no contract says so, rather than leaving the bar to be guessed", async () => {
+  const m = await mesh();
+  // A raw REQUEST: obliging, but unstamped, so there is no request schema to
+  // satisfy and no refusal set to name.
+  await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "REQUEST",
+    newThread: { subject: "no contract here" }, payload: { ask: "do the thing" },
+  });
+  // A non-obliging message in the same mailbox, so the assertion below can tell
+  // "printed for the shape it describes" from "printed under every message".
+  await m.supervisor.sendMessage({
+    from: "architect", to: ["dev"], type: "INFORM",
+    newThread: { subject: "just so you know" },
+  });
+
+  const { buildAgentContext, renderContextInstructions } = await import("../../packages/core/src/context");
+  const bundle = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev");
+  const text = renderContextInstructions(bundle);
+  const section = text.slice(text.indexOf("## Unread mail"));
+
+  assert.match(section, /contract: none/);
+  assert.match(section, /any reply that answers this settles it/);
+  assert.equal(
+    section.match(/contract: none/g)?.length,
+    1,
+    "an FYI owes no answer, so the line must appear for the ask alone",
+  );
+  await m.cleanup();
+});

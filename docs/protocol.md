@@ -74,10 +74,24 @@ REQUEST_RESEARCH REQUEST_EXECUTION PROPOSE CHALLENGE APPROVE REJECT VETO BLOCK
 DELEGATE HANDOFF PATCH_READY TEST_RESULT SECURITY_FINDING COMMIT ROLLBACK
 ESCALATE WAIT DONE`
 
-Requests (`REQUEST*`, `ESCALATE`, `CHALLENGE`) open a *pending request*; a
-reply carrying `replyTo` closes it. This is what lets an agent go to `WAITING`
-and be woken on the response, instead of blocking on a call — messages are
-**not RPC**.
+An ask opens a *pending request*; a reply carrying `replyTo` closes it. This is
+what lets an agent go to `WAITING` and be woken on the response, instead of
+blocking on a call — messages are **not RPC**.
+
+Which messages are asks is **two conditions, not one**, and the single
+predicate that answers it is `obligesRecipients` (`protocol/src/catalog.ts`):
+
+1. the **type** creates a debt — a `REQUEST*` name, `ESCALATE` or `CHALLENGE`
+   (prefix-matched, so a new `REQUEST_*` name is obliging without an edit); and
+2. `control.mode` is `"service"` (the default when absent).
+
+The same `REQUEST` type therefore obliges **nobody** under `mode: "broadcast"`
+or `mode: "collab"`. A broadcast addresses every seat, so an ask would open one
+entry owed by the whole roster and the first reply would leave everyone else
+owing an answer nobody was tracking — an announcement is not an ask. A collab is
+bounded by its own clock rather than by a per-recipient debt. Read off
+`control`, never `payload`: a sender able to set its own obligation band could
+promote its chatter above everyone else's real asks.
 
 ### A thread has an ending
 
@@ -111,7 +125,7 @@ Schema for its request, the refusals it may come back with, the capability a
 seat needs to answer it, and an SLA.
 
 `call` raises one; `contracts` lists them with the seats that can currently
-answer. Three properties matter:
+answer. Five properties matter:
 
 1. **It is sugar.** Every contract desugars to a typed op and re-enters the
    ordinary op path. `call` can reach nothing a typed op could not, and every
@@ -136,7 +150,28 @@ answer. Three properties matter:
    text makes them one. The set is rendered on the ask's own line in the
    debtor's prompt, because a closed set nobody can read is not closed.
 
+5. **Nothing requires a contract.** A contract is what `call` raises, not what
+   makes an ask an ask. A bare send with `type: "REQUEST_REVIEW"` and no
+   contract opens a real pending request — a real debt, a real wake, a real
+   entry on the ledger — with **no request schema, no refusal set and no SLA**.
+   The response check then has nothing to judge: `checkResponse`
+   (`core/src/projections-messaging.ts`) returns `undefined` when the ask
+   carries no contract, or a contract with no response schema, and that absence
+   is recorded as absence rather than failure. It fails **open and silently** —
+   a thin reply to a contractless ask is discharged exactly like a good one,
+   and no event records that nothing was verified. Contracts are a stricter
+   path a sender opts into, not a gate every ask passes through.
+
 A contract's SLA narrows an existing deadline regime and never creates one; see
+`docs/configuration.md`.
+
+`bus.vocabulary: "contracts"` — the setting that collapses a seat's manifest to
+the named asks — is **advertisement only**. It filters the tool *list* a seat is
+offered, but `callTool` resolves a name against the **unfiltered** tool map
+(`apps/mesh-server/src/mcp.ts`), so a hidden tool called by name still runs,
+through every gate, unchanged. A reader must not mistake it for enforcement:
+collapsing the vocabulary changes what a seat is shown, never what the mesh
+accepts, and it cannot take a capability away from a seat. See
 `docs/configuration.md`.
 
 ### One ask to N agents is N obligations
@@ -192,8 +227,19 @@ lifecycle. Events are append-only and **deduplicated by id** (exactly-once).
 ## Artifact URIs & versions (`schemas/artifact.schema.json`)
 
 `artifact://{Type}/{name}/{version}`. Artifact versions are immutable; a change
-produces `design-v2 → design-v3` with `parent` lineage. Messages reference URIs,
-never paste content — the bus is a reference bus. Digests are `sha256:…`.
+produces `design-v2 → design-v3` with `parent` lineage. Digests are `sha256:…`.
+
+Messages reference URIs rather than pasting content, but **"the bus is a
+reference bus" is a discipline, not a runtime rule.** Nothing rejects or strips
+a pasted body: `payload` is an unconstrained object in
+`schemas/message.schema.json`, so a whole file can ride in it and validate. The
+only payload policing is `RESERVED_PAYLOAD_KEYS` (`mode`, `delivery`,
+`cacheServed`, `contract`, `contractVersion`, `downgraded` — control fields
+deleted on input by `sanitizeAgentMessageInput`), and the only bound on free
+prose anywhere in the envelope is `note`'s 2000-character `maxLength`. The rule
+is carried by the role prompts,
+which `docs/architecture.md` classes as layer 1 (prompt awareness) — a rule the
+agent is told, not one the runtime enforces.
 
 ## Typed state machines
 

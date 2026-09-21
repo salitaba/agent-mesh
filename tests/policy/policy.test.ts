@@ -272,3 +272,35 @@ test("communication: a broadcast roster does not become a backdoor around may_co
   assert.equal(backdoor.accepted, false, "roster membership alone must not void the communication matrix");
   await m.cleanup();
 });
+
+test("policy: a rule spelled with a capability ALIAS denies the canonical token", async () => {
+  // The engine's compare is `.includes(capability)` against the canonical token
+  // the seat holds (`policy-engine:110`), so before config normalized rule
+  // clauses this rule loaded, booted, and denied nothing — `code.write` is a
+  // legal spelling that resolves to `repository.write` everywhere else. The
+  // engine test matters beyond the resolved shape: it is the only one that
+  // proves the two ends now agree on the same string.
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "qa", role: "qa", capabilities: ["test.write"], interests: [] },
+    ],
+    mayContact: { dev: ["qa"], qa: ["dev"] },
+    rules: [{ id: "no-writes", when: { actor_role: "developer" }, deny: { capabilities: ["code.write"] } }],
+  });
+  const ctx = { config: m.config, projections: m.kernel.state };
+  const denied = m.supervisor.deps.policy.evaluateCapability("dev", "repository.write", ctx);
+  assert.equal(denied.decision, "DENY", "an alias-spelled deny must actually deny the canonical capability");
+  assert.equal(denied.ruleId, "no-writes");
+  // The reason names the canonical token, because that is the string the engine
+  // compared — the alias never reaches it.
+  assert.match(denied.reason, /repository\.write/);
+
+  // And the rule still scopes: a seat outside `when.actor_role` keeps its capability.
+  assert.equal(
+    m.supervisor.deps.policy.evaluateCapability("qa", "test.write", ctx).decision,
+    "ALLOW",
+    "the alias fix must not have widened the rule",
+  );
+  await m.cleanup();
+});

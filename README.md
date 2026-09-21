@@ -82,8 +82,8 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
 #   (--no-demo disables the scripted team; agents then simply idle)
 
 # PARKED CONSOLE — dashboard + designer, nothing autonomous (no startup runs,
-# no cascades, no tokens), safe to poke at even for opencode configs on a
-# machine without the CLI installed:
+# no cascades, no tokens), safe to poke at even for a config whose runtime is
+# not installed on this machine:
 npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
 # (alias: ui; equivalent: npm run mesh -- run <file> --parked)
 # parked semantics: startup/interest/timer cascades are all off — nothing runs
@@ -93,8 +93,8 @@ npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
 # the console live in place (scheduler on, cascades resume) without restarting.
 
 # design first, run later:
-npm run mesh -- init my-mesh                       # auto-detects opencode; falls
-                                                   # back to runtime: stub if absent
+npm run mesh -- init my-mesh                       # writes a starter mesh.yaml
+                                                   # with runtime: claude
 $EDITOR my-mesh/mesh.yaml                          # or use the designer page
 npm run mesh -- validate my-mesh/mesh.yaml
 npm run mesh -- run my-mesh/mesh.yaml
@@ -146,7 +146,7 @@ packages/
   scheduler       interest registry, activation, mailboxes, concurrency, triage
   agent-runtime   adapter interface + deterministic StubRuntime (tests/sim)
   artifact-store  immutable content store + git worktree manager
-  runtime-opencode  OpenCode server adapter (sessions, turns, tokens, restore)
+  projects        multi-project registry (~/.agent-mesh/projects.json)
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub
