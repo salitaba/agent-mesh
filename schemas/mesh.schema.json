@@ -317,6 +317,13 @@
             "properties": {
               "defer_non_obliging": {
                 "type": "boolean"
+              },
+              "mail": {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "claims"
+                ]
               }
             },
             "additionalProperties": false

@@ -82,7 +82,7 @@ agents:
     session:      { persistent: true, max_context_tokens: 120000 }  # omit a key to inherit mesh.defaults.session
     delegation:   { allow: true, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }  # ditto mesh.defaults.delegation
     budget:       { tokens: 700000, wall_clock_minutes: 30, max_events: 2000, max_activations: 40 }
-    wake:         { defer_non_obliging: false }  # per-seat: never wake me for mail that obliges me nothing
+    wake:         { defer_non_obliging: false, mail: full }  # per-seat: never wake me for mail that obliges me nothing; and how much of a woken message to show
 ```
 
 - `mode: service` (e.g. explorer) → activates **only** on requests, read-only,
@@ -101,13 +101,33 @@ is the seat's own answer to the same question.
 ```yaml
 agents:
   tech-lead:
-    wake: { defer_non_obliging: true }
+    wake: { defer_non_obliging: true, mail: claims }
 ```
 
 - `defer_non_obliging: true` — mail that **obliges this seat nothing** never wakes
   it. The message is still delivered and sits in the mailbox; the seat reads it on
   its next natural activation. "Nothing is ever suppressed; only the wake is
   refused."
+- `mail: claims` (default `full`) — how much of a woken message's **content** the
+  prompt carries. `full` renders the payload; `claims` renders the header line
+  alone and marks it `body withheld`, to be filled in from the mailbox with
+  `mesh_inbox`. This is the pull path, and it is deliberately narrower than "send
+  less mail": the subject, sender, type and thread are still rendered, so a claim
+  is a standable-in-for line rather than a pointer into nowhere.
+  - **Mail that obliges this seat keeps its body in both modes.** The split falls
+    at the obligation, not at a size threshold. `message.delivered` marks a
+    message answered once the turn ends — "delivered means rendered AND answered"
+    — so a seat handed a bare claim and then marked answered has been made to
+    answer blind. What is deferred is the reading of news, never of a question.
+  - It composes with `defer_non_obliging` rather than replacing it: that key
+    decides whether an FYI buys a turn at all, this one decides what the turn
+    shows once it happens. A seat that sets both receives non-obliging mail
+    rarely and as a claim.
+  - **Off by default, and it should stay that way** unless a mission says
+    otherwise. Measured on a real run, the whole `Unread mail` section is 2.2% of
+    a turn's briefing block — roughly 0.2% of total mission input — so this is a
+    contact-quality lever, not a cost one. Reach for it when a seat is drowning
+    in news, not to save tokens.
 - **Obligation always wins, by construction rather than by exception.** The
   predicate is the same one the debt is opened with (`obligesRecipients`), so a
   message this setting ignores is a message that opened no `pendingRequests` entry.
@@ -188,8 +208,9 @@ since a key it does not read validates, boots, and restricts nothing:
 | `when.to` | a recipient the message must address — by agent id, by role, or by the base id of a hierarchical child (`qa#1` answers to `qa`). Only a message evaluation has recipients, so a rule carrying `to` never applies to a capability or authority check. A `to` no seat answers to is reported at load, because the rule is then scoped to nobody and denies nothing |
 | `when.message_type` | the message type under evaluation; a token outside the catalog is a load error |
 | `when.capability` | the capability under evaluation; a token outside the catalog is a load error |
-| `deny.capabilities` | capability names to refuse; a token outside the catalog is a load error |
+| `deny.capabilities` | capability names to refuse; a token outside the catalog is a load error. It refuses more than capabilities: because an authority check matches on actor and role alone, the same clause also denies a seat's **held** authority whenever the matched rule names any capability. Left as it is deliberately — narrowing it removes a `DENY` — and recorded in `NOTES-communication-measured-review.md` §7 row 12 |
 | `deny.message_types` | message types to refuse; a token outside the catalog is a load error |
+| `when.authority` | **does not exist, and never did.** An authority evaluation carries no authority token, so there is nothing for such a clause to compare against; a rule cannot be scoped to one authority (`deployment.approve`). `matchRule`'s doc comment says so at the point a reader would otherwise look for it |
 | `when.event` | **removed** — a rule still carrying it is refused at load. Its value was never compared; it only stopped the rule applying to capability and authority checks, so it silently switched denials *off* |
 | `escalate` | escalate instead of deny when the rule matches |
 

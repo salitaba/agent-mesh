@@ -119,11 +119,12 @@ test("config: an absent when.to draws no warning, and a cleared one does", () =>
 });
 
 test("config: idle_quiet_period_ms resolves and defaults to 30000", () => {
-  // The key is inert — nothing reads it (see the doc comment on
-  // `scheduling.idleQuietPeriodMs`) — so what is left to pin is the contract a
-  // future consumer would inherit: the resolution and the default. The key is
-  // spliced out of the helper's inline `timeouts:` block rather than added as a
-  // second block, which YAML would reject as a duplicate key.
+  // The key used to be inert — nothing read it — so this pinned only the
+  // contract a future consumer would inherit. It now has one (`Scheduler`'s
+  // dwell before declaring the mesh idle, `scheduler/src/index.ts`), and this
+  // still pins resolution and the default, which the dwell's behaviour depends
+  // on. The key is spliced out of the helper's inline `timeouts:` block rather
+  // than added as a second block, which YAML would reject as a duplicate key.
   const declared = testConfigYaml(AGENTS);
   const absent = declared.replace("idle_quiet_period_ms: 300, ", "");
   assert.notEqual(absent, declared, "the helper must still write the key this test is about");
@@ -133,7 +134,7 @@ test("config: idle_quiet_period_ms resolves and defaults to 30000", () => {
   assert.equal(
     resolve(declared.replace("idle_quiet_period_ms: 300", "idle_quiet_period_ms: 12345")).scheduling.idleQuietPeriodMs,
     12345,
-    "a declared value is carried through, inert or not",
+    "a declared value is carried through",
   );
 });
 

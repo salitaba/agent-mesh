@@ -11,6 +11,7 @@ import {
 } from "../../packages/core/src/context";
 import { MESSAGE_TYPES, OBLIGING_MESSAGE_TYPES, REQUEST_TYPES } from "../../packages/protocol/src/catalog";
 import { makeMesh } from "../helpers";
+import type { MeshInstance } from "../../apps/mesh-server/src/index";
 import type { CollabSession, MeshMessage, MessagePriority, MessageType } from "../../packages/protocol/src/index";
 
 /**
@@ -626,6 +627,19 @@ test("the open-threads list is capped, says so, and shows the newest", async () 
       newThread: { subject: subjects[i]! },
       payload: { note: "x" },
     });
+    // A real millisecond between threads, so "the newest" is a fact the
+    // fixture establishes rather than one it hopes for.
+    //
+    // `Thread.createdAt` is `clock.iso()` — millisecond resolution — and the
+    // id is not a tie-breaker either: `monotonicId`'s counter only advances
+    // when two ids land on the same `hrtime` residue, so ids minted in one
+    // millisecond differ only in their random suffix and sort arbitrarily.
+    // Nine sends in a tight loop therefore all share a `createdAt`, the
+    // descending sort is a no-op on them, and the cap keeps whichever six the
+    // Map happened to yield first — which made this test fail roughly one run
+    // in eight, on the assertion below, with no defect behind it. Real threads
+    // are seconds apart; only this fixture could collide.
+    await new Promise((r) => setTimeout(r, 2));
   }
 
   const bundle = buildAgentContext({ config: m.config, kernel: m.kernel }, "architect");
@@ -815,4 +829,144 @@ test("collapsing restatements actually saves lines on a chatty thread", () => {
   assert.ok(rendered < runs.length, `${runs.length} restatements rendered as ${rendered} lines`);
   assert.deepEqual(ids(shown), [runs[5]!.id], "the current state of the thread is what is shown");
   assert.equal(withheld[0]!.messages.length, 5, "and the five it replaced are all accounted for");
+});
+
+/* ------------------------------------------------------------------ *
+ * Claims: the pull path, and the mail it refuses to pull              *
+ * ------------------------------------------------------------------ */
+
+/**
+ * `wake.mail: "claims"` renders a message's header and withholds its body.
+ *
+ * The seat that asked for this is a low-contact one drowning in news, so the
+ * question worth pinning is not "are there fewer tokens" but "can it still
+ * tell what it is not being shown, and does it still see everything it owes".
+ */
+async function claimsMesh() {
+  return makeMesh({
+    agents: [
+      { id: "architect", role: "architect", capabilities: ["review.design"], interests: [] },
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [], wake: { mail: "claims" } },
+      { id: "qa", role: "qa", capabilities: ["test.execute"], interests: [] },
+    ],
+    mayContact: { architect: ["dev", "qa"], dev: ["architect", "qa"], qa: ["architect", "dev"] },
+    mode: "parked",
+  });
+}
+
+/**
+ * The Unread mail section alone: its heading through to the next `##` heading.
+ *
+ * Scoped rather than `slice(indexOf("## Unread mail"))`, which runs to the end
+ * of the document and would let a later section satisfy — or break — an
+ * assertion about this one. The claims tests below assert absences as well as
+ * presences, and an absence asserted over the whole prompt is a test that goes
+ * red the day some unrelated section learns the same word.
+ */
+function mailSection(m: MeshInstance, agent = "dev"): string {
+  const text = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, agent));
+  const start = text.indexOf("## Unread mail");
+  if (start === -1) return "";
+  const end = text.slice(start).search(/\n## /);
+  return end === -1 ? text.slice(start) : text.slice(start, start + end);
+}
+
+test("claims mode withholds an FYI's body and says so, without draining it", async () => {
+  const m = await claimsMesh();
+  const fyi = await m.supervisor.sendMessage({
+    from: "qa",
+    to: ["dev"],
+    type: "INFORM",
+    newThread: { subject: "the freeze starts friday" },
+    payload: { heads_up: "the freeze starts friday", window_hours: 48 },
+    note: "nothing here needs you",
+  });
+
+  const bundle = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev");
+  assert.equal(bundle.wakeMail, "claims", "the seat's setting reaches the bundle the renderer reads");
+  const mail = mailSection(m);
+
+  // A CLAIM, not a hole. The sender, type, thread and subject survive, so the
+  // line says what arrived and where to get it -- a bare "[msg-3]" would be a
+  // pointer into nowhere.
+  assert.match(mail, /qa → dev INFORM/);
+  assert.match(mail, /the freeze starts friday/, "the thread subject still names the conversation");
+  assert.match(mail, /body withheld/);
+  // And the fetch is named once, with the tool that actually returns it. Without
+  // this line the reader is told a body exists and left to guess how to see it.
+  assert.match(mail, /mesh_inbox/);
+  // Withheld means withheld: the payload JSON and the note are not on the page.
+  assert.doesNotMatch(mail, /window_hours/, "the body is not rendered");
+  assert.doesNotMatch(mail, /nothing here needs you/, "nor is the note beside it");
+
+  // The claim is a rendering, so the message is owed exactly as before. Nothing
+  // here may drain it -- a mode that made mail disappear would be a rationing
+  // knob that silently loses messages.
+  assert.equal(m.kernel.state.unread.get("dev")!.length, 1, "the mail is untouched by having been summarised");
+  assert.equal([...m.kernel.state.pendingRequests.keys()].includes(fyi.messageId!), false, "an FYI never owed anything to begin with");
+
+  await m.cleanup();
+});
+
+test("claims mode renders an ask in FULL, in the same page that claims an FYI", async () => {
+  const m = await claimsMesh();
+  await m.supervisor.sendMessage({
+    from: "architect",
+    to: ["dev"],
+    type: "REQUEST_REVIEW",
+    newThread: { subject: "the retry policy" },
+    payload: { question: "does this hold under a partial outage?" },
+    note: "the question is the whole ask",
+  });
+  // Same turn, same page, no obligation: the control for the assertions below.
+  // Without it this test passes in a mesh where claims mode was never wired up
+  // at all -- "the ask kept its body" is true of every mode.
+  await m.supervisor.sendMessage({
+    from: "qa",
+    to: ["dev"],
+    type: "INFORM",
+    newThread: { subject: "the freeze starts friday" },
+    payload: { heads_up: "the freeze starts friday" },
+  });
+
+  const mail = mailSection(m);
+
+  // The whole point of the split. `message.delivered` marks this answered when
+  // the turn ends, so a seat shown only "architect sent you a REQUEST_REVIEW"
+  // and then marked answered would have been made to answer blind -- the one
+  // outcome a claim mode must never produce.
+  assert.match(mail, /ANSWER OWED/);
+  assert.match(mail, /does this hold under a partial outage\?/, "an ask keeps its body in claims mode");
+  assert.match(mail, /note \(prose from architect/, "and its note, labelled as prose");
+  assert.match(mail, /contract: none/, "and the contract line, which is what tells the debtor how to decline");
+  // The boundary, in one render: the news on the same page is a claim. Without
+  // this line the test cannot tell "obliging mail is exempt" from "claims mode
+  // does nothing".
+  assert.match(mail, /the freeze starts friday/);
+  assert.match(mail, /body withheld/);
+  assert.doesNotMatch(mail, /heads_up/, "the FYI's body is the one that was deferred");
+  // And the mark is on the FYI's line, not the ask's: the section is mixed, so
+  // "body withheld appears somewhere" would be satisfied by marking the wrong
+  // message.
+  const askLine = mail.split("\n").find((l) => l.includes("REQUEST_REVIEW"))!;
+  assert.ok(askLine, "the ask is on the page");
+  assert.doesNotMatch(askLine, /body withheld/, "nothing about an ask is deferred");
+
+  await m.cleanup();
+});
+
+test("claims mode does not teach a seat to fetch when there is nothing withheld", async () => {
+  const m = await claimsMesh();
+  await m.supervisor.sendMessage({
+    from: "architect",
+    to: ["dev"],
+    type: "REQUEST_REVIEW",
+    newThread: { subject: "the retry policy" },
+    payload: { question: "does this hold?" },
+  });
+
+  const mail = mailSection(m);
+  assert.doesNotMatch(mail, /mesh_inbox/, "a seat with no claims would be told to reach for a tool it has no reason to call");
+
+  await m.cleanup();
 });

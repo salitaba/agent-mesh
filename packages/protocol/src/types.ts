@@ -904,6 +904,30 @@ export interface WakePolicy {
    * `may_be_contacted_by` already strikes one step harder.
    */
   deferNonObliging?: boolean;
+  /**
+   * How much of a NON-OBLIGING message the wake carries: `"full"` (the default)
+   * inlines the body, `"claims"` renders a one-line claim and leaves the body to
+   * be fetched with `mesh_inbox`.
+   *
+   * This is "push the obligation, pull the content", and the split falls at the
+   * obligation rather than at a size threshold on purpose: a message that owes
+   * this seat an answer is the reason the turn exists, so its body is always
+   * inlined and a seat can never answer one blind. Only mail that obliges
+   * nothing — the half a wake *interrupts* for rather than *owes* — becomes a
+   * claim.
+   *
+   * What it does not do is un-deliver anything. `message.delivered` is emitted
+   * for mail the turn RENDERED and the model ANSWERED (`supervisor.ts`), and a
+   * claim line is a rendering: the seat was told the message exists, by id, with
+   * its sender, type, priority and thread. The debt therefore closes exactly as
+   * it did before; what is deferred is the *reading*, not the receipt.
+   *
+   * Off by default, and it should stay that way until a mission says otherwise:
+   * the measured `Unread mail` section is 2.2% of a turn's briefing block
+   * (`NOTES-communication-measured-review.md` §1d), so this is a contact-quality
+   * lever, not a cost one.
+   */
+  mail?: "full" | "claims";
 }
 
 export interface AgentRuntimeState {
@@ -2357,6 +2381,21 @@ export interface AgentContextBundle {
    * layer can enforce, so the prompt never threatens a rule that cannot fire.
    */
   hardActions?: HardActionsPolicy;
+  /**
+   * How much of each message's content this seat's prompt carries: the whole
+   * body (`"full"`, the default and what every mesh written before this key
+   * gets), or a one-line claim per message for mail that owes the reader
+   * nothing (`"claims"`).
+   *
+   * Resolved from `agents.<id>.wake.mail` by the turn builder, and read by the
+   * renderer with a `"full"` fallback so a hand-built bundle is unchanged.
+   * Under `claims` the body is not lost -- it is in the mailbox, and
+   * `mesh_inbox` returns it -- but the recipient was not SHOWN it, which is
+   * why obliging mail keeps its body in both modes: `message.delivered` marks
+   * a message answered once the turn ends, and a seat must never be made to
+   * answer something it was not shown.
+   */
+  wakeMail?: "full" | "claims";
 }
 
 export interface CreateGoalInput {

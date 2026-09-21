@@ -74,3 +74,26 @@ test("wake: a typo inside the block is a load error, not a silent no-op", () => 
     "a misspelled key that loaded cleanly would leave the seat waking for everything",
   );
 });
+
+test("wake: mail is carried only when declared, and absence is the full body", () => {
+  // Same discipline as the block itself, one level down. A resolved definition
+  // that materialised `mail: "full"` on every seat would say nothing new while
+  // changing every fixture that deep-equals one — and `"full"` is what the
+  // renderer already falls back to, so the explicit form would be a second
+  // spelling of the default.
+  assert.equal(load("", "    wake: { defer_non_obliging: true }\n").wake?.mail, undefined);
+  assert.deepEqual(load("", "    wake: { mail: claims }\n").wake, { deferNonObliging: false, mail: "claims" });
+  assert.deepEqual(load("", "    wake: { defer_non_obliging: true, mail: full }\n").wake, {
+    deferNonObliging: true,
+    mail: "full",
+  });
+});
+
+test("wake: a mail mode outside the two is a load error", () => {
+  // The value decides whether a message's body reaches the model at all, so a
+  // typo has to fail at load: silently falling back to `full` would look like
+  // the setting worked, and the operator would keep paying for the bodies they
+  // asked to defer.
+  assert.throws(() => load("", "    wake: { mail: claim }\n"), /mail|enum/i);
+  assert.throws(() => load("", "    wake: { mail: true }\n"), /mail|must be string/i);
+});

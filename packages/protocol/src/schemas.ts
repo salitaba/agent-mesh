@@ -207,9 +207,17 @@ const agentConfigSchema = {
     // per-agent copy, and every seat would keep waking. Absent IS the default
     // for this block (see `RawWakePolicy`), so the schema refuses it in the
     // wrong place rather than accepting a key nothing reads.
+    // `mail` is the pull path: `"claims"` renders non-obliging mail as a
+    // one-line claim whose body is fetched by reading the inbox, while mail
+    // that obliges the recipient keeps its body either way -- a seat must
+    // never be asked to answer something it was not shown. Absent is `"full"`,
+    // which is what every mesh written before this key gets.
     wake: {
       type: "object",
-      properties: { defer_non_obliging: { type: "boolean" } },
+      properties: {
+        defer_non_obliging: { type: "boolean" },
+        mail: { type: "string", enum: ["full", "claims"] },
+      },
       additionalProperties: false,
     },
     budget: {

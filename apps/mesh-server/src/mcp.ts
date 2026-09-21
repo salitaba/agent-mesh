@@ -449,12 +449,18 @@ export class McpToolset {
    * that rule was written to prevent. This only SHOWS the queue: answering what
    * it read leaves the rest owed, and the seat is still woken for the rest.
    *
-   * That is also what makes this different from the "pull path" proposed in the
-   * communication review, and worth stating because the two get confused. This
-   * does not replace a wake with a pull; a seat that is never woken learns
-   * nothing from it. It answers the narrower question a woken seat cannot ask
-   * today: the turn renders `selectUnread`'s top 12 and says nothing about the
-   * rest, so a burst of 40 and a burst of 2 look identical from inside the turn.
+   * That is also what makes this the FETCH half of the pull path rather than
+   * the whole of it. On its own it does not replace a wake with a pull; a seat
+   * that is never woken learns nothing from it. It answers the narrower
+   * question a woken seat cannot ask today: the turn renders `selectUnread`'s
+   * top 12 and says nothing about the rest, so a burst of 40 and a burst of 2
+   * look identical from inside the turn.
+   *
+   * The PUSH half is `agents.<id>.wake.mail: "claims"`, which makes a turn
+   * render a bare claim per message instead of the body for mail that owes the
+   * reader nothing. Ship them together: the claim line names the message, this
+   * returns it, and obliging mail is inlined by the renderer in both modes so
+   * the pair never asks a seat to answer something it was not shown.
    */
   private inboxView(agentId: string, a: Record<string, any>): Record<string, unknown> {
     const state = this.supervisor.state;

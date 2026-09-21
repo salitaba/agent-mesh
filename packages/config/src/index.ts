@@ -322,22 +322,20 @@ export interface RawMeshFile {
       wait_wakeup_ms?: number;
       lease_ttl_ms?: number;
       /**
-       * INERT. Declared, schema'd, resolved and defaulted, and read by no code
-       * anywhere: the scheduler declares the mesh idle on the first moment its
-       * queue and its running turns are both empty (`Scheduler.checkIdle`), so
-       * there is no quiet period for this to configure and no debounce to tune.
+       * How long the mesh must be quiet — no queued activation and no running
+       * turn — before `Scheduler.checkIdle` declares it idle and fires its
+       * listeners (which is what starts the watchdog scan that can complete or
+       * escalate the goal).
        *
-       * Named `idleQuietPeriodMs` in the resolved config, which documents the
-       * same inertness. Deliberately NOT wired to a load warning like
-       * `scheduling.activation.*` is: the designer exposes this key as an
-       * editable field and `tests/helpers.ts` writes it into every fixture, so
-       * a warning would fire on essentially every config in this repo rather
-       * than on the ones that made a choice.
+       * It was inert for as long as it existed: the scheduler used to declare
+       * the idle moment on the instant the queue and the running map were both
+       * empty, so there was no quiet period for this to configure and no
+       * debounce to tune. The dwell now exists, and `0` (or below) is the escape
+       * hatch back to the old edge-triggered behaviour.
        *
-       * Kept rather than deleted because it is schema'd on a block that is
-       * `additionalProperties: false`, so dropping the property would turn
-       * every config that sets it — including everything `tests/helpers.ts`
-       * writes — into a hard validation failure.
+       * Deliberately NOT wired to a load warning like `scheduling.activation.*`
+       * is: nothing about the key is malformed, and `tests/helpers.ts` writes it
+       * into every fixture.
        */
       idle_quiet_period_ms?: number;
       /** Mission-quiet threshold before the stall watchdog nudges a driver. */
@@ -389,6 +387,7 @@ export interface RawHardActions {
  */
 export interface RawWakePolicy {
   defer_non_obliging?: boolean;
+  mail?: "full" | "claims";
 }
 
 export interface RawAgent {
@@ -611,12 +610,9 @@ export interface ResolvedMeshConfig {
     waitWakeupMs: number;
     leaseTtlMs: number;
     /**
-     * INERT: resolved, defaulted to 30000, and read by nothing. The scheduler
-     * declares an idle moment the instant no turn is running and its queue is
-     * empty, with no dwell time before it, so setting this key changes nothing
-     * about when the mesh goes idle. See the raw key
-     * (`scheduling.timeouts.idle_quiet_period_ms`) for why it is held rather
-     * than removed.
+     * How long the mesh must be quiet before `Scheduler.checkIdle` declares it
+     * idle, defaulting to 30000. `0` restores the old edge-triggered behaviour
+     * (declare on the instant the queue and the running map are both empty).
      */
     idleQuietPeriodMs: number;
     /** Mission-quiet threshold before the stall watchdog nudges a driver. */
@@ -923,7 +919,13 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       // default, so materialising `{ deferNonObliging: false }` on every seat
       // would change every resolved definition — and every fixture that
       // deep-equals one — to say nothing new.
-      ...(a.wake ? { wake: { deferNonObliging: a.wake.defer_non_obliging ?? false } } : {}),
+      //
+      // `mail` is carried only when declared, for the same reason one level
+      // down: its absence already means `"full"`, and an explicit `mail:
+      // undefined` is a key a deep-equal would see.
+      ...(a.wake
+        ? { wake: { deferNonObliging: a.wake.defer_non_obliging ?? false, ...(a.wake.mail !== undefined ? { mail: a.wake.mail } : {}) } }
+        : {}),
     };
     agents[id] = def;
     if (def.budget.tokens !== undefined) perAgentBudget[id] = def.budget.tokens;

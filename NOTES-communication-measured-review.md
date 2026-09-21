@@ -166,8 +166,16 @@ surface". (Both counts are as found; §10 makes it 47 and one.)
 tool, `mesh_inbox`, shows a seat its own queue. It is a *view*, not a pull: it never emits
 `message.delivered`, so the wake path is untouched and a seat that is **not** woken still learns
 nothing from it. What it fixes is the narrower defect 4c describes — a woken seat was handed the
-top 12 and told nothing about the rest — rather than the one this paragraph describes. The pull
-model, in the form §6 M5 proposed it, remains unshipped and still needs a decision.
+top 12 and told nothing about the rest — rather than the one this paragraph describes.
+
+**Then the pull path itself shipped, in the only form that is safe (see §10).** `mesh_inbox` is
+the *fetch*; `agents.<id>.wake.mail: "claims"` is the *push*, and it makes a turn render a
+one-line claim per message instead of the body — for mail that owes the reader nothing. Mail
+that obliges the reader keeps its body in both modes, which is the correction that makes this
+safe to build at all: `message.delivered` marks a message answered when the turn ends, so a
+recipient handed a bare claim and then marked answered would have been made to answer blind.
+Deferred is the *reading of news*, never a question. It is off by default and measured at ~0.2%
+of mission input (§1d), so it is a contact-quality lever rather than a cost one.
 
 **4c. A burst loses its own shape.** `Scheduler.gather()` records `count` and **never uses it**.
 A burst of 40 messages costs the same wake as a burst of 2, and the woken seat is told nothing
@@ -197,10 +205,13 @@ queued. The single cheapest quality win available: surface the count. **Fixed in
 > trade-off rather than a gap. Left alone deliberately.
 
 **4e. Dead code in the wake path.** `notifyMailDelivered` has no caller (deleted — §10).
-`idleQuietPeriodMs` is resolved and never read (documented as inert — §10). `MeshMessage.ttl` is
+`idleQuietPeriodMs` was resolved and never read (documented as inert) — **now implemented**
+(§10): it is the dwell before the scheduler declares an idle moment, which is what makes the
+declaration mean "this mesh has been quiet", not "this instant happened to be empty". `MeshMessage.ttl` is
 declared and read by nothing (§10). `deny.contact` and `when.to` were documented policy-rule fields
 that `matchRule` never read — a config using them validated and silently did nothing; both are
-fixed in §10.
+fixed in §10. `matchRule`'s `authority` parameter was declared, passed and never compared; the
+parameter is gone (§10), with the one denial it still performs documented in place.
 
 ---
 
@@ -329,8 +340,28 @@ does not make that trade: it changes nothing about *when* a seat wakes, only wha
 **already awake** can see. The defect it closes is the one §4c lists — the turn renders
 `selectUnread`'s top 12 and is silent about the remainder — so a seat that is woken with a full
 box can now see the whole box and page through it, inside a turn it already bought. No protocol
-change, no wake-path change, no new failure mode. The pull model is still unshipped and still
-wants the §8.4 decision.
+change, no wake-path change, no new failure mode.
+
+**And then the read path, in the form the evidence actually supports.** `agents.<id>.wake.mail:
+"claims"` splits M5's read path at the obligation instead of at a size threshold: `mesh_inbox` is
+the fetch half, and a claim line is the push half. It answers the retraction above on the two
+points that retraction was about:
+
+- **"A seat can choose not to look"** — it can, but only about mail it owes nothing on. Obliging
+  mail is inlined by the renderer in both modes, so the "woken and ignored" failure cannot reach
+  a question. What a seat may decline to read is news.
+- **"It should not be smuggled in as a cost fix"** — it is not, and §1d is why it cannot be: the
+  measured `Unread mail` section is 2.2% of a turn's briefing block (~0.2% of mission input), so
+  claim mode saves almost nothing. It is documented as a contact-quality lever, defaults to
+  `"full"`, and the default should not move until a mission asks for it.
+
+The reason the earlier form was wrong, stated plainly because it is a trap worth naming: deferring
+*rendering* is not the same as deferring *reading* when the drain is keyed on
+`renderableMail(bundle.unreadMail).shown` — a recomputation from the bundle, not the prompt string.
+Under a uniform claim mode, mail whose body was never shown still gets `message.delivered` when the
+turn ends. "Delivered means rendered AND answered" would quietly weaken to "mentioned AND
+answered", for a measured 0.2% of input. Splitting at the obligation is what keeps the sentence
+true.
 
 ---
 
@@ -348,11 +379,11 @@ next reader learns the wrong thing.
 | 5 | ~~`deny.contact` and `when.to` are documented policy-rule fields; `matchRule` reads neither~~ **both fixed** — `when.to` now binds (§10), `deny.contact` deleted + warned (§10) | `config:399,410` vs `policy-engine:292-309` |
 | 6 | `REQUEST_TYPES` is exported and `@deprecated` because it cannot answer "does this oblige?" | `catalog.ts:376-389` |
 | 7 | `vocabulary: "contracts"` is **advertisement only** — `callTool` resolves against the unfiltered map, so nothing is enforced | `mcp.ts:98-103` |
-| 8 | Dead: ~~`notifyMailDelivered`~~ (removed), ~~`MeshMessage.ttl`~~ (removed, loud — see §10), `idleQuietPeriodMs` (still never read; documented, not implemented) | various |
+| 8 | Dead: ~~`notifyMailDelivered`~~ (removed), ~~`MeshMessage.ttl`~~ (removed, loud — see §10), ~~`idleQuietPeriodMs`~~ **implemented** (§10) as the scheduler's idle dwell — the one "documented, not implemented" item in this sweep that turned out to want a reader rather than deletion | various |
 | 9 | ~~**`when.event` is read but never compared** — its only read is `if (w.event && !match.message) continue`, which tests *that a rule has an event clause*, not the event. `when: { event: "artifact.published" }` silently applies to message sends; the value is never validated.~~ **Removed** (§10): the clause and the guard are gone, and a config still setting it is refused at load. The guard was the only thing scoping such a rule to message evaluation, so removing the clause **widens** the rule to capability and authority checks — which is exactly why the refusal is an error and not a warning | `policy-engine:316` |
 | 10 | ~~**The rule surface is unvalidated end to end**~~ — **closed** (§10): every clause above is now checked at load, capabilities and message types as errors, `when.actor_role` and `when.to` as warnings. `policies.rules` is still `{ type: "array" }` with no `items`, so AJV still checks nothing inside a rule; the cross-field pass is what carries this, and it is now the whole clause surface rather than two fields. Because the array has no `items`, the *shape* of a rule is still enforced nowhere — the clause checks read defensively and tolerate what they do not recognise, which is what keeps a hand-written mesh loading | `schemas.ts:352`, `config:922-926` |
 | 11 | ~~`RawPolicyRule.requires` (`{ approvals?, evidence? }` on a *rule*) is entirely inert~~ **Removed** (§10), with an aggregated load warning rather than an error — it is inert in both directions, so removing it cannot widen anything. Name collision with the live `MeshMessage.requires` goes with it | `config:425-428` vs `policy-engine:492`, `supervisor.ts:1664` |
-| 12 | `matchRule`'s `authority` parameter is declared and passed by both callers, never read — there is no `when.authority`, so an authority evaluation matches on actor/role alone, and `policy-engine:144` denies an authority whenever *any* matching rule denies *any* capability | `policy-engine:296,125,143` |
+| 12 | ~~`matchRule`'s `authority` parameter is declared and passed by both callers, never read~~ **Removed** (§10): the parameter is gone and `matchRule`'s doc comment records what the match shape actually compares. There is still no `when.authority` — an authority matches on actor and role alone — and `policy-engine:144` still denies a **held** authority whenever the matched rule names any `deny.capabilities`. That last one is deliberately left: narrowing it removes a DENY, which is a permission *widening*, so it wants its own decision rather than a cleanup commit | `policy-engine:296,125,143` |
 
 > **Correction.** Row 8 first listed `Scheduler.triagedAway` as "counter only" and dead. It is
 > not: `triagedAwayCount()` is read by the status endpoint
@@ -428,6 +459,15 @@ fixed.
    that is already awake. It is not the read path — it buys no wake and so changes no failure
    mode — but it does close the "top 12 and silence" gap in §4c, which is the part of this
    question that had a defect behind it rather than a trade-off.
+
+   **Superseded: the read path itself then shipped, and this item is the reason it looks the way
+   it does.** Once the safe form was clear — split at the *obligation*, not at a size threshold,
+   so obliging mail keeps its body and a seat is never marked answered on a body it was not shown
+   — the two objections above stopped applying: the failure-mode change cannot reach a question,
+   and the cost argument is not the justification (it is 0.2% of input by §1d, and the key
+   defaults to `full`). So `agents.<id>.wake.mail: "claims"` shipped as an opt-in per-seat seam
+   whose fetch half is the tool this item describes. The decision record is §6 M5; the shipped
+   form is §10.
 5. **Whether to keep paying for the mail-path work at all.** §1d is the uncomfortable part: the
    last two rounds optimised a fifth of the bill. That does not make them wrong — contact quality
    is a product goal, not only a cost one — but the next round should be aimed at §1.
@@ -476,7 +516,7 @@ did *not*, because a status section that only lists successes is the same failur
 that documents a field nobody reads.
 
 **Shipped, verified green** (`npm run typecheck` clean; `eslint` 0 errors on every touched file; full
-suite **1620 pass / 0 fail**):
+suite **1628 pass / 0 fail**):
 
 | Item | Change |
 |---|---|
@@ -496,6 +536,9 @@ suite **1620 pass / 0 fail**):
 | **A rule written with no `when` at all** | The load-time actor check read `if (rule.when.actor && …)` unguarded, so a hand-written rule with no `when` block threw a raw `TypeError` out of config load instead of producing a diagnostic. `matchRule` had always tolerated the absence (`rule.when ?? {}`), which made the validator — not the engine — the odd one out. Pinned by a test that loads such a rule. |
 | **`mesh_inbox`** — a seat can see its own queue | A 47th MCP tool, read-only (`READ_TOOLS`), scoped to the caller and token-verified like every other. It renders the whole of `resolveUnread`, paged, with `total`/`truncated`/`nextOffset`, the thread subject resolved, and `answerOwed` computed from `obligesRecipients` — the same predicate the debt opens with. It deliberately **does not** emit `message.delivered`: a view is not a receipt, and `delivered` means rendered *and* answered, so a tool that drained would mark read what no prompt ever showed. The load-bearing assertion in `tests/integration/mcp-inbox.test.ts` is that both `readableMailDepth` and the projection's `unread` list are unchanged after the call, and the test runs `mode: "parked"` so a live scheduler cannot answer the mail underneath the assertions. |
 | **`Designer.renameAgent` left stale rule references** | Renaming a seat rewrote every other place its id appeared except `policies.rules[].when.actor` and `.to`, so the designer produced a config that then **failed to load** — the actor-coverage check above refuses a rule naming a seat that does not exist. The rename now carries the rule clauses with it, which is what lets that check ship without turning the designer into a way to brick a mesh. |
+| **§8.4 — the pull path, as an opt-in per-seat seam** | `wake: { mail: "full" \| "claims" }` (`types.ts` → `WakePolicy` and `AgentContextBundle.wakeMail`, `config`, `protocol/schemas.ts` + `schemas/mesh.schema.json`, `docs/configuration.md`, `core/context.ts`, and the `mesh_inbox` doc comment that described itself as *not* this). Under `claims` a message renders as its header line plus a `body withheld` mark, and `mesh_inbox` returns the body. **The split is at the obligation, not at a size threshold**: `obligesRecipients` keeps a body inline in both modes, because the drain keys `message.delivered` on `renderableMail(...).shown` — a recomputation from the bundle, not the prompt string — so a uniform claim mode would have quietly weakened "delivered means rendered AND answered" to "mentioned AND answered". Off by default: §1d measures the whole `Unread mail` section at 2.2% of a turn's briefing block (~0.2% of mission input), so this is a contact-quality lever, not a cost one, and the default should not move until a mission asks. The fetch line is rendered once per section, and only when something actually was withheld — a seat with nothing to fetch is not taught to reach for a tool. |
+| **§7 row 12** — `matchRule`'s dead `authority` parameter | Removed from the inline match type and from both call sites, with a doc comment recording what the match shape does compare (actor, role, recipient, message type, capability) and why there is deliberately no `authority` clause. `docs/configuration.md` gains a `when.authority` row: **does not exist, and never did.** The one denial the parameter's presence obscured is left in place and now documented at the call site: `evaluateAuthority` still denies a **held** authority whenever the matched rule names any `deny.capabilities`, which is a permission *narrowing*, so undoing it is a widening that wants its own decision. |
+| **§7 row 8** — `idleQuietPeriodMs`, which turned out to want a reader | `Scheduler.checkIdle` now arms a `setTimeout` for `scheduling.idle_quiet_period_ms` before declaring the idle moment, re-arming on any work and cancelling on stop/reset. The old edge-trigger fired on *any* instant the queue happened to be empty, which on a live mission is a moment, not a state — and the declaration is what the supervisor reads as "this mesh has gone quiet". `0` remains the escape hatch and declares idle in the pump with no timer, because `wait_wakeup_ms` (60s in prod) is far longer than a short quiet window and a sweep-based dwell would never fire. The three tests in `tests/scheduler/scheduler.test.ts` pin the dwell, the abandonment on work, and the zero-timer path. |
 
 **Not shipped, and why:**
 
@@ -505,17 +548,19 @@ suite **1620 pass / 0 fail**):
   risk to the briefing's steering role. Not worth it. Dropped rather than deferred.
 - **M1c — not needed.** It was the blunt alternative to M1b; shipping both would be two bounds on
   one failure.
-- **The read path (`mesh_read`) — deliberately not shipped.** §6 argues it should be decided on
-  its own merits; the pull model converts "never woken" into "woken and ignored", which is a
-  different failure and not obviously better. `mesh_inbox` is not this, and the difference is the
-  point: it buys no wake, so it changes no failure mode. It closes only the "top 12 and silence"
-  gap — a seat already awake can now see the rest — and a seat that is *not* woken still learns
-  nothing from it.
-- **`idleQuietPeriodMs` — documented, not implemented.** It has no reader anywhere; the fix
-  belongs in `Scheduler.checkIdle` (a dwell timer before declaring the mesh idle), and the
-  doc comments now say so rather than leaving the next reader to discover it. It is *not* warned
-  at load, because `tests/helpers.ts:265` writes it into every fixture in the repo.
-- **§7 rows 11-12** — reported, not fixed; neither is reachable from an operator's config.
+- **The read path as an unconditional default — deliberately not shipped.** The pull model on its
+  own converts "never woken" into "woken and ignored", which is a different failure and not
+  obviously better, and §1d removes the cost argument that would have justified it: mail is 0.2%
+  of mission input. So it shipped as an opt-in seam that cannot reach a question (see the
+  `§8.4` row above) rather than as a default. `mesh_inbox` remains the half that buys no wake and
+  so changes no failure mode; a seat that is *not* woken still learns nothing from either.
+- **`idleQuietPeriodMs` — implemented, closing the last "documented, not implemented" item in
+  §7 row 8.** The fix went where the entry said it belonged (`Scheduler.checkIdle`); the doc
+  comments in `config/src/index.ts` now describe a listener rather than an inert key. It is still
+  *not* warned at load, because `tests/helpers.ts` writes it into every fixture in the repo.
+- **§7 row 11** — removed, with the aggregated load warning described above. **Row 12** — the
+  parameter is gone; the denial it obscured is documented and left, because narrowing it is a
+  permission widening (see the row above).
 
 **Why row 10's new checks split between errors and warnings.** Not taste — it follows from whether
 a name can still turn up at runtime. A capability or a message type outside its catalog has no such
@@ -585,4 +630,25 @@ Every one of those compiled files was restored byte-for-byte (**sha256 checked, 
 and re-run green. The thresholds are derived from
 the §1 measurement rather than invented, and M1a means the next real mission can falsify them from
 data.
+
+**The three items after that commit got the same treatment, and one of them found a flake.**
+`wake.mail` in two halves: forcing `claimsOnly` to `false` in the compiled `core/context.ts` makes
+exactly the two claims tests go red — the FYI-withheld one and the ask-in-full one — while the
+"do not teach a seat to fetch" test correctly stays green, and dropping the `mail` thread-through
+in the compiled `config` makes exactly the resolve test go red. Both files restored byte-for-byte
+and re-run green. The `idleQuietPeriodMs` dwell was controlled the same way (restoring the
+edge-triggered `checkIdle` makes the two dwell tests red and the zero-window test green).
+
+The one that was *not* mine: adding these tests made
+`tests/core/context-inbox-order.test.ts`'s open-threads cap test fail about one run in eight, so
+before touching it I built HEAD in an isolated `git worktree` and ran it 15 times there —
+**2 failures at HEAD, 2 with my changes**, so the flake predates the work. The mechanism is worth
+recording because it is a fixture defect, not a production one: `Thread.createdAt` is
+`clock.iso()` (millisecond resolution) and the id is not a tie-breaker either — `monotonicId`'s
+counter only advances when two ids land on the same `hrtime` residue, so ids minted in one
+millisecond differ only in their random suffix. Nine sends in a tight loop therefore share a
+`createdAt`, the descending sort is a no-op on them, and the cap keeps whichever six the Map
+yields first — while the test asserts "the newest survives the cap". Real threads are seconds
+apart; only the fixture could collide. Fixed in the fixture (a real millisecond between sends) so
+the property the test asserts is one it establishes, and re-run 12 times clean.
 

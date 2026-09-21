@@ -122,7 +122,7 @@ export class PolicyEngine implements PolicyEvaluator {
     const required = `${subject}.${kind}`;
     const has = holdsAuthority(def.authority, subject, kind);
     if (!has) {
-      const rule = this.matchRule(ctx, { actorId, authority: required });
+      const rule = this.matchRule(ctx, { actorId });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `authority '${required}' missing; rule '${rule.id}' escalates`, ruleId: rule.id };
       // Name who CAN. This is the same remedy-legibility rule the criterion
       // accept path already follows when it names both authorities it tried:
@@ -140,7 +140,11 @@ export class PolicyEngine implements PolicyEvaluator {
       const remedy = holders.length > 0 ? ` — held by: ${holders.join(", ")}` : ` — no agent seat holds it`;
       return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}`, ruleId: "authority" };
     }
-    const rule = this.matchRule(ctx, { actorId, authority: required });
+    // `required` is not passed to matchRule: there is no `when.authority`, so an
+    // authority is matched on actor and role alone. The deny below is therefore
+    // the rule's *capability* denial applied to an authority that those
+    // capabilities do not describe — see matchRule's doc comment.
+    const rule = this.matchRule(ctx, { actorId });
     if (rule && (rule.deny?.capabilities?.length ?? 0) > 0) {
       return { decision: "DENY", reason: `authority '${required}' denied by rule '${rule.id}'`, ruleId: rule.id };
     }
@@ -292,9 +296,29 @@ export class PolicyEngine implements PolicyEvaluator {
     return ALLOW;
   }
 
+  /**
+   * The first rule in `this.rules` that a given evaluation matches, or
+   * `undefined`. Only the clauses that exist on `when` are compared: actor,
+   * actor_role, to, message_type, capability.
+   *
+   * There is deliberately no `authority` in the match shape. An authority
+   * evaluation passes only its actor, exactly as a capability evaluation passes
+   * only its actor and capability, because there is no `when.authority` clause
+   * for a token to be compared against — an authority matches on actor and role
+   * alone. The parameter that used to carry `${subject}.${kind}` was read by
+   * nothing, and its presence implied a clause that does not exist; deleting it
+   * is what makes the code say what it does.
+   *
+   * What that leaves, recorded rather than silently fixed: `evaluateAuthority`
+   * still denies a HELD authority whenever the matched rule carries any
+   * `deny.capabilities`, even though those capabilities have nothing to do with
+   * `${subject}.${kind}`. Narrowing that is a permission *widening* — it removes
+   * a DENY — so it wants its own decision rather than a cleanup commit. See
+   * `NOTES-communication-measured-review.md` §7 row 12.
+   */
   private matchRule(
     ctx: PolicyContext,
-    match: { actorId?: string; message?: string; capability?: string; authority?: string; recipients?: string[] },
+    match: { actorId?: string; message?: string; capability?: string; recipients?: string[] },
   ): RawPolicyRule | undefined {
     for (const rule of this.rules) {
       const w = rule.when ?? {};

@@ -114,6 +114,13 @@ export class Scheduler implements SchedulerPort {
   private listeners: Array<() => void> = [];
   private stopped = true;
   private idleFired = true;
+  /**
+   * When the current quiet stretch began, or null when no quiet period is in
+   * progress. Paired with `idleTimer`, the two are the dwell `checkIdle` used to
+   * skip entirely — the resolved `idleQuietPeriodMs` is what they count down.
+   */
+  private idleArmedAt: number | null = null;
+  private idleTimer?: NodeJS.Timeout;
   private lastNudge = new Map<string, number>();
   /**
    * `deliver`-class mail that has landed and not yet bought a turn, per seat.
@@ -176,6 +183,10 @@ export class Scheduler implements SchedulerPort {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    // A dwell in flight would otherwise outlive the stop and declare an idle
+    // mesh after the mission it belonged to is over.
+    this.clearIdleTimer();
+    this.idleArmedAt = null;
     // An owed respawn survives the stop: a completion shutdown only ever comes
     // back through a reopen, and the restart it owes must still be owed then.
     // Everything else in the queue is stale by construction — the mission that
@@ -209,6 +220,8 @@ export class Scheduler implements SchedulerPort {
     this.lastNudge = new Map();
     this.gathering = new Map();
     this.interests = new Map();
+    this.clearIdleTimer();
+    this.idleArmedAt = null;
     this.idleFired = true;
   }
 
@@ -830,11 +843,61 @@ export class Scheduler implements SchedulerPort {
     this.listeners.push(callback);
   }
 
+  /**
+   * Declare the mesh idle once it has been quiet for `idleQuietPeriodMs`.
+   *
+   * This used to fire on the instant the queue and the running map were both
+   * empty, which is what made the resolved `idleQuietPeriodMs` inert: a mesh
+   * going quiet between two bursts announced an idle moment it was about to
+   * end, and the watchdog scan that announcement triggers ran against a mesh
+   * that was still working. The setting is a *quiet period*, so the clock starts
+   * when the mesh stops, not the moment its last turn cleared.
+   *
+   * A dedicated timer rather than a check inside `tickWaiting`'s sweep, which is
+   * how the `deliver`-class gather window does it: that sweep runs every
+   * `waitWakeupMs` — 60s by default — against a 30s default window, so a dwell
+   * living there would be quantized to a minute in production. `stop()` already
+   * schedules a bare timeout, so a timer is not foreign to this class.
+   */
   private checkIdle(): void {
-    if (this.queue.length === 0 && this.runningMap.size === 0 && !this.idleFired) {
-      this.idleFired = true;
-      for (const cb of this.listeners) cb();
+    if (this.queue.length > 0 || this.runningMap.size > 0) {
+      // Work is queued or running, so no quiet period is in progress. A dwell
+      // already counting down is abandoned rather than left to fire, since it
+      // would announce an idle mesh that is demonstrably busy.
+      this.clearIdleTimer();
+      this.idleArmedAt = null;
+      return;
     }
+    if (this.idleFired) return;
+    const quietMs = this.config.scheduling.idleQuietPeriodMs;
+    // Zero or below keeps the old edge-triggered behaviour, which is the escape
+    // hatch for a mesh that wants the idle moment on the instant it is quiet.
+    if (quietMs <= 0) {
+      this.declareIdle();
+      return;
+    }
+    if (this.idleArmedAt !== null) return;
+    this.idleArmedAt = Date.now();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined;
+      this.idleArmedAt = null;
+      // Re-checked rather than assumed. `checkIdle` is only reached from the
+      // pump, and an admission's own pump clears this timer — but a timer that
+      // has already been queued still runs its callback, so the quiet condition
+      // is tested again here instead of being trusted to have held.
+      if (this.queue.length === 0 && this.runningMap.size === 0 && !this.idleFired) this.declareIdle();
+    }, quietMs);
+    this.idleTimer.unref?.();
+  }
+
+  private declareIdle(): void {
+    this.idleFired = true;
+    for (const cb of this.listeners) cb();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
   }
 
   private tickWaiting(): void {

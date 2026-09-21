@@ -29,8 +29,15 @@ export interface AgentSpec {
   persistent?: boolean;
   delegation?: { allow: boolean; max_depth: number; max_workers: number; worker_budget_tokens?: number };
   hardActions?: { mode: "off" | "warn" | "enforce"; capabilities?: string[] };
-  /** What this seat is willing to be woken for. Absent means "everything". */
-  wake?: { deferNonObliging?: boolean };
+  /**
+   * What this seat is willing to be woken for. Absent means "everything".
+   *
+   * `mail` is the other half of the same question: `deferNonObliging` decides
+   * whether an FYI becomes a wake at all, and `mail: "claims"` decides how much
+   * of a woken message's CONTENT the prompt carries. They compose, and a mesh
+   * that wants low contact sets both.
+   */
+  wake?: { deferNonObliging?: boolean; mail?: "full" | "claims" };
 }
 
 export interface TestMeshOptions {
@@ -59,6 +66,8 @@ export interface TestMeshOptions {
   autoRaise?: { enabled?: boolean; factor?: number; maxMultiple?: number };
   waitWakeupMs?: number;
   turnTimeoutMs?: number;
+  /** How long the mesh must be quiet before the scheduler declares it idle. */
+  idleQuietPeriodMs?: number;
   stallIdleMs?: number;
   stallCooldownMs?: number;
   stallNoopRetryMs?: number;
@@ -208,7 +217,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
       if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
-      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false} }`);
+      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false}${a.wake.mail ? `, mail: ${a.wake.mail}` : ""} }`);
       if (a.delegation) lines.push(`    delegation: { allow: ${a.delegation.allow}, max_depth: ${a.delegation.max_depth}, max_workers: ${a.delegation.max_workers}${a.delegation.worker_budget_tokens ? `, worker_budget_tokens: ${a.delegation.worker_budget_tokens}` : ""} }`);
       return lines.join("\n");
     })
@@ -265,7 +274,7 @@ scheduling:
   mode: event-driven
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}
   concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4}${opts.maxTotalAgents !== undefined ? `, max_total_agents: ${opts.maxTotalAgents}` : ""} }
-  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: 300, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
+  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: ${opts.idleQuietPeriodMs ?? 300}, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
 `;
 }
 
