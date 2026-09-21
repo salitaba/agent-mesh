@@ -176,11 +176,6 @@ export interface ContractListing {
   providers: string[];
 }
 
-/** Accept `to` as a string or a list of them; anything else is not a recipient. */
-/**
- * The contract fields a desugared op carries, or nothing. Spread into a
- * message payload so `contractSlaOf` can find the SLA on replay.
- */
 /**
  * The contract stamp for a desugared op, as runtime-owned envelope control.
  *
@@ -196,6 +191,7 @@ function contractStamp(op: { contract?: string; contractVersion?: number }): Mes
   return { contract: op.contract, contractVersion: op.contractVersion };
 }
 
+/** Accept `to` as a string or a list of them; anything else is not a recipient. */
 function asIdList(v: unknown): string[] | undefined {
   if (typeof v === "string" && v.trim()) return [v.trim()];
   if (Array.isArray(v)) {
@@ -539,10 +535,16 @@ function declaredTurnSummary(output: AgentOutput): string | undefined {
  * its state writes a summary of the conversation, which is the one thing the
  * successor does not need — the projections already carry the facts, and the
  * mesh already carries the ledger. What is lost is judgement.
+ *
+ * The first line states the reason without claiming a window occupancy:
+ * `transcriptTokens` is the sum over a turn's model calls, not a context size,
+ * so "full (N of M context tokens)" told the seat a figure no single call ever
+ * read — 5,219,210 reported against a largest prompt of 165,129
+ * (`NOTES-communication-measured-review.md` §11c).
  */
 const HANDOVER_INSTRUCTION = (info: RotationPendingInfo): string =>
   [
-    `Your backend session is full (${info.transcriptTokens} of ${info.thresholdTokens} context tokens) and will be replaced before your next turn.`,
+    `Your backend session is being rotated — its last turn read ${info.transcriptTokens} tokens across its model calls, past the ${info.thresholdTokens} rotation threshold — and it will be replaced before your next turn.`,
     "Everything you are holding in your head goes with it. The mesh keeps the log, the artifacts and your open asks; it does not keep what you concluded from them.",
     "",
     "Spend this turn on `write_continuity`, then `done`. Nothing else will be accepted.",
@@ -6025,7 +6027,7 @@ export class Supervisor {
       } satisfies SessionRotationPending,
       { actorId: agentId, causationId, correlationId: turnId },
     );
-    this.auditLine(`${agentId} is at ${info.transcriptTokens}/${info.thresholdTokens} context tokens — spending this turn on a handover`);
+    this.auditLine(`${agentId} read ${info.transcriptTokens} tokens across its last turn's calls (rotation threshold ${info.thresholdTokens}) — spending this turn on a handover`);
     return info;
   }
 
