@@ -536,15 +536,17 @@ function declaredTurnSummary(output: AgentOutput): string | undefined {
  * successor does not need — the projections already carry the facts, and the
  * mesh already carries the ledger. What is lost is judgement.
  *
- * The first line states the reason without claiming a window occupancy:
- * `transcriptTokens` is the sum over a turn's model calls, not a context size,
- * so "full (N of M context tokens)" told the seat a figure no single call ever
- * read — 5,219,210 reported against a largest prompt of 165,129
+ * The first line states the reason as a context size, which is what it now is:
+ * `transcriptTokens` is the largest prompt a single model call of the rotation
+ * turn was handed (`promptSize`), i.e. the transcript the window had to hold —
+ * the quantity the threshold is named for. Before the adapter's measure was
+ * fixed it was a turn's summed reads, and the sentence had to say so: 5,219,210
+ * reported against a largest prompt of 165,129
  * (`NOTES-communication-measured-review.md` §11c).
  */
 const HANDOVER_INSTRUCTION = (info: RotationPendingInfo): string =>
   [
-    `Your backend session is being rotated — its last turn read ${info.transcriptTokens} tokens across its model calls, past the ${info.thresholdTokens} rotation threshold — and it will be replaced before your next turn.`,
+    `Your backend session is being rotated — it is holding ${info.transcriptTokens} tokens of context, past the ${info.thresholdTokens} rotation threshold — and it will be replaced before your next turn.`,
     "Everything you are holding in your head goes with it. The mesh keeps the log, the artifacts and your open asks; it does not keep what you concluded from them.",
     "",
     "Spend this turn on `write_continuity`, then `done`. Nothing else will be accepted.",
@@ -6027,7 +6029,7 @@ export class Supervisor {
       } satisfies SessionRotationPending,
       { actorId: agentId, causationId, correlationId: turnId },
     );
-    this.auditLine(`${agentId} read ${info.transcriptTokens} tokens across its last turn's calls (rotation threshold ${info.thresholdTokens}) — spending this turn on a handover`);
+    this.auditLine(`${agentId} is holding ${info.transcriptTokens} tokens of context (rotation threshold ${info.thresholdTokens}) — spending this turn on a handover`);
     return info;
   }
 

@@ -97,10 +97,18 @@ interface OpenedQuery {
  * `cacheReadPerTurn` is indexed by the query's spawn order rather than by turn,
  * which is what lets a test say "the first session was huge, the replacement
  * starts empty" without reaching into adapter internals.
+ *
+ * `cacheReadFor` sizes the `result` frame, whose usage the CLI reports SUMMED
+ * over the turn's model calls. `callPromptsFor` sizes the per-call `assistant`
+ * frames, which is where a real prompt size can be read. A test that omits it
+ * gets no assistant frames at all — which is the backend-reports-nothing case,
+ * and the reason every test written before the two measures were separated
+ * still exercises the summed fallback unchanged.
  */
 function fakeQueryFactory(opts: {
   cacheReadFor: (queryIndex: number, turnIndex: number) => number;
   failOnOpen?: (queryIndex: number) => boolean;
+  callPromptsFor?: (queryIndex: number, turnIndex: number) => number[];
 }) {
   const opened: OpenedQuery[] = [];
 
@@ -128,6 +136,28 @@ function fakeQueryFactory(opts: {
       let turnIndex = 0;
       for await (const msg of prompt as AsyncIterable<{ message: { content: string } }>) {
         record.prompts.push(msg.message.content);
+        // One assistant frame per model call, each carrying that call's own
+        // prompt split across the three terms the SDK says make it up:
+        // `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`.
+        // Split rather than dumped into one field so a reader that drops a term
+        // — which is what the adapter did with `cache_creation` — reports low
+        // here rather than passing.
+        for (const total of opts.callPromptsFor?.(index, turnIndex) ?? []) {
+          yield {
+            type: "assistant",
+            session_id: sdkSessionId,
+            message: {
+              model: String(options.model ?? "claude-test"),
+              content: [],
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: total - 30,
+              },
+            },
+          };
+        }
         yield {
           type: "result",
           subtype: "success",
@@ -218,6 +248,10 @@ test("crossing the threshold retires the SDK session and keeps serving the mesh 
   assert.equal(rotations[0].meshSessionId, session.sessionId, "the mesh's id is the stable one");
   assert.equal(rotations[0].previousSdkSessionId, opened[0].sdkSessionId);
   assert.equal(rotations[0].sdkSessionId, opened[1].sdkSessionId);
+  // The summed fallback: this fake reports no per-call usage, so there is no
+  // prompt size to read and the adapter falls back to the `result` frame's
+  // turn total. It over-states, which is the safe direction — a seat rotates
+  // early and pays a cache prefix instead of running past its window.
   assert.equal(rotations[0].contextTokens, 80_010);
   assert.equal(rotations[0].rotations, 1);
 
@@ -462,8 +496,125 @@ test("rotationPending reports a stale session so the supervisor can ask for a co
   // The proof that this came from staleness and not from size: the report sits
   // far below its own threshold. If the adapter ever stopped latching, this
   // assertion is where a silent re-read would surface.
-  assert.equal(info.transcriptTokens, 60_010);
+  assert.equal(info.transcriptTokens, 60_010, "no per-call usage reported, so the summed fallback stands in");
   assert.equal(info.thresholdTokens, 600_000);
+
+  await rt.stop(session);
+});
+
+/**
+ * A turn is a tool loop. The backend reports `usage` once per model call, and
+ * the `result` frame reports their SUM — so the figure the rotation decision
+ * read grew with the number of calls a turn made, while the window it was
+ * compared against did not move. On a measured mission that was 5,219,210 and
+ * 6,189,695 reported against a largest real prompt of 165,129, ~32× over, at a
+ * median of 79 calls per turn (`NOTES-communication-measured-review.md` §11c).
+ *
+ * The consequence was not a wrong number in a log. It was a seat being told to
+ * spend a turn writing a continuity record, and then having its transcript
+ * thrown away, because it had worked hard — not because it was full.
+ */
+test("a turn's call count does not rotate a session that fits in its window", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({
+    // What the turn COST: eight calls re-reading the same modest transcript,
+    // summed by the result frame into a figure eight times the threshold.
+    cacheReadFor: () => 400_000,
+    // What the window actually HELD: 10k, every call, never close to 50k.
+    callPromptsFor: () => [10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000],
+  });
+  const rotations: unknown[] = [];
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 50_000,
+    onRotate: (info) => rotations.push(info),
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 1, "a busy turn is not a full context — 400k of reads over a 10k transcript");
+  assert.equal(rotations.length, 0);
+  assert.equal(
+    rt.rotationPending(session),
+    null,
+    "and no handover turn is demanded of a seat with 40k of window left",
+  );
+  assert.deepEqual(opened[0].prompts, ["turn one", "turn two"]);
+
+  await rt.stop(session);
+});
+
+test("the largest single call is what trips the threshold, and what the handover reports", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({
+    // Deliberately tiny, so the summed figure CANNOT be what fires this: if the
+    // adapter ever reverts to reading the result frame, this test goes green in
+    // the wrong direction and the assertions below catch it.
+    cacheReadFor: () => 100,
+    // One call in the turn grew past the threshold — that is a full window,
+    // whatever the calls around it did.
+    callPromptsFor: (queryIndex) => (queryIndex === 0 ? [10_000, 60_000, 12_000] : [900]),
+  });
+  const rotations: Array<Record<string, unknown>> = [];
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 50_000,
+    onRotate: (info) => rotations.push(info as unknown as Record<string, unknown>),
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+
+  // Before the rotation: the supervisor asks whether to spend a turn on a
+  // handover, and the number it is given is the one it will put in front of the
+  // model. `60_000` is a prompt a call really read; `82_100` — the sum — is not.
+  const pending = rt.rotationPending(session);
+  assert.ok(pending, "a call past the threshold is a pending rotation");
+  assert.equal(pending.transcriptTokens, 60_000, "the largest prompt, not the turn's summed reads");
+  assert.equal(pending.thresholdTokens, 50_000);
+
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 2, "a real overflow still rotates");
+  assert.deepEqual(opened[0].prompts, ["turn one"]);
+  assert.equal(rotations.length, 1);
+  assert.equal(rotations[0].contextTokens, 60_000);
+
+  // The replacement is measured the same way, so a shed transcript reads as
+  // shed rather than inheriting the figure that retired its predecessor.
+  await rt.send(session, agentInput("turn three"));
+  assert.equal(opened.length, 2, "900 is not 60,000 — the fresh session stays");
+
+  await rt.stop(session);
+});
+
+/**
+ * The staleness floor is the other comparison that was reading the wrong unit.
+ * At 40k it is meant to say "this transcript is big enough that re-reading it
+ * costs more than rebuilding it" — but against a turn's summed reads, eight
+ * cheap calls over a 5k transcript cleared it, and a quiet seat lost a
+ * conversation worth keeping for a cache prefix it would barely have paid.
+ */
+test("staleness measures the transcript, not how hard the last turn worked", async () => {
+  const dir = workspace();
+  const { queryFn, opened } = fakeQueryFactory({
+    cacheReadFor: () => 400_000,
+    callPromptsFor: () => [5_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000],
+  });
+  const rt = new ClaudeRuntimeAdapter({
+    queryFn,
+    rotateAtContextTokens: 600_000,
+    staleAfterMs: 0,
+    staleFloorTokens: 50_000,
+  });
+
+  const session = await rt.start(devDef, runtimeCtx(dir));
+  await rt.send(session, agentInput("turn one"));
+  await rt.send(session, agentInput("turn two"));
+
+  assert.equal(opened.length, 1, "a 5k transcript is under the floor however many times it was read");
 
   await rt.stop(session);
 });

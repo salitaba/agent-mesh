@@ -1183,8 +1183,13 @@ export interface SessionRotationPending {
   /** The session about to be discarded. */
   sessionId: string;
   reason: SessionEndReason;
-  /** Tokens accumulated on the outgoing transcript. This is the size of the
-   * memory that is about to be thrown away. */
+  /**
+   * The size of the memory about to be thrown away: the largest prompt a single
+   * model call of the seat's last turn was handed — the context the window was
+   * actually holding. A per-call size, not a turn's summed reads; the two differ
+   * by the number of calls in a turn (see `promptSize` in
+   * `@mesh/runtime-claude`, and §11c of `NOTES-communication-measured-review.md`).
+   */
   transcriptTokens: number;
   /** The threshold that tripped, for operators asking "why now?". */
   thresholdTokens: number;
@@ -2111,7 +2116,10 @@ export interface AgentRuntime {
 
 /** Why the supervisor is about to spend a turn on a handover. */
 export interface RotationPendingInfo {
+  /** The context the outgoing session is holding: a per-call prompt size, not a
+   * sum over the turn's calls. See `SessionRotationPending.transcriptTokens`. */
   transcriptTokens: number;
+  /** The figure `transcriptTokens` was compared against. */
   thresholdTokens: number;
 }
 

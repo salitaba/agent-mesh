@@ -270,6 +270,11 @@ const SESSION_CACHE_STALE_MS = 10 * 60_000;
  * inside it is not free to reproduce — so a quiet seat with a short
  * conversation keeps it. Only a seat that is both idle AND large is paying more
  * to carry its history than to rebuild from projections.
+ *
+ * "Size" is a per-call prompt (`promptSize`), i.e. tokens actually occupying a
+ * window — not a turn's summed reads. The two differed by ~32× on a measured
+ * mission, and this floor was calibrated against the second: at 40k it used to
+ * admit a 79-call turn over a transcript of a few thousand tokens.
  */
 const SESSION_STALE_ROTATE_FLOOR_TOKENS = 40_000;
 
@@ -346,7 +351,7 @@ export function rotateAtFor(model: string | undefined): number {
 const SEAT_EFFORT = "high" as const;
 
 /**
- * How much conversation the model loaded across a turn's calls.
+ * How much conversation the model loaded across a turn's calls, summed.
  *
  * `input + cache_read`, because a cached prefix is still context the model read
  * — it is only cheaper, not absent. Reading `input` alone would report a
@@ -357,20 +362,59 @@ const SEAT_EFFORT = "high" as const;
  * model call, so a turn that loops N times reports N reads of a context that may
  * never have approached the window — measured on a live mission: 954 calls whose
  * largest prompt was 165,129 tokens, against turn figures of 5,219,210 and
- * 6,189,695 (`NOTES-communication-measured-review.md` §11c). Everything that
- * compares this to a window — the rotation threshold, `staleFloorTokens`, and the
- * handover prompt's "session is full (N of M)" — is comparing a per-turn sum to a
- * per-call limit.
+ * 6,189,695 (`NOTES-communication-measured-review.md` §11c).
+ *
+ * So this is no longer what the rotation decision compares to a window. That is
+ * {@link promptSize}, taken per call. This one survives as the **fallback** for a
+ * backend that reports no per-call usage, and it is the safe direction to fall
+ * back in: it over-states, so a session rotates early and pays a cache prefix,
+ * where under-stating would let a transcript run past the window and kill a live
+ * mission.
  */
 export function transcriptSize(t: AgentOutput["tokensUsed"] | undefined): number {
   return (t?.input ?? 0) + (t?.cacheRead ?? 0);
 }
 
+/**
+ * The context one model call actually read.
+ *
+ * The SDK states the arithmetic itself: "Total input tokens in a request is the
+ * summation of `input_tokens`, `cache_creation_input_tokens`, and
+ * `cache_read_input_tokens`". That sum is a **size** — the transcript the model
+ * was handed for that one call — which is the quantity the rotation threshold
+ * was always named for and never measured.
+ *
+ * `cache_creation_input_tokens` is the term the mesh had been dropping: it rides
+ * into `usageToTokens`'s `total` and has no field of its own, so a prompt that
+ * was written to cache rather than read from it went uncounted.
+ *
+ * The wire type makes both cache fields `number | null`, so `?? 0` covers
+ * absent and null alike; a call that reports nothing at all returns 0, which
+ * callers must treat as "no measurement" rather than "an empty context".
+ */
+export function promptSize(u: ClaudeTurnUsage | undefined): number {
+  if (!u) return 0;
+  const input = u.input_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens ?? 0;
+  const cacheWrite = u.cache_creation_input_tokens ?? 0;
+  return input + cacheRead + cacheWrite;
+}
+
 export interface ClaudeTurnUsage {
   input_tokens?: number;
   output_tokens?: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
+  /**
+   * The two cache terms, `number | null` because that is what the wire says:
+   * `Usage` in `@anthropic-ai/sdk` declares both as `number | null`, and a call
+   * that used no cache reports the null rather than omitting the key.
+   *
+   * Declared nullable here so the `?? 0` in {@link usageToTokens} and
+   * {@link promptSize} is load-bearing rather than defensive. Typed as
+   * `number | undefined`, a future `a + usage.cache_read_input_tokens` would
+   * typecheck and then produce a NaN off a live backend.
+   */
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
   /**
    * Reasoning half of `output_tokens`, NOT a fifth token bucket.
    *
@@ -598,6 +642,16 @@ interface TurnState {
    * `result` branch in `pump`.
    */
   interrupted?: boolean;
+  /**
+   * The largest prompt any single model call in this turn was handed.
+   *
+   * A turn is a tool loop, so it makes N calls, each re-sending the transcript:
+   * the largest of them is the context the session is carrying, and the one the
+   * window has to hold. Zero means no frame reported usage — an absence, never
+   * an empty context, which is why the settle path falls back rather than
+   * reading this as "nothing to rotate".
+   */
+  maxPromptTokens: number;
 }
 
 /**
@@ -721,13 +775,21 @@ interface LiveSession {
   agent: AgentDefinition;
   context: RuntimeContext;
   /**
-   * What the last turn's model calls read, summed (`input + cache_read`).
+   * The context this session is carrying: the largest prompt a single model
+   * call of the last turn was handed (`input + cache_read + cache_creation`,
+   * see `promptSize`).
    *
-   * A measurement, not an estimate — but of **cost, not size**: usage arrives
-   * once per model call, so a turn that loops N times reports N reads of a
-   * context that may never have approached the window. Comparing it to a window
-   * size, as the rotation threshold and the handover prompt both do, compares a
-   * per-turn sum to a per-call limit; see `transcriptSize` above.
+   * A measurement, not an estimate. It is a **size** — a turn is a tool loop
+   * that re-sends the transcript to every call, so the largest of those prompts
+   * is the transcript as the window has to hold it — which is what the rotation
+   * threshold is named for and, until this, never received: the figure here used
+   * to be the same prompt summed over the turn's calls, so it grew with the
+   * number of calls and compared a per-turn cost to a per-call limit. On one
+   * measured mission that reported 5,219,210 against a largest real prompt of
+   * 165,129 (`NOTES-communication-measured-review.md` §11c).
+   *
+   * Falls back to that sum only when no frame reported usage at all, so a
+   * backend that reports nothing rotates early rather than never.
    */
   contextTokens: number;
   /** Turns served by the CURRENT sdk session, and rotations so far. */
@@ -915,6 +977,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       toolSeq: 0,
       settled: false,
       sawFrame: false,
+      maxPromptTokens: 0,
       settle: (outcome) => {
         if (turn.settled) return;
         turn.settled = true;
@@ -924,11 +987,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
         if (outcome.ok) {
           const end = this.toTurnEnd(outcome.msg, live);
           live.turns++;
-          // `input + cache_read` is what the backend says it loaded for this
-          // turn — i.e. the transcript's current size. Recorded here rather
-          // than estimated anywhere else, and read by the rotation check on
-          // the NEXT turn.
-          live.contextTokens = transcriptSize(end.tokensUsed);
+          // The largest prompt a single call was handed, which is the context
+          // this session is carrying — what the rotation threshold is named for
+          // and, before this, never measured. Falls back to the summed figure
+          // only when NO frame reported usage: an absence, not an empty
+          // context, and the fallback over-states, so an unmeasurable backend
+          // rotates early rather than overflowing a window.
+          live.contextTokens = turn.maxPromptTokens || transcriptSize(end.tokensUsed);
           // When this session last finished a turn, for the staleness branch of
           // the rotation check. Read on the NEXT turn, like `contextTokens`.
           live.lastTurnEndedAt = Date.now();
@@ -1553,8 +1618,25 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             s.markReady();
           }
         } else if (msg.type === "assistant") {
-          const m = msg.message as { model?: string; content?: unknown };
+          const m = msg.message as { model?: string; content?: unknown; usage?: ClaudeTurnUsage };
           if (typeof m.model === "string") s.lastModel = m.model;
+          // The per-call context, which nothing else in the mesh receives: the
+          // `result` frame carries the turn's usage SUMMED over its calls, and
+          // the rotation threshold needs one call's prompt, not the total of N
+          // of them (§11c of `NOTES-communication-measured-review.md`).
+          //
+          // A max, not a last: the CLI emits one assistant frame per completed
+          // content block and documents their `usage` as "not final", so
+          // several frames can describe one call and an early one may report
+          // zeros for cache terms it has not counted yet. A max ignores those
+          // without inventing tokens, and the last call of a turn — the largest
+          // prompt in it — always arrives on the final frame, whose usage is
+          // final. Over a turn it is therefore the context the window had to
+          // hold, not a figure that grows with the number of calls.
+          if (s.pending) {
+            const prompt = promptSize(m.usage);
+            if (prompt > s.pending.maxPromptTokens) s.pending.maxPromptTokens = prompt;
+          }
           const blocks = Array.isArray(m.content) ? m.content : [];
           for (const b of blocks as Array<Record<string, unknown>>) {
             if (b.type === "tool_use") {
