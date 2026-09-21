@@ -87,6 +87,8 @@ export function summarize(e: MeshEvent): string {
   switch (e.type) {
     case "goal.created":
       return `goal: ${(p.goal?.description ?? "").slice(0, 90)}`;
+    case "goal.description_revised":
+      return `goal → ${String(p.description ?? "").slice(0, 90)}${p.reason ? ` (${String(p.reason).slice(0, 60)})` : ""}`;
     case "goal.status_changed":
       return `${p.goalId?.slice(0, 12) ?? ""} → ${p.status}${p.reason ? ` (${String(p.reason).slice(0, 60)})` : ""}`;
     case "goal.paused":
@@ -116,6 +118,16 @@ export function summarize(e: MeshEvent): string {
       return `${p.criterionId} blocked`;
     case "requirement.satisfied":
       return `${p.criterionId} evidenced (${(p.evidence as any)?.kind ?? "evidence"})`;
+    case "requirement.revised": {
+      // Either key can be absent entirely — the emitter only writes the aspect
+      // that actually changed, and at least one of the two always did.
+      const bits: string[] = [];
+      if (p.description !== undefined) bits.push(`“${String(p.description).slice(0, 70)}”`);
+      if (p.mandatory !== undefined) bits.push(p.mandatory ? "now mandatory" : "now optional");
+      return `${p.criterionId} → ${bits.join(" · ") || "revised"}${p.reason ? ` (${String(p.reason).slice(0, 60)})` : ""}`;
+    }
+    case "requirement.removed":
+      return `${p.criterionId} removed: ${String(p.reason ?? "").slice(0, 80)}`;
     case "agent.created":
       return `${p.agent?.id} (${p.agent?.role})`;
     case "agent.started":
@@ -130,6 +142,19 @@ export function summarize(e: MeshEvent): string {
       return `${p.agentId} ${shortState(p.from)}→ ${p.to}${p.turnId ? ` · ${shortId(p.turnId)}` : ""}${p.note ? ` · ${String(p.note).slice(0, 60)}` : ""}`;
     case "agent.suspended":
       return `${p.agentId} suspended`;
+    case "session.rotation_pending":
+      return `${p.agentId} holding ${p.transcriptTokens}/${p.thresholdTokens} tokens · ${p.reason ?? "rotation"} pending`;
+    case "session.rotated":
+      return `${p.agentId} → session ${p.sessionOrdinal} · ${p.transcriptTokensDiscarded} tokens discarded`;
+    case "continuity.recorded":
+      return `${p.agentId} session ${p.sessionOrdinal} → ${String(p.nextIntent ?? "").slice(0, 70)} · ${Array.isArray(p.openCommitments) ? p.openCommitments.length : 0} open`;
+    case "context.assembled": {
+      // Tests emit this type with stub payloads, so nothing here may assume
+      // `slots` is the ten-entry array the real builder always produces.
+      const slots: Array<Record<string, any>> = Array.isArray(p.slots) ? p.slots : [];
+      const dropped = slots.filter((sl) => (sl?.dropped ?? 0) > 0).map((sl) => `${sl.slot} -${sl.dropped}`);
+      return `${p.agentId} ${p.usedTokens}/${p.budgetTokens} ${p.tier}${p.overSoftCap ? " OVER" : ""}${dropped.length ? ` · dropped ${dropped.join(" ")}` : ""}`;
+    }
     case "agent.resumed":
       return `${p.agentId} resumed`;
     case "agent.completed":
@@ -140,6 +165,12 @@ export function summarize(e: MeshEvent): string {
       return `${p.agentId} restart #${p.attempt ?? "?"}`;
     case "agent.replaced":
       return `${p.agentId} replaced`;
+    case "agent.retired":
+      return `${p.agentId} retired: ${String(p.reason ?? "").slice(0, 80)}`;
+    case "agent.mute_suspected":
+      // `meshBridgeAttached` is the diagnosis, not a detail: a seat that never
+      // got the bridge cannot speak, one that got it and said nothing chose to.
+      return `${p.agentId} ${p.meshBridgeAttached ? "has the mesh bridge and still said nothing" : "never attached the mesh bridge"} · ${Array.isArray(p.servers) ? p.servers.length : 0} server(s) · ${shortId(p.sessionId)}`;
     case "thread.created":
       return `${shortId(p.thread?.id)} “${String(p.thread?.subject ?? "").slice(0, 70)}”`;
     case "message.sent":
@@ -148,6 +179,16 @@ export function summarize(e: MeshEvent): string {
       return `${p.agentId} ⇐ ${shortId(p.messageId)}`;
     case "message.rejected":
       return `${p.from} blocked: ${String(p.reason ?? "").slice(0, 80)}`;
+    case "commitment.discharged":
+      // Only the six ledger fields are safe to key on: every caller spreads its
+      // own `detail` into this payload and no two agree on what is in it.
+      return `${shortId(p.messageId)} ${p.reason} by ${p.by}${p.partial ? ` · ${Array.isArray(p.remaining) ? p.remaining.length : 0} still owing` : ""}`;
+    case "collab.opened":
+      // The only payload in the catalog nested under a wrapper key; its sibling
+      // `collab.closed` is flat.
+      return `${shortId(p.session?.threadId)} “${String(p.session?.topic ?? "").slice(0, 70)}” · ${Array.isArray(p.session?.participants) ? p.session.participants.join(",") : ""}`;
+    case "collab.closed":
+      return `${shortId(p.threadId)} ${p.reason} ${p.exchanges}/${p.maxExchanges}${p.outcome ? ` · ${String(p.outcome).slice(0, 70)}` : ""}`;
     case "artifact.created":
       return `${p.artifact?.type} '${p.artifact?.name}' v${p.artifact?.version} by ${p.artifact?.createdBy}`;
     case "artifact.versioned":
@@ -160,6 +201,16 @@ export function summarize(e: MeshEvent): string {
       return `${shortId(p.taskId)} by ${p.agentId ?? "—"}`;
     case "task.completed":
       return `${shortId(p.taskId)} · ${String(p.summary ?? "").slice(0, 70)}`;
+    case "plan.updated": {
+      const steps: Array<Record<string, any>> = Array.isArray(p.plan?.steps) ? p.plan.steps : [];
+      const done = steps.filter((st) => st?.status === "DONE").length;
+      // An empty step list is not an empty plan — it is how an agent retracts
+      // one, and reading it as "0/0 steps" would hide the retraction.
+      if (steps.length === 0) return `${p.agentId} withdrew its plan (r${p.plan?.revision})`;
+      return `${p.agentId} ${done}/${steps.length} steps · r${p.plan?.revision}${p.plan?.taskId ? ` · ${shortId(p.plan.taskId)}` : ""}`;
+    }
+    case "plan.gate_rejected":
+      return `${p.agentId} ${p.op} blocked (${p.mode}): ${String(p.reason ?? "").slice(0, 100)}`;
     case "review.requested":
       return `${shortId(p.artifactId)} → ${Array.isArray(p.reviewers) ? p.reviewers.join(",") : ""}`;
     case "review.approved":
@@ -175,7 +226,9 @@ export function summarize(e: MeshEvent): string {
     case "architecture.approved":
       return `${p.subject ?? "architecture"} by ${e.actorId ?? ""}`;
     case "design.question":
-      return String(p.question ?? p.artifactId ?? "").slice(0, 100);
+      // Floored through `shortId`, as `research.requested` below already is: the
+      // bare `?? ""` fell to an empty string and printed a blank feed line.
+      return String(p.question ?? "").slice(0, 100) || shortId(p.artifactId);
     case "dependency.changed":
       return `${shortId(p.artifactId)} deps ${String(p.commit ?? "").slice(0, 12)}`;
     case "authentication.changed":
@@ -201,6 +254,12 @@ export function summarize(e: MeshEvent): string {
       return `${p.escalation?.raisedBy}: ${p.escalation?.reason}`;
     case "escalation.responded":
       return `responded: ${String(p.response ?? "").slice(0, 80)}`;
+    case "escalation.auto_resolved":
+      // `reason` is composed at the emit site and already begins "auto-resolved:",
+      // so it carries the phase; the three emit shapes share nothing else but the id.
+      return `${shortId(p.escalationId)} ${String(p.reason ?? "auto-resolved").slice(0, 100)}`;
+    case "deadlock.auto_resolved":
+      return `${p.kind ?? "deadlock"} ${Array.isArray(p.participants) ? p.participants.join(" → ") : ""} · voided ${shortId(p.voidedRequestId)}`;
     case "human.input":
       return `${p.action ?? "input"} ${shortId(p.escalationId)}`;
     case "lease.acquired":
