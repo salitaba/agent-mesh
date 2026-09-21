@@ -47,10 +47,10 @@ export interface EventStore {
    * the call, in append order, and the returned function detaches it.
    *
    * Each subscriber keeps its own position, which is the whole reason this
-   * lives on the store. The one push path that existed before (`EventTailer`'s
-   * file watcher) held its cursor in a map keyed by file path, so two
-   * followers of one log stole events from each other and every event reached
-   * exactly one arbitrary consumer.
+   * lives on the store. The one push path that existed before — a file watcher
+   * since deleted, `EventTailer` — held its cursor in a map keyed by file path,
+   * so two followers of one log stole events from each other and every event
+   * reached exactly one arbitrary consumer.
    *
    * Delivery is synchronous with the append and best-effort: a throwing
    * handler is isolated so one bad subscriber cannot fail another's delivery,

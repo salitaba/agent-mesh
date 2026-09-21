@@ -32,9 +32,10 @@ const stores: Array<[string, () => { store: EventStore; file?: string }]> = [
 ];
 
 for (const [name, make] of stores) {
-  // The bug this replaces: the only push path (EventTailer's file watcher)
-  // kept its cursor in a map keyed by file path, so two followers of one log
-  // advanced the SAME cursor and each event reached exactly one of them.
+  // The bug this replaces: the only push path — a file watcher since deleted,
+  // `EventTailer` — kept its cursor in a map keyed by file path, so two
+  // followers of one log advanced the SAME cursor and each event reached
+  // exactly one of them.
   test(`${name}: two subscribers each receive every event, not one each`, async () => {
     const { store } = make();
     const a: number[] = [];

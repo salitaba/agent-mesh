@@ -1198,11 +1198,14 @@ export interface SessionRotated {
    * on ordinal 6 has forgotten five times. */
   sessionOrdinal: number;
   reason: SessionEndReason;
+  /**
+   * The outgoing transcript's size, so the cost of the amnesia is a number in
+   * the log rather than a story. Written on every rotation
+   * (`apps/mesh-server/src/index.ts`, the `onRotate` hook); nothing reads it
+   * back yet, and an operator reconstructs a rotation history from the events
+   * themselves.
+   */
   transcriptTokensDiscarded: number;
-  /** The record the outgoing session left, when it managed to write one. Absent
-   * means the rotation was involuntary or the write turn did not land, and the
-   * successor genuinely starts from nothing. */
-  continuityRecordId?: EventId;
 }
 
 /**
