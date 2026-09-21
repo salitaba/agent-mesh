@@ -235,11 +235,13 @@ a pasted body: `payload` is an unconstrained object in
 `schemas/message.schema.json`, so a whole file can ride in it and validate. The
 only payload policing is `RESERVED_PAYLOAD_KEYS` (`mode`, `delivery`,
 `cacheServed`, `contract`, `contractVersion`, `downgraded` — control fields
-deleted on input by `sanitizeAgentMessageInput`), and the only bound on free
-prose anywhere in the envelope is `note`'s 2000-character `maxLength`. The rule
-is carried by the role prompts,
-which `docs/architecture.md` classes as layer 1 (prompt awareness) — a rule the
-agent is told, not one the runtime enforces.
+deleted on input by `sanitizeAgentMessageInput`), and the only bounds on free
+prose in a message are `note` and `requires[].text`, both 2000 characters. What
+a pasted body costs a *reader* is bounded separately, at render time:
+`renderMailPayload` prints at most 20 lines of 400 characters and marks the
+remainder omitted. The rule itself is carried by the role prompts, which
+`docs/architecture.md` classes as layer 1 (prompt awareness) — a rule the agent
+is told, not one the runtime enforces.
 
 ## Typed state machines
 

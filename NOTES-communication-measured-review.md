@@ -133,19 +133,29 @@ discipline already exists is `ContinuityRecord`'s `Belief.basis`, which *require
 That instinct — a claim carries its evidence — is not generalised to the thing the mesh exists
 for, which is answering questions.
 
-**3c. The reference bus is documented but unenforced.** `docs/protocol.md:196`: "Messages
-reference URIs, never paste content — the bus is a reference bus." Nothing rejects or strips
-pasted content. The only payload policing is `RESERVED_PAYLOAD_KEYS` (control fields, not prose)
-plus a `maxLength` on `note`. "Never paste" lives solely in role prompts — which
-`docs/architecture.md:46` explicitly labels "Not trusted". Measured, this is currently a non-issue
-(payloads average 273 chars ≈ 68 tokens, 3.6% of log bytes), so it is a *documentation* defect,
-not a cost one. Fix the doc or enforce the rule; do not leave the two disagreeing.
+**3c. The reference bus is documented but unenforced.** *(Fixed — `dc5e38d`, refined later.)*
+`docs/protocol.md:196` once said "Messages reference URIs, never paste content — the bus is a
+reference bus", as though something enforced it. Nothing does, and now the doc says so: the
+passage at `docs/protocol.md:232-243` calls reference-not-paste **"a discipline, not a runtime
+rule"**, names `payload` as unconstrained in the schema, and states outright that the rule is
+carried by the role prompts, which `docs/architecture.md` classes as layer 1 (prompt awareness).
+The two bounds it now names are exact — `note` and `requires[].text`, 2000 characters each (an
+earlier draft said `note` was the only one, which was false) — plus the render-time bound that is
+the *real* answer to "so what happens when someone does paste?": `renderMailPayload` prints at
+most 20 lines of 400 characters and marks the rest omitted. So the payload still rides in full and
+still costs a reader nothing beyond one screen. Measured, this was never a cost issue (payloads
+average 273 chars ≈ 68 tokens, 3.6% of log bytes); it was the doc promising a rule the runtime does
+not have, and the fix was to the doc because **enforcing** it is the design change, not the bug
+fix — see §7 row 1.
 
-**3d. `mode` is missing from the documented obligation rule.** `docs/protocol.md:77` says
-`REQUEST*`/`ESCALATE`/`CHALLENGE` open a pending request. The code adds an unstated second
-condition — `control.mode === "service"` — so the *same* REQUEST type obliges nobody under
-`broadcast` or `collab`. The code is right and the doc is wrong, in the one place a reader goes
-to learn what an ask is.
+**3d. `mode` was missing from the documented obligation rule.** *(Fixed — `dc5e38d`.)* The doc at
+`docs/protocol.md:77` once said `REQUEST*`/`ESCALATE`/`CHALLENGE` open a pending request, full
+stop. The code has always had an unstated second condition — `control.mode === "service"` — so the
+*same* REQUEST type obliges nobody under `broadcast` or `collab`. The code was right and the doc
+was wrong, in the one place a reader goes to learn what an ask is. It now states both conditions
+as two numbered ones and names `obligesRecipients` as the single predicate, with the reason
+`broadcast` is excluded (an announcement is not an ask: one entry owed by the whole roster, and
+the first reply leaves everyone else owing an answer nobody was tracking).
 
 ---
 
@@ -372,18 +382,18 @@ next reader learns the wrong thing.
 
 | # | Divergence | Where |
 |---|---|---|
-| 1 | "the bus is a reference bus" — never paste content: **unenforced**, prompt-text only | `docs/protocol.md:196` vs `RESERVED_PAYLOAD_KEYS` |
-| 2 | Obligation rule omits `control.mode`; a REQUEST under `broadcast` obliges nobody | `docs/protocol.md:77` vs `catalog.ts:372` |
-| 3 | "illegal APPROVE/COMMIT/DELEGATE/BLOCK are rejected before they become events" — the *bus* gates on type nowhere; what stops them is layer 2 on the op | `docs/architecture.md:50-51` vs `evaluateMessage` |
-| 4 | Layer 2 is described as the OpenCode adapter writing `permission` blocks — **that backend was removed** | `docs/architecture.md:48-49` |
+| 1 | ~~"the bus is a reference bus" — never paste content: **unenforced**, prompt-text only~~ **fixed** (§10): the doc now calls it a discipline rather than a rule, names `payload` as unconstrained, and states the render-time bound that actually limits what a pasted body costs | `docs/protocol.md:196` → `232-243` vs `RESERVED_PAYLOAD_KEYS` |
+| 2 | ~~Obligation rule omits `control.mode`; a REQUEST under `broadcast` obliges nobody~~ **fixed** (§10): both conditions now stated as two, with `obligesRecipients` named as the single predicate | `docs/protocol.md:77` vs `catalog.ts:372` |
+| 3 | ~~"illegal APPROVE/COMMIT/DELEGATE/BLOCK are rejected before they become events" — the *bus* gates on type nowhere; what stops them is layer 2 on the op~~ **fixed** (§10): layer 2 is named as where they stop, and the raw-message case is stated honestly — the message is logged and delivered, and it is the *state effect* that is refused, with the sender told | `docs/architecture.md:50-51` vs `evaluateMessage` |
+| 4 | ~~Layer 2 is described as the OpenCode adapter writing `permission` blocks~~ — **that backend was removed**, and layer 2 is now described as `policy-engine` plus each adapter's own tool gate. **Fixed** (§10), together with the same phantom backend in `docs/runtime.md`, `README.md` and `AGENTS.md` | `docs/architecture.md:47-53` |
 | 5 | ~~`deny.contact` and `when.to` are documented policy-rule fields; `matchRule` reads neither~~ **both fixed** — `when.to` now binds (§10), `deny.contact` deleted + warned (§10) | `config:399,410` vs `policy-engine:292-309` |
-| 6 | `REQUEST_TYPES` is exported and `@deprecated` because it cannot answer "does this oblige?" | `catalog.ts:376-389` |
-| 7 | `vocabulary: "contracts"` is **advertisement only** — `callTool` resolves against the unfiltered map, so nothing is enforced | `mcp.ts:98-103` |
+| 6 | `REQUEST_TYPES` is exported and `@deprecated` because it cannot answer "does this oblige?" — **kept on purpose, and closed** (§10): it is a derived copy behind the package index, so deleting it is a public API break for no in-repo gain, and its JSDoc now names the three tests that read it, so the deletion is small but priced | `catalog.ts:376-389` |
+| 7 | `vocabulary: "contracts"` is **advertisement only** — `callTool` resolves against the unfiltered map, so nothing is enforced — **closed as documented, not enforced** (§10): the split is deliberate (hiding is an advertisement decision; refusing is `transport: "typed-only"`'s job), and the docs state it in four places. Enforcing it is a capability *narrowing* whose coherent form needs the prompt half too, since the prose channel still teaches the 24-name catalogue under `contracts` | `mcp.ts:98-103`, `docs/protocol.md:167-175` |
 | 8 | Dead: ~~`notifyMailDelivered`~~ (removed), ~~`MeshMessage.ttl`~~ (removed, loud — see §10), ~~`idleQuietPeriodMs`~~ **implemented** (§10) as the scheduler's idle dwell — the one "documented, not implemented" item in this sweep that turned out to want a reader rather than deletion | various |
 | 9 | ~~**`when.event` is read but never compared** — its only read is `if (w.event && !match.message) continue`, which tests *that a rule has an event clause*, not the event. `when: { event: "artifact.published" }` silently applies to message sends; the value is never validated.~~ **Removed** (§10): the clause and the guard are gone, and a config still setting it is refused at load. The guard was the only thing scoping such a rule to message evaluation, so removing the clause **widens** the rule to capability and authority checks — which is exactly why the refusal is an error and not a warning | `policy-engine:316` |
 | 10 | ~~**The rule surface is unvalidated end to end**~~ — **closed** (§10): every clause above is now checked at load, capabilities and message types as errors, `when.actor_role` and `when.to` as warnings. `policies.rules` is still `{ type: "array" }` with no `items`, so AJV still checks nothing inside a rule; the cross-field pass is what carries this, and it is now the whole clause surface rather than two fields. Because the array has no `items`, the *shape* of a rule is still enforced nowhere — the clause checks read defensively and tolerate what they do not recognise, which is what keeps a hand-written mesh loading | `schemas.ts:352`, `config:922-926` |
 | 11 | ~~`RawPolicyRule.requires` (`{ approvals?, evidence? }` on a *rule*) is entirely inert~~ **Removed** (§10), with an aggregated load warning rather than an error — it is inert in both directions, so removing it cannot widen anything. Name collision with the live `MeshMessage.requires` goes with it | `config:425-428` vs `policy-engine:492`, `supervisor.ts:1664` |
-| 12 | ~~`matchRule`'s `authority` parameter is declared and passed by both callers, never read~~ **Removed** (§10): the parameter is gone and `matchRule`'s doc comment records what the match shape actually compares. There is still no `when.authority` — an authority matches on actor and role alone — and `policy-engine:144` still denies a **held** authority whenever the matched rule names any `deny.capabilities`. That last one is deliberately left: narrowing it removes a DENY, which is a permission *widening*, so it wants its own decision rather than a cleanup commit | `policy-engine:296,125,143` |
+| 12 | ~~`matchRule`'s `authority` parameter is declared and passed by both callers, never read~~ **Removed, and the denial it obscured is now surfaced** (§10): the parameter is gone and `matchRule`'s doc comment records what the match shape actually compares. There is still no `when.authority` — an authority matches on actor and role alone — and `evaluateAuthority` still denies a **held** authority whenever the matched rule names any `deny.capabilities`. That denial is deliberately left: narrowing it removes a DENY, which is a permission *widening*, so it wants its own decision rather than a cleanup commit. What is no longer left is its **invisibility**: `warnAuthorityStrippingRules` reports at load every rule that would strip an authority from a seat that holds one, a warning rather than an error precisely because it changes no permission | `policy-engine:296,125,143`, `config:warnAuthorityStrippingRules` |
 
 > **Correction.** Row 8 first listed `Scheduler.triagedAway` as "counter only" and dead. It is
 > not: `triagedAwayCount()` is read by the status endpoint
@@ -516,7 +526,7 @@ did *not*, because a status section that only lists successes is the same failur
 that documents a field nobody reads.
 
 **Shipped, verified green** (`npm run typecheck` clean; `eslint` 0 errors on every touched file; full
-suite **1628 pass / 0 fail**):
+suite **1634 pass / 0 fail**):
 
 | Item | Change |
 |---|---|
@@ -540,7 +550,26 @@ suite **1628 pass / 0 fail**):
 | **§7 row 12** — `matchRule`'s dead `authority` parameter | Removed from the inline match type and from both call sites, with a doc comment recording what the match shape does compare (actor, role, recipient, message type, capability) and why there is deliberately no `authority` clause. `docs/configuration.md` gains a `when.authority` row: **does not exist, and never did.** The one denial the parameter's presence obscured is left in place and now documented at the call site: `evaluateAuthority` still denies a **held** authority whenever the matched rule names any `deny.capabilities`, which is a permission *narrowing*, so undoing it is a widening that wants its own decision. |
 | **§7 row 8** — `idleQuietPeriodMs`, which turned out to want a reader | `Scheduler.checkIdle` now arms a `setTimeout` for `scheduling.idle_quiet_period_ms` before declaring the idle moment, re-arming on any work and cancelling on stop/reset. The old edge-trigger fired on *any* instant the queue happened to be empty, which on a live mission is a moment, not a state — and the declaration is what the supervisor reads as "this mesh has gone quiet". `0` remains the escape hatch and declares idle in the pump with no timer, because `wait_wakeup_ms` (60s in prod) is far longer than a short quiet window and a sweep-based dwell would never fire. The three tests in `tests/scheduler/scheduler.test.ts` pin the dwell, the abandonment on work, and the zero-timer path. |
 
+| **§7 rows 1, 2, 3** — doc/code divergences | All three were already repaired in `dc5e38d` (which rewrote exactly those passages) and this pass is the record catching up: rows 1-3 struck here, §3c and §3d rewritten to describe the current text rather than quote the deleted sentences, and the stale line numbers (`protocol.md:196`, `protocol.md:77`, `architecture.md:50-51`) replaced with the passages that now carry the argument. One genuine defect remained and is fixed: `docs/protocol.md` claimed `note`'s 2000-character bound was "the only bound on free prose anywhere in the envelope", and `requires[].text` is a second one — the paragraph now names both, and names the render-time bound (`renderMailPayload`: 20 lines of 400 characters, remainder marked omitted) that is the real answer to what a pasted body costs a reader. |
+| **§7 row 6** — `REQUEST_TYPES` | Closed without a code change, which is the honest end state: it is a derived copy (`[...OBLIGING_MESSAGE_TYPES]`) behind a public re-export, so deleting it is an API break for no in-repo gain, and correcting it in place is how the two lists would drift apart again. The JSDoc's one gap was that "zero runtime consumers" read as "free to delete" while three tests pin it as a copy, so it now names them (`tests/core/obligation-predicate.test.ts`, `tests/core/context-inbox-order.test.ts`, `tests/protocol/mcp-comms-surface.test.ts`). |
+| **§7 row 12, residue** — the denial nobody could see | `evaluateAuthority` still denies a **held** authority whenever the matched rule names any `deny.capabilities`; that stays, because removing it *widens* a permission. What is new is `warnAuthorityStrippingRules` (`config/src/index.ts`), a load warning that names the rule, the seat and the authorities it would strip. A warning and not an error, on the house severity rule: it changes no permission in either direction, whereas refusing to boot over a trap that has not sprung is a cost with no safety behind it — the exact inverse of `when.event`. It is ported from `matchRule`'s shape rather than reasoned about, and the three tests pin the two counter-intuitive halves: `when.to` **exempts** a rule (an authority check addresses nobody, so `to` fails closed) while `when.capability` does **not** (an authority check carries no capability to compare, so the clause fails open). Unreachable in every config shipped here — all three real `deny.capabilities` rules name seats that declare no authority — so the negative control is that the shipped shape stays silent. |
+| **§8.4, the other half of the seam** | `tests/integration/wake-claims.test.ts` asserts on `input.instructions` — the string a live turn actually hands the runtime — rather than on a hand-built bundle, because the unit tests beside them prove the *renderer* and not the *seam*, which is the failure this repo keeps finding: a key that loads, resolves, validates, documents and reaches nothing. Three tests: a claims seat is handed the claim and not the body, an unconfigured seat on the identical fixture is handed the body (the control that makes the first one mean something), and an ask on a claims seat keeps its body and its `contract: none` line. The negative control is aimed at the seam, not the renderer: with the compiled builder patched to ignore the configured key, exactly the first test reddens. |
+
 **Not shipped, and why:**
+
+- **Enforcing `bus.vocabulary` at call time — deliberately not shipped (§7 row 7).** The row's
+  divergence is closed by documentation, which was already true of the code (`mcp.ts:101-106`) and
+  is now true of `docs/protocol.md`, `docs/configuration.md` and `docs/runtime.md`: `"contracts"`
+  is an **advertisement** decision, and refusal is `transport: "typed-only"`'s job, not this key's.
+  Enforcing it would be a capability *narrowing* — for every mesh `mesh init` scaffolds, since
+  `writeDefaultMeshYaml` writes `vocabulary: contracts` — and it cannot be done coherently in one
+  place: `mesh_call`, `mesh_reply` and `mesh_announce` **desugar into** the ops a gate would ban, so
+  the unit is the tool name and not the op (all three would break otherwise); the human seat shares
+  one `McpToolset` and would need exempting; and the prose channel still teaches the 24-name
+  catalogue under `contracts`, because that branch is gated on `transport`, not on vocabulary — so
+  a tool-layer refusal alone would punish the tool and reward the bypass. Two coupled changes (a
+  bundle flag plus the prompt branch, then the refusal) and a permission decision that is the
+  operator's to make. Recorded here so it is a decision rather than an oversight.
 
 - **M2 — withdrawn.** The correction in §6 is the reason. I over-claimed ~8% of mission input by
   treating the whole briefing block as movable; the genuinely stable part is ~1,970 chars of it,

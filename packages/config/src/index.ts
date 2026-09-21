@@ -1011,6 +1011,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const w of warnInertRuleRequires(raw.policies?.rules ?? [])) {
     configWarnings.push(w);
   }
+  for (const w of warnAuthorityStrippingRules(raw.policies?.rules ?? [], Object.values(agents))) {
+    configWarnings.push(w);
+  }
 
   if (errors.length > 0) throw new ConfigError(dedupe(errors));
 
@@ -1705,6 +1708,73 @@ export function warnUnreachableRuleRoles(rules: RawPolicyRule[], agents: AgentDe
   return [
     `policy rule${offenders.length === 1 ? "" : "s"} ${named} scope${offenders.length === 1 ? "s" : ""} when.actor_role to a role no configured seat has — the rule applies to nobody until a seat with that role exists. Expected a declared role, a delegated worker's role, or 'human'`,
   ];
+}
+
+/**
+ * A `deny.capabilities` rule that also strips an **authority** from a seat that
+ * holds one.
+ *
+ * `evaluateAuthority` denies a *held* authority whenever the matched rule names
+ * any capability, because there is no `when.authority` clause for the check to
+ * compare against: an authority matches on actor and role alone, so the rule's
+ * capability denial is simply applied to it. The denial is deliberate and stays
+ * (removing it would widen a permission, not tidy one). What it must not stay is
+ * *invisible*.
+ *
+ * It is invisible today because the two halves live in different files, and
+ * because the effect is asymmetric: the op path asks the engine
+ * (`recordDecision`, `ratifyDecision`, `reviseGoalDescription`, …) and loses the
+ * sign-off, while a sign-off recorded from a **message** goes through
+ * `holdsAuthority` in the reducer, which consults no rules and still honours it.
+ * An operator who writes `when: { actor_role: tech-lead }, deny: {
+ * capabilities: [git.merge] }` gets a lead who cannot merge *and* cannot approve
+ * a design — the second, unasked-for, presenting as a mission stalled at the
+ * design gate with nothing in the log to explain it.
+ *
+ * Ported from `matchRule` rather than from intuition, because the clauses that
+ * scope an authority check are not the ones a reader expects:
+ *   - `when.actor` / `when.actor_role` scope it (an exact id and a role compare);
+ *   - `when.to` **does not match at all** — an authority check addresses nobody,
+ *     and `matchRule` fails `to` closed, so such a rule is exempt here;
+ *   - `when.message_type` / `when.capability` **do not scope it either** — both
+ *     compare only when the match carries one, and an authority check carries
+ *     neither, so a rule "scoped" to `git.merge` still lands on a held authority
+ *     for every seat its actor clause names.
+ *
+ * A warning, not an error: every config in this repo and every fixture is
+ * unaffected (all three shipped `deny.capabilities` rules name seats that declare
+ * no authority, so the branch cannot fire), and refusing to boot over a trap that
+ * has not sprung would be a cost with no safety behind it — the inverse of the
+ * `when.event` case, where removing the clause changed what the rule denied.
+ */
+export function warnAuthorityStrippingRules(rules: RawPolicyRule[], agents: AgentDefinition[]): string[] {
+  const warnings: string[] = [];
+  for (const r of rules) {
+    const denied = r.deny?.capabilities ?? [];
+    if (denied.length === 0) continue;
+    const when = (r.when as { actor?: unknown; actor_role?: unknown; to?: unknown } | undefined) ?? {};
+    // `to` is the one clause that makes the rule unreachable for an authority
+    // check, because that check carries no recipients.
+    if (when.to !== undefined) continue;
+    // The human seat holds `*` by design and never reaches the check.
+    const caught = agents.filter(
+      (a) =>
+        a.id !== "human" &&
+        a.authority.length > 0 &&
+        (when.actor === undefined || when.actor === a.id) &&
+        (when.actor_role === undefined || when.actor_role === a.role),
+    );
+    if (caught.length === 0) continue;
+    // One warning per rule, naming every seat it catches, for the reason
+    // `warnInertRuleContact` aggregates: a rule reaching three authority holders
+    // is one mistake to go and fix, and three near-identical lines is how an
+    // operator learns to skim the warnings.
+    const seats = caught.map((a) => `agents.${a.id} (${a.authority.join(", ")})`).join(", ");
+    warnings.push(
+      `policy rule '${r.id}' denies ${denied.join(", ")} and also strips authority from ${seats} — an authority check matches on actor and role alone, so those denials land on the op path too (approve, accept, ratify, retire), while a sign-off recorded from a message still honours them. Scope the rule with when.to, or accept the sign-off denial knowingly`,
+    );
+  }
+  return warnings;
 }
 
 /**

@@ -313,7 +313,10 @@ export class PolicyEngine implements PolicyEvaluator {
    * still denies a HELD authority whenever the matched rule carries any
    * `deny.capabilities`, even though those capabilities have nothing to do with
    * `${subject}.${kind}`. Narrowing that is a permission *widening* — it removes
-   * a DENY — so it wants its own decision rather than a cleanup commit. See
+   * a DENY — so it wants its own decision rather than a cleanup commit. What it
+   * does not get to be is invisible: `config`'s `warnAuthorityStrippingRules`
+   * reports at load every rule that would strip an authority from a seat that
+   * holds one, so the operator meets the trap before the mission does. See
    * `NOTES-communication-measured-review.md` §7 row 12.
    */
   private matchRule(

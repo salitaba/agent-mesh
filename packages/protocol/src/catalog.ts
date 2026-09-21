@@ -382,7 +382,11 @@ export function obligesRecipients(m: ObligationEnvelope): boolean {
  *
  * Kept rather than deleted because it is re-exported from the package index
  * and removing it is a public API break for no in-repo gain — it has zero
- * runtime consumers. Derived rather than corrected in place so the two lists
+ * runtime consumers. Its only readers are the three tests that pin it as a
+ * copy (`tests/core/obligation-predicate.test.ts`,
+ * `tests/core/context-inbox-order.test.ts`,
+ * `tests/protocol/mcp-comms-surface.test.ts`), so a deletion is small but not
+ * free: they object. Derived rather than corrected in place so the two lists
  * can never disagree again: as written it enumerated six REQUEST names plus
  * ESCALATE and omitted CHALLENGE, which creates a debt.
  */

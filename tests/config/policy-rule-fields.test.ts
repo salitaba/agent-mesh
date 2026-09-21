@@ -245,6 +245,77 @@ test("config: a rule-level requires is reported as unread, and a rule without on
   assert.deepEqual(clean.warnings.filter((w) => w.includes("rule-level requires")), []);
 });
 
+test("config: a deny.capabilities rule that would also strip a held authority is reported", () => {
+  // `evaluateAuthority` denies a HELD authority whenever the matched rule names
+  // any capability, because an authority check carries no token of its own to
+  // compare against. The denial stays — undoing it removes a DENY, which is a
+  // widening — but it must not be silent, and it is silent in two directions:
+  // the rule reads as a capability rule, and the loss lands only on the op path
+  // (the message path asks `holdsAuthority` in the reducer, which consults no
+  // rules) so the symptom is a mission stalled at the design gate with nothing
+  // in the log to explain it.
+  const cfg = resolve(testConfigYaml({
+    agents: [
+      { id: "lead", role: "tech-lead", authority: ["implementation.approve"], interests: [] },
+      { id: "deputy", role: "tech-lead", authority: ["architecture.approve"], interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { lead: ["dev"], deputy: ["dev"], dev: ["lead", "deputy"] },
+    rules: [{ id: "lead-no-merge", when: { actor_role: "tech-lead" }, deny: { capabilities: ["git.merge"] } }],
+  }));
+  const warned = cfg.warnings.filter((w) => w.includes("also strips authority"));
+  assert.equal(warned.length, 1, `expected one authority-stripping warning, got ${JSON.stringify(cfg.warnings)}`);
+  assert.match(warned[0] ?? "", /'lead-no-merge'/, "the warning must name the rule to go and fix");
+  assert.match(warned[0] ?? "", /agents\.lead/, "and every seat that loses the sign-off");
+  assert.match(warned[0] ?? "", /agents\.deputy/, "not just the first one the filter happened to yield");
+  assert.match(warned[0] ?? "", /implementation\.approve/);
+  assert.match(warned[0] ?? "", /architecture\.approve/, "each seat's own authority, or the operator cannot tell what is at stake");
+});
+
+test("config: the shipped shape of a deny.capabilities rule draws no warning", () => {
+  // Every `deny.capabilities` rule in this repo — the two in examples/spring-boot
+  // and the one in examples/line-follower-sim — scopes to a seat that declares
+  // no `authority` at all, so the branch cannot fire for it. A warning here
+  // would fire on all three and teach operators to ignore it.
+  const cfg = resolve(testConfigYaml({
+    agents: [
+      { id: "lead", role: "tech-lead", authority: ["implementation.approve"], interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { lead: ["dev"], dev: ["lead"] },
+    rules: [{ id: "dev-no-merge", when: { actor_role: "developer" }, deny: { capabilities: ["git.merge"] } }],
+  }));
+  assert.deepEqual(cfg.warnings.filter((w) => w.includes("also strips authority")), []);
+});
+
+test("config: when.to exempts a rule, and when.capability does not", () => {
+  // The two halves of `matchRule`'s asymmetry, and the reason the check is
+  // ported from it rather than reasoned about: an authority check addresses
+  // nobody, so `to` fails CLOSED and the rule never applies — while
+  // `message_type` and `capability` compare only when the match carries one,
+  // which an authority check never does, so a rule that looks scoped to
+  // `git.merge` still lands on the seat's held authority.
+  const seat = { id: "lead", role: "tech-lead", authority: ["implementation.approve"], interests: [] };
+  const dev = { id: "dev", role: "developer", interests: [] };
+  const withRule = (rule: Record<string, unknown>) =>
+    resolve(testConfigYaml({
+      agents: [seat, dev],
+      mayContact: { lead: ["dev"], dev: ["lead"] },
+      rules: [rule],
+    })).warnings.filter((w) => w.includes("also strips authority"));
+
+  assert.deepEqual(
+    withRule({ id: "recipient-scoped", when: { actor: "lead", to: "dev" }, deny: { capabilities: ["git.merge"] } }),
+    [],
+    "`to` scopes the rule away from an authority check, exactly as matchRule makes it",
+  );
+  assert.equal(
+    withRule({ id: "cap-scoped", when: { actor: "lead", capability: "git.merge" }, deny: { capabilities: ["git.merge"] } }).length,
+    1,
+    "`when.capability` does NOT scope it away: an authority check carries no capability to compare",
+  );
+});
+
 test("config: a hand-written rule with no when at all is a config load, not a TypeError", () => {
   // `policies.rules` has no `items` schema, so nothing upstream enforces the
   // required `when` — and the cross-field pass dereferenced `rule.when.actor`
