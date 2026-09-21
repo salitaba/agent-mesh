@@ -1056,3 +1056,73 @@ three questions. Asked to choose, I chose, and the reasoning matters more than t
   record of how much context a rotation destroyed, and `EventStore.flush()` — Stage 1.4's deviation —
   has zero production callers, which means no receipt this process hands out is backed by a durable
   log. Both are open at the time of writing and are the next thing.
+
+### 11n. §11l's two survivors, closed — and a third thing found on the way
+
+Both items §11m left open were about the same shape: something written, documented, and reaching
+nobody. They are closed differently, because only one of them was a missing reader.
+
+- **`transcriptTokensDiscarded` did not need a new mechanism; it needed a case statement.** The
+  search for "where should this field be read?" kept producing answers that meant new state, a new
+  projection, or a snapshot field. The actual answer was already built: `summarize()` in
+  `observability/src/views.ts` renders one human line per event for `mesh events`, `GET /events` and
+  the dashboard feed. It is documented — "Full-coverage human summary for every canonical event
+  type" — and `session.rotated` had no case in it. So the field's reader is three lines, changes no
+  state, and reaches the operator through three surfaces at once.
+
+- **The doc comment was wrong by sixteen.** Measuring the switch rather than reading it: of 79
+  canonical types, **16 had no case** and fell through to a default arm returning `""` for any
+  payload without a `summary` key — which none of the sixteen carries. A seventeenth,
+  `design.question`, had a case that could still bottom out at `""`. The list is not peripheral:
+  `commitment.discharged` is on it, which is *the* event of this branch — every expiry and every
+  refusal rendered as a blank line — along with `session.rotated`, `session.rotation_pending`,
+  `continuity.recorded`, `plan.gate_rejected`, `agent.retired` and `agent.mute_suspected`.
+  Blank is the worst available failure. A renderer that printed the raw type would be visibly
+  broken; an empty string is read as "this event carried nothing".
+
+- **The payload shapes had to come from the emit sites.** There is no payload-type map — event types
+  are a bare string union — so each case was written against the literal actually emitted. That is
+  where the sharp edges were: `commitment.discharged` spreads a caller-supplied `detail` into its
+  payload and no two of its ten callers agree on its keys (only the six ledger-written fields are
+  safe to key on); `collab.opened` nests under `p.session` while its sibling `collab.closed` is flat;
+  `escalation.auto_resolved` has three emit sites with three shapes sharing only `escalationId` and
+  `reason`; `requirement.revised` *omits the key entirely* for whichever aspect did not change; and
+  an empty `plan.steps` is how an agent retracts a plan, which "0/0 steps" would have hidden.
+
+- **The new test couples `EVENT_TYPES` to coverage**, the way `tests/protocol/event-catalog.test.ts`
+  already couples it to the `EventType` union. Both are hand-maintained; without the coupling the
+  next type added re-opens the hole silently. It probes for the default arm with a sentinel payload,
+  and separately asserts no type can render blank at all — which is the assertion that found
+  `design.question`, a case that existed and was still wrong.
+
+- **`EventStore.flush()` was the opposite problem: the reader existed, the caller did not.** The
+  barrier is documented "call it before handing out a receipt, not per append" and had zero
+  production callers. `append` returns after *queuing* the write and the ambient fsync fires every
+  fifty appends, so a 202 and its `messageId` could cross the wire up to forty-nine appends before
+  the line reached disk. Not a lost event — a lie: the caller has been told it happened and has no
+  way to ever learn otherwise.
+
+- **One call site, not twenty.** The obvious repair was `await store.flush()` in each handler that
+  mints an id. Every mutating JSON response already passes through one `json()` closure, and it has
+  not written the response head when it is called — so the barrier goes there, and two things fall
+  out of that placement for free. The endpoint added next week is covered by construction. And a
+  failed write becomes a **500 instead of the 2xx it displaced**, which is the half of `flush()`'s
+  contract that a per-handler `await` would have thrown away ("it needs to know that the write
+  failed"). It reports `retryable: false` deliberately: the event is applied in memory, so a retry
+  re-runs the action against a mesh that already has it.
+
+- **A per-response barrier is only affordable if it is free when idle**, so `JsonlEventStore` now
+  tracks whether an append is outstanding. The MCP bridge shares this path and most tool calls
+  append nothing; an unconditional fsync there would have restored exactly the per-emit syscall cost
+  the write queue was introduced to remove. The flag clears only on a *completed* flush — never on
+  the way out of a throw, which would tell the next receipt the log is durable when the line was
+  never written. That is pinned by a test, because it is the failure mode that looks like success.
+
+- **12 tests**, negative-controlled against the compiled build. Removing one `summarize` case
+  reddens the coverage test naming that exact type; disabling the barrier condition reddens the two
+  tests that assert it and leaves green the two that assert its *absence* on reads and 4xx — which
+  is the control working in both directions. Restored byte-for-byte, sha256 verified. Suite
+  **1670 pass / 0 fail**; typecheck clean; eslint 0 errors (151 pre-existing warnings, unchanged).
+
+With these, §11l has no survivors: every divergence that review opened is either fixed, or declined
+in writing with the argument that declined it.
