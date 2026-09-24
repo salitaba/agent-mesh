@@ -452,3 +452,36 @@ test("reset: the mesh keeps working afterwards (same live objects)", async () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("reset: refuses a second reset while one is still running", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-race-"));
+  const m = await boot(dir);
+  try {
+    await m.kernel.emit("human.input", { action: "probe" }, { actorId: "human" });
+
+    // Both launched before either is awaited, which is exactly what a
+    // double-clicked button produces now that the worktree copy awaits: the
+    // second request arrives while the first is still copying. Two resets that
+    // both proceed race — the winner's `removeAllWorktrees` deletes the
+    // worktrees out from under the loser's copy, and the loser aborts partway,
+    // leaving a half-written archive and no state archive at all.
+    const first = m.reset({});
+    const second = m.reset({});
+    const [a, b] = await Promise.allSettled([first, second]);
+
+    assert.equal(a.status, "fulfilled", "the first reset must run to completion");
+    assert.equal(b.status, "rejected", "the second must be refused, not queued behind the first");
+    if (a.status !== "fulfilled" || b.status !== "rejected") return;
+    assert.equal(a.value.ok, true);
+    assert.ok(a.value.archivedTo, "the winning reset must still archive the previous state");
+    assert.equal((b.reason as { code?: string }).code, "RESET_IN_PROGRESS");
+
+    // The flag has to clear, or one reset would wedge the route for the life
+    // of the process.
+    const third = await m.reset({});
+    assert.equal(third.ok, true, "a later reset must still be allowed");
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

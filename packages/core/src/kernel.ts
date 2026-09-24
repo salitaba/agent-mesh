@@ -1,8 +1,8 @@
 import type { Clock, EventId, EventType, GoalId, MeshEvent } from "../../protocol/src/index";
 import { PROTOCOL_VERSION } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
-import { applyEvent, ProjectionError } from "./projections";
-import { createInitialState, type CommitmentTtlConfig, type Projections } from "./state";
+import { applyEvent, ProjectionError, type ProjectionConfig } from "./projections";
+import { createInitialState, type Projections } from "./state";
 
 export type EventListener = (event: MeshEvent) => void | Promise<void>;
 
@@ -29,6 +29,23 @@ export class Kernel {
   private chain: Promise<void> = Promise.resolve();
   private audit: (msg: string) => void;
   private emitCount = 0;
+  /**
+   * Which turn an emit belongs to, when the caller did not say.
+   *
+   * Set by the supervisor to its own `activeTurnByAgent` lookup. Without it,
+   * `correlationId` was passed by hand at six of a hundred-and-nine emit sites,
+   * so 25 of 41 event types never carried one — including every verdict, every
+   * refusal, every `agent.failed` and every `task.created`. The consequence was
+   * not cosmetic: "which turn approved this artifact, and what else did that turn
+   * do" was simply not answerable from the log, and three separate measurements
+   * during one live watch needed a time-window heuristic because of it.
+   *
+   * Deliberately injected rather than read from a global, and deliberately
+   * OPTIONAL: a replay must reconstruct `correlationId` from the stored envelope,
+   * never from a live turn map. A replay kernel is constructed without this hook,
+   * so the field it reads is the one the log recorded.
+   */
+  public correlate?: (actorId?: string) => string | undefined;
 
   constructor(
     public readonly store: EventStore,
@@ -40,11 +57,7 @@ export class Kernel {
      * knob the live kernel has and a replay does not is a divergence between
      * the log and the state rebuilt from it.
      */
-    public readonly gates?: {
-      transitionGates?: Record<string, string[]>;
-      commitmentSemantic?: "compat" | "strict";
-      commitmentTtl?: CommitmentTtlConfig;
-    },
+    public readonly gates?: ProjectionConfig,
     private readonly snapshots?: { provider: KernelSnapshotProvider; meshId: string; every?: number },
   ) {
     this.audit = audit ?? (() => {});
@@ -66,7 +79,11 @@ export class Kernel {
       goalId: opts.goalId ?? this.state.activeGoalId ?? undefined,
       actorId: opts.actorId,
       causationId: opts.causationId,
-      correlationId: opts.correlationId,
+      // An explicit id always wins: several sites correlate to a turn the actor
+      // is no longer holding (the discard emit in `runTurn`'s `finally` is past
+      // the map delete), and one — `auditTransition` — deliberately correlates to
+      // a different party. The hook only fills the silence.
+      correlationId: opts.correlationId ?? this.correlate?.(opts.actorId),
       payload,
     };
     if (this.appliedIds.has(event.id)) {

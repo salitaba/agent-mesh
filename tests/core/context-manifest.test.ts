@@ -69,6 +69,7 @@ test("every slot in the vocabulary appears, including the empty ones", () => {
       "mission",
       "own_activity",
       "policy",
+      "refusals",
       "task",
     ],
     "a slot missing from the manifest is indistinguishable from a slot that was empty",

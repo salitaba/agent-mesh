@@ -76,12 +76,24 @@ test("classes: true takes the shipped tariff; explicit numbers win", () => {
     // with it the pre-flight refusal that can send a message as `deliver`
     // against the sender's request.
     attentionTokens: undefined,
+    // Absent for the same reason and with the same consequence: no key, no
+    // surcharge, and the flat tariff every mesh that wrote this block has.
+    congestionEvery: undefined,
   });
   assert.deepEqual(resolveDeliveryClasses({ classes: true, coalesce_ms: 5000, interrupt_cost_tokens: 250 }), {
     coalesceMs: 5000,
     interruptCostTokens: 250,
     attentionTokens: undefined,
+    congestionEvery: undefined,
   });
+  // A divisor below 1 is not a steeper curve, it is a surcharge on an empty
+  // box (or a division by zero), so it is read as "not configured" rather
+  // than clamped into something the operator did not ask for.
+  assert.equal(resolveDeliveryClasses({ classes: true, congestion_every: 0 })!.congestionEvery, undefined);
+  assert.equal(resolveDeliveryClasses({ classes: true, congestion_every: 4 })!.congestionEvery, 4);
+  // Floored, so a fractional divisor cannot put a fractional token price on a
+  // wake.
+  assert.equal(resolveDeliveryClasses({ classes: true, congestion_every: 4.7 })!.congestionEvery, 4);
   // A zero window would make `deliver` an `interrupt` by another name (gather,
   // then release on the very next tick), so zero falls back to the default.
   assert.equal(resolveDeliveryClasses({ classes: true, coalesce_ms: 0 })!.coalesceMs, 60_000);
@@ -108,6 +120,10 @@ test("mesh init scaffolds the regime, and the scaffold validates", () => {
     // seat stops being able to *work* long before it stops being able to
     // *talk*, and the degradation lands on the wrong agent.
     attentionTokens: 200_000,
+    // And born with congestion priced, for the same reason it is born with a
+    // cap: the flat tariff charges the same for waking an idle seat and the
+    // seat everyone is already queuing behind.
+    congestionEvery: 4,
   });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -153,6 +169,7 @@ test("RESERVED_PAYLOAD_KEYS still mirrors every control field", () => {
     mode: "service",
     delivery: "accrue",
     downgraded: "attention budget exhausted (2000/2000); 2000 tokens needed to wake 1 seat(s)",
+    ifUnanswered: { assume: "proceed" },
   };
   for (const key of Object.keys(everyControlField)) {
     assert.ok(RESERVED_PAYLOAD_KEYS.includes(key), `${key} is runtime-owned but not reserved in payload`);

@@ -13,7 +13,12 @@ async function chatHarness() {
       // The lead holds git.commit so this fixture is a mesh that can actually
       // land its work; without it the config layer warns (correctly) that the
       // mesh would deadlock, and these "validates clean" assertions fail.
-      { id: "lead", role: "tech-lead", capabilities: ["git.commit"], interests: [] },
+      // `requirements.accept` for the third instance of the same thing: the
+      // helper's default criterion `ship` is mandatory and is not one the runtime
+      // auto-evidences, so it closes only via `approve subject:"criterion:ship"`.
+      // With no seat holding that token the config layer warns (correctly) that
+      // the mission can never reach completion.
+      { id: "lead", role: "tech-lead", capabilities: ["git.commit"], authority: ["requirements.accept"], interests: [] },
     ],
     mayContact: { dev: ["lead"], lead: [] },
     // Same reason as git.commit above, one layer over: a mesh that activates

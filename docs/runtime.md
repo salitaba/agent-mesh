@@ -36,6 +36,30 @@ Every turn's inputs/outputs/model/tokens are appended to `turn-audit.jsonl` so
 the **orchestration** layer is deterministic and replayable even though the LLM
 is not (§41).
 
+### What counts as a productive turn
+
+A seat can act through **two** channels: the `mesh-json` ops block in its reply,
+and the `mesh_*` MCP tools it calls mid-turn. Both are real, and both are
+counted — a turn is unproductive only when neither moved the mesh.
+
+That distinction is load-bearing. Judging a turn by its ops block alone scored
+the most productive turns of a live run as empty: a seat that published three
+artifacts, opened five threads and sent four messages through the tools, then
+closed without an ops block, was logged *"no work was produced"* and took a
+strike. Because three strikes park a seat, and the recovery path re-woke it, one
+seat burned 537,479 tokens — 3.6× its configured budget — with every turn
+recorded as having produced nothing.
+
+A turn that worked through the tools but emitted no ops block is still told so,
+because closing without `done` leaves no statement of why the turn stopped — but
+it is not discarded and takes no strike.
+
+`turn.discarded` records a turn that genuinely produced nothing, with its token
+cost, under one of: `no_ops` (neither channel moved anything), `all_rejected`
+(every op refused), `timeout`, `silence`, `budget_blocked`, `failed`. It is a
+notice with no reducer — nothing projects from it — so it is safe to read as a
+pure cost signal.
+
 ## Runtime adapter interface
 
 ```ts
@@ -163,7 +187,8 @@ changing the protocol.
   print guidance about.
 - `mesh emit-schemas` regenerates `schemas/*.json` from the code (single source).
 - `mesh bench` runs the mesh-vs-single comparison across the A–F corpus.
-- `mesh mcp` is the internal stdio↔HTTP bridge spawned by OpenCode.
+- `mesh mcp` is the internal stdio↔HTTP bridge, spawned by the Claude adapter
+  (`runtime-claude` registers it as the `mesh` MCP server) to reach `/api`.
 - The dashboard (`apps/mesh-dashboard`) renders five views from the same event
   projections: mesh graph, goal progress, artifact timeline, cost, live event
   stream (SSE) — the UI holds no separate state.

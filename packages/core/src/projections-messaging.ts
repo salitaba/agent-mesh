@@ -1,7 +1,7 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import type { MeshMessage, Thread, ThreadId, CollabSession } from "../../protocol/src/index";
-import { RESPONSE_TYPES, findContract, validateContractResponse } from "../../protocol/src/index";
+import { RESPONSE_TYPES, contractForMessageType, findContract, validateContractResponse } from "../../protocol/src/index";
 // Straight from the catalog rather than through the package index: this is the
 // ONE obligation predicate, and the two core sites that ask it (here and the
 // prompt's inbox band in `context.ts`) should be visibly reaching for the same
@@ -40,15 +40,35 @@ import { artifactForRef, bumpConflict, clearPendingForArtifactReview, fingerprin
  * this stays a pure function of the log. An unknown name never reaches here
  * (the op refuses it at the edge); an unrecognised one simply yields nothing.
  */
-function contractOf(m: { payload?: unknown; control?: { contract?: string } }): string | undefined {
+function contractOf(
+  m: { type?: string; payload?: unknown; control?: { contract?: string } },
+  defaultByType = false,
+): string | undefined {
   const fromControl = m.control?.contract;
   if (typeof fromControl === "string") return fromControl;
   const legacy = (m.payload as { contract?: unknown } | undefined)?.contract;
-  return typeof legacy === "string" ? legacy : undefined;
+  if (typeof legacy === "string") return legacy;
+  // The type's own contract, when the mesh asked for it (`bus.commitments.
+  // by_type`). Resolved HERE, in the reducer, and deliberately not stamped
+  // onto `control.contract` at send time: a stamp on the wire is documented
+  // to mean "this ask passed its request schema", and this default has
+  // checked no schema. What it claims is narrower and true -- that the debt
+  // now on the ledger is governed by the contract its type speaks for.
+  //
+  // Pure, so replay re-derives it: the catalogue is frozen and the flag rides
+  // in ProjectionConfig with the semantic and the TTL. A mesh that flips the
+  // key and replays an old log correctly rebuilds a ledger holding its old
+  // asks to their types' contracts -- the flag describes how this mesh reads
+  // its ledger, not what was true the day a message was sent.
+  if (defaultByType && typeof m.type === "string") return contractForMessageType(m.type)?.name;
+  return undefined;
 }
 
-function contractSlaOf(m: { payload?: unknown; control?: { contract?: string } }): number | undefined {
-  const name = contractOf(m);
+function contractSlaOf(
+  m: { type?: string; payload?: unknown; control?: { contract?: string } },
+  defaultByType = false,
+): number | undefined {
+  const name = contractOf(m, defaultByType);
   return name !== undefined ? findContract(name)?.slaMs : undefined;
 }
 
@@ -82,7 +102,7 @@ export function applyMessagingEvent(
   state: Projections,
   event: MeshEvent,
   p: Record<string, any>,
-  config?: { commitmentSemantic?: "compat" | "strict"; commitmentTtl?: CommitmentTtlConfig },
+  config?: { commitmentSemantic?: "compat" | "strict"; commitmentTtl?: CommitmentTtlConfig; contractsByType?: boolean },
 ): boolean {
   switch (event.type) {
     case "collab.opened": {
@@ -258,6 +278,28 @@ export function applyMessagingEvent(
          */
         const revived = state.threads.get(m.threadId);
         if (revived && revived.status === "RESOLVED") revived.status = "OPEN";
+        /**
+         * The asker's own fallback, and the clock that makes it real.
+         *
+         * `computeDueBy` refuses to invent a deadline where the mesh
+         * configured none -- deliberately, and rightly, since a deadline the
+         * asker picks is a deadline the asker can set to infinity. But that
+         * rule would make `ifUnanswered` a promise the runtime cannot keep on
+         * any mesh without `bus.commitments.ttl_ms`: the default would be
+         * recorded, never fire, and the asker would wait forever for a
+         * fallback it was told it had.
+         *
+         * So a declared `afterMs` -- and ONLY that, on an ask that carries a
+         * default -- may draw its own clock. This is not the asker extending
+         * a debtor's rope: it shortens the ask's own life and releases every
+         * debtor at the end of it, which is the opposite move. The op is
+         * refused at the edge when neither this nor a configured regime
+         * exists, so a recorded default always has a deadline behind it.
+         */
+        const assumed = m.control?.ifUnanswered;
+        const ownClock = assumed && typeof assumed.afterMs === "number" && assumed.afterMs > 0
+          ? Date.parse(m.timestamp) + assumed.afterMs
+          : NaN;
         state.pendingRequests.set(m.id, {
           messageId: m.id,
           from: m.from,
@@ -266,13 +308,16 @@ export function applyMessagingEvent(
           threadId: m.threadId,
           taskId: m.taskId,
           createdAt: m.timestamp,
-          contract: contractOf(m),
-          dueBy: computeDueBy(state, m.to, m.timestamp, config?.commitmentTtl, contractSlaOf(m)),
+          contract: contractOf(m, config?.contractsByType === true),
+          dueBy: Number.isFinite(ownClock)
+            ? new Date(ownClock).toISOString()
+            : computeDueBy(state, m.to, m.timestamp, config?.commitmentTtl, contractSlaOf(m, config?.contractsByType === true)),
           goalId: m.goalId ?? event.goalId,
           artifactUris: (m.artifactRefs ?? []).map((r) => r.uri),
           // An ask to N agents is N obligations. Tracking them individually is
           // what stops one reply from closing everybody else's debt.
           outstanding: [...m.to],
+          ...(assumed ? { ifUnanswered: assumed } : {}),
         });
       }
       const answered = m.replyTo ? state.pendingRequests.get(m.replyTo) : undefined;

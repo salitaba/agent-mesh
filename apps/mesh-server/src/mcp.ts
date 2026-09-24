@@ -59,7 +59,7 @@ const TOOL_REQUIREMENT: Record<string, (def: AgentDefinition | undefined) => boo
  * map, so a model that names a hidden tool still gets it; nothing here can
  * take a capability away from a seat. That is also why this list stops at
  * tools a contract fully covers: `mesh_send` stays, because answering someone
- * and the 17 message types no contract names are still its job, and a manifest
+ * and the 16 message types no contract names are still its job, and a manifest
  * that omitted it would push the model to guess.
  */
 const SUPERSEDED_BY_CONTRACT: Record<string, string> = {
@@ -302,7 +302,7 @@ export class McpToolset {
   private toOp(name: string, a: Record<string, any>): MeshOp {
     switch (name) {
       case "mesh_send":
-        return { op: "send", type: a.type as MessageType, to: a.to, threadId: a.threadId, newThread: a.newThread, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload, note: a.note, priority: a.priority, taskId: a.taskId };
+        return { op: "send", type: a.type as MessageType, to: a.to, threadId: a.threadId, newThread: a.newThread, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload, note: a.note, priority: a.priority, taskId: a.taskId, ifUnanswered: a.ifUnanswered };
       case "mesh_broadcast":
         return { op: "broadcast", type: a.type as MessageType, payload: a.payload, note: a.note, artifactRefs: a.artifactRefs };
       case "mesh_collab":
@@ -316,7 +316,7 @@ export class McpToolset {
       // Passing both `threadId` and `newThread` is safe — `sendMessage`
       // resolves a live thread first and only then falls back to opening one.
       case "mesh_request":
-        return { op: "send", type: (a.requestType ?? "REQUEST") as MessageType, to: a.to, threadId: a.threadId, newThread: a.subject ? { subject: a.subject, artifactRefs: a.artifactRefs } : undefined, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload ?? {}, note: a.note };
+        return { op: "send", type: (a.requestType ?? "REQUEST") as MessageType, to: a.to, threadId: a.threadId, newThread: a.subject ? { subject: a.subject, artifactRefs: a.artifactRefs } : undefined, replyTo: a.replyTo, artifactRefs: a.artifactRefs, payload: a.payload ?? {}, note: a.note, ifUnanswered: a.ifUnanswered };
       case "mesh_respond":
         return { op: "respond", messageId: a.messageId, type: a.type as MessageType, payload: a.payload, artifactRefs: a.artifactRefs };
       case "mesh_discharge":
@@ -389,7 +389,7 @@ export class McpToolset {
       case "mesh_artifact_transition":
         return { op: "transition_artifact", artifactId: a.artifactId, to: a.to, evidence: a.evidence };
       case "mesh_request_review":
-        return { op: "request_review", artifactId: a.artifactId, reviewers: a.reviewers };
+        return { op: "request_review", artifactId: a.artifactId, reviewers: a.reviewers, ifUnanswered: a.ifUnanswered };
       case "mesh_task_claim":
         return { op: "claim_task", taskId: a.taskId };
       case "mesh_task_complete":
@@ -397,7 +397,7 @@ export class McpToolset {
       case "mesh_task_create":
         return { op: "create_task", title: a.title, description: a.description, assignedTo: a.assignedTo, requiredCapabilities: a.requiredCapabilities, artifactRefs: a.artifactRefs };
       case "mesh_research_request":
-        return { op: "request_research", to: a.to, question: a.question, artifactRefs: a.artifactRefs };
+        return { op: "request_research", to: a.to, question: a.question, artifactRefs: a.artifactRefs, ifUnanswered: a.ifUnanswered };
       case "mesh_decision_propose":
         return { op: "propose_decision", topic: a.topic, decision: a.decision, evidence: a.evidence };
       case "mesh_decision_ratify":
@@ -421,7 +421,7 @@ export class McpToolset {
       case "mesh_contracts":
         return { op: "contracts", role: a.role };
       case "mesh_call":
-        return { op: "call", contract: a.contract, request: a.request, to: a.to };
+        return { op: "call", contract: a.contract, request: a.request, to: a.to, ifUnanswered: a.ifUnanswered };
       case "mesh_plan":
         return { op: "plan", steps: a.steps, taskId: a.taskId };
       case "mesh_plan_step":
@@ -802,8 +802,26 @@ export class McpToolset {
     // legal messages on the strength of a list that answers a different
     // question.
     const msgType = (desc: string) => ({ ...str(desc), enum: [...MESSAGE_TYPES] });
+    // The only field on an ask that lets the asker spend LESS of everyone
+    // else's attention, so it is declared on every tool that opens a
+    // commitment rather than only on the contract path. An ask carrying one
+    // is never nudged and never escalates as a stalemate: at its deadline the
+    // mesh discharges it `defaulted` and hands the asker back the value it
+    // named. The description says "you will proceed" rather than "we assume"
+    // on purpose — the value is the ASKER's own commitment, not a guess the
+    // mesh makes on its behalf.
+    const ifUnanswered = {
+      type: "object",
+      description: "What you will do if nobody answers. Pass it whenever you can name that in advance: the mesh then stops chasing this ask for you, tells the recipient that silence is a legal ending, and at the deadline hands your own default back to you instead of raising a card for a human.",
+      required: ["assume"],
+      properties: {
+        assume: { description: "the value you will proceed with — recorded on the ask and handed back to you verbatim" },
+        afterMs: { type: "number", exclusiveMinimum: 0, description: "how long to wait first. Omit it only on a mesh that sets its own commitment deadline; with neither, the ask is refused rather than left to wait forever." },
+      },
+      additionalProperties: false,
+    };
     return [
-      { name: "mesh_send", description: "Send a typed message to agents (structured mesh protocol; never communicate outside the mesh).", inputSchema: { type: "object", required: ["type", "to"], properties: { type: msgType("message type"), to: strArr("recipient agent ids"), threadId: str("existing thread id"), newThread: obj("{subject, artifactRefs?} to open a thread"), replyTo: str("message id being answered"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("natural-language payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), priority: str("LOW|NORMAL|HIGH|URGENT"), taskId: str("task context") }, additionalProperties: false } },
+      { name: "mesh_send", description: "Send a typed message to agents (structured mesh protocol; never communicate outside the mesh).", inputSchema: { type: "object", required: ["type", "to"], properties: { type: msgType("message type"), to: strArr("recipient agent ids"), threadId: str("existing thread id"), newThread: obj("{subject, artifactRefs?} to open a thread"), replyTo: str("message id being answered"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("natural-language payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), priority: str("LOW|NORMAL|HIGH|URGENT"), taskId: str("task context"), ifUnanswered }, additionalProperties: false } },
       { name: "mesh_broadcast", description: "Broadcast an INFORM-class message to every mesh participant.", inputSchema: { type: "object", required: ["type"], properties: { type: msgType("message type"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_collab", description: "Open a TIME-BOXED discussion with other agents, for work too open-ended for a single request. It obliges nobody to answer, but it is bounded: it ends on a clock and on a message count, and running past either raises a card for the human. Prefer mesh_request when you can name what you want; use this only for genuine discovery, and close it with mesh_collab_close as soon as you have what you came for.", inputSchema: { type: "object", required: ["with", "topic"], properties: { with: strArr("agent ids to include"), topic: str("what this discussion is for"), payload: obj("opening message"), boxMs: { type: "number", description: "shorten the time box (ms); it can never be lengthened" }, maxExchanges: { type: "number", description: "shorten the message budget; it can never be raised" }, artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_collab_close", description: "Close a discussion you are part of, recording what came of it. Closing early costs nothing; letting it run to its edge always raises a card.", inputSchema: { type: "object", required: ["threadId", "outcome"], properties: { threadId: str("the collab thread"), outcome: str("what was decided or learned") }, additionalProperties: false } },
@@ -825,7 +843,7 @@ export class McpToolset {
       // names the ASK rather than its wire type and has its request shape
       // checked before anyone is woken — which is why this tool leaves the
       // manifest entirely under `bus.vocabulary: "contracts"`.
-      { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority") }, additionalProperties: false } },
+      { name: "mesh_request", description: "Open a typed request to other agents (asynchronous; you will be woken on response).", inputSchema: { type: "object", required: ["to"], properties: { to: strArr("recipients"), requestType: str("REQUEST_* type"), subject: str("thread subject"), threadId: str("existing thread to ask in; leave unset to open a new one"), replyTo: str("message id this request follows up on"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), payload: obj("payload"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), ifUnanswered }, additionalProperties: false } },
       { name: "mesh_respond", description: "Respond to a specific received message.", inputSchema: { type: "object", required: ["messageId", "type"], properties: { messageId: str("message being answered"), type: msgType("response message type"), payload: obj("payload"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_discharge", description: "Close a request addressed to you that you will NOT answer, stating why. Use instead of staying silent: an unanswered request nudges, burns budget, and eventually escalates to a human as a stalemate.", inputSchema: { type: "object", required: ["messageId", "reason"], properties: { messageId: str("the request you are closing"), reason: str("why it will not be answered, in your own words — the asker reads this"), refusal: str("WHICH no this is, named from the contract's refusal set. The ask's mail line lists the names its contract admits; passing one lets the asker tell 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your prose. Omit it and nothing is checked — prose alone still settles the ask.") }, additionalProperties: false } },
       // The mirror of `mesh_discharge`, and it exists because the asker had
@@ -865,11 +883,11 @@ export class McpToolset {
       { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content. Give exactly ONE body: fromPath (a file you already wrote — cheapest, the mesh reads it), edits (changes to a previous version, with asVersionOf), or content (inline — only for something that was never a file).", inputSchema: { type: "object", required: ["name", "type"], properties: { name: str("artifact name"), type: str("ArtifactType"), fromPath: str("path to a file in YOUR workspace, relative to its root. Prefer this: the mesh reads the file, so the content costs you nothing to publish."), edits: { type: "array", description: "exact replacements against the version named by asVersionOf — use instead of re-sending a whole revised document", items: { type: "object", required: ["old", "new"], properties: { old: str("text to replace; must appear exactly once in the previous version"), new: str("what replaces it; empty string deletes") }, additionalProperties: false } }, content: str("full content, inline. Only when the document is not already a file and does not revise one."), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
       { name: "mesh_artifact_read", description: "Read the content of an artifact version by URI or id. Large artifacts come back in parts: if the result says truncated, call again with the offset it gives you.", inputSchema: { type: "object", required: ["artifactRef"], properties: { artifactRef: str("artifact:// URI or artifact id"), offset: { type: "number", description: "character offset to resume from, taken from a previous truncated result's nextOffset" } }, additionalProperties: false } },
       { name: "mesh_artifact_transition", description: "Request an artifact state-machine transition (runtime-enforced gates apply).", inputSchema: { type: "object", required: ["artifactId", "to"], properties: { artifactId: str("artifact id"), to: str("target ArtifactStatus"), evidence: str("evidence description") }, additionalProperties: false } },
-      { name: "mesh_request_review", description: "Move an artifact to review and request reviewers.", inputSchema: { type: "object", required: ["artifactId", "reviewers"], properties: { artifactId: str("artifact id"), reviewers: strArr("reviewer agent ids") }, additionalProperties: false } },
+      { name: "mesh_request_review", description: "Move an artifact to review and request reviewers.", inputSchema: { type: "object", required: ["artifactId", "reviewers"], properties: { artifactId: str("artifact id"), reviewers: strArr("reviewer agent ids"), ifUnanswered }, additionalProperties: false } },
       { name: "mesh_task_claim", description: "Claim an open task you have the capabilities for.", inputSchema: { type: "object", required: ["taskId"], properties: { taskId: str("task id") }, additionalProperties: false } },
       { name: "mesh_task_complete", description: "Complete a claimed task with a summary and artifact evidence.", inputSchema: { type: "object", required: ["taskId", "summary"], properties: { taskId: str("task id"), summary: str("what was done"), artifacts: strArr("evidence artifact URIs") }, additionalProperties: false } },
       { name: "mesh_task_create", description: "Create a task in the shared backlog.", inputSchema: { type: "object", required: ["title", "description"], properties: { title: str("task title"), description: str("spec"), assignedTo: str("optional assignee"), requiredCapabilities: strArr("capabilities"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
-      { name: "mesh_research_request", description: "Ask a service-mode explorer for repository/system research.", inputSchema: { type: "object", required: ["to", "question"], properties: { to: str("explorer agent id"), question: str("research question") }, additionalProperties: false } },
+      { name: "mesh_research_request", description: "Ask a service-mode explorer for repository/system research.", inputSchema: { type: "object", required: ["to", "question"], properties: { to: str("explorer agent id"), question: str("research question"), ifUnanswered }, additionalProperties: false } },
       { name: "mesh_decision_propose", description: "Propose an organizational decision (goes to the decision registry).", inputSchema: { type: "object", required: ["topic", "decision"], properties: { topic: str("decision topic"), decision: obj("structured decision"), evidence: strArr("artifact refs") }, additionalProperties: false } },
       { name: "mesh_decision_ratify", description: "Ratify a proposed decision (requires architecture.approve authority).", inputSchema: { type: "object", required: ["decisionId"], properties: { decisionId: str("decision id") }, additionalProperties: false } },
       { name: "mesh_lease_acquire", description: "Acquire the single-writer lease on an artifact you own.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), files: strArr("files you intend to touch") }, additionalProperties: false } },
@@ -881,7 +899,7 @@ export class McpToolset {
       { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
       { name: "mesh_write_continuity", description: "Hand your working state to the session that replaces yours. Call this when told your session is about to be rotated. Do NOT list your open asks — the mesh fills those in.", inputSchema: { type: "object", required: ["nextIntent"], properties: { nextIntent: str("one sentence: what you were about to do next"), beliefs: { type: "array", description: "what you concluded, and what each conclusion stands on", items: { type: "object", required: ["claim", "basis", "confidence"], properties: { claim: str("what you believe"), basis: str("artifact uri, message id or event id that supports it"), confidence: { type: "string", enum: ["asserted", "assumed"], description: "asserted = you verified it; assumed = you proceeded on it unchecked" } }, additionalProperties: false } }, rejected: { type: "array", description: "what you already tried that was turned down", items: { type: "object", required: ["what", "rejectedBy", "reason"], properties: { what: str("artifact uri, or a short description"), rejectedBy: str("who rejected it"), reason: str("why") }, additionalProperties: false } } }, additionalProperties: false } },
       { name: "mesh_contracts", description: "List the named asks this mesh knows how to route, with the shape each one expects and who can answer it. Call this before mesh_call when you are unsure what to ask for.", inputSchema: { type: "object", properties: { role: str("only contracts a seat in this role would raise") }, additionalProperties: false } },
-      { name: "mesh_call", description: "Raise a named contract (see mesh_contracts). Preferred over mesh_send for the asks it covers: the mesh picks the recipient, validates the request shape before anyone is woken, and names the refusals you may get back. Unknown names are refused with the list of known ones.", inputSchema: { type: "object", required: ["contract"], properties: { contract: str("contract name, e.g. review.artifact"), request: obj("fields the contract requires"), to: strArr("override the recipient the mesh would pick") }, additionalProperties: false } },
+      { name: "mesh_call", description: "Raise a named contract (see mesh_contracts). Preferred over mesh_send for the asks it covers: the mesh picks the recipient, validates the request shape before anyone is woken, and names the refusals you may get back. Unknown names are refused with the list of known ones.", inputSchema: { type: "object", required: ["contract"], properties: { contract: str("contract name, e.g. review.artifact"), request: obj("fields the contract requires"), to: strArr("override the recipient the mesh would pick"), ifUnanswered }, additionalProperties: false } },
       // This is the ONLY channel that lets an agent recover from a plan-gate
       // rejection inside the SAME turn: a prose rejection rides endSummary into
       // memory and is not read until the next activation, but an MCP caller

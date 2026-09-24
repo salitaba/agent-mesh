@@ -67,7 +67,11 @@ function resolve(opts: Parameters<typeof meshYaml>[0]) {
   }
 }
 
-const merge = (w: string[]) => w.filter((x) => x.includes("git.merge"));
+// Narrow to the unmergeable-GATE warning specifically. `includes("git.merge")`
+// was a good-enough proxy until a second git.merge warning existed
+// (`warnMergeWithoutRepair`, for a seat that can land a patch but not repair
+// one), which this filter then swept up and reported as a gate problem.
+const merge = (w: string[]) => w.filter((x) => x.includes("no agent holds 'git.merge'"));
 const boots = (w: string[]) => w.filter((x) => x.includes("startup.activate"));
 const wired = (w: string[]) => w.filter((x) => x.includes("wired to nobody"));
 

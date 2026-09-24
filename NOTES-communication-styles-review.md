@@ -1056,3 +1056,496 @@ Two consequences worth recording, because neither was obvious:
 
 The depth scan and the `openThreads` filter needed no change: both already read
 `status`, which is the whole reason a terminal value was worth producing.
+
+---
+
+## 8. Shipped since: consequence, the axis the runtime could not see
+
+Everything above this section reasons about communication on two axes — does
+this exchange *oblige*, and does delivery *buy a turn*. A third was missing,
+and its absence was not a gap in the design but a live defect in the runtime.
+
+### 8a. The defect: obligation was standing in for consequence
+
+`classifyDelivery` derived a message's delivery class from `isObligingType`,
+which is true of `REQUEST*`, `ESCALATE` and `CHALLENGE` and of nothing else.
+Sixteen of the twenty-four message types therefore fell through to `accrue`
+— including every type that moves work (`HANDOFF`, `DELEGATE`, `PATCH_READY`)
+and every type that settles a review (`APPROVE`, `REJECT`, `VETO`, `BLOCK`).
+
+`accrue` means never woken for *and* never nudged back: the sweep chases only
+`interrupt`. So under the regime `mesh init` writes for every new mesh, a
+handoff moved work to a seat that was never told, nothing resurfaced it, and
+— because the sender's own ask had already been discharged — no stalemate
+detector ever fired. The mesh went quiet holding live work, and looked idle
+rather than stuck.
+
+The worst instance was structural rather than incidental: `deliverWorkerResult`
+reports a finished sub-worker to its parent as a `HANDOFF`. The parent's
+`REQUEST_EXECUTION` is discharged by the strict-mode taskId contract, so the
+ledger is clean, the class is `accrue`, and the parent sleeps forever on
+completed work.
+
+The two sides are held by `tests/core/delivery-work-movement.test.ts`, which
+kept its negative control: the same HANDOFF wakes normally in a mesh that never
+opted into the regime, which is what made this latent rather than obvious.
+
+### 8b. The fix belongs in the catalogue, because there were two consumers
+
+`movesWork` sits beside `isObligingType` in `protocol/src/catalog.ts` and
+answers the other half of the question: does this change what the recipient
+should do next, even though it obliges no reply? A type qualifies if it
+transfers custody (`MISSION`, `DELEGATE`, `HANDOFF`, `PATCH_READY`) or is a
+verdict on work the recipient is parked on (`APPROVE`, `REJECT`, `VETO`,
+`BLOCK`). Reports about the world — `INFORM`, `PROPOSE`, `TEST_RESULT`,
+`SECURITY_FINDING`, `COMMIT`, `ROLLBACK`, `WAIT`, `DONE` — stay out, because a
+fix that woke everybody would have bought back the wake-on-everything mesh
+delivery classes exist to replace.
+
+Putting it in the catalogue rather than patching `classifyDelivery` is what the
+second consumer forced. `defersMail` — the recipient's own `wake.defer_non_obliging`
+rationing — opens with the *same* `obligesRecipients` test, so it inherited the
+identical blind spot by an independent route. Stated at its sharpest:
+
+> Before this change, a mesh woke a seat for work handed to it **only if it
+> enabled neither delivery classes nor `defer_non_obliging`** — that is, only
+> in the legacy wake-on-everything mode, which is precisely the mode
+> `mesh init` does not write.
+
+Both opt-in paths out of wake-on-everything swallowed work movement, because
+both asked "does this oblige?" when the question was "does this move work?".
+Work-movers now class `deliver`, not `interrupt`: nobody owes an answer, so
+there is nothing to chase, and a burst of handoffs should cost one turn.
+
+The enumerated set is the thing `isObligingType` argues against, and there is
+no prefix to match on here. The answer is a louder failure rather than a better
+list: `tests/protocol/work-moving-types.test.ts` asserts every member of
+`MESSAGE_TYPES` has been classified deliberately, so adding a speech act
+without deciding this question fails the build instead of silently accruing.
+
+### 8c. Why it stayed latent: the demos ran a mesh no user is given
+
+None of the five `examples/*/mesh.yaml` carried a `bus:` block, so nothing the
+product demonstrates exercised the priced regime that every scaffolded mesh
+gets. All five now enable `bus.delivery`, at `coalesce_ms: 2000` rather than
+the scaffold's 60s — measured, not guessed: `examples/demo-stub` converges in
+~3s at that window and ~6s at 5000, because most bursts are drained by a turn
+the seat was taking anyway.
+
+Turning it on immediately failed the journey test, which is the point of having
+one. `examples/demo-stub` stalled one step from done, and the cause was the
+demo team itself: `bench.ts` answered pm's release `REQUEST_REVIEW` by opening
+a *fresh thread* with a `TEST_RESULT` and no `replyTo`. That discharged
+nothing, classed `accrue`, and pm was never woken. The demo team is the worked
+example of how a seat is supposed to talk, and it was modelling exactly the
+habit §8d corrects; it now answers with `replyTo` via a shared `answering()`
+helper. Note what this is *not*: `TEST_RESULT` was not added to `movesWork`.
+An answer to a parked asker already classes `interrupt` on its own branch, and
+the message only needed to say what it was.
+
+### 8d. The prompts taught a runtime that no longer exists
+
+All seven `roles/*.md` and `context.ts` carried the same sentence: `replyTo` is
+"the only exact signal the runtime has; without it it guesses from thread and
+timing, and a wrong guess either strands the asker forever or closes a question
+nobody answered." Under `strict` — the default since the semantic was
+introduced — there is no guessing: without `replyTo` the answer is delivered
+and read and discharges nothing. The advice was right and its reason was false,
+which is the worst shape for a prompt, because an agent that reasons about the
+stated mechanism reasons from fiction. All eight sites now describe what
+actually happens.
+
+The second divergence was an omission. The mesh prices attention and never told
+the payer: `interrupt_cost_tokens` is debited from the sender's wallet per
+recipient woken, and an unaffordable interrupt is silently downgraded, so a
+seat could spend its allowance on URGENT flags, watch them quietly stop
+working, and have no way to learn why. A price nobody is quoted is a penalty.
+The bundle now carries `interruptCostTokens` and the contract quotes it —
+rendered only when the tariff can fire, on the same "never advertise a rule
+that cannot fire" discipline as `delegationEnabled`.
+
+### 8e. The four that were deferred, and what happened to them
+
+The four items below were listed here as deliberately not done. All four have
+since been implemented, so the list stands as a record of the reasoning rather
+than of the state. Three shipped roughly as described; the fourth was
+re-scoped on evidence, and that is noted where it happened.
+
+- **Contractless asks failed open.** `supervisor.ts` was explicit that an ask
+  with no contract "has nothing to check against and is accepted as given", so
+  the eight contracts remained opt-in decoration: a bare `REQUEST_REVIEW`
+  opened a real debt with no schema, no refusal set and no SLA, while
+  `mesh_call` with the same question got all three. Two doors to the same room,
+  one of them with no rules on it, and the typed door is the one the older role
+  prompts teach.
+
+  Now `bus.commitments.by_type` lets a bare typed ask inherit the contract its
+  own message type names. The mapping is derived from each contract's
+  `messageType` — never enumerated — so it cannot drift from the catalogue;
+  `contractForMessageType` returns nothing for a type no contract claims, which
+  matters because `isObligingType` is a prefix match and a later `REQUEST_*`
+  must arrive contractless rather than inherit whichever contract sorts first.
+
+  Three deliberate limits. The default is resolved **in the reducer**, not
+  stamped on `control.contract`: a stamp on the wire is documented to mean
+  "this ask passed its request schema", and this default has checked none, so
+  writing it would make every later reader of that field wrong. The request
+  body is therefore NOT validated — the refusals and the deadline are real, the
+  shape check is not, and the prompt says so in those words, because a closed
+  refusal set the debtor is never shown is a trap rather than a vocabulary.
+  And an inherited SLA *narrows* a deadline regime and never creates one: a
+  mesh with no `ttl_ms` still has no clock, because expiry is an operator's
+  choice and not something to inherit from an upgrade.
+
+  The key is off unless a mesh writes it. Turning it on turns an open refusal
+  set into a closed one, which is a behaviour change every existing mesh is
+  entitled not to receive.
+
+- **The tariff was flat.** An interrupt cost the same whether the recipient's
+  mailbox was empty or forty deep, which asks the wrong question: those two
+  wakes buy different things. The first buys a turn that starts on the sender's
+  problem; the second buys a turn that starts by reading nineteen other
+  people's.
+
+  `bus.delivery.congestion_every` adds one step of surcharge per N unread in
+  the recipient's box, capped at 4x. The cap is the load-bearing part: a sender
+  cannot see inside another seat's mailbox, and `MAX_UNREAD_PER_AGENT` is 200,
+  so an uncapped curve at `every: 1` reaches 200x — a price nobody can predict
+  is not a price, it is a penalty. The prompt quotes the divisor, the cap and
+  the cheap alternative, so the sender can compute the bill before sending.
+
+  One subtlety cost a helper: the pre-flight quote runs before the reducer
+  files the message and the charge runs after, so counting the box naively
+  makes them differ by one, which at a tier boundary quotes one price and bills
+  another for a surcharge the sender's own message caused. `pricedMailDepth`
+  excludes the message being priced, and both sides now go through one
+  `interruptCost`.
+
+- **There was no outbound digest.** Re-scoped, and the re-scoping is the
+  interesting part. The original framing was a *render* digest — batch what a
+  seat sends in a turn into one rendered block. That is not where the money is:
+  the inbox is already thread-grouped and supersession-collapsing, and
+  `docs/configuration.md` measures the whole mail section at 2.2% of the
+  briefing and ~0.2% of mission input. A render digest would have optimised a
+  rounding error, and the docs already said so.
+
+  The real defect was one layer down, at pricing. `scheduler/src/index.ts`
+  does not enqueue a second turn for a seat already queued, so three URGENT
+  messages to one colleague in one burst bought **one** turn and were billed
+  three times. Charging for a turn nobody gets was never a policy. The digest
+  therefore landed as a per-(sender, recipient, turn) ledger: the second wake
+  is free, the refusal path agrees with it (an exhausted attention line does
+  not refuse a wake that costs nothing), and the ledger clears at the top of
+  each turn, because whoever a seat woke last turn has long since taken it.
+  Not configurable — billing for nothing is a bug, not a knob.
+
+- **`bus.vocabulary` was left alone in the examples.** Now set (commented) in
+  all five. The check that made it safe: it is read in exactly one place, the
+  MCP manifest advertisement, and never by the kernel. The look also turned up
+  a real divergence — both config-side texts described seven tools and omitted
+  `mesh_withdraw`, which is registered and dispatched. Fixed in the same pass.
+
+One bug found while testing, and it is the reason the replay test exists:
+`contractsByType` was declared on the kernel's `gates` and never handed to the
+kernel at construction, so the reducer defaulted nothing while the prompt
+claimed it had. The live kernel and `supervisor.replay()` read this knob from
+two different places; a knob one has and the other does not is a divergence
+between the log and the state rebuilt from it.
+
+On priorities: `NOTES-communication-measured-review.md` §11f is right that the
+money is in output tokens (46%) and calls per turn (median 79), and that
+neither is a mail-path question. None of the above is claimed as a cost win.
+This round is about a mesh that stopped moving work, which is a correctness
+question and would be worth fixing at any price.
+
+## 9. Shipped since: the knob that went missing three times, made impossible
+
+### 9a. The instance was fixed in §8e; the shape was not
+
+`contractsByType` reached production declared on the kernel's `gates`, read by the reducer, and
+passed by nobody. Fixing that one field would have been the third repair of the same defect at the
+same site: `commitmentSemantic` went missing the same way, then `commitmentTtl`, then this. Three
+occurrences is not carelessness, it is a shape — and the shape was four hand-maintained lists of the
+same four fields, in four files, with nothing connecting them.
+
+- `Kernel`'s `gates?: { ... }` — an inline literal, maintained by hand
+- `mesh-server`'s `new Kernel(...)` — a second literal, copied
+- `Supervisor.projectionConfig()` — a third, for replay
+- `tests/replay` — a fourth, and the reason the gap was invisible
+
+What made adding a fifth field silent is that `ProjectionConfig` is **all-optional**, and an object
+literal that omits an optional key type-checks perfectly. Every one of those four sites compiled
+while disagreeing about what a projection is.
+
+**The fix is one producer with a required return type.** `projectionConfigFor(config)` in
+`projections.ts` returns all four fields, none optional. `Kernel.gates` is now typed
+`ProjectionConfig` instead of restating it. `projectionConfig()` calls the producer instead of
+hand-copying. `mesh-server` passes the producer's result. `ProjectionConfig` itself stays all-optional
+on purpose — tests construct deliberately partial ones, including the negative control below — so the
+requiredness lives in the producer, which is the only thing a production caller should use.
+
+Negative-controlled: deleting one field from the producer's body is `TS2741`, not a passing build.
+That is the whole point. The next knob cannot be dropped at a construction site, because there is
+one construction site.
+
+### 9b. The replay test could not have caught it
+
+It handed the fresh kernel **one of the four knobs** and then compared a view set that excluded the
+ledger those knobs write into. It passed for the same reason a test that asserts nothing passes.
+
+Now it builds the fresh kernel from `projectionConfigFor`, asserts the rebuilt ask carries both
+`contract` and `dueBy` — the two fields `contractsByType` and `commitmentTtl` actually produce — and
+ends with a control: a kernel given only `transitionGates` must **not** match the live mesh.
+If that assertion ever passes, the test is proving nothing again and says so in its own message.
+
+One exclusion, stated rather than hidden: `budgets` is left out of the comparison because
+`BudgetManager.declare` writes through to state and emits no event, so a declared-but-unconsumed
+budget line is not replayable at all. That is a property of the system, not of the test, and it is
+named in the test so the next reader does not mistake it for laziness.
+
+### 9c. Three audit findings that were wrong, and what refuted them
+
+Three parallel audits ran over the same surface looking for more of this shape. Three of their
+findings did not survive checking, and the checks are worth recording because each looked convincing:
+
+- **`AgentDefinition.rolePrompt` is not dead.** No static reader in the repo, but `runtime-http`
+  POSTs the whole definition bundle every turn and its `/sessions` payload omits `rolePromptText` —
+  so for an HTTP agent this field is the *only* channel carrying the role. Documented on the type
+  with the consumer named, and explicitly marked do-not-delete, rather than removed.
+- **The congestion guard is not inconsistent.** `context.ts` and `supervisor.ts` were reported to
+  disagree about a zero price; they agree in effect, because a surcharge applied to zero is zero.
+  No change.
+- **Hiding `bus.vocabulary` cannot strand a role prompt.** The claim was that prompts name MCP tool
+  names. `grep -c "mesh_" roles/*.md` is 0 for all seven — they name ops and message types, which
+  the manifest does not gate.
+
+Recording these because the cost of an audit is not the findings it misses, it is the ones it
+invents; a note that says "checked, false" is what stops the third re-investigation.
+
+### 9d. Per-agent budget caps that never bind
+
+A seat's `budget` block accepts four caps and enforces two. `tokens` becomes a real ledger line the
+supervisor reserves against and can auto-raise; `max_activations` is a policy-engine DEFER.
+`wall_clock_minutes` and `max_events` are read by nothing —
+there is no per-agent wall-clock or event ledger — while the identically-named `budgets.mission.*`
+keys are enforced in `termination.ts`. An operator capping a runaway seat with `wall_clock_minutes`
+gets silence and believes they are protected.
+
+Warned, not enforced, following `warnInertVariant`'s precedent: enforcing would start terminating
+seats in meshes that already set the key and have been running fine. The warning names the exact
+path the author wrote, the mission key that is enforced, and `budget.tokens` for the per-seat case —
+because the mission cap is not per-seat and an operator sent only there would cap the wrong thing.
+
+Six tests. The one that matters is `the caps that DO bind never warn`: the failure mode worth
+guarding is not a missing warning, it is a warning that grows to cover `tokens` and talks an
+operator into removing a cap that works. All five shipped examples are silent.
+
+### 9e. Ten tests were passing for a backend that does not exist
+
+Found while counting for the README. `npm test` is `tsc` then `node --test dist/tests/**`, and
+`tsc` never deletes. `ac8a36f` removed the opencode backend; its module and its two test files stayed
+in `dist/`, where the runner kept finding them and kept passing them — **10 tests, green, for code
+that was deleted.** A green suite is only evidence about the code that is still there.
+
+`tests/build/dist-coherence.test.ts` now fails when any compiled file has no source, names the files,
+and gives the remedy (`npm run clean && npm run build`). Negative-controlled by planting a ghost
+`.js` in `dist/` and watching it redden. The alternative — cleaning on every `npm test` — was
+rejected: it slows the path people actually run, and a loud failure with the fix in the message is
+worth more than a silent rebuild.
+
+README's `# 85 tests` was stale by an order of magnitude in the other direction; it now reads
+~1,700 in 171 files.
+
+### 9f. The smaller divergences closed in the same pass
+
+- `server.dashboard: false` was accepted and ignored — the server always mounted the SPA. Honoured now.
+- The context block's `replyTo` sentence described behaviour the kernel does not have; the runtime-state
+  line showed a seat its own token use and never the mission budget it is actually spending against.
+- The MCP bridge said "the 17 message types no contract names"; it is 16.
+- README claimed a `runtime: stub` fallback when the opencode CLI is absent — there is no such
+  fallback and no such CLI; `mesh mcp` was attributed to the same removed backend in README and
+  `docs/runtime.md`.
+- All seven role prompts said `answer` "is the only thing that closes an ask". `discharge` also
+  closes one, and on a strict mesh nothing else the agent writes does — the prompts now say which
+  moves are the agent's and which (deadline, withdrawal, operator) are not.
+- `docs/configuration.md`: the delivery-class table's `deliver` row named none of the eight
+  work-moving types; the strict-semantics signal list was missing the asker's own `withdraw` — it
+  listed eight closing signals where there are nine.
+
+### 9g. Gates
+
+Suite **1732 pass / 0 fail** (the 10 phantoms gone, +9 real tests added). Typecheck clean, root and
+dashboard. ESLint 0 errors, 152 warnings — one more than the 151 baseline, the deliberate
+cross-package import in `projections.ts` that the producer requires, of the kind the rule's own
+message says to leave alone.
+
+---
+
+## 10. Shipped since: the five proposals, and the one that was built differently
+
+This is the "async and low contact, at best quality" pass. Five proposals, all landed. The
+review recommended **against** the envelope/format rewrite and still does — §0 shows two
+formats unbuilt, and neither of them is what was costing anything.
+
+The through-line: every rationing mechanism the mesh had was about *how much* a message
+costs. None of them was about whether the ask needed to be answered at all.
+
+### 10a. P1 — ask about consequence, not about the type name
+
+`movesWork(type)` was the fix §8 shipped, and it was half the question. `TEST_RESULT` and
+`SECURITY_FINDING` are **the same word for opposite events**: `PASSED` is a report and the
+recipient learns the world is as it hoped; `FAILED` hands the work straight back and there
+is no other message coming to say so.
+
+In the happy path `roles/developer.md` documents, `PATCH_READY` obliges nothing, so QA's
+verdict has no `replyTo` creditor, so a FAILED test classed `accrue` — never woken for, and
+excluded from the nudge sweep, which chases only `interrupt`. The developer sat in WAITING
+holding a red build while the mesh went quiet. **The identical failure §8 fixed, surviving
+one layer down, because the fix asked the new question of the type name alone.**
+
+`isAdverseVerdict(m)` + `movesWorkMessage(m)` in `catalog.ts`. The rule is "a
+verdict-bearing type whose payload states a `result` that is not `PASSED`" — written as
+*present and not passing* rather than *equals FAILED*, so a mesh that grows `ERROR` or
+`TIMEOUT` gets the safe answer without anyone remembering to extend a list.
+
+Reading `payload` is a deliberate exception to "read off `control`, never `payload`", and
+the defence is in the doc comment: a lying sender can buy exactly one thing, the `deliver`
+class, which coalesces and is not billed — and it could already buy that for free by typing
+the same message `REJECT`. The direction an attacker wants is *claiming success*, and that
+path is authority-checked in both reducers already.
+
+12 tests (`tests/protocol/adverse-verdict.test.ts`, `tests/core/verdict-work-movement.test.ts`).
+
+### 10b. P2 — render the comms half of a role prompt from the resolved bus
+
+Seven role prompts named tools by hand. `bus.vocabulary: contracts` collapses the manifest
+to eight, and the prompts went on naming the ones a seat could no longer see. The prompt
+and the manifest had no structural reason to agree, so they drifted, and the drift is
+invisible until a seat calls a tool it was told about and is refused.
+
+The comms vocabulary is now generated from `BUILTIN_CONTRACTS` into
+`AgentInput.instructions`, per turn, from the **resolved** config. Drift is not fixed; it is
+made impossible.
+
+### 10c. P3 — an ask that can answer itself
+
+The one that matters most, and the only construct in the mesh that makes an ask cheaper for
+its **recipient** rather than dearer for its sender.
+
+A developer that will use Postgres unless the architect objects has an ask whose whole
+content is an objection it does not expect. Raised plainly it costs the architect a turn to
+say "yes, fine" — and three more turns of nudging if it does not.
+
+`ifUnanswered: { assume, afterMs }` on `send` / `request` / `call` / `research_request` /
+`request_review`. Three effects, one per party:
+
+- the **debtor's prompt** says silence is a legal ending here and shows the value that will
+  be assumed;
+- the ask **skips the nudge ladder** entirely, so it cannot reach `MAX_NUDGES` and cannot
+  raise `stalemate:unanswered_request`;
+- at the deadline it discharges **`defaulted`**, carrying the assumed value and the silent
+  debtors, and wakes the **asker** — not a human.
+
+The debtor line is the feature, not a nicety. Everything else the prompt says to a debtor is
+about how to spend a turn, and silence has always read as "still working". Unshown,
+`ifUnanswered` would spend the debtor's attention on exactly the asks the asker had already
+said it could do without — the whole cost it exists to remove, paid anyway because only one
+side was told.
+
+`defaulted` is a **settlement**: deliberately not in `UNANSWERED_DISCHARGE_REASONS`, so the
+thread reaches `RESOLVED`. It is the third exit authorized by a *party* to the ask rather
+than by the runtime running out of options — `refused` by owing the answer,
+`withdrawn_by_sender` by having asked the question, `defaulted` by having said in advance
+what the answer would be taken to mean.
+
+It needs a clock and says so. `afterMs` draws a deadline where `commitments.ttl_ms` gives
+none; with neither, the op is refused at the edge naming both fixes, rather than opening an
+ask that would wait forever under a promise to end. House rule: never advertise a rule that
+cannot fire.
+
+11 tests (`tests/policy/default-answer.test.ts`). Most assert something **not** happening, so
+each pins a count after the mesh settles and re-checks after the relevant timer has had
+several windows — the no-nudge test runs 15 nudge windows.
+
+### 10d. P4 — `bus.style`, one word for a coherent bus
+
+The bus keys are individually good and collectively hard. Set three of the four and you get
+a bus nobody designed: most often one that prices attention and never charges, or one that
+stops chasing asks that have no deadline to end at.
+
+`high-contact` / `balanced` / `low-contact`, and **a style is an expansion into raw keys and
+nothing else**. Not a mode, nothing branches on it. The load-bearing test is not "low-contact
+sets these five values"; it is that a styled mesh and the hand-written mesh it expands to
+resolve to the **same object**.
+
+That is not decoration. Every absent-vs-zero-vs-present distinction in the bus is a presence
+test on a raw key inside `resolveCommitmentTtl` / `resolveDeliveryClasses` /
+`resolveBusVocabulary`. A style producing *resolved* values would have been a second path
+into those decisions — the one place `deliveryClasses` could exist without `classes: true`.
+
+Two details worth keeping:
+
+- **`high-contact` is `{}`.** The absence of every key *is* the high-contact mesh. Writing
+  `classes: false` would suggest silence and `false` are different states, and they are not.
+  What the word buys is the record that an operator looked at this and chose it.
+- **`low-contact`'s deadline is SHORTER than `balanced`'s** (900s vs 1800s). Looks backwards
+  until you notice what is off: with no nudge ladder behind a defaulted ask and no chase
+  behind an ordinary one, the deadline is the only thing that ends it. A longer one is not
+  patience, it is a debt the ledger carries silently.
+
+`low-contact` also selects the prompt variant — four *spending* rules, not a description of
+the configuration. A seat cannot act on "coalesce_ms is 300000"; it can act on "your message
+may sit for minutes, so do not send it twice". The one thing the rules must not say is that
+silence is free: it is free only on an ask whose asker priced it, which is why the first rule
+points at `ifUnanswered` rather than at saying nothing.
+
+9 tests (`tests/config/bus-style.test.ts`) + 3 appended to `context-comms-vocabulary`.
+
+### 10e. P5 — built differently from the sketch, and the sketch was wrong
+
+**Stated plainly because it is a deviation.** The proposal said "let `interests` gate directed
+mail". On inspection that could not have worked: `interestMatches` is a **dotted-path**
+matcher, message types are flat `UPPER_SNAKE` words, and `interestMatches("*", "STATUS_UPDATE")`
+returns **false**. A glob surface there would have looked like it worked and muted nothing —
+the worst available outcome for a rationing key.
+
+Shipped as the substance instead: `wake.not_for: [MessageType, ...]`, exact names pinned to
+the catalogue enum in the schema, so a typo is a config error rather than a rule that
+silently matches nothing.
+
+`interests` gates **broadcasts** and nothing else. Mail addressed to a seat by name has
+always woken it, and the seat's only say was `defer_non_obliging` — all of its chatter or
+none of it. That is a choice most seats decline to make, and declining it means paying for
+every FYI.
+
+The line in `defersMail` sits **after** the three escapes and never before them: an ask the
+seat owes, operator mail, and `movesWorkMessage`. So a seat that names `HANDOFF` or
+`REQUEST_REVIEW` has named nothing, because both left the function several lines earlier.
+That ordering is what keeps this a batching preference rather than an authority boundary,
+and it is most of what the tests pin. P1 pays off here for free: a seat that mutes
+`TEST_RESULT` still wakes for the FAILED one.
+
+11 tests (`tests/scheduler/wake-not-for.test.ts`). Negative-controlled by disabling the check
+in the compiled build: exactly the two muting assertions go red and the seven ordering
+assertions stay green, which is the signature that says the ordering tests are testing the
+escapes and not the new line.
+
+### 10f. Two things for Ali
+
+- **`schemas/mesh.schema.json` grew by 47 lines, not by my two keys.** It was already out of
+  sync with `packages/protocol/src/schemas.ts` before this pass — `bus.commitments.by_type`
+  and `bus.delivery.congestion_every` were in the TS source and not in the generated file.
+  `tests/protocol/protocol.test.ts` deepEquals the two, so that was a live or imminent
+  failure sitting in the WIP. Regenerating fixed it as a side effect.
+  Note `scripts/sync-schemas.mjs` reads **compiled** output: build before syncing, or it
+  reports "already in sync" over a stale `dist/`.
+- **`tests/server/receipt-durability.test.ts` flaked once** under the full suite and passes
+  3/3 in isolation. Unrelated to this pass; it arrived in `edd1dde`. It has not reproduced
+  since.
+
+### 10g. Gates
+
+Suite **1789 pass / 0 fail**. Typecheck clean, root and dashboard. ESLint **0 errors, 152
+warnings** — the baseline exactly, no new ones. Docs updated in the same pass:
+`docs/configuration.md` (`bus.style`, `wake.not_for`, `ifUnanswered`) and `docs/protocol.md`
+(the `defaulted` exit).

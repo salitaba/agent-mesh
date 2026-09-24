@@ -4,7 +4,7 @@ import { makeMesh } from "../helpers";
 import { fingerprintOf, bumpConflict } from "../../packages/core/src/projections-helpers";
 import { createInitialState } from "../../packages/core/src/state";
 import { applyEvent } from "../../packages/core/src/projections";
-import { sanitizeAgentMessageInput, validateMessage } from "../../packages/protocol/src/index";
+import { MAX_MESSAGE_NOTE_CHARS, NOTE_TRUNCATION_MARKER, sanitizeAgentMessageInput, validateMessage } from "../../packages/protocol/src/index";
 import type { MeshEvent, MeshMessage } from "../../packages/protocol/src/index";
 
 /**
@@ -95,6 +95,35 @@ test("envelope: sanitizing leaves non-object payloads alone", () => {
     undefined,
     "a directly supplied control block is dropped",
   );
+});
+
+test("envelope: an over-long note is clamped, not allowed to sink the whole message", () => {
+  // `note` is prose the mesh never parses — no ops, no discharge, no routing, no
+  // authority. So a 2001-character note is not a protocol error, and refusing the
+  // message over it destroys everything else it was carrying.
+  //
+  // This was the single most-hit rule in a live run: 12 of 12 schema rejections,
+  // every one against a seat using the DOCUMENTED field, while 194 messages under
+  // invented keys passed unvalidated (largest 10,049 chars). One seat lost six
+  // messages across two consecutive turns and could not learn why, because
+  // denials never reach a seat's own context.
+  // `note` is the TOP-LEVEL envelope field — the one the schema validates.
+  // `payload.note` is a different field and is not checked at all, because
+  // `payload` is the empty schema.
+  const long = "x".repeat(5000);
+  const out = sanitizeAgentMessageInput({ note: long, payload: { keep: "me" } });
+
+  assert.equal(String(out.note).length, MAX_MESSAGE_NOTE_CHARS, "clamped to exactly the schema's cap");
+  assert.ok(String(out.note).endsWith(NOTE_TRUNCATION_MARKER), "and says so — a silent truncation lets the sender believe it all arrived");
+  assert.equal((out.payload as Record<string, unknown>).keep, "me", "the payload is untouched");
+  assert.equal(validateMessage(msg({ note: long })).valid, false, "the schema stays the backstop for non-agent callers");
+  assert.equal(validateMessage(msg({ note: out.note })).valid, true, "and a clamped note passes it, so the message survives");
+});
+
+test("envelope: a note within the cap is left exactly as written", () => {
+  const fits = "y".repeat(MAX_MESSAGE_NOTE_CHARS);
+  assert.equal(sanitizeAgentMessageInput({ note: fits }).note, fits, "no marker, no clamp, no change");
+  assert.equal(sanitizeAgentMessageInput({ note: "short" }).note, "short");
 });
 
 test("envelope: the schema rejects an unknown control field instead of ignoring it", () => {

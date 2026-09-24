@@ -315,6 +315,43 @@ export function contractNames(): string[] {
 }
 
 /**
+ * The contract that governs a message type when the sender named none.
+ *
+ * DERIVED from the catalogue's own `messageType` fields, never enumerated. A
+ * hand-written table here would be a second place to state a mapping the
+ * contracts already carry, and the two would drift the first time a contract
+ * changed the type it speaks for -- the failure mode `OBLIGING_MESSAGE_TYPES`
+ * and `WORK_MOVING_MESSAGE_TYPES` are both built to avoid.
+ *
+ * Returns undefined for every type no contract claims, which is the honest
+ * answer and the one that keeps this safe: `isObligingType` is a PREFIX match
+ * (`startsWith("REQUEST")`), so a `REQUEST_*` type added later is obliging
+ * from the moment it exists and has no contract until someone writes one.
+ * That case gets no default rather than a wrong one.
+ *
+ * Nothing here decides whether the default is USED. This only answers "which
+ * contract speaks for this type"; `bus.contracts_by_type` decides whether an
+ * ask that named none is held to it. See `contractOf` in
+ * `packages/core/src/projections-messaging.ts`.
+ */
+const CONTRACT_BY_MESSAGE_TYPE: ReadonlyMap<string, Contract> = (() => {
+  const byType = new Map<string, Contract>();
+  for (const c of BUILTIN_CONTRACTS) {
+    // First wins, deliberately. Two contracts claiming one type is a
+    // catalogue bug, not a precedence question -- `tests/protocol/
+    // contracts.test.ts` asserts the claim is unique so this branch stays
+    // unreachable rather than silently picking a winner.
+    if (!byType.has(c.messageType)) byType.set(c.messageType, c);
+  }
+  return byType;
+})();
+
+export function contractForMessageType(type: string): Contract | undefined {
+  if (typeof type !== "string") return undefined;
+  return CONTRACT_BY_MESSAGE_TYPE.get(type);
+}
+
+/**
  * The refusal an unknown contract gets. It NAMES THE ALTERNATIVES, which is the
  * whole mitigation for the risk this stage carries: a larger vocabulary is only
  * safe if getting it wrong teaches you the right one in the same breath. An

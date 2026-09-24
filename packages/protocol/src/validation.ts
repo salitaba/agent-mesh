@@ -49,6 +49,30 @@ export function validateSchema(name: SchemaName, value: unknown): ValidationResu
   };
 }
 
+/**
+ * `payload` in the message schema is the EMPTY schema — literally `payload: {}` —
+ * so it accepts `{}`, `null`, a string, an array, and any set of invented keys,
+ * while the envelope around it is `additionalProperties: false`. The closure is
+ * on the wrong side of the boundary: the mesh strictly validates the fields it
+ * wrote itself and never looks at the body the model wrote.
+ *
+ * A "payload must not be empty" check was tried here and REVERTED. It is recorded
+ * rather than silently dropped, because the evidence that killed it also corrects
+ * the finding that motivated it:
+ *
+ *   - The three `INFORM`s in the live run that looked contentless were not. Every
+ *     one carried `artifactRefs`, so the message did say something — "look at
+ *     this artifact" — and the meaning simply lived in the envelope rather than
+ *     the body. `NOTES-communication-live-run.md` §20.8 overstated that case.
+ *   - `payload: {}` is this codebase's own idiomatic default, including in its
+ *     test fixtures. Rejecting it broke fourteen test groups covering policy,
+ *     lifecycle, commitments, deadlock and the MCP bus — behaviour those tests
+ *     are asserting on purpose.
+ *
+ * Fourteen groups of real behaviour against three thin-but-not-empty messages is
+ * not a trade worth making. Typing the payload per message type is the change that
+ * would actually close this, and it is a much larger one.
+ */
 export function validateMessage(message: unknown): ValidationResult {
   return validateSchema("message", message);
 }

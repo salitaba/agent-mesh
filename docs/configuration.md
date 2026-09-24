@@ -57,6 +57,15 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 `allow: false` or `max_depth: 0` keeps it even when the mesh default is higher —
 `false` and `0` are opt-outs, never "unset". Every field is optional at both levels.
 
+> **A seat's `wall_clock_minutes` and `max_events` are accepted and resolved,
+> but nothing enforces them.** Of the four keys under a seat's `budget:`, only
+> `tokens` and `max_activations` bind — `tokens` is declared as a real ledger
+> line (`BudgetManager.declare`) and `max_activations` is checked by the policy
+> engine. The other two are declared for the *mission* ledger and never for an
+> agent one, so a seat with `wall_clock_minutes: 30` runs for as long as the
+> mission does. Use `budgets.mission.wall_clock_minutes` / `.max_events`, which
+> are enforced, and set a per-seat cap with `tokens`.
+
 > **`max_context_tokens` is accepted and resolved, but nothing enforces it yet.**
 > No runtime currently truncates or compacts a session on it, at either level —
 > setting it changes what the config reports, not how agents run. The other five
@@ -81,8 +90,8 @@ agents:
     interests:    [architecture.approved, review.rejected]   # wake-on-interest
     session:      { persistent: true, max_context_tokens: 120000 }  # omit a key to inherit mesh.defaults.session
     delegation:   { allow: true, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }  # ditto mesh.defaults.delegation
-    budget:       { tokens: 700000, wall_clock_minutes: 30, max_events: 2000, max_activations: 40 }
-    wake:         { defer_non_obliging: false, mail: full }  # per-seat: never wake me for mail that obliges me nothing; and how much of a woken message to show
+    budget:       { tokens: 700000, max_activations: 40 }   # only these two bind; see below
+    wake:         { defer_non_obliging: false, mail: full, not_for: [] }  # per-seat: never wake me for mail that obliges me nothing, or for these types by name; and how much of a woken message to show
 ```
 
 - `mode: service` (e.g. explorer) → activates **only** on requests, read-only,
@@ -102,12 +111,33 @@ is the seat's own answer to the same question.
 agents:
   tech-lead:
     wake: { defer_non_obliging: true, mail: claims }
+    # or, narrower: keep being woken by everything except the news it batches
+    wake: { not_for: [INFORM, COMMIT] }
 ```
 
 - `defer_non_obliging: true` — mail that **obliges this seat nothing** never wakes
   it. The message is still delivered and sits in the mailbox; the seat reads it on
   its next natural activation. "Nothing is ever suppressed; only the wake is
   refused."
+- `not_for: [INFORM, COMMIT]` — the same refusal, but per **type** instead of
+  all-or-nothing. Exact `MessageType` names, validated against the catalogue, so
+  a word that is not a message type is a config error rather than a rule that
+  silently matches nothing.
+  - This is the half `interests` never reached. `interests` gates **broadcasts**
+    (`candidatesFor` consults it and nothing else does); mail addressed to a seat
+    by name has always woken it, and until this key existed the seat's only say
+    was `defer_non_obliging` — all of its chatter or none of it. That is a choice
+    most seats decline to make, and declining it means paying for every FYI.
+  - **Exact names, not globs, and deliberately.** `interests` patterns are dotted
+    paths (`architecture.*`); message types are flat `UPPER_SNAKE` words, and
+    `interestMatches("*", "INFORM")` is `false` against every one of them. A glob
+    surface here would have looked like it worked and muted nothing.
+  - **Naming a type that cannot be deferred does nothing at all.** The three
+    exemptions below are checked *first*, so `not_for: [HANDOFF, REQUEST_REVIEW]`
+    names two things that have already left the function. That is what keeps this
+    a batching preference rather than an authority boundary.
+  - It composes with `defer_non_obliging` by narrowing nothing: the broad switch
+    already holds everything this one names.
 - `mail: claims` (default `full`) — how much of a woken message's **content** the
   prompt carries. `full` renders the payload; `claims` renders the header line
   alone and marks it `body withheld`, to be filled in from the mailbox with
@@ -128,14 +158,26 @@ agents:
     a turn's briefing block — roughly 0.2% of total mission input — so this is a
     contact-quality lever, not a cost one. Reach for it when a seat is drowning
     in news, not to save tokens.
-- **Obligation always wins, by construction rather than by exception.** The
-  predicate is the same one the debt is opened with (`obligesRecipients`), so a
-  message this setting ignores is a message that opened no `pendingRequests` entry.
-  An ask — `REQUEST*`/`ESCALATE`/`CHALLENGE` under `mode: service` — always wakes
-  the seat that owes it. A mesh where a seat could quietly opt out of its own debts
-  would not be a mesh.
+- **Obligation always wins.** The predicate is the same one the debt is opened
+  with (`obligesRecipients`), so a message this setting defers is a message that
+  opened no `pendingRequests` entry. An ask — `REQUEST*`/`ESCALATE`/`CHALLENGE`
+  under `mode: service` — always wakes the seat that owes it. A mesh where a seat
+  could quietly opt out of its own debts would not be a mesh.
+- **Work handed to the seat also wins**, which is an exception rather than a
+  consequence of the predicate: the eight work-moving types (`MISSION`,
+  `DELEGATE`, `HANDOFF`, `PATCH_READY`, `APPROVE`, `REJECT`, `VETO`, `BLOCK`)
+  open no debt, yet they still wake a deferring seat. The setting reads as "hold
+  my chatter", and a `HANDOFF` is not chatter — it is this seat's next piece of
+  work, and deferring it leaves the work with nobody awake to do it. A seat can
+  batch what is merely *told* to it and is still woken for what is *handed* to
+  it, which is the same line the delivery classes stop at.
 - **Operator mail is exempt**, as it is from every other rationing mechanism: a
   human can always wake a seat, including a finished mission's.
+- **All three exemptions bind `not_for` too, and are checked before it.** They
+  are also read off the *message* rather than its type where the type does not
+  finish the sentence: `TEST_RESULT` and `SECURITY_FINDING` are the same word for
+  opposite events, so a `FAILED` one hands work back and wakes a seat that muted
+  the type, while the `PASSED` beside it is a report and stays muted.
 - **It does not refund the sender.** An `interrupt` sent to a deferring seat was
   already charged to the sender's attention ledger and stays charged. The setting
   lives in `mesh.yaml`, so it is a public declaration a sender can read before
@@ -298,11 +340,36 @@ the listed capabilities without a plan step declaring it:
 did before this feature existed.
 
 Only capabilities that map to a mesh op can be gated — currently
-`repository.write` (publish), `git.commit` and `git.merge`. `shell.execute` and
-`network.request` are legal tokens but are spent through the coding agent's own
-tools, so listing only those produces a load-time warning that the gate will
-never fire. A capability the agent does not hold is never gated either: the
-demand would be one the agent has no legal way to satisfy.
+`repository.write` (`publish_artifact`), `git.commit` and `git.merge`.
+`shell.execute` and `network.request` are legal tokens but are spent through the
+coding agent's own tools, so listing only those produces a load-time warning that
+the gate will never fire. A capability the agent does not hold is never gated
+either: the demand would be one the agent has no legal way to satisfy.
+
+**This is a planning gate, not a permission.** `git.commit` and `git.merge` are
+independently enforced as permissions; `repository.write` is **not** enforced on
+`publish_artifact`, and that is deliberate — a seat holding only
+`repository.read` publishing a `RequirementsDoc` is the shipped configuration in
+`examples/payment-api` and `examples/line-follower-sim`. So the mapping above
+says "declare a plan step before doing this if `hard_actions` asks you to", not
+"you need this token to publish".
+
+Worth stating because the inverse is easy to assume and expensive: in one live
+run a read-only `pm` seat concluded from its own capability list that it could
+not publish at all, wrote its requirements document into prose instead, and lost
+the turn. Inline `content` was available to it throughout.
+
+### a seat that can merge but not repair
+
+`git.merge` lands a branch in the product tree. When the merge leaves the tree
+needing a fix — a stray lockfile, a workspace file that has to be removed and
+regenerated — repairing it needs `repository.write` and confirming the result
+needs `test.execute`. A seat holding `git.merge` without them can only describe
+the problem and move on, and because `git merge` refuses to run over uncommitted
+changes, the mess it leaves blocks **every later merge**. Declaring that shape
+produces a load-time warning naming a seat that could do the repair, if one
+exists. It is a warning rather than an error: separating landing from repairing
+is a legitimate design.
 
 ## budgets & scheduling
 
@@ -332,14 +399,18 @@ Budgets are hierarchical: `mission → agent/task/thread/tool`. Overrun emits
 halt). `mesh run` writes `events.jsonl`, snapshots, turn audit, and a projection
 rejection log under `server.state_dir`.
 
-## bus: commitments, transport, vocabulary & delivery
+## bus: style, commitments, transport, vocabulary & delivery
 
 ```yaml
 bus:
+  style: low-contact      # one word for a coherent bus; expands to the keys below,
+                          #   every one of which you may still write yourself
   commitments:
     semantic: compat        # or omit for "strict"
     ttl_ms: 1800000         # 30 min, and what `mesh init` writes; omit (or 0) for no deadline
     ttl_ms_by_role: { security: 7200000 }
+    by_type: true           # and what `mesh init` writes; a bare typed ask inherits its
+                            #   type's contract (refusals + SLA). Omit to leave it ungoverned.
   transport: typed-only     # or omit for "mixed"
   vocabulary: contracts     # and what `mesh init` writes; omit (or "typed") for the full manifest
   delivery:
@@ -348,14 +419,71 @@ bus:
     interrupt_cost_tokens: 2000   # what one interrupt costs its sender, per seat woken
     attention_tokens: 200000      # what a seat may spend on wakes before they stop
                                   #   being interrupts; 0 = never buy one (low contact)
+    congestion_every: 4           # and what `mesh init` writes; +1x to the tariff per 4
+                                  #   unread in the recipient's box, capped at 4x. Omit
+                                  #   for the flat price at every depth.
 ```
+
+### style
+
+A whole coherent bus written as one word. `high-contact`, `balanced` or
+`low-contact`.
+
+The keys below are individually good and collectively hard. `ttl_ms` decides
+whether asks end; `delivery.classes` decides whether they wake anyone;
+`attention_tokens` decides whether a wake is priced; `vocabulary` decides what
+a seat is even shown. Set three of the four and you get a bus nobody designed —
+most commonly one that prices attention and then never charges for it, or one
+that stops chasing asks that have no deadline to end at. `style` is the set
+that was designed together.
+
+A style is an **expansion into the raw keys**, and nothing else. It is not a
+mode, nothing downstream branches on it, and it cannot reach a bus you could
+not have typed by hand — `tests/config/bus-style.test.ts` pins a styled mesh
+and its hand-written equivalent as the same resolved object. What each one
+writes:
+
+| | `high-contact` | `balanced` | `low-contact` |
+|---|---|---|---|
+| `commitments.ttl_ms` | — | `1800000` | `900000` |
+| `commitments.by_type` | — | — | `true` |
+| `delivery.classes` | — | `true` | `true` |
+| `delivery.coalesce_ms` | — | *(60000 default)* | `300000` |
+| `delivery.attention_tokens` | — | — | `200000` |
+| `delivery.congestion_every` | — | — | `4` |
+| `vocabulary` | — | — | `contracts` |
+| `collab.box_ms` / `max_exchanges` | — | — | `600000` / `10` |
+
+- **`high-contact` is `{}`, on purpose.** The absence of every key *is* the
+  high-contact mesh: every message wakes its recipients, no ask has a deadline,
+  nothing is billed. Writing `classes: false` into the preset would suggest that
+  silence and `false` are different states, and they are not. What the word buys
+  you is the record that an operator looked at this and chose it.
+- **`low-contact`'s deadline is SHORTER than `balanced`'s**, which looks
+  backwards until you notice what is off. With `attention_tokens` set, a wake
+  can be refused; with a five-minute coalesce window, a `deliver` sits. Nothing
+  is chasing these asks, so the deadline is the only thing that ends one. A
+  longer deadline there is not patience, it is a debt the ledger carries
+  silently.
+- **A key you write beside a style wins, per KEY and not per block.** `style:
+  low-contact` with `delivery: { coalesce_ms: 30000 }` keeps the attention price
+  and the congestion curve and takes your window. A whole-block override would
+  have left you a mesh that says low-contact and bills nothing.
+- **A style can be contradicted.** `ttl_ms: 0` and `classes: false` are how
+  those are spelled off, and they beat the preset that wrote them. A style that
+  could not be argued with would be a mode, not a starting point.
+- `low-contact` also selects the prompt variant: seats on such a mesh are told,
+  in four lines, that nothing is coming to chase them and what to spend instead
+  (see `docs/runtime.md`). That is the one thing about a low-contact mesh a seat
+  cannot infer from anything else it is shown.
 
 ### commitments.semantic
 
 - `strict` (**default**): inference is off. A response without `replyTo`
   delivers content and wakes the asker but discharges **nothing**; only the
-  exact signals close the ask (`replyTo`, `discharge`, operator answer/drop,
-  review verdict, supersede, deadlock break, expiry, task completion).
+  exact signals close the ask (`replyTo`, `discharge`, the asker's own
+  `withdraw`, operator answer/drop, review verdict, supersede, deadlock break,
+  expiry, task completion).
   Exception: the worker-result contract (`REQUEST_EXECUTION` taskId ==
   `HANDOFF` taskId) works in both modes.
 - `compat`: the exact signals **plus** inference — a response in the ask's
@@ -406,6 +534,45 @@ events at all — precisely when a deadline needs to fire. An expiry is emitted
 as `commitment.discharged` (reason `expired`, naming who was late), so it
 survives replay, and an ask an **open** escalation points at is never expired
 out from under the operator answering it.
+
+### commitments.by_type
+
+Lets a **bare typed ask** inherit the contract its message type names. Absent
+(the default) it inherits nothing, which is what every mesh that predates this
+key has.
+
+The hole it closes: `mesh_call` with a question got a request schema, a closed
+refusal set and an SLA; `mesh_send` with `type: REQUEST_INFO` opened exactly
+the same debt — the same ledger row, the same nudge ladder, the same
+escalation at the end of it — and got none of the three. Two doors to the same
+room, one of them with no rules on it, and the typed door is the one the older
+role prompts teach.
+
+The mapping is **derived** from each contract's own `messageType`, never
+written out, so it cannot drift from the catalogue: `REQUEST_INFO` →
+`info.question`, `REQUEST_REVIEW` → `review.artifact`, and so on for all eight.
+A type no contract claims inherits **nothing** rather than something close —
+"obliging" is a prefix match on `REQUEST*`, so a type added later is obliging
+from the moment it exists and must not pick up whichever contract sorts first.
+
+Three limits are deliberate:
+
+- **The request body is not validated.** The ask never passed a schema, so
+  nothing claims it did. The refusals and the deadline are real; the shape
+  check is not, and the debtor's prompt says so in those words.
+- **Nothing is stamped on the wire.** `control.contract` is documented to mean
+  *this ask passed its request schema*; writing this default there would make
+  every later reader of that field wrong. The contract is resolved in the
+  reducer, where the debt is recorded, and rides into replay with the semantic
+  and the TTL.
+- **An inherited SLA narrows, never creates.** With no `ttl_ms` there is still
+  no deadline — the same rule `call` already follows, for the same reason.
+
+What it does change is the **refusal set**, from open to closed: with the key
+on, `discharge` refuses a refusal kind the inherited contract does not admit,
+and names the ones that would have worked. The debtor is shown the set in its
+mail line, because a closed set nobody is shown is a trap rather than a
+vocabulary. That change is why the key is opt-in.
 
 ### Capacity
 
@@ -518,8 +685,14 @@ three classes all deliver, and differ only in what the delivery may cost:
 | class | wakes | charged | derived for |
 |---|---|---|---|
 | `interrupt` | now, as mail always has | yes, per seat woken | an `URGENT`; an answer to an ask the recipient is parked on; a re-ask in the thread of a debt that seat still owes the sender |
-| `deliver` | once per `coalesce_ms` burst, or not at all if the seat takes a turn for another reason first | no | asks (`REQUEST*`, `ESCALATE`, `CHALLENGE`) and collab chatter |
+| `deliver` | once per `coalesce_ms` burst, or not at all if the seat takes a turn for another reason first | no | asks (`REQUEST*`, `ESCALATE`, `CHALLENGE`), collab chatter, and the eight work-moving types (`MISSION`, `DELEGATE`, `HANDOFF`, `PATCH_READY`, `APPROVE`, `REJECT`, `VETO`, `BLOCK`) |
 | `accrue` | never | no | everything else — announcements, FYI, unsolicited `INFORM` |
+
+Work-moving mail is `deliver` and not `accrue` because it is not news: a
+`HANDOFF` is the recipient's next piece of work, and a class that never woke
+anybody would leave it sitting with no one awake to do it. It is not
+`interrupt` either — there is no debt to chase and nobody is parked on a
+specific answer, so coalescing a burst of handoffs into one turn is right.
 
 **No class is a suppressed delivery.** The reducer puts the message in every
 recipient's mailbox before the scheduler ever sees the event, so an unwoken
@@ -611,6 +784,55 @@ ask to that seat an `interrupt`, and in a mesh where seats habitually owe each
 other work the expensive class becomes the default — the inversion this key
 exists to correct.
 
+### congestion_every
+
+One step of surcharge on `interrupt_cost_tokens` per N messages already unread
+in the recipient's box, capped at **4x**. Absent (the default) is the flat
+tariff at every depth, which is what every mesh that wrote a `delivery` block
+already has.
+
+The flat price asks the wrong question. It charges the same to wake a seat with
+an empty box and a seat with nineteen unread, and those are not the same
+purchase: the first buys a turn that starts on the sender's problem, the second
+buys a turn that starts by reading nineteen other people's. Congestion pricing
+prices the queue the sender is joining, so the seat everyone is already
+interrupting is the expensive one to interrupt — which is the signal, and the
+cheap alternative (ordinary mail, read on the turn they were going to take
+anyway) is always available.
+
+The **cap is load-bearing**. A sender cannot see inside another seat's mailbox,
+and a box holds up to 200 messages, so an uncapped curve would reach 200x. A
+price nobody can predict is not a price, it is a penalty. The seat's prompt
+quotes the divisor, the cap and the alternative, so the bill can be computed
+before the send rather than discovered after it.
+
+The first message in a box is not a surcharge — someone has to be first, and
+charging for it would raise every wake above the flat tariff, which is a rename
+rather than a signal. A value below 1 is read as "not configured" rather than
+clamped: it is a division by zero or a surcharge on an empty box, so the
+operator asked for something incoherent and gets the documented default.
+
+The quote and the bill are computed by one function and neither counts the
+message being sent. The pre-flight check runs before the reducer files it and
+the charge runs after; counting the box naively makes them differ by one, and
+at a tier boundary that quotes one price and bills another for a surcharge the
+sender's own message caused.
+
+### One wake per recipient per turn
+
+Not configurable, and not a tariff: **the second interrupt to the same seat in
+the same turn is free.** The scheduler does not enqueue a second turn for a
+seat that is already queued, so three URGENT messages to one colleague in one
+burst bought one turn and used to be billed three times. Charging for a turn
+nobody gets was never a policy.
+
+It is per **sender**: two seats waking the same colleague both pay, because a
+digest keyed on the recipient would let the second sender ride the first's wake
+for free, which prices a public good and rewards piling on. The refusal path
+agrees with the bill — an exhausted attention line does not refuse a wake that
+costs nothing — and the ledger clears at the top of each turn, because whoever
+a seat woke last turn has long since taken it.
+
 ### Contracts
 
 A contract is a named ask with a request schema, a set of refusals it may come
@@ -638,3 +860,25 @@ one**: with no `bus.commitments.ttl_ms` configured, a contract ask has no
 deadline, because deadlines drive expiry and expiry discharges debt — a
 catalogue that invented one would silently forgive asks you told the mesh to
 keep. A `ttl_ms_by_role` entry still outranks the contract.
+
+### ifUnanswered: an ask that can answer itself
+
+Any op that opens a commitment — `send`, `request`, `call`, `research_request`,
+`request_review` — may carry `ifUnanswered: { assume, afterMs }`: what the asker
+will do if nobody answers.
+
+```json
+{ "op": "call", "contract": "decision.challenge",
+  "ifUnanswered": { "assume": "postgres", "afterMs": 900000 } }
+```
+
+An ask carrying one is **never nudged and never escalates as a stalemate**; the
+debtor's prompt says in so many words that silence is a legitimate ending here;
+and at the deadline the ask discharges `defaulted`, carrying the assumed value,
+waking the **asker** rather than raising a card for a human. It is a settlement,
+not a loss — the thread resolves. See `docs/protocol.md` for the full semantics.
+
+It is the one thing in the bus that makes an ask *cheaper for the recipient*,
+which is why it is worth reaching for on any mesh and not only a low-contact
+one. `afterMs` supplies a deadline on a mesh with no `commitments.ttl_ms`; with
+neither, the op is refused rather than left to wait forever.

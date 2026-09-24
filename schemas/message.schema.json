@@ -156,6 +156,20 @@
         },
         "downgraded": {
           "type": "string"
+        },
+        "ifUnanswered": {
+          "type": "object",
+          "required": [
+            "assume"
+          ],
+          "properties": {
+            "assume": {},
+            "afterMs": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

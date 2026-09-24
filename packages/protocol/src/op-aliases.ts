@@ -239,6 +239,76 @@ export interface AliasOptions {
   aliases?: boolean;
 }
 
+/**
+ * Pull every complete top-level `{...}` out of a buffer, parsing each one on
+ * its own. String- and escape-aware, so a brace — or a markdown fence — inside
+ * a message body cannot end an object early.
+ *
+ * This exists because the fenced-block parser cannot be trusted to find the
+ * right closing fence. A `publish_artifact` whose `content` carries its own
+ * ``` block closes the fence early, and one live run lost a 18,492-char turn
+ * that way: cut at the first fence the JSON was truncated mid-string, cut at
+ * the last it parsed cleanly into three ops. Scanning braces sidesteps the
+ * question entirely — a fence inside a JSON string is just two characters.
+ *
+ * It also decouples entries from each other. `JSON.parse` on the whole array
+ * is all-or-nothing, so in the same run a brace error in the fourth op
+ * destroyed a well-formed `transition_artifact` in the first. Here a bad entry
+ * costs only itself, and `dropped` says which and why rather than swallowing it.
+ *
+ * Returns raw objects, not ops: aliasing is the caller's business (the
+ * dashboard renders what the model literally wrote; the runtime repairs it).
+ */
+export function scanJsonObjects(body: string): { objects: Record<string, unknown>[]; dropped: { index: number; reason: string }[] } {
+  const objects: Record<string, unknown>[] = [];
+  const dropped: { index: number; reason: string }[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let escaped = false;
+  let index = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (c === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        const slice = body.slice(start, i + 1);
+        try {
+          const parsed: unknown = JSON.parse(slice);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            objects.push(parsed as Record<string, unknown>);
+          } else {
+            dropped.push({ index, reason: "not an object" });
+          }
+        } catch (err) {
+          // Half-written while streaming, or malformed on a finished turn —
+          // the caller cannot tell the difference and does not need to.
+          dropped.push({ index, reason: err instanceof Error ? err.message : String(err) });
+        }
+        index++;
+        start = -1;
+      }
+      if (depth < 0) depth = 0;
+    }
+  }
+  return { objects, dropped };
+}
+
 export function aliasTextOp(raw: unknown, opts: AliasOptions = {}): Record<string, unknown> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;

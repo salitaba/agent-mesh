@@ -37,7 +37,7 @@ export interface AgentSpec {
    * of a woken message's CONTENT the prompt carries. They compose, and a mesh
    * that wants low contact sets both.
    */
-  wake?: { deferNonObliging?: boolean; mail?: "full" | "claims" };
+  wake?: { deferNonObliging?: boolean; mail?: "full" | "claims"; notFor?: string[] };
 }
 
 export interface TestMeshOptions {
@@ -72,12 +72,27 @@ export interface TestMeshOptions {
   stallCooldownMs?: number;
   stallNoopRetryMs?: number;
   bus?: {
+    /**
+     * A whole coherent bus written as one word. Emitted LITERALLY, like
+     * `vocabulary` below and for the same reason: what a fixture has to be
+     * able to prove is the EXPANSION, and it cannot if the builder performs
+     * it first.
+     */
+    style?: "high-contact" | "balanced" | "low-contact";
     commitments?: {
       semantic?: "compat" | "strict";
       /** Deadline for an outstanding ask. 0 / unset means asks never expire. */
       ttlMs?: number;
       /** Per-role override of `ttlMs`, keyed by role name. */
       ttlMsByRole?: Record<string, number>;
+      /**
+       * Let a bare typed ask inherit the contract its message type names.
+       *
+       * Off in every fixture that does not ask for it, because turning it on
+       * turns the refusal list into a CLOSED set: suites that open an ask with
+       * no contract and expect no verdict depend on the default staying false.
+       */
+      byType?: boolean;
     };
     transport?: "mixed" | "typed-only";
     /**
@@ -96,7 +111,14 @@ export interface TestMeshOptions {
      * `classes: false` -- absent is the behaviour of every mesh that never
      * opted in, and most suites here depend on getting exactly that.
      */
-    delivery?: { classes?: boolean; coalesceMs?: number; interruptCostTokens?: number; attentionTokens?: number };
+    delivery?: {
+      classes?: boolean;
+      coalesceMs?: number;
+      interruptCostTokens?: number;
+      attentionTokens?: number;
+      /** Unread messages per surcharge step. Unset means the flat tariff. */
+      congestionEvery?: number;
+    };
   };
 }
 
@@ -137,6 +159,7 @@ export function evidenceContent(subject: string): string {
 function busYaml(bus: TestMeshOptions["bus"]): string {
   if (!bus) return "";
   const body =
+    (bus.style ? `  style: ${bus.style}\n` : "") +
     busCommitmentsYaml(bus.commitments) +
     (bus.transport ? `  transport: ${bus.transport}\n` : "") +
     busVocabularyYaml(bus.vocabulary) +
@@ -159,6 +182,10 @@ function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"
   if (c.semantic) parts.push(`semantic: ${c.semantic}`);
   if (c.ttlMs !== undefined) parts.push(`ttl_ms: ${c.ttlMs}`);
   if (c.ttlMsByRole !== undefined) parts.push(`ttl_ms_by_role: ${JSON.stringify(c.ttlMsByRole)}`);
+  // Written only when asked for. `by_type: false` and an absent key resolve
+  // the same way, but a fixture that says nothing about contracts should
+  // produce a mesh.yaml that says nothing about them either.
+  if (c.byType !== undefined) parts.push(`by_type: ${c.byType}`);
   return parts.length ? `  commitments: { ${parts.join(", ")} }\n` : "";
 }
 
@@ -201,6 +228,10 @@ function busDeliveryYaml(d: NonNullable<TestMeshOptions["bus"]>["delivery"]): st
   // asked for it, because an absent count is what keeps every mesh that
   // predates this key on its own agent line.
   if (d.attentionTokens !== undefined) parts.push(`attention_tokens: ${d.attentionTokens}`);
+  // Not `!== undefined` here: the resolver floors this at 1 and treats 0 as
+  // absent, so there is no zero case to preserve and writing one would only
+  // produce a key the schema then rejects for being below its minimum.
+  if (d.congestionEvery !== undefined) parts.push(`congestion_every: ${d.congestionEvery}`);
   return `  delivery: { ${parts.join(", ")} }\n`;
 }
 
@@ -217,7 +248,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
       if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
-      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false}${a.wake.mail ? `, mail: ${a.wake.mail}` : ""} }`);
+      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false}${a.wake.mail ? `, mail: ${a.wake.mail}` : ""}${a.wake.notFor ? `, not_for: [${a.wake.notFor.join(", ")}] }` : " }"}`);
       if (a.delegation) lines.push(`    delegation: { allow: ${a.delegation.allow}, max_depth: ${a.delegation.max_depth}, max_workers: ${a.delegation.max_workers}${a.delegation.worker_budget_tokens ? `, worker_budget_tokens: ${a.delegation.worker_budget_tokens}` : ""} }`);
       return lines.join("\n");
     })

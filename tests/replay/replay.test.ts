@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor, goalOf, evidenceContent } from "../helpers";
 import { Kernel } from "../../packages/core/src/kernel";
+import { projectionConfigFor } from "../../packages/core/src/projections";
 import { MemoryEventStore } from "../../packages/event-store/src/index";
 import { FixedClock, type MeshOp } from "../../packages/protocol/src/index";
 import type { MeshEvent } from "../../packages/protocol/src/index";
@@ -54,6 +55,12 @@ function serializableViews(kernel: Kernel) {
     tasks: [...st.tasks.values()],
     decisions: [...st.decisions.values()],
     approvals: [...st.approvals.entries()].map(([k, v]) => [k, v] as const),
+    // The commitment ledger. Every knob that has ever gone missing at a
+    // construction site (`commitmentSemantic`, `commitmentTtl`,
+    // `contractsByType`) is written by the reducer into THESE rows and
+    // nowhere else, so a parity check that omits them cannot see a dropped
+    // knob at all.
+    pendingRequests: [...st.pendingRequests.entries()].map(([k, v]) => [k, v] as const).sort((a, b) => a[0].localeCompare(b[0])),
     budgets: [...st.budgets.values()].map((b) => ({ ...b, reservations: undefined })).sort((x, y) => x.key.localeCompare(y.key)),
     eventCount: st.eventCount,
     lastSeq: st.lastEventSeq,
@@ -70,7 +77,13 @@ test("replay: projections rebuild identically from the event log (no LLMs)", asy
   });
   await buildTrail(m);
   const events = await m.store.read();
-  const fresh = new Kernel(new MemoryEventStore(), new FixedClock(), undefined, { transitionGates: m.config.transitionGates });
+  // The mesh's WHOLE projection config, not one field of it. This line used to
+  // read `{ transitionGates: m.config.transitionGates }`, which meant the live
+  // kernel carried four knobs and the rebuild carried one -- so the test that
+  // exists to catch live-vs-replay divergence was structurally blind to three
+  // of the four ways it can happen, and passed only because this mesh leaves
+  // them at their defaults.
+  const fresh = new Kernel(new MemoryEventStore(), new FixedClock(), undefined, projectionConfigFor(m.config));
   await fresh.rebuild(events as MeshEvent[]);
   assert.deepEqual(serializableViews(fresh), serializableViews(m.kernel));
   await m.cleanup();
@@ -153,5 +166,86 @@ test("replay: deterministic orchestration audit captures model/tool decisions", 
   const turnDetail = budgetEvents.find((e) => (e.payload as { model?: string }).model === "test-model");
   assert.ok(turnDetail, "turn must record model + tokens for deterministic orchestration");
   assert.equal((turnDetail!.payload as { temperature?: number }).temperature, 0.2);
+  await m.cleanup();
+});
+
+/**
+ * A knob that reaches the live kernel and not the replay is a divergence
+ * between the log and the state rebuilt from it — the one failure an
+ * event-sourced kernel cannot tolerate, because the log is the only truth.
+ *
+ * It has happened three times, all at the same hand-copied call site, and the
+ * test above could not see any of it: it passed one of four knobs to the
+ * comparison kernel and compared views that did not include the ledger those
+ * knobs write into. The negative control at the end of this test is the point
+ * of it — it asserts the parity check can still FAIL, which is the only
+ * evidence that it is checking anything.
+ */
+test("replay: a mesh with every projection knob set rebuilds its ledger identically", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      { id: "lead", role: "lead", authority: ["architecture.approve"], interests: [] },
+    ],
+    mayContact: { dev: ["lead"], lead: ["dev"] },
+    mode: "parked",
+    bus: { commitments: { semantic: "strict", ttlMs: 60_000, byType: true } },
+  });
+  const turn = { turnId: "t-replay", agentId: "dev", reason: { kind: "manual" as const }, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [] };
+  await m.supervisor.executeOp(
+    "dev",
+    { op: "send", type: "REQUEST_INFO", to: ["lead"], newThread: { subject: "which cache?" }, payload: { question: "which cache?" } } as MeshOp,
+    turn as never,
+  );
+
+  // The fixture has to actually exercise the knobs, or the parity below is a
+  // comparison of two empty ledgers. `contract` comes from `contractsByType`
+  // and `dueBy` from `commitmentTtl`; both are stamped by the reducer at open
+  // time, which is why neither survives a replay that lacks them.
+  const ask = [...m.kernel.state.pendingRequests.values()][0];
+  assert.ok(ask, "fixture must open a real ask");
+  assert.equal(ask!.contract, "info.question", "by_type must have governed this ask");
+  assert.ok(ask!.dueBy, "commitmentTtl must have deadlined this ask");
+
+  // Budgets are excluded here, and only here, for a reason that is a property
+  // of the system rather than of this test: `BudgetManager.declare` calls
+  // `ensureBudget` straight against kernel state and emits nothing, so a
+  // declared-but-untouched budget line is not in the log to be replayed. The
+  // suite above compares them because its trail runs real turns and every
+  // declared line is then consumed, which puts it in the log; this fixture is
+  // parked and consumes nothing. The ledger, which is what this test is about,
+  // is compared in full.
+  const ledgerViews = (k: Kernel) => { const { budgets: _budgets, ...rest } = serializableViews(k); return rest; };
+
+  const events = (await m.store.read()) as MeshEvent[];
+  const faithful = new Kernel(new MemoryEventStore(), new FixedClock(), undefined, projectionConfigFor(m.config));
+  await faithful.rebuild(events);
+  assert.deepEqual(ledgerViews(faithful), ledgerViews(m.kernel), "same log + same projection config must rebuild the same state");
+
+  // Negative control: exactly the config this suite used to hand the
+  // comparison kernel. If this ever stops diverging, the parity check above
+  // has gone blind again and is passing for the wrong reason.
+  const partial = new Kernel(new MemoryEventStore(), new FixedClock(), undefined, { transitionGates: m.config.transitionGates });
+  await partial.rebuild(events);
+  assert.notDeepEqual(
+    ledgerViews(partial),
+    ledgerViews(m.kernel),
+    "a rebuild missing three of four knobs must NOT match the live mesh — if it does, this test proves nothing",
+  );
+  await m.cleanup();
+});
+
+test("replay: the live kernel and the replay path read the same projection config", async () => {
+  const m = await makeMesh({
+    agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }],
+    mayContact: { dev: [] },
+    bus: { commitments: { semantic: "strict", ttlMs: 30_000, byType: true } },
+  });
+  // Both sides call `projectionConfigFor` today, so this holds by construction
+  // — that is the fix, not the test. It stays as a regression guard on the two
+  // call sites: it fails the moment either end goes back to hand-copying the
+  // knob list and drops one, which is how all three previous defects shipped.
+  assert.deepEqual(m.kernel.gates, m.supervisor.projectionConfig(), "live gates and replay config must not drift");
+  assert.equal(m.kernel.gates?.contractsByType, true, "and must carry what the mesh actually configured");
   await m.cleanup();
 });

@@ -6,7 +6,8 @@
   PolicyDecisionResult,
 } from "../../protocol/src/index";
 import type { PolicyContext, PolicyEvaluator } from "../../core/src/ports";
-import { checkApprovals, gateForTransition, holdsAuthority } from "../../core/src/projections";
+import { AUTHORITY_DOMAINS, AUTHORITY_TOKENS } from "../../protocol/src/index";
+import { checkApprovals, gateForTransition, holdsAuthority, REVIEW_CAPABILITIES, subjectForArtifactType } from "../../core/src/projections";
 import { approvalKey } from "../../core/src/state";
 import type { RawPolicyRule } from "../../config/src/index";
 import { HUMAN_AGENT_ID } from "../../core/src/supervisor";
@@ -137,7 +138,22 @@ export class PolicyEngine implements PolicyEvaluator {
         .filter((r) => r.definition.id !== HUMAN_AGENT_ID)
         .filter((r) => holdsAuthority(r.definition.authority, subject, kind))
         .map((r) => r.definition.id);
-      const remedy = holders.length > 0 ? ` — held by: ${holders.join(", ")}` : ` — no agent seat holds it`;
+      // `subject` reaches here as free text — `domainOfSubject` passes an
+      // unrecognised word straight through — so `required` may be a token that
+      // CANNOT exist. `design.approve` is the live example: no seat held it, so
+      // the remedy read "no agent seat holds it", which invites an operator to
+      // grant it in `mesh.yaml`, where `validateAuthorityTokens` then refuses
+      // the token at load and the mesh stops booting. A remedy must not name a
+      // fix that bricks the mesh. So distinguish "nobody has it" from "it is
+      // not a thing", and for the latter give the domains that are.
+      const remedy =
+        holders.length > 0
+          ? ` — held by: ${holders.join(", ")}`
+          : AUTHORITY_TOKENS.includes(required)
+            ? ` — no agent seat holds it`
+            : ` — '${required}' is not a grantable authority (do not add it to mesh.yaml; the config loader rejects it and the mesh will not boot).` +
+              ` Valid domains: ${AUTHORITY_DOMAINS.join(", ")}. Re-issue naming the capacity you are signing in` +
+              ` (for example subject "${AUTHORITY_DOMAINS.includes(subject as (typeof AUTHORITY_DOMAINS)[number]) ? subject : "quality"}"), not the artifact or the topic`;
       return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}`, ruleId: "authority" };
     }
     // `required` is not passed to matchRule: there is no `when.authority`, so an
@@ -442,38 +458,30 @@ function configKeyFor(ctx: PolicyContext, id: string): string | undefined {
   return undefined;
 }
 
-export const REVIEW_CAPABILITIES: Partial<Record<Artifact["type"], string>> = {
-  ArchitectureDocument: "review.design",
-  ADR: "review.design",
-  ApiSpec: "review.design",
-  DatabaseSchema: "review.design",
-  CodePatch: "code.review",
-  ReleasePlan: "code.review",
-  TestReport: "test.write",
-  SecurityReport: "security.review",
-  RequirementsDoc: "review.design",
-};
+// The table this file used to declare itself now lives in core, because the
+// self-approval screen on the op path and the `review-authority` rule on the
+// transition path must be the same screen. They were not: the two copies
+// disagreed on DatabaseSchema, ReleasePlan, TestReport and RequirementsDoc,
+// so an artifact could be refused here and waved through there. Re-exported
+// so every existing importer of the policy path keeps working.
+export { REVIEW_CAPABILITIES } from "../../core/src/projections";
 
+/**
+ * The same consolidation, now applied to the subject table too.
+ *
+ * This was the surviving twin: it disagreed with core's `domainOfSubject` on
+ * `DatabaseSchema` (architecture vs the caller's word), on `ReleasePlan`
+ * (implementation vs release), and on every unmapped type — where this returned
+ * `architecture` from its `default:` and core returned the artifact's own type
+ * name, which is never a valid authority domain.
+ *
+ * NOTE a deliberate behaviour change: `ReleasePlan` now resolves to `release`
+ * rather than `implementation`, so `canReviewArtifactType` — and through it the
+ * `review-authority` rule — asks for `release.approve`. That is the correct
+ * reading; the `ACCEPTED` transition below already keys off `release.accept`.
+ */
 export function reviewSubject(artifact: Pick<Artifact, "type">): string {
-  switch (artifact.type) {
-    case "ArchitectureDocument":
-    case "ADR":
-    case "ApiSpec":
-    case "DatabaseSchema":
-      return "architecture";
-    case "CodePatch":
-    case "ReleasePlan":
-      return "implementation";
-    case "TestReport":
-      return "quality";
-    case "SecurityReport":
-      return "security";
-    case "RequirementsDoc":
-    case "Requirement":
-      return "requirements";
-    default:
-      return "architecture";
-  }
+  return subjectForArtifactType(artifact.type);
 }
 
 /**

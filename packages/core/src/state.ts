@@ -5,6 +5,7 @@ import type {
   ArtifactId,
   BudgetProjectionEntry,
   DecisionRecord,
+  DefaultAnswer,
   Escalation,
   Goal,
   GoalId,
@@ -120,7 +121,30 @@ export type DischargeReason =
    * that loss is auditable instead of silent, and counted so operators can
    * see the ledger is over capacity.
    */
-  | "evicted_cap";
+  | "evicted_cap"
+  /**
+   * The deadline passed on an ask that carried its own answer, so the runtime
+   * gave the asker the answer it had agreed to assume.
+   *
+   * The only reason here that a SILENCE produces and that is nonetheless a
+   * settled question. `expired` is its sibling and its opposite: same clock,
+   * same absence of a reply, and the difference is entirely whether the asker
+   * said in advance what silence would mean. Where it did, nobody failed --
+   * the debtors were offered a say and had nothing to add, which is the
+   * cheapest legitimate outcome a busy mesh has.
+   *
+   * Deliberately ABSENT from `UNANSWERED_DISCHARGE_REASONS`, on the same
+   * grounds as `refused` and `withdrawn_by_sender`: the party whose answer
+   * mattered got the answer it asked for. Membership would settle the thread
+   * as ESCALATED and keep an operator card open over an ask that resolved
+   * exactly as designed -- turning the low-contact path into a generator of
+   * human interrupts, which is the precise cost it exists to remove.
+   *
+   * Absent from `PER_DEBTOR_DISCHARGE_REASONS` too: the deadline speaks for
+   * the whole ask, so it releases every debtor at once, and the released set
+   * is the record's own `to`.
+   */
+  | "defaulted";
 
 /** Discharge reasons the runtime inferred rather than was told. */
 export const INFERRED_DISCHARGE_REASONS: ReadonlySet<DischargeReason> = new Set<DischargeReason>([
@@ -207,6 +231,16 @@ export interface PendingRequest {
    * behavior rather than rewriting history on replay.
    */
   outstanding?: string[];
+  /**
+   * The answer the asker declared it would assume, when it declared one.
+   *
+   * Recorded at open for the same reason as `contract`: it is read at
+   * DISCHARGE, by which time the asking message is the only place it survives
+   * -- and unlike the contract it is also read WHILE the ask is open, by the
+   * nudge sweep, which skips an ask that carries one. Present means silence
+   * is a legal ending here; absent means silence is a stall.
+   */
+  ifUnanswered?: DefaultAnswer;
 }
 
 /** A discharged ask, kept briefly so the runtime can explain what happened. */

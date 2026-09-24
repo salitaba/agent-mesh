@@ -12,6 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   BackendUnreachableError,
+  InterruptedTurnError,
   EDIT_CAPABILITIES,
   normalizeCapability,
   type AgentDefinition,
@@ -1654,6 +1655,31 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
               }
             }
           }
+        } else if (msg.type === "user") {
+          // Tool RESULTS. Previously dropped, and the omission was load-bearing:
+          // `tool_call` is pushed when a call is announced and nothing ever
+          // emitted `tool_call_update`, so `noteToolFrame` stamped liveness once
+          // — at the START of the call — and never again. A single four-minute
+          // `Bash` run therefore read as a turn that had gone silent, and the
+          // stall watchdog killed it. That is the mechanism behind ten dead turns
+          // in one live run, and no amount of tuning the silence floor fixes it.
+          //
+          // Both consumers already exist: `collectAgentOutput` folds
+          // `tool_call_update` into `toolCalls`, and the dashboard's stream
+          // reducer keys off it. Only the producer was missing.
+          const um = (msg as { message?: { content?: unknown } }).message;
+          const parts = Array.isArray(um?.content) ? um.content : [];
+          for (const b of parts as Array<Record<string, unknown>>) {
+            if (b.type !== "tool_result") continue;
+            const id = b.tool_use_id ?? b.toolUseId;
+            if (id === undefined || !s.pending) continue;
+            s.pending.events.push({
+              kind: "tool_call_update",
+              toolCallId: String(id),
+              status: b.is_error === true ? "failed" : "completed",
+              resultDigest: shortDigest(JSON.stringify(b.content ?? "")),
+            });
+          }
         } else if (msg.type === "stream_event") {
           // Live token tap, observability only — never fails the turn.
           const ev = (msg as { event?: { type?: string; delta?: { type?: string; text?: string } } }).event;
@@ -1680,9 +1706,16 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             // always wins. Deciding it here removes the race. A result that is
             // NOT an error is left alone: that is the CLI completing the turn
             // as we aborted, and its ops are legitimate work.
+            // The frame we are discarding still reports what the backend spent
+            // getting this far, so carry it out on the error instead of dropping
+            // it. `InterruptedTurnError` is named "AbortError", so every
+            // classification path downstream is unchanged — see its doc comment.
             pending.settle({
               ok: false,
-              err: new DOMException("turn interrupted by the mesh before the backend answered", "AbortError"),
+              err: new InterruptedTurnError(
+                "turn interrupted by the mesh before the backend answered",
+                usageToTokens(result.usage),
+              ),
             });
             // Every failure marks the seat UNREACHABLE, which `ensureSession`
             // reads as "discard this session and rebuild it". The abort left the

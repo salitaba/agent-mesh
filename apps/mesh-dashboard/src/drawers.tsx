@@ -509,8 +509,16 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
 function parseOpsBlock(text: unknown): any[] | null {
   if (typeof text !== "string" || !text) return null;
   const cands: string[] = [];
-  const m = /```(?:mesh-json|json|mesh-op)?\s*\n?([\s\S]*?)```/.exec(text);
-  if (m) cands.push(m[1]);
+  // Close on the LAST ``` , not the first. A lazy match ends the block at any
+  // fence inside a published document's `content`, truncating the JSON
+  // mid-string — the drawer then shows no ops for the richest turns in the
+  // run. Same defect the runtime parser carried; see `parseMeshOps`.
+  const open = /```(?:mesh-json|json|mesh-op)?[ \t]*\r?\n?/.exec(text);
+  if (open) {
+    const bodyAt = open.index + open[0].length;
+    const close = text.lastIndexOf("```");
+    cands.push(close > bodyAt ? text.slice(bodyAt, close) : text.slice(bodyAt));
+  }
   const t = text.trim();
   if (t.startsWith("[") || t.startsWith("{")) cands.push(t);
   for (const c of cands) {

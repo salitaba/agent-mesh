@@ -30,9 +30,9 @@ Regenerate the GIF with `npm run demo:capture` (needs a built repo, Chrome/Chrom
 ```bash
 npm install
 npm run build
-npm test                         # 85 tests: protocol, policy, scheduler,
-                                 # lifecycle, replay, integration, properties,
-                                 # simulation, git worktrees, adapters,
+npm test                         # ~1,700 tests in 171 files: protocol, policy,
+                                 # scheduler, lifecycle, replay, integration,
+                                 # properties, simulation, git worktrees, adapters,
                                  # HTTP/MCP, the demo journey, parked/step/live modes
 npm run mesh -- run examples/demo-stub/mesh.yaml
 # then open http://127.0.0.1:7421/ and watch a whole AI organization
@@ -63,9 +63,11 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
 3. **Design** — `#/designer` in the dashboard: build agents, capabilities, authority,
    interests, the communication matrix, transition gates and budgets with
    live server-side validation (same engine as `mesh validate`), YAML preview,
-   save; then `mesh run <saved path>`. `mesh init` scaffolds a starter (falls
-   back to `runtime: stub` when the OpenCode CLI isn't on PATH, and `mesh run`
-   preflights the reverse case with guidance instead of crashing).
+   save; then `mesh run <saved path>`. `mesh init` scaffolds a starter with
+   `runtime: claude` — there is no PATH probe and there should not be, because
+   that executable ships with the SDK this repo already depends on, so a probe
+   would fail on a working install. Set `runtime: stub` by hand for a mesh that
+   boots and runs with zero model calls.
 
 ## Running
 
@@ -129,7 +131,8 @@ Set it per agent, or mesh-wide via `mesh.runtime.default`. Add `--git` to give
 writing agents real git worktrees.
 
 Other helpers: `emit-schemas schemas` (regenerate canonical JSON schemas),
-`mesh mcp` (internal stdio↔HTTP bridge spawned by OpenCode).
+`mesh mcp` (internal stdio↔HTTP bridge, spawned by the Claude adapter to
+reach `/api`).
 
 
 ## Repository layout

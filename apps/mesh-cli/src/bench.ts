@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import type { AgentInput, MeshOp, ArtifactStatus } from "../../../packages/protocol/src/index";
+import type { AgentInput, MeshOp, MeshOpSend, ArtifactStatus } from "../../../packages/protocol/src/index";
 import type { StubScript } from "../../../packages/agent-runtime/src/index";
 import { bootstrapMesh, type MeshInstance } from "../../mesh-server/src/index";
 import { buildMetrics, buildCostReport, type MetricsSnapshot } from "../../../packages/observability/src/index";
@@ -295,6 +295,31 @@ function mailType(input: AgentInput, ...types: string[]) {
   return input.context.unreadMail.find((m) => types.includes(m.type));
 }
 
+/**
+ * Address an outgoing message as an ANSWER to the ask that prompted it, when
+ * there was one.
+ *
+ * The demo team is the worked example of how a seat is supposed to talk, and
+ * it used to answer every request by opening a fresh thread -- which happened
+ * to work only because the old mesh woke every recipient for every message.
+ * Under a priced bus that is the failure the role prompts now warn about:
+ * without `replyTo` the ask is never discharged, and a verdict raised as new
+ * chatter classes `accrue`, so the asker is never woken and the mission stops
+ * one step from done. `replyTo` is what makes the answer both exact and
+ * worth a turn.
+ *
+ * `ask` is loose because the callers' own guards are: several scripts fall
+ * back to an interest event, in which case there is no message to answer and
+ * a new thread is the right shape.
+ */
+function answering(ask: unknown, subject: string): Partial<MeshOpSend> {
+  const m = ask as { id?: string; threadId?: string } | undefined;
+  if (m && typeof m === "object" && typeof m.id === "string") {
+    return { replyTo: m.id, ...(typeof m.threadId === "string" ? { threadId: m.threadId } : {}) };
+  }
+  return { newThread: { subject } };
+}
+
 function buildMeshScripts(sim: Sim): Map<string, StubScript> {
   const { spec, board, flags } = sim;
   const scripts = new Map<string, StubScript>();
@@ -489,6 +514,14 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           op: "publish_artifact",
           name: `patch-tx-pipeline-${sim.patches}`,
           type: "CodePatch",
+          // `metadata.path` is not decoration: without it (or `## File:`
+          // sections) `extractPatchFiles` finds nothing, materialization fails,
+          // and the merge writes zero bytes. The demo used to converge anyway,
+          // because a failed merge still moved the artifact to MERGED — so this
+          // journey asserted a merge that had never written a file. `opMerge`
+          // now lands the change before recording it, and the demo has to
+          // produce something real to land.
+          metadata: { path: "src/tx/Pipeline.java" },
           content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ idempotency-safe pipeline (revision ${sim.patches}) handles ${spec.coupledWrites} coupled classes${demoBody("transaction pipeline patch")}`,
         });
         ops.push({ op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "tests green locally" } });
@@ -503,7 +536,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           return {
             text: "rework",
             operations: [
-              { op: "publish_artifact", name: `patch-tx-pipeline-${sim.patches}`, type: "CodePatch", content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})${demoBody("transaction pipeline patch")}` },
+              { op: "publish_artifact", name: `patch-tx-pipeline-${sim.patches}`, type: "CodePatch", metadata: { path: "src/tx/Pipeline.java" }, content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})${demoBody("transaction pipeline patch")}` },
               { op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "rework addressing the block" } },
               { op: "wait" },
             ],
@@ -553,7 +586,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           operations: [
             { op: "publish_artifact", name: "release-test-report", type: "TestReport", content: "release regression green" + demoBody("release regression report"), metadata: { result: "PASSED" } },
             { op: "transition_artifact", artifactId: "artifact://TestReport/release-test-report/1", to: "READY_FOR_REVIEW" },
-            { op: "send", type: "TEST_RESULT", to: ["pm", "tech-lead"], newThread: { subject: "release QA pass" }, payload: { result: "PASSED", subject: "release" } },
+            { op: "send", type: "TEST_RESULT", to: ["pm", "tech-lead"], ...answering(releaseAsk, "release QA pass"), payload: { result: "PASSED", subject: "release" } },
             { op: "done" },
           ],
         };
@@ -574,7 +607,7 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         operations: [
           { op: "publish_artifact", name: `security-scan-${sim.secScans}`, type: "SecurityReport", content: "no critical findings" + demoBody("security scan"), metadata: { result: "PASSED", criticalFindings: 0 } },
           { op: "transition_artifact", artifactId: `artifact://SecurityReport/security-scan-${sim.secScans}/1`, to: "READY_FOR_REVIEW" },
-          { op: "send", type: "SECURITY_FINDING", to: ["pm", "tech-lead"], newThread: { subject: "security pass" }, payload: { result: "PASSED", subject: "security" } },
+          { op: "send", type: "SECURITY_FINDING", to: ["pm", "tech-lead"], ...answering(ask, "security pass"), payload: { result: "PASSED", subject: "security" } },
           { op: "done" },
         ],
       };

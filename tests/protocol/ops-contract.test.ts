@@ -72,6 +72,39 @@ test("ops contract: delegation ops appear exactly when they are usable", () => {
   }
 });
 
+test("ops contract: the interrupt tariff is quoted exactly when it can be charged", () => {
+  const off = renderContextInstructions(emptyBundle());
+  assert.ok(
+    !off.includes("What interrupting someone costs you"),
+    "a mesh with no tariff must not be told a price nothing ever debits",
+  );
+  const on = renderContextInstructions(emptyBundle({ interruptCostTokens: 2000 }));
+  assert.match(on, /2000 tokens for every recipient woken/, "the seat that pays must be quoted the unit price");
+  assert.ok(on.includes("costs you 6000"), "the cost of waking three seats has to be arithmetic the seat can check");
+  assert.match(
+    on,
+    /only the wake is refused/,
+    "running out is silent, so the contract is the only place a seat can learn what that looks like",
+  );
+});
+
+/**
+ * The guidance used to describe inference the default semantic disabled: "it
+ * guesses from thread and timing, and a wrong guess either strands the asker
+ * forever". Under `strict` there is no guess -- the answer lands, is read, and
+ * discharges nothing. Right advice, false reason, which is the worst shape for
+ * a prompt: an agent reasoning about the stated mechanism reasons from fiction.
+ */
+test("ops contract: answering guidance describes strict semantics, not inference", () => {
+  const text = renderContextInstructions(emptyBundle());
+  assert.match(text, /Always set `replyTo`/);
+  assert.ok(
+    !/guess(es)? from thread and timing/.test(text),
+    "the runtime does not infer a discharge under the default `strict` semantic",
+  );
+  assert.match(text, /the request stays open/, "the seat must be told what actually happens without `replyTo`");
+});
+
 test("ops contract: criterion acceptance is documented with its evidence requirement", () => {
   const text = renderContextInstructions(emptyBundle({ criterionAcceptanceEnabled: true }));
   assert.match(text, /criterion:/, "agents must see the subject shape that satisfies a criterion");
@@ -158,6 +191,52 @@ test("typed-only: the config reaches the bundle, not just the renderer", async (
   } finally {
     await typed.cleanup();
     await mixed.cleanup();
+  }
+});
+
+/**
+ * The same pairing, one channel over: the tariff prose above is only worth
+ * anything if a real `bus.delivery` block reaches the bundle, and only safe if
+ * a mesh that charges nothing renders no price.
+ */
+test("the interrupt tariff reaches the bundle, and only when it can be charged", async () => {
+  const agents = [
+    { id: "architect", role: "architect", interests: [] },
+    { id: "dev", role: "developer", interests: [] },
+  ];
+  const priced = await makeMesh({
+    agents,
+    mode: "parked" as const,
+    bus: { delivery: { classes: true, interruptCostTokens: 2000 } },
+  });
+  const free = await makeMesh({
+    agents,
+    mode: "parked" as const,
+    bus: { delivery: { classes: true, interruptCostTokens: 0 } },
+  });
+  const none = await makeMesh({ agents, mode: "parked" as const });
+  try {
+    assert.equal(
+      buildAgentContext({ config: priced.config, kernel: priced.kernel }, "dev").interruptCostTokens,
+      2000,
+      "bus.delivery.interrupt_cost_tokens never reached the bundle, so the price can never be quoted",
+    );
+    // `chargeInterrupt` no-ops on a non-positive cost, so quoting one here
+    // would name a debit that never happens.
+    assert.equal(
+      buildAgentContext({ config: free.config, kernel: free.kernel }, "dev").interruptCostTokens,
+      undefined,
+      "a zero tariff must not be advertised as a price",
+    );
+    assert.equal(
+      buildAgentContext({ config: none.config, kernel: none.kernel }, "dev").interruptCostTokens,
+      undefined,
+      "a mesh with no delivery regime charges nothing and must be told nothing",
+    );
+  } finally {
+    await priced.cleanup();
+    await free.cleanup();
+    await none.cleanup();
   }
 });
 

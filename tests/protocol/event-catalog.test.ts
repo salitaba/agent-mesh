@@ -88,6 +88,7 @@ test("event catalog: EVENT_TYPES and the EventType union are the same set", () =
     "lease.released": true,
     "memory.updated": true,
     "context.assembled": true,
+    "turn.discarded": true,
     "plan.updated": true,
     "plan.gate_rejected": true,
     "budget.reserved": true,

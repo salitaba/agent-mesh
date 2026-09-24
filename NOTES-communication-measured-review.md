@@ -108,6 +108,10 @@ The async bones are genuinely good, and the review should say so before proposin
 - **Attention is priced** — `interrupt` charges the sender, `deliver` coalesces, `accrue` never
   wakes, and when the sender cannot afford it the message still ships and only the wake is
   refused. "Nothing is ever suppressed; only the wake is refused" is the right invariant.
+  (Recorded as a win before anyone checked WHICH messages landed in which class: the derivation
+  keyed on obligation alone, so all eight work-moving and verdict types accrued and the invariant
+  held while the mesh silently stopped moving work. `NOTES-communication-styles-review.md` §8.
+  The price was also never quoted to the sender paying it until the same round.)
 - Three free pure-state gates already run before any cost: broadcast interest, delivery class,
   `isRedundantObservation`.
 
@@ -181,7 +185,13 @@ the first reply leaves everyone else owing an answer nobody was tracking).
 **4a. The recipient owns no wake policy.** Rationing is entirely the sender's: `attention_tokens`
 is the sender's wallet, the tariff is charged to the sender, and `interests:` gates only
 *broadcasts*. A seat that wants to batch its mail cannot say so. Contrast `accrue`, which already
-does exactly this globally — the machinery exists, it is just not per-recipient.
+does exactly this globally — the machinery exists, it is just not per-recipient. (As found, and
+now stale in its last clause: `wake.defer_non_obliging` parses per seat at `config/src/index.ts:927`
+and `defersMail` reads it per agent at `scheduler/src/index.ts:244`. M5 below is built and
+unadopted — no `examples/*/mesh.yaml` sets `wake:` — rather than unbuilt. It also carried the
+`isObligingType` blind spot until `movesWork` landed: a seat deferring "non-obliging" mail was
+deferring the handoffs that were its next piece of work. See
+`NOTES-communication-styles-review.md` §8.)
 
 **4b. There is no pull path.** No inbox tool; `mailbox` appeared only as a
 read-only status field. 46 MCP tools and not one read mail. An agent that is not woken never

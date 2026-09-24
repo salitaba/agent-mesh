@@ -277,7 +277,15 @@ export function summarize(e: MeshEvent): string {
     case "budget.exceeded":
       return `${shortKey(p.key)} ${p.consumed}/${p.limit} EXCEEDED`;
     case "budget.limit_raised":
-      return `${shortKey(p.key)} limit → ${p.limit}${p.previous != null ? ` (was ${p.previous})` : ""}`;
+      return `${shortKey(p.key)} limit → ${p.limit}${p.previous != null ? ` (was ${p.previous})` : ""}${p.decidedBy === "auto" ? " (auto)" : ""}`;
+    // The token figure is optional and the absence is load-bearing: a turn killed
+    // mid-generation spent tokens nobody counted, so it reads "cost unmeasured"
+    // rather than "0 tokens". A feed line claiming zero would be the same lie the
+    // ledger used to tell.
+    case "turn.discarded":
+      return `${p.agentId} turn discarded (${p.reason})${
+        typeof p.tokens === "number" ? ` · ${p.tokens} tokens lost` : " · cost unmeasured"
+      }${p.turnId ? ` · ${shortId(p.turnId)}` : ""}`;
     default:
       return (p as any).summary ? String((p as any).summary).slice(0, 120) : "";
   }

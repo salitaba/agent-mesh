@@ -12,20 +12,19 @@ import type {
   Task,
   ThreadId,
 } from "../../protocol/src/index";
-import { episodeOf } from "../../protocol/src/index";
+import { CODE_ARTIFACT_TRANSITIONS, episodeOf } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   MESSAGE_TYPES,
   HARD_OP_CAPABILITY,
   effectiveHardActions,
   artifactScope,
-  obligesRecipients,
-} from "../../protocol/src/catalog";
-import { findContract } from "../../protocol/src/contracts";
+  obligesRecipients, movesWork } from "../../protocol/src/catalog";
+import { BUILTIN_CONTRACTS, contractForMessageType, findContract } from "../../protocol/src/contracts";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
-import { agentKey, missionKey } from "./budgets";
+import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
 import { holdsAuthority } from "./projections-helpers";
 
@@ -38,6 +37,14 @@ const MAX_UNREAD = 12;
 const MAX_DECISIONS = 10;
 const MAX_ARTIFACT_REFS = 20;
 const MAX_ACTIVITY = 15;
+/**
+ * Refusals shown back to the seat that caused them.
+ *
+ * Small on purpose: this is a "do not retry that" signal, not a log. The
+ * newest few carry it; older ones have either been acted on or stopped
+ * mattering.
+ */
+const MAX_REFUSALS = 5;
 const MAX_OUTSTANDING = 10;
 const MAX_MEMORY = 20;
 
@@ -100,20 +107,40 @@ const PRIORITY_RANK: Record<string, number> = { URGENT: 9, HIGH: 6, NORMAL: 4, L
 export { obligesRecipients };
 
 /**
- * Mail order: obligation band first, then priority, then recency.
+ * Which slice of the window a message competes in.
  *
- * The band leads because the two classes answer different questions. An
- * unanswered ask is work the reader owes a named agent who is parked waiting
- * for it; everything else is news. A reader that spends its turn on news while
- * an ask sits ten lines below has not been badly informed, it has been
- * mis-prompted — and the asker waits another whole turn for the answer.
+ * 0 — an unanswered ask: work this reader OWES a named agent who is parked
+ *     waiting for the reply.
+ * 1 — a speech act that MOVES this reader's work: a MISSION, a DELEGATE, a
+ *     HANDOFF, a verdict. Nobody is blocked on a reply, but it is the
+ *     instruction the rest of the turn is supposed to serve.
+ * 2 — news.
+ *
+ * Band 1 used to be folded into news, which put a MISSION below every routine
+ * REQUEST in the box and below the 12-slot cap with it. A seat can answer its
+ * mail correctly and still do the wrong work, if the brief defining that work
+ * was the thing that did not fit.
+ */
+function mailBand(m: MeshMessage): number {
+  if (obligesRecipients(m)) return 0;
+  if (movesWork(m.type)) return 1;
+  return 2;
+}
+
+/**
+ * Mail order: band first, then priority, then recency.
+ *
+ * The band leads because the classes answer different questions. A reader that
+ * spends its turn on news while an ask sits ten lines below has not been badly
+ * informed, it has been mis-prompted — and the asker waits another whole turn
+ * for the answer.
  *
  * Priority is compared INSIDE a band rather than ahead of it, which is what
  * makes the URGENT reservation in `selectUnread` necessary rather than
  * redundant.
  */
 function byObligationThenPriority(a: MeshMessage, b: MeshMessage): number {
-  const band = (obligesRecipients(a) ? 0 : 1) - (obligesRecipients(b) ? 0 : 1);
+  const band = mailBand(a) - mailBand(b);
   if (band !== 0) return band;
   const priority = (PRIORITY_RANK[b.priority] ?? 4) - (PRIORITY_RANK[a.priority] ?? 4);
   if (priority !== 0) return priority;
@@ -397,6 +424,7 @@ export interface ContextLimits {
   maxDecisions?: number;
   maxArtifactRefs?: number;
   maxActivity?: number;
+  maxRefusals?: number;
   maxOutstanding?: number;
   maxMemory?: number;
 }
@@ -414,6 +442,7 @@ export function buildAgentContext(
   const maxDecisions = cap(limits?.maxDecisions, MAX_DECISIONS);
   const maxArtifactRefs = cap(limits?.maxArtifactRefs, MAX_ARTIFACT_REFS);
   const maxActivity = cap(limits?.maxActivity, MAX_ACTIVITY);
+  const maxRefusals = cap(limits?.maxRefusals, MAX_REFUSALS);
   const maxOutstanding = cap(limits?.maxOutstanding, MAX_OUTSTANDING);
   const maxMemory = cap(limits?.maxMemory, MAX_MEMORY);
   const state = kernel.state;
@@ -504,6 +533,10 @@ export function buildAgentContext(
       status: a.status,
       name: a.name,
       version: a.version,
+      // Narrow on purpose: a CodePatch mid-ladder, and nothing else.
+      ...(a.type === "CodePatch" && (a.status === "APPROVED" || a.status === "VERIFIED" || a.status === "MERGEABLE")
+        ? { pendingRung: (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0] }
+        : {}),
     }));
 
   // Bounded recency window instead of sorting the whole log per turn: turns
@@ -528,6 +561,34 @@ export function buildAgentContext(
     // recency bound the agent is not meant to see past, so reporting the full
     // message count here would overstate what was withheld.
     countOmitted("activity", window.length, recentOwnActivity.length);
+  }
+
+  // What this seat asked for and did not get.
+  //
+  // Both rings are projected for the operator and were read by nobody else:
+  // the failure digest and the run report see them, `context.ts` did not. The
+  // agent that caused a refusal was handed `{ ok: true }` in the same turn and
+  // told nothing afterwards, so a denial it could have worked around was
+  // instead repeated verbatim — twice in a live mission by one seat, three
+  // times by another. Newest first, because the last wall is the one still in
+  // front of it.
+  const refusedOps: string[] = [];
+  {
+    const mine: Array<{ at: string; line: string }> = [];
+    for (const d of state.deniedActions) {
+      if (d.agentId !== agentId) continue;
+      const rule = d.ruleId ? ` [${d.ruleId}]` : "";
+      const subject = d.subject ? ` (${d.subject})` : "";
+      mine.push({ at: d.at, line: `${d.decision ?? "DENY"}: ${d.action}${subject} — ${d.reason}${rule}` });
+    }
+    for (const r of state.refusedSends) {
+      if (r.from !== agentId) continue;
+      const rule = r.ruleId ? ` [${r.ruleId}]` : "";
+      mine.push({ at: r.at, line: `REFUSED: ${r.type} to ${r.to.join(", ")} — ${r.reason}${rule}` });
+    }
+    mine.sort((a, b) => b.at.localeCompare(a.at));
+    for (const m of mine.slice(0, maxRefusals)) refusedOps.push(m.line);
+    countOmitted("refusals", mine.length, refusedOps.length);
   }
 
   // Agent-authored notes outrank auto-written turn summaries for the same
@@ -642,6 +703,8 @@ export function buildAgentContext(
     relevantArtifacts,
     unreadMail: unread,
     recentOwnActivity,
+    refusedOps,
+    mailDropped: state.mailOverflowDropped.get(agentId) ?? 0,
     agentMemory,
     elidedMemory,
     continuity,
@@ -703,6 +766,22 @@ export function buildAgentContext(
      * `"full"` here is also what keeps every existing fixture -- which builds a
      * bundle with no wake policy at all -- rendering exactly as it did. */
     wakeMail: config.agents[agentId]?.wake?.mail ?? "full",
+    /* Quoted only when it can be charged. `chargeInterrupt` no-ops on a
+     * non-positive cost and the whole regime is absent without
+     * `bus.delivery.classes`, so anywhere else this would name a price that
+     * is never debited. */
+    ...(config.bus.deliveryClasses && config.bus.deliveryClasses.interruptCostTokens > 0
+      ? { interruptCostTokens: config.bus.deliveryClasses.interruptCostTokens }
+      : {}),
+    ...(config.bus.contractsByType ? { contractsByType: true } : {}),
+    /* Same absent-by-default shape as contractsByType above, and for the same
+     * reason: a mesh that never collapsed its vocabulary renders byte-for-byte
+     * what it rendered before this key existed. */
+    ...(config.bus.vocabulary === "contracts" ? { commsVocabulary: "contracts" as const } : {}),
+    ...(config.bus.style === "low-contact" ? { lowContact: true as const } : {}),
+    ...(config.bus.deliveryClasses?.congestionEvery !== undefined && config.bus.deliveryClasses.interruptCostTokens > 0
+      ? { interruptCongestionEvery: config.bus.deliveryClasses.congestionEvery }
+      : {}),
   };
 }
 
@@ -978,7 +1057,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("");
   lines.push("## Your runtime state");
   lines.push(
-    `lifecycle=${bundle.agentState.lifecycle} mailbox=${bundle.agentState.mailboxDepth} tokens=${bundle.budgetSnapshot.agentTokensUsed}/${bundle.budgetSnapshot.agentTokenBudget} activeTask=${bundle.currentTask?.id ?? "-"}`,
+    // `mission=` is here because the bundle has carried
+    // `missionTokensUsed`/`missionTokenBudget` since it was written and no
+    // renderer has ever read them: the seat was told its own wallet and never
+    // the shared purse. A mesh that asks a seat to ration its contact -- to
+    // weigh an interrupt against what it costs someone else -- and then hides
+    // the common budget is quoting half a price.
+    `lifecycle=${bundle.agentState.lifecycle} mailbox=${bundle.agentState.mailboxDepth} tokens=${bundle.budgetSnapshot.agentTokensUsed}/${bundle.budgetSnapshot.agentTokenBudget} mission=${bundle.budgetSnapshot.missionTokensUsed}/${bundle.budgetSnapshot.missionTokenBudget} activeTask=${bundle.currentTask?.id ?? "-"}`,
   );
   lines.push("");
   lines.push("## Relevant policy");
@@ -1011,7 +1096,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (bundle.relevantArtifacts.length > 0) {
     lines.push("## Artifact references (fetch via mesh_artifact_read — do not paste contents)");
     for (const a of bundle.relevantArtifacts) {
-      lines.push(`- ${a.ref} (${a.type}, ${a.status})`);
+      // The pending rung, said where the seat is already reading the artifact.
+      // Without it the status line says "APPROVED", which a seat reasonably reads
+      // as finished rather than as "waiting for you to walk it to MERGED".
+      const rung = a.pendingRung ? ` — needs ${a.pendingRung} next; nothing advances it automatically` : "";
+      lines.push(`- ${a.ref} (${a.type}, ${a.status})${rung}`);
     }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
@@ -1084,6 +1173,17 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     } else {
       lines.push("All mandatory criteria are evidenced. Close out remaining work or accept completion.");
     }
+    lines.push("");
+  }
+  // Ahead of the mail, and deliberately: this is the only section that tells
+  // the seat something it tried and could not do. A refusal it does not see is
+  // a refusal it repeats byte-for-byte on the next turn, which is what a live
+  // mission recorded three times from one seat.
+  const refusals = bundle.refusedOps ?? [];
+  if (refusals.length > 0) {
+    lines.push("## Refused last time (do not simply retry these)");
+    for (const r of refusals) lines.push(`- ${r}`);
+    partial(bundle.omitted?.refusals, "refusal(s)", "older ones; the newest are the ones still in your way");
     lines.push("");
   }
   // Thread subjects live on the Thread, not on the message, and this is the
@@ -1175,11 +1275,28 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         // (decision.escalate), where there is nothing to name. Unreachable under
         // `asClaim` for the same reason -- claims mode withholds only mail that
         // owes nothing.
-        const askContract = m.control?.contract ? findContract(m.control.contract) : undefined;
+        // Named, or -- under `bus.commitments.by_type` -- the one this type
+        // speaks for. Quoting the default is not decoration: the key turns
+        // refusals into a closed set, and a set the debtor is never shown is
+        // a trap rather than a vocabulary. The renderer resolves it with the
+        // same catalogue lookup the reducer used, so what a seat is told it
+        // may say is exactly what the discharge gate will accept.
+        const named = m.control?.contract ? findContract(m.control.contract) : undefined;
+        const askContract = named ?? (bundle.contractsByType ? contractForMessageType(m.type) : undefined);
         if (obliging && askContract?.refusals.length) {
           lines.push(
             `  contract: ${askContract.name} — to decline, discharge with reason (your words) and refusal: one of ${askContract.refusals.join(", ")}.`,
           );
+          // Said plainly when the contract was defaulted rather than named,
+          // because the two are not the same promise. A named contract was
+          // checked against its request schema at the edge; this one was not,
+          // so the ask may not match the shape the contract describes even
+          // though the refusals and the deadline are the contract's.
+          if (!named) {
+            lines.push(
+              `  (${askContract.name} governs this ask because it is a ${m.type}, not because the sender named it — so the request shape was never checked, but the refusals and the deadline above are real.)`,
+            );
+          }
         } else if (obliging && !askContract) {
           // Naming the ABSENCE, because it is load-bearing rather than merely
           // absent. With no contract this ask carries no request schema, no
@@ -1190,6 +1307,25 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           // is supposed to make impossible.
           lines.push(
             "  contract: none — no request schema was named, so any reply that answers this settles it. Discharge it with a reason if you will not.",
+          );
+        }
+        // The one line on an obliging ask that tells a debtor it may do
+        // nothing.
+        //
+        // Every other thing this section says to a debtor is about how to
+        // spend a turn: answer it, or discharge it and say which no. Silence
+        // was never a move — it reads as "still working", so the runtime
+        // nudges three times and then wakes a human. On an ask carrying a
+        // default it IS a move, and a cheap correct one, but only if the
+        // debtor knows the ask carries one and what it will be taken to mean.
+        // Unshown, this key would quietly spend the debtor's attention on
+        // asks the asker had already said it could do without — which is the
+        // whole cost it exists to remove, paid anyway because only one side
+        // was told.
+        const assumed = obliging ? m.control?.ifUnanswered : undefined;
+        if (assumed) {
+          lines.push(
+            `  if you say nothing: the asker proceeds as ${JSON.stringify(assumed.assume)}. That is a legitimate ending here and you will not be nudged for it — answer only if that would be WRONG.`,
           );
         }
       }
@@ -1213,6 +1349,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       lines.push("- Bodies marked `body withheld` are in your mailbox, not lost: read them with `mesh_inbox` (this seat receives non-urgent mail as claims).");
     }
     partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");
+    if (bundle.mailDropped && bundle.mailDropped > 0) {
+      lines.push(
+        `- (${bundle.mailDropped} earlier message(s) were dropped from your mailbox before you read them — the queue outran the cap. They are gone; if you are waiting on something that never arrived, ask again rather than keep waiting.)`,
+      );
+    }
     lines.push("");
   }
   /**
@@ -1321,7 +1462,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push(' {"op":"wait","reason":"awaiting review"}]');
     lines.push("```");
   }
-  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence), withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back; when you can say in ADVANCE what you will do if nobody answers, add `ifUnanswered: {assume: <the value you will proceed with>, afterMs: <how long you will wait>}` — it works on `send` too, and it makes silence a legal ending: nobody is chased for the ask, and at the deadline the mesh hands your own default back to you instead of raising a card for a human), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence), withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such
@@ -1382,7 +1523,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("- request_research (to/question) — ask the explorer a read-only question.");
   lines.push("- broadcast (type/payload) — inform everyone you may contact; prefer a targeted send.");
   lines.push("- ratify_decision (decisionId) — promote a proposed decision to a shared fact.");
-  lines.push("- commit / request_commit / merge — version-control moves, subject to your capabilities.");
+  lines.push(
+    "- commit / request_commit / merge — version-control moves, subject to your capabilities. " +
+      "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with transition_artifact " +
+      "and then `merge`; approval alone lands nothing, and no step happens on its own.",
+  );
   lines.push("- delegate (taskId/to), acquire_lease / release_lease (resource) — hand off work, avoid collisions.");
   // Shown only when usable: with delegation off (the v1 default, max_depth 0)
   // every spawn_worker is denied, so advertising it would only buy wasted turns.
@@ -1392,9 +1537,81 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     );
   }
   lines.push("");
+  // The half of a seat's comms surface nobody generates.
+  //
+  // `bus.vocabulary: "contracts"` collapses the MCP manifest down to eight
+  // tools, none of which takes a message type. What it cannot collapse is
+  // `roles/*.md`, which is prose a human wrote in the typed vocabulary and
+  // which still says "send REQUEST_RESEARCH to the explorer" and "request a
+  // review from the tech lead". The seat then holds a tool list those
+  // sentences do not appear in, and its only way to learn the replacements is
+  // to spend a whole turn on `contracts` before it can ask for anything --
+  // assuming it thinks to, rather than reaching for a tool its brief named
+  // and its manifest does not have.
+  //
+  // So the mapping is rendered, and it is DERIVED from BUILTIN_CONTRACTS
+  // rather than written beside it. A hand-kept table here would be a second
+  // statement of the same fact in a third place, and the first contract to
+  // change the type it speaks for would leave it wrong -- which is the exact
+  // failure this section exists to fix, moved one file over. Same reasoning
+  // as `CONTRACT_BY_MESSAGE_TYPE` in `protocol/src/contracts.ts`.
+  //
+  // Rendered only under the collapsed vocabulary: on a typed mesh the brief
+  // and the manifest already agree, and this would be ~160 tokens a turn
+  // restating it.
+  if (bundle.commsVocabulary === "contracts") {
+    lines.push("## How you ask for things here (your role brief is written in the older vocabulary)");
+    lines.push(
+      "This mesh routes asks by CONTRACT, not by message type. The asks it will route are the ones `contracts` lists, with who answers each and the refusals you may get back — that list is authoritative. Your role brief is not: it is written in the typed vocabulary and names moves your tool list does not have. The type names it quotes are still the right WORDS for what you mean; these are how you say them here.",
+    );
+    for (const c of BUILTIN_CONTRACTS) {
+      // `desugarsTo` named only when it is not `send`, because those three are
+      // the ones a brief says in prose ("request a review", "escalate it") and
+      // so the ones a seat looks for a tool by name for.
+      const alsoOp = c.desugarsTo === "send" ? "" : ` / the \`${c.desugarsTo}\` op`;
+      lines.push(`- \`${c.messageType}\`${alsoOp} → \`call ${c.name}\` — ${c.summary}`);
+    }
+    lines.push(
+      "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `announce` — it obliges no one and costs no one a turn. An answer to an ask is `reply`, naming the message you are answering.",
+    );
+    if (!bundle.typedOpsOnly) {
+      // True on this channel and only this one: under typed-only the prose
+      // block is parsed and refused, so pointing at `send` there would be
+      // pointing at a turn that lands nothing.
+      lines.push(
+        "The raw `send` op still works for the asks no contract covers. Reach for it last — a `call` is checked before anyone is woken and names its refusals up front, and a `send` is neither.",
+      );
+    }
+    lines.push("");
+  }
+  // The style's own paragraph, and the only place the runtime tells a seat
+  // that the machinery which chases it has been turned down.
+  //
+  // It is short on purpose, and it is four SPENDING rules rather than a
+  // description of the configuration. A seat cannot act on "coalesce_ms is
+  // 300000"; it can act on "your message may sit for minutes, so do not send
+  // it twice". The one thing it must not say is that silence is free — it is
+  // free only on an ask whose asker priced it, which is why the first rule
+  // points at `ifUnanswered` rather than at saying nothing.
+  if (bundle.lowContact) {
+    lines.push("## This mesh is LOW-CONTACT (it will not chase, and neither should you)");
+    lines.push(
+      "- When you raise an ask and can say in advance what you will do if nobody answers, pass `ifUnanswered`. The mesh then stops chasing it for anyone, and at the deadline hands your own default back to you. An ask you cannot name a default for is still a normal ask — raise it.",
+    );
+    lines.push(
+      "- Asks here have DEADLINES and end at them, answered or not. That is the mesh's way of not pestering anyone, not a licence to sit on one: an ask you let expire cost the asker the whole wait and gave them nothing.",
+    );
+    lines.push(
+      "- Waking someone is BILLED, and gets dearer the fuller their mailbox. Say it once. A message that has not been answered yet has not been lost — it is waiting for the recipient's next turn, and sending it again costs you again and them again.",
+    );
+    lines.push(
+      "- Prefer `announce` to asking, and prefer an artifact to an announcement. Something published is read when it is needed and wakes nobody; an ask spends a turn of someone's life whether or not it was worth one.",
+    );
+    lines.push("");
+  }
   lines.push("## Answering (this is how the mesh knows a question is settled)");
   lines.push(
-    'Always set `replyTo` to the id of the request you are answering. That is the only exact signal the runtime has; without it it must guess from thread and timing, and a wrong guess either strands the asker waiting forever or closes a question nobody actually answered.',
+    'Always set `replyTo` to the id of the request you are answering. It is the only way an ANSWER closes an ask — on a strict mesh (the default) nothing else you write counts as one, so without it your answer is delivered and read while the request stays open, you keep being nudged for it, and it can end up escalated to a human as a question nobody answered. `discharge` below is the only other move you have; the rest — the deadline passing, the asker withdrawing, an operator stepping in — is not yours to trigger.',
   );
   lines.push(
     'If you cannot or will not answer a request addressed to you, say so with `discharge` (messageId + reason). Never just stay silent: silence is indistinguishable from "still working", so the runtime keeps nudging you, burns budget, and eventually escalates it to a human as a stalemate.',
@@ -1410,6 +1627,28 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(
     'If an ask YOU raised stops mattering, close it with `withdraw` (messageId + reason) instead of waiting for it. The agents who still owe you an answer are told to stop and released, and it costs them no turn. Leaving it open is not harmless: the runtime keeps nudging them for an answer you no longer want, and the ask eventually escalates to a human as a stalemate.',
   );
+  // The price, quoted to the seat that pays it. Everything above this point
+  // tells an agent what to send; this is the first thing that tells it what
+  // sending costs. Rendered only when the tariff can fire -- see
+  // AgentContextBundle.interruptCostTokens.
+  if (bundle.interruptCostTokens !== undefined) {
+    lines.push("");
+    lines.push("## What interrupting someone costs you");
+    lines.push(
+      `Waking another agent is charged to YOUR attention budget: ${bundle.interruptCostTokens} tokens for every recipient woken. Marking a message URGENT is the deliberate way to buy that wake, so an URGENT to three agents costs you ${bundle.interruptCostTokens * 3}. Answering an ask someone is parked on, and re-asking in a thread where they already owe you, are charged the same way -- they are worth it, and they are not free.`,
+    );
+    if (bundle.interruptCongestionEvery !== undefined) {
+      lines.push(
+        `Waking a busy agent costs more than waking an idle one. Every ${bundle.interruptCongestionEvery} messages already unread in someone's mailbox adds another ${bundle.interruptCostTokens} to the price of waking them, up to ${MAX_INTERRUPT_SURCHARGE}x -- so interrupting the agent everyone else is already interrupting can cost ${bundle.interruptCostTokens * MAX_INTERRUPT_SURCHARGE} instead of ${bundle.interruptCostTokens}. You cannot see inside their mailbox, but ${MAX_INTERRUPT_SURCHARGE}x is the worst it ever gets. The cheap way to reach someone who is buried is ordinary mail, which they read on the turn they were going to take anyway.`,
+      );
+    }
+    lines.push(
+      "Waking the same agent twice in one turn costs you once: the second wake buys nothing, because they are already coming.",
+    );
+    lines.push(
+      "When you can no longer afford a wake, the message is still delivered in full -- only the wake is refused, and it is not announced. So an URGENT that stops feeling urgent is what running out looks like. Ordinary mail costs you nothing and is read on the recipient's next turn: prefer it, and keep URGENT for work that is genuinely blocked on being seen now.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -1473,6 +1712,7 @@ export function buildContextManifest(
     slot("task", bundle.currentTask ? 1 : 0, 0, bundle.currentTask),
     slot("decisions", bundle.relevantDecisions.length, omitted.decisions, bundle.relevantDecisions),
     slot("artifacts", bundle.relevantArtifacts.length, omitted.artifacts, bundle.relevantArtifacts),
+    slot("refusals", (bundle.refusedOps ?? []).length, omitted.refusals, bundle.refusedOps ?? []),
     slot("mail", bundle.unreadMail.length, omitted.unread, bundle.unreadMail),
     slot("own_activity", bundle.recentOwnActivity.length, omitted.activity, bundle.recentOwnActivity),
     slot("memory", bundle.agentMemory.length, omitted.memory, bundle.agentMemory),

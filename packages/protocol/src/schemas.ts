@@ -68,6 +68,19 @@ export const messageSchema = {
         mode: { type: "string", enum: ["service", "collab", "broadcast"] },
         delivery: { type: "string", enum: ["interrupt", "deliver", "accrue"] },
         downgraded: { type: "string" },
+        /**
+         * The asker's own fallback. `assume` is deliberately UNTYPED: it is
+         * the answer the ask's contract would have carried, and those shapes
+         * are per-contract. `afterMs` is bounded below because a default that
+         * fires at once is not a default, it is an ask nobody was given a
+         * chance to answer.
+         */
+        ifUnanswered: {
+          type: "object",
+          required: ["assume"],
+          properties: { assume: {}, afterMs: { type: "number", exclusiveMinimum: 0 } },
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },
@@ -216,6 +229,7 @@ const agentConfigSchema = {
       type: "object",
       properties: {
         defer_non_obliging: { type: "boolean" },
+        not_for: { type: "array", items: { type: "string", enum: MESSAGE_TYPES } },
         mail: { type: "string", enum: ["full", "claims"] },
       },
       additionalProperties: false,
@@ -381,9 +395,11 @@ export const meshConfigSchema = {
             semantic: { type: "string", enum: ["compat", "strict"] },
             ttl_ms: { type: "number", minimum: 0 },
             ttl_ms_by_role: { type: "object", additionalProperties: { type: "number", minimum: 0 } },
+            by_type: { type: "boolean" },
           },
           additionalProperties: false,
         },
+        style: { type: "string", enum: ["high-contact", "balanced", "low-contact"] },
         transport: { type: "string", enum: ["mixed", "typed-only"] },
         vocabulary: { type: "string", enum: ["typed", "contracts"] },
         collab: {
@@ -401,6 +417,7 @@ export const meshConfigSchema = {
             coalesce_ms: { type: "number", minimum: 0 },
             interrupt_cost_tokens: { type: "number", minimum: 0 },
             attention_tokens: { type: "number", minimum: 0 },
+            congestion_every: { type: "number", minimum: 1 },
           },
           additionalProperties: false,
         },

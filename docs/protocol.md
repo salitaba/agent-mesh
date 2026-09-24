@@ -211,6 +211,55 @@ counterpart to `refused` — authorized by having *asked* the question, exactly
 where `refused` is authorized by *owing* the answer — and it is the one exit
 whose purpose is to remove an interrupt rather than manufacture one.
 
+### An ask that can answer itself
+
+The ledger's asks all assume the answer is worth waiting for, and most are.
+Some are not: a developer that will use Postgres unless the architect objects
+has an ask whose *whole content* is the objection it does not expect. Raised
+plainly, that ask costs the architect a turn to say "yes, fine", and costs it
+three more turns of nudging if it does not.
+
+`ifUnanswered` lets the asker price that in advance. It goes on any op that
+opens a commitment — `send`, `request`, `call`, `research_request`,
+`request_review` — and carries `assume` (the value the asker will proceed with)
+and optionally `afterMs` (how long it will wait first):
+
+```json
+{ "op": "call", "contract": "decision.challenge",
+  "ifUnanswered": { "assume": "postgres", "afterMs": 900000 } }
+```
+
+What it changes, on all three sides of the ask:
+
+- **The debtor is told, in its own prompt, that silence is a legal move.** The
+  ask's line reads *"if you say nothing: the asker proceeds as `"postgres"`.
+  That is a legitimate ending here and you will not be nudged for it — answer
+  only if that would be WRONG."* This line is the feature. Everything else the
+  prompt says to a debtor is about how to spend a turn, and silence has always
+  read as "still working"; unshown, `ifUnanswered` would spend the debtor's
+  attention on exactly the asks the asker had already said it could do without.
+- **The ask is never chased.** It skips the nudge ladder entirely, so it cannot
+  reach `MAX_NUDGES` and cannot raise a `stalemate:unanswered_request` card.
+- **At the deadline it discharges `defaulted`**, carrying the assumed value and
+  the debtors who never answered, and the **asker** is woken with it — not a
+  human. The asker gets its own commitment handed back and proceeds; nobody's
+  operator queue grows a card over a question that was already settled.
+
+`defaulted` is a **settlement**, not a loss. It is deliberately not among the
+four reasons that mean *gone, not answered*, so a thread whose last ask
+defaulted reaches `RESOLVED`: nothing went wrong in that conversation. It is the
+third exit authorized by a party to the ask rather than by the runtime running
+out of options — `refused` is authorized by *owing* the answer,
+`withdrawn_by_sender` by having *asked* the question, and `defaulted` by having
+said in advance what the answer would be taken to be.
+
+**It needs a clock, and says so.** `afterMs` draws a deadline on a mesh that has
+none; on a mesh with `bus.commitments.ttl_ms` it may be omitted and the mesh's
+own deadline is used. With neither, the op is **refused at the edge** naming
+both ways to fix it, rather than opening an ask that would wait forever under a
+promise to end. `assume` is likewise required: an `ifUnanswered` with no value to
+proceed with describes no ending.
+
 ## Event envelope (`schemas/event.schema.json`)
 
 ```jsonc
@@ -268,6 +317,21 @@ version being retyped to change a paragraph.
   **refused and the refusal names the other two fields** — never truncated, since
   a truncated artifact still digests, versions and satisfies gates.
 
+Note which seats can actually choose. `fromPath` reads from the seat's own
+worktree, and a worktree is only granted to holders of an edit capability
+(`repository.write`, `architecture.write`, `test.write`). A seat with
+`repository.read` alone — which is the shipped shape for `pm` — has no worktree
+and therefore **no** `fromPath`, so the cheap route is closed to exactly the
+seats whose job is publishing documents. For them `content` is the only body, and
+the cost note above is advice they cannot act on.
+
+A payload containing its own markdown code fence is safe. It did not used to be:
+the ops-block parser ended the block at the first following fence marker, so a
+document carrying a fenced diagram truncated its own ops mid-JSON-string and the
+whole turn was discarded. Ops are now recovered per entry by brace balance, so a
+fence inside a JSON string is just three more characters, and one malformed op in
+an array no longer destroys the valid ones beside it.
+
 This is the one place the reference-bus discipline became a runtime rule rather
 than prompt advice — and note what it corrects: telling agents "never paste into
 messages, publish an artifact instead" moved the paste out of the cheapest
@@ -282,6 +346,23 @@ channel (mail, which is ~0.2% of input) and into the most expensive one.
 - **document**: `DRAFT → READY_FOR_REVIEW → UNDER_REVIEW → APPROVED/FINAL`
 
 Transitions are gated by approvals/evidence recorded in the event stream.
+
+`MERGED` is terminal — the code machine has no edge out of it — so it is only
+recorded **after** the change is actually on the product branch. `merge` runs the
+git merge (or, without a workspace, materializes the patch's files) first and
+transitions only on success; a failure leaves the artifact `MERGEABLE`, which is
+both true and retryable once the conflict is fixed. The order used to be
+reversed, and because `MERGED` on a `CodePatch` also mirrors `patch.merged` and
+`implementation.completed`, a failed merge announced finished work that no
+commit contained.
+
+A verdict outside a reviewable status records a signature and moves nothing —
+approving a `DRAFT` artifact, or rejecting one already `MERGED`. That is
+intentional: a `<role>.approve` gate token is a signature, and seats legitimately
+sign artifacts sitting where no approval can advance them. What the op result now
+carries is a caveat saying so, with a route (`move it to review first`; `already
+MERGED — open a revert or publish a new version`), because the silent version let
+a reviewer believe it had rejected shipped code.
 
 ## Trust / provenance classes
 

@@ -394,8 +394,18 @@ export function archiveDir(dir: string, opts: ArchiveOptions = {}): string | nul
  * The copy is per top-level entry — same `exclude` semantics as `archiveDir`,
  * same non-atomicity — and the source is never modified, so a repeated call is
  * safe.
+ *
+ * Async on purpose. `fs.cpSync` blocks the event loop for as long as the copy
+ * runs, and a reset copies every agent worktree: a 300MB one wedges the child
+ * for ~18s. The child's 2s heartbeat cannot fire while it is blocked, so the
+ * host watchdog (`HEARTBEAT_TIMEOUT_MS`, 15s) read the silence as a wedged
+ * child, stopped it, and — SIGTERM being unrunnable on a blocked loop — SIGKILLed
+ * it mid-copy. The reset died right here, leaving a half-written worktree
+ * archive, no branch bundle, and a state dir that was never wiped, so the
+ * mission came back on the next boot. Awaiting per entry keeps the heartbeat
+ * flowing for the whole archive.
  */
-export function copyDir(dir: string, opts: ArchiveOptions = {}): string | null {
+export async function copyDir(dir: string, opts: ArchiveOptions = {}): Promise<string | null> {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) return null;
   const excludes = (opts.exclude ?? []).map((e) => path.resolve(e));
@@ -404,7 +414,7 @@ export function copyDir(dir: string, opts: ArchiveOptions = {}): string | null {
   const target = nextArchivePath(resolved, opts);
   fs.mkdirSync(target, { recursive: true });
   for (const name of entries) {
-    fs.cpSync(path.join(resolved, name), path.join(target, name), { recursive: true });
+    await fs.promises.cp(path.join(resolved, name), path.join(target, name), { recursive: true });
   }
   return target;
 }

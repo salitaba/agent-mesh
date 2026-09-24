@@ -1,5 +1,6 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { CommitmentTtlConfig, Projections } from "./state";
+import type { ResolvedMeshConfig } from "../../config/src/index";
 import { applyGoalEvent } from "./projections-goal";
 import { applyAgentEvent } from "./projections-agent";
 import { applyMessagingEvent } from "./projections-messaging";
@@ -20,8 +21,11 @@ export {
   recordApproval,
   holdsAuthority,
   hasPeerReviewerFor,
+  approverMayAdvance,
   capabilityForReview,
+  REVIEW_CAPABILITIES,
   domainOfSubject,
+  subjectForArtifactType,
   artifactForRef,
   clearPendingForArtifactReview,
   clearPendingForTask,
@@ -61,6 +65,50 @@ export interface ProjectionConfig {
    * afterwards would not survive replay.
    */
   commitmentTtl?: CommitmentTtlConfig;
+  /**
+   * Whether an ask that named no contract is held to its type's. Part of the
+   * projection config for the same reason as the two above: the contract name
+   * is written into the ledger by the reducer at open time, so a replay
+   * without this knob rebuilds asks that are governed by nothing.
+   */
+  contractsByType?: boolean;
+}
+
+/**
+ * The one place a mesh config becomes a projection config.
+ *
+ * Every field here is REQUIRED on purpose. `ProjectionConfig` has to be
+ * all-optional -- tests replay a handful of events without one, and the
+ * reducers document what an absent config means -- but that optionality is
+ * exactly what let a knob go missing: an object literal at a call site that
+ * forgets a key still type-checks against an all-optional type, silently.
+ * That has now happened three times at the same call site (`commitmentSemantic`
+ * shipped alone, `commitmentTtl` was bolted on later, `contractsByType` later
+ * still, inert in production until it was caught by a ledger test).
+ *
+ * So the two paths that must never disagree -- the live kernel's `gates` and
+ * `Supervisor.projectionConfig()` for replay -- both call this instead of
+ * hand-copying. Adding a knob to `ProjectionConfig` and forgetting it here is
+ * a compile error; adding it here reaches both paths at once. If you add a
+ * field, add it to this return type too, not just to the object.
+ */
+export function projectionConfigFor(config: ResolvedMeshConfig): {
+  transitionGates: Record<string, string[]>;
+  commitmentSemantic: "compat" | "strict";
+  commitmentTtl: CommitmentTtlConfig | undefined;
+  contractsByType: boolean;
+} {
+  return {
+    transitionGates: config.transitionGates,
+    commitmentSemantic: config.bus.commitmentSemantic,
+    // `dueBy` is stamped by the reducer at open time, so a replay without this
+    // knob rebuilds a ledger whose asks have no deadlines and never expire.
+    commitmentTtl: config.bus.commitmentTtl,
+    // Same reason: the contract a debt is held to is written into the ledger
+    // by the reducer at open time, so a replay without it rebuilds asks that
+    // are governed by nothing.
+    contractsByType: config.bus.contractsByType,
+  };
 }
 
 export function isStrictCommitments(config?: ProjectionConfig): boolean {

@@ -227,6 +227,11 @@ export interface TurnTrackerPersist {
 export class TurnTracker {
   private recent: TurnRecord[] = [];
   private persistTimer?: NodeJS.Timeout;
+  /**
+   * Tool calls announced and not yet finished, per running turn. Live-only: a
+   * turn restored from disk is not running, so there is nothing to wait on.
+   */
+  private openToolCalls = new Map<string, Set<string>>();
 
   constructor(private readonly persist?: TurnTrackerPersist) {
     if (!persist) return;
@@ -287,6 +292,7 @@ export class TurnTracker {
   }
 
   finish(turnId: string, agentId: string, patch: Partial<TurnRecord>, nowIso: string): void {
+    this.openToolCalls.delete(turnId);
     const cur = this.recent.find((t) => t.turnId === turnId);
     const endedAt = patch.endedAt ?? nowIso;
     const startedAt = cur?.startedAt ?? endedAt;
@@ -342,7 +348,7 @@ export class TurnTracker {
    * and folding it into `lastTokenAt` would tell the silence watchdog a turn
    * had started streaming when it had not.
    */
-  noteToolFrame(turnId: string): void {
+  noteToolFrame(turnId: string, call?: { id?: string; closed?: boolean }): void {
     const cur = this.recent.find((t) => t.turnId === turnId);
     if (!cur || cur.status !== "running") return;
     cur.toolFrames = (cur.toolFrames ?? 0) + 1;
@@ -350,7 +356,33 @@ export class TurnTracker {
     if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
     if (cur.phases.firstActivityAt === undefined) cur.phases.firstActivityAt = at;
     cur.phases.lastActivityAt = at;
+    // Which calls are still running, so the silence watchdog can tell a turn
+    // waiting on a tool from a turn whose stream has frozen. Stamping activity
+    // alone is not enough: liveness is stamped when a call STARTS and when it
+    // ENDS, so a single tool that runs longer than the silence floor still looks
+    // silent for its whole duration — which is exactly the shape that killed ten
+    // turns in one live run.
+    //
+    // Not persisted: `openToolCalls` is live-only state about a turn in flight,
+    // and a turn restored from disk is by definition no longer running.
+    if (call?.id) {
+      if (!this.openToolCalls.has(turnId)) this.openToolCalls.set(turnId, new Set());
+      const open = this.openToolCalls.get(turnId)!;
+      if (call.closed) open.delete(call.id);
+      else open.add(call.id);
+      if (open.size === 0) this.openToolCalls.delete(turnId);
+    }
     this.schedulePersist();
+  }
+
+  /** Is this turn waiting on a tool call it announced and has not seen finish? */
+  hasOpenToolCall(turnId: string): boolean {
+    return (this.openToolCalls.get(turnId)?.size ?? 0) > 0;
+  }
+
+  /** Forget a finished turn's open-call set; called from `finish`. */
+  clearOpenToolCalls(turnId: string): void {
+    this.openToolCalls.delete(turnId);
   }
 
   list(limit = 60): TurnRecord[] {

@@ -98,6 +98,7 @@
         "lease.released",
         "memory.updated",
         "context.assembled",
+        "turn.discarded",
         "plan.updated",
         "plan.gate_rejected",
         "budget.reserved",
