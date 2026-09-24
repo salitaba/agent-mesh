@@ -14,21 +14,33 @@ import {
   findContract,
 } from "../../packages/protocol/src/index";
 import { computeDueBy, createInitialState } from "../../packages/core/src/state";
+import { resolveCommitmentTtl } from "../../packages/config/src/index";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
 /**
  * Contracts: named asks that desugar to typed ops.
  *
  * The problem they exist for is vocabulary size. A seat is shown 24 message
- * type strings and 41 tool names, guesses which of them means "please review
- * this", gets it wrong, and `op-aliases.ts` quietly rewrites the guess — which
- * papers over the miss AND over the evidence that the miss keeps happening.
- * A contract replaces the guess with a name, a request schema checked before
- * anyone is woken, and a named set of refusals.
+ * type strings and 43 tool names (`buildTools`, in `mesh-server/src/mcp.ts`),
+ * guesses which of them means "please review this", gets it wrong, and
+ * `op-aliases.ts` quietly rewrites the guess — which papers over the miss AND
+ * over the evidence that the miss keeps happening. A contract replaces the
+ * guess with a name, a request schema checked before anyone is woken, and a
+ * named set of refusals.
  *
  * The invariant every test here defends: `call` is SUGAR. It desugars to an
  * op that already existed and goes back through `executeOp`, so it can never
  * reach anything a typed op could not, and every gate applies unchanged.
+ *
+ * Deliberately NOT asserted anywhere below: the size of that tool surface.
+ * The counts above are a snapshot of a list that grows every time a tool is
+ * added, and pinning one in an assertion would make each new tool arrive as a
+ * failure in this file — which teaches the next author to edit the number
+ * rather than to read what it claims. The manifest tests at the bottom defend
+ * the structural facts instead: that the tools a contract supersedes leave the
+ * advertised set, that `mesh_call` and the raw `mesh_send` channel stay, and
+ * that the manifest genuinely shrinks. None of those go stale when the surface
+ * changes size.
  */
 
 type Mesh = Awaited<ReturnType<typeof makeMesh>>;
@@ -128,8 +140,15 @@ test("contracts: call desugars to the typed op, and the message carries the stam
 
     const payload = msg!.payload as Record<string, unknown>;
     assert.equal(payload.question, "which cache are we on?");
-    assert.equal(payload.contract, "info.question", "the log must say which named ask this was");
-    assert.equal(payload.contractVersion, 1);
+
+    // The stamp rides on the runtime-owned envelope, NOT in the payload. The
+    // ledger reads it to set this ask's deadline and to judge its answer, and
+    // `payload` is verbatim agent input -- so a stamp there was a routing
+    // decision any seat could make for the kernel by writing one JSON key.
+    assert.equal(msg!.control?.contract, "info.question", "the log must say which named ask this was");
+    assert.equal(msg!.control?.contractVersion, 1);
+    assert.equal(payload.contract, undefined, "the stamp must not travel in agent-visible payload");
+    assert.equal(payload.contractVersion, undefined);
 
     // Sugar, not a second path: the ask lands in the SAME ledger a typed send
     // would have opened. If this ever fails, `call` has grown its own route.
@@ -140,7 +159,7 @@ test("contracts: call desugars to the typed op, and the message carries the stam
   }
 });
 
-test("contracts: review.artifact desugars through request_review and stamps the payload", async () => {
+test("contracts: review.artifact desugars through request_review and stamps the envelope", async () => {
   const m = await mesh();
   try {
     const pub = await runOp(m, "dev", {
@@ -157,8 +176,12 @@ test("contracts: review.artifact desugars through request_review and stamps the 
     const id = res.ok ? res.messageId : undefined;
     const msg = m.kernel.state.messages.get(id!);
     assert.equal(msg!.type, "REQUEST_REVIEW");
-    const payload = msg!.payload as Record<string, unknown>;
-    assert.equal(payload.contract, "review.artifact", "review is stamped too, or its SLA silently would not apply");
+    assert.equal(msg!.control?.contract, "review.artifact", "review is stamped too, or its SLA silently would not apply");
+    assert.equal(
+      (msg!.payload as Record<string, unknown>).contract,
+      undefined,
+      "the stamp belongs to the runtime, not to agent-visible payload",
+    );
   } finally {
     await m.cleanup();
   }
@@ -289,6 +312,131 @@ test("contracts: discovery filtered by role only shows what that role can answer
   }
 });
 
+// --- the answer ------------------------------------------------------------
+
+/**
+ * A contract's `response` schema, checked at discharge.
+ *
+ * The gap these close: discharge is STRUCTURAL. A reply that names the ask
+ * settles it, and nothing ever looked at what the reply said. So "sure" and a
+ * real answer closed a commitment with equal force, the asker's loop moved on,
+ * and the hole surfaced a turn later as a re-ask -- a full turn, with the
+ * nudge ladder and eventually a human underneath it.
+ *
+ * The rule being pinned is FAIL-OPEN: a thin answer still discharges. Holding
+ * the ask open on a schema miss would turn a disagreement about shape into a
+ * stall, and stalls in this runtime end at an operator card.
+ */
+test("contracts: a contentless reply still settles the ask, and is marked for it", async () => {
+  const m = await mesh();
+  try {
+    const ask = await runOp(m, "architect", call("info.question", { question: "which cache?" }, ["dev"]));
+    assert.equal(ask.ok, true, ask.ok ? "" : ask.reason);
+    const askId = (ask.ok ? ask.messageId : "")!;
+
+    // A well-formed reply that answers nothing: it names the ask, so the
+    // ledger's most confident discharge path fires on it.
+    const reply = await runOp(m, "dev", {
+      op: "send", type: "INFORM", to: ["architect"],
+      threadId: m.kernel.state.messages.get(askId)!.threadId,
+      replyTo: askId,
+      payload: { answer: "   " },
+    } as MeshOp);
+    assert.equal(reply.ok, true, reply.ok ? "" : reply.reason);
+
+    assert.equal(m.kernel.state.pendingRequests.has(askId), false, "fail-open: the debt is settled even so");
+    const rec = m.kernel.state.discharged.find((d) => d.messageId === askId);
+    assert.ok(rec, "the settlement must be on the ledger");
+    assert.equal(rec!.reason, "reply");
+    assert.equal(rec!.responseValid, false, "a whitespace answer is not an answer");
+    assert.ok((rec!.responseIssues ?? []).length > 0, "the mark must say what was wrong with it");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: a real answer discharges clean", async () => {
+  const m = await mesh();
+  try {
+    const ask = await runOp(m, "architect", call("info.question", { question: "which cache?" }, ["dev"]));
+    const askId = (ask.ok ? ask.messageId : "")!;
+    const reply = await runOp(m, "dev", {
+      op: "send", type: "INFORM", to: ["architect"],
+      threadId: m.kernel.state.messages.get(askId)!.threadId,
+      replyTo: askId,
+      payload: { answer: "Redis, single node, 512MB." },
+    } as MeshOp);
+    assert.equal(reply.ok, true, reply.ok ? "" : reply.reason);
+
+    const rec = m.kernel.state.discharged.find((d) => d.messageId === askId);
+    assert.equal(rec!.responseValid, true, "a substantive answer must not be flagged");
+    assert.equal(rec!.responseIssues, undefined);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: an ask opened without a contract is not judged at all", async () => {
+  // Absence must read as "not checked", never as "failed" -- otherwise every
+  // ask predating this stage, and every plain typed send, would be marked thin
+  // the moment it shipped, and the mark would be worth nothing.
+  const m = await mesh();
+  try {
+    const ask = await runOp(m, "architect", {
+      op: "send", type: "REQUEST_INFO", to: ["dev"],
+      newThread: { subject: "plain ask" }, payload: { question: "which cache?" },
+    } as MeshOp);
+    const askId = (ask.ok ? ask.messageId : "")!;
+    await runOp(m, "dev", {
+      op: "send", type: "INFORM", to: ["architect"],
+      threadId: m.kernel.state.messages.get(askId)!.threadId,
+      replyTo: askId, payload: { answer: "" },
+    } as MeshOp);
+
+    const rec = m.kernel.state.discharged.find((d) => d.messageId === askId);
+    assert.ok(rec, "it still discharges");
+    assert.equal(rec!.responseValid, undefined, "no contract means no verdict, not a failing one");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: a hand-written contract stamp in payload buys nothing", async () => {
+  // The invariant: the ledger routes on `control`, which only the supervisor
+  // writes and only after the request schema passed. While the stamp lived in
+  // `payload` -- verbatim agent input -- a seat could name a contract in a raw
+  // send and set its own creditor's clock without meeting that contract's
+  // schema. `info.question` carries slaMs: 10m, so a forged stamp would be
+  // visible here as a deadline.
+  const m = await mesh({ bus: { commitments: { ttlMs: 3_600_000 } } });
+  try {
+    const res = await runOp(m, "architect", {
+      op: "send", type: "REQUEST_INFO", to: ["dev"],
+      newThread: { subject: "forged" },
+      payload: { question: "which cache?", contract: "info.question", contractVersion: 1 },
+    } as MeshOp);
+    assert.equal(res.ok, true, res.ok ? "" : res.reason);
+    const id = (res.ok ? res.messageId : "")!;
+
+    const msg = m.kernel.state.messages.get(id)!;
+    assert.equal((msg.payload as Record<string, unknown>).contract, undefined, "the forged key is stripped on send");
+    assert.equal(msg.control?.contract, undefined, "and it never reaches the runtime-owned envelope");
+
+    const pending = m.kernel.state.pendingRequests.get(id)!;
+    assert.equal(pending.contract, undefined, "so the ledger records no contract");
+    // A regime IS configured here, so the ask still gets the mesh-wide
+    // deadline -- it just does not get the contract's narrower one.
+    const openedAt = new Date(msg.timestamp).getTime();
+    assert.equal(
+      new Date(pending.dueBy!).getTime() - openedAt,
+      3_600_000,
+      "the forged stamp must not narrow the clock to the contract's 10 minutes",
+    );
+  } finally {
+    await m.cleanup();
+  }
+});
+
 // --- SLA -------------------------------------------------------------------
 
 test("contracts: an SLA narrows an existing deadline regime and never creates one", () => {
@@ -301,15 +449,61 @@ test("contracts: an SLA narrows an existing deadline regime and never creates on
   // debt — inventing one silently forgives asks the mesh was told to keep.
   assert.equal(computeDueBy(state, debtors, at, undefined, 60_000), undefined);
 
+  // The shapes the RESOLVER actually produces. Asserting on a literal
+  // `undefined` above is necessary but NOT sufficient, and that gap is what
+  // let this break: `resolveCommitmentTtl` used to be an unconditional object
+  // literal, so `computeDueBy` was never once called with the falsy value its
+  // first line tests for. The guard was dead code and the rule it encodes went
+  // unenforced. These assertions pin the resolver's side of the contract.
+  assert.equal(resolveCommitmentTtl(undefined), undefined, "an unconfigured mesh has no deadline regime");
+  assert.equal(resolveCommitmentTtl({}), undefined, "an empty commitments block is not a regime");
+  assert.equal(resolveCommitmentTtl({ ttl_ms: 0 }), undefined, "zero is how an operator writes 'no deadline'");
+  assert.equal(
+    computeDueBy(state, debtors, at, resolveCommitmentTtl({}), 60_000),
+    undefined,
+    "an SLA must not create a deadline on a mesh configured with none",
+  );
+
   // A regime exists: the contract's SLA wins over the default.
-  const withDefault = computeDueBy(state, debtors, at, { defaultMs: 3_600_000, byRole: {} }, 60_000);
+  const withDefault = computeDueBy(state, debtors, at, resolveCommitmentTtl({ ttl_ms: 3_600_000 }), 60_000);
   assert.ok(withDefault);
   assert.equal(new Date(withDefault!).getTime() - new Date(at).getTime(), 60_000);
 
-  // An operator's per-role deadline outranks the contract: the config is the
-  // authority on how long this mesh's seats get, not the catalogue.
-  const withRole = computeDueBy(state, debtors, at, { defaultMs: 3_600_000, byRole: {} }, 60_000);
-  assert.ok(withRole);
+  // A per-role entry is itself a regime, even with no mesh-wide default. The
+  // contract's SLA then applies to the seats the operator did not name --
+  // narrowing something that already exists, which is the legal direction.
+  const byRoleOnly = resolveCommitmentTtl({ ttl_ms_by_role: { qa: 5_000 } });
+  assert.ok(byRoleOnly, "naming one role's clock establishes a regime");
+  const narrowed = computeDueBy(state, debtors, at, byRoleOnly, 60_000);
+  assert.ok(narrowed);
+  assert.equal(new Date(narrowed!).getTime() - new Date(at).getTime(), 60_000);
+});
+
+test("contracts: a default mesh gives a contract-stamped ask no deadline", async () => {
+  // The cell no test covered, and the one that was actually broken in the
+  // shipped runtime: a DEFAULT mesh.yaml (no bus block at all) plus an ask
+  // carrying a contract stamp. The existing no-TTL tests passed only because
+  // their asks carried no contract, and the unit test above passed only
+  // because it hand-built a config shape the resolver could not emit. Between
+  // the two, every default mesh was handing out 10-to-45-minute deadlines the
+  // operator never asked for -- and expiry discharges debt, so those asks were
+  // being silently forgiven.
+  const m = await mesh();
+  try {
+    const res = await runOp(m, "architect", call("info.question", { question: "which cache?" }, ["dev"]));
+    assert.equal(res.ok, true, res.ok ? "" : res.reason);
+    const id = (res.ok ? res.messageId : "")!;
+    const pending = m.kernel.state.pendingRequests.get(id);
+    assert.ok(pending, "the ask must still open a commitment");
+    assert.equal(
+      findContract("info.question")?.slaMs,
+      10 * 60_000,
+      "guard: this test is only meaningful while the contract carries an SLA",
+    );
+    assert.equal(pending!.dueBy, undefined, "no TTL configured, so the contract's SLA must not create one");
+  } finally {
+    await m.cleanup();
+  }
 });
 
 test("contracts: the SLA reaches the ledger through the payload stamp", async () => {
@@ -442,7 +636,7 @@ test("manifest: typed-only drops the tools contracts replace, and keeps the ones
     // without a way to make the ask.
     assert.ok(after.includes("mesh_call") && after.includes("mesh_contracts"));
 
-    // `mesh_send` stays: no contract covers answering, or the 17 message types
+    // `mesh_send` stays: no contract covers answering, or the 16 message types
     // the catalogue does not name. Dropping it would force exactly the guessing
     // this stage exists to end.
     assert.ok(after.includes("mesh_send"), "the raw channel must survive; contracts do not cover every message");

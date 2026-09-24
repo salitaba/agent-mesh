@@ -2,6 +2,7 @@ import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import type { AgentDefinition } from "../../protocol/src/index";
 import { ProjectionError, transitionLifecycle } from "./projections-helpers";
+import { bumpComms } from "./state";
 
 export function applyAgentEvent(state: Projections, event: MeshEvent, p: Record<string, any>): boolean {
   switch (event.type) {
@@ -33,6 +34,15 @@ export function applyAgentEvent(state: Projections, event: MeshEvent, p: Record<
         rec.state.activations++;
         rec.state.lastActivityAt = event.timestamp;
         state.eventsSinceActivation.set(p.agentId, 0);
+        // `activations` above counts this wake; this counts WHY it happened.
+        // The two are not redundant: a seat woken forty times by its own timer
+        // and a seat woken forty times by its colleagues are the same number
+        // in `activations` and the entire question in `wakesByKind`. The kind
+        // rides the event's own `reason`, so this is derived from the log
+        // rather than from the scheduler's in-memory intent — which is what
+        // lets a replay reach the same counts a live run did.
+        const kind = (p.reason as { kind?: unknown } | undefined)?.kind;
+        bumpComms(state.comms.wakesByKind, typeof kind === "string" ? kind : "unknown");
       }
       break;
     }

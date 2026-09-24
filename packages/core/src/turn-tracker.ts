@@ -125,6 +125,39 @@ export interface TurnRecord {
   tokens?: number;
   tokensInput?: number;
   tokensOutput?: number;
+  /**
+   * Replayed prompt prefix the backend reported for this turn. Unbilled, but
+   * it is the only measurement of how big a transcript the seat is carrying.
+   *
+   * Read it against `tokensInput`: a healthy turn on a persistent session is a
+   * small fresh `tokensInput` beside a large `tokensCacheRead`, because the
+   * transcript was served from cache. A turn whose `tokensInput` is as large as
+   * its history is a COLD turn — the prefix was re-sent and billed at full
+   * price. Without this field those two cases are the same number here, which
+   * is how a handful of catastrophic cold re-reads stayed invisible while
+   * every average looked healthy.
+   *
+   * Cache writes need no field of their own: `total` is
+   * `input + output + cacheWrite`, so a write is `tokens - tokensInput -
+   * tokensOutput` and stays derivable.
+   */
+  tokensCacheRead?: number;
+  /**
+   * The part of `tokensOutput` the backend spent thinking rather than saying.
+   *
+   * Billed identically to any other output token — which is the most expensive
+   * rate the mesh pays — and until this field existed it was billed invisibly:
+   * `tokensOutput` said a turn wrote 26k tokens, and nothing said whether that
+   * was a long artifact or a long deliberation. Those two want opposite fixes,
+   * so collapsing them made the output column unactionable.
+   *
+   * Absent means UNMEASURED, not zero. Not every backend reports the split, and
+   * a gateway that omits the detail must not be read as a model that did no
+   * thinking — the same discipline `tokensCacheRead` keeps, where a missing
+   * value is unknown rather than cold. Readers: check `=== undefined` before
+   * arithmetic, never `?? 0`.
+   */
+  tokensThinking?: number;
   model?: string;
   ops?: string[];
   toolCalls?: number;
@@ -194,6 +227,11 @@ export interface TurnTrackerPersist {
 export class TurnTracker {
   private recent: TurnRecord[] = [];
   private persistTimer?: NodeJS.Timeout;
+  /**
+   * Tool calls announced and not yet finished, per running turn. Live-only: a
+   * turn restored from disk is not running, so there is nothing to wait on.
+   */
+  private openToolCalls = new Map<string, Set<string>>();
 
   constructor(private readonly persist?: TurnTrackerPersist) {
     if (!persist) return;
@@ -254,6 +292,7 @@ export class TurnTracker {
   }
 
   finish(turnId: string, agentId: string, patch: Partial<TurnRecord>, nowIso: string): void {
+    this.openToolCalls.delete(turnId);
     const cur = this.recent.find((t) => t.turnId === turnId);
     const endedAt = patch.endedAt ?? nowIso;
     const startedAt = cur?.startedAt ?? endedAt;
@@ -309,7 +348,7 @@ export class TurnTracker {
    * and folding it into `lastTokenAt` would tell the silence watchdog a turn
    * had started streaming when it had not.
    */
-  noteToolFrame(turnId: string): void {
+  noteToolFrame(turnId: string, call?: { id?: string; closed?: boolean }): void {
     const cur = this.recent.find((t) => t.turnId === turnId);
     if (!cur || cur.status !== "running") return;
     cur.toolFrames = (cur.toolFrames ?? 0) + 1;
@@ -317,7 +356,33 @@ export class TurnTracker {
     if (!cur.phases) cur.phases = { startedAt: Date.parse(cur.startedAt) || at };
     if (cur.phases.firstActivityAt === undefined) cur.phases.firstActivityAt = at;
     cur.phases.lastActivityAt = at;
+    // Which calls are still running, so the silence watchdog can tell a turn
+    // waiting on a tool from a turn whose stream has frozen. Stamping activity
+    // alone is not enough: liveness is stamped when a call STARTS and when it
+    // ENDS, so a single tool that runs longer than the silence floor still looks
+    // silent for its whole duration — which is exactly the shape that killed ten
+    // turns in one live run.
+    //
+    // Not persisted: `openToolCalls` is live-only state about a turn in flight,
+    // and a turn restored from disk is by definition no longer running.
+    if (call?.id) {
+      if (!this.openToolCalls.has(turnId)) this.openToolCalls.set(turnId, new Set());
+      const open = this.openToolCalls.get(turnId)!;
+      if (call.closed) open.delete(call.id);
+      else open.add(call.id);
+      if (open.size === 0) this.openToolCalls.delete(turnId);
+    }
     this.schedulePersist();
+  }
+
+  /** Is this turn waiting on a tool call it announced and has not seen finish? */
+  hasOpenToolCall(turnId: string): boolean {
+    return (this.openToolCalls.get(turnId)?.size ?? 0) > 0;
+  }
+
+  /** Forget a finished turn's open-call set; called from `finish`. */
+  clearOpenToolCalls(turnId: string): void {
+    this.openToolCalls.delete(turnId);
   }
 
   list(limit = 60): TurnRecord[] {

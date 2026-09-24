@@ -9,8 +9,10 @@ import {
   CHILD_READY_PREFIX,
   ChildProcessSupervisor,
   PIDFILE_NAME,
+  STALE_POLLS_BEFORE_STOP,
   SupervisionTree,
   backoffDelayMs,
+  heartbeatVerdict,
   statusForFailure,
   type ProjectRef,
   type SupervisionEvent,
@@ -46,7 +48,7 @@ function makeProject(base: string, folder: string, id: string, yaml?: string): P
 function stubChild(
   base: string,
   name: string,
-  body: { beat?: boolean; exitAfterMs?: number; exitCode?: number },
+  body: { beat?: boolean; exitAfterMs?: number; exitCode?: number; readyAfterMs?: number },
 ): string {
   const file = path.join(base, `${name}.js`);
   const beat = body.beat
@@ -56,10 +58,16 @@ function stubChild(
     typeof body.exitAfterMs === "number"
       ? `setTimeout(() => process.exit(${body.exitCode ?? 1}), ${body.exitAfterMs});`
       : "";
+  // `readyAfterMs` is how a slow boot is simulated: the handshake is what the
+  // parent waits for, so delaying it delays everything the parent considers
+  // "this child is up" — which is the instant the health clock should start.
+  const ready = `process.stdout.write(\`${CHILD_READY_PREFIX} \${JSON.stringify({ port: 1, pid: process.pid, projectId: 'stub', url: 'http://127.0.0.1:1' })}\\n\`);`;
+  const handshake =
+    typeof body.readyAfterMs === "number" ? `setTimeout(() => { ${ready} }, ${body.readyAfterMs});` : ready;
   fs.writeFileSync(
     file,
     [
-      `process.stdout.write(\`${CHILD_READY_PREFIX} \${JSON.stringify({ port: 1, pid: process.pid, projectId: 'stub', url: 'http://127.0.0.1:1' })}\\n\`);`,
+      handshake,
       beat,
       die,
       "process.on('SIGTERM', () => process.exit(0));",
@@ -347,6 +355,73 @@ test("a child that stops heartbeating is killed and restarted", async () => {
   }
 });
 
+/**
+ * The rule that decides a child is wedged, tested directly.
+ *
+ * It lives in a pure function because the failure it guards against is a
+ * SCHEDULING artefact: heartbeats arrive on stdout and the host only observes
+ * them when its event loop comes back around, so a poll that runs before the
+ * pipe drains measures a silence that never happened. Any test driving that
+ * through a real child and a real event loop is racing the same noise the rule
+ * exists to absorb, and so could not tell the rule working from the noise.
+ */
+test("one stale reading is not a verdict: a child is stopped on the second consecutive one", () => {
+  const TIMEOUT = 300;
+
+  // Fresh: nothing to decide, and the count resets so a stall that has resolved
+  // can never be completed by a later, unrelated one.
+  assert.deepEqual(heartbeatVerdict(299, TIMEOUT, 0), { stale: false, stop: false, nextChecks: 0 });
+  assert.deepEqual(heartbeatVerdict(0, TIMEOUT, 1), { stale: false, stop: false, nextChecks: 0 }, "a beat clears the count");
+
+  // The boundary is inclusive: exactly at the timeout is stale, as before.
+  assert.equal(heartbeatVerdict(TIMEOUT, TIMEOUT, 0).stale, true);
+
+  // The case this exists for: one long reading, not yet a verdict.
+  const first = heartbeatVerdict(5_000, TIMEOUT, 0);
+  assert.equal(first.stale, true);
+  assert.equal(first.stop, false, "a single stale poll must not kill a child that may have been beating all along");
+  assert.equal(first.nextChecks, 1);
+
+  // Sustained silence: the second poll confirms it, and only then is it wedged.
+  const second = heartbeatVerdict(5_025, TIMEOUT, first.nextChecks);
+  assert.equal(second.stop, true);
+  assert.equal(second.nextChecks, STALE_POLLS_BEFORE_STOP);
+
+  // And the verdict cannot be reached by accumulating unrelated readings: a
+  // fresh poll in between resets it, so two stale polls must be CONSECUTIVE.
+  const interrupted = heartbeatVerdict(5_000, TIMEOUT, heartbeatVerdict(10, TIMEOUT, 1).nextChecks);
+  assert.equal(interrupted.stop, false, "a resolved stall must not count toward the next one");
+});
+
+test("a slow boot is not silence: the health clock starts at READY, not at spawn", async () => {
+  // The heartbeat timeout is measured from the child's last beat, or — for a
+  // child that has never beaten — from when it came up. It used to be measured
+  // from `startedAt`, which is stamped before the child is SPAWNED, so the
+  // child's own boot was spent out of its heartbeat budget. On a loaded machine
+  // that is the whole budget: the child becomes ready already most of the way
+  // to being declared wedged, and a 400ms boot plus 50ms of quiet reads as a
+  // dead process. A child that cannot come up at all is `readyTimeoutMs`'s
+  // business, which is a different failure with its own clock.
+  //
+  // The numbers are chosen so the two rules disagree: ready at 150ms, dead at
+  // 400ms. Measured from spawn the watchdog fires at 300ms and reports a live,
+  // booted child as wedged; measured from ready it never gets there, and the
+  // child's own exit is reported for what it is.
+  const base = tmpRoot();
+  const ref = makeProject(base, "slow", "slow");
+  const script = stubChild(base, "slow-child", { readyAfterMs: 150, exitAfterMs: 400 });
+  const { tree, events } = makeTree({ childScript: script }, { backoff: () => 50 });
+  try {
+    const opened = await tree.open(ref);
+    assert.equal(opened.status, "open");
+    await waitFor(() => events.some((e) => e.status === "crashed"));
+    const crash = events.find((e) => e.status === "crashed")!;
+    assert.equal(crash.reason, "crash", "the child booted and then died; it was never silent for the timeout");
+  } finally {
+    await tree.shutdown();
+  }
+});
+
 test("a healthy child is never restarted by the watchdog", async () => {
   const base = tmpRoot();
   const ref = makeProject(base, "steady", "steady");
@@ -356,6 +431,14 @@ test("a healthy child is never restarted by the watchdog", async () => {
     await tree.open(ref);
     // Several watchdog cycles: a false positive here kills a working project
     // mid-mission, which is the worst outcome the health check can produce.
+    //
+    // The margin is 6x the child's 50ms beat, and it stays that way rather than
+    // being widened: the point of this test is the real 300ms timeout, and a
+    // fixture tuned until it cannot fail would stop testing anything. What made
+    // it flake under a loaded suite was not a tight margin but the single-poll
+    // rule -- one poll landing before the pipe drained read as a wedge -- so the
+    // rule is what changed (see `heartbeatVerdict`). This test is the
+    // end-to-end guard that the two-poll rule still lets a healthy child live.
     await new Promise((r) => setTimeout(r, 700));
     assert.equal(events.filter((e) => e.status === "booting").length, 1);
     assert.equal(tree.status("steady"), "open");

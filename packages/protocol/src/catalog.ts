@@ -7,9 +7,11 @@ import type {
   GoalStatus,
   HardActionsPolicy,
   MeshOp,
+  InteractionMode,
   LifecycleState,
   MessageType,
   Severity,
+  AcceptanceCriterion,
 } from "./types";
 
 export const EVENT_TYPES: EventType[] = [
@@ -82,11 +84,14 @@ export const EVENT_TYPES: EventType[] = [
   // An outstanding ask stopped being outstanding (answered, superseded,
   // withdrawn, or voided). The only event-sourced exit from the ledger.
   "commitment.discharged",
+  "collab.opened",
+  "collab.closed",
   "human.input",
   "lease.acquired",
   "lease.released",
   "memory.updated",
   "context.assembled",
+  "turn.discarded",
   "plan.updated",
   "plan.gate_rejected",
   "budget.reserved",
@@ -226,6 +231,10 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   // operator debugging a run wants to know the runtime had to break a cycle.
   "deadlock.auto_resolved": "alert",
   "commitment.discharged": "notice",
+  "collab.opened": "notice",
+  // Notice, not alert: the OVERRUN raises an escalation card of its own, and
+  // most closes are an agent ending its own session on time.
+  "collab.closed": "notice",
 
   "human.input": "notice",
 
@@ -238,6 +247,11 @@ export const EVENT_SEVERITY: Record<EventType, Severity> = {
   // useful in aggregate rather than line by line. Folded by default; read when
   // a specific turn is under investigation.
   "context.assembled": "routine",
+
+  // Not routine, however often it happens. A discarded turn is work the mesh
+  // paid for and threw away, and the whole reason this type exists is that the
+  // loss was invisible — folding it by default would reinstate exactly that.
+  "turn.discarded": "notice",
 
   "plan.updated": "notice",
   "plan.gate_rejected": "alert",
@@ -276,15 +290,288 @@ export const MESSAGE_TYPES: MessageType[] = [
   "DONE",
 ];
 
-export const REQUEST_TYPES: MessageType[] = [
-  "REQUEST",
-  "REQUEST_INFO",
-  "REQUEST_REVIEW",
-  "REQUEST_ARTIFACT",
-  "REQUEST_RESEARCH",
-  "REQUEST_EXECUTION",
-  "ESCALATE",
-];
+/**
+ * The envelope fields the obligation predicate reads, and only those.
+ *
+ * Structural rather than `MeshMessage`, for the same reason `VerdictEscalation`
+ * further down is: naming the two fields that decide the answer is itself the
+ * documentation, and a caller holding a half-assembled envelope can still ask.
+ */
+export interface ObligationEnvelope {
+  type: MessageType;
+  control?: { mode?: InteractionMode };
+}
+
+/**
+ * The TYPE half of {@link obligesRecipients}: is this speech act one that
+ * creates a debt at all?
+ *
+ * Prefix-matched rather than enumerated, deliberately. The enumerated version
+ * — `REQUEST_TYPES` as it was written — silently omitted any `REQUEST_*` name
+ * added to `MESSAGE_TYPES` after it, and a list that quietly stops being
+ * complete is worse than one that is obviously partial.
+ *
+ * Not the whole answer on its own: mode decides too. A caller holding a
+ * message wants `obligesRecipients`, not this.
+ */
+export function isObligingType(type: string): boolean {
+  return type.startsWith("REQUEST") || type === "ESCALATE" || type === "CHALLENGE";
+}
+
+/**
+ * Every message type that creates a debt when it is sent in `service` mode.
+ *
+ * Derived from `MESSAGE_TYPES` through `isObligingType` rather than written
+ * out, so it cannot fall out of step with the predicate the commitment ledger
+ * actually runs.
+ */
+export const OBLIGING_MESSAGE_TYPES: MessageType[] = MESSAGE_TYPES.filter(isObligingType);
+
+/**
+ * The speech acts that change what their recipient should do next, WITHOUT
+ * obliging a reply.
+ *
+ * The second half of a question the catalogue used to answer with one
+ * predicate. `isObligingType` asks *does this create a debt?*, and every
+ * consequence gate in the runtime was keyed off it — so the runtime could only
+ * see messages that ask for something, and was blind to messages that hand
+ * something over. Those are different axes:
+ *
+ *   - `REQUEST_INFO` obliges an answer and may be trivial.
+ *   - `HANDOFF` obliges nothing and is the most consequential message in the
+ *     mesh: the sender has stopped working and the recipient has not started.
+ *
+ * Keyed off obligation alone, a HANDOFF classed `accrue` — never woken for,
+ * and excluded from the nudge sweep because that only chases `interrupt`. The
+ * work moved and the seat holding it was never told, and because the sender's
+ * own ask had already been discharged, no stalemate detector ever fired
+ * either. `tests/core/delivery-work-movement.test.ts` is that failure, kept.
+ *
+ * The line drawn here, so the next reader can argue with a rule rather than
+ * guess at a list. A type moves work if it either:
+ *
+ *   1. transfers custody of work — `MISSION`, `DELEGATE`, `HANDOFF`,
+ *      `PATCH_READY`: after it lands, the recipient owns something it did
+ *      not own before; or
+ *   2. is a verdict on work the recipient is parked on — `APPROVE`,
+ *      `REJECT`, `VETO`, `BLOCK`: the recipient cannot proceed until it
+ *      arrives, and proceeds differently depending on which one it is.
+ *
+ * Deliberately NOT in it, because the boundary only means something if things
+ * fall outside it: `INFORM`, `PROPOSE`, `TEST_RESULT`, `SECURITY_FINDING`,
+ * `COMMIT`, `ROLLBACK`, `WAIT`, `DONE`. Those report on the world rather than
+ * hand over custody or settle a verdict, and a reader who wakes for all of
+ * them has bought back the wake-on-everything mesh that delivery classes exist
+ * to replace. `ROLLBACK` and `SECURITY_FINDING` are the two closest calls; the
+ * argument for keeping them out is that both describe something that happened
+ * rather than something now owed, and a seat that must act on one is normally
+ * also sent the `REQUEST_*` that asks it to.
+ *
+ * Enumerated, which `isObligingType` argues against for good reason — a list
+ * that quietly stops being complete is worse than one that is obviously
+ * partial, and there is no prefix here to match on. The answer is not a better
+ * list but a louder failure: `tests/protocol/work-moving-types.test.ts` asserts
+ * every member of `MESSAGE_TYPES` has been classified deliberately, so adding a
+ * type without deciding this question fails the build instead of silently
+ * accruing.
+ */
+const WORK_MOVING_TYPES: ReadonlySet<string> = new Set<MessageType>([
+  // custody
+  "MISSION",
+  "DELEGATE",
+  "HANDOFF",
+  "PATCH_READY",
+  // verdicts
+  "APPROVE",
+  "REJECT",
+  "VETO",
+  "BLOCK",
+]);
+
+/**
+ * Does this speech act move work, in the sense {@link WORK_MOVING_TYPES}
+ * defines?
+ *
+ * Type-only, like {@link isObligingType} and for the same reason: mode is a
+ * separate question, and each caller has already settled it by the time it
+ * asks. A `broadcast`-mode HANDOFF is an announcement about work, not a
+ * transfer of it, and both call sites return before reaching here.
+ */
+export function movesWork(type: string): boolean {
+  return WORK_MOVING_TYPES.has(type);
+}
+
+/**
+ * The envelope fields the work-movement predicate reads, and only those.
+ *
+ * Structural for the same reason {@link ObligationEnvelope} is, and it carries
+ * `payload` for a reason that took a bug to learn: for two message types the
+ * type name does not finish the sentence.
+ */
+export interface WorkMovementEnvelope {
+  type: MessageType | string;
+  payload?: unknown;
+}
+
+/**
+ * The two speech acts whose consequence lives in the PAYLOAD rather than in
+ * the type name.
+ *
+ * `TEST_RESULT` and `SECURITY_FINDING` are the same word for opposite events.
+ * PASSED is a report — the recipient learns that the world is as it hoped and
+ * has nothing new to do. FAILED hands the work straight back: the developer
+ * that shipped the patch now owns a red build, and there is no other message
+ * coming to tell it so.
+ *
+ * Nothing else in `MESSAGE_TYPES` is like this. `ROLLBACK` is adjacent — the
+ * closest call the list above admits to — but it reports an action already
+ * taken by its sender rather than a verdict on work the recipient is parked
+ * on, so it stays out and stays type-only.
+ */
+const VERDICT_BEARING_TYPES: ReadonlySet<string> = new Set<MessageType>(["TEST_RESULT", "SECURITY_FINDING"]);
+
+/**
+ * Is this a verdict that hands work BACK to the seat it is addressed to?
+ *
+ * The rule, so the next reader can argue with it: a verdict-bearing type whose
+ * payload states a `result` that is not `PASSED`. Written as "present and not
+ * passing" rather than "equals FAILED" on purpose — a mesh that grows a third
+ * outcome (`ERROR`, `TIMEOUT`, `BLOCKED`) gets the safe answer without anyone
+ * remembering to extend a list, and the one outcome that must NOT move work is
+ * the single string this repo already treats as a sign-off everywhere else
+ * (`projections-messaging.ts`, `supervisor.ts#deriveSemantic`).
+ *
+ * An ABSENT `result` reads as no verdict at all and moves nothing. A
+ * `TEST_RESULT` carrying only prose is a report; it takes the class every
+ * report has always taken, so no existing mesh changes behaviour by accident.
+ *
+ * Reading `payload` here is a deliberate exception to the rule
+ * {@link obligesRecipients} states two functions down — "read off `control`,
+ * never `payload`" — and the exception is narrow enough to defend:
+ *
+ *   - That rule exists because `payload` is verbatim agent input and a sender
+ *     able to write its own obligation band could promote its chatter above
+ *     everybody else's real asks. Here a sender can buy exactly one thing: the
+ *     `deliver` class, which coalesces. It cannot reach `interrupt`, which is
+ *     the class that is billed and chased.
+ *   - And it could already buy that, for free, by typing the same message
+ *     `REJECT`. A sender that wants a wake has never needed to lie about a
+ *     test to get one, so this grants no authority that was being withheld.
+ *   - The asymmetry is the safeguard. Claiming FAILURE costs the sender a
+ *     recipient's attention and claims nothing about the mesh's gates.
+ *     Claiming SUCCESS is a sign-off, and that path is authority-checked in
+ *     both reducers — an unentitled PASSED is "a report, not a verdict". The
+ *     direction an attacker wants is the direction that is already guarded.
+ */
+export function isAdverseVerdict(m: WorkMovementEnvelope): boolean {
+  if (!VERDICT_BEARING_TYPES.has(m.type)) return false;
+  const result = (m.payload as { result?: unknown } | null | undefined)?.result;
+  return typeof result === "string" && result !== "PASSED";
+}
+
+/**
+ * Does this MESSAGE move work — the whole question, type and payload both?
+ *
+ * The one every consequence gate should ask. {@link movesWork} answers the
+ * type half and is still the right call where only a type is in hand (the
+ * catalogue's own derived lists, the classification table in
+ * `tests/protocol/work-moving-types.test.ts`); it is the wrong call anywhere a
+ * full envelope is available, and both places that had one were asking it.
+ *
+ * The bug that produced this, kept because the shape of it will recur: the
+ * branch directly above was added to fix `HANDOFF` and `DELEGATE` falling to
+ * `accrue`, and its diagnosis was exact — "both asked *does this oblige?* when
+ * the question was *does this move work?*". The fix then asked the new question
+ * of the type name alone, and for `TEST_RESULT` and `SECURITY_FINDING` the type
+ * name does not know the answer. So the identical failure survived one layer
+ * down: in the happy path `roles/developer.md` documents, `PATCH_READY` obliges
+ * nothing, QA's verdict therefore has no `replyTo` creditor, and a FAILED test
+ * classed `accrue` — never woken for, and excluded from the nudge sweep, which
+ * chases only `interrupt`. The developer sat in WAITING holding a red build
+ * while the mesh went quiet. `tests/core/verdict-work-movement.test.ts` is that
+ * failure, kept.
+ */
+export function movesWorkMessage(m: WorkMovementEnvelope): boolean {
+  return movesWork(m.type) || isAdverseVerdict(m);
+}
+
+/**
+ * Every message type that moves work, derived rather than written out, for the
+ * same reason {@link OBLIGING_MESSAGE_TYPES} is.
+ */
+export const WORK_MOVING_MESSAGE_TYPES: MessageType[] = MESSAGE_TYPES.filter(movesWork);
+
+/**
+ * Does this message put the agents it is addressed to under an obligation?
+ *
+ * The ONE answer. It used to be three, and they disagreed: this predicate's
+ * ancestor in `core/src/context.ts`, a hand-copy of it inside the
+ * `message.sent` case of `core/src/projections-messaging.ts` — held in step by
+ * a comment saying it was a hand-copy — and `REQUEST_TYPES` below, which was
+ * the only *exported* one and the only one that was wrong. Both core sites now
+ * call this, so the prompt's obligation band and the commitment ledger cannot
+ * drift apart again.
+ *
+ * It lives in the catalog because the catalog is the one shared table every
+ * consumer may take a *value* import from: it imports nothing but types, and
+ * this predicate keeps that property (see the import-weight note at the top of
+ * `core/src/run-report.ts`, which depends on it).
+ *
+ * Reading the type names alone is wrong in BOTH directions, which is what made
+ * three copies possible in the first place:
+ *
+ *   - `CHALLENGE` creates a real debt and is not a `REQUEST_*` name. A
+ *     CHALLENGE raised through `mesh_request` really does open a
+ *     `state.pendingRequests` entry, so a list omitting it under-counts the
+ *     ledger — and constraining an ask tool's schema to that list would make a
+ *     debt-creating ask unrepresentable.
+ *   - The very same REQUEST type obliges NOBODY when its interaction mode is
+ *     `broadcast` or `collab`. A REQUEST-typed broadcast addresses every seat
+ *     in the mesh, so it used to open one entry owed by everyone at once, and
+ *     `outstandingDebtors` then treated the whole roster as debtors: the first
+ *     reply left every other seat owing an answer nobody was tracking, while
+ *     nudges and stalemate detection pointed at agents who were never
+ *     individually asked. An announcement is not an ask. A `collab` is bounded
+ *     by its own clock rather than by a per-recipient debt — that is what "no
+ *     obligation, but time-boxed" means, and putting it on the ledger would
+ *     make it exactly the open-ended chatter it exists to replace.
+ *
+ * Read off `control`, never `payload`: `payload` is verbatim agent input, and
+ * a sender able to set its own obligation band could promote its chatter above
+ * everybody else's real asks. An absent mode reads as `service`, which is what
+ * every message written before the field existed was, so replaying an old log
+ * is unchanged.
+ *
+ * A statement about the ENVELOPE rather than a lookup in
+ * `state.pendingRequests`, on purpose. An agent can only discharge mail it has
+ * been shown, so an ask still sitting unread is still owed; keeping it pure is
+ * what lets the whole inbox ordering be tested without standing up a kernel,
+ * and what lets the reducer use this same call to DECIDE the ledger entry it
+ * would otherwise have to consult.
+ */
+export function obligesRecipients(m: ObligationEnvelope): boolean {
+  if ((m.control?.mode ?? "service") !== "service") return false;
+  return isObligingType(m.type);
+}
+
+/**
+ * @deprecated The name reads like the answer to "does this oblige anyone?" and
+ * it is not: it knows nothing about `control.mode`, so a `broadcast`-mode
+ * REQUEST is in it and obliges nobody. Ask {@link obligesRecipients} with the
+ * message; for a list, take {@link OBLIGING_MESSAGE_TYPES}, which this is now
+ * a copy of.
+ *
+ * Kept rather than deleted because it is re-exported from the package index
+ * and removing it is a public API break for no in-repo gain — it has zero
+ * runtime consumers. Its only readers are the three tests that pin it as a
+ * copy (`tests/core/obligation-predicate.test.ts`,
+ * `tests/core/context-inbox-order.test.ts`,
+ * `tests/protocol/mcp-comms-surface.test.ts`), so a deletion is small but not
+ * free: they object. Derived rather than corrected in place so the two lists
+ * can never disagree again: as written it enumerated six REQUEST names plus
+ * ESCALATE and omitted CHALLENGE, which creates a debt.
+ */
+export const REQUEST_TYPES: MessageType[] = [...OBLIGING_MESSAGE_TYPES];
 
 export const RESPONSE_TYPES: MessageType[] = [
   "APPROVE",
@@ -482,6 +769,62 @@ export const AUTHORITY_DOMAINS = [
 
 /** Verbs an authority token can carry. */
 export const AUTHORITY_VERBS = ["approve", "reject", "accept", "block", "veto", "pass", "*"] as const;
+
+/**
+ * The only acceptance criterion ids the runtime can ever close by itself.
+ *
+ * Every one of these has a `markCriterionEvidence` call behind some event the
+ * mesh already produces (a design approval, a merge, a security pass, the
+ * requirements analysis). A mandatory criterion whose id is NOT in this set can
+ * be closed one way only: a seat issuing `approve subject:"criterion:<id>"`,
+ * which needs `requirements.accept` or `requirements.approve`.
+ *
+ * That is why this list lives here rather than in `packages/config`, which is
+ * the one place that needs to warn about it. A mesh declaring seventeen
+ * mandatory criteria none of which are in this set, and no seat holding either
+ * requirements token, cannot complete — and one such mesh spent 12.7M tokens
+ * proving it, with nothing at load time saying a word. `HUMAN_AGENT_ID` was
+ * once duplicated across this boundary the other way and drifted, so the set is
+ * exported and imported, never copied.
+ *
+ * Adding a `markCriterionEvidence("<id>", …)` call to the supervisor without
+ * adding its id here makes the warning fire on a mesh that is actually fine.
+ */
+export const AUTO_EVIDENCED_CRITERIA: string[] = [
+  "architecture-approved",
+  "implementation-merged",
+  "quality-verified",
+  "security-verified",
+  "req-analysis",
+];
+
+/**
+ * The acceptance criteria a mission gets when its config declares none.
+ *
+ * Lives here, beside `AUTO_EVIDENCED_CRITERIA`, because two packages need it and
+ * neither may import the other: the supervisor falls back to it when generation
+ * is off or fails, and `packages/config` has to warn about it at load. Config
+ * deliberately does not import from core (see the `HUMAN_AGENT_ID` note in
+ * `config/src/index.ts`), so the alternative was a copy — and a copy of a list
+ * whose whole job is to agree with another list is the bug it is meant to catch.
+ * `core/src/supervisor.ts` re-exports this name, so existing importers are
+ * unaffected.
+ *
+ * Note `requirements-documented` is mandatory and is NOT auto-evidenced: only
+ * `apps/mesh-cli/src/bench.ts` ever closes it, and nothing in the runtime does.
+ * So every mesh that declares no criteria of its own inherits a mandatory
+ * criterion that closes solely via `approve subject:"criterion:requirements-documented"`,
+ * which needs a `requirements.*` authority. `warnUnacceptableCriteria` exists to
+ * say so at load time; `examples/greenfield/mesh.yaml` had no such seat and
+ * therefore could never have completed.
+ */
+export const DEFAULT_CRITERIA: Array<Partial<AcceptanceCriterion> & { description: string }> = [
+  { id: "requirements-documented", description: "Requirements are documented in a RequirementsDoc artifact accepted by PM", mandatory: true },
+  { id: "architecture-approved", description: "Architecture approved by architect and tech-lead", mandatory: true },
+  { id: "implementation-merged", description: "Implementation patches reviewed and merged", mandatory: true },
+  { id: "quality-verified", description: "QA verification passed with test report evidence", mandatory: true },
+  { id: "security-verified", description: "Security verification passed with scan evidence", mandatory: true },
+];
 
 /**
  * Every authority token the runtime can satisfy, plus the `*` superuser held

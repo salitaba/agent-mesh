@@ -509,8 +509,16 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
 function parseOpsBlock(text: unknown): any[] | null {
   if (typeof text !== "string" || !text) return null;
   const cands: string[] = [];
-  const m = /```(?:mesh-json|json|mesh-op)?\s*\n?([\s\S]*?)```/.exec(text);
-  if (m) cands.push(m[1]);
+  // Close on the LAST ``` , not the first. A lazy match ends the block at any
+  // fence inside a published document's `content`, truncating the JSON
+  // mid-string — the drawer then shows no ops for the richest turns in the
+  // run. Same defect the runtime parser carried; see `parseMeshOps`.
+  const open = /```(?:mesh-json|json|mesh-op)?[ \t]*\r?\n?/.exec(text);
+  if (open) {
+    const bodyAt = open.index + open[0].length;
+    const close = text.lastIndexOf("```");
+    cands.push(close > bodyAt ? text.slice(bodyAt, close) : text.slice(bodyAt));
+  }
   const t = text.trim();
   if (t.startsWith("[") || t.startsWith("{")) cands.push(t);
   for (const c of cands) {
@@ -774,8 +782,21 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const summaryIsOps = typeof t.summary === "string" && /^\s*[\[{]/.test(t.summary) && t.summary.includes('"op"');
   const opRows = ops ? matchOpEffects(ops, timeline) : null;
   const landedCount = opRows ? opRows.filter((r) => r.fx).length : 0;
-  const showSplit = typeof t.tokensInput === "number" && typeof t.tokensOutput === "number"
-    && t.tokensInput >= 100 && (t.tokensInput + t.tokensOutput) >= (t.tokens ?? 0) * 0.3;
+  // The split is on the raw `TurnRecord` while the turn is still in the
+  // tracker's ring; once it has aged out, the log-reconstructed step carries the
+  // same figures, so fall back to it instead of losing the bar and the cached
+  // share — which is the one number that says whether a seat is re-reading its
+  // transcript or starting cold.
+  const tokIn = typeof t.tokensInput === "number" ? t.tokensInput : listStep?.tokensInput;
+  const tokOut = typeof t.tokensOutput === "number" ? t.tokensOutput : listStep?.tokensOutput;
+  const tokCached = typeof t.tokensCacheRead === "number" ? t.tokensCacheRead : listStep?.tokensCacheRead;
+  // Thinking is billed inside `out` at the same rate as text the seat actually
+  // said, so a turn that looks expensive to WRITE may have been expensive to
+  // DECIDE — opposite fixes. Rendered only where the backend reported it;
+  // absent it simply does not appear, rather than showing a 0 nobody measured.
+  const tokThinking = typeof t.tokensThinking === "number" ? t.tokensThinking : listStep?.tokensThinking;
+  const showSplit = typeof tokIn === "number" && typeof tokOut === "number"
+    && tokIn >= 100 && (tokIn + tokOut) >= (t.tokens ?? listStep?.tokens ?? 0) * 0.3;
   // Phase marks are live-only; a turn evicted from the server's ring has none,
   // in which case the rail and parts of the vitals simply do not render.
   const phases: TurnPhases | undefined = t.phases ?? listStep?.phases;
@@ -794,7 +815,10 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
   const toolCalls: any[] = Array.isArray(t.toolCallsDetail) ? t.toolCallsDetail : [];
 
   const attempt = t.attempt ?? listStep?.attempt;
-  const inShare = showSplit ? Math.round((t.tokensInput / Math.max(1, t.tokensInput + t.tokensOutput)) * 100) : null;
+  const inShare = showSplit ? Math.round(((tokIn ?? 0) / Math.max(1, (tokIn ?? 0) + (tokOut ?? 0))) * 100) : null;
+  const cachedShare = showSplit && tokCached && tokCached > 0
+    ? Math.round((tokCached / Math.max(1, (tokIn ?? 0) + (tokOut ?? 0) + tokCached)) * 100)
+    : null;
   const durText = isRunning ? (elapsed !== null ? `${elapsed}s` : "—") : (t.durationMs != null ? dur(t.durationMs) : "—");
   // Outcome-shaped state: raw "waiting" reads like "stuck", so the status
   // block classifies the turn and always answers why and what happens next.
@@ -864,10 +888,17 @@ export function StepDrawer({ turnId, steps }: { turnId: string; steps: any[] }):
         </p>
         <div className="sv-metrics">
           <span title="wall clock for this turn">{durText}</span>
-          <span title={showSplit ? `in ${fmt(t.tokensInput)} · out ${fmt(t.tokensOutput)}` : "total tokens"}>
+          <span title={showSplit
+            ? `in ${fmt(tokIn ?? 0)} fresh · out ${fmt(tokOut ?? 0)}${typeof tokThinking === "number" ? ` (${fmt(tokThinking)} thinking)` : ""}${tokCached ? ` · ${fmt(tokCached)} replayed from cache` : ""}`
+            : "total tokens"}>
             {t.tokens != null ? `${fmt(t.tokens)} tok` : "— tok"}
             {inShare !== null ? <i className="sv-split" aria-hidden="true"><b style={{ width: `${inShare}%` }} /></i> : null}
           </span>
+          {cachedShare !== null ? (
+            <span className="mono" title="share of this turn's prompt that was replayed from cache rather than sent fresh">
+              cached {cachedShare}%
+            </span>
+          ) : null}
           <span title="tool calls made">{t.toolCalls ?? toolCalls.length ?? 0} tools</span>
           <span className={opRows && landedCount < opRows.length ? "part" : undefined} title="actions recorded in the event log">
             {opRows ? `${landedCount}/${opRows.length} landed` : "— landed"}

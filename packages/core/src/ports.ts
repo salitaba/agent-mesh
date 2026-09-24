@@ -109,7 +109,6 @@ export interface SchedulerPort {
   handleEvent(event: MeshEvent): Promise<void>;
   requestActivation(req: SchedulerActivationRequest): Promise<boolean>;
   notifyTurnFinished(agentId: string): void;
-  notifyMailDelivered(agentId: string): void;
   /**
    * How the runner's turn ended. The scheduler uses consecutive non-ok
    * outcomes as its circuit breaker (park poison work instead of spinning

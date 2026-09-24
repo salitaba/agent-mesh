@@ -8,7 +8,7 @@ import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, Des
 import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
-import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
+import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, projectionConfigFor, readableMailDepth, resolveUnread, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
 import { missionKey } from "../../../packages/core/src/budgets";
 import { JsonlEventStore, MemoryEventStore, type EventStore } from "../../../packages/event-store/src/index";
 import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-engine/src/index";
@@ -33,7 +33,7 @@ import {
   type StateLockHandle,
 } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
-import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, type GitMode } from "../../../packages/protocol/src/index";
+import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, aliasStats, type GitMode } from "../../../packages/protocol/src/index";
 import {
   buildMeshGraph,
   buildCostReport,
@@ -192,6 +192,20 @@ export interface ResetOptions {
   archiveWorktrees?: boolean;
 }
 
+/**
+ * Raised when a reset is asked for while one is already running. Carries a
+ * `code` instead of relying on `instanceof` so `staging.ts` can recognise it
+ * without importing this module at runtime — the graph already runs
+ * index -> staging, and the reverse edge would close a cycle.
+ */
+export class ResetInProgressError extends Error {
+  readonly code = "RESET_IN_PROGRESS";
+  constructor() {
+    super("a mission reset is already in progress");
+    this.name = "ResetInProgressError";
+  }
+}
+
 export interface ResetReport {
   ok: boolean;
   /** Absolute path of the archived previous state dir, null when there was none. */
@@ -297,11 +311,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     store,
     systemClock,
     auditLog,
-    {
-      transitionGates: config.transitionGates,
-      commitmentSemantic: config.bus.commitmentSemantic,
-      commitmentTtl: config.bus.commitmentTtl,
-    },
+    projectionConfigFor(config),
     snapshotProvider ? { provider: snapshotProvider, meshId: config.meshId, every: 200 } : undefined,
   );
   // EventBus decouples kernel fan-out from direct subscribe chains.
@@ -442,7 +452,6 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     handleEvent: async () => undefined,
     requestActivation: async () => false,
     notifyTurnFinished: () => undefined,
-    notifyMailDelivered: () => undefined,
     pending: () => 0,
     running: () => 0,
     start: () => undefined,
@@ -533,6 +542,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
 
   const mainProductPath = path.join(config.workspacePath, "main");
   let lastBoot: MeshInstance["lastBoot"] = null;
+  let resetInFlight = false;
   const instance: MeshInstance = {
     config,
     productPath: workspace
@@ -599,124 +609,142 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       // `mode`/`uiOnly` follow `scheduler.isRunning()`; stopping IS parking.
     },
     async reset(resetOpts: ResetOptions = {}) {
-      const self = this as MeshInstance;
-      // 1. Stop everything first. Order matters: the scheduler must not be
-      //    able to start a turn while the log underneath it is being replaced.
-      await self.park();
-      await supervisor.resetMission();
-      scheduler.resetMissionState();
-      // Every archive this reset produces shares one stamp, so the backups read
-      // as one set rather than as unrelated snapshots taken seconds apart.
-      const archiveRoot = meshArchiveRoot(config.dir, config.meshId);
-      const stamp = archiveStamp();
-      // 2. Copy the worktrees aside BEFORE deleting them. They are not
-      //    disposable: an agent's uncommitted edits live only in its worktree,
-      //    and `removeAllWorktrees` deletes the branch as well, which leaves
-      //    any commits as unreachable objects for `git gc` to collect. Both
-      //    copies are taken here, while the branches still exist.
-      let worktreesArchivedTo: string | null = null;
-      let worktreeBundleTo: string | null = null;
-      if (workspace && !options.inMemory && resetOpts.archiveWorktrees !== false) {
-        worktreesArchivedTo = copyDir(workspace.worktreesPath, { archiveRoot, stamp });
-        // Walking away from a failed copy would delete the only copy, so a
-        // throw here aborts the reset with the worktrees still intact.
-        const bundle = await workspace.bundleWorktreeBranches(
-          // Inside the worktree archive when there is one, so a stamp resolves
-          // to a single directory; otherwise beside it under the same stamp.
-          worktreesArchivedTo
-            ? path.join(worktreesArchivedTo, "mesh-branches.bundle")
-            : path.join(archiveRoot, `mesh-branches.bak-${stamp}.bundle`),
-        );
-        worktreeBundleTo = bundle?.path ?? null;
+      // A reset is destructive and takes tens of seconds: the worktree copy
+      // awaits (it has to — a synchronous copy blocks the heartbeat and the
+      // host watchdog SIGKILLs the child mid-archive; see `copyDir`). That
+      // await leaves the server free to accept a SECOND reset while the first
+      // is still copying, and the two then race: the winner's
+      // `removeAllWorktrees` deletes the worktrees out from under the loser's
+      // copy, which throws ENOENT and aborts at step 2 — leaving a half-written
+      // worktree archive, no bundle, and no state archive, while the operator
+      // is told nothing. A double-clicked button must not queue a second wipe
+      // either, so this refuses outright rather than serialising.
+      if (resetInFlight) throw new ResetInProgressError();
+      resetInFlight = true;
+      try {
+        const self = this as MeshInstance;
+        // 1. Stop everything first. Order matters: the scheduler must not be
+        //    able to start a turn while the log underneath it is being replaced.
+        await self.park();
+        await supervisor.resetMission();
+        scheduler.resetMissionState();
+        // Every archive this reset produces shares one stamp, so the backups read
+        // as one set rather than as unrelated snapshots taken seconds apart.
+        const archiveRoot = meshArchiveRoot(config.dir, config.meshId);
+        const stamp = archiveStamp();
+        // 2. Copy the worktrees aside BEFORE deleting them. They are not
+        //    disposable: an agent's uncommitted edits live only in its worktree,
+        //    and `removeAllWorktrees` deletes the branch as well, which leaves
+        //    any commits as unreachable objects for `git gc` to collect. Both
+        //    copies are taken here, while the branches still exist.
+        let worktreesArchivedTo: string | null = null;
+        let worktreeBundleTo: string | null = null;
+        if (workspace && !options.inMemory && resetOpts.archiveWorktrees !== false) {
+          worktreesArchivedTo = await copyDir(workspace.worktreesPath, { archiveRoot, stamp });
+          // Walking away from a failed copy would delete the only copy, so a
+          // throw here aborts the reset with the worktrees still intact.
+          const bundle = await workspace.bundleWorktreeBranches(
+            // Inside the worktree archive when there is one, so a stamp resolves
+            // to a single directory; otherwise beside it under the same stamp.
+            worktreesArchivedTo
+              ? path.join(worktreesArchivedTo, "mesh-branches.bundle")
+              : path.join(archiveRoot, `mesh-branches.bak-${stamp}.bundle`),
+          );
+          worktreeBundleTo = bundle?.path ?? null;
+        }
+        // 3. Now it is safe to delete them (and their mesh/* branches) so the
+        //    next run cannot read the previous run's files. Sessions are already
+        //    stopped, so no process is using them.
+        const worktreesRemoved = workspace ? await workspace.removeAllWorktrees() : [];
+        // 4. The product checkout is mission scratch: archive it outside the
+        //    workspace, then leave an empty product root so the Product page
+        //    (and the next run) sees no files from the previous mission. Git
+        //    mode owns the dedicated `main/` checkout. Without git the mission
+        //    materializes product files (and the playground build) straight into
+        //    the workspace root, so that root is what gets archived. The state
+        //    dir lives inside the workspace by default and step 6 archives it
+        //    separately, so exclude it here instead of double-archiving.
+        let productArchivedTo: string | null = null;
+        let strayRootArchivedTo: string | null = null;
+        if (workspace && !options.inMemory) {
+          productArchivedTo = archiveDir(workspace.mainPath, { archiveRoot, stamp });
+          // Anything at the root other than what git mode owns is untracked by
+          // every repo here, so `removeMain` below would leave it behind and the
+          // next boot would refuse the layout (see `assertWorkspaceCoherent`). A
+          // root `.git` is deliberately NOT excluded: a workspace that is its own
+          // repository is the other half of that refusal, and reset is exactly
+          // when it should stop being one.
+          strayRootArchivedTo = archiveDir(config.workspacePath, {
+            archiveRoot,
+            stamp,
+            exclude: [
+              workspace.mainPath,
+              path.join(config.workspacePath, WORKTREES_DIRNAME),
+              path.join(config.workspacePath, ".mesh"),
+              config.stateDir,
+            ],
+          });
+          workspace.removeMain();
+          await workspace.ensureRepo();
+        } else if (!options.inMemory) {
+          productArchivedTo = archiveDir(config.workspacePath, {
+            archiveRoot,
+            stamp,
+            exclude: [config.stateDir],
+          });
+          fs.mkdirSync(config.workspacePath, { recursive: true });
+          // Hand the next mission a real repo, not a bare directory: git mode
+          // gets one from `ensureRepo` above, and without the same here every
+          // git read of the product silently answers from an enclosing repo (or
+          // from nothing) for the rest of the run.
+          initProductRepo(config.workspacePath, config.stateDir);
+        }
+        // 5. Release the sqlite index handle before the directory moves; an open
+        //    handle would keep writing into the archived copy.
+        closeIndex();
+        // 6. Archive-then-recreate the state dir (atomic rename, recoverable).
+        //    The archive lives outside `workspace/` so new agents cannot read
+        //    it from their working tree.
+        let archivedTo: string | null = null;
+        if (!options.inMemory) {
+          archivedTo = archiveStateDir(config.stateDir, {
+            keepArtifacts: resetOpts.keepArtifacts,
+            archiveRoot,
+            stamp,
+          }).archivedTo;
+          // The rename moved the lock file into the archive with everything
+          // else, leaving the recreated directory unclaimed. Rewrite it, or a
+          // second process could open the state dir this one is still using.
+          stateLock?.refresh();
+        }
+        // 7. Empty the log + projections + snapshot in place, preserving object
+        //    identity so every route handler's closure stays valid.
+        await kernel.resetToEmpty();
+        // 8. Reopen the index against the fresh (empty) directory.
+        if (!options.inMemory) openIndex([]);
+        // 9. Boot a brand-new mission from the config. resume:false forces a new
+        //    goal rather than resurrecting the one we just deleted.
+        await supervisor.boot({ resume: false, mode: "parked" });
+        scheduler.rebuildInterestRegistry();
+        // Step 1 parked the scheduler and `boot({mode:"parked"})` left it that
+        // way, so the derived `mode`/`uiOnly` already read "parked".
+        self.startedAt = Date.now();
+        return {
+          ok: true,
+          archivedTo,
+          productArchivedTo,
+          worktreesRemoved,
+          worktreesArchivedTo,
+          worktreeBundleTo,
+          strayRootArchivedTo,
+          goalId: kernel.state.activeGoalId ?? null,
+          mode: self.mode,
+        };
+      } finally {
+        // Cleared on the failure path too, or one aborted reset would wedge
+        // the route for the life of the process.
+        resetInFlight = false;
       }
-      // 3. Now it is safe to delete them (and their mesh/* branches) so the
-      //    next run cannot read the previous run's files. Sessions are already
-      //    stopped, so no process is using them.
-      const worktreesRemoved = workspace ? await workspace.removeAllWorktrees() : [];
-      // 4. The product checkout is mission scratch: archive it outside the
-      //    workspace, then leave an empty product root so the Product page
-      //    (and the next run) sees no files from the previous mission. Git
-      //    mode owns the dedicated `main/` checkout. Without git the mission
-      //    materializes product files (and the playground build) straight into
-      //    the workspace root, so that root is what gets archived. The state
-      //    dir lives inside the workspace by default and step 6 archives it
-      //    separately, so exclude it here instead of double-archiving.
-      let productArchivedTo: string | null = null;
-      let strayRootArchivedTo: string | null = null;
-      if (workspace && !options.inMemory) {
-        productArchivedTo = archiveDir(workspace.mainPath, { archiveRoot, stamp });
-        // Anything at the root other than what git mode owns is untracked by
-        // every repo here, so `removeMain` below would leave it behind and the
-        // next boot would refuse the layout (see `assertWorkspaceCoherent`). A
-        // root `.git` is deliberately NOT excluded: a workspace that is its own
-        // repository is the other half of that refusal, and reset is exactly
-        // when it should stop being one.
-        strayRootArchivedTo = archiveDir(config.workspacePath, {
-          archiveRoot,
-          stamp,
-          exclude: [
-            workspace.mainPath,
-            path.join(config.workspacePath, WORKTREES_DIRNAME),
-            path.join(config.workspacePath, ".mesh"),
-            config.stateDir,
-          ],
-        });
-        workspace.removeMain();
-        await workspace.ensureRepo();
-      } else if (!options.inMemory) {
-        productArchivedTo = archiveDir(config.workspacePath, {
-          archiveRoot,
-          stamp,
-          exclude: [config.stateDir],
-        });
-        fs.mkdirSync(config.workspacePath, { recursive: true });
-        // Hand the next mission a real repo, not a bare directory: git mode
-        // gets one from `ensureRepo` above, and without the same here every
-        // git read of the product silently answers from an enclosing repo (or
-        // from nothing) for the rest of the run.
-        initProductRepo(config.workspacePath, config.stateDir);
-      }
-      // 5. Release the sqlite index handle before the directory moves; an open
-      //    handle would keep writing into the archived copy.
-      closeIndex();
-      // 6. Archive-then-recreate the state dir (atomic rename, recoverable).
-      //    The archive lives outside `workspace/` so new agents cannot read
-      //    it from their working tree.
-      let archivedTo: string | null = null;
-      if (!options.inMemory) {
-        archivedTo = archiveStateDir(config.stateDir, {
-          keepArtifacts: resetOpts.keepArtifacts,
-          archiveRoot,
-          stamp,
-        }).archivedTo;
-        // The rename moved the lock file into the archive with everything
-        // else, leaving the recreated directory unclaimed. Rewrite it, or a
-        // second process could open the state dir this one is still using.
-        stateLock?.refresh();
-      }
-      // 7. Empty the log + projections + snapshot in place, preserving object
-      //    identity so every route handler's closure stays valid.
-      await kernel.resetToEmpty();
-      // 8. Reopen the index against the fresh (empty) directory.
-      if (!options.inMemory) openIndex([]);
-      // 9. Boot a brand-new mission from the config. resume:false forces a new
-      //    goal rather than resurrecting the one we just deleted.
-      await supervisor.boot({ resume: false, mode: "parked" });
-      scheduler.rebuildInterestRegistry();
-      // Step 1 parked the scheduler and `boot({mode:"parked"})` left it that
-      // way, so the derived `mode`/`uiOnly` already read "parked".
-      self.startedAt = Date.now();
-      return {
-        ok: true,
-        archivedTo,
-        productArchivedTo,
-        worktreesRemoved,
-        worktreesArchivedTo,
-        worktreeBundleTo,
-        strayRootArchivedTo,
-        goalId: kernel.state.activeGoalId ?? null,
-        mode: self.mode,
-      };
     },
     backups() {
       return listArchives(meshArchiveRoot(config.dir, config.meshId));
@@ -1228,11 +1256,49 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   async function route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const u = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const parts = u.pathname.split("/").filter((p) => p.length > 0);
-    const json = (code: number, body: unknown) => {
+    const send = (code: number, body: unknown): void => {
       res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
       // Compact serialization: pretty-printing roughly doubles large payloads
       // (timelines, traces) for zero client benefit — every consumer parses.
       res.end(JSON.stringify(body));
+    };
+    /**
+     * Every JSON response, with a durability barrier in front of the ones that
+     * are receipts.
+     *
+     * `EventStore.append` returns before the line reaches disk — a deliberate
+     * throughput trade, with the crash window bounded by an fsync every
+     * SYNC_EVERY appends rather than closed. That trade is right nearly
+     * everywhere and wrong at one moment: when we hand an id back over the
+     * wire. From then on something outside this process treats the event as
+     * having happened, and it has no way to ever learn otherwise — so a crash
+     * inside the window does not lose an event, it turns a 202 into a lie.
+     *
+     * The barrier is per receipt, not per append, which is the distinction
+     * `flush()`'s contract asks for: a turn that emits forty events pays one
+     * fsync, on the reply that mentions them. Reads skip it entirely, and
+     * `flush()` costs nothing on a store with no pending write, so the
+     * read-only MCP tool calls that share this path stay free.
+     *
+     * A flush that throws becomes a 500 rather than the 2xx it was going to
+     * be: learning that the write failed is the whole reason to wait for it.
+     * The event is still in memory and still applied, so this is not a
+     * retryable failure — it reports that the log behind this mesh has
+     * stopped accepting writes, and a retry would only re-apply the action.
+     */
+    const json = async (code: number, body: unknown): Promise<void> => {
+      if (req.method !== "GET" && code >= 200 && code < 300) {
+        try {
+          await store.flush?.();
+        } catch (err) {
+          return send(500, {
+            error: `event log write failed: ${(err as Error).message}`,
+            code: "event_log_not_durable",
+            retryable: false,
+          });
+        }
+      }
+      send(code, body);
     };
     const body = async (): Promise<Record<string, any>> => {
       const chunks: Buffer[] = [];
@@ -1326,7 +1392,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               code: "run_report_unavailable",
             });
           }
-          const report = await buildRunReport(kernel.state, goalId);
+          // Process-scoped, handed in rather than read inside the builder --
+          // see `RunReportComms.aliases`. Same process as this handler, so the
+          // counters are this mesh's, not some other child's.
+          const report = await buildRunReport(kernel.state, goalId, { aliases: aliasStats() });
           if (report == null) return json(404, { error: `no run report for goal ${goalId}` });
           return json(200, report);
         }
@@ -1400,7 +1469,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             return json(200, {
               definition: rec.definition,
               state: rec.state,
-              unread: kernel.state.unread.get(id) ?? [],
+              unread: resolveUnread(kernel.state, id),
               memory: [...(kernel.state.memory.get(id)?.values() ?? [])],
               session: kernel.state.sessionMap.get(id) ?? null,
             });
@@ -1486,7 +1555,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // removed, i.e. a whole-file rewrite that never happened.
           const beforeRead: ContentRead = from && fromN !== toN ? await readContentResult(instance, from.contentRef) : { ok: true, text: "" };
           const afterRead: ContentRead = await readContentResult(instance, to.contentRef);
-          const unreadable = (reason: string, version: number): void =>
+          const unreadable = (reason: string, version: number): Promise<void> =>
             json(503, {
               error: `artifact content is unreadable: ${reason}`,
               code: "artifact_content_unreadable",
@@ -1985,7 +2054,20 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             meshId: config.meshId,
           });
         }
-        const report = await instance.reset({ keepArtifacts: b.keepArtifacts === true });
+        let report;
+        try {
+          report = await instance.reset({ keepArtifacts: b.keepArtifacts === true });
+        } catch (err) {
+          if (err instanceof ResetInProgressError) {
+            // 409, not 500: the request was well-formed and the mesh refused it,
+            // same as the confirmId guard above.
+            return json(409, {
+              ok: false,
+              error: "a mission reset is already in progress — wait for it to finish. A second reset races the first and aborts partway, leaving a half-written archive.",
+            });
+          }
+          throw err;
+        }
         const cleaned = report.worktreesRemoved.length ? `${report.worktreesRemoved.length} worktree(s) removed; ` : "";
         const product = report.productArchivedTo ? "product checkout archived; " : "";
         return json(200, {
@@ -2521,9 +2603,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
       }
 
-      json(404, { error: `no route: ${req.method} ${u.pathname}` });
+      return json(404, { error: `no route: ${req.method} ${u.pathname}` });
     } catch (err) {
-      json(500, { error: (err as Error).message });
+      return json(500, { error: (err as Error).message });
     }
   }
 
@@ -2634,8 +2716,17 @@ function artifactVersion(instance: MeshInstance, id: string, version: number): A
 }
 
 /** Composer for the end-of-run report, shaped like the other state-derived
- * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next. */
-type RunReportBuilder = (state: unknown, goalId: string) => unknown | Promise<unknown>;
+ * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next.
+ *
+ * The third argument is the one input that is not a projection -- the alias
+ * counters, which are process-scoped. It is optional and typed loosely here
+ * because this module is loaded by `require` and the builder may be an older
+ * one that never heard of it. */
+type RunReportBuilder = (
+  state: unknown,
+  goalId: string,
+  opts?: { aliases?: unknown },
+) => unknown | Promise<unknown>;
 
 /**
  * Resolve core's run-report composer lazily. `packages/core/src/run-report.ts`
@@ -3092,7 +3183,14 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
       path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-dashboard", "dist"),
       path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
     ].find((d) => fs.existsSync(d));
-  const server = createHttpServer(instance, { dashboardDir });
+  // `server.dashboard: false` used to be a key that did nothing: the SPA was
+  // mounted unconditionally while its two siblings (`host`, `port`) were both
+  // read two lines below. Withholding the directory is the whole mechanism --
+  // the static route is last and already no-ops without one, so the `/api`
+  // surface is untouched and only the HTML stops being served.
+  const server = createHttpServer(instance, {
+    dashboardDir: instance.config.server.dashboard === false ? undefined : dashboardDir,
+  });
   const port = options.port ?? instance.config.server.port;
   const host = options.host ?? instance.config.server.host;
   await new Promise<void>((resolve, reject) => {

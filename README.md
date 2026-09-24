@@ -30,9 +30,9 @@ Regenerate the GIF with `npm run demo:capture` (needs a built repo, Chrome/Chrom
 ```bash
 npm install
 npm run build
-npm test                         # 85 tests: protocol, policy, scheduler,
-                                 # lifecycle, replay, integration, properties,
-                                 # simulation, git worktrees, adapters,
+npm test                         # ~1,700 tests in 171 files: protocol, policy,
+                                 # scheduler, lifecycle, replay, integration,
+                                 # properties, simulation, git worktrees, adapters,
                                  # HTTP/MCP, the demo journey, parked/step/live modes
 npm run mesh -- run examples/demo-stub/mesh.yaml
 # then open http://127.0.0.1:7421/ and watch a whole AI organization
@@ -63,9 +63,11 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
 3. **Design** — `#/designer` in the dashboard: build agents, capabilities, authority,
    interests, the communication matrix, transition gates and budgets with
    live server-side validation (same engine as `mesh validate`), YAML preview,
-   save; then `mesh run <saved path>`. `mesh init` scaffolds a starter (falls
-   back to `runtime: stub` when the OpenCode CLI isn't on PATH, and `mesh run`
-   preflights the reverse case with guidance instead of crashing).
+   save; then `mesh run <saved path>`. `mesh init` scaffolds a starter with
+   `runtime: claude` — there is no PATH probe and there should not be, because
+   that executable ships with the SDK this repo already depends on, so a probe
+   would fail on a working install. Set `runtime: stub` by hand for a mesh that
+   boots and runs with zero model calls.
 
 ## Running
 
@@ -82,8 +84,8 @@ npm run mesh -- run examples/demo-stub/mesh.yaml
 #   (--no-demo disables the scripted team; agents then simply idle)
 
 # PARKED CONSOLE — dashboard + designer, nothing autonomous (no startup runs,
-# no cascades, no tokens), safe to poke at even for opencode configs on a
-# machine without the CLI installed:
+# no cascades, no tokens), safe to poke at even for a config whose runtime is
+# not installed on this machine:
 npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
 # (alias: ui; equivalent: npm run mesh -- run <file> --parked)
 # parked semantics: startup/interest/timer cascades are all off — nothing runs
@@ -93,8 +95,8 @@ npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
 # the console live in place (scheduler on, cascades resume) without restarting.
 
 # design first, run later:
-npm run mesh -- init my-mesh                       # auto-detects opencode; falls
-                                                   # back to runtime: stub if absent
+npm run mesh -- init my-mesh                       # writes a starter mesh.yaml
+                                                   # with runtime: claude
 $EDITOR my-mesh/mesh.yaml                          # or use the designer page
 npm run mesh -- validate my-mesh/mesh.yaml
 npm run mesh -- run my-mesh/mesh.yaml
@@ -129,7 +131,8 @@ Set it per agent, or mesh-wide via `mesh.runtime.default`. Add `--git` to give
 writing agents real git worktrees.
 
 Other helpers: `emit-schemas schemas` (regenerate canonical JSON schemas),
-`mesh mcp` (internal stdio↔HTTP bridge spawned by OpenCode).
+`mesh mcp` (internal stdio↔HTTP bridge, spawned by the Claude adapter to
+reach `/api`).
 
 
 ## Repository layout
@@ -146,7 +149,7 @@ packages/
   scheduler       interest registry, activation, mailboxes, concurrency, triage
   agent-runtime   adapter interface + deterministic StubRuntime (tests/sim)
   artifact-store  immutable content store + git worktree manager
-  runtime-opencode  OpenCode server adapter (sessions, turns, tokens, restore)
+  projects        multi-project registry (~/.agent-mesh/projects.json)
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub

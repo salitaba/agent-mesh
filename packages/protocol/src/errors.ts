@@ -45,6 +45,38 @@ export class RequestTimeoutError extends Error {
 }
 
 /**
+ * A turn the MESH stopped on purpose, carrying whatever the backend had already
+ * spent on it.
+ *
+ * `name` is `"AbortError"` deliberately: `isTimeoutError` treats an `Error` with
+ * that name exactly as it treats the `DOMException` this replaces, so every
+ * existing classification, retry and "slow, not crashed" path behaves
+ * identically. The only thing that changes is that the usage figures survive.
+ *
+ * They did not before. When the mesh interrupts a turn the CLI still answers with
+ * a `result` frame carrying real `usage`, and the adapter threw that frame away
+ * on its way to raising the abort. Across one measured run that silently
+ * destroyed roughly 85 minutes of generation: unbilled, so the budget ledger
+ * believed the tokens were never spent, and invisible, so no one could see the
+ * mesh was paying for work it then discarded.
+ *
+ * `tokensUsed` is optional and may be absent — an interrupt that beats the CLI's
+ * own frame has nothing to report. Absent means "unmeasured", never zero; the
+ * cost convention elsewhere (`noteTurnCost` ignoring zero-token turns as missing
+ * data) depends on the difference.
+ */
+export class InterruptedTurnError extends Error {
+  /** What the backend reported spending before the abort, if it reported at all. */
+  readonly tokensUsed?: { input: number; output: number; total: number };
+
+  constructor(message: string, tokensUsed?: { input: number; output: number; total: number }) {
+    super(message);
+    this.name = "AbortError";
+    this.tokensUsed = tokensUsed;
+  }
+}
+
+/**
  * Undici timeout codes. These surface as `TypeError: fetch failed` with the
  * real reason only on `cause.code`, so the message-pattern check below cannot
  * tell them apart from a refused socket. They mean "the backend is alive but

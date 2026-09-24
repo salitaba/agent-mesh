@@ -17,6 +17,21 @@ export interface TurnStep {
   messageIds: string[];
   artifactIds: string[];
   tokens: number;
+  /**
+   * The split behind `tokens`, when the log carries it: `budget.consumed` puts
+   * the runtime's own `input`/`output`/`cacheRead` in its payload, so a replayed
+   * turn can be read the way `mesh ledger` reads the audit file. Absent means the
+   * backend reported no split — never a zero that was never claimed.
+   */
+  tokensInput?: number;
+  tokensOutput?: number;
+  tokensCacheRead?: number;
+  /**
+   * The thinking part of `tokensOutput`, when the backend reported it. Absent
+   * is unmeasured: most gateways omit the detail, and a 0 here would claim a
+   * turn deliberated for free.
+   */
+  tokensThinking?: number;
   model?: string;
   error?: string;
   seqStart: number;
@@ -174,6 +189,14 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
         // Mission/thread consumes mirror the agent consume; only count agent-scoped keys once.
         if (typeof p.key === "string" && p.key.startsWith("agent:")) {
           s.tokens += amt;
+          // The split rides on the same event: the kernel puts the runtime's own
+          // input/output/cacheRead in the consume detail, which `budgets.consume`
+          // spreads onto the payload. Add only what the payload actually states,
+          // so a backend that reports nothing leaves these absent rather than 0.
+          if (typeof p.input === "number") s.tokensInput = (s.tokensInput ?? 0) + p.input;
+          if (typeof p.output === "number") s.tokensOutput = (s.tokensOutput ?? 0) + p.output;
+          if (typeof p.cacheRead === "number") s.tokensCacheRead = (s.tokensCacheRead ?? 0) + p.cacheRead;
+          if (typeof p.thinking === "number") s.tokensThinking = (s.tokensThinking ?? 0) + p.thinking;
           if (p.model) s.model = String(p.model);
         }
         s.seqEnd = Math.max(s.seqEnd, seq);

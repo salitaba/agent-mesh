@@ -1,7 +1,7 @@
 ﻿import * as fs from "fs";
 import * as path from "path";
 import type { MeshEvent } from "../../protocol/src/index";
-import type { EventStore } from "../../event-store/src/index";
+import type { exportState } from "../../core/src/state";
 
 export * from "./state-lock";
 import { STATE_LOCK_FILENAME } from "./state-lock";
@@ -76,20 +76,23 @@ export interface SnapshotEnvelope {
   meshId: string;
   takenAt: string;
   throughSeq: number;
-  data: {
-    goals: unknown[];
-    agents: unknown[];
-    artifacts: unknown[];
-    threads: unknown[];
-    messages: unknown[];
-    tasks: unknown[];
-    decisions: unknown[];
-    approvals: unknown[];
-    escalations: unknown[];
-    budgets: unknown[];
-    leases: unknown[];
-    memory: unknown[];
-  };
+  /**
+   * Exactly what `exportState` produced, rather than a second hand-written
+   * list of keys.
+   *
+   * The list that used to stand here named twelve keys, fewer than half of
+   * what the codec writes. Nothing made that wrong at compile time, so this
+   * type went on describing a snapshot shape the runtime had left behind --
+   * and a type that documents a lie is worse than no type, because it is read
+   * as the contract.
+   * Tying it to the codec means a field added to the codec arrives here for
+   * free and a field dropped from it cannot go unnoticed.
+   *
+   * `import type` is erased, so this records a coupling that already exists in
+   * fact -- a snapshot file is an `exportState` result and nothing else --
+   * without giving persistence a runtime dependency on core.
+   */
+  data: ReturnType<typeof exportState>;
 }
 
 export class SnapshotStore {
@@ -391,8 +394,18 @@ export function archiveDir(dir: string, opts: ArchiveOptions = {}): string | nul
  * The copy is per top-level entry — same `exclude` semantics as `archiveDir`,
  * same non-atomicity — and the source is never modified, so a repeated call is
  * safe.
+ *
+ * Async on purpose. `fs.cpSync` blocks the event loop for as long as the copy
+ * runs, and a reset copies every agent worktree: a 300MB one wedges the child
+ * for ~18s. The child's 2s heartbeat cannot fire while it is blocked, so the
+ * host watchdog (`HEARTBEAT_TIMEOUT_MS`, 15s) read the silence as a wedged
+ * child, stopped it, and — SIGTERM being unrunnable on a blocked loop — SIGKILLed
+ * it mid-copy. The reset died right here, leaving a half-written worktree
+ * archive, no branch bundle, and a state dir that was never wiped, so the
+ * mission came back on the next boot. Awaiting per entry keeps the heartbeat
+ * flowing for the whole archive.
  */
-export function copyDir(dir: string, opts: ArchiveOptions = {}): string | null {
+export async function copyDir(dir: string, opts: ArchiveOptions = {}): Promise<string | null> {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) return null;
   const excludes = (opts.exclude ?? []).map((e) => path.resolve(e));
@@ -401,7 +414,7 @@ export function copyDir(dir: string, opts: ArchiveOptions = {}): string | null {
   const target = nextArchivePath(resolved, opts);
   fs.mkdirSync(target, { recursive: true });
   for (const name of entries) {
-    fs.cpSync(path.join(resolved, name), path.join(target, name), { recursive: true });
+    await fs.promises.cp(path.join(resolved, name), path.join(target, name), { recursive: true });
   }
   return target;
 }
@@ -686,53 +699,4 @@ export function restoreStateDir(
   if (sessionsDropped) fs.rmSync(sessionsFile, { force: true });
 
   return { previousArchivedTo, snapshotDropped, events: countLogEvents(logFile), sessionsDropped };
-}
-
-export class EventTailer {
-  private size = 0;
-  private buffer = "";
-  constructor(private store: EventStore, private pollMs = 100) {
-    void this.store;
-  }
-
-  /**
-   * Follow a JSONL log, handing each newly-appended event to `onLine`.
-   *
-   * The cursor is per-WATCHER, not per-file. It used to live in a module-level
-   * map keyed by path, which meant two watchers on the same log shared one
-   * offset and raced: whichever fired first advanced the cursor past the lines
-   * the other had not read, so each event reached exactly one arbitrary
-   * subscriber. That is at-most-once delivery wearing the shape of a broadcast,
-   * and it is invisible until the second subscriber exists.
-   *
-   * The same map also never reset. A `reset()` that truncated the log left the
-   * offset at the old line count, so every event after a reset was skipped
-   * until the file grew back past its previous length. Tracking the cursor on
-   * the watcher makes both bugs unrepresentable: a fresh watch starts at zero,
-   * and a shrinking file is detected below.
-   */
-  static watchFile(file: string, onLine: (event: MeshEvent) => void): fs.FSWatcher {
-    let offset = 0;
-    const watcher = fs.watch(file, { persistent: false }, () => {
-      try {
-        const content = fs.readFileSync(file, "utf8");
-        const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
-        // The log got shorter: it was truncated, rotated or replaced. Anything
-        // we had already counted belongs to a file that no longer exists, so
-        // the only safe cursor is the start of the new one.
-        if (lines.length < offset) offset = 0;
-        for (const line of lines.slice(offset)) {
-          try {
-            onLine(JSON.parse(line) as MeshEvent);
-          } catch {
-            /* partial line: the writer is mid-append, it arrives on the next tick */
-          }
-        }
-        offset = lines.length;
-      } catch {
-        /* file replaced out from under the read; the next event re-reads it */
-      }
-    });
-    return watcher;
-  }
 }

@@ -106,6 +106,43 @@ budgets:
   mission: { tokens: 2000000, wall_clock_minutes: 60, max_events: 10000 }
   thread: { tokens: 100000 }
 
+bus:
+  # The manifest a seat is shown. `mesh init` has written this for every mesh
+  # it scaffolds since the key existed; these examples predate it, so they were
+  # teaching the 24-name typed surface to anyone who read them to learn the
+  # system. Collapsing it takes no capability away -- the tools it hides stay
+  # callable by name -- and the kernel never reads the key: it is consumed in
+  # exactly one place, where the MCP manifest is built.
+  vocabulary: contracts
+  commitments:
+    # Hold an ask that named no contract to the one its type implies, the way
+    # `mesh init` now does. Without it the eight contracts are decoration a
+    # sender may opt into, and a bare REQUEST_REVIEW opens a debt with no
+    # refusal vocabulary, no SLA and no answer shape. These examples set no
+    # `ttl_ms`, so nothing here creates a deadline -- what it buys is the
+    # closed refusal set (quoted to the debtor in its own prompt) and a
+    # verdict on whether an answer actually answered.
+    by_type: true
+  # Price attention, the way `mesh init` does for every mesh it scaffolds.
+  # Without this block every message wakes each of its recipients the instant
+  # it is sent, and a wake is a full model turn -- so these examples were
+  # demonstrating a mesh no new user is given. Every class still lands in the
+  # mailbox; only the wake differs. The generated mesh.yaml from `mesh init`
+  # annotates each key in full.
+  delivery:
+    classes: true
+    # Shorter than the 60s default that `mesh init` writes: these examples are
+    # meant to be watched, and a minute of gathering reads as a stall. Measured
+    # on examples/demo-stub, which converges in ~3s at this window and ~6s at
+    # 5000 -- most bursts are drained by a turn the seat was taking anyway.
+    coalesce_ms: 2000
+    interrupt_cost_tokens: 2000
+    attention_tokens: 200000
+    # How many unread messages in the RECIPIENT's box add one unit to the price
+    # of waking them, capped at 4x. The flat tariff charges the same for
+    # waking an idle seat and the seat everyone is already queuing behind.
+    congestion_every: 4
+
 scheduling:
   mode: event-driven
   concurrency: { max_active_agents: 4 }

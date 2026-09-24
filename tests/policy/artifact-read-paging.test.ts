@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
@@ -26,16 +28,25 @@ function fakeTurn(agentId: string) {
  * as data, with a way to ask for the rest.
  */
 
+/**
+ * Publishes through `fromPath`, not `content`: the bodies these tests need are
+ * far over the inline ceiling, which is exactly the case `fromPath` exists for.
+ * A 150k document is still a document — the cap refuses to have it TYPED, not
+ * to have it published.
+ */
 async function meshWithArtifact(content: string) {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }],
   });
+  const ws = await m.supervisor.agentWorkspace("dev");
+  fs.mkdirSync(ws, { recursive: true });
+  fs.writeFileSync(path.join(ws, "big-doc.md"), content, "utf8");
   const pub = await m.supervisor.executeOp(
     "dev",
-    { op: "publish_artifact", name: "BigDoc", type: "RequirementsDoc", content },
+    { op: "publish_artifact", name: "BigDoc", type: "RequirementsDoc", fromPath: "big-doc.md" },
     fakeTurn("dev"),
   );
-  assert.equal(pub.ok, true);
+  assert.equal(pub.ok, true, pub.reason);
   return { m, id: pub.artifactId! };
 }
 

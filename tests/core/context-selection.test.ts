@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { focusTerms, rankByRelevance, isRelevantArtifact } from "../../packages/core/src/context";
 import { estimateTokens } from "../../packages/core/src/supervisor";
-import { transcriptSize } from "../../packages/runtime-claude/src/index";
+import { promptSize, transcriptSize } from "../../packages/runtime-claude/src/index";
 import { artifactScope, defaultArtifactScope } from "../../packages/protocol/src/catalog";
 import type { Artifact, MeshMessage } from "../../packages/protocol/src/index";
 
@@ -103,11 +103,57 @@ test("token estimates round up and never under-state a real prompt", () => {
 /**
  * The transcript, not the new message, was the unbounded quantity. Reading
  * `input` alone hides it completely the moment the prefix caches.
+ *
+ * This is the fallback measure now — used only when a backend reports no
+ * per-call usage — so it is pinned as the sum it is, and as the direction it
+ * errs in when it stands in for a real size.
  */
 test("transcript size counts the cached prefix, not just the fresh input", () => {
   assert.equal(transcriptSize({ input: 500, output: 100, total: 600, cacheRead: 148_000 }), 148_500);
   assert.equal(transcriptSize({ input: 0, output: 0, total: 0, cacheRead: 0 }), 0);
   assert.equal(transcriptSize(undefined), 0);
+});
+
+/**
+ * The rotation threshold is a per-call window limit, so the figure it is
+ * compared against has to be one call's prompt.
+ *
+ * It was not. The adapter read the turn's `result` frame, whose usage is the
+ * SUM over every call in the turn, and compared that to a window: a measured
+ * mission reported 5,219,210 and 6,189,695 against a largest real prompt of
+ * 165,129, a ~32× overstatement that grew with the number of calls. This
+ * function reads the per-call frames instead.
+ */
+test("prompt size is one call's context, cache writes included", () => {
+  // The SDK's own arithmetic: input + cache_creation + cache_read.
+  assert.equal(
+    promptSize({ input_tokens: 1_200, output_tokens: 300, cache_read_input_tokens: 148_000, cache_creation_input_tokens: 6_000 }),
+    155_200,
+  );
+  // A call that wrote its prefix to cache instead of reading it: `cache_creation`
+  // rides into `usageToTokens`'s total and has no `tokensUsed` field, so before
+  // this the mesh dropped the term entirely.
+  assert.equal(promptSize({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 900 }), 900);
+  // The wire type makes the cache fields `number | null`.
+  assert.equal(promptSize({ input_tokens: 10, output_tokens: 0, cache_read_input_tokens: null, cache_creation_input_tokens: null }), 10);
+  // No usage at all is an absence, and the caller must not read it as an empty
+  // context — the settle path falls back to `transcriptSize` on a zero.
+  assert.equal(promptSize(undefined), 0);
+  assert.equal(promptSize({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }), 0);
+});
+
+/**
+ * The two measures must not be interchangeable: the sum grows with the number
+ * of calls and the size does not. This is the regression in one assertion.
+ */
+test("a turn's summed reads are not a context size", () => {
+  const oneCall = { input: 100, output: 0, total: 100, cacheRead: 165_029 };
+  assert.equal(transcriptSize(oneCall), 165_129);
+  assert.equal(
+    transcriptSize({ input: 79 * 100, output: 0, total: 7_900, cacheRead: 79 * 165_029 }),
+    79 * 165_129,
+    "the fallback measure scales with the call count — which is why it is a fallback",
+  );
 });
 
 /**

@@ -1,4 +1,5 @@
 import type { Projections } from "../../core/src/state";
+import { readableMailDepth } from "../../core/src/state";
 
 export interface GraphEdge {
   from: string;
@@ -24,7 +25,7 @@ export function buildMeshGraph(state: Projections): { nodes: GraphNode[]; edges:
     lifecycle: r.state.lifecycle,
     tokens: r.state.tokensConsumed,
     activations: r.state.activations,
-    mailbox: state.unread.get(r.definition.id)?.length ?? 0,
+    mailbox: readableMailDepth(state, r.definition.id),
   }));
   const edgeMap = new Map<string, GraphEdge>();
   const kindOf = (t: string): GraphEdge["kind"] =>

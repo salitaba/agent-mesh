@@ -5,6 +5,7 @@ import { Button, Card, Chip, ErrorState, EventRow, Pill, StepMini } from "../com
 import { ArtifactDrawer, StepDrawer, CloseX } from "../drawers";
 import { useGoLive, useReopenMission, useResetMission } from "../actions";
 import { useProjectsOptional } from "../projects";
+import { CollabCard } from "../collabcard";
 import { liveMissionVerdict, terminalMissionVerdict } from "../../../../packages/protocol/src/catalog";
 
 export function MeshMark(): React.JSX.Element {
@@ -148,6 +149,17 @@ export default function Overview(): React.JSX.Element {
   const { busy: bootBusy, goLive: doBoot } = useGoLive();
   const { busy: resetBusy, resetMission } = useResetMission();
   const { busy: reopenBusy, reopenMission } = useReopenMission();
+  // Optional by design: `mesh console` serves a single mesh and has no project
+  // registry, so a null context means "no host that could have a ceiling".
+  //
+  // Read here with the other hooks rather than at its point of use further
+  // down, where it reads more naturally but is a hook behind the `!status`
+  // early return: on the render where the server has not answered yet the
+  // call is skipped, on the next one it is made, and React — which counts
+  // hooks per render — throws "rendered more hooks than during the previous
+  // render" and takes the whole overview down. That is the exact path an
+  // operator hits when the server comes back.
+  const hostSpend = useProjectsOptional()?.hostSpend ?? null;
 
   useEffect(() => {
     let dead = false;
@@ -236,9 +248,6 @@ export default function Overview(): React.JSX.Element {
   // silently does nothing until the goal is reopened — offer the reopen right
   // where the operator sees the verdict.
   const missionOver = goal.status === "COMPLETED" || goal.status === "FAILED";
-  // Optional by design: `mesh console` serves a single mesh and has no project
-  // registry, so a null context means "no host that could have a ceiling".
-  const hostSpend = useProjectsOptional()?.hostSpend ?? null;
   const ceilingHit = hostSpend?.ceilingTripped === true;
   const blocks = standingBlocks(events);
   const anyDeny = blocks.some((b) => b.payload?.decision === "DENY");
@@ -430,6 +439,9 @@ export default function Overview(): React.JSX.Element {
       >
         <div className="steps-mini">{(steps || []).length ? (steps || []).slice(0, 5).map((s: any) => <StepMini key={s.turnId} s={s} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />) : stepsLoaded ? <div className="muted">No work yet — wake an agent or start the mission.</div> : <div className="muted">loading recent work…</div>}</div>
       </Card>
+      {/* Renders nothing unless a collaboration is actually open, and owns its
+          own hooks so this component's hook count does not move. */}
+      <CollabCard />
       <div className="grid two" style={{ marginTop: 12 }}>
         <Card title="Goal">
           <p style={{ margin: "0 0 10px", maxWidth: "70ch" }}>{((goal.description || "").replace(/\n+/g, " "))}</p>

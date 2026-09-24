@@ -219,11 +219,31 @@ export interface MeshMessage {
   artifactRefs: ArtifactRef[];
   payload: unknown;
   priority: MessagePriority;
-  ttl?: string;
   requires?: Requirement[];
   budgetHint?: BudgetHint;
   provenance?: ContentProvenance;
   taskId?: TaskId;
+  /**
+   * Prose attached to the message. NEVER parsed by the mesh.
+   *
+   * The one place a seat can write freely without the mesh reading it as
+   * anything. Deliberately an ENVELOPE field and not a payload key, because
+   * every payload key is live: `payloadDiscriminator` hashes unrecognised
+   * payloads wholesale, so a `note` inside `payload` would change a message's
+   * identity — two seats saying the same thing in different words would
+   * collide or not based on the wording — while `validateContractResponse`
+   * would reject it outright against any contract with a closed response
+   * schema. On the envelope it reaches no parser, no contract check, no
+   * discharge inference and no routing decision.
+   *
+   * Being outside `fingerprintOf` cuts both ways, and that is the intended
+   * shape: a note cannot make two otherwise-identical sends distinct, so it
+   * cannot be used to slip past loop detection.
+   *
+   * Not settable through `payload`, and stripped from `payload` like every
+   * other reserved key, so a legacy reader cannot find a forged copy there.
+   */
+  note?: string;
   /**
    * Runtime-owned delivery control. NEVER settable by an agent.
    *
@@ -254,10 +274,261 @@ export interface MessageControl {
    * not mail. Suppresses mailbox delivery and interest activation.
    */
   cacheServed?: boolean;
+  /**
+   * The contract this ask was opened under.
+   *
+   * Lives here rather than in `payload` for the reason stated above, and this
+   * field is the concrete case that motivated the rule. The commitment ledger
+   * reads it twice: once at open, to draw the ask's deadline from the
+   * contract's `slaMs`, and once at discharge, to judge the answer against the
+   * contract's `response` schema. Both are runtime decisions about an agent's
+   * obligations, and while the stamp sat in `payload` -- verbatim agent input,
+   * stripped of nothing but `cacheServed` -- a seat could hand-write a
+   * contract name into a raw `send` and set its own creditor's clock without
+   * its request ever meeting that contract's schema.
+   *
+   * Written only by the supervisor, and only after `validateContractRequest`
+   * has passed, so the stamp's presence is itself the evidence that the ask
+   * was checked.
+   */
+  contract?: string;
+  contractVersion?: number;
+  /**
+   * Interaction mode, and the field that DETERMINES this exchange's obligation
+   * semantics rather than describing them.
+   *
+   * Until now every exchange was the same kind of thing and its blocking
+   * semantics were inferred from a type-string prefix: anything beginning
+   * `REQUEST` opened a debt, everything else did not. That inference is wrong
+   * in both directions. A `broadcast` of a REQUEST type opened an obligation
+   * on EVERY seat in the mesh -- an ask nobody in particular owed, which no
+   * single reply could honestly discharge. And open-ended discussion had no
+   * representation at all, so it happened inside service asks, untracked and
+   * unbounded.
+   *
+   * - `service` (default): one obligation per recipient, answered against a
+   *   published contract. This is X-as-a-Service -- a narrow ask, no ongoing
+   *   chatter -- and it is what a seat gets when it does not say otherwise.
+   * - `collab`: no obligation, but TIME-BOXED at open and metered. Discovery
+   *   genuinely needs it; the point is that a seat cannot enter it by accident
+   *   and cannot stay in it quietly.
+   * - `broadcast`: no obligation, and cannot be replied to. Wakes only
+   *   declared interests.
+   *
+   * Runtime-owned for the same reason as `contract`: an agent choosing its own
+   * obligation semantics is an agent deciding whether it owes anything.
+   */
+  mode?: InteractionMode;
+  /**
+   * What landing in the mailbox is allowed to COST the recipient.
+   *
+   * The mesh is asynchronous in its transport and synchronous in its
+   * attention. Nothing blocks, but inbound mail wakes the recipient, a wake is
+   * a turn, and a turn is a model call -- so every message is an interrupt
+   * with a bill attached and the sender pays none of it. Delivery and wake
+   * were fused for everything except broadcast, which means the cheapest
+   * possible act in the system (writing a sentence) unilaterally spends the
+   * most expensive resource another seat has.
+   *
+   * This field separates the two. Every class DELIVERS -- the reducer puts the
+   * message in every recipient's mailbox before the scheduler ever sees it, so
+   * an unwoken seat reads it on its next natural activation. They differ only
+   * in whether and when the delivery also buys a turn:
+   *
+   * - `interrupt`: wake now, as mail has always done, and CHARGE the sender's
+   *   budget line for it. Reserved for the wakes that are worth a turn: an
+   *   URGENT, and an answer a seat is parked in WAITING for.
+   * - `deliver`: no wake at send; the scheduler coalesces a burst and wakes
+   *   once after `bus.delivery.coalesce_ms`, or not at all if the seat takes a
+   *   turn for any other reason first. A service ask still gets answered, just
+   *   not by a turn bought per message.
+   * - `accrue`: never wakes and never counts as mail pressure. It rides the
+   *   next turn the seat takes for its own reasons.
+   *
+   * ABSENT is not a fourth class and not a cheap default: it is today's wake
+   * path, unchanged. Classes are stamped only where `bus.delivery.classes` is
+   * configured, so no existing mesh changes behaviour, and a message that
+   * predates the regime replays exactly as it ran.
+   *
+   * ORTHOGONAL TO `mode`, deliberately. `mode` answers what the exchange
+   * obliges and therefore who is a candidate for a wake at all; `delivery`
+   * answers whether being a candidate is worth a turn right now. The two could
+   * have been collapsed -- `broadcast` already behaves like `accrue` -- and
+   * they are not, because a broadcast's narrowing to declared interests is an
+   * operator's decision written in config (`interests:`), and a class derived
+   * from an envelope must never overrule it. So the deriver leaves broadcasts
+   * unclassed and they keep their own gate; the class rides on top of the
+   * recipient set `mode` chose, never widening it.
+   *
+   * Runtime-owned for the same reason as `mode`: a delivery class a sender
+   * could set is a sender silencing its own interrupt, or handing itself the
+   * one class nobody is charged for.
+   */
+  delivery?: DeliveryClass;
+  /**
+   * Why this interrupt did not get its class, when it did not.
+   *
+   * The tariff's whole purpose is to be a price, and a price that cannot
+   * refuse is a receipt. When a sender has spent its attention line, the
+   * message still ships and its mail still lands -- nothing in this mesh is a
+   * suppressed delivery -- but it ships as `deliver` instead of `interrupt`,
+   * so the wake it asked for is not bought. This records why, in the sender's
+   * own words when it reads its tool result and in the log for everyone else.
+   *
+   * A sentence rather than a boolean because "refused" has more than one
+   * cause, and they call for different answers from the sender: an exhausted
+   * attention line means stop interrupting and let the backlog clear, while
+   * an operator's `interrupt_cost_tokens` set past what any sender can afford
+   * means the configuration is wrong, not the sender.
+   *
+   * Runtime-owned, reserved, and closed in the schema, exactly like
+   * `delivery` itself: a sender that could write this could claim a refusal
+   * that never happened, and `downgradedInterrupts` in the run report would
+   * stop being evidence of anything.
+   */
+  downgraded?: string;
+  /**
+   * The answer the ASKER will assume if nobody gives it one, and the deadline
+   * after which it assumes it.
+   *
+   * Every other field on this envelope prices or routes an interruption. This
+   * one removes the need for it. A service ask has exactly two endings a seat
+   * can reach on purpose -- an answer or a `discharge` -- and both cost the
+   * recipient a turn. Silence, the cheapest thing a busy seat can do, is the
+   * one move the runtime reads as failure: it nudges three times, then raises
+   * a card for a human. So an ask whose answer is "yes unless you object"
+   * costs the same attention as one that genuinely needs deciding, and the
+   * mesh has no way to tell the two apart because the asker was never given a
+   * way to say which it was.
+   *
+   * With this set, silence becomes a legal and INFORMATIVE move. The nudge
+   * ladder is skipped (there is nothing to chase; the answer is already
+   * known), and at the deadline the ask discharges as `defaulted` carrying
+   * `assume`, the debtors are released owing nothing, and the ASKER is woken
+   * with the value it agreed to assume -- rather than a human being woken to
+   * arbitrate a question nobody thought was open.
+   *
+   * Runtime-owned like the rest of `control`, but agent-REQUESTED, which no
+   * other field here is. That is safe in the one direction that matters: it
+   * can only weaken an obligation the asker itself created. It cannot oblige
+   * anyone more, cannot reach a seat the asker may not contact, and cannot
+   * buy a wake -- the one wake it causes is the asker's own, and the asker
+   * already pays for that.
+   */
+  ifUnanswered?: DefaultAnswer;
 }
 
-/** Payload keys the runtime once trusted, now reserved and stripped on input. */
-export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed"];
+/**
+ * What an asker will assume when nobody answers. See
+ * `MessageControl.ifUnanswered`.
+ *
+ * `afterMs` exists because the promise is only as real as the clock behind
+ * it. `computeDueBy` returns nothing at all unless the mesh configured
+ * `bus.commitments.ttl_ms` -- a contract's own `slaMs` NARROWS a regime and
+ * never creates one -- so on a mesh with no deadline regime a default that
+ * relied on the ask's ordinary `dueBy` would simply never fire, and the
+ * asker would wait forever for a fallback it was told it had. Naming the
+ * interval on the ask is the one way to hold that promise on any mesh; where
+ * neither exists the op is refused at the edge rather than accepted and
+ * quietly never honoured.
+ */
+export interface DefaultAnswer {
+  /** The value the asker will proceed with. Recorded and handed back to it. */
+  assume: unknown;
+  /** Milliseconds to wait before assuming. Falls back to the ask's own deadline. */
+  afterMs?: number;
+}
+
+/**
+ * Whether a delivered message also buys the recipient a turn. See
+ * `MessageControl.delivery`, which carries the reasoning.
+ */
+export type DeliveryClass = "interrupt" | "deliver" | "accrue";
+
+export const DELIVERY_CLASSES: readonly DeliveryClass[] = ["interrupt", "deliver", "accrue"];
+
+/**
+ * How an exchange is conducted, and therefore what it obliges.
+ *
+ * `service` is the default because it is the cheap one: a narrow published
+ * ask, one answer, done. `collab` stays available because discovery needs it,
+ * but it must be DECLARED and it is bounded -- that is the whole low-contact
+ * mechanism. High-bandwidth interaction remains possible, becomes visible,
+ * and becomes expensive.
+ */
+export type InteractionMode = "service" | "collab" | "broadcast";
+
+export const INTERACTION_MODES: readonly InteractionMode[] = ["service", "collab", "broadcast"];
+
+/**
+ * An open-ended exchange, made expensive on purpose.
+ *
+ * `service` asks are cheap because they are narrow and self-closing. Real
+ * discovery is not narrow, and before this existed it happened ANYWAY --
+ * inside service asks, as a thread that kept going after the ask it opened
+ * with had been answered. That traffic was invisible: no deadline could fire
+ * (the ask was discharged), no ledger entry existed, and the only thing that
+ * ever stopped it was a thread token budget running dry, which reads to an
+ * operator as a budget fault rather than as two agents talking in circles.
+ *
+ * A collab session is that conversation, declared. It obliges nobody -- there
+ * is no debt, no nudge, no stalemate -- but it is BOUNDED at the moment it
+ * opens, by a wall clock and by a count of exchanges, and it is metered
+ * against the thread budget line it runs on. When it overruns, an operator
+ * gets a card naming what was spent, not a silent stall.
+ *
+ * Bounds are stamped at OPEN, into the event, rather than read from config at
+ * sweep time: a mission that edits its box mid-flight must not retroactively
+ * lengthen a session already running, and replay has to reproduce the same
+ * expiry it originally produced.
+ */
+export interface CollabSession {
+  /** The thread the session owns. One session per thread, at most. */
+  threadId: ThreadId;
+  goalId?: GoalId;
+  openedBy: AgentId;
+  participants: AgentId[];
+  /** What it is for. Shown on the overrun card. */
+  topic: string;
+  openedAt: string;
+  /** ISO-8601. The wall-clock edge of the box, fixed at open. */
+  expiresAt: string;
+  /** Messages in this thread before the box is considered overrun. */
+  maxExchanges: number;
+  /** Messages seen in this thread since the session opened. */
+  exchanges: number;
+  /**
+   * The budget ledger key this session's tokens land on. Not a second meter:
+   * every turn in the thread already charges `thread:<goalId>/<threadId>`,
+   * so this records WHERE to read the spend rather than re-counting it.
+   */
+  budgetKey?: string;
+  status: "OPEN" | "CLOSED" | "OVERRUN";
+  /** Why it ended: `closed`, `expired`, or `exchanges_exhausted`. */
+  closedReason?: string;
+  closedAt?: string;
+}
+
+/**
+ * Payload keys the runtime once trusted, now reserved and stripped on input.
+ *
+ * The list is the payload-side mirror of `MessageControl`, and it has to stay
+ * that way. `sanitizeAgentMessageInput` deletes `control` wholesale, so a
+ * runtime-owned field is already unforgeable in its real home; what this list
+ * closes is the second copy an agent can leave in `payload`, which nothing
+ * reads today but a legacy reader — or a future one — would find. A key that
+ * exists on `control` and is missing here is that hole standing open.
+ *
+ * `mode` is the one that had drifted out of the mirror. It decides whether an
+ * exchange obliges anyone at all, which is exactly the judgement an agent must
+ * not be allowed to make about its own message.
+ *
+ * `delivery` is the same judgement about cost rather than obligation: it says
+ * whether this message may spend a recipient's turn, and whether the sender is
+ * billed for spending it. A seat that could write either key into `payload`
+ * could price its own interrupts at zero.
+ */
+export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed", "contract", "contractVersion", "mode", "delivery", "downgraded", "ifUnanswered"];
 
 /**
  * Remove runtime-owned fields from agent-supplied message input.
@@ -266,8 +537,8 @@ export const RESERVED_PAYLOAD_KEYS: readonly string[] = ["cacheServed"];
  * the real field, the second stops a legacy reader (or a future one that
  * reaches into `payload`) from finding a forged copy there.
  */
-export function sanitizeAgentMessageInput<T extends { payload?: unknown; control?: MessageControl }>(input: T): T {
-  const cleaned = { ...input } as T & { payload?: unknown; control?: MessageControl };
+export function sanitizeAgentMessageInput<T extends { payload?: unknown; control?: MessageControl; note?: string }>(input: T): T {
+  const cleaned = { ...input } as T & { payload?: unknown; control?: MessageControl; note?: string };
   delete cleaned.control;
   const payload = cleaned.payload;
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
@@ -281,8 +552,41 @@ export function sanitizeAgentMessageInput<T extends { payload?: unknown; control
     }
     if (stripped) cleaned.payload = copy;
   }
+  // CLAMP the envelope's `note` rather than let the schema refuse the message.
+  //
+  // `note` is prose the mesh never parses — its own schema description says so:
+  // no op extraction, no discharge inference, no routing, no authority. A note
+  // 2001 characters long is therefore not a protocol error, and refusing the whole
+  // message over it destroys everything else the message was carrying.
+  //
+  // This was the single most-hit validation rule in a live run: EVERY schema
+  // rejection, 12 of 12, was this one cap. One seat lost six messages across two
+  // consecutive turns and could not learn why, because denials never reach a
+  // seat's own context — so it regenerated the same oversized field each time.
+  //
+  // Note this is the TOP-LEVEL envelope field, which is the one the schema
+  // actually validates. `payload.note` is a different thing entirely and is not
+  // checked at all, because `payload` is the empty schema.
+  //
+  // The marker matters: a silent truncation would let the sender believe the
+  // recipient read the whole thing. The schema's `maxLength` stays as the backstop
+  // for non-agent callers.
+  const envelope = cleaned as { note?: unknown };
+  if (typeof envelope.note === "string" && envelope.note.length > MAX_MESSAGE_NOTE_CHARS) {
+    const keep = MAX_MESSAGE_NOTE_CHARS - NOTE_TRUNCATION_MARKER.length;
+    envelope.note = envelope.note.slice(0, Math.max(0, keep)) + NOTE_TRUNCATION_MARKER;
+  }
   return cleaned;
 }
+
+/**
+ * The `note` cap, mirrored from `schemas.ts` so the clamp and the schema cannot
+ * disagree. If these ever diverge the clamp stops preventing the rejection it
+ * exists to prevent, which is a silent failure — hence one constant.
+ */
+export const MAX_MESSAGE_NOTE_CHARS = 2000;
+/** Said out loud, so a recipient knows the prose it is reading is not all of it. */
+export const NOTE_TRUNCATION_MARKER = " …[truncated at 2000 chars]";
 
 export type EventType =
   | "goal.created"
@@ -388,6 +692,14 @@ export type EventType =
    * a commitment leaves the ledger, so replay reproduces it exactly.
    */
   | "commitment.discharged"
+  /**
+   * A time-boxed collaboration opened. Carries the bounds it was opened with,
+   * so replay reproduces the same expiry rather than re-deriving one from
+   * whatever the config says now.
+   */
+  | "collab.opened"
+  /** It ended -- by choice, by its clock, or by exhausting its exchanges. */
+  | "collab.closed"
   | "human.input"
   | "lease.acquired"
   | "lease.released"
@@ -403,6 +715,29 @@ export type EventType =
    * no evidence that it had ever been a candidate.
    */
   | "context.assembled"
+  /**
+   * A turn whose output the mesh could not use, and what that cost.
+   *
+   * The only event in the catalog whose subject is a NON-event: a turn that ran,
+   * spent tokens, and produced nothing the mesh could act on. Four ways that
+   * happens and none of them left a trace — a parse failure emitted an audit
+   * line only, and a timeout or a forced settle wrote no audit row at all
+   * because the row is written past the throw.
+   *
+   * The gap was not cosmetic. One live run spent 1,191,376 tokens — 28% of
+   * everything it billed — on turns whose ops list parsed to empty, including a
+   * review verdict, two artifact publications and the mission's own requirements
+   * baseline. From `events.jsonl` every one of those turns is indistinguishable
+   * from a seat that woke up and had nothing to say. The seats themselves knew
+   * (the summary reaches their next context as an auto-memory note) and wrote it
+   * into their continuity records, which is how it was found at all.
+   *
+   * `tokens` is optional and must be read as UNMEASURED rather than as zero: a
+   * turn killed mid-generation really did spend tokens at the provider, and the
+   * reservation it released is an estimate, not a measurement. Claiming a figure
+   * we do not have would be worse than admitting we do not have it.
+   */
+  | "turn.discarded"
   | "plan.updated"
   | "plan.gate_rejected"
   | "budget.reserved"
@@ -583,6 +918,11 @@ export interface AgentDefinition {
    * behaving exactly as it did before this feature existed.
    */
   hardActions?: HardActionsPolicy;
+  /**
+   * Absent means "wake me for everything", which is what every seat did before
+   * this existed. Optional for the same reason `hardActions` is.
+   */
+  wake?: WakePolicy;
 }
 
 export type PlanStepStatus = "PENDING" | "DONE";
@@ -636,6 +976,92 @@ export interface AgentPlan {
 export interface HardActionsPolicy {
   mode: "off" | "warn" | "enforce";
   capabilities: string[];
+}
+
+/**
+ * What a seat is willing to be WOKEN for, authored by the recipient. That is
+ * the point of the block: every other rationing knob in the mesh belongs to the
+ * sender — `bus.delivery.attention_tokens` is the sender's wallet, the tariff
+ * is charged to the sender, and `interests` gates only broadcasts. This is the
+ * recipient's own answer to the same question.
+ *
+ * It is deliberately one step MILDER than `communicationPolicy.mayBeContactedBy`,
+ * the existing recipient-authored preference: that one refuses the SEND, so the
+ * message never exists. This refuses only the WAKE — the mail is delivered, sits
+ * in the mailbox, and is read on the seat's next natural activation, exactly as
+ * `accrue` already does mesh-wide. "Nothing is ever suppressed; only the wake is
+ * refused."
+ */
+export interface WakePolicy {
+  /**
+   * Never wake me for mail that obliges me nothing.
+   *
+   * Obligation is the one thing that overrides this, by construction rather than
+   * by exception: `obligesRecipients` is the same predicate the debt is opened
+   * with, so a message this setting ignores is a message that opened no
+   * `pendingRequests` entry and owes nobody an answer. An ask always wakes the
+   * seat that owes it — a mesh where a seat could quietly opt out of its own
+   * debts would not be a mesh.
+   *
+   * It does not refund the sender. An `interrupt` sent to a deferring seat was
+   * already charged to the sender's attention ledger at send time, and stays
+   * charged: the setting is part of mesh.yaml, so it is a public declaration a
+   * sender can read before spending, which is the same bargain
+   * `may_be_contacted_by` already strikes one step harder.
+   */
+  deferNonObliging?: boolean;
+  /**
+   * Message types this seat will not be woken for, named exactly.
+   *
+   * `deferNonObliging` is one switch over a whole half of the mesh's traffic,
+   * and a seat that flips it is saying it would rather read EVERY FYI late
+   * than be interrupted by any of them. Most seats do not mean that. A
+   * tech-lead wants the STATUS_UPDATEs batched and the ARTIFACT_PUBLISHED
+   * that it reviews against delivered now; with one switch it has to choose,
+   * and the choice it makes is usually to leave the switch off and keep
+   * paying for both.
+   *
+   * Exact names rather than the `interests` glob, though this is the same
+   * wish `interests` expresses for broadcasts. `interests` matches DOTTED
+   * event paths, where a `*` is a real generalisation; message types are flat
+   * UPPER_SNAKE words, where every pattern short of the whole name matches
+   * nothing (`interestMatches("*", "STATUS_UPDATE")` is false) — so a glob
+   * here would be a syntax that looked like it worked and silently muted
+   * nothing. The schema pins these to the `MessageType` enum, so a misspelled
+   * entry fails config validation rather than quietly never matching.
+   *
+   * Subject to the same three exemptions as `deferNonObliging`, checked
+   * first: an ask that obliges this seat, operator mail, and a message that
+   * carries the seat's next piece of work all wake it whatever this list
+   * says. Naming `HANDOFF` or `REQUEST_REVIEW` here therefore does nothing —
+   * a seat cannot mute its own debts, and this is a batching preference, not
+   * an authority boundary.
+   */
+  notFor?: MessageType[];
+  /**
+   * How much of a NON-OBLIGING message the wake carries: `"full"` (the default)
+   * inlines the body, `"claims"` renders a one-line claim and leaves the body to
+   * be fetched with `mesh_inbox`.
+   *
+   * This is "push the obligation, pull the content", and the split falls at the
+   * obligation rather than at a size threshold on purpose: a message that owes
+   * this seat an answer is the reason the turn exists, so its body is always
+   * inlined and a seat can never answer one blind. Only mail that obliges
+   * nothing — the half a wake *interrupts* for rather than *owes* — becomes a
+   * claim.
+   *
+   * What it does not do is un-deliver anything. `message.delivered` is emitted
+   * for mail the turn RENDERED and the model ANSWERED (`supervisor.ts`), and a
+   * claim line is a rendering: the seat was told the message exists, by id, with
+   * its sender, type, priority and thread. The debt therefore closes exactly as
+   * it did before; what is deferred is the *reading*, not the receipt.
+   *
+   * Off by default, and it should stay that way until a mission says otherwise:
+   * the measured `Unread mail` section is 2.2% of a turn's briefing block
+   * (`NOTES-communication-measured-review.md` §1d), so this is a contact-quality
+   * lever, not a cost one.
+   */
+  mail?: "full" | "claims";
 }
 
 export interface AgentRuntimeState {
@@ -830,6 +1256,10 @@ export type ContextSlot =
   | "task"
   | "decisions"
   | "artifacts"
+  /** What this seat was just refused. Above `mail` because the union's split
+   * is "what the agent needs to not repeat itself", and an unseen refusal is
+   * repeated verbatim on the next turn. */
+  | "refusals"
   | "mail"
   | "own_activity"
   | "memory";
@@ -891,8 +1321,13 @@ export interface SessionRotationPending {
   /** The session about to be discarded. */
   sessionId: string;
   reason: SessionEndReason;
-  /** Tokens accumulated on the outgoing transcript. This is the size of the
-   * memory that is about to be thrown away. */
+  /**
+   * The size of the memory about to be thrown away: the largest prompt a single
+   * model call of the seat's last turn was handed — the context the window was
+   * actually holding. A per-call size, not a turn's summed reads; the two differ
+   * by the number of calls in a turn (see `promptSize` in
+   * `@mesh/runtime-claude`, and §11c of `NOTES-communication-measured-review.md`).
+   */
   transcriptTokens: number;
   /** The threshold that tripped, for operators asking "why now?". */
   thresholdTokens: number;
@@ -906,11 +1341,14 @@ export interface SessionRotated {
    * on ordinal 6 has forgotten five times. */
   sessionOrdinal: number;
   reason: SessionEndReason;
+  /**
+   * The outgoing transcript's size, so the cost of the amnesia is a number in
+   * the log rather than a story. Written on every rotation
+   * (`apps/mesh-server/src/index.ts`, the `onRotate` hook); nothing reads it
+   * back yet, and an operator reconstructs a rotation history from the events
+   * themselves.
+   */
   transcriptTokensDiscarded: number;
-  /** The record the outgoing session left, when it managed to write one. Absent
-   * means the rotation was involuntary or the write turn did not land, and the
-   * successor genuinely starts from nothing. */
-  continuityRecordId?: EventId;
 }
 
 /**
@@ -1018,6 +1456,21 @@ export interface ActivationReason {
 
 export interface MeshOpSend {
   op: "send";
+  /**
+   * Contract this send desugared from. Set by `callContract` after the
+   * request schema has passed; carried onto the envelope's `control`, never
+   * into `payload`. Mirrors the same pair on the request_review and
+   * request_research ops.
+   */
+  contract?: string;
+  contractVersion?: number;
+  /**
+   * Answer this ask yourself if nobody else does. See
+   * `MessageControl.ifUnanswered` — the supervisor copies it onto the
+   * envelope's `control` after the op is checked, and it is the only part of
+   * `control` an agent gets to ask for.
+   */
+  ifUnanswered?: DefaultAnswer;
   type: MessageType;
   to: AgentId[];
   threadId?: ThreadId;
@@ -1025,6 +1478,13 @@ export interface MeshOpSend {
   replyTo?: MessageId;
   artifactRefs?: ArtifactRef[];
   payload?: unknown;
+  /**
+   * Free prose for the recipient. Never parsed — see `MeshMessage.note`.
+   *
+   * Separate from `payload` on purpose: `payload` is what a contract validates
+   * and what loop detection fingerprints, and prose belongs in neither.
+   */
+  note?: string;
   priority?: MessagePriority;
   taskId?: TaskId;
   requires?: Requirement[];
@@ -1035,7 +1495,47 @@ export interface MeshOpBroadcast {
   op: "broadcast";
   type: MessageType;
   payload?: unknown;
+  /** Free prose for every recipient. Never parsed — see `MeshMessage.note`. */
+  note?: string;
   artifactRefs?: ArtifactRef[];
+}
+
+/**
+ * Open a time-boxed, metered collaboration. See CollabSession.
+ *
+ * Deliberately a DECLARED op rather than a flag on `send`: entering an
+ * open-ended exchange is a decision with a cost, and a seat should not be
+ * able to drift into one. The box comes from mesh config unless overridden
+ * here, and an override may only SHORTEN it -- an agent cannot vote itself a
+ * longer leash.
+ */
+export interface MeshOpCollab {
+  op: "collab";
+  /** Who is in the room. */
+  with: AgentId[];
+  /** What it is for. Becomes the thread subject and the card's title. */
+  topic: string;
+  /** Opening message. */
+  payload?: unknown;
+  /** Shorten the wall-clock box. Ignored if longer than the configured one. */
+  boxMs?: number;
+  /** Shorten the exchange budget. Ignored if larger than the configured one. */
+  maxExchanges?: number;
+  artifactRefs?: ArtifactRef[];
+}
+
+/**
+ * Close a collaboration you opened, before its box runs out.
+ *
+ * The cheap exit. A session that ends here costs no card; one that runs to
+ * its edge always raises one, because an exchange nobody chose to end is the
+ * failure mode this whole mode exists to make visible.
+ */
+export interface MeshOpCloseCollab {
+  op: "close_collab";
+  threadId: ThreadId;
+  /** What came of it. Recorded on the session and shown to participants. */
+  outcome: string;
 }
 
 export interface MeshOpRequestResearch {
@@ -1054,6 +1554,13 @@ export interface MeshOpRequestResearch {
    */
   contract?: string;
   contractVersion?: number;
+  /**
+   * Answer this ask yourself if nobody else does. See
+   * `MessageControl.ifUnanswered` — the supervisor copies it onto the
+   * envelope's `control` after the op is checked, and it is the only part of
+   * `control` an agent gets to ask for.
+   */
+  ifUnanswered?: DefaultAnswer;
 }
 
 export interface MeshOpRespond {
@@ -1079,6 +1586,69 @@ export interface MeshOpDischarge {
   messageId: MessageId;
   /** Why it will not be answered — recorded and shown to the asker. */
   reason: string;
+  /**
+   * WHICH "no" this is, named from the contract's closed `refusals` set.
+   *
+   * Optional, and its absence is the pre-existing behaviour: a discharge with
+   * only prose settles the ask exactly as it always did. Present, it must be
+   * one of the names the ask's contract declares, or the op is refused at the
+   * edge with the legitimate ones listed -- the same "getting it wrong teaches
+   * you the right one in the same breath" contract `unknownContractReason`
+   * makes for contract names.
+   *
+   * The reason this is a separate field rather than a convention for `reason`
+   * is that the asker is supposed to BRANCH on it. `contracts.ts` says the
+   * closed set exists so a refusal can be told apart as "I am the wrong seat"
+   * (re-route) from "your ask is incomplete" (re-ask) from "I disagree"
+   * (escalate) -- three situations that free text makes indistinguishable.
+   * Deriving that from prose would mean the mesh guessing at a sentence, which
+   * is the failure mode the whole typed-envelope design exists to avoid. So
+   * the kind is stated as a value or it is not stated at all.
+   */
+  refusal?: string;
+}
+
+/**
+ * Close an ask YOU raised, before anyone answers it.
+ *
+ * The creditor's mirror of `discharge`, and the move that was missing from the
+ * same asymmetry. A debtor that will not answer can now say so; an asker that
+ * no longer NEEDS an answer could only stay quiet and keep waiting. Its
+ * alternatives were both bad. A chase is an interrupt -- priced in another
+ * seat's attention -- sent to demand an answer to a question the asker had
+ * already stopped needing. And silence fed the nudge ladder, so the ask aged
+ * into a `stalemate:unanswered_request` card and the operator was woken to
+ * arbitrate a question nobody wanted answered.
+ *
+ * This is the cheap exit from exactly that. It is also the only move that
+ * releases a DEBTOR: "stop working on this" is information the debtor cannot
+ * otherwise get, and a seat mid-review on a withdrawn question is burning
+ * turns on work that has been cancelled.
+ *
+ * Addressed by message id and authorized by the ask's own `from`, so it needs
+ * no recipient list and cannot be aimed at someone else's ask.
+ */
+export interface MeshOpWithdraw {
+  op: "withdraw";
+  /** The ask being retracted. Only its original sender may withdraw it. */
+  messageId: MessageId;
+  /** Why it is no longer wanted -- recorded, and shown to the debtors. */
+  reason?: string;
+}
+
+/**
+ * One exact replacement against an artifact's previous version.
+ *
+ * Deliberately the same contract as the Edit tool: no regex, no fuzzy match, no
+ * line numbers. `old` either appears exactly once or the publish is refused,
+ * because a replacement that silently hit the wrong occurrence would corrupt an
+ * immutable version that reviewers will cite.
+ */
+export interface ArtifactEdit {
+  /** Text to replace. Must occur exactly once in the previous version. */
+  old: string;
+  /** What replaces it. Empty string deletes. */
+  new: string;
 }
 
 export interface MeshOpPublishArtifact {
@@ -1086,7 +1656,47 @@ export interface MeshOpPublishArtifact {
   name: string;
   type: ArtifactType;
   status?: ArtifactStatus;
-  content: string;
+  /**
+   * The document, by value.
+   *
+   * Exactly one of `content`, `fromPath` or `edits` must be given. This one is
+   * the expensive way and stays the default only because it is the only way to
+   * publish something that was never a file: every character here is emitted by
+   * the model, and output is the priciest token a mesh buys.
+   *
+   * Measured on one real mission: 44 publishes carried 1,178,479 characters
+   * inline — 17% of everything the mission wrote, from 44 tool calls — while
+   * the same seats' `commit` path published from the worktree for a few dozen
+   * tokens. The role prompts say "never paste documents into messages, publish
+   * an artifact instead", which was sound advice that moved the paste out of
+   * the cheap channel and into this one.
+   */
+  content?: string;
+  /**
+   * The document, by reference: a path inside the seat's own workspace.
+   *
+   * The runtime reads the file, so the content never passes through the model
+   * at all. This is the right field whenever the thing being published already
+   * exists on disk — which is the common case, because a seat writes a design
+   * doc or a source tree with Write/Edit and then has to publish it.
+   *
+   * Resolved against {@link Supervisor.agentWorkspace}, never against the
+   * process cwd, and refused if it escapes that directory: a seat may publish
+   * what it wrote, not what it can reach.
+   */
+  fromPath?: string;
+  /**
+   * The document, by difference: exact string replacements against the version
+   * named by `asVersionOf`.
+   *
+   * Revising by value means re-emitting the whole document to change a
+   * paragraph, and the cost grows with every revision — one artifact on the
+   * measured mission went 7,154 → 9,692 → 27,727 characters, each version
+   * re-typing all of its predecessor. These are applied exactly like the Edit
+   * tool a seat already uses: `old` must appear exactly once, or nothing is
+   * written and the publish is refused.
+   */
+  edits?: ArtifactEdit[];
   /**
    * Overrides the type-derived default. An agent publishing something the whole
    * mesh should keep in view says so here rather than hoping its type is on a
@@ -1133,6 +1743,13 @@ export interface MeshOpRequestReview {
    */
   contract?: string;
   contractVersion?: number;
+  /**
+   * Answer this ask yourself if nobody else does. See
+   * `MessageControl.ifUnanswered` — the supervisor copies it onto the
+   * envelope's `control` after the op is checked, and it is the only part of
+   * `control` an agent gets to ask for.
+   */
+  ifUnanswered?: DefaultAnswer;
 }
 
 export interface MeshOpApprove {
@@ -1270,6 +1887,13 @@ export interface MeshOpCall {
   contract: string;
   request?: unknown;
   to?: AgentId[];
+  /**
+   * Answer this ask yourself if nobody else does. See
+   * `MessageControl.ifUnanswered` — the supervisor copies it onto the
+   * envelope's `control` after the op is checked, and it is the only part of
+   * `control` an agent gets to ask for.
+   */
+  ifUnanswered?: DefaultAnswer;
 }
 
 export interface MeshOpWriteContinuity {
@@ -1347,9 +1971,12 @@ export interface MeshOpSpawnWorker {
 export type MeshOp =
   | MeshOpSend
   | MeshOpBroadcast
+  | MeshOpCollab
+  | MeshOpCloseCollab
   | MeshOpRequestResearch
   | MeshOpRespond
   | MeshOpDischarge
+  | MeshOpWithdraw
   | MeshOpPublishArtifact
   | MeshOpReadArtifact
   | MeshOpTransitionArtifact
@@ -1710,7 +2337,10 @@ export interface AgentRuntime {
 
 /** Why the supervisor is about to spend a turn on a handover. */
 export interface RotationPendingInfo {
+  /** The context the outgoing session is holding: a per-call prompt size, not a
+   * sum over the turn's calls. See `SessionRotationPending.transcriptTokens`. */
   transcriptTokens: number;
+  /** The figure `transcriptTokens` was compared against. */
   thresholdTokens: number;
 }
 
@@ -1861,15 +2491,76 @@ export interface StagedProposal {
 }
 
 export interface AgentContextBundle {
+  /**
+   * The seat's role prose.
+   *
+   * Looks dead to every static reader and is not: no renderer touches it, and
+   * `grep` for `.rolePrompt` over the whole repo finds zero property reads.
+   * Its consumer is on the far side of an HTTP boundary. `runtime-http` POSTs
+   * this whole bundle as the turn body, and its `/sessions` call carries only
+   * agentId/role/capabilities/meshId/goalId -- so for an HTTP-backed seat this
+   * field is the ONLY channel that ever carries its role. The Claude adapter
+   * does not read it because it gets the same text by another route
+   * (`RuntimeContext.rolePromptText` -> ROLE.md + custom system prompt).
+   *
+   * So: do not delete it as unused. Deleting it silently un-roles every
+   * external agent, and nothing in this repo would fail to compile or test.
+   */
   rolePrompt: string;
   mission: string;
   relevantPolicies: string[];
   agentState: AgentRuntimeState;
   currentTask?: Task;
   relevantDecisions: DecisionRecord[];
-  relevantArtifacts: Array<{ ref: string; type: ArtifactType; status: ArtifactStatus; name: string; version: number }>;
+  relevantArtifacts: Array<{
+    ref: string;
+    type: ArtifactType;
+    status: ArtifactStatus;
+    name: string;
+    version: number;
+    /**
+     * For a CodePatch parked partway up `APPROVED -> VERIFIED -> MERGEABLE ->
+     * MERGED`, the rung it needs next.
+     *
+     * Present only for that narrow set, so no other mesh pays a token for it. It
+     * exists because the ladder has no auto-advance and the stall watchdog only
+     * fires on a QUIET mission — a busy mission can leave a patch approved
+     * indefinitely with nothing telling any seat it is waiting. One live run ended
+     * that way: 12.76M tokens, an approved patch with green tests, and a product
+     * tree holding only its scaffold commit.
+     */
+    pendingRung?: ArtifactStatus;
+  }>;
   unreadMail: MeshMessage[];
   recentOwnActivity: string[];
+  /**
+   * Operations this seat asked for and did not get, newest first.
+   *
+   * A refusal used to be projected for the OPERATOR and nobody else: it landed
+   * in `deniedActions`/`refusedSends`, which the failure digest and the run
+   * report read and no context builder did. The agent that caused it was told
+   * `{ ok: true }` in the same turn and nothing at all afterwards, so it had
+   * no way to discover the wall it had just walked into — in a live mission
+   * one seat hit the identical capability denial twice a hundred seconds
+   * apart, and another hit its own three times, each retry byte-identical.
+   * That is not a model failing to learn; it is a model never being told.
+   *
+   * Optional so the many hand-built bundles in tests and adapters keep
+   * compiling; `buildAgentContext` always sets it, and both readers treat an
+   * absent value as "none".
+   */
+  refusedOps?: string[];
+  /**
+   * Messages that were silently destroyed before this seat could read them.
+   *
+   * The mailbox cap is the one place in the messaging path where mail ceases
+   * to exist, and by design nothing said so: a reducer that emits an event
+   * stops being a function of the log, so the drop is only counted. Counted
+   * and never shown is still silence from where the agent sits — it reads the
+   * top of its box as the whole of it. Surfacing the count is what replay can
+   * honestly carry.
+   */
+  mailDropped?: number;
   agentMemory: AgentMemoryNote[];
   /**
    * What the previous session in this seat handed over, if there was one.
@@ -1905,8 +2596,23 @@ export interface AgentContextBundle {
     activity?: number;
     outstanding?: number;
     memory?: number;
+    refusals?: number;
   };
   openThreads: Thread[];
+  /**
+   * Subject for every conversation this bundle's mail mentions, plus every
+   * open thread. Absent from bundles assembled by hand (fixtures, adapters
+   * that stub a bundle rather than build one), where `openThreads` is the
+   * fallback.
+   *
+   * It exists because the two lists no longer coincide. `openThreads` is the
+   * LIVE set, and a settled thread leaves it the moment its last ask is
+   * answered (D13) — which is the same moment the answer is sitting unread in
+   * a mailbox. Deriving the mail section's titles from the live set therefore
+   * dropped the heading off the one conversation whose subject the reader most
+   * needs, on the turn the reply arrived.
+   */
+  threadSubjects?: Record<string, string>;
   budgetSnapshot: { agentTokensUsed: number; agentTokenBudget: number; missionTokensUsed: number; missionTokenBudget: number };
   /**
    * What this agent is still owed, and what it still owes.
@@ -1918,10 +2624,16 @@ export interface AgentContextBundle {
    * unavoidable.
    */
   outstanding: {
-    /** Asks this agent made that nobody has answered yet. */
-    awaitingResponse: Array<{ messageId: string; to: string[]; type: string; since: string }>;
-    /** Asks addressed to this agent that it has not discharged. */
-    owedByYou: Array<{ messageId: string; from: string; type: string; since: string }>;
+    /**
+     * Asks this agent made that nobody has answered yet.
+     *
+     * `dueBy` is the ask's own clock, copied from the ledger entry the reducer
+     * opened it with — absent when no TTL regime is configured, which is a
+     * different statement from a deadline that has passed.
+     */
+    awaitingResponse: Array<{ messageId: string; to: string[]; type: string; since: string; dueBy?: string }>;
+    /** Asks addressed to this agent that it has not discharged. `dueBy` as above. */
+    owedByYou: Array<{ messageId: string; from: string; type: string; since: string; dueBy?: string }>;
   };
   /**
    * THIS goal's acceptance criteria, verbatim from the goal record.
@@ -1942,6 +2654,38 @@ export interface AgentContextBundle {
    */
   delegationEnabled?: boolean;
   /**
+   * What one interrupt costs this seat, in tokens, or absent when nothing
+   * charges for one.
+   *
+   * The mesh prices attention and never told the payer. `interrupt_cost_tokens`
+   * is debited from the sender's attention wallet for every recipient woken,
+   * and an unaffordable interrupt is silently downgraded to `deliver` -- so a
+   * seat could spend its whole allowance on URGENT flags, watch them quietly
+   * stop working, and have no way to learn why. A price nobody is quoted is
+   * not a price; it is a penalty.
+   *
+   * Set only when the tariff can actually fire (delivery classes on AND a
+   * positive cost), on the same "never advertise a rule that cannot fire"
+   * discipline as `delegationEnabled` above.
+   */
+  interruptCostTokens?: number;
+  /**
+   * Whether this mesh holds a contractless ask to its type's contract
+   * (`bus.commitments.by_type`), or absent when it does not. Carried so the
+   * inbox can quote the refusal set an ask will actually be judged by: the
+   * key makes refusals a closed set, and a closed set nobody is shown is a
+   * trap rather than a vocabulary.
+   */
+  contractsByType?: boolean;
+  /**
+   * How many unread messages in a recipient's box add one unit to the price
+   * of waking them (`bus.delivery.congestion_every`), or absent under the
+   * flat tariff. Carried so the seat can be told the RULE: it cannot see
+   * another box's depth, so the rule and its cap are the only parts of the
+   * price it can reason about in advance.
+   */
+  interruptCongestionEvery?: number;
+  /**
    * Whether this agent may satisfy an acceptance criterion — `approve` on
    * `subject: "criterion:<id>"`, as opposed to approving a reviewed artifact.
    *
@@ -1953,11 +2697,71 @@ export interface AgentContextBundle {
    */
   criterionAcceptanceEnabled?: boolean;
   /**
+   * Whether this mesh refuses ops parsed out of prose (`bus.transport:
+   * "typed-only"`).
+   *
+   * Same "never advertise a rule that cannot fire" discipline as the two
+   * flags above, one channel over. Under typed-only the supervisor parses a
+   * `mesh-json` block and then refuses every op in it, so the contract that
+   * teaches a seat to emit one is teaching a turn that cannot land -- and the
+   * seat is charged a full turn to discover it.
+   */
+  typedOpsOnly?: boolean;
+  /**
+   * Whether this mesh advertises the COLLAPSED contract vocabulary
+   * (`bus.vocabulary: "contracts"`), or absent under the full typed manifest.
+   *
+   * Carried because the two halves of a seat's comms surface are written by
+   * different hands and only one of them is generated. The manifest is built
+   * from this key; the role brief is a markdown file a human wrote, and it
+   * still says "send a REQUEST_REVIEW" and "ask the explorer" in the typed
+   * vocabulary. Under `contracts` those tools are not in the seat's tool list,
+   * so the brief names moves the seat cannot see -- and the seat's only way to
+   * learn the replacements is to spend a turn on `contracts` before it can ask
+   * for anything at all.
+   *
+   * The renderer closes that gap by deriving the mapping from
+   * `BUILTIN_CONTRACTS` itself rather than from a table beside the role files,
+   * which is what keeps the two from drifting again: a contract that changes
+   * the type it speaks for changes the prompt line in the same edit.
+   */
+  commsVocabulary?: "contracts";
+  /**
+   * Set when this mesh was configured `bus.style: "low-contact"`, absent
+   * otherwise — including under the other two styles, which change nothing
+   * about what a seat should DO that the rest of the bundle does not already
+   * say.
+   *
+   * It is carried because the one thing a low-contact mesh changes cannot be
+   * inferred from anything else a seat is shown: that nobody is coming to
+   * chase it. Every other instruction in the prompt is written for a mesh
+   * that nudges — "never just stay silent", "you keep being nudged" — and
+   * those sentences stay true here only for asks that carry no default. A
+   * seat told to be brief but not told the mesh has stopped chasing it will
+   * behave exactly as before and the style will have bought nothing.
+   */
+  lowContact?: true;
+  /**
    * Effective hard-action policy for this agent: `capabilities` is already
    * intersected with what the agent actually holds AND with the tokens the op
    * layer can enforce, so the prompt never threatens a rule that cannot fire.
    */
   hardActions?: HardActionsPolicy;
+  /**
+   * How much of each message's content this seat's prompt carries: the whole
+   * body (`"full"`, the default and what every mesh written before this key
+   * gets), or a one-line claim per message for mail that owes the reader
+   * nothing (`"claims"`).
+   *
+   * Resolved from `agents.<id>.wake.mail` by the turn builder, and read by the
+   * renderer with a `"full"` fallback so a hand-built bundle is unchanged.
+   * Under `claims` the body is not lost -- it is in the mailbox, and
+   * `mesh_inbox` returns it -- but the recipient was not SHOWN it, which is
+   * why obliging mail keeps its body in both modes: `message.delivered` marks
+   * a message answered once the turn ends, and a seat must never be made to
+   * answer something it was not shown.
+   */
+  wakeMail?: "full" | "claims";
 }
 
 export interface CreateGoalInput {
@@ -1973,6 +2777,17 @@ export interface SendResult {
   reason?: string;
   redirectedTo?: AgentId[];
   escalated?: EscalationId;
+  /**
+   * Why this send did not get the delivery class it asked for.
+   *
+   * Present only when an `interrupt` was refused its wake and shipped as
+   * `deliver` instead. The send SUCCEEDED -- `accepted` is still true, the
+   * message has an id, and the recipient will read it -- so this is not a
+   * failure and must not be reported as one. It is the sender being told what
+   * its message actually cost, which is the whole difference between a tariff
+   * the sender can respond to and a ledger entry nobody reads.
+   */
+  deliveryDowngraded?: string;
 }
 
 export interface ReplayState {

@@ -435,3 +435,104 @@ test("scheduler: a policy refusal reaches the operator instead of collapsing to 
   assert.equal(m.scheduler.lastActivationRefusal("dev")?.ruleId, "goal-paused");
   await m.cleanup();
 });
+
+/**
+ * `scheduling.timeouts.idle_quiet_period_ms` was resolved, defaulted and read
+ * by nothing: the scheduler declared an idle moment on the instant its queue and
+ * its running map were both empty. These pin the dwell that replaced it — that
+ * it waits, that a mesh going back to work abandons it, and that `0` is the way
+ * back to the old behaviour.
+ */
+test("scheduler: an idle moment waits out the quiet period instead of firing on the instant", async () => {
+  const m = await makeMesh({
+    idleQuietPeriodMs: 700,
+    agents: [{ id: "dev", role: "developer", interests: [] }],
+    mayContact: { dev: [] },
+  });
+  const s = stub(m);
+  s.setScript("dev", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+
+  let fired = 0;
+  m.scheduler.onIdle(() => {
+    fired += 1;
+  });
+
+  await m.supervisor.humanSend(["dev"], "INFORM", { note: "go" });
+  await waitFor("the turn ran", () => m.supervisor.isIdle(), 8000);
+
+  // The mesh is quiet, and `isIdle()` says so — it is a live predicate and does
+  // not consult this dwell. What must not have happened yet is the *idle
+  // moment*: the pump that drained the queue used to declare it on the spot.
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fired, 0, "700ms of quiet cannot have elapsed 200ms in");
+
+  await waitFor("the mesh declares itself idle", () => fired > 0, 8000);
+  await m.cleanup();
+});
+
+test("scheduler: work during the quiet period abandons the idle moment", async () => {
+  const m = await makeMesh({
+    idleQuietPeriodMs: 400,
+    agents: [{ id: "dev", role: "developer", interests: [] }],
+    mayContact: { dev: [] },
+  });
+  const s = stub(m);
+  let release!: () => void;
+  const held = new Promise<void>((r) => {
+    release = r;
+  });
+  let turn = 0;
+  s.setScript("dev", async () => {
+    turn += 1;
+    // Held open, so the mesh is demonstrably busy at the moment the first quiet
+    // period's deadline passes. A timer left armed through that would announce
+    // an idle mesh that is running a turn.
+    if (turn === 2) await held;
+    return { operations: [{ op: "done" } as MeshOp] };
+  });
+
+  let fired = 0;
+  m.scheduler.onIdle(() => {
+    fired += 1;
+  });
+
+  await m.supervisor.humanSend(["dev"], "INFORM", { note: "first" });
+  await waitFor("the first turn ran", () => m.supervisor.isIdle(), 8000);
+
+  // Back to work well inside the 400ms window.
+  await new Promise((r) => setTimeout(r, 100));
+  await m.supervisor.humanSend(["dev"], "INFORM", { note: "second" });
+  await waitFor("the second turn started", () => turn >= 2, 8000);
+
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(fired, 0, "a mesh running a turn is not idle, whatever the abandoned timer would have said");
+
+  release();
+  await waitFor("the second turn finished", () => m.supervisor.isIdle(), 8000);
+  await waitFor("the mesh declares itself idle once it is quiet again", () => fired > 0, 8000);
+  await m.cleanup();
+});
+
+test("scheduler: a zero quiet period declares the idle moment in the pump, with no timer", async () => {
+  const m = await makeMesh({
+    idleQuietPeriodMs: 0,
+    agents: [{ id: "dev", role: "developer", interests: [] }],
+    mayContact: { dev: [] },
+  });
+  const s = stub(m);
+  s.setScript("dev", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+
+  let fired = 0;
+  m.scheduler.onIdle(() => {
+    fired += 1;
+  });
+
+  await m.supervisor.humanSend(["dev"], "INFORM", { note: "go" });
+  await waitFor("the turn ran", () => m.supervisor.isIdle(), 8000);
+  // No waiting: this is the behaviour every mesh had before the window existed,
+  // and it is what `0` is for. `isIdle()` cannot be true before the scheduler
+  // has released the seat, and releasing it is what runs the pump, so the
+  // callback has already fired by the time this line is reached.
+  assert.equal(fired, 1, "a zero window must not defer the idle moment by even one turn's worth of slack");
+  await m.cleanup();
+});

@@ -32,11 +32,26 @@ function resolveWith(timeouts: string) {
   }
 }
 
-test("turn_silence_ms defaults to half the turn timeout, capped at two minutes and never below a minute", () => {
-  assert.equal(resolveWith("").scheduling.turnSilenceMs, 120000);
-  assert.equal(resolveWith("turn_timeout_ms: 2400000").scheduling.turnSilenceMs, 120000);
-  assert.equal(resolveWith("turn_timeout_ms: 100000").scheduling.turnSilenceMs, 60000);
-  assert.equal(resolveWith("turn_timeout_ms: 20000").scheduling.turnSilenceMs, 60000);
+test("turn_silence_ms is a flat five minutes, independent of the turn timeout", () => {
+  // It used to be `min(120s, max(60s, turn_timeout/2))`, and the coupling ran the
+  // wrong way: a mesh that raised its turn timeout BECAUSE its turns do long work
+  // got a tighter silence floor, not a looser one. With `turn_timeout_ms:
+  // 1200000` it pinned at the 120s cap and one live run lost ten turns — 45
+  // minutes of generation — every one a seat that narrated early then worked
+  // quietly.
+  //
+  // The old comment's real argument was that half of a long timeout pushes
+  // detection out to ten minutes, by which point the stall is already a human
+  // escalation. A flat five minutes keeps that, and is longer than any quiet
+  // stretch a healthy turn showed.
+  assert.equal(resolveWith("").scheduling.turnSilenceMs, 300000);
+  for (const t of [20000, 100000, 600000, 1200000, 2400000]) {
+    assert.equal(
+      resolveWith(`turn_timeout_ms: ${t}`).scheduling.turnSilenceMs,
+      300000,
+      `turn_timeout_ms ${t} must not move the silence floor`,
+    );
+  }
 });
 
 test("turn_silence_ms accepts an explicit value and clears the schema", () => {

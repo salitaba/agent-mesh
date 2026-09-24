@@ -112,6 +112,7 @@ const EVENT_PLAIN: Record<string, string> = {
   "budget.consumed": "spent", "budget.exceeded": "over budget", "escalation.requested": "needs you",
   "goal.completed": "done", "goal.escalated": "paused",
   "plan.updated": "plan", "plan.gate_rejected": "plan gate",
+  "collab.opened": "started talking", "collab.closed": "stopped talking",
 };
 export const plainEvent = (t: unknown): string => EVENT_PLAIN[String(t || "")] || String(t || "");
 
@@ -131,6 +132,15 @@ export const friendlyBudgetKey = (k: unknown): string => {
   m = s.match(/^task:[^/]+\/(.+)$/);
   if (m) return "task budget";
   return s;
+};
+
+/** Why a collaboration ended. Keys are the kernel's `collab.closed` reasons;
+    two of the three are the watchdog's, and they are worded so the operator can
+    tell "they finished" from "we stopped them" without opening the event. */
+export const COLLAB_CLOSE_PLAIN: Record<string, string> = {
+  closed: "wrapped up",
+  expired: "ran out of time",
+  exchanges_exhausted: "hit its message limit",
 };
 
 export const MESSAGE_PLAIN: Record<string, string> = {

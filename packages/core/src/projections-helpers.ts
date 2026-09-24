@@ -230,20 +230,159 @@ export function holdsAuthority(authority: readonly string[] | undefined, subject
   return authority.includes(`${subject}.${kind}`) || authority.includes(`${subject}.*`) || authority.includes("*");
 }
 
-/** Which capability lets an agent review this kind of artifact? */
-export function capabilityForReview(type: Artifact["type"]): string | null {
+/**
+ * Which capability lets an agent review each kind of artifact?
+ *
+ * The single table. It used to have a twin in the policy engine, also called
+ * `REVIEW_CAPABILITIES`, and the two disagreed on four types — DatabaseSchema,
+ * ReleasePlan, TestReport and RequirementsDoc — where this side answered null
+ * and that side named a token.
+ *
+ * Every consequence of the disagreement ran the same way. `hasPeerReviewerFor`
+ * below short-circuits on `reviewCap &&`, so a null here means "no capability
+ * could have made anyone else a reviewer", which is exactly the condition that
+ * PERMITS self-approval. A PM approving its own RequirementsDoc was not a
+ * policy decision anyone made; it was a missing row. Meanwhile the transition
+ * path, reading the other copy, refused the same act.
+ *
+ * Lives in core for the same layering reason `holdsAuthority` does — the
+ * import edge runs policy-engine -> core and never back — and is re-exported
+ * from there, the way `planCoversHardOp` already is.
+ */
+export const REVIEW_CAPABILITIES: Record<Artifact["type"], string> = {
+  ArchitectureDocument: "review.design",
+  ADR: "review.design",
+  ApiSpec: "review.design",
+  DatabaseSchema: "review.design",
+  CodePatch: "code.review",
+  ReleasePlan: "code.review",
+  TestReport: "test.write",
+  SecurityReport: "security.review",
+  RequirementsDoc: "review.design",
+  // The six that were missing, and the reason they had to be filled.
+  //
+  // `Partial<Record<…>>` let the table cover 9 of the 15 artifact types, and a
+  // missing row does not fail closed — it fails in a way nobody would guess.
+  // `capabilityForReview` returns null, `hasPeerReviewerFor` short-circuits on
+  // that null and so reports that NO peer could have reviewed the artifact, and
+  // `approverMayAdvance` reads "no peer reviewer exists" as the single-agent
+  // control-group carve-out and returns true. The effect is that the
+  // self-approval screen switches itself OFF — in a fully staffed mesh — for
+  // exactly the types nobody remembered to list.
+  //
+  // Now `Record`, not `Partial<Record>`: the type is the guard. A new artifact
+  // type is a compile error here instead of a silent hole in the review model.
+  ResearchReport: "review.design",
+  Decision: "review.design",
+  DisagreementRecord: "review.design",
+  Requirement: "review.design",
+  TaskSpec: "review.design",
+  BenchmarkResult: "test.write",
+};
+
+/**
+ * Which authority DOMAIN an artifact belongs to, from its type alone.
+ *
+ * One source, read by three callers that used to each have their own copy:
+ * `domainOfSubject` (core), `reviewSubject` (policy-engine) and through it
+ * `canReviewArtifactType`. They disagreed on `DatabaseSchema`, on `ReleasePlan`,
+ * and on every type neither mapped — which is the "refused here, waved through
+ * there" class the `REVIEW_CAPABILITIES` consolidation was written to end.
+ *
+ * Aligned rather than merged: one definition with two named readers, which is the
+ * pattern the policy-engine comment already established for the capability table.
+ */
+export function subjectForArtifactType(type: Artifact["type"]): string {
   switch (type) {
     case "ArchitectureDocument":
     case "ADR":
     case "ApiSpec":
-      return "review.design";
+    case "DatabaseSchema":
+      return "architecture";
     case "CodePatch":
-      return "code.review";
+      return "implementation";
+    case "ReleasePlan":
+      return "release";
+    case "TestReport":
+    case "BenchmarkResult":
+      return "quality";
     case "SecurityReport":
-      return "security.review";
-    default:
-      return null;
+      return "security";
+    case "RequirementsDoc":
+    case "Requirement":
+    case "TaskSpec":
+      return "requirements";
+    // Types that govern no domain of their own. `architecture` matches what
+    // `reviewSubject` already returned from its `default:` arm, so nothing moves
+    // for them; it is stated explicitly here so the next type added has to choose.
+    case "ResearchReport":
+    case "Decision":
+    case "DisagreementRecord":
+      return "architecture";
   }
+}
+
+/** Which capability lets an agent review this kind of artifact? */
+export function capabilityForReview(type: Artifact["type"]): string | null {
+  return REVIEW_CAPABILITIES[type] ?? null;
+}
+
+/**
+ * Where an approval takes this artifact, given where it is now.
+ *
+ * Empty means an approval here records a verdict and moves NOTHING. That is
+ * sometimes right — a `<role>.approve` gate token is a signature, and seats
+ * legitimately sign artifacts sitting at a gate status that no approval can
+ * advance. It is wrong when the signer believes it approved the work, which is
+ * what a clean `{ ok: true }` told it, so the op path asks this and says so.
+ *
+ * Lives here rather than beside the reducer that also uses it, because the
+ * supervisor's op path must reach it and core's reducers may not import the
+ * policy engine — the same layering reason `holdsAuthority` lives here.
+ */
+export function approvalPath(type: Artifact["type"], status: ArtifactStatus): ArtifactStatus[] {
+  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)][status] ?? [];
+  if (allowed.includes("APPROVED")) return ["APPROVED"];
+  if (allowed.includes("FINAL")) return ["FINAL"];
+  return [];
+}
+
+/**
+ * Would a verdict of this kind MOVE the artifact, or only record a signature?
+ *
+ * `approvalPath` alone does not answer this, and the gap is the bug it was
+ * missing. For a DOCUMENT-machine artifact in DRAFT, `approvalPath` returns
+ * ["FINAL"] — non-empty — so an approve-on-DRAFT reads as advanceable and the
+ * signer is told nothing, while the reducer refuses to move anything that is
+ * not under review. A live run approved a RequirementsDoc exactly that way and
+ * left the mission's only requirements evidence stranded in DRAFT, where the
+ * criterion path cannot cite it. For a CodePatch the path is empty and the
+ * caveat did fire, which is why the behaviour looked type-dependent.
+ *
+ * Mirrors the three reducer guards in `projections-artifact.ts`:
+ * `review.approved` (UNDER_REVIEW | READY_FOR_REVIEW), `architecture.approved`
+ * (UNDER_REVIEW only — deliberately narrower, because widening it changes how
+ * existing logs project) and `review.rejected` (UNDER_REVIEW, with no
+ * `approverMayAdvance` screen).
+ *
+ * A mirror rather than the reducers' own predicate, on purpose: those run on
+ * every replay and replay equality is the property the event store rests on,
+ * so they are not worth disturbing for a caveat string. `tests/core/inert-verdict.test.ts`
+ * pins the two in agreement so the mirror cannot drift silently.
+ */
+export function verdictAdvances(
+  state: Projections,
+  actorId: string | undefined,
+  artifact: Artifact,
+  kind: "approve" | "pass" | "reject" | "veto",
+  viaArchitecture = false,
+): boolean {
+  if (kind === "reject" || kind === "veto") return artifact.status === "UNDER_REVIEW";
+  if (!approverMayAdvance(state, actorId, artifact)) return false;
+  const reviewable = viaArchitecture
+    ? artifact.status === "UNDER_REVIEW"
+    : artifact.status === "UNDER_REVIEW" || artifact.status === "READY_FOR_REVIEW";
+  return reviewable && approvalPath(artifact.type, artifact.status).length > 0;
 }
 
 /**
@@ -254,29 +393,25 @@ export function capabilityForReview(type: Artifact["type"]): string | null {
  */
 export function domainOfSubject(state: Projections, subject: string, artifactId?: string): string {
   if (subject.startsWith("criterion:")) return "requirements";
+  // A typed domain word wins over the artifact, and that is deliberate: the
+  // subject names the CAPACITY the signer is acting in, not the domain the
+  // artifact belongs to. QA recording `subject: "quality"` against a CodePatch
+  // is the cross-domain sign-off the whole `<role>.approve` gate system rests
+  // on, and resolving that to `implementation` makes every such gate
+  // unsatisfiable by the seat it names.
+  //
+  // What must NOT follow from a capacity claim is the power to move someone
+  // else's artifact. That check belongs where the movement happens — see
+  // `approverMayAdvance` in projections-artifact.ts — not here.
   if (["architecture", "implementation", "quality", "security", "requirements", "release"].includes(subject)) return subject;
   const artifact = artifactId ? state.artifacts.get(artifactId) : undefined;
-  if (artifact) {
-    switch (artifact.type) {
-      case "ArchitectureDocument":
-      case "ApiSpec":
-      case "ADR":
-        return "architecture";
-      case "CodePatch":
-        return "implementation";
-      case "ReleasePlan":
-        return "release";
-      case "TestReport":
-        return "quality";
-      case "SecurityReport":
-        return "security";
-      case "RequirementsDoc":
-      case "Requirement":
-        return "requirements";
-      default:
-        return subject;
-    }
-  }
+  // One table, shared with `reviewSubject`. The switch that used to live here
+  // mapped six types and fell through for the rest, returning the caller's own
+  // word as an authority domain — which is how a live run ended up checking a
+  // seat against `'frontend v5 verification report (R17 surfaces) — accepted as
+  // the v5 verification record.approve'`, and against `design.approve`, a token
+  // config load would refuse to boot.
+  if (artifact) return subjectForArtifactType(artifact.type);
   return subject;
 }
 
@@ -296,6 +431,52 @@ export function domainOfSubject(state: Projections, subject: string, artifactId?
  * Pure over `state.agents` and `state.artifacts`, both projected from the log,
  * so this is safe inside a reducer — exactly like `holdsAuthority`.
  */
+/**
+ * May this agent ADVANCE this artifact by approving it?
+ *
+ * Recording a verdict and moving an artifact are different powers, and the
+ * runtime used to conflate them. The subject an agent types names the capacity
+ * it signs in — `quality` on a CodePatch is a legitimate QA signature, and the
+ * `<role>.approve` gates are built on exactly that — but a capacity claim must
+ * not also confer authority to settle an artifact the claimant could never
+ * review. Without this screen, any seat holding one of the six domain
+ * authorities could move any artifact of any type by naming its own domain
+ * word: in a live mission an ApiSpec reached APPROVED under a `requirements`
+ * subject, signed by a seat whose only capability was repository.read.
+ *
+ * This is the test the transition path already applies as `review-authority`
+ * (policy-engine `canReviewArtifactType`). It is restated here because
+ * reducers are pure over projections and may not call the policy engine — the
+ * same reason `holdsAuthority` and `hasPeerReviewerFor` live in this file.
+ *
+ * Unknown actors pass. A reducer must never refuse to replay an event because
+ * the seat that caused it is not in this projection: hand-built logs and
+ * pre-registration events would stop replaying identically, and replay
+ * equality is the one property the whole event store rests on. Every seat in a
+ * real mesh is registered before it can act, which is where the screen bites.
+ */
+export function approverMayAdvance(
+  state: Projections,
+  actorId: string | undefined,
+  artifact: Artifact,
+  humanAgentId = "human",
+): boolean {
+  if (!actorId || actorId === humanAgentId) return true;
+  const def = state.agents.get(actorId)?.definition;
+  if (!def) return true;
+  // The single-agent control group. If no other seat in this mesh could have
+  // reviewed the artifact, the only seat there is may settle it — the same
+  // carve-out the self-approval screen makes just below, for the same
+  // benchmark-comparability reason, and what keeps a one-seat mesh converging
+  // instead of deadlocking on a reviewer that does not exist.
+  if (!hasPeerReviewerFor(state, actorId, artifact, humanAgentId)) return true;
+  const domain = domainOfSubject(state, artifact.type, artifact.id);
+  const auth = def.authority ?? [];
+  if (auth.includes(`${domain}.approve`) || auth.includes(`${domain}.*`) || auth.includes("*")) return true;
+  const cap = capabilityForReview(artifact.type);
+  return cap !== null && (def.capabilities ?? []).includes(cap);
+}
+
 export function hasPeerReviewerFor(
   state: Projections,
   actorId: string,
@@ -529,11 +710,24 @@ export function isTerminalGoal(status: Goal["status"]): boolean {
  *
  *  - No `HARD_OP_CAPABILITY` entry: most ops are not hard actions. `send`,
  *    `claim_task` and friends must never need a plan.
- *  - The agent does not HOLD the capability: some other layer will refuse this
- *    op anyway. Gating here would produce an unsatisfiable demand — "write a
- *    plan step for repository.write" addressed to an agent that can never do
- *    a repository.write — and the agent would loop re-planning until its
- *    strike budget ran out.
+ *  - The agent does not HOLD the capability: gating here would produce an
+ *    unsatisfiable demand — "write a plan step for repository.write" addressed
+ *    to an agent that can never do a repository.write — and the agent would
+ *    loop re-planning until its strike budget ran out.
+ *
+ *    This early-out used to justify itself with "some other layer will refuse
+ *    this op anyway". That is true of `commit` (`git.commit`) and `merge`
+ *    (`git.merge`) and NOT of `publish_artifact`: nothing anywhere enforces
+ *    `repository.write` on a publish, and that is deliberate — a read-only PM
+ *    seat publishing a `RequirementsDoc` is the shipped configuration in
+ *    `examples/payment-api` and `examples/line-follower-sim`. So the
+ *    `publish_artifact` entry in `HARD_OP_CAPABILITY` describes an opt-in
+ *    PLANNING requirement, not a permission, and no refusal is coming.
+ *
+ *    Worth knowing because the role prompts read as though it were a
+ *    permission: in a live run a read-only pm seat concluded it could not
+ *    publish at all, wrote its requirements document into prose instead, and
+ *    lost the turn. `content` inline was available to it the whole time.
  *  - The operator did not list the capability as hard: opting `git.commit` in
  *    must not drag `repository.write` along with it.
  *

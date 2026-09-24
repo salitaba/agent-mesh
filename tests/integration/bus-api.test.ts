@@ -108,7 +108,7 @@ test("mcp bus: read-only observability tools answer run questions", async () => 
   await m.cleanup();
 });
 
-test("mcp bus: read-only toolset serves only observability tools", async () => {
+test("mcp bus: read-only toolset serves only read tools", async () => {
   const m = await makeMesh({ agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }], mayContact: { dev: [] } });
   const mcp = createMcpToolset(m.supervisor, { readOnly: true });
   const tok = `${m.config.meshId}:dev:${shortHash(m.kernel.state.activeGoalId!)}`;
@@ -116,7 +116,7 @@ test("mcp bus: read-only toolset serves only observability tools", async () => {
   const list = (await mcp.handle("dev", tok, mcpReq("tools/list", {}))) as { result: { tools: Array<{ name: string }> } };
   assert.deepEqual(
     list.result.tools.map((t) => t.name).sort(),
-    ["mesh_agent_activity", "mesh_failures", "mesh_query_events", "mesh_run_digest", "mesh_run_status", "mesh_steps"],
+    ["mesh_agent_activity", "mesh_failures", "mesh_inbox", "mesh_query_events", "mesh_run_digest", "mesh_run_status", "mesh_steps"],
   );
 
   const status = (await mcp.handle("dev", tok, mcpReq("tools/call", { name: "mesh_run_status", arguments: {} }))) as { result: { isError: boolean } };

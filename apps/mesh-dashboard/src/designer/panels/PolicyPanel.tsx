@@ -76,7 +76,7 @@ export default function PolicyPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
 
       <details className="ms-adv">
         <summary>expert — raw policy rules (JSON)</summary>
-        <p className="muted tx-meta">Advanced when/requires/deny rules enforced by the policy engine. Edit as JSON; the server validates on check.</p>
+        <p className="muted tx-meta">Advanced `when`/`deny` rules enforced by the policy engine. Edit as JSON; the server validates on check — a rule naming an actor, capability or message type that does not exist is rejected at load, not ignored.</p>
         <TextArea mono rows={6} spellCheck={false} aria-label="policy rules JSON"
           defaultValue={rulesText ?? JSON.stringify(rawRules, null, 1)} key={`rules-${JSON.stringify(rawRules).length}`}
           onChange={(e) => setRulesText(e.target.value)} />

@@ -13,6 +13,8 @@ import {
   INFERRED_DISCHARGE_REASONS,
   MAX_DISCHARGE_HISTORY,
   MAX_PENDING_REQUESTS,
+  MAX_SNAPSHOT_MESSAGES,
+  MAX_UNREAD_PER_AGENT,
   outstandingDebtors,
   PER_DEBTOR_DISCHARGE_REASONS,
   pushBounded,
@@ -476,16 +478,101 @@ test("importState ignores unusable scalars and nameless model spend", () => {
   assert.equal(ok.agents.size, 0);
 });
 
-test("exportState caps the message tail it snapshots", () => {
+/** Exported message ids, in the order the snapshot carries them. */
+function exportedMessageIds(state: Projections): string[] {
+  return (exportState(state).messages as MeshMessage[]).map((m) => m.id);
+}
+
+function seedMessages(state: Projections, count: number): void {
+  for (let i = 0; i < count; i++) state.messages.set(`m-${i}`, { id: `m-${i}` } as MeshMessage);
+}
+
+test("exportState caps the message history at the newest MAX_SNAPSHOT_MESSAGES", () => {
   const state = createInitialState();
-  for (let i = 0; i < 2100; i++) state.messages.set(`m-${i}`, { id: `m-${i}` } as MeshMessage);
+  seedMessages(state, MAX_SNAPSHOT_MESSAGES + 100);
 
-  const snapshot = exportState(state);
+  const ids = exportedMessageIds(state);
 
-  assert.equal(snapshot.messages.length, 2000);
-  // Newest kept, oldest dropped.
-  assert.equal((snapshot.messages[0] as MeshMessage).id, "m-100");
-  assert.equal((snapshot.messages[1999] as MeshMessage).id, "m-2099");
+  assert.equal(ids.length, MAX_SNAPSHOT_MESSAGES);
+  // With no mail outstanding the cap is still exactly the tail: newest kept,
+  // oldest dropped.
+  assert.equal(ids[0], "m-100");
+  assert.equal(ids[MAX_SNAPSHOT_MESSAGES - 1], `m-${MAX_SNAPSHOT_MESSAGES + 99}`);
+});
+
+test("the cap keeps every message somebody is still owed, however old", () => {
+  /**
+   * The rule is no longer "the last MAX_SNAPSHOT_MESSAGES" but "the last
+   * MAX_SNAPSHOT_MESSAGES, minus whatever slots the unread mail needs".
+   *
+   * `unread` rides into the snapshot verbatim, so a mailbox id whose body fell
+   * off the tail comes back pointing at nothing: mail somebody was owed,
+   * deleted by the restart that was supposed to preserve it. Owed bodies are
+   * paid for out of the OLDEST end of the tail, so the export stays capped.
+   */
+  const state = createInitialState();
+  seedMessages(state, MAX_SNAPSHOT_MESSAGES + 100);
+  const newest = MAX_SNAPSHOT_MESSAGES + 99;
+  // Two messages far older than the tail, plus one already inside it (which
+  // must not be paid for twice).
+  state.unread.set("dev", ["m-3", `m-${MAX_SNAPSHOT_MESSAGES + 50}`]);
+  state.unread.set("qa", ["m-7"]);
+  // A box can already hold an id with no message behind it (an older snapshot,
+  // or a box restored before this rule existed). It must not consume a slot.
+  state.unread.set("ghost", ["m-vanished"]);
+
+  const ids = exportedMessageIds(state);
+  const bodies = new Set(ids);
+
+  // Still capped, and still ordered, and no message carried twice.
+  assert.equal(ids.length, MAX_SNAPSHOT_MESSAGES);
+  assert.equal(bodies.size, ids.length);
+  const order = ids.map((id) => Number(id.slice(2)));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+
+  // The invariant the whole rule exists for.
+  for (const [agentId, box] of state.unread) {
+    for (const id of box) {
+      if (!state.messages.has(id)) continue;
+      assert.ok(bodies.has(id), `${agentId} is owed ${id}, but the snapshot carries no body for it`);
+    }
+  }
+
+  // Three owed bodies, two of them older than the tail, so the two oldest
+  // members of the plain tail are exactly what paid for them.
+  assert.equal(bodies.has("m-3"), true);
+  assert.equal(bodies.has("m-7"), true);
+  assert.equal(bodies.has("m-100"), false);
+  assert.equal(bodies.has("m-101"), false);
+  assert.equal(bodies.has("m-102"), true);
+  assert.equal(bodies.has(`m-${newest}`), true);
+});
+
+test("mailboxes deeper than the whole budget do not grow the snapshot past it", () => {
+  // The pathological case: owed mail outranks recency, but it never gets to
+  // expand the file. Fifteen agents on a full box own more messages between
+  // them than a snapshot may carry at all.
+  const state = createInitialState();
+  seedMessages(state, MAX_SNAPSHOT_MESSAGES * 2);
+  const agents = 15;
+  for (let a = 0; a < agents; a++) {
+    const box: string[] = [];
+    for (let i = 0; i < MAX_UNREAD_PER_AGENT; i++) box.push(`m-${a * MAX_UNREAD_PER_AGENT + i}`);
+    state.unread.set(`agent-${a}`, box);
+  }
+  const owedCount = agents * MAX_UNREAD_PER_AGENT;
+  assert.ok(owedCount > MAX_SNAPSHOT_MESSAGES);
+
+  const ids = exportedMessageIds(state);
+
+  assert.equal(ids.length, MAX_SNAPSHOT_MESSAGES);
+  // The budget went entirely to owed mail, so nothing merely recent survives.
+  assert.equal(ids.includes(`m-${MAX_SNAPSHOT_MESSAGES * 2 - 1}`), false);
+  // Newest-owed wins and oldest-owed is dropped — the same oldest-first rule
+  // MAX_UNREAD_PER_AGENT applies to the box itself.
+  assert.equal(ids[0], `m-${owedCount - MAX_SNAPSHOT_MESSAGES}`);
+  assert.equal(ids[ids.length - 1], `m-${owedCount - 1}`);
+  assert.equal(ids.includes("m-0"), false);
 });
 
 test("an empty snapshot exports empty collections, not undefined", () => {

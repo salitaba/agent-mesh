@@ -312,6 +312,54 @@
             },
             "additionalProperties": false
           },
+          "wake": {
+            "type": "object",
+            "properties": {
+              "defer_non_obliging": {
+                "type": "boolean"
+              },
+              "not_for": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "MISSION",
+                    "INFORM",
+                    "REQUEST",
+                    "REQUEST_INFO",
+                    "REQUEST_REVIEW",
+                    "REQUEST_ARTIFACT",
+                    "REQUEST_RESEARCH",
+                    "REQUEST_EXECUTION",
+                    "PROPOSE",
+                    "CHALLENGE",
+                    "APPROVE",
+                    "REJECT",
+                    "VETO",
+                    "BLOCK",
+                    "DELEGATE",
+                    "HANDOFF",
+                    "PATCH_READY",
+                    "TEST_RESULT",
+                    "SECURITY_FINDING",
+                    "COMMIT",
+                    "ROLLBACK",
+                    "ESCALATE",
+                    "WAIT",
+                    "DONE"
+                  ]
+                }
+              },
+              "mail": {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "claims"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
           "budget": {
             "type": "object",
             "properties": {
@@ -438,9 +486,20 @@
                 "type": "number",
                 "minimum": 0
               }
+            },
+            "by_type": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "high-contact",
+            "balanced",
+            "low-contact"
+          ]
         },
         "transport": {
           "type": "string",
@@ -448,6 +507,52 @@
             "mixed",
             "typed-only"
           ]
+        },
+        "vocabulary": {
+          "type": "string",
+          "enum": [
+            "typed",
+            "contracts"
+          ]
+        },
+        "collab": {
+          "type": "object",
+          "properties": {
+            "box_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_exchanges": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "delivery": {
+          "type": "object",
+          "properties": {
+            "classes": {
+              "type": "boolean"
+            },
+            "coalesce_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "interrupt_cost_tokens": {
+              "type": "number",
+              "minimum": 0
+            },
+            "attention_tokens": {
+              "type": "number",
+              "minimum": 0
+            },
+            "congestion_every": {
+              "type": "number",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

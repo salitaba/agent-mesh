@@ -222,7 +222,11 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
         text: "write patch",
         operations: [
           { op: "claim_task", taskId: String((task.payload as { taskId?: string }).taskId ?? "") },
-          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ idempotency v${sim.patchVersion}\n${evidenceContent("payment core patch")}` },
+          // `metadata.path` gives the patch something to materialize. Without
+          // it `extractPatchFiles` finds no file sections, the merge writes
+          // zero bytes, and the patch now stays MERGEABLE — this mission used
+          // to converge on a merge that had never written a file.
+          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", metadata: { path: "Payment.java" }, content: `diff --git a/Payment.java b/Payment.java\n+ idempotency v${sim.patchVersion}\n${evidenceContent("payment core patch")}` },
           { op: "send", type: "PATCH_READY", to: ["qa"], newThread: { subject: `patch v${sim.patchVersion}` }, artifactRefs: [{ uri: patchUri(sim) }], payload: { summary: "tests pass locally" } },
           { op: "wait" },
         ],
@@ -234,7 +238,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
       return {
         text: "rework",
         operations: [
-          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", content: `diff --git a/Payment.java b/Payment.java\n+ rework v${sim.patchVersion}\n${evidenceContent("payment core rework")}` },
+          { op: "publish_artifact", name: sim.patchName, type: "CodePatch", metadata: { path: "Payment.java" }, content: `diff --git a/Payment.java b/Payment.java\n+ rework v${sim.patchVersion}\n${evidenceContent("payment core rework")}` },
           { op: "send", type: "PATCH_READY", to: ["qa"], newThread: { subject: `patch v${sim.patchVersion}` }, artifactRefs: [{ uri: patchUri(sim) }], payload: { summary: "addressed block" } },
           { op: "wait" },
         ],

@@ -1,8 +1,9 @@
-import type { ActivationReason, MeshEvent, EventType, LifecycleState, PolicyDecisionResult } from "../../protocol/src/index";
+import type { ActivationReason, MeshEvent, MeshMessage, EventType, LifecycleState, PolicyDecisionResult } from "../../protocol/src/index";
+import { movesWorkMessage, obligesRecipients } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
-import { stillOwes } from "../../core/src/state";
+import { readableMailDepth, resolveUnread, stillOwes } from "../../core/src/state";
 import type { PolicyEvaluator, QueueWait, SchedulerActivationRequest, SchedulerPort, TurnOutcome } from "../../core/src/ports";
 
 export interface TurnRunner {
@@ -55,6 +56,33 @@ const OBSERVATIONAL_EVENTS: ReadonlySet<string> = new Set([
   "agent.state_changed",
 ]);
 
+/**
+ * Fallback gathering window for `deliver` mail on a mesh that declares none.
+ *
+ * Reachable on replay and after a config edit: the class is stamped on the
+ * envelope at send time and outlives the config that produced it, exactly as
+ * a collab's bounds do. Honouring the class with a default window is the only
+ * answer that keeps a replay reproducing the run it is replaying.
+ */
+const DEFAULT_COALESCE_MS = 60_000;
+
+/**
+ * How long mail may sit unread before it buys a turn on its own.
+ *
+ * Every wake gate in `handleEvent` is a deliberate cost control and every one
+ * of them rests on the same claim: the seat "reads it on its next natural
+ * activation". A seat whose declared interests never fire has no next natural
+ * activation. In a live mission `qa` subscribed to three event types, the run
+ * emitted none of them, and it held a message addressed to it for thirty-one
+ * minutes while taking ZERO turns — excluded from the mail half of the sweep
+ * below because the message was a broadcast, and from the pending half
+ * because a broadcast obliges nobody and opens no request.
+ *
+ * Comfortably longer than a turn, so this never races an agent that is simply
+ * busy: it is a floor under the gates, not a competitor to them.
+ */
+const STALE_MAIL_MS = 240_000;
+
 const PRIORITY_BY_MESSAGE: Record<string, number> = {
   URGENT: 9,
   HIGH: 6,
@@ -103,7 +131,27 @@ export class Scheduler implements SchedulerPort {
   private listeners: Array<() => void> = [];
   private stopped = true;
   private idleFired = true;
+  /**
+   * When the current quiet stretch began, or null when no quiet period is in
+   * progress. Paired with `idleTimer`, the two are the dwell `checkIdle` used to
+   * skip entirely — the resolved `idleQuietPeriodMs` is what they count down.
+   */
+  private idleArmedAt: number | null = null;
+  private idleTimer?: NodeJS.Timeout;
   private lastNudge = new Map<string, number>();
+  /** When each seat was last woken purely because its mail had gone stale. */
+  private lastStaleMailWake = new Map<string, number>();
+  /**
+   * `deliver`-class mail that has landed and not yet bought a turn, per seat.
+   *
+   * The whole of the `deliver` class lives here: the message is already in the
+   * mailbox (the reducer put it there before this scheduler saw the event), so
+   * this holds only the WAKE — one per burst, released by `drainGathered`
+   * once the window has run or dropped outright if the seat takes a turn for
+   * any other reason first. Losing an entry therefore loses a wake and never a
+   * message, which is why it is in-memory and not projected.
+   */
+  private gathering = new Map<string, { armedAt: number; count: number; reason: ActivationReason; priority: number }>();
   private timer?: NodeJS.Timeout;
   private interests = new Map<string, string[]>();
   private pumping = false;
@@ -154,6 +202,10 @@ export class Scheduler implements SchedulerPort {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    // A dwell in flight would otherwise outlive the stop and declare an idle
+    // mesh after the mission it belonged to is over.
+    this.clearIdleTimer();
+    this.idleArmedAt = null;
     // An owed respawn survives the stop: a completion shutdown only ever comes
     // back through a reopen, and the restart it owes must still be owed then.
     // Everything else in the queue is stale by construction — the mission that
@@ -185,8 +237,173 @@ export class Scheduler implements SchedulerPort {
     this.lastRefusal = new Map();
     this.reportedRefusal = new Map();
     this.lastNudge = new Map();
+    this.gathering = new Map();
     this.interests = new Map();
+    this.clearIdleTimer();
+    this.idleArmedAt = null;
     this.idleFired = true;
+  }
+
+  /**
+   * Does this seat's own wake policy defer this message?
+   *
+   * One function because TWO sites ask it: the send-time gate in `handleEvent`
+   * and the wait-timer sweep, which would otherwise undo the first site's
+   * decision one tick later by counting the same unread mail as pressure. That
+   * second failure has a name in this repo — the accrue test in
+   * `tests/core/delivery-classes.test.ts` pins it as "correctly not woken, then
+   * woken anyway, at the same cost" — and a policy only the send path honoured
+   * would be exactly it.
+   *
+   * Obligation beats the setting by construction rather than by exception:
+   * `obligesRecipients` is the predicate the debt is opened with, so a message
+   * deferred here is one that opened no `pendingRequests` entry and owes nobody
+   * an answer. An ask always wakes the seat that owes it.
+   */
+  private defersMail(agentId: string, m: MeshMessage): boolean {
+    if (obligesRecipients(m)) return false;
+    // Operator mail is exempt from every other rationing mechanism in the mesh
+    // (it is never billed, and it survives the mission-over gate below), and it
+    // is exempt here for a reason that is not just consistency: `hasHumanMail`
+    // decides whether post-mission feedback still gets answered, and a policy
+    // that filtered human mail out of that list would silently stop a finished
+    // mission from hearing its operator.
+    if (m.from === "human") return false;
+    // The policy is named for obligation, and obligation is not the whole of
+    // what a seat cannot afford to sleep through. `deferNonObliging` reads as
+    // "hold my chatter"; a HANDOFF is not chatter, it is this seat's next
+    // piece of work, and deferring it means the work sits with nobody awake
+    // to do it. So the recipient's own rationing stops at the same line the
+    // delivery classes stop at — a seat can batch what is merely told to it,
+    // and is still woken for what is handed to it.
+    // The MESSAGE, not its type: a FAILED verdict is this seat's next piece of
+    // work just as surely as a handoff is, and the type name alone cannot tell
+    // it from the PASSED that means the opposite.
+    if (movesWorkMessage(m)) return false;
+    const wake = this.state.agents.get(agentId)?.definition.wake;
+    // Checked AFTER the three escapes above and never before them, which is
+    // what keeps this a batching preference rather than an authority
+    // boundary: a seat that names `HANDOFF` or `REQUEST_REVIEW` here has
+    // named nothing, because both left this function several lines ago.
+    //
+    // Directed mail is the half `interests` never reached. A seat's
+    // `interests` list gates BROADCASTS (`candidatesFor`), so until this
+    // existed the only thing a seat could say about mail addressed to it by
+    // name was `deferNonObliging` — all of its FYIs or none of them. That is
+    // a choice most seats decline to make, and declining it means paying for
+    // every one.
+    if (wake?.notFor?.includes(m.type)) return true;
+    return wake?.deferNonObliging === true;
+  }
+
+  /**
+   * Unread mail this seat is willing to be woken for, by its own declaration.
+   *
+   * The question every "does this seat have mail worth a turn" check should be
+   * asking, now that a seat can answer it for itself. `readableMailDepth` is
+   * still the right guard for "is there anything in the box at all"; this is
+   * the right one for "does it justify a turn".
+   *
+   * Not applied everywhere on purpose. The FAILED-agent recovery check keeps
+   * `readableMailDepth`: there, mail is one of two reasons a failed seat is
+   * restarted at all, and letting a wake policy make a seat unrecoverable
+   * would trade a spurious restart for a lost one.
+   */
+  /**
+   * Epoch millis of the oldest message sitting unread for this seat, or
+   * undefined if its box is empty.
+   *
+   * Deliberately counts EVERY unread message, including the broadcasts and
+   * classed mail the nudge sweep excludes. Those exclusions are about not
+   * paying twice for a wake the gates already decided against; this is about
+   * mail that would otherwise never be read at all.
+   */
+  private oldestUnreadAt(agentId: string): number | undefined {
+    const box = this.state.unread.get(agentId);
+    if (!box?.length) return undefined;
+    let oldest: number | undefined;
+    for (const id of box) {
+      const m = this.state.messages.get(id);
+      if (!m) continue;
+      const t = Date.parse(m.timestamp);
+      if (Number.isNaN(t)) continue;
+      if (oldest === undefined || t < oldest) oldest = t;
+    }
+    return oldest;
+  }
+
+  private wakeableMail(agentId: string): MeshMessage[] {
+    return resolveUnread(this.state, agentId).filter((m) => !this.defersMail(agentId, m));
+  }
+
+  /**
+   * Hold a `deliver` message's wake open instead of spending a turn on it.
+   *
+   * `armedAt` is kept from the FIRST message of a burst, deliberately. A
+   * window that restarted on every arrival would never close under a steady
+   * stream — precisely the traffic this class exists to price — and the seat
+   * would be starved of the turn it is owed rather than charged less for it.
+   */
+  private gather(agentId: string, reason: ActivationReason, priority: number): void {
+    const open = this.gathering.get(agentId);
+    this.gathering.set(agentId, {
+      armedAt: open?.armedAt ?? Date.now(),
+      count: (open?.count ?? 0) + 1,
+      // The newest message is the one worth naming in the activation reason,
+      // and the burst is worth the highest priority in it.
+      reason,
+      priority: Math.max(open?.priority ?? 0, priority),
+    });
+  }
+
+  /**
+   * Release the wakes whose gathering window has run.
+   *
+   * The second half of `deliver`, and the cheaper one: a seat already queued
+   * has not built its prompt yet, so the turn it is about to take will render
+   * this mail and the window closes having bought nothing. That is the "next
+   * turn taken for any reason" in the class's definition, and it is where the
+   * saving actually comes from — the wake is not merely delayed, it is often
+   * never needed.
+   */
+  private drainGathered(now: number): void {
+    if (this.gathering.size === 0) return;
+    const window = this.config.bus.deliveryClasses?.coalesceMs ?? DEFAULT_COALESCE_MS;
+    for (const [agentId, open] of [...this.gathering]) {
+      if (!this.state.agents.has(agentId)) {
+        this.gathering.delete(agentId);
+        continue;
+      }
+      if (this.queue.some((q) => q.agentId === agentId)) {
+        // This used to delete the gathered wake outright, on the assumption
+        // that the already-queued turn would render the mail. Often it does
+        // not: that turn's context bundle is snapshotted when it STARTS, so
+        // anything arriving after that is invisible to it; or the activation
+        // is refused by policy; or the turn fails before it drains. The wake
+        // was then gone for good — the mechanism by which a MISSION reached
+        // its architect four minutes after the architecture it was written to
+        // direct had already been published and approved.
+        //
+        // Hold the window and look again next tick instead. It is released the
+        // moment the seat really has nothing unread, so this cannot spin.
+        if (this.wakeableMail(agentId).length === 0) this.gathering.delete(agentId);
+        continue;
+      }
+      if (now - open.armedAt < window) continue;
+      this.gathering.delete(agentId);
+      // A gathered wake that says "new mail arrived" when eleven arrived is a
+      // wake that gets one message answered and leaves ten owed a turn each.
+      // The count is the one thing this buffer knows and the reason line did
+      // not say, and naming it is what lets a single delivered turn do the
+      // work of the burst -- which is the whole point of the class. Copied,
+      // never mutated in place: `open.reason` is the newest message's own
+      // reason object.
+      const reason =
+        open.count > 1
+          ? { ...open.reason, note: `${open.count} messages arrived together, not one — the others are in your mailbox below.` }
+          : open.reason;
+      void this.requestActivation({ agentId, reason, priority: open.priority });
+    }
   }
 
   async handleEvent(event: MeshEvent): Promise<void> {
@@ -208,17 +425,57 @@ export class Scheduler implements SchedulerPort {
 
     if (event.type === "message.sent") {
       const m = (event.payload as { message: import("../../protocol/src/index").MeshMessage }).message;
+      // A broadcast wakes only the seats that declared an interest in mail;
+      // direct mail still wakes every recipient. The difference is what the
+      // message obliges: an ask is owed an answer by a named seat, so that
+      // seat must run, while an announcement is owed nothing by anyone — and
+      // waking the whole roster for one costs a full turn per seat, which is
+      // the single largest avoidable spend in a wide mesh.
+      //
+      // This suppresses the WAKEUP, never the delivery: the reducer has
+      // already put the broadcast in every recipient's mailbox, so an
+      // uninterested seat reads it on its next natural activation. Nothing is
+      // lost, it is just not paid for twice.
+      const interested =
+        m.control?.mode === "broadcast" ? new Set(this.candidatesFor("message.sent", m.from)) : undefined;
       for (const target of m.to) {
         if (target === m.from) continue;
+        if (interested && !interested.has(target)) continue;
         // Envelope, not payload: see MeshMessage.control. Reading activation
         // control out of agent-written JSON let a sender silence the wakeup
         // for its own message.
         if (m.control?.cacheServed === true) continue;
-        await this.requestActivation({
-          agentId: target,
-          reason: { kind: "message", messageId: m.id, threadId: m.threadId, eventId: event.id, eventType: "message.sent" },
-          priority: PRIORITY_BY_MESSAGE[m.priority] ?? 4,
-        });
+        const reason: ActivationReason = { kind: "message", messageId: m.id, threadId: m.threadId, eventId: event.id, eventType: "message.sent" };
+        const priority = PRIORITY_BY_MESSAGE[m.priority] ?? 4;
+        // The delivery class, where the mesh has one. Same principle as the
+        // broadcast gate directly above and the same guarantee: it suppresses
+        // the WAKEUP, never the delivery. The reducer has already put this in
+        // the recipient's mailbox, so an unwoken seat reads it on its next
+        // activation — the message is not lost, it is just not paid for at
+        // the moment it arrived.
+        //
+        // An ABSENT class is not a class. It falls through to the wake below,
+        // which is exactly what every message did before delivery classes
+        // existed, so a mesh with no `bus.delivery` block and a replay of one
+        // that predates it behave identically.
+        const cls = m.control?.delivery;
+        if (cls === "accrue") continue;
+        // The recipient's own rationing (`AgentDefinition.wake`), which is the
+        // one wake decision in this loop that the SENDER does not own. Every
+        // other knob here — the class, the broadcast gate, the attention tariff
+        // — is either the envelope's or the sender's; a seat that wants to batch
+        // its FYIs had no way to say so, and `accrue` only did it mesh-wide.
+        //
+        // Same guarantee as the two gates above, and the reason this is safe to
+        // put here rather than at send time: it suppresses the WAKEUP, never the
+        // delivery. The reducer has already put the message in this recipient's
+        // mailbox, so a deferring seat reads it on its next natural activation.
+        if (this.defersMail(target, m)) continue;
+        if (cls === "deliver") {
+          this.gather(target, reason, priority);
+          continue;
+        }
+        await this.requestActivation({ agentId: target, reason, priority });
       }
       return;
     }
@@ -268,8 +525,11 @@ export class Scheduler implements SchedulerPort {
     for (const key of ["agentId", "assignedTo", "owner", "actorId"]) {
       if (p[key] === agentId) return false;
     }
-    // Real work outstanding: it needs the turn regardless of the event.
-    if ((this.state.unread.get(agentId)?.length ?? 0) > 0) return false;
+    // Real work outstanding: it needs the turn regardless of the event. Mail the
+    // seat's own wake policy defers is not outstanding work — counting it here
+    // would wake the seat for an observational event *because* it batched an
+    // FYI, which is the leak the policy exists to close.
+    if (this.wakeableMail(agentId).length > 0) return false;
     const rec = this.state.agents.get(agentId);
     if (rec?.state.activeTaskId) return false;
     for (const pr of this.state.pendingRequests.values()) {
@@ -348,8 +608,18 @@ export class Scheduler implements SchedulerPort {
     // wakes). Retrying poison work on every event is the wedge.
     if (!req.explicit && this.isParkedForBackoff(req.agentId)) return false;
     if (this.isBusy(req.agentId)) {
-      // already running: mail stays queued (re-run handled on finish); interest
-      // wakeups are transient and dropped mid-turn.
+      // Already running. Mail and recovery are stashed and re-run on finish.
+      //
+      // Interest wakes used to fall through here and be DROPPED, while the
+      // function still returned `true` — which `activateAgent` reads as
+      // `{ queued: true }`, so every caller was told a wake had landed that no
+      // longer existed. With `max_active_agents: 3` against eight seats a
+      // recipient is busy most of the time, and it showed: over a live run 74
+      // interest-eligible events produced 4 interest wakes.
+      //
+      // They are stashed now, but never over a message or recovery wake:
+      // `wakeAfterTurn` holds one entry per seat, and mail is the stronger
+      // claim on the next turn.
       if (req.reason.kind === "message" || req.reason.kind === "recovery" || req.explicit) {
         this.wakeAfterTurn.set(req.agentId, { agentId: req.agentId, reason: req.reason, priority: req.priority, explicit: req.explicit });
       }
@@ -556,30 +826,38 @@ export class Scheduler implements SchedulerPort {
           explicit: deferred.explicit,
         });
       }
-    } else if (!this.stopped && (this.state.unread.get(agentId)?.length ?? 0) > 0) {
-      const unread = this.state.unread.get(agentId)!;
+    } else if (!this.stopped && this.wakeableMail(agentId).length > 0) {
+      // Filtered through the same recipient policy as the send path, and before
+      // the mission-over check rather than after: a box holding only FYIs this
+      // seat declared it batches is not "mail queued while running", and letting
+      // it through here would hand the seat the turn the send path just refused
+      // it — the third site of the same failure.
+      const unread = this.wakeableMail(agentId);
       // The "mail queued while running" retry is a scheduler self-nudge, not
       // operator intent: on a finished mission it only starts dead turns for
       // stale agent mail. Human mail passes so feedback still gets answered.
-      if (!(over && !this.hasHumanMail(unread))) {
-        const oldest = unread[0];
-        const msg = this.state.messages.get(oldest);
+      if (unread.length > 0 && !(over && !this.hasHumanMail(unread.map((m) => m.id)))) {
+        // The head of the box, resolved. It used to be `unread[0]` straight
+        // off the id array, so a box whose head was a dangler activated a turn
+        // citing a messageId that resolved to nothing -- the seat was woken to
+        // read a message that does not exist.
+        const msg = unread[0];
         void this.requestActivation({
           agentId,
-          reason: { kind: "message", messageId: oldest, threadId: msg?.threadId, note: "mail queued while running" },
+          // The depth, not just the fact. A seat told only that mail is waiting
+          // answers the head and stops; the rest are then owed a turn each.
+          // `unread` is resolved above anyway, so naming the size is free.
+          reason: {
+            kind: "message",
+            messageId: msg.id,
+            threadId: msg.threadId,
+            note: `${unread.length} messages waiting in your mailbox.`,
+          },
           priority: 5,
         });
       }
     }
     void this.pump();
-  }
-
-  notifyMailDelivered(agentId: string): void {
-    void this.requestActivation({
-      agentId,
-      reason: { kind: "message", note: "mail delivered" },
-      priority: 4,
-    });
   }
 
   /**
@@ -652,11 +930,61 @@ export class Scheduler implements SchedulerPort {
     this.listeners.push(callback);
   }
 
+  /**
+   * Declare the mesh idle once it has been quiet for `idleQuietPeriodMs`.
+   *
+   * This used to fire on the instant the queue and the running map were both
+   * empty, which is what made the resolved `idleQuietPeriodMs` inert: a mesh
+   * going quiet between two bursts announced an idle moment it was about to
+   * end, and the watchdog scan that announcement triggers ran against a mesh
+   * that was still working. The setting is a *quiet period*, so the clock starts
+   * when the mesh stops, not the moment its last turn cleared.
+   *
+   * A dedicated timer rather than a check inside `tickWaiting`'s sweep, which is
+   * how the `deliver`-class gather window does it: that sweep runs every
+   * `waitWakeupMs` — 60s by default — against a 30s default window, so a dwell
+   * living there would be quantized to a minute in production. `stop()` already
+   * schedules a bare timeout, so a timer is not foreign to this class.
+   */
   private checkIdle(): void {
-    if (this.queue.length === 0 && this.runningMap.size === 0 && !this.idleFired) {
-      this.idleFired = true;
-      for (const cb of this.listeners) cb();
+    if (this.queue.length > 0 || this.runningMap.size > 0) {
+      // Work is queued or running, so no quiet period is in progress. A dwell
+      // already counting down is abandoned rather than left to fire, since it
+      // would announce an idle mesh that is demonstrably busy.
+      this.clearIdleTimer();
+      this.idleArmedAt = null;
+      return;
     }
+    if (this.idleFired) return;
+    const quietMs = this.config.scheduling.idleQuietPeriodMs;
+    // Zero or below keeps the old edge-triggered behaviour, which is the escape
+    // hatch for a mesh that wants the idle moment on the instant it is quiet.
+    if (quietMs <= 0) {
+      this.declareIdle();
+      return;
+    }
+    if (this.idleArmedAt !== null) return;
+    this.idleArmedAt = Date.now();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined;
+      this.idleArmedAt = null;
+      // Re-checked rather than assumed. `checkIdle` is only reached from the
+      // pump, and an admission's own pump clears this timer — but a timer that
+      // has already been queued still runs its callback, so the quiet condition
+      // is tested again here instead of being trusted to have held.
+      if (this.queue.length === 0 && this.runningMap.size === 0 && !this.idleFired) this.declareIdle();
+    }, quietMs);
+    this.idleTimer.unref?.();
+  }
+
+  private declareIdle(): void {
+    this.idleFired = true;
+    for (const cb of this.listeners) cb();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
   }
 
   private tickWaiting(): void {
@@ -665,6 +993,7 @@ export class Scheduler implements SchedulerPort {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     if (!goal || goal.status !== "ACTIVE") return;
     this.pruneStallTracking();
+    this.drainGathered(now);
     for (const rec of this.state.agents.values()) {
       const id = rec.state.agentId;
       if (id === "human") continue;
@@ -677,7 +1006,7 @@ export class Scheduler implements SchedulerPort {
       // no mail → nothing to do).
       if (rec.state.lifecycle === "FAILED") {
         const owed = [...this.state.pendingRequests.values()].some((pr) => stillOwes(pr, id));
-        const mail = (this.state.unread.get(id)?.length ?? 0) > 0;
+        const mail = readableMailDepth(this.state, id) > 0;
         if (!owed && !mail) continue;
       }
       // Must match the predicate `requestActivation` uses, not just
@@ -688,19 +1017,102 @@ export class Scheduler implements SchedulerPort {
       // no turn ever ran. Three of those escalated a false stalemate against
       // an agent that was working the whole time.
       if (this.isBusy(id) || this.queue.some((q) => q.agentId === id)) continue;
+      // A seat with an open gathering window is not stalled — it is holding a
+      // coalesced burst that this same timer will release. Without this the
+      // `deliver` class bought nothing whenever the nudge cadence was shorter
+      // than the window (it is 60s against 60s in the shipped defaults, and
+      // 200ms against anything in the tests): the seat was correctly not woken
+      // by the message, then woken a tick later by the sweep below to chase
+      // the very ask it was holding. Filtering the unread list is not enough,
+      // because an obliging message also opens a pendingRequest and the
+      // pending half of this sweep is deliberately left alone.
+      //
+      // Bounded, not suppressed: `armedAt` is the FIRST message of the burst,
+      // so the window closes on schedule whatever else arrives, and every
+      // close ends in a real activation. Nudges and the stalemate escalation
+      // resume the moment it does.
+      if (this.gathering.has(id)) continue;
       // Parked by the circuit breaker: leave it alone (and do NOT count a
       // denial — a parked agent is resting, not stonewalling a request).
       if (this.isParkedForBackoff(id)) {
         this.lastNudge.set(id, now);
         continue;
       }
-      const unread = this.state.unread.get(id)?.length ?? 0;
+      // Announcements are not mail PRESSURE. This nudge exists to restart a
+      // stalled loop — its own note says "follow up or close the loop" — and
+      // a broadcast opens no loop: it obliges nobody and cannot even be
+      // replied to. Counting it here silently undid the interest gate on
+      // `message.sent`: the uninterested seat was correctly not woken by the
+      // broadcast, then woken by this timer one tick later for that same
+      // message, at the same cost, with a note telling it to close a loop
+      // that never existed. It still has the mail and still reads it on its
+      // next real activation.
+      //
+      // Classed mail is excluded for exactly the same reason, and it is the
+      // same bug if it is not: `accrue` says never wake and `deliver` says
+      // wake once when the gathering window runs, so counting either here
+      // would have this timer undo the class one tick later — the seat
+      // correctly not woken by the message, then woken by the sweep for that
+      // same message, at the same cost, with a note about closing a loop the
+      // class had already decided was not worth a turn. `interrupt` mail
+      // still counts: it was woken for, and if it is STILL unread the stalled
+      // loop this nudge exists for is real.
+      //
+      // Nothing here touches the pending-request half of the sweep below, so
+      // an unanswered ask is nudged and escalated exactly as before whatever
+      // class carried it.
+      const unread = (this.state.unread.get(id) ?? []).filter((mid) => {
+        const m = this.state.messages.get(mid);
+        // `m?.` below let a dangler fall through both exclusions and be counted
+        // as mail worth nudging for -- a message that cannot be read, cannot be
+        // delivered, and cannot be discharged. Tested first, deliberately.
+        if (!m) return false;
+        if (m.control?.mode === "broadcast") return false;
+        if (m.control?.delivery && m.control.delivery !== "interrupt") return false;
+        // The same recipient policy the send path honours, for the same reason
+        // the class is honoured here: a seat that declared it batches FYIs must
+        // not be nudged for one on the next sweep, or the declaration bought
+        // nothing but a tick's delay.
+        if (this.defersMail(id, m)) return false;
+        return true;
+      }).length;
+      // The floor under the wake gates. Everything excluded from `unread`
+      // above was excluded so the mesh would not pay twice for one wake — a
+      // sound trade, and one that assumed the seat turns up eventually for its
+      // own reasons. When it does not, the mail is simply never read, and no
+      // other path here notices: a broadcast opens no pending request, so the
+      // scan below skips the seat too.
+      //
+      // One turn per stale window, not one per message, so a seat that woke
+      // and still did not drain its box is retried rather than abandoned, and
+      // a busy or parked seat never reaches here at all (both `continue`
+      // above).
+      const oldestMailAt = this.oldestUnreadAt(id);
+      if (oldestMailAt !== undefined && now - oldestMailAt >= STALE_MAIL_MS) {
+        if (now - (this.lastStaleMailWake.get(id) ?? 0) >= STALE_MAIL_MS) {
+          this.lastStaleMailWake.set(id, now);
+          void this.requestActivation({
+            agentId: id,
+            reason: { kind: "timer", note: "mail has been waiting unread and nothing you subscribe to woke you for it" },
+            priority: 3,
+          });
+          continue;
+        }
+      }
       // Oldest-first by creation time (insertion order is not a reliable clock
       // once entries are deleted out of order). Scoped to the active goal so
       // a stale request from a previous mission cannot stall the new one.
       const activeGoal = this.state.activeGoalId;
       const oldestPending = [...this.state.pendingRequests.values()]
         .filter((pr) => stillOwes(pr, id) && pr.from !== id && (!pr.goalId || !activeGoal || pr.goalId === activeGoal))
+        // An ask that carries its own answer is not a stall, and chasing one
+        // is the exact cost `ifUnanswered` exists to remove. The ladder below
+        // spends a debtor's turn three times and then a human's once, all to
+        // extract an answer the asker has already said it can do without --
+        // so for these the debtor is left alone. It still holds the ask in
+        // its inbox and can answer on any turn it takes for its own reasons;
+        // what it no longer gets is a turn bought to remind it.
+        .filter((pr) => pr.ifUnanswered === undefined)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
       const age = now - (this.lastNudge.get(id) ?? 0);
       if (age < this.config.scheduling.waitWakeupMs) continue;
@@ -745,7 +1157,16 @@ export class Scheduler implements SchedulerPort {
       // and escalate on those too so a permanent block cannot hang silently.
       void this.requestActivation({
         agentId: id,
-        reason: { kind: "timer", note: `follow up on unanswered request ${oldestPending.messageId} (nudge ${count}/${MAX_NUDGES})` },
+        reason: {
+          kind: "timer",
+          // The nudge names the deadline as well as the counter: this wake is
+          // about one specific ask, and the seat that has to answer it should
+          // not have to ask how long it has left — §11k of
+          // `NOTES-communication-measured-review.md`.
+          note: `follow up on unanswered request ${oldestPending.messageId} (nudge ${count}/${MAX_NUDGES})${
+            oldestPending.dueBy ? ` — due by ${oldestPending.dueBy}` : ""
+          }`,
+        },
         priority: 3,
       }).then((ok) => {
         if (ok) {

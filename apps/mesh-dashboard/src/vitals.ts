@@ -321,8 +321,12 @@ export function parsePartialOps(text: string): PartialOps {
   if (fence) {
     prose = text.slice(0, fence.index).trim();
     body = text.slice(fence.index + fence[0].length);
-    const close = body.indexOf("```");
-    if (close >= 0) body = body.slice(0, close);
+    // Deliberately NOT bounded by the next ``` . A published document whose
+    // `content` carries its own code fence would be cut mid-JSON-string, and
+    // the op spanning it would never complete — the live view would go blank
+    // exactly when an operator is watching a big publish land. `scanObjects`
+    // is brace-balanced and string-aware, so it needs no closing fence to know
+    // where an object ends, and trailing prose contributes no `op` objects.
   } else {
     const t = text.trimStart();
     if (!t.startsWith("[") && !t.startsWith("{")) return { ops: [], writing: false, prose: text.trim() };

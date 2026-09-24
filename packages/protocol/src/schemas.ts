@@ -40,6 +40,18 @@ export const messageSchema = {
     },
     payload: {},
     /**
+     * Prose for the recipient. Never parsed by the mesh.
+     *
+     * Optional and closed like every other envelope field: a `note` that is not
+     * declared here is REJECTED by `additionalProperties: false`, not ignored,
+     * so a message carrying one fails loudly at send time with the path named.
+     */
+    note: {
+      description: "Free prose for the recipient. Never parsed by the mesh: no op extraction, no discharge inference, no routing. Carries no authority.",
+      type: "string",
+      maxLength: 2000,
+    },
+    /**
      * Runtime-owned delivery control. Agents cannot set this:
      * `sanitizeAgentMessageInput` strips it from every send, and the closed
      * property set means a forged field fails validation instead of being
@@ -49,11 +61,30 @@ export const messageSchema = {
       description:
         "Runtime-owned delivery control. Agents cannot set this: sanitizeAgentMessageInput strips it from every send, and the closed property set means a forged field fails validation instead of being ignored.",
       type: "object",
-      properties: { cacheServed: { type: "boolean" } },
+      properties: {
+        cacheServed: { type: "boolean" },
+        contract: { type: "string" },
+        contractVersion: { type: "number" },
+        mode: { type: "string", enum: ["service", "collab", "broadcast"] },
+        delivery: { type: "string", enum: ["interrupt", "deliver", "accrue"] },
+        downgraded: { type: "string" },
+        /**
+         * The asker's own fallback. `assume` is deliberately UNTYPED: it is
+         * the answer the ask's contract would have carried, and those shapes
+         * are per-contract. `afterMs` is bounded below because a default that
+         * fires at once is not a default, it is an ask nobody was given a
+         * chance to answer.
+         */
+        ifUnanswered: {
+          type: "object",
+          required: ["assume"],
+          properties: { assume: {}, afterMs: { type: "number", exclusiveMinimum: 0 } },
+          additionalProperties: false,
+        },
+      },
       additionalProperties: false,
     },
     priority: { type: "string", enum: ["LOW", "NORMAL", "HIGH", "URGENT"] },
-    ttl: { type: "string" },
     requires: {
       type: "array",
       items: {
@@ -179,6 +210,27 @@ const agentConfigSchema = {
       properties: {
         mode: { type: "string", enum: ["off", "warn", "enforce"] },
         capabilities: { type: "array", items: { type: "string" } },
+      },
+      additionalProperties: false,
+    },
+    // Per-agent only. The mesh-wide version of this question is
+    // `bus.delivery.classes`, so `mesh.defaults` deliberately does NOT carry a
+    // `wake` key: a default here would give an operator a knob that looks like
+    // it turns the setting on mesh-wide while the resolver reads only the
+    // per-agent copy, and every seat would keep waking. Absent IS the default
+    // for this block (see `RawWakePolicy`), so the schema refuses it in the
+    // wrong place rather than accepting a key nothing reads.
+    // `mail` is the pull path: `"claims"` renders non-obliging mail as a
+    // one-line claim whose body is fetched by reading the inbox, while mail
+    // that obliges the recipient keeps its body either way -- a seat must
+    // never be asked to answer something it was not shown. Absent is `"full"`,
+    // which is what every mesh written before this key gets.
+    wake: {
+      type: "object",
+      properties: {
+        defer_non_obliging: { type: "boolean" },
+        not_for: { type: "array", items: { type: "string", enum: MESSAGE_TYPES } },
+        mail: { type: "string", enum: ["full", "claims"] },
       },
       additionalProperties: false,
     },
@@ -343,10 +395,32 @@ export const meshConfigSchema = {
             semantic: { type: "string", enum: ["compat", "strict"] },
             ttl_ms: { type: "number", minimum: 0 },
             ttl_ms_by_role: { type: "object", additionalProperties: { type: "number", minimum: 0 } },
+            by_type: { type: "boolean" },
           },
           additionalProperties: false,
         },
+        style: { type: "string", enum: ["high-contact", "balanced", "low-contact"] },
         transport: { type: "string", enum: ["mixed", "typed-only"] },
+        vocabulary: { type: "string", enum: ["typed", "contracts"] },
+        collab: {
+          type: "object",
+          properties: {
+            box_ms: { type: "number", minimum: 0 },
+            max_exchanges: { type: "number", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        delivery: {
+          type: "object",
+          properties: {
+            classes: { type: "boolean" },
+            coalesce_ms: { type: "number", minimum: 0 },
+            interrupt_cost_tokens: { type: "number", minimum: 0 },
+            attention_tokens: { type: "number", minimum: 0 },
+            congestion_every: { type: "number", minimum: 1 },
+          },
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },

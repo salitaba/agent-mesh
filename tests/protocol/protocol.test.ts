@@ -63,6 +63,38 @@ test("protocol: message without thread/goal ids is rejected", () => {
   assert.equal(r.valid, false);
 });
 
+test("protocol: a note is an envelope field, not a payload one", () => {
+  // `note` is free prose for the recipient: never parsed, no op extraction, no
+  // discharge inference, no routing, no authority. It sits at the ENVELOPE
+  // level deliberately — `fingerprintOf` reads only `m.payload`, so a note
+  // cannot make two otherwise-identical sends distinct. See the envelope
+  // identity test for the other half of that claim.
+  const r = validateMessage(validMessage({ note: "this reads like mesh_send but is just prose" }));
+  assert.equal(r.valid, true, JSON.stringify(r.errors));
+
+  // Absent is legal: this field is opt-in and most sends will not carry one.
+  assert.equal(validateMessage(validMessage()).valid, true);
+});
+
+test("protocol: note is closed — a wrong type or an oversized one is rejected", () => {
+  assert.equal(validateMessage(validMessage({ note: 42 as unknown as string })).valid, false);
+  // maxLength: 2000. A note is a sentence to a colleague, not a document; an
+  // unbounded envelope field is a channel for pasting a codebase into someone's
+  // context, which is the cost this whole wave is trying to bring down.
+  assert.equal(validateMessage(validMessage({ note: "x".repeat(2001) })).valid, false);
+  assert.equal(validateMessage(validMessage({ note: "x".repeat(2000) })).valid, true);
+});
+
+test("protocol: an undeclared envelope field is rejected, not ignored", () => {
+  // This is why `note` had to be added to BOTH `packages/protocol/src/schemas.ts`
+  // and `schemas/message.schema.json`: `additionalProperties: false` means an
+  // envelope field missing from either copy makes a carrying send FAIL LOUDLY at
+  // validation, it does not ride along unread. The parity test below is the
+  // other half — it catches the drift between the two copies.
+  const r = validateMessage({ ...validMessage(), notes: "typo'd" } as unknown as MeshMessage);
+  assert.equal(r.valid, false, "a typo in the field name must fail rather than drop the prose silently");
+});
+
 test("protocol: canonical event catalog is unique and lower.dotted", () => {
   assert.equal(new Set(EVENT_TYPES).size, EVENT_TYPES.length);
   for (const t of EVENT_TYPES) {

@@ -1,5 +1,6 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "../../core/src/state";
+import { readableMailDepth, resolveUnread } from "../../core/src/state";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { TurnStep } from "./steps";
 import { eventTimeline, type EventTimelineEntry } from "./views";
@@ -30,7 +31,7 @@ export function buildAgentActivity(state: Projections, steps: TurnStep[] = []): 
     lastActivityAt: r.state.lastActivityAt,
     activations: r.state.activations,
     tokens: r.state.tokensConsumed,
-    mailbox: state.unread.get(r.definition.id)?.length ?? 0,
+    mailbox: readableMailDepth(state, r.definition.id),
     activeTaskId: r.state.activeTaskId,
     lastError: r.state.lastError,
   }));
@@ -142,12 +143,13 @@ export function buildAgentDetail(
   if (!rec) return null;
   const goalId = state.activeGoalId ?? "";
 
-  const unreadIds = state.unread.get(agentId) ?? [];
-  const unreadMessages = unreadIds
-    .slice(0, 12)
-    .map((id) => state.messages.get(id))
-    .filter(Boolean)
-    .slice(0, 12);
+  // Resolved once, and counted from the SAME array. This function used to count
+  // `state.unread.get(agentId).length` -- the raw box -- while building the
+  // message list by resolving those ids, so the drawer rendered
+  // "Inbox (3 unread)" above a list of two and then a phantom "+1 more unread"
+  // for a message that does not exist.
+  const unread = resolveUnread(state, agentId);
+  const unreadMessages = unread.slice(0, 12);
 
   const allRelated: MeshEvent[] = [];
   void allRelated;
@@ -249,7 +251,7 @@ export function buildAgentDetail(
   return {
     definition: rec.definition,
     state: rec.state,
-    unread: [...unreadIds],
+    unread: unread.map((m) => m.id),
     memory: [...(state.memory.get(agentId)?.values() ?? [])],
     session: state.sessionMap.get(agentId) ?? null,
     unreadMessages,
@@ -283,7 +285,7 @@ export function buildAgentDetail(
       tasksInvolved: tasksInvolved.length,
       activations: rec.state.activations,
       tokens: rec.state.tokensConsumed,
-      mailbox: unreadIds.length,
+      mailbox: unread.length,
     },
   };
 }

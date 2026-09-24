@@ -16,16 +16,49 @@ A single `runTurn`:
 2. `agent.awakened` → `OBSERVING`
 3. ensure the runtime session (start or **restore** the persistent session id)
 4. build the agent context (§29) — **never** the whole transcript
-5. deliver queued mail (`message.delivered`)
-6. `THINKING` → call the runtime adapter with a turn timeout
+5. `THINKING` → call the runtime adapter with a turn timeout
+6. mark the mail the turn actually read as delivered (`message.delivered`)
 7. apply the returned **mesh operations** (each re-checked by policy)
 8. consume budget (`budget.consumed`, with model/tool-call audit for replay)
 9. derive the end lifecycle (`WAITING` if it has an outstanding request, else
    `IDLE`/`BLOCKED`)
 
+Steps 5 and 6 are in that order deliberately, and both halves matter. Mail is
+marked delivered **after** the adapter returns, so a turn that crashes or times
+out leaves the mailbox owed rather than emptied — a crash used to consume the
+mail it never showed anyone. And it marks the messages the context builder
+actually **rendered**, not everything that was queued: the context has a per-turn
+unread budget (§29), so a deep backlog is drained over several turns instead of
+being marked read in one. Delivered means *rendered and answered*; anything else
+stays owed.
+
 Every turn's inputs/outputs/model/tokens are appended to `turn-audit.jsonl` so
 the **orchestration** layer is deterministic and replayable even though the LLM
 is not (§41).
+
+### What counts as a productive turn
+
+A seat can act through **two** channels: the `mesh-json` ops block in its reply,
+and the `mesh_*` MCP tools it calls mid-turn. Both are real, and both are
+counted — a turn is unproductive only when neither moved the mesh.
+
+That distinction is load-bearing. Judging a turn by its ops block alone scored
+the most productive turns of a live run as empty: a seat that published three
+artifacts, opened five threads and sent four messages through the tools, then
+closed without an ops block, was logged *"no work was produced"* and took a
+strike. Because three strikes park a seat, and the recovery path re-woke it, one
+seat burned 537,479 tokens — 3.6× its configured budget — with every turn
+recorded as having produced nothing.
+
+A turn that worked through the tools but emitted no ops block is still told so,
+because closing without `done` leaves no statement of why the turn stopped — but
+it is not discarded and takes no strike.
+
+`turn.discarded` records a turn that genuinely produced nothing, with its token
+cost, under one of: `no_ops` (neither channel moved anything), `all_rejected`
+(every op refused), `timeout`, `silence`, `budget_blocked`, `failed`. It is a
+notice with no reducer — nothing projects from it — so it is safe to read as a
+pure cost signal.
 
 ## Runtime adapter interface
 
@@ -39,37 +72,38 @@ interface AgentRuntime {
 ```
 
 `AgentOutput.operations` is the vendor-neutral contract: an adapter only needs
-to produce typed mesh ops. This is how OpenCode, Claude Code, Codex, custom HTTP
-agents, and future A2A agents all plug in without touching the domain model.
+to produce typed mesh ops. This is how Claude Code, custom HTTP agents, and
+future A2A agents all plug in without touching the domain model.
 
-### `runtime-opencode`
-- writes a per-agent OpenCode config (`opencode.json`) under the agent workspace
-  with: `instructions` pointing at the role prompt (absolute path), the **mesh
-  MCP server** (`type: "local"`, spawned via `mesh mcp`, bus URL/agent id/token
-  passed through `environment`), and a `permission` block derived from the
-  agent's capabilities (`edit`/`bash`/`webfetch`/`read`)
-- spawns `opencode serve --port … --hostname 127.0.0.1` with the agent's
-  workspace as `cwd` and the per-agent file injected via `OPENCODE_CONFIG`
-  (documented custom-config path); health-gates on `GET /global/health`
-- creates a session per agent (`POST /session`), sends each activation as
-  `POST /session/:id/message` with `{parts, system, model}`, aborts via
-  `POST /session/:id/abort`, restores by `GET /session/:id`
-- parses `mesh-json` op blocks from the assistant text into `MeshOp[]`; token
-  accounting reads `info.tokens.{input,output,reasoning,cache}` from the
-  assistant message
-- reports `UNREACHABLE` on process death (the recovery manager then restarts with
-  `restoreSession`)
+### `runtime-opencode` — **removed**
 
-Note: OpenCode registers MCP tools with the server name as a prefix, so the bus
-tools surface to the model as `mesh_mesh_send`, `mesh_mesh_approve`, … (server
-`mesh`). Agents are told to look for `mesh_*`.
+There is no OpenCode adapter. The package is gone, and a config naming it fails
+to load with `runtime 'opencode' was removed; <keys> still names it` — caught at
+load rather than at activation, because an unregistered runtime name otherwise
+resolves fine at boot and fails on the first turn, long after the mesh looked
+healthy. Use `claude` (no separate install: it rides on the declared
+`@anthropic-ai/claude-agent-sdk` dependency) or `stub` (zero model calls).
+
+The transport it used — `opencode serve` on a local port, health-gated on
+`GET /global/health` — is therefore not part of any adapter in this repo. What
+survives from it is the interface above, which it was the first implementation
+of.
+
+Note: *which* bus tools an adapter is handed is a property of the mesh, not of
+the adapter. `tools/list` is filtered per seat -- by the agent's capabilities,
+by `bus.transport`, and by `bus.vocabulary`, which under `contracts` replaces
+`mesh_send`/`mesh_broadcast`/`mesh_respond` with the contract verbs
+(`mesh_call`, `mesh_reply`, `mesh_announce`, …). The filtering is
+advertisement-only: every adapter can still *call* a tool that was not listed,
+so an op parsed out of prose, or a name a model remembers from another mesh,
+keeps working. See `docs/configuration.md` § bus.
 
 ### `runtime-claude`
 - Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that
   drives the Claude Code binary as a child process. **There is no `claude serve`**
-  — no local HTTP API, no SSE, nothing to health-probe — so none of the opencode
-  transport applies. The SDK ships its own executable, so unlike opencode there
-  is nothing for the user to install and nothing to preflight
+  — no local HTTP API, no SSE, nothing to health-probe — so there is no port to
+  gate on and no process to attach to. The SDK ships its own executable, so
+  there is nothing for the user to install and nothing to preflight
 - one **long-lived streaming `query()` per agent**, held for the agent's
   lifetime. Streaming input is not a preference: SDK control requests
   (`interrupt()`, `supportedModels()`) are only supported on a streaming query,
@@ -93,7 +127,7 @@ tools surface to the model as `mesh_mesh_send`, `mesh_mesh_approve`, … (server
   `total_cost_usd` and `modelUsage` are cumulative across a streaming session,
   so billing a turn off them would re-charge the whole conversation every turn
 - the mesh MCP bridge is wired through the SDK's `mcpServers` option, the same
-  `mesh mcp` stdio bridge opencode spawns
+  `mesh mcp` stdio bridge the other adapters spawn
 - no `reasoning` token field (Claude's usage has none), and the system prompt is
   snapshotted at a session's first request, so mid-run `ROLE.md` edits land only
   after compaction
@@ -153,7 +187,8 @@ changing the protocol.
   print guidance about.
 - `mesh emit-schemas` regenerates `schemas/*.json` from the code (single source).
 - `mesh bench` runs the mesh-vs-single comparison across the A–F corpus.
-- `mesh mcp` is the internal stdio↔HTTP bridge spawned by OpenCode.
+- `mesh mcp` is the internal stdio↔HTTP bridge, spawned by the Claude adapter
+  (`runtime-claude` registers it as the `mesh` MCP server) to reach `/api`.
 - The dashboard (`apps/mesh-dashboard`) renders five views from the same event
   projections: mesh graph, goal progress, artifact timeline, cost, live event
   stream (SSE) — the UI holds no separate state.

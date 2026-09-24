@@ -219,7 +219,17 @@ export async function applyStagedMutation(
             `the reason alone is not a confirmation`,
         );
       }
-      const report = await instance.reset({});
+      let report;
+      try {
+        report = await instance.reset({});
+      } catch (err) {
+        // Recognised by `code`, not `instanceof`: importing the class from
+        // `./index` would close the index -> staging import cycle.
+        if ((err as { code?: string } | null)?.code === "RESET_IN_PROGRESS") {
+          return no(m.kind, "a mission reset is already in progress — wait for it to finish, then apply again");
+        }
+        throw err;
+      }
       return ok(m.kind, report.archivedTo
         ? `mission reset to zero; previous state archived at ${report.archivedTo}. Mesh is parked.`
         : "mission reset to zero; mesh is parked.");

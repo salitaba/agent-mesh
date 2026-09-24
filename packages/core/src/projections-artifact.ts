@@ -11,6 +11,8 @@ import type { Projections } from "./state";
 import { MAX_ARTIFACT_HISTORY, artifactKey, dischargeCommitment } from "./state";
 import {
   ProjectionError,
+  approvalPath,
+  approverMayAdvance,
   assertArtifactTransition,
   clearPendingForArtifactReview,
   gateSatisfiedWithConfig,
@@ -64,29 +66,6 @@ function doTransition(
   }
 }
 
-// An approval must not be inert: a document approved while it sits in
-// READY_FOR_REVIEW (no tracked review round) used to record the verdict and
-// stay open forever. Take the machine's terminal review edge instead.
-//
-// That fix originally reached only the READY_FOR_REVIEW branch, and the normal
-// flow races straight past it: `request_review` drives DRAFT ->
-// READY_FOR_REVIEW -> UNDER_REVIEW before any reviewer answers, so by decision
-// time the artifact is always in the other branch. There a hardcoded whitelist
-// dropped every type but three on the floor. The verdict was recorded and the
-// reviewer's pending cleared, but the artifact never moved -- and it could not
-// be reopened either, because nothing had been closed. It just sat in
-// UNDER_REVIEW looking busy, which no stall check is built to notice.
-//
-// The whitelist was never guarding a machine invariant: every machine that has
-// an UNDER_REVIEW state already declares UNDER_REVIEW -> APPROVED legal (`code`
-// and `document` both; `release` has no such state), so assertArtifactTransition
-// would have admitted each of these. Ask the machine, not a type list.
-function approvalPath(type: ArtifactType, status: ArtifactStatus): ArtifactStatus[] {
-  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)][status] ?? [];
-  if (allowed.includes("APPROVED")) return ["APPROVED"];
-  if (allowed.includes("FINAL")) return ["FINAL"];
-  return [];
-}
 
 export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Record<string, any>, config?: { transitionGates?: Record<string, string[]> }): boolean {
   switch (event.type) {
@@ -166,7 +145,10 @@ export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Reco
       recordApproval(state, p, event, p.kind === "pass" ? "pass" : "approve");
       if (p.artifactId && event.actorId) clearPendingForArtifactReview(state, p.artifactId, event.actorId);
       const a = p.artifactId ? state.artifacts.get(p.artifactId) : undefined;
-      if (a && (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW")) {
+      // The verdict is recorded above whatever happens — a gate signature is
+      // worth keeping even from a seat that may not settle the artifact. Only
+      // the MOVE is screened. See `approverMayAdvance`.
+      if (a && approverMayAdvance(state, event.actorId, a) && (a.status === "UNDER_REVIEW" || a.status === "READY_FOR_REVIEW")) {
         for (const to of approvalPath(a.type, a.status)) {
           doTransition(state, event, a.id, to, true, config);
         }
@@ -186,8 +168,30 @@ export function applyArtifactEvent(state: Projections, event: MeshEvent, p: Reco
       recordApproval(state, p, event, "approve");
       if (p.artifactId && event.actorId) clearPendingForArtifactReview(state, p.artifactId, event.actorId);
       const a = p.artifactId ? state.artifacts.get(p.artifactId) : undefined;
-      if (a && a.status === "UNDER_REVIEW") {
-        doTransition(state, event, a.id, "APPROVED", true, config);
+      // `approvalPath` rather than a hardcoded "APPROVED": ask the machine
+      // where an approval lands instead of asserting it, the same way
+      // `review.approved` does. For UNDER_REVIEW the two agree on every
+      // machine that has the state, so this is a no-op today and stays correct
+      // if a machine ever changes.
+      //
+      // The guard stays UNDER_REVIEW-only, and NOT because the asymmetry with
+      // `review.approved` (which also settles from READY_FOR_REVIEW) is
+      // intended. Widening it changes how existing logs project: a document
+      // approved while merely READY_FOR_REVIEW advances to FINAL, and a real
+      // mission log then replays a later READY_FOR_REVIEW transition that used
+      // to be absorbed as a no-op and is now illegal — caught by
+      // tests/integration/resume-storm. Replay equality is the property the
+      // event store rests on, so it outranks the inconsistency.
+      //
+      // What actually stranded nine artifacts in a live mission was upstream:
+      // they were never submitted for review at all, so an approval had
+      // nothing to advance. Approving an artifact that is not under review is
+      // still silently inert here, and that is the part worth surfacing — at
+      // the op path, where a refusal can reach the agent.
+      if (a && approverMayAdvance(state, event.actorId, a) && a.status === "UNDER_REVIEW") {
+        for (const to of approvalPath(a.type, a.status)) {
+          doTransition(state, event, a.id, to, true, config);
+        }
       }
       break;
     }

@@ -18,6 +18,15 @@ export const MISSION_HALTED_ALLOW_OPS: ReadonlySet<MeshOp["op"]> = new Set([
   "done",
   "remember",
   "read_artifact",
+  // `withdraw` is here and it is the point of the op, not an exception. The
+  // halt that matters most is the one an unanswered ask causes: three nudges,
+  // then a `stalemate:unanswered_request` card, then `goal.escalated` and this
+  // freeze. The card exists because the mesh has lost track of whether anyone
+  // still wants the answer — and the one seat that can say is the asker. It
+  // cannot do that if the freeze blocks the op, so the asker would watch its
+  // own stale question hold the mission down for the length of an operator's
+  // absence. Like every other op in this set, it moves no work: it ends some.
+  "withdraw",
 ]);
 
 /**

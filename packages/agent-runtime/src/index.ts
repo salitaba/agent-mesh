@@ -11,7 +11,7 @@ import type {
   RuntimeContext,
   RotationPendingInfo,
 } from "../../protocol/src/index";
-import { newAgentSessionId, aliasTextOp, type AliasOptions } from "../../protocol/src/index";
+import { newAgentSessionId, aliasTextOp, scanJsonObjects, type AliasOptions } from "../../protocol/src/index";
 
 export type StubScript = (input: AgentInput, turnIndex: number, session: AgentSession) => StubTurn | Promise<StubTurn>;
 
@@ -378,31 +378,126 @@ export async function collectAgentOutput(
 // runtime that has to recover ops from prose rather than from typed tool calls
 // uses these. The claude runtime takes ops from typed mesh_* MCP tools and
 // only falls back here, which is why `typedOps` can be trusted on that path.
-const OPS_BLOCK = /```(?:mesh-json|json)?\s*\n?([\s\S]*?)```/g;
+// Every ``` marker, opening or closing, with its language tag. Pairing them is
+// deliberately NOT done here: which marker closes a block cannot be decided
+// left to right, because a payload may contain its own fence. See
+// `opsCandidates`.
+const FENCE = /```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n?/g;
+const OPS_FENCE_TAGS = new Set(["", "mesh-json", "meshjson", "json", "mesh-op", "meshop"]);
+const MAX_FENCES = 16;
+const MAX_CANDIDATES = 24;
 
-export function parseMeshOps(text: string, opts: AliasOptions = {}): MeshOp[] {
-  const candidates: string[] = [];
+/**
+ * Block bodies worth trying, best first.
+ *
+ * The old parser used one lazy regex, which took the FIRST later ``` as the
+ * close. A `publish_artifact` whose `content` carries a markdown fence
+ * therefore truncated mid-JSON-string — and worse, `exec` advanced past that
+ * truncated close, so the real closing fence became the NEXT candidate's
+ * OPENING fence and the correct body was never generated as a candidate at
+ * all. That is why "try every candidate" did not already rescue it. One live
+ * run lost an 18,492-char turn, and the mission's requirements brief with it.
+ *
+ * So: collect every marker, then offer every (open, close) pair, preferring a
+ * recognised tag and then the LONGEST span — the outermost close, which is the
+ * one a nested fence cannot fake.
+ */
+function opsCandidates(text: string): string[] {
+  const marks: { tag: string; at: number; bodyAt: number }[] = [];
+  const re = new RegExp(FENCE.source, "g");
   let m: RegExpExecArray | null;
-  const re = new RegExp(OPS_BLOCK.source, "g");
-  while ((m = re.exec(text)) !== null) candidates.push(m[1]);
+  while ((m = re.exec(text)) !== null && marks.length < MAX_FENCES) {
+    marks.push({ tag: (m[1] ?? "").toLowerCase(), at: m.index, bodyAt: m.index + m[0].length });
+  }
+  const scored: { body: string; score: number }[] = [];
+  for (let i = 0; i < marks.length; i++) {
+    const open = marks[i];
+    const tagged = OPS_FENCE_TAGS.has(open.tag) ? 1000 : 0;
+    for (let j = marks.length - 1; j > i; j--) {
+      scored.push({ body: text.slice(open.bodyAt, marks[j].at), score: tagged + (j - i) });
+    }
+    // A reply cut off mid-block still carries ops; ranked below any closed span.
+    scored.push({ body: text.slice(open.bodyAt), score: tagged - 1 });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const out = scored.slice(0, MAX_CANDIDATES).map((s) => s.body);
   const trimmed = text.trim();
-  if (trimmed.startsWith("[") || trimmed.startsWith("{")) candidates.push(trimmed);
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) out.push(trimmed);
+  return out;
+}
+
+export interface OpsParseDiagnostic {
+  /** True when ops were recovered entry-by-entry after the block as a whole failed. */
+  salvaged: boolean;
+  /** Entries that could not be read at all, and why. */
+  dropped: { index: number; reason: string }[];
+}
+
+export interface OpsParseResult {
+  ops: MeshOp[];
+  diagnostic: OpsParseDiagnostic;
+}
+
+/**
+ * Parse ops from prose, reporting what could not be read.
+ *
+ * `parseMeshOps` returns a bare array and therefore cannot distinguish "the
+ * model emitted no block" from "the block was malformed" — a distinction the
+ * turn summary needs, because one is a contract miss and the other is a bug.
+ */
+export function parseMeshOpsDetailed(text: string, opts: AliasOptions = {}): OpsParseResult {
+  const candidates = opsCandidates(text);
+  const clean: OpsParseDiagnostic = { salvaged: false, dropped: [] };
+
+  // 1. The block parses whole — the common case, and the only one that was
+  //    ever supported.
   for (const candidate of candidates) {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(candidate);
-      const ops = normalizeOps(parsed, opts);
-      if (ops) return ops;
+      parsed = JSON.parse(candidate);
     } catch {
       continue;
     }
+    const ops = normalizeOps(parsed, opts);
+    // An array whose entries all fail aliasing normalizes to `[]`, which used
+    // to be truthy here and short-circuited every remaining candidate AND both
+    // salvage paths below. Length is the question, not existence.
+    if (ops && ops.length > 0) return { ops, diagnostic: clean };
   }
-  // Salvage path: small models sometimes emit YAML-ish blocks (```mesh-op
+
+  // 2. Entry-by-entry salvage. `JSON.parse` on the whole array is
+  //    all-or-nothing: in one live run a brace error in the fourth op
+  //    destroyed a well-formed `transition_artifact` in the first, and with it
+  //    the fix for a deadlock three seats were waiting on. Take the candidate
+  //    that yields the most ops, not merely the first that yields any — a
+  //    truncated span can produce one valid op while the right span produces
+  //    all of them.
+  let best: { ops: MeshOp[]; dropped: { index: number; reason: string }[] } | null = null;
+  for (const candidate of candidates) {
+    const { objects, dropped } = scanJsonObjects(candidate);
+    if (objects.length === 0) continue;
+    const ops: MeshOp[] = [];
+    const bad = [...dropped];
+    objects.forEach((obj, i) => {
+      const aliased = aliasTextOp(obj, opts);
+      if (aliased && typeof aliased.op === "string") ops.push(aliased as unknown as MeshOp);
+      else bad.push({ index: i, reason: "no recognisable `op` field" });
+    });
+    if (ops.length > 0 && (best === null || ops.length > best.ops.length)) best = { ops, dropped: bad };
+  }
+  if (best) return { ops: best.ops, diagnostic: { salvaged: true, dropped: best.dropped } };
+
+  // 3. Salvage path: small models sometimes emit YAML-ish blocks (```mesh-op
   // with `op:` lines) instead of JSON. Only runs when JSON found nothing.
   for (const candidate of candidates) {
     const op = parseYamlishOp(candidate, opts);
-    if (op) return [op];
+    if (op) return { ops: [op], diagnostic: clean };
   }
-  return [];
+  return { ops: [], diagnostic: clean };
+}
+
+export function parseMeshOps(text: string, opts: AliasOptions = {}): MeshOp[] {
+  return parseMeshOpsDetailed(text, opts).ops;
 }
 
 /**

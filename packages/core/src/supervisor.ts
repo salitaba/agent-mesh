@@ -9,6 +9,7 @@ import {
   artifactMachineOf,
   validateMessage,
   validateArtifact,
+  CAPABILITY_TOKENS,
   normalizeCapability,
   effectiveHardActions,
   PLAN_GATE_PREFIX,
@@ -25,6 +26,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeStatus,
   type Artifact,
+  type ArtifactEdit,
   type ArtifactRef,
   type ArtifactScope,
   type ArtifactStatus,
@@ -39,6 +41,7 @@ import {
   type MeshEvent,
   type MeshMessage,
   type MeshOp,
+  type MeshOpWithdraw,
   type MessageType,
   type ReplayState,
   type RuntimeContext,
@@ -56,27 +59,40 @@ import {
   type MeshOpWriteContinuity,
   type RotationPendingInfo,
   type SessionRotationPending,
+  DEFAULT_CRITERIA,
+  InterruptedTurnError,
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
 import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
-import { BUILTIN_CONTRACTS, findContract, unknownContractReason } from "../../protocol/src/index";
+import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingType, movesWorkMessage, unknownContractReason } from "../../protocol/src/index";
 import { validateContractRequest } from "../../protocol/src/validation";
-import type { Contract, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
+import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
-import { planCoversHardOp } from "./projections-helpers";
-import { sanitizeAgentMessageInput } from "../../protocol/src/index";
+import { approvalPath, planCoversHardOp, verdictAdvances } from "./projections-helpers";
+import { sanitizeAgentMessageInput, aliasStats } from "../../protocol/src/index";
+import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
-import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
+import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, transitionLifecycle } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, projectionConfigFor, transitionLifecycle } from "./projections";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import type { Kernel } from "./kernel";
 import { KernelRejectedError } from "./kernel";
 import type { BudgetManager, BudgetKey } from "./budgets";
-import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
+import {
+  agentKey,
+  attentionKey,
+  autoRaiseExhausted,
+  configuredBudgetLimit,
+  interruptSurcharge,
+  missionKey,
+  taskKey,
+  threadKey,
+  TURN_RESERVE_TOKENS,
+} from "./budgets";
 import type {
   ArtifactContentStore,
   CriteriaGeneratorPort,
@@ -91,10 +107,10 @@ import type {
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
-import { buildAgentContext, buildContextManifest, renderContextInstructions } from "./context";
+import { buildAgentContext, buildContextManifest, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
-import { refToString, artifactUri } from "../../protocol/src/uri";
+import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
 import {
   MISSION_HALTED_ALLOW_OPS,
@@ -135,9 +151,20 @@ export interface OpResult {
   artifactId?: string;
   artifactUri?: string;
   taskId?: string;
+  /** Set by the collab ops: the thread the session owns. */
+  threadId?: string;
   reason?: string;
   artifact?: Artifact;
   escalationId?: string;
+  /**
+   * Set when the sender asked for a wake it could not pay for, so the message
+   * was reclassified to `deliver`. The send SUCCEEDED -- `ok` is true and the
+   * mail landed -- but the seat asked for an interrupt and did not get one,
+   * and a seat that cannot tell those apart will read silence as a delivery
+   * failure and send the same thing again, at the same price it cannot pay.
+   * The string is the reason, phrased for the sender.
+   */
+  deliveryDowngraded?: string;
   /**
    * Set on a `read_artifact` that returned only a slice. An agent that cannot
    * tell a partial document from a whole one will reason confidently over the
@@ -163,15 +190,33 @@ export interface ContractListing {
   providers: string[];
 }
 
-/** Accept `to` as a string or a list of them; anything else is not a recipient. */
 /**
- * The contract fields a desugared op carries, or nothing. Spread into a
- * message payload so `contractSlaOf` can find the SLA on replay.
+ * The contract stamp for a desugared op, as runtime-owned envelope control.
+ *
+ * Two things changed here and both are load-bearing. It returns `control`
+ * rather than payload keys, so the commitment ledger routes on the envelope
+ * and never on verbatim agent input; and it resolves the name against the
+ * catalogue first, so a stamp that reaches a message is always a real
+ * contract. An unresolvable name yields nothing rather than a stamp the
+ * reducer will look up and silently drop -- same outcome, stated at the edge.
  */
-function contractStamp(op: { contract?: string; contractVersion?: number }): Record<string, unknown> {
-  return op.contract ? { contract: op.contract, contractVersion: op.contractVersion } : {};
+function askControl(op: { contract?: string; contractVersion?: number; ifUnanswered?: DefaultAnswer }): MessageControl | undefined {
+  const stamp = op.contract && findContract(op.contract)
+    ? { contract: op.contract, contractVersion: op.contractVersion }
+    : undefined;
+  // The asker's fallback rides the same envelope band for the same reason the
+  // contract does -- the ledger reads it, twice, and a decision about
+  // obligations must not be readable out of verbatim agent input. It is
+  // carried INDEPENDENTLY of the stamp because a default is not a contract
+  // feature: a raw `send` to a named seat is exactly the ask most likely to
+  // deserve one, and gating it on a contract would put the low-contact move
+  // out of reach of the channel that needs it most.
+  const assume = op.ifUnanswered ? { ifUnanswered: op.ifUnanswered } : undefined;
+  if (!stamp && !assume) return undefined;
+  return { ...stamp, ...assume };
 }
 
+/** Accept `to` as a string or a list of them; anything else is not a recipient. */
 function asIdList(v: unknown): string[] | undefined {
   if (typeof v === "string" && v.trim()) return [v.trim()];
   if (Array.isArray(v)) {
@@ -192,25 +237,17 @@ function firstWords(request: Record<string, unknown>): string {
 
 export const HUMAN_AGENT_ID = "human";
 
-export const DEFAULT_CRITERIA: Array<Partial<AcceptanceCriterion> & { description: string }> = [
-  { id: "requirements-documented", description: "Requirements are documented in a RequirementsDoc artifact accepted by PM", mandatory: true },
-  { id: "architecture-approved", description: "Architecture approved by architect and tech-lead", mandatory: true },
-  { id: "implementation-merged", description: "Implementation patches reviewed and merged", mandatory: true },
-  { id: "quality-verified", description: "QA verification passed with test report evidence", mandatory: true },
-  { id: "security-verified", description: "Security verification passed with scan evidence", mandatory: true },
-];
+// Moved to `protocol/src/catalog.ts`, next to `AUTO_EVIDENCED_CRITERIA`, which
+// it has to be read against: `packages/config` warns when a mandatory criterion
+// is in this list and not in that one, and config cannot import core. Re-exported
+// here so every existing importer (and `tests/core/criteria.test.ts`) is unmoved.
+// (imported at the top of this file so it is in local scope here too — a bare
+// `export … from` re-export does not bind the name for this module's own use.)
+export { DEFAULT_CRITERIA };
 
-/**
- * Cold-start size AND ceiling for the per-turn pre-flight hold. It is not an
- * estimate of anything — no agent's turn is known to cost 32k — it is the
- * pessimistic bound used before that agent has spent a single token. Once real
- * turns have been observed, `sizedTurnReserve` shrinks the hold towards what
- * that agent actually spends, so a nearly-empty ledger can still admit a cheap
- * turn instead of refusing every turn as if it were the worst case.
- *
- * `budgets.thread.reserve_tokens` overrides the ceiling for thread ledgers.
- */
-const TURN_RESERVE_TOKENS = 32000;
+// `TURN_RESERVE_TOKENS` moved to ./budgets, where `autoRaiseExhausted` has to
+// reproduce `tryAutoRaise`'s arithmetic exactly. Two copies of it would be the
+// drift that makes the termination verdict and the auto-raise sweep disagree.
 
 /**
  * Never reserve less than this, however cheap the agent's history looks: a
@@ -252,6 +289,30 @@ const MAX_TIMEOUT_RETRIES = 5;
  * documented and replayed for a number whose only sane value is "a few".
  */
 const MAX_STALL_NUDGES = 3;
+
+/**
+ * How many idle windows a HALTED mission may sit in before the watchdog decides
+ * nobody is coming.
+ *
+ * Derived from `stallIdleMs` rather than configured, for the same reason as
+ * `MAX_STALL_NUDGES`: this is the shape of the failure, not a knob. Five windows
+ * because the answer being waited for is a human's, and a human is allowed to
+ * take several minutes — a live mission sat 3h04m, so anything in this range is
+ * an improvement and the generous end costs nothing.
+ */
+const HALT_NEGLECT_IDLE_MULTIPLE = 5;
+
+/**
+ * How much longer a turn holding a claimed task may take than a coordination one.
+ *
+ * Not a knob, for the same reason as the constants above: an operator tuning this
+ * would be choosing how much finished work to throw away. Three because the
+ * observed spread is roughly that — coordination turns land at one to three
+ * minutes, a turn that builds something at fourteen to twenty — so a 10-minute
+ * default becomes 30 for the seat the mission is blocked on, and a 20-minute one
+ * becomes an hour.
+ */
+const WORK_TURN_TIMEOUT_MULTIPLE = 3;
 /**
  * Bounds on the TRACE COPY of a turn — what the Steps drawer and the audit
  * mirror retain. Named `MAX_TRACE_*` rather than `MAX_TURN_*` because the old
@@ -315,6 +376,29 @@ const INSTRUCTIONS_SOFT_CAP_TOKENS = 9000;
 const ARTIFACT_READ_MAX_CHARS = 60000;
 
 /**
+ * Ceiling on an inline `publish_artifact` body, in characters.
+ *
+ * Deliberately below {@link ARTIFACT_READ_MAX_CHARS}: anything a seat can
+ * publish in one inline call, a reader can get back in one un-paged read. The
+ * asymmetry that existed before — 60k in, unbounded out — was the wrong way
+ * round, because the unbounded side is the one billed at output rates.
+ *
+ * Over the limit the publish is refused, never truncated, and the refusal names
+ * `fromPath` and `edits`. A big document is not the problem; re-typing one
+ * through the model is.
+ */
+const ARTIFACT_PUBLISH_MAX_CHARS = 48000;
+
+/**
+ * Ceiling on a `fromPath` publish, in bytes.
+ *
+ * Higher than the inline cap because these bytes cost nothing to publish — the
+ * runtime reads the file — but not unbounded, because they still have to be
+ * readable afterwards, and `read_artifact` pages at 60k a turn.
+ */
+const ARTIFACT_PUBLISH_MAX_BYTES = 2_000_000;
+
+/**
  * The two degradation tiers, shared by the thread-budget path and the
  * instructions soft cap so both shrink a turn the same way.
  */
@@ -328,14 +412,14 @@ const ARTIFACT_READ_MAX_CHARS = 60000;
  * section can be removed outright here — this is the smallest a turn can get.
  */
 const CONTEXT_LIMITS_MINIMAL: ContextLimits = {
-  maxUnread: 2, maxDecisions: 1, maxArtifactRefs: 1, maxActivity: 1, maxOutstanding: 1, maxMemory: 1,
+  maxUnread: 2, maxDecisions: 1, maxArtifactRefs: 1, maxActivity: 1, maxOutstanding: 1, maxMemory: 1, maxRefusals: 1,
 };
 
 const CONTEXT_LIMITS_TIGHT: ContextLimits = {
-  maxUnread: 3, maxDecisions: 3, maxArtifactRefs: 5, maxActivity: 4, maxOutstanding: 3, maxMemory: 5,
+  maxUnread: 3, maxDecisions: 3, maxArtifactRefs: 5, maxActivity: 4, maxOutstanding: 3, maxMemory: 5, maxRefusals: 2,
 };
 const CONTEXT_LIMITS_REDUCED: ContextLimits = {
-  maxUnread: 6, maxDecisions: 5, maxArtifactRefs: 10, maxActivity: 7, maxOutstanding: 5, maxMemory: 10,
+  maxUnread: 6, maxDecisions: 5, maxArtifactRefs: 10, maxActivity: 7, maxOutstanding: 5, maxMemory: 10, maxRefusals: 3,
 };
 
 /** Ordered widest-to-narrowest. The soft cap walks this and stops at the first tier that fits. */
@@ -515,10 +599,18 @@ function declaredTurnSummary(output: AgentOutput): string | undefined {
  * its state writes a summary of the conversation, which is the one thing the
  * successor does not need — the projections already carry the facts, and the
  * mesh already carries the ledger. What is lost is judgement.
+ *
+ * The first line states the reason as a context size, which is what it now is:
+ * `transcriptTokens` is the largest prompt a single model call of the rotation
+ * turn was handed (`promptSize`), i.e. the transcript the window had to hold —
+ * the quantity the threshold is named for. Before the adapter's measure was
+ * fixed it was a turn's summed reads, and the sentence had to say so: 5,219,210
+ * reported against a largest prompt of 165,129
+ * (`NOTES-communication-measured-review.md` §11c).
  */
 const HANDOVER_INSTRUCTION = (info: RotationPendingInfo): string =>
   [
-    `Your backend session is full (${info.transcriptTokens} of ${info.thresholdTokens} context tokens) and will be replaced before your next turn.`,
+    `Your backend session is being rotated — it is holding ${info.transcriptTokens} tokens of context, past the ${info.thresholdTokens} rotation threshold — and it will be replaced before your next turn.`,
     "Everything you are holding in your head goes with it. The mesh keeps the log, the artifacts and your open asks; it does not keep what you concluded from them.",
     "",
     "Spend this turn on `write_continuity`, then `done`. Nothing else will be accepted.",
@@ -559,6 +651,24 @@ export class Supervisor {
    */
   private continuityAsked = new Map<string, number>();
   private turnInFlight = new Set<string>();
+  /**
+   * Who each sender has already bought a wake for during its current turn.
+   *
+   * The outbound half of the digest, and it exists because the scheduler
+   * already refuses to sell the second wake: `requestActivation` finds the
+   * recipient still queued and raises its priority WITHOUT enqueuing another
+   * turn. So a seat that interrupts the same recipient five times in one turn
+   * moves that recipient exactly once and was billed five times -- paying for
+   * attention that was never delivered, on the one ledger whose whole purpose
+   * is to make attention cost something real.
+   *
+   * Keyed by sender and cleared when that sender's turn begins, so it bounds
+   * a burst rather than a conversation: interrupting the same seat again on a
+   * LATER turn is a genuinely new wake and is charged again. Sends from
+   * outside a turn (the operator, sweeps, system paths) have no entry and are
+   * priced exactly as before.
+   */
+  private wakesBoughtThisTurn = new Map<string, Set<string>>();
   /** Turn ids the silence detector already interrupted — one interrupt per turn. */
   private interruptedTurnIds = new Set<string>();
   /**
@@ -638,6 +748,22 @@ export class Supervisor {
   private idleCallbacks: Array<() => void> = [];
   private recentTurns: TurnRecord[] = [];
   private activeTurnByAgent = new Map<string, string>();
+  /**
+   * How many effects each in-flight turn has landed on the mesh, keyed by turn
+   * id. Counted from the event stream, so it sees work however it arrived —
+   * the `mesh-json` ops block OR the `mesh_*` MCP tools.
+   *
+   * That distinction is the whole point. `unproductive` used to be decided by
+   * `output.operations.length`, which is only the ops block, and seats with
+   * MCP tools have largely stopped using it. In one live run 12 of 32 turns
+   * were logged "nothing was sent, published, or requested" while publishing
+   * artifacts, transitioning them and sending mail; the strikes that followed
+   * fed a recovery loop that cost one seat 537,479 tokens, 3.6x its configured
+   * budget, with every turn recorded as having produced nothing.
+   *
+   * Cleared when the turn settles, so this never outlives the turn it counts.
+   */
+  private turnEffects = new Map<string, number>();
   /**
    * Non-`mesh_*` tool invocations made by the turn currently in flight, keyed
    * by agent id. Written as soon as the runtime answers (before the op loop
@@ -734,6 +860,14 @@ export class Supervisor {
    * (see `checkStall`) instead of being re-raised.
    */
   private stallCapEscalated = false;
+  /**
+   * Whether the halt-neglect card this supervisor raised is still standing.
+   * Same self-release contract as `stallCapEscalated`: once the card is no
+   * longer OPEN the flag clears and the halt is re-evaluated from scratch.
+   */
+  private haltNeglectEscalated = false;
+  /** Say "someone already owes an answer" once, not once per watchdog tick. */
+  private haltNeglectNoted = false;
 
   constructor(public readonly deps: SupervisorDeps) {
     // Restore the persisted turn ring before anything can push a turn; the
@@ -741,6 +875,11 @@ export class Supervisor {
     // opTimings, text), and without this a restart loses every trace of it.
     this.turns = new TurnTracker(this.deps.turnsFile ? this.turnsPersistAdapter() : undefined);
     this.detector = new DeadlockDetector(deps.config);
+    // Every emit made while a seat is mid-turn now carries that turn, without
+    // any of the 109 emit sites having to say so. Only a LIVE kernel gets this:
+    // a replay must take `correlationId` off the stored envelope, never from a
+    // turn map that does not exist during a rebuild.
+    deps.kernel.correlate = (actorId) => (actorId ? this.activeTurnByAgent.get(actorId) : undefined);
     deps.scheduler.onIdle?.(() => this.onIdle());
     deps.kernel.subscribe((event) => {
       // Real work re-arms the watchdog. Without this, quiescence would be a
@@ -748,6 +887,13 @@ export class Supervisor {
       // message or a late artifact, which is a deadlock wearing a cost saving
       // as a disguise.
       if (isProgressEvent(event.type)) this.quiesced = false;
+      // `kernel.correlate` (set just above) stamps every emit made mid-turn
+      // with that turn's id, so counting here catches work from BOTH channels
+      // without any emit site having to say so — which is exactly what the
+      // ops-block-only measure could not do.
+      if (event.correlationId && isTurnEffect(event)) {
+        this.turnEffects.set(event.correlationId, (this.turnEffects.get(event.correlationId) ?? 0) + 1);
+      }
       this.scheduleWatchdog(!isBookkeepingEvent(event.type));
     });
   }
@@ -796,6 +942,8 @@ export class Supervisor {
     this.stallNudgeStreak = 0;
     this.stallRefusalStreak = 0;
     this.stallCapEscalated = false;
+    this.haltNeglectEscalated = false;
+    this.haltNeglectNoted = false;
   }
 
   /**
@@ -805,19 +953,11 @@ export class Supervisor {
    * mesh did — exactly the class of live-vs-replay divergence the commitment
    * ledger was built to eliminate.
    */
-  projectionConfig(): {
-    transitionGates: Record<string, string[]>;
-    commitmentSemantic: "compat" | "strict";
-    commitmentTtl: { defaultMs: number; byRole: Record<string, number> };
-  } {
-    return {
-      transitionGates: this.config.transitionGates,
-      commitmentSemantic: this.config.bus.commitmentSemantic,
-      // Carried for the same reason as the semantic: `dueBy` is stamped by the
-      // reducer at open time, so a replay without this knob would rebuild a
-      // ledger whose asks have no deadlines and never expire.
-      commitmentTtl: this.config.bus.commitmentTtl,
-    };
+  projectionConfig(): ReturnType<typeof projectionConfigFor> {
+    // Deliberately not a hand-copy of the live kernel's gates. The two used to
+    // be two lists maintained in parallel, which is how `contractsByType`
+    // reached production declared, read by the reducer, and passed by neither.
+    return projectionConfigFor(this.config);
   }
 
   private auditLine(msg: string): void {
@@ -996,6 +1136,20 @@ export class Supervisor {
     for (const id of this.config.agentOrder) {
       this.deps.budget.declare(agentKey(goalId, id), "tokens", this.config.agents[id].budget.tokens ?? null);
     }
+    // The attention line, declared only for a mesh that asked for one, and for
+    // exactly the seats an agent line is declared for -- a spawned worker's
+    // token line is undeclared today, so mirroring that is consistent rather
+    // than a new gap. The pre-flight check reads the LIMIT FROM CONFIG, not
+    // from this ledger, so a seat missing a declaration can still have its
+    // interrupts refused; what the declaration buys is `budget.exceeded` on
+    // the attention key, which is the one event an operator can watch for
+    // "this seat has run out of influence".
+    const attentionLimit = this.config.bus.deliveryClasses?.attentionTokens;
+    if (attentionLimit !== undefined) {
+      for (const id of this.config.agentOrder) {
+        this.deps.budget.declare(attentionKey(goalId, id), "tokens", attentionLimit);
+      }
+    }
     // 8b. close turns abandoned by a previous process lifetime: anything the
     // log still shows as running can never finish (in-memory traces are gone
     // with the old process), and would otherwise read as "running" forever in
@@ -1124,7 +1278,7 @@ export class Supervisor {
     for (const rec of this.state.agents.values()) {
       const a = rec.state;
       if (a.agentId === HUMAN_AGENT_ID) continue;
-      if ((this.state.unread.get(a.agentId)?.length ?? 0) > 0 || a.activeTaskId || a.lifecycle === "WAITING" || a.lifecycle === "FAILED") {
+      if (readableMailDepth(this.state, a.agentId) > 0 || a.activeTaskId || a.lifecycle === "WAITING" || a.lifecycle === "FAILED") {
         out.push(a.agentId);
       }
     }
@@ -1302,6 +1456,296 @@ export class Supervisor {
     await this.registerAgent(human);
   }
 
+  /**
+   * What this message's delivery is allowed to cost its recipients.
+   *
+   * Runs inside `sendMessage` so every path — agent op, MCP tool, HTTP API —
+   * is classed by the same rule, and after `sanitizeAgentMessageInput` so the
+   * class is never something a sender wrote. See `MessageControl.delivery`
+   * for what the three classes mean and why they are orthogonal to `mode`.
+   *
+   * Returns `undefined` whenever the mesh has no delivery regime configured,
+   * which is the default. An unclassed message takes the wake path it always
+   * took: absence is today's behaviour, never a cheaper default applied to a
+   * mesh that never asked for one.
+   */
+  private classifyDelivery(message: MeshMessage, cacheHit: boolean): DeliveryClass | undefined {
+    if (!this.config.bus.deliveryClasses) return undefined;
+    // A cached research answer is a log record, not mail: `cacheServed`
+    // already suppresses both the delivery and the wake, so pricing it would
+    // bill a sender for an interrupt no seat ever receives.
+    if (cacheHit) return undefined;
+    const control = message.control;
+    // A caller that stamped a class has already decided. Nothing does today;
+    // the guard is here so a deliberate runtime stamp can never be silently
+    // replaced by a derived one.
+    if (control?.delivery) return undefined;
+    // Broadcasts keep their own gate. The seats a broadcast wakes are the
+    // ones an operator wrote an `interests:` entry for, and a class derived
+    // from an envelope must not overrule a decision taken in config.
+    if (control?.mode === "broadcast") return undefined;
+    if (message.priority === "URGENT") return "interrupt";
+    // An answer to an ask the recipient is parked on. This is the one wake
+    // that is unarguably worth its turn: the creditor cannot proceed until it
+    // lands, so holding it in a coalesce window would make the cheap class
+    // the expensive one.
+    if (message.replyTo) {
+      const pending = this.state.pendingRequests.get(message.replyTo);
+      if (pending && message.to.includes(pending.from)) return "interrupt";
+    }
+    // The obligation rule itself, imported rather than restated. A delivery
+    // class has to be derived from the SAME predicate the commitment ledger
+    // runs on, or a mesh prices a wake as chatter while the ledger is
+    // recording a debt for it -- the class would then be cheapest exactly
+    // where the obligation is real. This used to be a local copy, which made
+    // four; `projections-messaging`, `context` and this site now all call the
+    // catalogue's one.
+    //
+    // Type-only is the right half here: `obligesRecipients` also gates on
+    // `control.mode`, and this function has already returned for `broadcast`
+    // above and handles `collab` below, so mode is settled by the time we
+    // ask. (`REQUEST_TYPES` is not the thing to reach for either -- it is
+    // `@deprecated`, and it is this same type-only question wearing a name
+    // that promises the whole answer.)
+    const obliging = isObligingType(message.type);
+    // Chasing a debt that is already open: this recipient owes this sender an
+    // answer IN THIS THREAD and is being asked again. Worth a turn, and worth
+    // a bill — the pairing is what makes a chase a decision instead of a
+    // reflex.
+    //
+    // Thread-scoped deliberately, and it is not a detail. Without the thread
+    // test, "this seat owes me something, anything" made every subsequent ask
+    // an interrupt: three unrelated questions to one busy colleague classed
+    // one `deliver` and two `interrupt`, so in a mesh where seats habitually
+    // owe each other work the expensive class becomes the default and the
+    // pricing inverts — which is the failure this whole move exists to close.
+    // A different question is a new ask; the same thread asked twice is a
+    // chase.
+    if (obliging) {
+      for (const pending of this.state.pendingRequests.values()) {
+        if (pending.from !== message.from) continue;
+        if (pending.threadId !== message.threadId) continue;
+        if (message.to.some((t) => stillOwes(pending, t))) return "interrupt";
+      }
+    }
+    // A collab is bounded at open and dies on its box. An accrued collab is a
+    // discussion nobody is ever woken to continue, so every session would run
+    // to its edge and raise an overrun card — D1's failure reached by another
+    // route. Coalescing keeps the conversation moving and still prices it: a
+    // burst of chatter costs one turn instead of one per line.
+    if (control?.mode === "collab") return "deliver";
+    if (obliging) return "deliver";
+    // Consequence, which is a different axis from obligation and used to be
+    // missing entirely. Everything above this line asks "does someone owe an
+    // answer?"; a HANDOFF, a DELEGATE or a verdict owes nothing and is the
+    // whole reason the recipient's next turn should look different. Without
+    // this, all eight fell to `accrue` — no wake, and no nudge either, since
+    // the sweep chases only `interrupt` — so work moved to a seat that was
+    // never told, and the sender's discharged ask meant nothing ever noticed.
+    //
+    // `deliver` rather than `interrupt`, deliberately. There is no debt here
+    // and so nothing to chase, and the recipient is not parked on a specific
+    // answer the way a `replyTo` creditor is; coalescing a burst of handoffs
+    // into one turn is exactly right, and it keeps the expensive class for
+    // mail someone is actually blocked on.
+    //
+    // Asked of the MESSAGE, not of `message.type`. For `TEST_RESULT` and
+    // `SECURITY_FINDING` the type name is the same word for opposite events,
+    // and the one that hands work back is the one the type-only question could
+    // not see — see `isAdverseVerdict`. That gap had a documented happy path
+    // running through it: `PATCH_READY` obliges nothing, so QA's verdict had no
+    // `replyTo` creditor, and a red build accrued in silence.
+    if (movesWorkMessage(message)) return "deliver";
+    return "accrue";
+  }
+
+  /**
+   * Why this sender cannot buy the wake it is asking for, or `undefined` when
+   * it can.
+   *
+   * Read before the send is a fact, unlike the charge it guards, because this
+   * one has to change the ENVELOPE -- it is the difference between a price and
+   * a receipt. See the call site in `sendMessage` for why the refusal lands on
+   * the class rather than on the message.
+   *
+   * Returns a sentence rather than a boolean because the sender reads it: an
+   * exhausted line and a mis-set `interrupt_cost_tokens` call for opposite
+   * responses from whoever sees it, and a `false` cannot tell them apart.
+   *
+   * Not a reservation. Nothing is held against the line here, and the charge
+   * still lands in `chargeInterrupt` after the send succeeds -- so a message
+   * that fails validation or a policy gate still bills nobody, which is the
+   * property the post-emit charge exists to protect. The window between the
+   * two is one turn of one seat; two interrupts racing inside it can both be
+   * refused or both allowed against the same headroom, which costs at most one
+   * interrupt and never a message.
+   */
+  /**
+   * Readable mail in a seat's box, NOT counting one message.
+   *
+   * `readableMailDepth` answers "how much can this seat open", which is the
+   * right question everywhere else and the wrong one here by exactly one
+   * message. The pre-flight quote runs before the send; the charge runs after
+   * the reducer has already pushed this message into the recipient's box. Ask
+   * the same question at both moments and the answers differ by one, which is
+   * enough to cross a tier boundary -- so the sender would be quoted one price
+   * and billed another, for a surcharge its own message caused. Excluding the
+   * message being priced makes the two agree and prices only the queue the
+   * sender is adding to.
+   */
+  private pricedMailDepth(agentId: string, selfMessageId?: string): number {
+    const box = this.state.unread.get(agentId);
+    if (!box?.length) return 0;
+    let n = 0;
+    for (const id of box) {
+      if (id === selfMessageId) continue;
+      if (this.state.messages.has(id)) n += 1;
+    }
+    return n;
+  }
+
+  /**
+   * What waking these recipients costs this sender, right now.
+   *
+   * The single place the tariff is computed, called by both the pre-flight
+   * refusal and the charge that lands afterwards. One function rather than
+   * two agreeing ones: the doc on `interruptUnaffordable` already concedes a
+   * one-turn race between quote and charge, and two separately-maintained
+   * price lists would widen that from a race into a drift.
+   *
+   * Two things make the price differ from `price * recipients.length`:
+   * congestion (a backed-up seat costs more to wake) and the per-turn digest
+   * (a wake already bought this turn costs nothing, because the scheduler
+   * will not sell a second one).
+   *
+   * The digest's premise, stated exactly so the bound is visible: the
+   * scheduler collapses a second activation for a seat that is QUEUED (it
+   * raises the priority of the entry already there) or BUSY (it records one
+   * re-run for after the turn). It does not collapse an activation for a seat
+   * that has since gone idle -- so a recipient that starts AND finishes a turn
+   * while the sender is still inside its own would sell a second turn that
+   * this ledger gives away. That window is the sender's own turn, it needs the
+   * recipient to complete inside it, and erring here costs one free wake;
+   * erring the other way bills for turns nobody gets, which is the defect this
+   * exists to fix. Priced as the common case, deliberately.
+   */
+  private interruptCost(
+    from: string,
+    recipients: string[],
+    selfMessageId?: string,
+  ): { total: number; priced: string[] } {
+    const regime = this.config.bus.deliveryClasses;
+    const price = regime?.interruptCostTokens ?? 0;
+    const bought = this.wakesBoughtThisTurn.get(from);
+    let total = 0;
+    const priced: string[] = [];
+    for (const t of recipients) {
+      if (bought?.has(t)) continue;
+      const depth = this.pricedMailDepth(t, selfMessageId);
+      const mult = interruptSurcharge(depth, regime?.congestionEvery);
+      total += price * mult;
+      priced.push(mult > 1 ? `${t} (${depth} unread, x${mult})` : t);
+    }
+    return { total, priced };
+  }
+
+  private interruptUnaffordable(from: string, goalId: GoalId, recipients: string[]): string | undefined {
+    const regime = this.config.bus.deliveryClasses;
+    // No regime, or a regime with no attention line: nothing to refuse
+    // against. This is the branch that keeps the change additive -- a mesh
+    // that enabled `classes` and never wrote `attention_tokens` behaves as it
+    // did, including the tariff landing on the agent line.
+    if (!regime || regime.attentionTokens === undefined) return undefined;
+    // Free interrupts are not rationed: at a price of zero the line can never
+    // run out, and a check that could still refuse would make `0` mean the
+    // opposite of what `interrupt_cost_tokens: 0` has always meant.
+    if (regime.interruptCostTokens <= 0) return undefined;
+    // An operator's interrupt is the operator's prerogative. It has no agent
+    // line to land on, so it has no attention line to be refused by.
+    if (from === HUMAN_AGENT_ID) return undefined;
+    const woken = recipients.filter((t) => t !== from && t !== HUMAN_AGENT_ID);
+    if (woken.length === 0) return undefined;
+    const { total: cost, priced } = this.interruptCost(from, woken);
+    // Every wake here was already bought earlier in this turn, so this send
+    // moves nobody who is not already moving and costs nothing to refuse
+    // against.
+    if (cost <= 0) return undefined;
+    const limit = regime.attentionTokens;
+    const ledger = this.state.budgets.get(attentionKey(goalId, from));
+    const spent = (ledger?.consumed ?? 0) + (ledger?.reserved ?? 0);
+    if (limit - spent >= cost) return undefined;
+    // Names the recipients and their surcharges rather than just counting
+    // seats. Under congestion pricing the cost no longer follows from the
+    // seat count, so "N tokens to wake 2 seat(s)" would read as an
+    // unexplained price jump for the same two seats -- and the one thing the
+    // sender can act on is WHICH seat is backed up.
+    return `attention budget exhausted (${spent}/${limit}); ${cost} tokens needed to wake ${priced.join(", ")}`;
+  }
+
+  /**
+   * Bill the sender for the turns its interrupt just bought.
+   *
+   * The asymmetry this closes: a send costs the sender nothing and costs each
+   * recipient a full model turn, so the cheapest act in the mesh spends the
+   * most expensive resource another seat has and no ledger anywhere records
+   * it. Priced per recipient woken, because an interrupt addressed to three
+   * seats buys three turns.
+   *
+   * Never on the mission line: that is the record of what the mission really
+   * spent, and a tariff added there would make that number a fiction. The
+   * recipient's real turn is still charged where it is really spent, when it
+   * runs.
+   *
+   * On the sender's ATTENTION line when the mesh declared one, and on its
+   * agent line when it did not. What a seat may spend thinking and what it may
+   * spend making someone else think are different budgets: charged to the same
+   * line, an interrupt-happy seat exhausts the budget it needs to work, so the
+   * degradation lands on the wrong resource and the wrong party.
+   *
+   * Deliberately NOT priced from `message.budgetHint`, the one envelope field
+   * that already gestures at the cost of a send. `budgetHint` arrives in
+   * `input`, is agent-written, and is not among the reserved keys — so a
+   * sender that set the price of its own interrupt could set it to zero.
+   * (It stays declared and, as before this change, read by nothing on the
+   * message envelope; the identically-named field on delegate/create_task is
+   * a different thing and still read.)
+   */
+  private async chargeInterrupt(message: MeshMessage, goalId: GoalId, correlationId?: string): Promise<void> {
+    if (message.control?.delivery !== "interrupt") return;
+    const price = this.config.bus.deliveryClasses?.interruptCostTokens ?? 0;
+    if (price <= 0) return;
+    // An operator's interrupt is the operator's prerogative and has no agent
+    // line to land on.
+    if (message.from === HUMAN_AGENT_ID) return;
+    const woken = message.to.filter((t) => t !== message.from && t !== HUMAN_AGENT_ID);
+    if (woken.length === 0) return;
+    // Where the tariff lands. With an attention line configured it goes there
+    // and only there: what a seat may spend thinking and what it may spend
+    // making someone ELSE think are different budgets, and charging the second
+    // to the first is what made an over-interrupting seat unable to work.
+    // Without one, the agent line, exactly as before this key existed.
+    const line =
+      this.config.bus.deliveryClasses?.attentionTokens !== undefined
+        ? attentionKey(goalId, message.from)
+        : agentKey(goalId, message.from);
+    const { total, priced } = this.interruptCost(message.from, woken, message.id);
+    // Record the wakes before the early return, not after: a second interrupt
+    // to the same seat this turn must be free whether or not this one was
+    // billable.
+    const bought = this.wakesBoughtThisTurn.get(message.from) ?? new Set<string>();
+    for (const t of woken) bought.add(t);
+    this.wakesBoughtThisTurn.set(message.from, bought);
+    if (total <= 0) return;
+    await this.deps.budget.consume(
+      line,
+      "tokens",
+      total,
+      undefined,
+      { reason: "interrupt", messageId: message.id, messageType: message.type, woke: woken, priced, unitTokens: price },
+      { actorId: message.from, goalId, correlationId },
+    );
+  }
+
   async sendMessage(input: {
     from: string;
     to: string[];
@@ -1312,13 +1756,29 @@ export class Supervisor {
     replyTo?: string;
     artifactRefs?: Array<ArtifactRef | string>;
     payload?: unknown;
+    /**
+     * Prose for the recipient, never parsed. NOT inside `payload`, because
+     * every payload key is live -- see `MeshMessage.note`. Unlike `control`
+     * this one is genuinely agent-supplied, so it travels in `input` where the
+     * sanitiser screens it rather than in the runtime-only second argument.
+     */
+    note?: string;
     priority?: MeshMessage["priority"];
     taskId?: string;
     causationId?: string;
     correlationId?: string;
     requires?: { id: string; text: string }[];
     budgetHint?: { maxTokens?: number; maxTurns?: number };
-  }): Promise<SendResult> {
+  },
+  /**
+   * Envelope fields only the runtime may set. Deliberately a SEPARATE
+   * argument rather than a field on `input`: everything in `input` goes
+   * through `sanitizeAgentMessageInput` on the next line, which is what makes
+   * forgery structurally impossible, so a runtime-owned value cannot travel
+   * in the same object it is being protected from.
+   */
+  runtime?: { control?: MessageControl },
+  ): Promise<SendResult> {
     // Every send — agent turn, MCP tool, HTTP API — funnels through here, so
     // this is the one place runtime-owned fields must be stripped off caller
     // input. Structural: after this line no forged `control` (or a forged
@@ -1419,6 +1879,9 @@ export class Supervisor {
       causationId: input.causationId,
       artifactRefs: messageRefs ?? [],
       payload: input.payload ?? {},
+      // Length is already policed by the schema's `maxLength`; a note longer
+      // than the cap is REFUSED by name at validation, not quietly truncated.
+      note: input.note,
       priority: input.priority ?? (recipients.some((r) => this.config.agents[r]?.mode === "service") ? "HIGH" : "NORMAL"),
       taskId: input.taskId,
       requires: input.requires,
@@ -1428,8 +1891,55 @@ export class Supervisor {
           ? { source: "human", trustLevel: 100 }
           : { source: "agent", trustLevel: 50 },
     };
+    if (runtime?.control) {
+      // Applied here: after `sanitizeAgentMessageInput` stripped whatever the
+      // caller supplied, and before `validateMessage`, so the closed `control`
+      // property set in the message schema actually covers these fields.
+      message.control = { ...(message.control ?? {}), ...runtime.control };
+    }
+    // Derived here, on the same seam and for the same reason: after the
+    // caller's `control` is gone and before `validateMessage`, so the closed
+    // property set covers the class too. It reads `mode`, so it must follow
+    // the merge above rather than precede it.
+    let delivery = this.classifyDelivery(message, !!cacheHit);
+    // The price, applied while it can still change the envelope.
+    //
+    // `chargeInterrupt` below runs after the send is a fact, and deliberately
+    // so -- but a charge that can only be levied after the wake was already
+    // bought is a receipt, not a price. Every mesh with a tariff therefore had
+    // exactly one way to stop a seat interrupting by habit: the seat would
+    // exhaust its own agent line and the `budget` rule would stop activating
+    // IT. That worked, and punished the wrong thing -- the seat lost the
+    // ability to work rather than the ability to interrupt, and nothing could
+    // tell those apart on one ledger.
+    //
+    // So the refusal happens here, before the emit, and it refuses the WAKE
+    // rather than the message. Nothing in this mesh is a suppressed delivery:
+    // the envelope ships, the mail lands, the commitment opens, the recipient
+    // reads it on its next turn for any other reason. Only the class changes.
+    let downgraded: string | undefined;
+    if (delivery === "interrupt") {
+      const afford = this.interruptUnaffordable(input.from, goalId, recipients);
+      if (afford) {
+        downgraded = afford;
+        delivery = "deliver";
+      }
+    }
+    if (delivery) message.control = { ...(message.control ?? {}), delivery };
+    // Stamped after `delivery` so the closed schema covers it, and only on the
+    // refusal path -- an absent field is the normal case, and a boolean would
+    // have made every message carry the answer to a question nobody asked.
+    if (downgraded) message.control = { ...(message.control ?? {}), downgraded };
     if (message.replyTo && !this.state.messages.has(message.replyTo)) {
       return { accepted: false, reason: `replyTo ${message.replyTo} not found` };
+    }
+    if (message.replyTo && this.state.messages.get(message.replyTo)?.control?.mode === "broadcast") {
+      // A broadcast is an announcement, not an ask: it opens no commitment,
+      // so a reply to one has nothing to discharge and no deadline to meet.
+      // Refused rather than quietly re-typed, because N seats each replying
+      // to one announcement is precisely the N-way chatter this mode exists
+      // to avoid. A seat with something to say opens its own ask.
+      return { accepted: false, reason: "cannot reply to a broadcast; open a request instead" };
     }
     const validation = validateMessage(message);
     if (!validation.valid) {
@@ -1461,6 +1971,10 @@ export class Supervisor {
       { message },
       { actorId: input.from, goalId, causationId: input.causationId, correlationId },
     );
+    // After the send is a fact, never before: a charge raised on a message
+    // that then failed validation or a policy gate would bill a sender for an
+    // interrupt that woke nobody.
+    await this.chargeInterrupt(message, goalId, correlationId);
 
     if (cacheHit) {
       await this.deps.kernel.emit("research.completed", { cached: true, artifactRef: cacheHit, messageId: message.id }, { actorId: input.from, goalId, causationId: evt.id });
@@ -1473,12 +1987,18 @@ export class Supervisor {
         artifactRefs: [cacheHit],
         payload: { summary: "answer served from explorer cache (no model invoked)", cached: true },
       });
-      return { accepted: true, messageId: message.id, eventId: evt.id };
+      return { accepted: true, messageId: message.id, eventId: evt.id, deliveryDowngraded: downgraded };
     }
 
     // derived semantic events
     await this.deriveSemantic(input.from, message, evt.id, correlationId);
-    return { accepted: true, messageId: message.id, eventId: evt.id, redirectedTo: policy.decision === "REDIRECT" ? recipients : undefined };
+    return {
+      accepted: true,
+      messageId: message.id,
+      eventId: evt.id,
+      redirectedTo: policy.decision === "REDIRECT" ? recipients : undefined,
+      deliveryDowngraded: downgraded,
+    };
   }
 
   private async deriveSemantic(from: string, m: MeshMessage, causationId: string, correlationId?: string): Promise<void> {
@@ -1486,11 +2006,27 @@ export class Supervisor {
     const corr = correlationId ?? this.turnCorrelation(from);
     const primary = m.artifactRefs[0]?.uri;
     if (m.type === "REQUEST_REVIEW") {
-      const art = primary ? this.findArtifactByUri(primary) : undefined;
-      await this.deps.kernel.emit("review.requested", { artifactId: art?.id, artifactRef: primary, reviewers: m.to, messageId: m.id, subject: m.payload }, { actorId: from, goalId, causationId, correlationId: corr });
-      await this.auditTransition(art?.id, m.id, goalId, corr);
-      if (art && (art.type === "ArchitectureDocument" || art.type === "ApiSpec")) {
-        await this.deps.kernel.emit("design.question", { artifactId: art.id, question: (m.payload as any)?.question ?? null, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
+      // One REQUEST_REVIEW may carry SEVERAL artifacts, and only the first ref
+      // used to resolve. An architect who published seven documents and asked
+      // for one review got one `review.requested`: six artifacts never left
+      // READY_FOR_REVIEW, and the approval reducer's status guard then ignored
+      // every sign-off they were later given. Ask per artifact, so each one
+      // reaches the state its own review was requested in.
+      const targets: Array<{ uri: string | undefined; art: Artifact | undefined }> = [];
+      for (const ref of m.artifactRefs) {
+        const art = ref.uri ? this.findArtifactByUri(ref.uri) : undefined;
+        if (art) targets.push({ uri: ref.uri, art });
+      }
+      // A request whose refs resolve to nothing is still an ask worth
+      // recording — it is how a review asked for in prose alone reaches the
+      // reviewer's mailbox, and dropping it would strand the asker.
+      if (targets.length === 0) targets.push({ uri: primary, art: undefined });
+      for (const { uri, art } of targets) {
+        await this.deps.kernel.emit("review.requested", { artifactId: art?.id, artifactRef: uri, reviewers: m.to, messageId: m.id, subject: m.payload }, { actorId: from, goalId, causationId, correlationId: corr });
+        await this.auditTransition(art?.id, m.id, goalId, corr);
+        if (art && (art.type === "ArchitectureDocument" || art.type === "ApiSpec")) {
+          await this.deps.kernel.emit("design.question", { artifactId: art.id, question: (m.payload as any)?.question ?? null, messageId: m.id }, { actorId: from, goalId, causationId, correlationId: corr });
+        }
       }
     }
     if ((m.type === "TEST_RESULT" || m.type === "SECURITY_FINDING") && (m.payload as any)?.result === "PASSED") {
@@ -1613,6 +2149,43 @@ export class Supervisor {
         });
       }
     }
+    // A verdict asserted in a MESSAGE is not a verdict.
+    //
+    // `APPROVE`, `REJECT` and `VETO` are valid message types and `deriveSemantic`
+    // had no branch for any of them; nothing anywhere reads `payload.verdict`.
+    // So a seat could write a full, reasoned approval — a recipient, an artifact
+    // ref, a citation, a justification — and the artifact would not move, no
+    // verdict would be recorded, and nothing would say so. Measured: 6 of 25
+    // verdict assertions in one live run had no backing op. Two seats did it every
+    // single time, while a third always used the op; it is a per-seat habit that
+    // nothing corrected.
+    //
+    // Worse, `op-aliases.ts` normalizes `APPROVED` → `APPROVE`, so a model writing
+    // the past tense is helped INTO the inert path.
+    //
+    // Same shape as the two branches above: the message is still delivered (it is a
+    // statement, and may carry reasoning a human wants), the refusal is recorded,
+    // and the SENDER is woken with the remedy — because the recipient is not the
+    // party who needs telling. Deduped per (sender, artifact) so a seat that keeps
+    // doing it is woken once, not once per message.
+    if (m.type === "APPROVE" || m.type === "REJECT" || m.type === "VETO") {
+      const art = artifactForRef(this.state, (m.payload as any)?.artifactId, primary);
+      const opName = m.type === "APPROVE" ? "approve" : m.type === "REJECT" ? "reject" : "veto";
+      const target = art ? `"artifactId":"${art.id}"` : '"artifactUri":"artifact://<Type>/<name>/<version>"';
+      const why =
+        `a ${m.type} message records no verdict — the mesh reads verdicts only from the \`${opName}\` op, so nothing moved and no signature was recorded. ` +
+        `Re-issue it as {"op":"${opName}","subject":"<domain>",${target}}.`;
+      await this.denied(from, art?.id ?? primary, `${opName} by message`, {
+        decision: "DENY",
+        reason: why,
+        ruleId: "verdict.message-only",
+      });
+      const notifyKey = `verdict:${from}:${art?.id ?? primary ?? ""}`;
+      if (!this.patchRefusalNotified.has(notifyKey)) {
+        this.patchRefusalNotified.add(notifyKey);
+        await this.activateAgent(from, { kind: "recovery", note: why, messageId: m.id }).catch(() => undefined);
+      }
+    }
     if (m.type === "ESCALATE") {
       // already an explicit escalation op path; keep audit-only
     }
@@ -1677,6 +2250,13 @@ export class Supervisor {
     // WAITING forever — the "no active agents" stall. A `respond`/`reply`
     // already notifies via its answer message; the extra wake is harmless
     // (deduped by isBusy/queue) but keep it anyway: uniform beats clever.
+    // The one exception to all of the above: the actor closed its OWN ask.
+    // Waking the asker to tell it what it just did is pure cost -- and worse
+    // than noise, because the note below reads "your request closed: <why>",
+    // so a self-close would state the action back to the seat that took it.
+    // Computed here rather than guarded at the call site so every self-close
+    // gets it, including a future one that does not arrive through `withdraw`.
+    const selfClosed = by === pending.from;
     if (partial) {
       // One of several debtors answered. The ask is NOT closed, so telling the
       // asker it was would send it off to plan a next step while it is still
@@ -1689,7 +2269,7 @@ export class Supervisor {
       }
       return true;
     }
-    if (pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
+    if (!selfClosed && pending.from !== HUMAN_AGENT_ID && this.state.agents.has(pending.from)) {
       const why =
         reason === "reply" ? "it was answered"
         : reason === "superseded" ? "a newer artifact version replaced what was under review"
@@ -1701,7 +2281,21 @@ export class Supervisor {
         : reason === "task" ? "its task was answered"
         : reason === "in_thread" ? "an in-thread answer arrived"
         : reason === "refused" ? `${by} declined it — do not re-ask the same agent; route it elsewhere or proceed without it`
+        // Naming `by` rather than "the asker", because those are the same
+        // seat only in the case that never reaches here: the asker closing its
+        // own ask is `selfClosed` above, so the only withdrawal that wakes an
+        // asker is one an operator performed on its behalf. Hard-coding "the
+        // agent that asked for it" would then tell the asker it withdrew an
+        // ask it is in fact waiting on.
+        : reason === "withdrawn_by_sender" ? `${by} withdrew it — stop working on it; nobody owes an answer`
         : reason === "expired" ? "its deadline passed with no answer — treat it as UNANSWERED and decide without it or re-ask"
+        // The one closing note that hands back an ANSWER. Quoted rather than
+        // described, because the asker is being woken precisely to act on the
+        // value, and "your default applied" would make it re-derive what it
+        // had already told the mesh. Never re-ask on this one: the debtors
+        // were offered a say and declined to use it, so a re-ask spends their
+        // attention on a question already settled in their favour.
+        : reason === "defaulted" ? `nobody objected by the deadline, so it stands as you said it would: ${JSON.stringify(pending.ifUnanswered?.assume) ?? "your stated default"} — proceed on that and do not re-ask`
         : reason === "refused_cap" ? "the ask ledger was full so it was never opened — re-ask once outstanding work drains"
         : "it was closed";
       await this.activateAgent(pending.from, {
@@ -1710,6 +2304,92 @@ export class Supervisor {
       }).catch(() => undefined);
     }
     return true;
+  }
+
+  /**
+   * Close an ask the actor itself raised.
+   *
+   * The credential is the exact opposite of `discharge`'s, which is why this is
+   * its own op rather than a flag on that one: a refusal is authorized by OWING
+   * the answer, a withdrawal by having ASKED the question. Requiring
+   * `pending.from === actorId` is what stops a bystander voiding a colleague's
+   * question -- the same abuse the debtor check exists to prevent, arriving
+   * from the other end.
+   *
+   * The ledger work is `dischargeCommitment`'s, like every other exit. What is
+   * NOT shared is who gets told: that path wakes the ASKER, and here the actor
+   * is the asker, so it would be waking a seat to inform it of its own act.
+   * The seat that needs the message is the DEBTOR, for whom "stop working on
+   * this" is information it cannot get any other way -- a reviewer mid-review
+   * on a withdrawn question is spending turns on cancelled work.
+   */
+  private async opWithdraw(actorId: string, op: MeshOpWithdraw, turn: TurnState): Promise<OpResult> {
+    const pending = this.state.pendingRequests.get(op.messageId);
+    if (!pending) {
+      return { ok: false, op: op.op, reason: `no outstanding request '${op.messageId}' (already answered, or never existed)` };
+    }
+    if (pending.from !== actorId && actorId !== HUMAN_AGENT_ID) {
+      // Names the creditor, not the debtors. The seat that tried this needs to
+      // know WHOSE ask it was trying to close; who owed an answer has nothing
+      // to do with why it was refused, and listing them invites the reading
+      // that it is a dispute about the answer.
+      return { ok: false, op: op.op, reason: `only ${pending.from}, who raised ${op.messageId}, may withdraw it` };
+    }
+    // Read the debtors BEFORE the discharge: that call deletes the entry this
+    // reads from, and `released` is what the notice below is addressed to.
+    const released = outstandingDebtors(pending).filter((d) => d !== HUMAN_AGENT_ID);
+    // No `detail`, deliberately. Extra keys would ride into the
+    // `commitment.discharged` event payload and stop there: the reducer builds
+    // a `DischargeRecord` from a FIXED field list (`state.dischargeCommitment`),
+    // so `note` and a `released` list would look persisted while nothing could
+    // ever read them back. Both facts already have durable homes -- the reason
+    // is on the event payload and in the notice below, and the released set is
+    // `rec.to`, which for a whole-ask close IS the list of debtors let go.
+    const closed = await this.dischargeCommitment(op.messageId, "withdrawn_by_sender", actorId);
+    if (!closed) {
+      // The discharge event did not reach the log, so the ask is still open.
+      // Say so rather than sending a "stop working on this" notice for work
+      // that is still owed.
+      return { ok: false, op: op.op, reason: `could not close '${op.messageId}' — it is still open` };
+    }
+    if (released.length === 0) return { ok: true, op: op.op, reason: op.reason };
+
+    // Stamped `accrue`, and this is a deliberate override rather than a
+    // derivation. A retraction is a DE-escalation: the asker has decided the
+    // answer does not matter, which is the one thing a wake is for, so buying
+    // a turn per debtor to say "never mind" would make the cheap exit the most
+    // expensive move in the exchange. The class suppresses the WAKEUP and never
+    // the delivery -- the notice lands in every released debtor's mailbox and
+    // is read on its next turn for any other reason, the same guarantee every
+    // other class carries.
+    const notice = await this.sendMessage(
+      {
+        from: actorId,
+        to: released,
+        type: "INFORM",
+        // Both, deliberately, and this is the documented-safe combination:
+        // `sendMessage` resolves a live thread first and only falls back to
+        // opening one, so the notice lands in the thread that raised the ask
+        // and still has a subject if that thread is somehow gone.
+        threadId: pending.threadId,
+        newThread: { subject: `withdrawn: ${pending.type} ${op.messageId}` },
+        // `causationId` and NOT `replyTo`. They read alike and mean opposite
+        // things: `replyTo` is what DISCHARGES an ask (the reducer looks the
+        // id up in `pendingRequests` and settles the debt), so a retraction
+        // carrying it would claim to be the answer to the question it is
+        // cancelling. `causationId` says only that this message happens
+        // because of that one, which is exactly true.
+        causationId: op.messageId,
+        payload: { withdrawn: true, request: op.messageId, requestType: pending.type, from: actorId, reason: op.reason },
+        priority: "NORMAL",
+      },
+      // Runtime-owned control, the same door `broadcast` and `collab` use to
+      // stamp `mode`: an agent cannot set this, and the scheduler reads it off
+      // the envelope rather than out of agent-written JSON.
+      actorId === HUMAN_AGENT_ID ? undefined : { control: { delivery: "accrue" } },
+    );
+    turn.sentOps++;
+    return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
   }
 
   /**
@@ -1805,12 +2485,35 @@ export class Supervisor {
    * replay is a no-op (same-status guard) but whose presence makes the
    * transition observable to consumers that read the event stream.
    */
-  private async auditTransition(artifactId: string | undefined, causationId: string, goalId: string, correlationId?: string): Promise<void> {
+  /**
+   * Mirror the post-reducer status of an artifact an approval just moved.
+   *
+   * `actorId` is who DID the thing, and it is not the same as the artifact's
+   * owner. Falling back to `this.turnCorrelation(a.owner)` meant a reviewer's
+   * approval of someone else's artifact was stamped with the OWNER's turn — which
+   * is either undefined (the owner is idle) or, worse, a live and entirely
+   * unrelated concurrent turn. The owner remains the last resort, because the
+   * two `deriveSemantic` callers genuinely have no acting seat.
+   *
+   * The emit's own `actorId` stays `"system"`: the transition is the reducer's
+   * doing, not the reviewer's. Only the correlation is being corrected.
+   */
+  private async auditTransition(
+    artifactId: string | undefined,
+    causationId: string,
+    goalId: string,
+    correlationId?: string,
+    actorId?: string,
+  ): Promise<void> {
     if (!artifactId) return;
     const a = this.state.artifacts.get(artifactId);
     if (!a) return;
     await this.deps.kernel
-      .emit("artifact.transition", { artifactId, to: a.status, derived: true, gateSatisfied: true }, { actorId: "system", goalId, causationId, correlationId: correlationId ?? this.turnCorrelation(a.owner) })
+      .emit(
+        "artifact.transition",
+        { artifactId, to: a.status, derived: true, gateSatisfied: true },
+        { actorId: "system", goalId, causationId, correlationId: correlationId ?? this.turnCorrelation(actorId ?? a.owner) },
+      )
       .catch(() => undefined);
   }
 
@@ -2146,11 +2849,41 @@ export class Supervisor {
         await this.markCriterionEvidence("implementation-merged", { kind: "release-accepted", artifactRef: { uri: artifactUri(a.type, a.name, a.version) }, by: a.owner, recordedAt: this.deps.kernel.clock.iso() });
       }
     }
+    await this.markTypeKeyedCriteria(a, to, a.owner);
+  }
+
+  /**
+   * Criteria that follow from an artifact's TYPE reaching a status, not from the
+   * word the signer used.
+   *
+   * Extracted because it only ever ran on the explicit `transition_artifact` path.
+   * When an approval moves an artifact through the REDUCER instead — which is what
+   * `recordDecision` does — `mirrorTransition` is never called, so the criterion
+   * was never marked. Live consequence: tech-lead signed eleven approvals as
+   * `subject: "quality"` (which its own role prompt tells it to do), four of them
+   * ArchitectureDocuments, and every one moved the artifact while
+   * `architecture.approved` stopped firing entirely. The artifacts were APPROVED
+   * and the criterion they satisfy stayed unmarked, so the mission's own acceptance
+   * record was silently wrong.
+   *
+   * Keyed off the artifact deliberately: a criterion is a statement about the
+   * artifact, not about the capacity the signer was acting in. The signer's word
+   * still decides which EVENT is emitted (`architecture.approved` vs
+   * `review.approved`), which must not change — `architecture.approved`'s reducer
+   * guard is strictly narrower than `review.approved`'s, and widening it breaks
+   * replay equality.
+   *
+   * `by` is the acting seat, and it has to be threaded rather than defaulted:
+   * `claimIsVerified` treats an absent claimer as runtime-derived and therefore
+   * verified by construction, so passing `undefined` here would let a reviewer's
+   * no-tool approval land EVIDENCED and defeat the verification gate.
+   */
+  private async markTypeKeyedCriteria(a: Artifact, to: ArtifactStatus, by: string | undefined): Promise<void> {
     if (to === "APPROVED" && (a.type === "ArchitectureDocument" || a.type === "ApiSpec")) {
       await this.markCriterionEvidence("architecture-approved", {
         kind: "architecture-approved",
         artifactRef: { uri: artifactUri(a.type, a.name, a.version) },
-        by: a.owner,
+        by,
         recordedAt: this.deps.kernel.clock.iso(),
       });
     }
@@ -2324,7 +3057,28 @@ export class Supervisor {
     return halted ? haltReasonText(halted) : null;
   }
 
-  async recordDecision(actorId: string, kind: ApprovalKind, subject: string, artifactId?: string, comment?: string): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
+  /**
+   * @param citedUri The `artifact://…/<version>` the caller actually reviewed, when
+   *   it supplied one. Checked against the artifact's CURRENT version, because
+   *   nothing else in the pipeline does: `resolveArtifactRef` throws the version
+   *   away and returns the single mutable record, and the payload below rebuilds the
+   *   ref from whatever version is current. So a reviewer who read v1 and approved
+   *   after v2 landed had its approval recorded against v2, silently, and
+   *   `approvalPath` advanced v2 on the strength of a review of v1.
+   *
+   *   Measured: 2 of 13 verdicts in one live run landed on a superseded version, and
+   *   one of them — a rejection of a design system — was 5 of 7 findings already
+   *   fixed in the version the reviewer had not seen. The author found it by hand
+   *   and said so in prose; nothing in the mesh noticed.
+   */
+  async recordDecision(
+    actorId: string,
+    kind: ApprovalKind,
+    subject: string,
+    artifactId?: string,
+    comment?: string,
+    citedUri?: string,
+  ): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, reason: "no active goal" };
     const frozen = this.haltedSettlementRefusal(actorId);
@@ -2408,7 +3162,7 @@ export class Supervisor {
         },
         { actorId, goalId },
       );
-      await this.auditTransition(artifactId, evt.id, goalId);
+      await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
       const landed = await this.markCriterionEvidence(criterionId, {
         kind: "criteria-acceptance",
         artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
@@ -2448,6 +3202,28 @@ export class Supervisor {
       await this.denied(actorId, artifactId, "self-approval", { decision: "DENY", reason, ruleId: "self-approval" });
       return { ok: false, reason };
     }
+    // A verdict on a version that no longer exists is not a verdict on this
+    // artifact. Refused rather than caveated: the reviewer demonstrably never read
+    // what it is about to settle, and letting it through is how a rejection whose
+    // findings were already fixed advanced a supersedeing version.
+    //
+    // Guarded against the fuzzy resolver on purpose. `resolveArtifactRef` falls
+    // through to `findArtifactByUri`, which matches on display name and slug and
+    // prefers the newest version — so a model-invented URI can resolve to an
+    // artifact with a different name entirely. Checking the version on such a match
+    // would refuse a verdict the seat never miscited. So the check applies only when
+    // the cited URI parses AND its kind and name are the ones that actually resolved.
+    if (artifact && citedUri) {
+      const cited = parseArtifactUri(citedUri);
+      const sameArtifact = cited !== null && cited.kind === artifact.type && cited.name === artifact.name;
+      if (cited?.version !== undefined && sameArtifact && cited.version !== artifact.version) {
+        const reason =
+          `you cited v${cited.version} but ${artifact.name} is now v${artifact.version} — read the current version before ruling on it. ` +
+          `Nothing was recorded; your findings on v${cited.version} may already be addressed.`;
+        await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason, ruleId: "verdict.stale-version" });
+        return { ok: false, reason };
+      }
+    }
     const payload = {
       subject: artifactId ? `artifact:${artifactId}` : subject,
       fallbackSubject: subject,
@@ -2462,6 +3238,48 @@ export class Supervisor {
       actorRole: this.state.agents.get(actorId)?.definition.role ?? actorId,
       comment,
     };
+    // An approval always RECORDS a verdict — a `<role>.approve` gate token is a
+    // signature, and seats legitimately sign artifacts sitting at a gate status
+    // that no approval can advance. What it does not always do is MOVE the
+    // artifact, and the signer was told `{ ok: true }` either way.
+    //
+    // That is the silent half. In a live mission a reviewer gave nine
+    // architecture documents a reasoned APPROVE with binding errata, every one
+    // of them recorded, none of them moved, and the implementers — who wake on
+    // the approval event and are told by their role prompts that it unlocks
+    // work — built on an architecture the projection still called unapproved.
+    // Nothing in any of those turns said so.
+    //
+    // The refusal shape here is the caveat channel, not a hard failure: the op
+    // SUCCEEDED, and refusing it would break the gate signatures that depend on
+    // signing artifacts in exactly these statuses.
+    //
+    // Two holes this used to have, both found by watching a live run:
+    //
+    //  - it covered `approve`/`pass` only, so a REJECT that moved nothing came
+    //    back clean. A reviewer rejected an already-merged CodePatch 35 minutes
+    //    after it shipped; `review.rejected` went on the log reading
+    //    authoritative, the artifact stayed MERGED, and nothing told either the
+    //    reviewer or an auditor that the verdict was inert.
+    //  - it asked `approvalPath` — the MACHINE — rather than the reducer. A
+    //    document-machine artifact in DRAFT has a non-empty path (["FINAL"]),
+    //    so approve-on-DRAFT looked advanceable and said nothing, while the
+    //    reducer refused to move it. `verdictAdvances` asks the reducer's own
+    //    question instead.
+    const verdictKind: "approve" | "pass" | "reject" | "veto" | undefined =
+      kind === "approve" || kind === "pass" || kind === "reject" || kind === "veto" ? kind : undefined;
+    const movesIt =
+      artifact && verdictKind
+        ? verdictAdvances(this.state, actorId, artifact, verdictKind, domain === "architecture" && kind === "approve")
+        : true;
+    const inertApproval =
+      artifact && verdictKind && !movesIt
+        ? verdictKind === "reject" || verdictKind === "veto"
+          ? artifact.status === "MERGED"
+            ? `the verdict is recorded, but ${artifact.type} "${artifact.name}" is already MERGED and a rejection cannot unland it — open a revert or publish a new version if the work has to come out`
+            : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and a rejection only moves something that is UNDER_REVIEW`
+          : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and an approval cannot advance it from there — move it to review first if you meant to approve the work`
+        : undefined;
     let type: EventType;
     if (kind === "approve" || kind === "pass") type = "review.approved";
     else if (kind === "reject" || kind === "veto") type = "review.rejected";
@@ -2469,10 +3287,10 @@ export class Supervisor {
     else type = "review.approved";
     if (domain === "architecture" && kind === "approve") {
       const evt = await this.deps.kernel.emit("architecture.approved", { ...payload, subject: "architecture" }, { actorId, goalId });
-      await this.auditTransition(artifactId, evt.id, goalId);
+      await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
       await this.markCriterionEvidence("architecture-approved", { kind: "approval", by: actorId, recordedAt: this.deps.kernel.clock.iso() });
       await this.settleReviewAsks(actorId, artifact, evt.id);
-      return { ok: true, eventId: evt.id };
+      return { ok: true, eventId: evt.id, reason: inertApproval };
     }
     if (kind === "block") {
       const requesters = [...this.state.pendingRequests.values()]
@@ -2490,16 +3308,36 @@ export class Supervisor {
       });
       if (!m.accepted) {
         const evt = await this.deps.kernel.emit("review.rejected", { subject, artifactId, actorId, actorRole: this.state.agents.get(actorId)?.definition.role ?? actorId, comment, blockedInstead: true }, { actorId, goalId });
-        await this.auditTransition(artifactId, evt.id, goalId);
+        await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
       }
       return { ok: m.accepted, reason: m.reason, eventId: m.eventId };
     }
     const evt = await this.deps.kernel.emit(type, payload, { actorId, goalId });
-    await this.auditTransition(artifactId, evt.id, goalId);
+    await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
+    // Type-keyed criteria, read AFTER the reducer has run. `mirrorTransition`
+    // covers the explicit `transition_artifact` op; this covers the reducer path,
+    // which is how an approval actually moves an artifact. Without it a seat
+    // signing in a capacity other than the artifact's own domain moved the
+    // artifact and marked nothing — eleven times in one live run.
+    //
+    // Deliberately NOT inside `auditTransition`: that is also called from two
+    // `deriveSemantic` sites with `actorId: "system"` and no acting seat, and
+    // `claimIsVerified` reads an absent claimer as verified-by-construction — so a
+    // reviewer's no-tool approval would land EVIDENCED and defeat the verification
+    // gate. Re-read from projections because the reducer has updated the status.
+    const moved = artifactId ? this.state.artifacts.get(artifactId) : undefined;
+    if (moved) await this.markTypeKeyedCriteria(moved, moved.status, actorId);
     await this.settleReviewAsks(actorId, artifact, evt.id);
-    if (kind === "pass" && (domain === "quality" || domain === "release")) {
-      await this.markCriterionEvidence(domain === "quality" ? "quality-verified" : "security-verified", {
-        kind: `${domain}-pass`,
+    // `release` used to ride this branch, and the ternary then sent it to the
+    // ELSE arm — so a release sign-off evidenced `security-verified`. A release
+    // manager saying "ship it" is not a security review, and there is no
+    // release criterion in `AUTO_EVIDENCED_CRITERIA` for it to close instead.
+    // Nothing pinned the old mapping: the one test in this area
+    // (`supervisor-turn.test.ts:569`) passes `subject: "security"`, which is
+    // the separate branch below and is unaffected.
+    if (kind === "pass" && domain === "quality") {
+      await this.markCriterionEvidence("quality-verified", {
+        kind: "quality-pass",
         by: actorId,
         recordedAt: this.deps.kernel.clock.iso(),
       });
@@ -2507,7 +3345,7 @@ export class Supervisor {
     if (kind === "pass" && domain === "security") {
       await this.markCriterionEvidence("security-verified", { kind: "security-pass", by: actorId, recordedAt: this.deps.kernel.clock.iso() });
     }
-    return { ok: true, eventId: evt.id };
+    return { ok: true, eventId: evt.id, reason: inertApproval };
   }
 
   private domainOfSubject(subject: string, artifactId?: string): string {
@@ -2536,7 +3374,13 @@ export class Supervisor {
       // DENY does not and waiting for it is the trap. Without this the only
       // way to tell them apart was to re-derive policy knowledge in the UI.
       { from: actorId, action, subject: subjectId, reason: decision.reason, ruleId: decision.ruleId, decision: decision.decision, denied: true },
-      { actorId, goalId },
+      // Explicitly, not via the kernel's default. This is the single choke point
+      // for every policy denial in the file — the op path, the criterion path,
+      // `reportActivationDenied`, `claimTask`, `transitionArtifact`, the
+      // TEST_RESULT and PATCH_READY refusals — and before this it carried no
+      // correlation at all: one live run had a turn link on 1 of 19 rejections.
+      // A refusal nobody can trace to a turn is a refusal nobody can act on.
+      { actorId, goalId, correlationId: this.turnCorrelation(actorId) },
     );
   }
 
@@ -2581,6 +3425,31 @@ export class Supervisor {
     if (gate && gate.length > 0 && task.requiredCapabilities.includes("implementation.gate")) {
       const res = checkApprovals(this.state, gate, undefined);
       if (!res.ok) return { ok: false, reason: `implementation gate unsatisfied, missing: ${res.missing.join(", ")}` };
+    }
+    // The `artifacts` field was accepted and never read. `mesh_merge`'s tool
+    // schema advertises it as "evidence artifact URIs" and the value went straight
+    // into the payload with no existence check — so a completion could cite an
+    // artifact that does not exist, or cite nothing at all, and the board recorded
+    // the task as done either way. Contrast `claimTask` directly above, which does
+    // enforce every declared `requiredCapability` and records a `denied()` when one
+    // is missing: the claim is gated on a machine-checkable precondition and the
+    // completion was gated on nothing.
+    //
+    // Deliberately NOT a `requiredArtifacts` contract. No such field exists
+    // anywhere in the repo, and adding one buys a check `artifactForRef` already
+    // performs at the cost of a new config surface and a new class of deadlock.
+    // This only holds the seat to the evidence IT chose to cite.
+    for (const ref of artifacts ?? []) {
+      const uri = typeof ref === "string" ? ref : ref?.uri;
+      if (!uri) continue;
+      if (!artifactForRef(this.state, undefined, uri)) {
+        await this.denied(actorId, taskId, "complete task (unresolvable evidence)", {
+          decision: "DENY",
+          reason: `cited evidence '${uri}' resolves to no artifact — publish it, or cite it by ref: artifact://<Type>/<name>/<version>`,
+          ruleId: "task.evidence-unresolvable",
+        });
+        return { ok: false, reason: `cited evidence '${uri}' resolves to no artifact` };
+      }
     }
     // Bounded like the task prose it closes: this summary is replayed out of
     // the log into every later prompt that recounts the task, so an unbounded
@@ -2850,7 +3719,12 @@ export class Supervisor {
       return { ok: false, reason: `new limit (${next}) must be above the current limit (${ledger.limit})` };
     }
     const goalId = this.state.activeGoalId ?? undefined;
-    const res = await this.deps.budget.raiseLimit(key, next, { actorId: by, goalId, reason: opts.reason ?? "operator raise from escalation" });
+    const res = await this.deps.budget.raiseLimit(key, next, {
+      actorId: by,
+      goalId,
+      reason: opts.reason ?? "operator raise from escalation",
+      decidedBy: "operator",
+    });
     return { ok: true, key, previous: res.previous, limit: res.limit, unblocked: res.unblocked };
   }
 
@@ -3174,9 +4048,14 @@ export class Supervisor {
     const next = Math.min(ceiling, Math.max(Math.floor(ledger.limit * cfg.factor), ledger.consumed + ledger.reserved + TURN_RESERVE_TOKENS));
     if (next <= ledger.limit) return false;
     await this.deps.budget.raiseLimit(key, next, {
+      // `HUMAN_AGENT_ID` stays as the actor of last resort rather than the agent
+      // id: `scheduler.candidatesFor` feeds `event.actorId` in as `excludeActor`,
+      // so naming the agent here would silently stop waking it on its own raise.
+      // `decidedBy` is what makes the machine decision legible instead.
       actorId: actorId ?? HUMAN_AGENT_ID,
       goalId: this.state.activeGoalId ?? undefined,
       reason: `auto-raise: ${ledger.consumed}/${ledger.limit} exhausted; ceiling ${ceiling} (${cfg.maxMultiple}x ${originalLimit})`,
+      decidedBy: "auto",
     });
     this.auditLine(`budget ${key} auto-raised ${ledger.limit} -> ${next} (ceiling ${ceiling})`);
     return true;
@@ -3241,16 +4120,19 @@ export class Supervisor {
     if (!goalId) return;
     for (const ledger of [...this.state.budgets.values()]) {
       if (!ledger.exceeded) continue;
-      let original: number | null = null;
-      if (ledger.key.startsWith(`agent:${goalId}/`)) {
-        const agentId = ledger.key.slice(`agent:${goalId}/`.length);
-        original = this.state.agents.get(agentId)?.definition.budget.tokens
-          ?? this.config.budgets.perAgent[agentId]
-          ?? this.config.budgets.agentDefaults.tokens;
-      } else if (ledger.key.startsWith(`thread:${goalId}/`)) {
-        original = this.config.budgets.threadTokens;
-      } else continue;
-      await this.tryAutoRaise(ledger.key, original);
+      // One lookup, shared with the termination verdict. `configuredBudgetLimit`
+      // returns null for exactly the keys this sweep used to skip with
+      // `else continue` — mission and task ledgers, which are deliberately
+      // never auto-raised — so the behaviour is unchanged and the verdict can
+      // no longer disagree with the sweep about what a ledger's ceiling is.
+      const original = configuredBudgetLimit(this.state, this.config, ledger.key);
+      if (original === null) continue;
+      // `"system"` rather than the default `HUMAN_AGENT_ID`: this sweep runs off
+      // a timer with no agent and no operator behind it, and labelling its work
+      // `human` is what made nine machine decisions read as nine interventions.
+      // `system` is the established actor for runtime-originated events and, like
+      // `human`, registers no interests — so no wake behaviour changes.
+      await this.tryAutoRaise(ledger.key, original, "system");
     }
   }
 
@@ -3383,11 +4265,48 @@ export class Supervisor {
     // 1. Withdraw the verdict. The projection also flips the targeted criteria
     //    back to UNSATISFIED, which is what stops the watchdog from emitting
     //    `goal.completed` again on its next tick.
+    //
+    //    Read the criteria BEFORE the emit so the flip can be attributed: a
+    //    criterion that was already UNSATISFIED is not news, and announcing it
+    //    as newly blocked would make the signal useless.
+    const criteriaBefore = new Map(
+      (this.state.goals.get(gid)?.acceptanceCriteria ?? []).map((c) => [c.id, c.status] as const),
+    );
     await this.deps.kernel.emit(
       "goal.reopened",
       { goalId: gid, reason, criteria: opts.criteria, addCriteria: minted },
       { actorId: by, goalId: gid },
     );
+
+    //    Say WHICH criteria the reopen put back in the way, one event each.
+    //
+    //    `goal.reopened` is a single goal-level fact; the criteria it withdraws
+    //    are the part a seat can act on, and until this nothing emitted
+    //    `requirement.blocked` anywhere in the runtime. It was a declared,
+    //    schema'd, alert-severity event that five shipped configs subscribe to
+    //    and `roles/pm.md` instructs a seat to "never ignore" — a subscription
+    //    that could not fire, which reads to a config author as a mechanism
+    //    that exists. Reopen is the one place the runtime genuinely knows a
+    //    criterion has regressed, and the reducer for this event is idempotent
+    //    on a criterion already UNSATISFIED, so this announces the change
+    //    without re-applying it.
+    const goalAfterReopen = this.state.goals.get(gid);
+    for (const c of goalAfterReopen?.acceptanceCriteria ?? []) {
+      if (c.status !== "UNSATISFIED") continue;
+      // Only a criterion that EXISTED and was not already unsatisfied. A
+      // criterion minted from the reopen reason is new work, not work put back
+      // in the way, and announcing it as newly blocked would fire this on every
+      // reopen with a reason.
+      if (!criteriaBefore.has(c.id)) continue;
+      if (criteriaBefore.get(c.id) === "UNSATISFIED") continue;
+      await this.deps.kernel
+        .emit(
+          "requirement.blocked",
+          { criterionId: c.id, reason: `withdrawn by the reopen: ${reason}` },
+          { actorId: by, goalId: gid },
+        )
+        .catch(() => undefined);
+    }
 
     // 2. Revive the agents that completed WITH the mission. COMPLETED -> IDLE
     //    is the only legal edge out of COMPLETED, and `agent.resumed` is the
@@ -3576,6 +4495,9 @@ export class Supervisor {
       if (process.env.MESH_TURN_DEBUG) console.error(`[dbg] runTurn ${agentId} early-return: no goal`);
       return;
     }
+    // A new turn is a new burst: whoever this seat woke last time has long
+    // since taken that turn, so waking them again buys a real one.
+    this.wakesBoughtThisTurn.delete(agentId);
     const goal = this.state.goals.get(goalId);
     // Post-completion follow-up (human feedback via direct mail, an operator
     // wake, or a recovery answer) may still run one turn on a COMPLETED goal
@@ -3630,6 +4552,19 @@ export class Supervisor {
     // Set when this turn was spent on a handover; holds the reason the seat was
     // ACTUALLY woken for, so the `finally` can give it back.
     let handoverReactivation: ActivationReason | null = null;
+    /**
+     * Set on any path where this turn's work does not reach the mesh, so the
+     * `finally` can emit one `turn.discarded`.
+     *
+     * Hoisted rather than emitted in place because the failure paths are three
+     * different shapes — a parse that yielded nothing, a reserve that blocked,
+     * and a throw — and only the `finally` runs on all of them. `tokens` stays
+     * optional: on a throw the figure genuinely is not known, and the released
+     * reservation is an EWMA estimate rather than a measurement.
+     */
+    let turnDiscard:
+      | { reason: "no_ops" | "all_rejected" | "timeout" | "silence" | "budget_blocked" | "failed"; detail?: string; tokens?: number }
+      | null = null;
     try {
       // budget reservation
       const agentReserveAmount = this.sizedTurnReserve(agentId);
@@ -3656,6 +4591,11 @@ export class Supervisor {
         await this.escalate({ reason: "budget_exhausted", raisedBy: agentId, conflictKey: `budget:${agentKey(goalId, agentId)}`, detail: { key: agentKey(goalId, agentId), reason: reserve.reason } });
         this.finishTurn(turnId, agentId, { status: "blocked", error: reserve.reason });
         this.deps.scheduler.noteTurnOutcome?.(agentId, "blocked");
+        // No tokens: this turn never reached the model, so unlike the other
+        // reasons nothing was spent. Recorded anyway — a seat that keeps being
+        // turned away at the door is a wake the mesh is paying to schedule and
+        // then wasting, and that is worth seeing next to the costly kinds.
+        turnDiscard = { reason: "budget_blocked", detail: reserve.reason?.slice(0, 200) };
         return;
       }
       if (reserve.reservationId) openReservations.push({ key: agentKey(goalId, agentId), reservationId: reserve.reservationId });
@@ -3697,6 +4637,7 @@ export class Supervisor {
           await this.escalate({ reason: "thread_budget_exhausted", raisedBy: agentId, conflictKey: `budget:${tk}`, detail: { threadId: reason.threadId } });
           this.finishTurn(turnId, agentId, { status: "blocked", error: `thread budget exhausted: ${reason.threadId}` });
           this.deps.scheduler.noteTurnOutcome?.(agentId, "blocked");
+          turnDiscard = { reason: "budget_blocked", detail: `thread budget exhausted: ${reason.threadId}` };
           return; // `finally` releases the agent hold taken above.
         }
         threadReservationId = tReserve.reservationId;
@@ -3763,23 +4704,10 @@ export class Supervisor {
       const session = await this.ensureSession(agentId);
       const handover = await this.openHandover(agentId, session, turnId, activationEvt.id);
       if (handover) handoverReactivation = reason;
-      // build context from undelivered mail first, then drain via delivery events
+      // build context from undelivered mail; the drain is emitted after the
+      // model has actually read it (see the delivery loop below the runtime call)
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
       const rawBundle = buildAgentContext({ config: this.config, kernel: this.deps.kernel }, agentId, taskHint, contextLimits);
-      // Delivery is bookkeeping: the agent only ever reads the first
-      // MAX_UNREAD (12) in context. Cap per-turn fan-out so a deep backlog
-      // (hundreds/thousands queued) can't turn one turn into thousands of
-      // emits — each emit wakes the watchdog, scheduler matching, the sqlite
-      // index and SSE broadcast. The remainder stays queued and drains over
-      // following turns (notifyTurnFinished re-queues while unread > 0).
-      const unread = [...(this.state.unread.get(agentId) ?? [])].slice(0, MAX_DELIVERED_PER_TURN);
-      for (const mid of unread) {
-        await this.deps.kernel.emit(
-          "message.delivered",
-          { agentId, messageId: mid, turnId },
-          { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
-        );
-      }
       const renderTurn = (b: AgentContextBundle): string =>
         renderContextInstructions(b) +
         `\n\n## Why you were woken\n${handover ? HANDOVER_INSTRUCTION(handover) : describeReason(reason)}\n\nEmit your reply as mesh operations.`;
@@ -3915,7 +4843,13 @@ export class Supervisor {
           // progress — otherwise such a turn is indistinguishable from a dead
           // one to every liveness reader and to the dashboard.
           try {
-            this.turns.noteToolFrame(turnId);
+            // The call id and whether it CLOSED, so the silence watchdog can
+            // tell a turn waiting on a long tool from a turn whose stream froze.
+            // A `tool_call` opens, a `tool_call_update` closes.
+            this.turns.noteToolFrame(turnId, {
+              id: "toolCallId" in ev ? String(ev.toolCallId) : undefined,
+              closed: ev.kind === "tool_call_update",
+            });
             this.recentTurns = this.turns.list(RECENT_TURNS_MAX);
           } catch {
             /* a missing activity mark must never break the turn */
@@ -3950,6 +4884,73 @@ export class Supervisor {
         this.toolRequests.set(agentId, held);
       }
       if (output.error) throw new RuntimeFailure(output.error);
+
+      /**
+       * Drain the mailbox now that a model has actually been handed it, and
+       * only for the mail that model was actually shown.
+       *
+       * The reducer splices the id straight out of `state.unread` on
+       * `message.delivered` and nothing ever puts it back, so this emit is the
+       * single point where mail stops being owed. It used to run before
+       * `callRuntimeWithTimeout`, over the first MAX_DELIVERED_PER_TURN (100)
+       * QUEUED ids, which got both halves of that wrong.
+       *
+       * Wrong in time: a turn that then timed out, lost its backend or crashed
+       * had permanently eaten messages no agent had seen — silently, because an
+       * empty mailbox is indistinguishable from a read one, and because
+       * `notifyTurnFinished` only re-queues while `unread > 0`, which the drain
+       * had just made false. The mail did not go unanswered; it ceased to exist.
+       *
+       * Wrong in extent: the bundle renders at most `maxUnread` of them (12,
+       * and as few as 2 once the tier ladder degrades), so a backlog of 100 or
+       * fewer had up to 88 messages marked delivered that were never put in
+       * front of anyone — while `omitted.unread` told the agent they were still
+       * queued until a later turn showed them. Degradation made it worse: the
+       * rebuild below re-read an already-drained box and rendered no mail at
+       * all, which is precisely when an agent can least afford to lose its asks.
+       *
+       * Both halves collapse into one rule: delivered means rendered AND
+       * answered; everything else stays owed. That can show the same message
+       * twice (the runtime answered, the op loop below then threw), which is the
+       * right trade — re-reading a message costs a paragraph of context, losing
+       * one costs the exchange it belonged to.
+       *
+       * It cannot spin. `state.unread` only ever holds ids that `message.sent`
+       * also put in `state.messages`, nothing deletes from there, and every tier
+       * renders at least two, so a non-empty box always renders something and
+       * therefore always shrinks. A deep backlog now drains over more turns
+       * instead of being discarded in one. The pre-model failures that leave
+       * mail queued are each already attempt-counted by `handleAgentFailure`
+       * (3 restarts, 5 slow retries) before the seat is SUSPENDED and refused
+       * activation.
+       *
+       * Placed before the op loop rather than at the end of the turn because
+       * once the model has read the mail it may have ACTED on it, and
+       * re-delivering after a half-applied turn would invite it to act twice.
+       *
+       * `renderableMail` rather than `bundle.unreadMail` because the page no
+       * longer renders every message the window admitted: a sender that
+       * restated itself inside one thread renders once, and the restatements it
+       * made stale are withheld and counted in that thread instead. The whole
+       * point of draining here rather than before the model call is that
+       * "delivered" means a model was handed it, so the drain has to ask what
+       * was handed over -- not what was selected. Asking `bundle.unreadMail`
+       * directly would mark the withheld restatements delivered without anyone
+       * having read them, which is the silent loss this block exists to
+       * prevent, reintroduced one layer up.
+       *
+       * The helper is shared with the renderer rather than reimplemented here,
+       * so the two cannot drift apart.
+       */
+      const delivered = renderableMail(bundle.unreadMail).shown.slice(0, MAX_DELIVERED_PER_TURN);
+      for (const msg of delivered) {
+        await this.deps.kernel.emit(
+          "message.delivered",
+          { agentId, messageId: msg.id, turnId },
+          { actorId: agentId, causationId: activationEvt.id, correlationId: turnId },
+        );
+      }
+
       // Record BEFORE the op loop: the ops below are where an agent accepts a
       // criterion, and `markCriterionEvidence` has to know whether this turn
       // actually checked anything or is just asserting it did.
@@ -4013,6 +5014,11 @@ export class Supervisor {
         // Recorded but NOT billed: the replayed transcript on a persistent
         // session. Kept on the event so cost reports can still show it.
         cacheRead: output.tokensUsed?.cacheRead,
+        // Billed inside `output`, not beside it — this rides along so a replayed
+        // mission can say what the output went ON, which is the one question
+        // the largest line on the bill could not answer. Undefined when the
+        // backend reports no split, and read as unknown, not as none.
+        thinking: output.tokensUsed?.thinking,
         toolCalls: output.toolCalls?.length ?? 0,
         turnId,
       }, { actorId: agentId, correlationId: turnId });
@@ -4075,10 +5081,33 @@ export class Supervisor {
       if (typedOnlyRefusal) {
         endSummary = typedOnlyRefusal + (modelSummary ? ` (model said: ${modelSummary})` : "");
         unproductive = true;
+      } else if (output.operations.length === 0 && (this.turnEffects.get(turnId) ?? 0) > 0) {
+        // Worked through the MCP channel and closed without an ops block.
+        //
+        // This arm exists because the measure above is only half the turn.
+        // Seats holding `mesh_*` tools have largely stopped writing ops blocks
+        // — the tools work and answer mid-turn — and judging them by the block
+        // alone called the most productive turns of a live run empty: three
+        // artifacts published, five threads opened and four messages sent,
+        // logged as "nothing was sent, published, or requested", then a strike.
+        //
+        // So: say the contract was missed, because closing without `done`
+        // leaves no statement of why the turn stopped. Do NOT call it
+        // unproductive and do NOT discard it — the effects are already durable
+        // on the log, and scoring them as nothing is what fed the strike loop
+        // that cost one seat 537,479 tokens.
+        const effects = this.turnEffects.get(turnId) ?? 0;
+        endSummary = `no mesh-json ops block — ${effects} mesh effect${effects === 1 ? "" : "s"} landed through the mesh tools this turn, so the work stands; close with an ops block (at least \`done\`) so the turn records why it stopped${modelSummary ? ` (model said: ${modelSummary})` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId} parsed 0 ops but landed ${effects} effect(s) through tools`);
       } else if (output.operations.length === 0) {
         endSummary = `⚠ no mesh ops parsed from output — nothing was sent, published, or requested${modelSummary ? ` (model said: ${modelSummary})` : ""}`;
         this.auditLine(`turn ${turnId} for ${agentId} parsed 0 ops`);
         unproductive = true;
+        // The costliest of the discard reasons and the one with no signature at
+        // all before this: the seat wrote a verdict or published an artifact, the
+        // ops block failed to parse, and the only trace was an audit line plus a
+        // note in the seat's own memory. Tokens are known here, so state them.
+        turnDiscard = { reason: "no_ops", detail: modelSummary ? modelSummary.slice(0, 200) : undefined, tokens: output.tokensUsed?.total };
       } else if (rejected.length === turn.results.length && turn.results.length > 0) {
         unproductive = true;
         const why = rejected
@@ -4087,6 +5116,12 @@ export class Supervisor {
           .slice(0, 300);
         endSummary = `⚠ all ${rejected.length} ops rejected (${why})${modelSummary ? ` — model said: ${modelSummary}` : ""}`;
         this.auditLine(`turn ${turnId} for ${agentId}: all ${rejected.length} ops rejected: ${why}`);
+        // This arm used to be the one unproductive outcome that left NO
+        // `turn.discarded` behind. A turn whose every op was refused spent full
+        // tokens and moved nothing — the same loss `no_ops` records — but from
+        // the event stream it was indistinguishable from a productive turn, so
+        // any measure of wasted spend silently undercounted it.
+        turnDiscard = { reason: "all_rejected", detail: why.slice(0, 200), tokens: output.tokensUsed?.total };
       } else if (
         // Planning is not doing. A plan is bookkeeping about future work, so a
         // turn that only planned spent full tokens and moved nothing — exactly
@@ -4138,9 +5173,25 @@ export class Supervisor {
       // closer to done. Without this warning the agent reads a clean turn,
       // concludes the criterion is closed, and never revisits it. Appended
       // rather than branched, so it survives alongside a rejection warning.
+      //
+      // A refused wake belongs here for the same reason and with the same
+      // shape: the send returned ok and the mail landed, so every other signal
+      // in this turn says it worked, and the only thing that did not happen is
+      // the one thing the seat asked for. Left unsaid, a seat reads the
+      // missing wake as a delivery that failed and sends the same message
+      // again — paying the same price it could not pay the first time.
       const caveats = turn.results
-        .filter((r) => r.ok && r.reason)
-        .map((r) => `${r.op}: ${r.reason}`)
+        .flatMap((r) => {
+          if (!r.ok) return [];
+          const lines: string[] = [];
+          if (r.reason) lines.push(`${r.op}: ${r.reason}`);
+          if (r.deliveryDowngraded) {
+            lines.push(
+              `${r.op}: SENT, but it did not wake anyone (${r.deliveryDowngraded}). The message is delivered and sits in the recipient's mailbox — they will see it on their next turn. Do not send it again; escalate to the operator if it truly cannot wait.`,
+            );
+          }
+          return lines;
+        })
         .join("; ")
         .slice(0, 400);
       if (caveats) {
@@ -4154,6 +5205,11 @@ export class Supervisor {
         tokens,
         tokensInput: output.tokensUsed?.input,
         tokensOutput: output.tokensUsed?.output,
+        tokensCacheRead: output.tokensUsed?.cacheRead,
+        // Optional all the way down on purpose: a backend that does not report
+        // the split leaves this undefined, and every reader must keep reading
+        // it as unmeasured rather than as a turn that thought for nothing.
+        tokensThinking: output.tokensUsed?.thinking,
         model: output.model,
         // Executed ops only (not merely planned): if the mission flipped
         // mid-turn and the loop stopped early, the trace must not claim the
@@ -4199,6 +5255,36 @@ export class Supervisor {
           error: err instanceof Error ? err.message : String(err),
           errorDetail: describeError(err, failedIn),
         });
+        // A turn that threw wrote no audit row — `auditTurn` runs before the op
+        // loop, past which the throw escapes — and billed nothing, because
+        // `consume` is only reached on the success path. So a 20-minute timeout
+        // and a two-minute forced settle both cost real provider tokens and were
+        // recorded as free.
+        //
+        // `tokens` is absent unless the adapter measured it. An `InterruptedTurnError`
+        // does: the CLI answers a mesh-ordered abort with a `result` frame carrying
+        // real `usage`, which the adapter used to discard. Everything else here still
+        // reports nothing, because the figure genuinely is not known and the released
+        // reservation is an EWMA estimate — billing an estimate poisons the next one.
+        //
+        // Surfaced, not yet billed: `consume` on this path would be a budget-ledger
+        // change with its own double-count risk against the success path, and is a
+        // separate decision from making the spend visible at all.
+        const msg = err instanceof Error ? err.message : String(err);
+        const interrupted = err instanceof InterruptedTurnError;
+        turnDiscard = {
+          // Type before message. An interrupt's own words say nothing about
+          // timeouts or silence, so the regex below classified a turn the mesh
+          // stopped on purpose as `failed` — indistinguishable from a crashed
+          // backend, which is the exact confusion the adapter raises this type to
+          // prevent. Of the two mesh-ordered interrupt sites, only
+          // `interruptSilentTurns` surfaces this error: the turn-timeout site
+          // rejects with its own `RuntimeFailure` immediately after calling
+          // `interrupt`, so it wins that race and still reads "timeout".
+          reason: interrupted ? "silence" : /timeout/i.test(msg) ? "timeout" : /silence/i.test(msg) ? "silence" : "failed",
+          detail: msg.slice(0, 200),
+          ...(interrupted && err.tokensUsed !== undefined ? { tokens: err.tokensUsed.total } : {}),
+        };
         await this.handleAgentFailure(agentId, err, reason);
       }
     } finally {
@@ -4206,9 +5292,33 @@ export class Supervisor {
       for (const { key, reservationId } of openReservations) {
         await this.deps.budget.release(key, reservationId, { actorId: agentId, goalId }).catch(() => undefined);
       }
+      // One event for every way a turn's work fails to reach the mesh. Emitted
+      // here because the `finally` is the only block all those paths share.
+      //
+      // `correlationId: turnId` is passed EXPLICITLY and must stay that way: the
+      // `activeTurnByAgent` delete is three lines below, so a correlation resolved
+      // from that map would come back undefined depending on statement order.
+      if (turnDiscard) {
+        await this.deps.kernel
+          .emit(
+            "turn.discarded",
+            {
+              agentId,
+              turnId,
+              reason: turnDiscard.reason,
+              ...(turnDiscard.tokens !== undefined ? { tokens: turnDiscard.tokens } : {}),
+              ...(turnDiscard.detail ? { detail: turnDiscard.detail } : {}),
+            },
+            { actorId: agentId, goalId, correlationId: turnId },
+          )
+          .catch(() => undefined);
+      }
       this.turnInFlight.delete(agentId);
       this.activeTurnByAgent.delete(agentId);
       this.turnVerificationTools.delete(agentId);
+      // Keyed by turn, so it must be dropped here or it accumulates one entry
+      // per turn for the life of the mission.
+      this.turnEffects.delete(turnId);
       this.lastTurnAt = Date.now();
       this.deps.scheduler.notifyTurnFinished(agentId);
       // The handover turn CONSUMED the activation that woke this seat, so the
@@ -4248,7 +5358,23 @@ export class Supervisor {
   }
 
   private async callRuntimeWithTimeout(agentId: string, session: { session: import("../../protocol/src/index").AgentSession; runtime: AgentRuntime }, input: AgentInput, turnId: string): Promise<AgentOutput> {
-    const timeoutMs = this.config.scheduling.turnTimeoutMs;
+    // A seat holding a claimed task gets longer, because it is the seat the
+    // mission is blocked on and the one turn that must not be thrown away.
+    //
+    // `turn_timeout_ms` is a single global number, and it is calibrated for
+    // coordination: review, dispositioning and delegation turns take one to three
+    // minutes, while a turn that actually builds something takes fourteen to
+    // twenty. Both live timeouts in one run killed the seat the mission was
+    // waiting on, one of them holding the only claimed implementation task in the
+    // mission — twenty minutes of work discarded, and the task still marked
+    // CLAIMED afterwards.
+    //
+    // `activeTaskId` is the distinction, it is already in scope, and it is read
+    // one screen away in `handleAgentFailure` to release the claim. Multiplying
+    // the existing budget keeps one knob rather than introducing a per-seat
+    // timeout config surface and the schema churn that comes with it.
+    const holdsTask = this.state.agents.get(agentId)?.state.activeTaskId !== undefined;
+    const timeoutMs = this.config.scheduling.turnTimeoutMs * (holdsTask ? WORK_TURN_TIMEOUT_MULTIPLE : 1);
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -4316,6 +5442,8 @@ export class Supervisor {
       tokens: output.tokensUsed?.total ?? 0,
       tokensInput: output.tokensUsed?.input,
       tokensOutput: output.tokensUsed?.output,
+      tokensCacheRead: output.tokensUsed?.cacheRead,
+      tokensThinking: output.tokensUsed?.thinking,
       summary: declaredTurnSummary(output)?.slice(0, 500),
       text: (output.text ?? "").slice(0, MAX_TRACE_TEXT_CHARS),
       instructions: input.instructions?.slice(0, MAX_TRACE_INSTRUCTIONS_CHARS),
@@ -4546,6 +5674,137 @@ export class Supervisor {
     return this.deps.workspace.mainPath;
   }
 
+  // ------------------------------------------------------ artifact bodies
+
+  /**
+   * Turn a publish op into the bytes to store.
+   *
+   * Three ways in, and the ordering of the checks is the policy: exactly one
+   * source, or the op is refused with the name of the field that would have
+   * worked. Refusing-and-teaching rather than guessing, because a publish that
+   * silently picked one of two given bodies would produce an immutable version
+   * whose provenance nobody can reconstruct.
+   *
+   * The reason these exist at all is a cost the mesh was paying invisibly.
+   * `content` is emitted by the model, and output tokens are the most expensive
+   * thing a mission buys. On the mission this was measured against, 44 inline
+   * publishes carried 1.18M characters — about 17% of everything written — and
+   * most of it already existed as a file the runtime could have read for free,
+   * or as a previous version the new one re-typed in full.
+   */
+  private async resolveArtifactBody(
+    actorId: string,
+    op: { content?: string; fromPath?: string; edits?: ArtifactEdit[]; asVersionOf?: string },
+  ): Promise<{ content: string } | { error: string }> {
+    const given = [
+      op.content !== undefined ? "content" : undefined,
+      op.fromPath !== undefined ? "fromPath" : undefined,
+      op.edits !== undefined ? "edits" : undefined,
+    ].filter((v): v is string => v !== undefined);
+    if (given.length > 1) {
+      return { error: `give exactly one of content, fromPath or edits — got ${given.join(" and ")}` };
+    }
+    if (given.length === 0) {
+      return { error: "no body: give content (inline), fromPath (a file in your workspace) or edits (changes to asVersionOf)" };
+    }
+
+    if (op.fromPath !== undefined) return this.readArtifactBodyFromPath(actorId, op.fromPath);
+    if (op.edits !== undefined) return this.applyArtifactEdits(op.edits, op.asVersionOf);
+
+    const content = String(op.content ?? "");
+    // The read side has had a ceiling since the day an agent could flood its own
+    // window with one `read_artifact`; the write side had none, and one measured
+    // publish arrived at 106,021 characters. Refuse rather than truncate: a
+    // truncated artifact is a corrupt document that still digests, versions and
+    // passes gates, which is worse than no artifact at all. The refusal names
+    // the two cheap ways out, because a model that just spent 26k output tokens
+    // on a body needs to be told where those tokens should have gone.
+    if (content.length > ARTIFACT_PUBLISH_MAX_CHARS) {
+      return {
+        error:
+          `inline content is ${content.length} chars, over the ${ARTIFACT_PUBLISH_MAX_CHARS} limit. ` +
+          `Write the document to a file in your workspace and publish with fromPath, ` +
+          `or if this revises an existing artifact, send edits with asVersionOf instead of the whole body.`,
+      };
+    }
+    return { content };
+  }
+
+  /**
+   * Read a publish body off disk.
+   *
+   * Anchored on {@link agentWorkspace} — the same directory the seat's own
+   * Write/Edit tools land in — so "publish what I just wrote" is one relative
+   * path and nothing else in the filesystem is reachable. The containment check
+   * is done on the resolved real path, not the string, because `../` and a
+   * symlink out of the worktree are the same escape wearing two hats.
+   */
+  private async readArtifactBodyFromPath(actorId: string, fromPath: string): Promise<{ content: string } | { error: string }> {
+    const root = await this.agentWorkspace(actorId);
+    const rootReal = await fs.promises.realpath(root).catch(() => path.resolve(root));
+    const abs = path.resolve(rootReal, fromPath);
+    const real = await fs.promises.realpath(abs).catch(() => abs);
+    const rel = path.relative(rootReal, real);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      return { error: `fromPath '${fromPath}' resolves outside your workspace — publish a file you wrote, using a path relative to your workspace root` };
+    }
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(real);
+    } catch {
+      return { error: `fromPath '${fromPath}' does not exist in your workspace (looked in ${rootReal})` };
+    }
+    if (!stat.isFile()) {
+      return { error: `fromPath '${fromPath}' is not a file` };
+    }
+    // Same ceiling as inline, for a different reason: the bytes are free to
+    // publish but not free to read back — `read_artifact` pages at 60k, and a
+    // 10MB file would page for forty turns. The limit is generous enough that
+    // any hand-written document clears it; what it stops is a seat publishing
+    // a build output or a log by accident.
+    if (stat.size > ARTIFACT_PUBLISH_MAX_BYTES) {
+      return { error: `fromPath '${fromPath}' is ${stat.size} bytes, over the ${ARTIFACT_PUBLISH_MAX_BYTES} limit for a published artifact` };
+    }
+    const content = await fs.promises.readFile(real, "utf8");
+    return { content };
+  }
+
+  /**
+   * Apply exact replacements to the previous version of an artifact.
+   *
+   * The same contract as the Edit tool a seat already knows: each `old` must
+   * appear exactly once, and if any one of them does not, nothing is written.
+   * All-or-nothing matters more here than in a working file — an artifact
+   * version is immutable and gets cited as evidence, so a half-applied revision
+   * would be a document that claims to say something it does not.
+   */
+  private async applyArtifactEdits(edits: ArtifactEdit[], asVersionOf?: string): Promise<{ content: string } | { error: string }> {
+    if (!asVersionOf) {
+      return { error: "edits need asVersionOf: they are changes to a specific previous version, so say which one" };
+    }
+    if (edits.length === 0) {
+      return { error: "edits is empty — a version that changes nothing is not a version" };
+    }
+    const current = this.state.artifacts.get(asVersionOf);
+    if (!current) return { error: `unknown artifact ${asVersionOf}` };
+    let content = await this.deps.content.read(current.contentRef);
+    for (const [i, edit] of edits.entries()) {
+      const target = String(edit?.old ?? "");
+      if (target.length === 0) {
+        return { error: `edits[${i}].old is empty — give the exact text to replace` };
+      }
+      const first = content.indexOf(target);
+      if (first === -1) {
+        return { error: `edits[${i}].old not found in ${current.type}:${current.name} v${current.version} — read the artifact and quote it exactly` };
+      }
+      if (content.indexOf(target, first + target.length) !== -1) {
+        return { error: `edits[${i}].old appears more than once in ${current.type}:${current.name} v${current.version} — include enough surrounding text to make it unique` };
+      }
+      content = content.slice(0, first) + String(edit?.new ?? "") + content.slice(first + target.length);
+    }
+    return { content };
+  }
+
   // ------------------------------------------------------ tool approvals
 
   /**
@@ -4668,6 +5927,19 @@ export class Supervisor {
         }
       }
     }
+    /**
+     * A default with no clock behind it is a lie the asker cannot detect.
+     *
+     * `computeDueBy` returns nothing at all unless the mesh configured
+     * `bus.commitments.ttl_ms` -- a contract's `slaMs` narrows a regime and
+     * never creates one -- so on a mesh with no deadline regime an ask
+     * carrying `ifUnanswered` and no `afterMs` would be accepted, recorded,
+     * and then sit open forever while the asker believed it had an answer
+     * coming at a known time. Refused here instead, at the one moment the
+     * seat is listening, and the refusal names all three ways out.
+     */
+    const undated = this.undatedDefault(op);
+    if (undated) return { ok: false, op: op.op, reason: undated };
     try {
       switch (op.op) {
         case "send": {
@@ -4681,19 +5953,89 @@ export class Supervisor {
             replyTo: op.replyTo,
             artifactRefs: op.artifactRefs,
             payload: op.payload,
+            note: op.note,
             priority: op.priority,
             taskId: op.taskId,
             requires: op.requires,
             budgetHint: op.budgetHint,
-          });
+          }, { control: askControl(op) });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, eventId: res.eventId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted
+            ? { ok: true, op: op.op, messageId: res.messageId, eventId: res.eventId, deliveryDowngraded: res.deliveryDowngraded }
+            : { ok: false, op: op.op, reason: res.reason };
         }
         case "broadcast": {
           const targets = [...this.state.agents.keys()].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
-          const res = await this.sendMessage({ from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, artifactRefs: op.artifactRefs });
+          const res = await this.sendMessage(
+            { from: actorId, to: targets, type: op.type, newThread: { subject: `broadcast ${op.type}` }, payload: op.payload, note: op.note, artifactRefs: op.artifactRefs },
+            // Stamped by the runtime, not the agent, because three separate
+            // behaviours key off it and all three must be unforgeable: the
+            // reducer opens no commitment for a broadcast, `sendMessage`
+            // refuses replies to one, and the scheduler wakes only the seats
+            // that declared an interest instead of the whole roster.
+            { control: { mode: "broadcast" } },
+          );
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
+        }
+        case "collab": {
+          const peers = [...new Set(op.with ?? [])].filter((id) => id !== actorId && id !== HUMAN_AGENT_ID);
+          if (peers.length === 0) return { ok: false, op: op.op, reason: "collab needs at least one other participant" };
+          const topic = (op.topic ?? "").trim();
+          if (!topic) return { ok: false, op: op.op, reason: "collab needs a topic (it names the box on the overrun card)" };
+          const box = this.config.bus.collab;
+          // Clamp, never widen. An agent may shorten its own leash — that is
+          // a useful thing to let it do — but a box an agent could lengthen
+          // is not a box, and this op is the one place a request for more
+          // room would arrive.
+          const boxMs = Math.max(1, Math.min(op.boxMs && op.boxMs > 0 ? op.boxMs : box.boxMs, box.boxMs));
+          const maxExchanges = Math.max(
+            1,
+            Math.min(op.maxExchanges && op.maxExchanges > 0 ? op.maxExchanges : box.maxExchanges, box.maxExchanges),
+          );
+          const res = await this.sendMessage(
+            { from: actorId, to: peers, type: "INFORM", newThread: { subject: `collab: ${topic}` }, payload: op.payload ?? { topic }, artifactRefs: op.artifactRefs },
+            { control: { mode: "collab" } },
+          );
+          if (!res.accepted) return { ok: false, op: op.op, reason: res.reason };
+          turn.sentOps++;
+          const opened = this.state.messages.get(res.messageId!);
+          const threadId = opened!.threadId;
+          const openedAt = this.deps.kernel.clock.iso();
+          const session: CollabSession = {
+            threadId,
+            goalId: this.state.activeGoalId ?? undefined,
+            openedBy: actorId,
+            participants: [actorId, ...peers],
+            topic,
+            openedAt,
+            // Computed HERE and carried in the event, not derived at sweep
+            // time: a mesh that edits `bus.collab` mid-mission must not
+            // retroactively move the edge of a session already running, and a
+            // replay has to reproduce the expiry the live run actually used.
+            expiresAt: new Date(Date.parse(openedAt) + boxMs).toISOString(),
+            maxExchanges,
+            // The opening message is the OPEN, not an exchange — the session
+            // does not exist when the reducer sees it, so it is not metered,
+            // and that is the intended reading.
+            exchanges: 0,
+            budgetKey: this.state.activeGoalId ? `thread:${this.state.activeGoalId}/${threadId}` : undefined,
+            status: "OPEN",
+          };
+          await this.deps.kernel.emit("collab.opened", { session }, { actorId, goalId: session.goalId });
+          return { ok: true, op: op.op, messageId: res.messageId, threadId };
+        }
+        case "close_collab": {
+          const cs = this.state.collabSessions.get(op.threadId as never);
+          if (!cs) return { ok: false, op: op.op, reason: `no collab session on thread ${op.threadId}` };
+          if (cs.status !== "OPEN") return { ok: false, op: op.op, reason: `collab on ${op.threadId} already ${cs.status.toLowerCase()}` };
+          if (!cs.participants.includes(actorId)) return { ok: false, op: op.op, reason: "only a participant may close a collab" };
+          await this.deps.kernel.emit(
+            "collab.closed",
+            { threadId: cs.threadId, reason: "closed", closedBy: actorId, outcome: op.outcome, exchanges: cs.exchanges, maxExchanges: cs.maxExchanges },
+            { actorId, goalId: cs.goalId },
+          );
+          return { ok: true, op: op.op, threadId: cs.threadId };
         }
         case "request_research": {
           const cache = this.researchCache(op.question);
@@ -4715,10 +6057,10 @@ export class Supervisor {
             type: "REQUEST_RESEARCH",
             newThread: { subject: `research: ${op.question.slice(0, 80)}`, artifactRefs: op.artifactRefs },
             artifactRefs: op.artifactRefs,
-            payload: { question: op.question, ...contractStamp(op) },
-          });
+            payload: { question: op.question },
+          }, { control: askControl(op) });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "respond": {
           const original = this.state.messages.get(op.messageId);
@@ -4733,8 +6075,10 @@ export class Supervisor {
             payload: op.payload,
           });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
+        case "withdraw":
+          return this.opWithdraw(actorId, op, turn);
         case "discharge": {
           const pending = this.state.pendingRequests.get(op.messageId);
           if (!pending) return { ok: false, op: op.op, reason: `no outstanding request '${op.messageId}' (already answered, or never existed)` };
@@ -4749,6 +6093,33 @@ export class Supervisor {
               reason: `only ${outstandingDebtors(pending).join(", ")} may discharge this request`,
             };
           }
+          /**
+           * The refusal KIND, checked at the edge against the ask's own contract.
+           *
+           * `refusals` has been a declared closed set since contracts shipped and
+           * was read by nothing: a debtor said no in prose and the asker had to
+           * interpret the sentence to tell "wrong seat" from "bad ask" from "I
+           * disagree" -- the three cases the set was introduced to separate.
+           * Checking it here rather than at discharge-inference time keeps the
+           * judgement out of the reducer: an invalid kind is refused before any
+           * event exists, exactly as a malformed `request` is, and the refusal
+           * names the legitimate ones so the next attempt is informed.
+           *
+           * Fail-open in every direction that is not a wrong name. No `refusal`
+           * at all is the old behaviour and stays legal -- prose still settles an
+           * ask. An ask with no contract, or a contract declaring an empty set
+           * (`decision.escalate`, which no peer answers), has nothing to check
+           * against and is accepted as given.
+           */
+          const askContract = pending.contract ? findContract(pending.contract) : undefined;
+          const refusal = op.refusal?.trim() || undefined;
+          if (refusal && askContract?.refusals.length && !askContract.refusals.includes(refusal)) {
+            return {
+              ok: false,
+              op: op.op,
+              reason: `'${refusal}' is not a refusal ${askContract.name} admits. Use one of: ${askContract.refusals.join(", ")}. Keep 'reason' for your own words — the asker reads both.`,
+            };
+          }
           // Close FIRST, then notify. The order matters and it used to be the
           // other way round, which made the decline unrecordable: the notice
           // carries `replyTo`, so the reducer discharged the ask as `reply`
@@ -4760,7 +6131,11 @@ export class Supervisor {
           // The asker is not left hanging by the reorder: `dischargeCommitment`
           // wakes it with a reason of its own before this returns, and the
           // notice below follows with the agent's own words.
-          const closed = await this.dischargeCommitment(op.messageId, "refused", actorId, { declined: true, note: op.reason });
+          const closed = await this.dischargeCommitment(op.messageId, "refused", actorId, {
+            declined: true,
+            note: op.reason,
+            ...(refusal ? { refusal } : {}),
+          });
           if (!closed) {
             // The discharge event did not reach the log, so the ask is still
             // open. Say so rather than sending a notice that claims otherwise.
@@ -4773,18 +6148,22 @@ export class Supervisor {
             threadId: this.state.threads.has(pending.threadId) ? pending.threadId : undefined,
             newThread: this.state.threads.has(pending.threadId) ? undefined : { subject: `cannot answer ${op.messageId}` },
             replyTo: this.state.messages.has(op.messageId) ? op.messageId : undefined,
-            payload: { declined: true, request: op.messageId, reason: op.reason },
+            // `refusal` rides the notice as data, which is the whole point: the
+            // asker can act on the KIND without parsing the sentence beside it.
+            payload: { declined: true, request: op.messageId, reason: op.reason, ...(refusal ? { refusal } : {}) },
             priority: "HIGH",
           });
           turn.sentOps++;
           return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
         }
         case "publish_artifact": {
+          const body = await this.resolveArtifactBody(actorId, op);
+          if ("error" in body) return { ok: false, op: op.op, reason: body.error };
           const res = await this.createArtifact({
             actorId,
             name: op.name,
             type: op.type,
-            content: op.content,
+            content: body.content,
             status: op.status,
             scope: op.scope,
             metadata: op.metadata,
@@ -4835,35 +6214,109 @@ export class Supervisor {
           }
           const a = targetId ? this.state.artifacts.get(targetId) : undefined;
           if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"}` };
-          const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
-          const cap = capabilityForReview(a.type);
-          if (cap) {
-            const decision = this.deps.policy.evaluateCapability(actorId, cap, ctx);
-            if (decision.decision !== "ALLOW") await this.denied(actorId, a.id, "request review", decision);
+          // Can the seats being asked actually produce a verdict that MOVES this?
+          //
+          // The predicate is `approverMayAdvance`, not `canReviewArtifactType`.
+          // The latter is narrower than what `recordDecision` accepts and would
+          // refuse the cross-domain `<role>.approve` signatures the whole gate
+          // system rests on — a seat signing `subject: "quality"` on a design
+          // artifact is legitimate and its own role prompt may instruct it. What the
+          // asker actually needs to know is whether a verdict from this seat can
+          // settle the artifact, and that is the same question the reducer asks.
+          //
+          // Measured: 3 of 5 review requests in one live run named a reviewer who
+          // could not deliver a binding verdict. Nothing refused them, so threads
+          // opened, the seats were woken, and their verdicts could never count. Each
+          // paired a capable reviewer with an incapable one, which is why the waste
+          // was survivable and therefore invisible.
+          const canSettle = op.reviewers.filter((r) => approverMayAdvance(this.state, r, a, HUMAN_AGENT_ID));
+          const cannotSettle = op.reviewers.filter((r) => !canSettle.includes(r));
+          if (canSettle.length === 0) {
+            const able = [...this.state.agents.values()]
+              .map((rec) => rec.definition.id)
+              .filter((id) => id !== HUMAN_AGENT_ID && id !== a.owner && approverMayAdvance(this.state, id, a, HUMAN_AGENT_ID));
+            const remedy = able.length > 0 ? ` — ${able.join(", ")} can` : ` — no seat in this mesh can`;
+            const reason = `none of ${op.reviewers.join(", ")} can deliver a verdict on this ${a.type}${remedy}`;
+            await this.denied(actorId, a.id, "request review", { decision: "DENY", reason, ruleId: "review.reviewer-cannot-settle" });
+            return { ok: false, op: op.op, reason };
           }
-          const tr = await this.transitionArtifact(actorId, a.id, { to: "READY_FOR_REVIEW" });
-          if (!tr.ok && tr.reason && !tr.reason.includes("illegal")) return { ok: false, op: op.op, reason: tr.reason };
+          // Asking for a review is a SEND, not a review, so the asker's own
+          // capabilities do not gate it. `capabilityForReview` used to be
+          // applied here to the REQUESTER — the wrong party twice over: it
+          // refused authors who merely wanted their work looked at, and it is
+          // the same table the approve path uses as a widener for the APPROVER
+          // (:2993).
+          //
+          // NOTE the comment that stood here claimed "policy screens that side in
+          // `sendMessage` below". That was false: `evaluateMessage` checks sender
+          // registration and the contact matrix and never inspects a recipient's
+          // review capability or the artifact type. The screen above is that check.
+          //
+          // Worse, it refused nothing. With no `return`, the denial was pure
+          // telemetry and the transition, the message, `review.requested` and
+          // `design.question` all still ran. A refused ask therefore left the
+          // artifact sitting in READY_FOR_REVIEW, which is an approvable state.
+          //
+          // `sendMessageCapability` is the sender-side gate this op was meant
+          // to have (`request_review`, which repository.read confers) and it is
+          // deliberately still not wired in: it has never run in production,
+          // and a seat holding review.design without repository.read is valid
+          // config today, so switching it on would refuse asks that work now.
+          // That is a separate decision from fixing the wrong-party check.
+          //
+          // Order matters instead. The send goes first; the artifact moves only
+          // once the ask is actually accepted, so a refusal — for any reason,
+          // policy or protocol — leaves no state behind for someone else to
+          // approve.
           const res = await this.sendMessage({
             from: actorId,
             to: op.reviewers,
             type: "REQUEST_REVIEW",
             newThread: { subject: `review ${a.name}`, artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }] },
             artifactRefs: [{ uri: artifactUri(a.type, a.name, a.version) }],
-            payload: { question: `Review ${a.type} ${a.name} v${a.version}`, ...contractStamp(op) },
-          });
+            payload: { question: `Review ${a.type} ${a.name} v${a.version}` },
+          }, { control: askControl(op) });
+          if (!res.accepted) return { ok: false, op: op.op, reason: res.reason };
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          // Move it only if the send did not already do so.
+          //
+          // `sendMessage` runs `deriveSemantic`, which emits `review.requested`,
+          // whose reducer walks DRAFT -> READY_FOR_REVIEW -> UNDER_REVIEW. So by
+          // the time the send returns, the artifact is normally ALREADY in
+          // review — and re-asserting READY_FOR_REVIEW here pulled it back OUT
+          // of UNDER_REVIEW. That is a legal transition, so it happened
+          // silently: the artifact looked fine, sat one step short of
+          // reviewable, and every later approval of it was inert.
+          //
+          // The explicit transition is still needed for the case the reducer
+          // cannot serve: an event whose artifact ref does not resolve, where
+          // nothing else moves it off DRAFT.
+          const afterSend = this.state.artifacts.get(a.id);
+          if (afterSend && afterSend.status === "DRAFT") {
+            const tr = await this.transitionArtifact(actorId, a.id, { to: "READY_FOR_REVIEW" });
+            if (!tr.ok && tr.reason && !tr.reason.includes("illegal")) return { ok: false, op: op.op, reason: tr.reason };
+          }
+          // Some, but not all, of the named reviewers can settle it. The ask stands
+          // — a capable reviewer is on it — but the asker is told, through the same
+          // caveat channel an inert approval uses, so it learns which of the seats it
+          // named is going to spend a turn on a verdict that cannot count. This
+          // reaches the seat's next context via `endSummary` → `rememberMemory`.
+          const partial =
+            cannotSettle.length > 0
+              ? `${cannotSettle.join(", ")} cannot deliver a verdict on this ${a.type} — ${canSettle.join(", ")} can, so the ask stands with them`
+              : undefined;
+          return { ok: true, op: op.op, reason: partial, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded };
         }
         case "approve": {
-          const res = await this.recordDecision(actorId, op.kind === "pass" ? "pass" : "approve", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment);
+          const res = await this.recordDecision(actorId, op.kind === "pass" ? "pass" : "approve", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment, op.artifactUri);
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "reject": {
-          const res = await this.recordDecision(actorId, "reject", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment);
+          const res = await this.recordDecision(actorId, "reject", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment, op.artifactUri);
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "veto": {
-          const res = await this.recordDecision(actorId, "veto", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment);
+          const res = await this.recordDecision(actorId, "veto", op.subject, this.resolveArtifactRef(op.artifactId, op.artifactUri), op.comment, op.artifactUri);
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "block": {
@@ -4875,10 +6328,32 @@ export class Supervisor {
         }
         case "create_task": {
           if (!String(op.title ?? "").trim()) return { ok: false, op: op.op, reason: "create_task requires a non-empty title" };
+          const unknownCaps = this.unknownTaskCapabilities(op.requiredCapabilities);
+          if (unknownCaps.length > 0) {
+            return { ok: false, op: op.op, reason: `task requires capability the runtime can never match: ${unknownCaps.join(", ")} (known: ${CAPABILITY_TOKENS.join(", ")})` };
+          }
+          const dupe = this.openTaskWithTitle(op.title);
+          if (dupe) {
+            return { ok: false, op: op.op, reason: `"${op.title}" is already open as ${dupe.id} (${dupe.status}) — claim that one instead of filing a second; if it is genuinely different work, give it a title that says how` };
+          }
           const task = this.newTask(actorId, op.title, op.description, op.requiredCapabilities, op.artifactRefs, undefined, op.budgetHint);
           await this.emitTaskCreated(task);
           if (op.assignedTo) {
-            await this.sendMessage({ from: actorId, to: [op.assignedTo], type: "DELEGATE", newThread: { subject: `task ${task.id}: ${task.title}` }, payload: { taskId: task.id }, taskId: task.id });
+            // The payload carries the task's CONTENT, not just its id. A DELEGATE
+            // whose whole body is `{taskId}` hands the recipient an opaque handle
+            // and no instruction: it must go and look the task up to learn what it
+            // was asked to do, and it cannot see the capabilities the task demands
+            // until it tries to claim it and is refused. `opDelegate` already sent
+            // the richer shape; this path — which is what a seat actually uses when
+            // it creates work and names an owner in one op — did not.
+            await this.sendMessage({
+              from: actorId,
+              to: [op.assignedTo],
+              type: "DELEGATE",
+              newThread: { subject: `task ${task.id}: ${task.title}` },
+              payload: { taskId: task.id, title: task.title, description: task.description, requiredCapabilities: task.requiredCapabilities },
+              taskId: task.id,
+            });
             turn.sentOps++;
           }
           return { ok: true, op: op.op, taskId: task.id };
@@ -4972,7 +6447,7 @@ export class Supervisor {
             payload: { artifactId: a.id, comment: op.comment ?? "ready to commit" },
           });
           turn.sentOps++;
-          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId } : { ok: false, op: op.op, reason: res.reason };
+          return res.accepted ? { ok: true, op: op.op, messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded } : { ok: false, op: op.op, reason: res.reason };
         }
         case "merge": {
           return this.opMerge(actorId, op.artifactId, op.comment, op.artifactUri);
@@ -4999,6 +6474,57 @@ export class Supervisor {
     }
   }
 
+  /**
+   * Capability tokens a task is allowed to require.
+   *
+   * Config load REJECTS an unknown capability on an agent, because an operator
+   * wrote it and can fix it before the mesh boots. A task's list is written by
+   * a model, mid-mission, and there is no load moment to throw at — so an
+   * invented token used to produce a task that nobody could ever claim and a
+   * `capabilities` denial on every attempt, naming a token the roster
+   * genuinely did not contain. Nothing anywhere said the token was not real.
+   *
+   * Refuse it to the author instead, while the author is still there to pick
+   * another. `implementation.gate` is admitted deliberately: it is not a
+   * capability any seat holds but a marker `completeTask` reads, and dropping
+   * it here would make that gate unreachable.
+   */
+  private unknownTaskCapabilities(raw?: string[]): string[] {
+    const known = new Set([...CAPABILITY_TOKENS, "implementation.gate"]);
+    return (raw ?? [])
+      .map((c) => normalizeCapability(String(c)))
+      .filter((c) => !known.has(c));
+  }
+
+  /**
+   * An open task in this goal already carrying this title, if there is one.
+   *
+   * Three seats independently opened a task for the same work within three
+   * minutes in a live mission — same title, three task ids, two of them never
+   * claimed — because nothing compared a new task against the board. A seat
+   * that sees work is undone and files it has no way to learn that a peer
+   * filed it too; the four subscribers to `task.created` are told, but only on
+   * a turn, which is minutes after the duplicate was written.
+   *
+   * Scoped to the goal, and blind to COMPLETED and CANCELLED: re-doing work
+   * that was finished or abandoned is legitimate, and a second goal is a
+   * different mission.
+   *
+   * Compared case- and whitespace-insensitively, because the titles come from
+   * a model and "T3.1 UI flows" and "t3.1  ui flows" are the same work.
+   */
+  private openTaskWithTitle(title: string): Task | undefined {
+    const key = String(title ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!key) return undefined;
+    const goalId = this.state.activeGoalId;
+    for (const t of this.state.tasks.values()) {
+      if (goalId && t.goalId !== goalId) continue;
+      if (t.status === "COMPLETED" || t.status === "CANCELLED") continue;
+      if (t.title.trim().toLowerCase().replace(/\s+/g, " ") === key) return t;
+    }
+    return undefined;
+  }
+
   private newTask(
     createdBy: string,
     title: string,
@@ -5021,7 +6547,15 @@ export class Supervisor {
       description: String(description ?? "").trim().slice(0, MAX_TASK_DESCRIPTION_CHARS),
       createdBy,
       status: "OPEN",
-      requiredCapabilities: requiredCapabilities ?? [],
+      // Normalized HERE, at the one point every task passes through, for the
+      // same reason the prose is bounded here. Agent definitions, policy rules
+      // and the runtime tool gate all normalize their capability tokens at
+      // load; task requirements were the one list that did not, so a task
+      // asking for `test.run` was unclaimable by the seat holding the
+      // canonical `test.execute` it aliases to — and the denial named a token
+      // the roster genuinely did not contain, which reads like a
+      // misconfiguration rather than a mismatch.
+      requiredCapabilities: Array.from(new Set((requiredCapabilities ?? []).map((c) => normalizeCapability(String(c))))),
       artifactRefs: normalizeArtifactRefs(artifactRefs) ?? [],
       parentTaskId,
       delegationDepth: (parent?.delegationDepth ?? 0) + (parentTaskId ? 1 : 0),
@@ -5042,11 +6576,25 @@ export class Supervisor {
     if (def.mode === "service") return { ok: false, op: "delegate", reason: "service agents may not delegate" };
     const target = this.state.agents.get(op.to)?.definition;
     if (!target) return { ok: false, op: "delegate", reason: `unknown target ${op.to}` };
-    const missingCaps = (op.requiredCapabilities ?? []).filter((c) => !target.capabilities.includes(c));
+    // `target.capabilities` is normalized at config load and the op's list was
+    // not, so this compared two different vocabularies: a delegate naming
+    // `code.write` against a seat holding the `repository.write` it aliases to
+    // reported the target as lacking a capability it actually had.
+    const missingCaps = (op.requiredCapabilities ?? [])
+      .map((c) => normalizeCapability(String(c)))
+      .filter((c) => !target.capabilities.includes(c));
     if (missingCaps.length > 0) {
       return { ok: false, op: "delegate", reason: `${op.to} lacks required capabilities ${missingCaps.join(", ")}` };
     }
     if (!String(op.title ?? "").trim()) return { ok: false, op: "delegate", reason: "delegate requires a non-empty title" };
+    const unknownCaps = this.unknownTaskCapabilities(op.requiredCapabilities);
+    if (unknownCaps.length > 0) {
+      return { ok: false, op: "delegate", reason: `task requires capability the runtime can never match: ${unknownCaps.join(", ")} (known: ${CAPABILITY_TOKENS.join(", ")})` };
+    }
+    const dupe = this.openTaskWithTitle(op.title);
+    if (dupe) {
+      return { ok: false, op: "delegate", reason: `"${op.title}" is already open as ${dupe.id} (${dupe.status}, ${dupe.claimedBy ?? dupe.assignedTo ?? "unclaimed"}) — delegate that one instead of filing a second` };
+    }
     // Construct the task first, but EMIT it only once the message is accepted.
     // `newTask` just builds the record — the projection registers it off the
     // `task.created` event — so a refusal here leaves nothing behind. Emitting
@@ -5059,7 +6607,7 @@ export class Supervisor {
       to: [op.to],
       type: "DELEGATE",
       newThread: { subject: `delegate: ${task.title}` },
-      payload: { taskId: task.id, title: task.title, description: task.description },
+      payload: { taskId: task.id, title: task.title, description: task.description, requiredCapabilities: task.requiredCapabilities },
       taskId: task.id,
       budgetHint: op.budgetHint,
     });
@@ -5260,32 +6808,70 @@ export class Supervisor {
     if (artifact.status !== "MERGEABLE") {
       return { ok: false, op: "merge", reason: `artifact is ${artifact.status}, must be MERGEABLE` };
     }
-    const res = await this.transitionArtifact(actorId, artifactId, { to: "MERGED", comment });
-    if (!res.ok) return { ok: false, op: "merge", reason: res.reason };
+    // Land the change FIRST, record it second.
+    //
+    // This order used to be reversed, and the comment that lived here admitted
+    // the consequence rather than fixing it: "what cannot be undone is the
+    // status -- the transition above is already on the log, the ladder is
+    // strict, and MERGED is terminal, so a failed merge does leave a CodePatch
+    // reading MERGED." It does worse than that. `transitionArtifact` fires
+    // `mirrorTransition`, which emits `patch.merged` AND
+    // `implementation.completed` -- so a merge that never touched the product
+    // branch still announced finished work, and `implementation.completed`
+    // reduces to an `implementation|pass` approval record feeding the gates.
+    //
+    // A live run on 2026-09-23 did exactly this at 20:23:57: the artifact read
+    // MERGED with both mirrors on the log, and `git log` never contained the
+    // patch. Nothing could roll it back, because MERGED is terminal and has no
+    // edge out. Doing the work before the bookkeeping is the only fix that
+    // does not require an un-merge the ladder cannot express.
+    //
+    // On failure the artifact stays MERGEABLE, which is both true and
+    // retryable: the seat can fix the conflict and merge again.
+    let landed: string;
     if (this.deps.workspace) {
-      const merged = await this.deps.workspace.mergeWorktree(artifactId, artifact.owner, comment ?? `merge ${artifact.name}`);
-      await this.transitionArtifact(HUMAN_AGENT_ID, artifactId, { to: "MERGED" }).catch(() => undefined);
-      void merged;
-      await this.markMergeEvidence(artifact);
-      return { ok: true, op: "merge", eventId: res.eventId };
-    }
-    const materialized = await this.materializeProductFiles(artifact);
-    if (!materialized.ok) {
+      // `mergeWorktree` runs `git merge` and REJECTS on a conflict (execFile on
+      // a non-zero exit). That rejection used to escape `opMerge` entirely --
+      // `executeOp`'s catch rethrows anything that is not a `KernelRejectedError`
+      // -- so a conflicted merge became a thrown turn rather than an op result,
+      // and the commit sha of a successful one was discarded by a bare `void`.
+      let merged: { commit: string };
+      try {
+        merged = await this.deps.workspace.mergeWorktree(artifactId, artifact.owner, comment ?? `merge ${artifact.name}`);
+      } catch (err) {
+        const reason = `git merge of '${artifact.name}' failed: ${err instanceof Error ? err.message : String(err)} — nothing landed on the product branch, the patch stays MERGEABLE, and implementation-merged stays UNEVIDENCED`;
+        this.auditLine(`merge of '${artifact.name}': ${reason}`);
+        await this.denied(actorId, artifactId, "merge (git)", { decision: "DENY", reason, ruleId: "merge.git-failed" });
+        return { ok: false, op: "merge", reason };
+      }
+      landed = `merged as ${merged.commit.slice(0, 12)}`;
+    } else {
       // Without git, materialization IS the merge: nothing else puts the
       // patch's files into the product. Reporting `ok: true` here let a run
-      // finish "successfully" having written not one byte — the artifact
-      // showed MERGED, `implementation-merged` stayed UNEVIDENCED, and the
-      // only trace was an audit line nobody reads. Fail the op so the result
-      // reaches the agent's turn (and counts toward the unproductive-turn
-      // detector) instead of being swallowed by an optimistic return.
-      const reason = `merge recorded but no product files were written: ${materialized.reason} — implementation-merged stays UNEVIDENCED`;
-      this.auditLine(`merge of '${artifact.name}': ${reason}`);
-      await this.denied(actorId, artifactId, "merge (materialize)", { decision: "DENY", reason, ruleId: "merge.materialize-failed" });
-      return { ok: false, op: "merge", eventId: res.eventId, reason };
+      // finish "successfully" having written not one byte.
+      const materialized = await this.materializeProductFiles(artifact);
+      if (!materialized.ok) {
+        const reason = `no product files were written: ${materialized.reason} — the patch stays MERGEABLE and implementation-merged stays UNEVIDENCED`;
+        this.auditLine(`merge of '${artifact.name}': ${reason}`);
+        await this.denied(actorId, artifactId, "merge (materialize)", { decision: "DENY", reason, ruleId: "merge.materialize-failed" });
+        return { ok: false, op: "merge", reason };
+      }
+      this.auditLine(`merge of '${artifact.name}': materialized ${materialized.reason}`);
+      landed = `materialized ${materialized.reason}`;
     }
-    this.auditLine(`merge of '${artifact.name}': materialized ${materialized.reason}`);
+    // The product branch now holds the change; record it once. A second
+    // transition attributed to HUMAN_AGENT_ID used to follow this one, from
+    // the runtime's first commit and with no comment explaining it. It was a
+    // pure duplicate that survived every guard by accident -- policy
+    // short-circuits on `human`, then the reducer absorbs a same-status move
+    // before `assertArtifactTransition` can refuse it, so the kernel appended
+    // the event and `mirrorTransition` re-fired. Its cost was a second
+    // `implementation|pass` approval record attributed to the artifact owner:
+    // a gate signature the owner never gave.
+    const res = await this.transitionArtifact(actorId, artifactId, { to: "MERGED", comment });
+    if (!res.ok) return { ok: false, op: "merge", reason: res.reason };
     await this.markMergeEvidence(artifact);
-    return { ok: true, op: "merge", eventId: res.eventId, reason: `materialized ${materialized.reason}` };
+    return { ok: true, op: "merge", eventId: res.eventId, reason: landed };
   }
 
   /**
@@ -5451,7 +7037,7 @@ export class Supervisor {
       } satisfies SessionRotationPending,
       { actorId: agentId, causationId, correlationId: turnId },
     );
-    this.auditLine(`${agentId} is at ${info.transcriptTokens}/${info.thresholdTokens} context tokens — spending this turn on a handover`);
+    this.auditLine(`${agentId} is holding ${info.transcriptTokens} tokens of context (rotation threshold ${info.thresholdTokens}) — spending this turn on a handover`);
     return info;
   }
 
@@ -5552,6 +7138,21 @@ export class Supervisor {
    * and without a second implementation to keep in step. `call` is sugar. If it
    * ever stops being sugar, this is the line that broke.
    */
+  /**
+   * The refusal for an `ifUnanswered` this mesh could never honour. See the
+   * guard in `executeOp` for why it is refused rather than accepted.
+   */
+  private undatedDefault(op: MeshOp): string | undefined {
+    const assumed = (op as { ifUnanswered?: DefaultAnswer }).ifUnanswered;
+    if (!assumed) return undefined;
+    if (typeof assumed.assume === "undefined") {
+      return "ifUnanswered needs an `assume`: the value you will proceed with. Without it there is nothing for the mesh to hand back when the deadline passes.";
+    }
+    if (typeof assumed.afterMs === "number" && assumed.afterMs > 0) return undefined;
+    if (this.config.bus.commitmentTtl) return undefined;
+    return "ifUnanswered needs a deadline, and this mesh has none: pass afterMs on the ask, or have an operator set bus.commitments.ttl_ms. Without one the default would be recorded and never fire, and you would wait forever for an answer the mesh had promised you.";
+  }
+
   private async callContract(actorId: string, op: MeshOpCall, turn: TurnState): Promise<OpResult> {
     const contract = findContract(op.contract);
     if (!contract) return { ok: false, op: op.op, reason: unknownContractReason(op.contract) };
@@ -5569,6 +7170,13 @@ export class Supervisor {
 
     // An operator card has no peer recipient, so it resolves nothing.
     if (contract.desugarsTo === "escalate") {
+      // ...and therefore opens no commitment for a default to discharge. Said
+      // rather than dropped: a field that is silently ignored teaches the
+      // seat it worked, and the seat would then proceed on an assumption the
+      // mesh never agreed to hold.
+      if (op.ifUnanswered) {
+        return { ok: false, op: op.op, reason: `${contract.name} raises a card for a human and opens no commitment, so ifUnanswered has nothing to discharge. Drop it, or ask a peer with a contract that opens one.` };
+      }
       return this.executeOp(actorId, {
         op: "escalate",
         reason: String(request.reason ?? ""),
@@ -5593,9 +7201,12 @@ export class Supervisor {
       targets = [resolved[0]];
     }
 
-    // The contract name travels in the payload so the commitment ledger can
-    // read its SLA on replay, and so a reader can tell what was asked without
-    // re-deriving it from prose.
+    // The contract name travels on the envelope's runtime-owned `control`, not
+    // in the payload: the ledger reads it to draw the ask's deadline and to
+    // judge the answer, and both are decisions about obligations that an agent
+    // must not be able to make for the kernel by writing a key into free-form
+    // JSON. `askControl` re-checks the name against the catalogue, so a
+    // stamp on the wire always means "this ask passed its request schema".
     switch (contract.desugarsTo) {
       case "request_review":
         return this.executeOp(actorId, {
@@ -5605,6 +7216,7 @@ export class Supervisor {
           reviewers: targets,
           contract: contract.name,
           contractVersion: contract.version,
+          ifUnanswered: op.ifUnanswered,
         }, turn);
       case "request_research":
         return this.executeOp(actorId, {
@@ -5614,6 +7226,7 @@ export class Supervisor {
           artifactRefs: (request.artifactRefs as ArtifactRef[] | undefined),
           contract: contract.name,
           contractVersion: contract.version,
+          ifUnanswered: op.ifUnanswered,
         }, turn);
       default: {
         const subject = typeof request.subject === "string" && request.subject.trim()
@@ -5624,7 +7237,10 @@ export class Supervisor {
           type: contract.messageType,
           to: targets,
           newThread: { subject },
-          payload: { ...request, contract: contract.name, contractVersion: contract.version },
+          contract: contract.name,
+          contractVersion: contract.version,
+          ifUnanswered: op.ifUnanswered,
+          payload: { ...request },
         }, turn);
       }
     }
@@ -6168,9 +7784,19 @@ export class Supervisor {
     // definition, in no hurry.
     for (const pr of overdue.slice(0, Supervisor.MAX_EXPIRIES_PER_SWEEP)) {
       const overdueMs = nowMs - Date.parse(pr.dueBy!);
-      const ok = await this.dischargeCommitment(pr.messageId, "expired", "system", {
+      // Same clock, two different endings, and the asker chose which one when
+      // it raised the ask. Where it declared what silence would mean, nobody
+      // failed and the answer is known -- so this is not an expiry, and
+      // recording it as one would settle the thread ESCALATED and leave an
+      // operator holding a card over a question that resolved as designed.
+      const assumed = pr.ifUnanswered;
+      const ok = await this.dischargeCommitment(pr.messageId, assumed ? "defaulted" : "expired", "system", {
         dueBy: pr.dueBy,
         overdueMs,
+        // The value the asker gets back, on the event rather than only in the
+        // wake note: a replay has to be able to say what was assumed without
+        // re-reading the asking message.
+        ...(assumed ? { assumed: assumed.assume } : {}),
         // Who was late. Without this the log records that an ask expired but
         // not who failed to answer it, which is the only part an operator can
         // act on.
@@ -6184,6 +7810,71 @@ export class Supervisor {
           `ask ${pr.messageId} (${pr.type}) from ${pr.from} expired ${Math.round(overdueMs / 1000)}s past its deadline, unanswered by ${outstandingDebtors(pr).join(", ")}`,
         );
       }
+    }
+  }
+
+  /**
+   * Close collaborations that ran past their box, and raise a card for each.
+   *
+   * Wall clock for the same reason `sweepExpiredCommitments` is: a collab
+   * that has gone quiet emits no events, and a quiet session past its edge is
+   * the exact case worth catching — two agents that stopped talking without
+   * ever deciding they were done, holding a thread budget open.
+   *
+   * The card is ADVISORY. An overrun is not a fault that should halt a
+   * mission or block its completion; it is a bill. It names what the session
+   * spent and which budget line to read it on, and the operator decides
+   * whether that was worth it.
+   */
+  private async sweepCollabOverruns(nowMs: number): Promise<void> {
+    for (const cs of this.state.collabSessions.values()) {
+      if (cs.status !== "OPEN") continue;
+      const expired = Date.parse(cs.expiresAt) <= nowMs;
+      const spent = cs.exchanges >= cs.maxExchanges;
+      if (!expired && !spent) continue;
+      // Clock first when both are true: a session that sat past its deadline
+      // is a different diagnosis from one that talked itself out, and the
+      // deadline is the bound the operator actually set.
+      const reason = expired ? "expired" : "exchanges_exhausted";
+      const spentMs = nowMs - Date.parse(cs.openedAt);
+      await this.deps.kernel
+        .emit(
+          "collab.closed",
+          { threadId: cs.threadId, reason, exchanges: cs.exchanges, maxExchanges: cs.maxExchanges, openedAt: cs.openedAt, expiresAt: cs.expiresAt, spentMs },
+          { actorId: "system", goalId: cs.goalId },
+        )
+        .catch((err) => {
+          this.auditLine(`collab close of ${cs.threadId} failed: ${(err as Error).message}`);
+          return null;
+        });
+      await this.escalate({
+        reason: `collab_overrun:${reason}`,
+        raisedBy: "collab-watchdog",
+        // Stable, so a session cannot raise a fresh card on every tick. The
+        // reducer has already marked it OVERRUN, which is what actually stops
+        // the loop; this is the second belt.
+        conflictKey: `collab:${cs.threadId}`,
+        threadId: cs.threadId,
+        participants: cs.participants,
+        advisory: true,
+        detail: {
+          topic: cs.topic,
+          openedBy: cs.openedBy,
+          participants: cs.participants,
+          exchanges: cs.exchanges,
+          maxExchanges: cs.maxExchanges,
+          openedAt: cs.openedAt,
+          expiresAt: cs.expiresAt,
+          spentMs,
+          budgetKey: cs.budgetKey,
+        },
+      }).catch((err) => {
+        this.auditLine(`collab overrun card for ${cs.threadId} failed: ${(err as Error).message}`);
+        return null;
+      });
+      this.auditLine(
+        `collab "${cs.topic}" on ${cs.threadId} (${cs.participants.join(", ")}) ${reason} after ${Math.round(spentMs / 1000)}s and ${cs.exchanges}/${cs.maxExchanges} exchanges`,
+      );
     }
   }
 
@@ -6210,6 +7901,10 @@ export class Supervisor {
     // returns further down are about whether to NUDGE, which is a different
     // question from whether an ask is overdue.
     await this.sweepExpiredCommitments(now);
+    // Same argument, same tick: a box that expires while a turn is in flight
+    // has still expired, so this sits with the commitment sweep ahead of the
+    // mission-quiet gates rather than below them.
+    await this.sweepCollabOverruns(now);
     // The silence check runs FIRST, before every mission-level guard: a stream
     // frozen after its first token is a stall regardless of goal status and
     // regardless of other scheduler work. Ordered after those guards it was
@@ -6224,7 +7919,17 @@ export class Supervisor {
     }
     const goalId = this.state.activeGoalId;
     const goal = goalId ? this.state.goals.get(goalId) : undefined;
-    if (!goal || goal.status !== "ACTIVE") return;
+    if (!goal) return;
+    // A non-ACTIVE goal used to end this tick outright, which is the one mission
+    // state neither watchdog could see. Everything below is about whether to
+    // NUDGE, which a halted mission has no answer to — but "halted and nothing
+    // will ever resume it" is a different question, and it is the one that let a
+    // live mission sit for 3h04m emitting nothing at all.
+    if (goal.status !== "ACTIVE") {
+      await this.checkHaltNeglect(now, goal);
+      return;
+    }
+    this.haltNeglectEscalated = false;
     if (this.deps.scheduler.pending() !== 0 || this.deps.scheduler.running() !== 0) return;
     // A no-op turn arms a fast retry: the idle and cooldown gates both apply
     // to work-producing turns (their async ripple may still be landing), but
@@ -6347,6 +8052,76 @@ export class Supervisor {
   }
 
   /**
+   * A halted mission that nothing will ever resume.
+   *
+   * `resumeIfNothingPending` already holds the correct rule — a goal held only
+   * by ADVISORY cards has nothing to answer, so it should return to ACTIVE —
+   * and it would have released the run this check exists for. It never ran:
+   * it is only called from `reconcileDerivedEscalations`'s tail under
+   * `if (retired > 0)`, and advisory cards retire nothing. Calling it on a timer
+   * instead is deliberately forbidden (a mission may legitimately sit ESCALATED
+   * with no card at all, and auto-resuming that would silently undo a halt an
+   * operator meant).
+   *
+   * So this does not resume anything. It mints ONE non-advisory card, which is
+   * the thing the mesh was missing: something for a human to answer. Answering
+   * or retiring it increments `retired`, which calls `resumeIfNothingPending`,
+   * which finds no non-advisory card left and flips the goal ACTIVE — so the
+   * card is both the alarm and the release, exactly like the stall-nudge cap.
+   *
+   * Measured case: nine `runtime_failure` cards, every one advisory, a goal
+   * ESCALATED behind them, and 3h04m of silence with no actionable card in
+   * existence. A detector keyed on "an open actionable card" would not have
+   * fired — the absence of one is the whole fault.
+   */
+  private async checkHaltNeglect(now: number, goal: Goal): Promise<void> {
+    const key = `halt-neglect:${goal.id}`;
+    const open = [...this.state.escalations.values()].filter((e) => e.status === "OPEN");
+    // Our own card is open: the operator owns the mission, so stay quiet.
+    if (open.some((e) => e.conflictKey === key)) return;
+    if (this.haltNeglectEscalated) {
+      // It was answered or retired. Forget it and let the next tick re-decide —
+      // by then `resumeIfNothingPending` has normally flipped the goal ACTIVE.
+      this.haltNeglectEscalated = false;
+      this.auditLine("stall watch: the halt-neglect escalation is no longer open — re-evaluating the halt from scratch");
+      return;
+    }
+    const haltedForMs = now - this.lastTurnAt;
+    if (haltedForMs < this.config.scheduling.stallIdleMs * HALT_NEGLECT_IDLE_MULTIPLE) return;
+    // Someone genuinely owes an answer. A second card would be spam, and the
+    // existing one is already the operator's cue — say it once in the audit and
+    // leave it alone.
+    const actionable = open.filter((e) => !e.advisory);
+    if (actionable.length > 0) {
+      if (!this.haltNeglectNoted) {
+        this.haltNeglectNoted = true;
+        this.auditLine(
+          `stall watch: goal ${goal.id} has been ${goal.status} for ${Math.round(haltedForMs / 1000)}s behind ${actionable.length} open card(s) an operator must answer — not raising a second`,
+        );
+      }
+      return;
+    }
+    this.haltNeglectEscalated = true;
+    this.haltNeglectNoted = false;
+    await this.escalate({
+      reason: "stalemate:halt_neglect",
+      raisedBy: "stall-watchdog",
+      conflictKey: key,
+      detail: {
+        status: goal.status,
+        haltedForSeconds: Math.round(haltedForMs / 1000),
+        advisoryCards: open.map((e) => e.reason).slice(0, 10),
+        advisoryCardCount: open.length,
+        criteria: this.unmetCriteriaSummary(),
+        note: `the goal has been ${goal.status} for ${Math.round(haltedForMs / 1000)}s behind ${open.length} card(s) that need no answer, so nothing will ever resume it — answer or retire this card to release the mission`,
+      },
+    });
+    this.auditLine(
+      `stall watch: goal ${goal.id} ${goal.status} for ${Math.round(haltedForMs / 1000)}s with no card anyone can answer — escalating so the mission can be released`,
+    );
+  }
+
+  /**
    * Interrupt a turn that streamed tokens and then went silent. Only turns
    * past the first token qualify: pre-token thinking and long internal tool
    * runs never reach onToken, so they must be left alone. The interrupt makes
@@ -6380,6 +8155,13 @@ export class Supervisor {
           : (phases.lastActivityAt ?? phases.lastTokenAt ?? phases.firstTokenAt);
       if (!turnId || !session || lastAliveAt === undefined) continue;
       if (now - lastAliveAt <= silenceMs) continue;
+      // A turn waiting on a tool it announced and has not seen finish is
+      // WORKING, not frozen, however long it has been quiet. Stamping activity
+      // at the start and end of each call is not sufficient on its own: a single
+      // tool that runs longer than the floor looks silent for its whole
+      // duration, which is precisely how ten turns died in one live run. The
+      // turn timeout remains the outer bound for a tool that never returns.
+      if (this.turns.hasOpenToolCall(turnId)) continue;
       if (this.interruptedTurnIds.has(turnId)) continue;
       this.interruptedTurnIds.add(turnId);
       this.auditLine(`stall silence: turn ${turnId} for ${agentId} silent for ${now - lastAliveAt}ms — interrupting`);
@@ -6410,11 +8192,24 @@ export class Supervisor {
   private wakeValue(): { worth: boolean; why: string } {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     if (!goal) return { worth: false, why: "no active goal" };
+    // Before the criteria count, because it is the more specific answer. A stalled
+    // merge ladder reads as "N mandatory criteria unmet" otherwise, which is true
+    // and tells an operator nothing — the stall-cap card carries this string, and
+    // naming the real blocker is the difference between a card someone can act on
+    // and a card that restates the mission.
+    const pending = this.mergeLadderPending();
+    if (pending.length > 0) {
+      const first = pending[0]!;
+      return {
+        worth: true,
+        why: `${pending.length} patch(es) stalled on the merge ladder (${first.artifact.name} is ${first.artifact.status}, needs ${first.next})`,
+      };
+    }
     const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
     const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
     if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet` };
     // Every criterion is evidenced. Only a concrete loose end justifies a turn.
-    const mail = [...this.state.agents.keys()].some((id) => (this.state.unread.get(id)?.length ?? 0) > 0);
+    const mail = [...this.state.agents.keys()].some((id) => readableMailDepth(this.state, id) > 0);
     if (mail) return { worth: true, why: "undelivered mail" };
     const openEscalations = [...this.state.escalations.values()].filter((e) => e.status === "OPEN");
     if (openEscalations.length > 0) return { worth: true, why: `${openEscalations.length} open escalations` };
@@ -6440,10 +8235,70 @@ export class Supervisor {
   private stallWakeNote(): string {
     const summary = this.unmetCriteriaSummary();
     const base = `stall watchdog: mission active but quiet — ${summary}`;
+    // The concrete next move, ahead of any criterion prose. A seat woken with
+    // "drive the next step toward an unmet criterion" has to guess; a seat told
+    // which patch is parked and what rung it needs has one obvious action. This is
+    // the note that would have turned 12.76M tokens of approved-but-unmerged work
+    // into a commit.
+    const pending = this.mergeLadderPending();
+    if (pending.length > 0) {
+      const p = pending[0]!;
+      const uri = artifactUri(p.artifact.type, p.artifact.name, p.artifact.version);
+      const rest = p.next === "MERGED" ? "then `merge` it" : `then keep walking it: VERIFIED -> MERGEABLE -> merge`;
+      const who = p.who.length > 0 ? ` (${p.who.join(", ")} may)` : " (no seat in this mesh holds the capability for this rung)";
+      return (
+        `${base}. A patch is parked on the merge ladder: ${uri} is ${p.artifact.status} and nobody has moved it. ` +
+        `Transition it to ${p.next}${who}, ${rest} — nothing advances it automatically.`
+      );
+    }
     if (!this.hasUnmetMandatory()) {
       return `${base}. Do NOT re-approve or re-confirm finished work. Either close out a concrete loose end (unanswered mail, an open escalation, a claimed task), or reply with a single \`done\` op and stop — the mission will close itself.`;
     }
     return `${base}; drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+  }
+
+  /**
+   * CodePatches parked partway up the merge ladder, and who could move each one.
+   *
+   * The merge path is fully implemented and was never invoked. `APPROVED → VERIFIED
+   * → MERGEABLE → MERGED` is a strict ladder with no auto-advance anywhere, `opMerge`
+   * refuses anything that is not already MERGEABLE, and nothing in the runtime — no
+   * nudge, no watchdog, no context line — ever told a seat that a patch was sitting
+   * at APPROVED waiting for it. One live mission spent 12.76M tokens, approved a
+   * CodePatch with green tests, and finished with `workspace/main` holding a README
+   * and the scaffold commit. `patch.merged` events: zero.
+   *
+   * So this is the missing signal, and it is deliberately read-only state: three
+   * existing surfaces consume it rather than a new mechanism being added.
+   */
+  private mergeLadderPending(): Array<{ artifact: Artifact; next: ArtifactStatus; who: string[] }> {
+    const out: Array<{ artifact: Artifact; next: ArtifactStatus; who: string[] }> = [];
+    for (const a of this.state.artifacts.values()) {
+      if (a.type !== "CodePatch") continue;
+      if (a.status !== "APPROVED" && a.status !== "VERIFIED" && a.status !== "MERGEABLE") continue;
+      const next = (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0];
+      if (!next) continue;
+      // Who the transition rules would actually accept for the next rung. Derived
+      // from capabilities rather than hardcoded so it cannot drift from the gate.
+      const who = [...this.state.agents.values()]
+        .map((r) => r.definition)
+        .filter((d) => {
+          if (d.id === HUMAN_AGENT_ID) return false;
+          if (next === "MERGED") return d.capabilities.includes("git.merge");
+          if (next === "VERIFIED") {
+            return (
+              d.capabilities.includes("test.execute") ||
+              d.capabilities.includes("security.review") ||
+              holdsAuthority(d.authority, "implementation", "approve")
+            );
+          }
+          // MERGEABLE has no actor rule of its own: anyone who can transition may.
+          return true;
+        })
+        .map((d) => d.id);
+      out.push({ artifact: a, next, who });
+    }
+    return out;
   }
 
   /** True when at least one mandatory criterion still lacks evidence. */
@@ -6470,9 +8325,20 @@ export class Supervisor {
     const byOldest = (a: string, b: string): number =>
       (this.state.agents.get(a)?.state.lastActivityAt ?? "").localeCompare(this.state.agents.get(b)?.state.lastActivityAt ?? "");
     const all = [...this.state.agents.keys()].filter(eligible);
+    // A seat that can move a parked patch outranks the mail/task heuristic. Waking
+    // someone with mail is a good default, but if the mission's only real blocker is
+    // a patch nobody has advanced, the seat that CAN advance it is the one turn worth
+    // buying — and it is not usually the seat with mail.
+    const pending = this.mergeLadderPending();
+    if (pending.length > 0) {
+      for (const p of pending) {
+        const mover = p.who.filter(eligible).sort(byOldest)[0];
+        if (mover) return mover;
+      }
+    }
     for (const id of all) {
       const rec = this.state.agents.get(id)!;
-      if ((this.state.unread.get(id)?.length ?? 0) > 0 || rec.state.activeTaskId) return id;
+      if (readableMailDepth(this.state, id) > 0 || rec.state.activeTaskId) return id;
     }
     const stuck = all.filter((id) => ["WAITING", "BLOCKED"].includes(this.state.agents.get(id)!.state.lifecycle)).sort(byOldest);
     if (stuck.length > 0) return stuck[0];
@@ -6635,6 +8501,25 @@ export class Supervisor {
     progress: { completed: number; total: number; ratio: number } | null;
     openEscalations: Escalation[];
     eventCount: number;
+    /**
+     * Prose alias rewrites this PROCESS has performed, and the tables that
+     * caught them.
+     *
+     * Process-scoped, not goal-scoped, because that is what the counter is:
+     * `op-aliases.ts` keeps a module-global Map and documents the choice as
+     * deliberate. Reading a deliberate aggregate as if it were per-goal would
+     * be the wrong question -- what this answers is "is anyone still writing
+     * names the alias tables exist to translate?", which is the precondition
+     * for ever retiring them.
+     *
+     * Notably it reports ZERO, which is the whole point: a run report only
+     * prints a comms section when it has a finding, so the absence of alias
+     * hits is invisible there. Here it is a number you can read.
+     *
+     * Caveat worth knowing: process restarts reset it to zero. So a zero here
+     * is evidence only for as long as this process has been up.
+     */
+    aliases: { total: number; byRewrite: Array<{ rewrite: string; count: number }> };
   }> {
     const goalId = this.state.activeGoalId;
     const goal = goalId ? this.state.goals.get(goalId) : undefined;
@@ -6645,7 +8530,7 @@ export class Supervisor {
         id: r.definition.id,
         role: r.definition.role,
         lifecycle: r.state.lifecycle,
-        mailbox: this.state.unread.get(r.definition.id)?.length ?? 0,
+        mailbox: readableMailDepth(this.state, r.definition.id),
         tokens: r.state.tokensConsumed,
         taskId: r.state.activeTaskId ?? null,
         activations: r.state.activations,
@@ -6657,6 +8542,7 @@ export class Supervisor {
       progress: progress ? { completed: progress.completed, total: progress.total, ratio: progress.ratio } : null,
       openEscalations: [...this.state.escalations.values()].filter((e) => e.status === "OPEN"),
       eventCount: this.state.eventCount,
+      aliases: aliasStats(),
     };
   }
 }
@@ -6693,6 +8579,42 @@ function normalizeArtifactRefs(refs: unknown): ArtifactRef[] | undefined {
  * idling. Only these reset quiescence, so a rested mesh wakes for real work
  * and stays quiet for its own heartbeat.
  */
+/**
+ * Did this TURN move the mesh?
+ *
+ * Wider than `isProgressEvent`, and deliberately so: that predicate answers
+ * "should quiescence reset", which verdicts do not need to do. This one
+ * answers "did the seat do anything", and a reviewer whose whole turn is
+ * approvals did. In a live run tech-lead approved three design artifacts
+ * through `mesh_approve`, emitted no ops block, and was logged `turn.discarded
+ * — nothing was sent, published, or requested`. Its approvals were durable the
+ * whole time.
+ *
+ * Derived transitions are excluded: `auditTransition` emits them as `system`
+ * bookkeeping after a verdict that is already counted here, so counting both
+ * would score one act twice.
+ */
+function isTurnEffect(event: MeshEvent): boolean {
+  if (isProgressEvent(event.type)) return true;
+  switch (event.type) {
+    case "review.approved":
+    case "review.rejected":
+    case "architecture.approved":
+    case "review.requested":
+    case "patch.ready":
+    case "patch.merged":
+    case "implementation.completed":
+    case "research.completed":
+    case "requirement.satisfied":
+    case "design.question":
+      return true;
+    case "artifact.transition":
+      return (event.payload as { derived?: boolean }).derived !== true;
+    default:
+      return false;
+  }
+}
+
 function isProgressEvent(type: EventType): boolean {
   switch (type) {
     case "message.sent":
@@ -6779,14 +8701,21 @@ function reviewRoundsArtifactOf(esc: Escalation): string | null {
   return m ? m[1] : null;
 }
 
-function describeReason(reason: ActivationReason): string {
+/**
+ * The one line the seat reads to learn why it is awake, so it is load-bearing
+ * rather than cosmetic: a gathered wake that says only "new mail arrived" gets
+ * one message answered and leaves the rest owed a turn each. Exported for the
+ * same reason its neighbours below are — it is a pure function of the reason,
+ * and its wording is what the model acts on.
+ */
+export function describeReason(reason: ActivationReason): string {
   switch (reason.kind) {
     case "startup":
       // The note is the kickoff brief (goLive embeds the criteria gap here);
       // dropping it hid the "why" from the very first turn.
       return `Startup activation: begin your mission role.${reason.note ? ` ${reason.note}` : ""}`;
     case "message":
-      return `New mail arrived${reason.threadId ? ` in thread ${reason.threadId}` : ""}.`;
+      return `New mail arrived${reason.threadId ? ` in thread ${reason.threadId}` : ""}.${reason.note ? ` ${reason.note}` : ""}`;
     case "interest_event":
       return `Event matched your declared interests: ${reason.eventType ?? "unknown"} (event ${reason.eventId}).`;
     case "manual":

@@ -120,12 +120,56 @@
       }
     },
     "payload": {},
+    "note": {
+      "description": "Free prose for the recipient. Never parsed by the mesh: no op extraction, no discharge inference, no routing. Carries no authority.",
+      "type": "string",
+      "maxLength": 2000
+    },
     "control": {
       "description": "Runtime-owned delivery control. Agents cannot set this: sanitizeAgentMessageInput strips it from every send, and the closed property set means a forged field fails validation instead of being ignored.",
       "type": "object",
       "properties": {
         "cacheServed": {
           "type": "boolean"
+        },
+        "contract": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "number"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "service",
+            "collab",
+            "broadcast"
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "interrupt",
+            "deliver",
+            "accrue"
+          ]
+        },
+        "downgraded": {
+          "type": "string"
+        },
+        "ifUnanswered": {
+          "type": "object",
+          "required": [
+            "assume"
+          ],
+          "properties": {
+            "assume": {},
+            "afterMs": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -138,9 +182,6 @@
         "HIGH",
         "URGENT"
       ]
-    },
-    "ttl": {
-      "type": "string"
     },
     "requires": {
       "type": "array",

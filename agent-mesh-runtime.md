@@ -1421,6 +1421,22 @@ Has architecture approval occurred?
 
 # 19. Policy Language
 
+> **Historical — this section describes a design that was not built this way, and the two
+> rules below are not runnable.** It is kept because it is where `when.event` and a
+> rule-level `requires` came from, and because the third rule in the example is what
+> actually shipped.
+>
+> What happened to it: the transition half became `policies.transitions`
+> (`implementation.completed: { requires: [tech-lead.approve, qa.pass] }`), which is the
+> declarative gate the mesh enforces today. `when.to` was repurposed — here it names an
+> artifact *status* (`IMPLEMENTED`), and in the shipped engine it names a message
+> *recipient*. `when.event` and rule-level `requires` were left stranded and are now
+> removed: `requires` was never read by anything, and `when.event`'s value was never
+> compared — its only effect was to skip the rule whenever no message was under
+> evaluation, which silently switched capability and authority denial off. Config now
+> refuses a rule still carrying `when.event` and warns about a rule-level `requires`. See
+> `docs/configuration.md` (`### rules`) for the language that exists.
+
 Start with YAML.
 
 Example:

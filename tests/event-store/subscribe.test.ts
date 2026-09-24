@@ -32,9 +32,10 @@ const stores: Array<[string, () => { store: EventStore; file?: string }]> = [
 ];
 
 for (const [name, make] of stores) {
-  // The bug this replaces: the only push path (EventTailer's file watcher)
-  // kept its cursor in a map keyed by file path, so two followers of one log
-  // advanced the SAME cursor and each event reached exactly one of them.
+  // The bug this replaces: the only push path — a file watcher since deleted,
+  // `EventTailer` — kept its cursor in a map keyed by file path, so two
+  // followers of one log advanced the SAME cursor and each event reached
+  // exactly one of them.
   test(`${name}: two subscribers each receive every event, not one each`, async () => {
     const { store } = make();
     const a: number[] = [];
@@ -174,6 +175,64 @@ test("MemoryEventStore.flush exists and is a no-op, so callers need no special c
   await store.append(evt(1));
   await store.flush();
   assert.equal((await store.read()).length, 1);
+});
+
+/**
+ * The barrier now sits on every mutating HTTP response rather than at a
+ * handful of hand-picked call sites, which is only affordable if a flush with
+ * nothing pending costs nothing. The read-only MCP tool calls share that path
+ * and append nothing at all; an unconditional fsync there would have put the
+ * per-emit syscall cost back exactly where it was removed from.
+ */
+test("JsonlEventStore.flush: a store with nothing pending does no work at all", async () => {
+  const file = tmpLog();
+  const store = new JsonlEventStore(file);
+  const inner = store as unknown as { handle: unknown };
+
+  await store.flush();
+  assert.equal(inner.handle, null, "a barrier on a clean store must not even open the log");
+  await store.close();
+});
+
+test("JsonlEventStore.flush: a second barrier with no append between is free", async () => {
+  const file = tmpLog();
+  const store = new JsonlEventStore(file);
+  await store.append(evt(1));
+  await store.flush();
+
+  const inner = store as unknown as { handle: { sync(): Promise<void> } };
+  const realSync = inner.handle.sync.bind(inner.handle);
+  let syncs = 0;
+  inner.handle.sync = async (): Promise<void> => {
+    syncs++;
+    await realSync();
+  };
+
+  await store.flush();
+  await store.flush();
+  assert.equal(syncs, 0, "nothing was appended, so there is nothing to make durable");
+
+  await store.append(evt(2));
+  await store.flush();
+  assert.equal(syncs, 1, "and a real append re-arms it");
+  await store.close();
+});
+
+test("JsonlEventStore.flush: a poisoned queue keeps failing, it does not report durable once", async () => {
+  const file = tmpLog();
+  const store = new JsonlEventStore(file);
+  await store.append(evt(1));
+  const broken = store as unknown as { writeChain: Promise<void>; writeError: unknown };
+  broken.writeChain = broken.writeChain.then(() => {
+    broken.writeError = new Error("disk went away");
+  });
+
+  await assert.rejects(() => store.flush(), /disk went away/);
+  // The dangerous shape would be a flush that clears its own pending flag on
+  // the way out of a throw: the next receipt would be told the log is durable
+  // by a store that has never written the line.
+  await assert.rejects(() => store.flush(), /disk went away/, "the failure is sticky until someone deals with it");
+  await store.close();
 });
 
 // --------------------------------------------------- validation parity

@@ -12,6 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   BackendUnreachableError,
+  InterruptedTurnError,
   EDIT_CAPABILITIES,
   normalizeCapability,
   type AgentDefinition,
@@ -132,6 +133,20 @@ export interface ClaudeAdapterOptions {
    */
   rotateAtContextTokens?: number;
   /**
+   * Pin the idle gap after which a session's prompt cache counts as expired.
+   *
+   * Defaults to `SESSION_CACHE_STALE_MS`. Overridable for the same reason as
+   * `rotateAtContextTokens`: the staleness tests cannot spend ten real minutes
+   * waiting for a cache to go cold.
+   */
+  staleAfterMs?: number;
+  /**
+   * Pin the transcript size below which staleness is not worth a rotation.
+   *
+   * Defaults to `SESSION_STALE_ROTATE_FLOOR_TOKENS`.
+   */
+  staleFloorTokens?: number;
+  /**
    * Seam for the SDK's `query`. Defaults to the real one.
    *
    * Session rotation tears down a live query and stands a replacement up
@@ -240,6 +255,31 @@ const SESSION_CONTEXT_ROTATE_RATIO = 0.6;
 const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
 
 /**
+ * How long a session may sit idle before its prompt cache has certainly
+ * expired, in ms.
+ *
+ * The other half of the rotation decision, and the one that was missing: size
+ * was bounded, TIME was not. See the staleness branch in `stream` for the
+ * measurement this threshold comes from.
+ */
+const SESSION_CACHE_STALE_MS = 10 * 60_000;
+
+/**
+ * Transcript size below which staleness is not worth a rotation.
+ *
+ * Re-reading a small transcript is cheap, and the un-externalised reasoning
+ * inside it is not free to reproduce — so a quiet seat with a short
+ * conversation keeps it. Only a seat that is both idle AND large is paying more
+ * to carry its history than to rebuild from projections.
+ *
+ * "Size" is a per-call prompt (`promptSize`), i.e. tokens actually occupying a
+ * window — not a turn's summed reads. The two differed by ~32× on a measured
+ * mission, and this floor was calibrated against the second: at 40k it used to
+ * admit a 79-call turn over a transcript of a few thousand tokens.
+ */
+const SESSION_STALE_ROTATE_FLOOR_TOKENS = 40_000;
+
+/**
  * Context window per model id, in tokens — the denominator of the ratio above.
  *
  * Bare, undated ids, which is the convention `toClaudeModelId` documents and
@@ -312,22 +352,70 @@ export function rotateAtFor(model: string | undefined): number {
 const SEAT_EFFORT = "high" as const;
 
 /**
- * How much conversation the model loaded for a turn.
+ * How much conversation the model loaded across a turn's calls, summed.
  *
  * `input + cache_read`, because a cached prefix is still context the model read
  * — it is only cheaper, not absent. Reading `input` alone would report a
  * 150k-token transcript as a few hundred tokens once the prefix caches, which
  * is exactly the blind spot that let the transcript grow unnoticed.
+ *
+ * A **cost** signal, not a context size. The backend reports `usage` once per
+ * model call, so a turn that loops N times reports N reads of a context that may
+ * never have approached the window — measured on a live mission: 954 calls whose
+ * largest prompt was 165,129 tokens, against turn figures of 5,219,210 and
+ * 6,189,695 (`NOTES-communication-measured-review.md` §11c).
+ *
+ * So this is no longer what the rotation decision compares to a window. That is
+ * {@link promptSize}, taken per call. This one survives as the **fallback** for a
+ * backend that reports no per-call usage, and it is the safe direction to fall
+ * back in: it over-states, so a session rotates early and pays a cache prefix,
+ * where under-stating would let a transcript run past the window and kill a live
+ * mission.
  */
 export function transcriptSize(t: AgentOutput["tokensUsed"] | undefined): number {
   return (t?.input ?? 0) + (t?.cacheRead ?? 0);
 }
 
+/**
+ * The context one model call actually read.
+ *
+ * The SDK states the arithmetic itself: "Total input tokens in a request is the
+ * summation of `input_tokens`, `cache_creation_input_tokens`, and
+ * `cache_read_input_tokens`". That sum is a **size** — the transcript the model
+ * was handed for that one call — which is the quantity the rotation threshold
+ * was always named for and never measured.
+ *
+ * `cache_creation_input_tokens` is the term the mesh had been dropping: it rides
+ * into `usageToTokens`'s `total` and has no field of its own, so a prompt that
+ * was written to cache rather than read from it went uncounted.
+ *
+ * The wire type makes both cache fields `number | null`, so `?? 0` covers
+ * absent and null alike; a call that reports nothing at all returns 0, which
+ * callers must treat as "no measurement" rather than "an empty context".
+ */
+export function promptSize(u: ClaudeTurnUsage | undefined): number {
+  if (!u) return 0;
+  const input = u.input_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens ?? 0;
+  const cacheWrite = u.cache_creation_input_tokens ?? 0;
+  return input + cacheRead + cacheWrite;
+}
+
 export interface ClaudeTurnUsage {
   input_tokens?: number;
   output_tokens?: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
+  /**
+   * The two cache terms, `number | null` because that is what the wire says:
+   * `Usage` in `@anthropic-ai/sdk` declares both as `number | null`, and a call
+   * that used no cache reports the null rather than omitting the key.
+   *
+   * Declared nullable here so the `?? 0` in {@link usageToTokens} and
+   * {@link promptSize} is load-bearing rather than defensive. Typed as
+   * `number | undefined`, a future `a + usage.cache_read_input_tokens` would
+   * typecheck and then produce a NaN off a live backend.
+   */
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
   /**
    * Reasoning half of `output_tokens`, NOT a fifth token bucket.
    *
@@ -555,6 +643,16 @@ interface TurnState {
    * `result` branch in `pump`.
    */
   interrupted?: boolean;
+  /**
+   * The largest prompt any single model call in this turn was handed.
+   *
+   * A turn is a tool loop, so it makes N calls, each re-sending the transcript:
+   * the largest of them is the context the session is carrying, and the one the
+   * window has to hold. Zero means no frame reported usage — an absence, never
+   * an empty context, which is why the settle path falls back rather than
+   * reading this as "nothing to rotate".
+   */
+  maxPromptTokens: number;
 }
 
 /**
@@ -678,15 +776,37 @@ interface LiveSession {
   agent: AgentDefinition;
   context: RuntimeContext;
   /**
-   * Size of the transcript the model actually read on the last turn
-   * (`input + cache_read`). This is a measurement, not an estimate: it is what
-   * the backend reported it had loaded, and it is the only honest signal for
-   * "how big has this conversation become".
+   * The context this session is carrying: the largest prompt a single model
+   * call of the last turn was handed (`input + cache_read + cache_creation`,
+   * see `promptSize`).
+   *
+   * A measurement, not an estimate. It is a **size** — a turn is a tool loop
+   * that re-sends the transcript to every call, so the largest of those prompts
+   * is the transcript as the window has to hold it — which is what the rotation
+   * threshold is named for and, until this, never received: the figure here used
+   * to be the same prompt summed over the turn's calls, so it grew with the
+   * number of calls and compared a per-turn cost to a per-call limit. On one
+   * measured mission that reported 5,219,210 against a largest real prompt of
+   * 165,129 (`NOTES-communication-measured-review.md` §11c).
+   *
+   * Falls back to that sum only when no frame reported usage at all, so a
+   * backend that reports nothing rotates early rather than never.
    */
   contextTokens: number;
   /** Turns served by the CURRENT sdk session, and rotations so far. */
   turns: number;
   rotations: number;
+  /**
+   * When this session last FINISHED a turn, in ms. The staleness half of the
+   * rotation decision: a session quiet long enough has certainly lost its
+   * prompt cache, and is then re-reading itself at full price.
+   */
+  lastTurnEndedAt?: number;
+  /**
+   * Latched once this session is judged stale, so the decision survives the
+   * turn that answers it. See `markStaleRotationDue`.
+   */
+  staleRotationDue?: boolean;
   /**
    * Tools unlocked for this seat, held BY REFERENCE by the permission gate.
    * Mutated in place each turn from `AgentInput.approvalGranted`; assigning a
@@ -830,8 +950,14 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // handover. It cannot wedge a seat permanently over the threshold: the
     // supervisor sets it only when it is asking for a continuity record, and
     // the very next turn comes in without it and rotates.
-    if (s.contextTokens >= rotateAt && !input.suppressRotation) {
-      s = await this.rotate(s, `context ${s.contextTokens} tokens >= ${rotateAt}`);
+    const stale = this.markStaleRotationDue(s);
+    if (!input.suppressRotation && (s.contextTokens >= rotateAt || stale)) {
+      s = await this.rotate(
+        s,
+        stale && s.contextTokens < rotateAt
+          ? `transcript idle past the prompt-cache lifetime: ${s.contextTokens} tokens would be re-read at full price`
+          : `context ${s.contextTokens} tokens >= ${rotateAt}`,
+      );
     }
     const live = s;
 
@@ -852,6 +978,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       toolSeq: 0,
       settled: false,
       sawFrame: false,
+      maxPromptTokens: 0,
       settle: (outcome) => {
         if (turn.settled) return;
         turn.settled = true;
@@ -861,11 +988,16 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
         if (outcome.ok) {
           const end = this.toTurnEnd(outcome.msg, live);
           live.turns++;
-          // `input + cache_read` is what the backend says it loaded for this
-          // turn — i.e. the transcript's current size. Recorded here rather
-          // than estimated anywhere else, and read by the rotation check on
-          // the NEXT turn.
-          live.contextTokens = transcriptSize(end.tokensUsed);
+          // The largest prompt a single call was handed, which is the context
+          // this session is carrying — what the rotation threshold is named for
+          // and, before this, never measured. Falls back to the summed figure
+          // only when NO frame reported usage: an absence, not an empty
+          // context, and the fallback over-states, so an unmeasurable backend
+          // rotates early rather than overflowing a window.
+          live.contextTokens = turn.maxPromptTokens || transcriptSize(end.tokensUsed);
+          // When this session last finished a turn, for the staleness branch of
+          // the rotation check. Read on the NEXT turn, like `contextTokens`.
+          live.lastTurnEndedAt = Date.now();
           this.statuses.set(session.agentId, "IDLE");
           turn.events.push(end);
         } else {
@@ -1186,19 +1318,67 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
+   * Has this session's prompt cache certainly expired, and is its transcript
+   * large enough that re-reading it costs more than rebuilding from
+   * projections?
+   *
+   * The second reason to retire a session, and not a variant of the first: the
+   * size threshold bounds what a turn COSTS, this bounds what an IDLE turn
+   * costs, and that second failure was unbounded. Measured on a real mission
+   * (examples/line-follower-sim: 200 turns, 4.35M input tokens), fresh input
+   * tracks the gap since this seat's previous turn — flat at a median of 5,655
+   * tokens under ten minutes however long the conversation had grown, because
+   * the prefix was served from cache — then a median of 23,615 and a maximum
+   * of 691,420 past it, because the cache had expired and the whole transcript
+   * was billed at full price. Seven turns of that mission carried 77.5% of its
+   * entire input bill, and every one was a cold re-read.
+   *
+   * Rotating there gives up nothing that was not already lost: the cache prefix
+   * is the one thing a rotation discards, and on this path it is gone before
+   * the turn begins. Both conditions are required for that reason — a SMALL
+   * transcript is cheap to re-read and the reasoning inside it is not free to
+   * reproduce, so only a seat that is idle AND large is better off rebuilt.
+   *
+   * LATCHED, and that is the load-bearing part. The condition that triggers it
+   * is a gap between turns, so it disappears the moment the seat takes one —
+   * and the turn it triggers is a handover, which is exactly a turn taken on
+   * the old transcript. Un-latched, the rotation would be deferred for the
+   * handover and then never happen, and the seat would carry its cold
+   * transcript for the rest of the mission. `rotationPending` latches it too,
+   * so the supervisor still gets its chance to ask for a continuity record.
+   */
+  private markStaleRotationDue(s: LiveSession): boolean {
+    if (s.staleRotationDue) return true;
+    if (s.lastTurnEndedAt === undefined) return false;
+    const staleAfter = this.options.staleAfterMs ?? SESSION_CACHE_STALE_MS;
+    const floor = this.options.staleFloorTokens ?? SESSION_STALE_ROTATE_FLOOR_TOKENS;
+    if (Date.now() - s.lastTurnEndedAt < staleAfter) return false;
+    if (s.contextTokens < floor) return false;
+    s.staleRotationDue = true;
+    return true;
+  }
+
+  /**
    * Would the next `stream()` call rotate this session?
    *
-   * Reads the same two numbers the rotation decision itself reads, from the
-   * same place, so the supervisor's answer and the adapter's cannot disagree.
+   * Reads the same numbers the rotation decision itself reads, from the same
+   * place, so the supervisor's answer and the adapter's cannot disagree.
    * Deliberately NOT a prediction of the next turn's size: `contextTokens` is
    * last turn's measurement, which is exactly what the threshold test at the
    * top of `stream` compares against.
+   *
+   * Sets the staleness latch when it reports one — a query with a side effect,
+   * which the "cannot disagree" promise requires. The supervisor answers a
+   * pending rotation by asking for a continuity record, and that handover turn
+   * runs ON the old transcript, so it closes the very gap that made the session
+   * stale. Remembering the verdict here is what makes the rotation still happen
+   * on the turn after it.
    */
   rotationPending(session: AgentSession): RotationPendingInfo | null {
     const s = this.live.get(session.sessionId);
     if (!s || s.closed) return null;
     const thresholdTokens = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
-    if (s.contextTokens < thresholdTokens) return null;
+    if (s.contextTokens < thresholdTokens && !this.markStaleRotationDue(s)) return null;
     return { transcriptTokens: s.contextTokens, thresholdTokens };
   }
 
@@ -1439,8 +1619,25 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             s.markReady();
           }
         } else if (msg.type === "assistant") {
-          const m = msg.message as { model?: string; content?: unknown };
+          const m = msg.message as { model?: string; content?: unknown; usage?: ClaudeTurnUsage };
           if (typeof m.model === "string") s.lastModel = m.model;
+          // The per-call context, which nothing else in the mesh receives: the
+          // `result` frame carries the turn's usage SUMMED over its calls, and
+          // the rotation threshold needs one call's prompt, not the total of N
+          // of them (§11c of `NOTES-communication-measured-review.md`).
+          //
+          // A max, not a last: the CLI emits one assistant frame per completed
+          // content block and documents their `usage` as "not final", so
+          // several frames can describe one call and an early one may report
+          // zeros for cache terms it has not counted yet. A max ignores those
+          // without inventing tokens, and the last call of a turn — the largest
+          // prompt in it — always arrives on the final frame, whose usage is
+          // final. Over a turn it is therefore the context the window had to
+          // hold, not a figure that grows with the number of calls.
+          if (s.pending) {
+            const prompt = promptSize(m.usage);
+            if (prompt > s.pending.maxPromptTokens) s.pending.maxPromptTokens = prompt;
+          }
           const blocks = Array.isArray(m.content) ? m.content : [];
           for (const b of blocks as Array<Record<string, unknown>>) {
             if (b.type === "tool_use") {
@@ -1457,6 +1654,31 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
                 });
               }
             }
+          }
+        } else if (msg.type === "user") {
+          // Tool RESULTS. Previously dropped, and the omission was load-bearing:
+          // `tool_call` is pushed when a call is announced and nothing ever
+          // emitted `tool_call_update`, so `noteToolFrame` stamped liveness once
+          // — at the START of the call — and never again. A single four-minute
+          // `Bash` run therefore read as a turn that had gone silent, and the
+          // stall watchdog killed it. That is the mechanism behind ten dead turns
+          // in one live run, and no amount of tuning the silence floor fixes it.
+          //
+          // Both consumers already exist: `collectAgentOutput` folds
+          // `tool_call_update` into `toolCalls`, and the dashboard's stream
+          // reducer keys off it. Only the producer was missing.
+          const um = (msg as { message?: { content?: unknown } }).message;
+          const parts = Array.isArray(um?.content) ? um.content : [];
+          for (const b of parts as Array<Record<string, unknown>>) {
+            if (b.type !== "tool_result") continue;
+            const id = b.tool_use_id ?? b.toolUseId;
+            if (id === undefined || !s.pending) continue;
+            s.pending.events.push({
+              kind: "tool_call_update",
+              toolCallId: String(id),
+              status: b.is_error === true ? "failed" : "completed",
+              resultDigest: shortDigest(JSON.stringify(b.content ?? "")),
+            });
           }
         } else if (msg.type === "stream_event") {
           // Live token tap, observability only — never fails the turn.
@@ -1484,9 +1706,16 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             // always wins. Deciding it here removes the race. A result that is
             // NOT an error is left alone: that is the CLI completing the turn
             // as we aborted, and its ops are legitimate work.
+            // The frame we are discarding still reports what the backend spent
+            // getting this far, so carry it out on the error instead of dropping
+            // it. `InterruptedTurnError` is named "AbortError", so every
+            // classification path downstream is unchanged — see its doc comment.
             pending.settle({
               ok: false,
-              err: new DOMException("turn interrupted by the mesh before the backend answered", "AbortError"),
+              err: new InterruptedTurnError(
+                "turn interrupted by the mesh before the backend answered",
+                usageToTokens(result.usage),
+              ),
             });
             // Every failure marks the seat UNREACHABLE, which `ensureSession`
             // reads as "discard this session and rebuild it". The abort left the

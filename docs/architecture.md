@@ -32,8 +32,8 @@ COLLABORATION BUS      packages/protocol + packages/policy-engine +
       ▼                         ▼
 AGENT RUNTIMES         ARTIFACT PLANE
 packages/agent-runtime packages/artifact-store
-  opencode / claude /  git worktrees +
-  http / stub          immutable versions
+  claude / http /      git worktrees +
+  stub / none          immutable versions
       │                         │
       └───────────┬─────────────┘
                   ▼
@@ -44,11 +44,30 @@ append-only log → projections → replay → audit → cost → metrics
 ## Layered enforcement (why prompts are not the contract)
 
 1. **Prompt awareness** (`context.ts`) — the agent is told the rules. Not trusted.
-2. **Tool/capability enforcement** (`policy-engine`, `agent-runtime` config) —
-   an agent without `git.merge` cannot invoke the merge tool. OpenCode adapter
-   writes per-agent `permission` blocks and only mounts the mesh MCP server.
-3. **Mesh policy enforcement** (`policy-engine` via the bus) — illegal
-   `APPROVE`/`COMMIT`/`DELEGATE`/`BLOCK` are rejected before they become events.
+2. **Tool/capability enforcement** (`policy-engine`, plus each adapter's own
+   tool gate) — an agent without `git.merge` cannot invoke the merge tool.
+   Illegal `APPROVE`/`COMMIT`/`DELEGATE`/`BLOCK` are stopped **here**, on the
+   op, by `evaluateAuthority`/`evaluateCapability` (`recordDecision`, `opCommit`,
+   `opMerge`, `opDelegate`) before any message is sent. Each adapter enforces
+   capability in its own idiom: `runtime-claude` installs a `canUseTool`
+   permission gate that allows the `mcp__mesh*` tools and read tools, denies
+   edit/exec/network without the matching capability, and fails closed on any
+   tool it does not map; `runtime-http` and the `stub` runtime have no tool gate
+   of their own — their ops are executed by the kernel through that same op path,
+   so the same checks apply. Any `mesh_*` call a seat makes, including one from
+   an out-of-process agent, arrives at the MCP bridge, where the policy engine
+   authenticates it.
+   Registered runtimes are `claude`, `stub` and `none` (the human seat's
+   placeholder), plus `http` when a URL is configured — see `docs/runtime.md`.
+   The OpenCode backend was removed; no registered runtime reads an
+   `opencode.json` or writes per-agent `permission` blocks any more.
+3. **Mesh policy enforcement** (`policy-engine` via the bus) — the communication
+   matrix: who may *initiate* contact with whom (`policies.communication`),
+   plus any operator `policies.rules` that deny or escalate. It does **not**
+   gate on message type — `evaluateMessage` reads `message.type` only to feed
+   optional custom `RawPolicyRules`. A raw `BLOCK` that skips the op path is not
+   rejected here either: the reducer refuses to record it and the sender is told
+   its objection was delivered as a concern that withholds nothing.
 4. **State-transition enforcement** (`core/projections.ts`) — even a rogue event
    cannot force an artifact into an illegal state. The projection reducer throws
    and the kernel refuses to append it. This is the strongest layer.
@@ -74,8 +93,8 @@ Agents talk only through the mesh · policy is evaluated before commit ·
 transitions need evidence · one writer per artifact · process death ≠ identity
 loss · replay is equivalent · activation is event-driven · transcripts are not
 auto-shared · human escalation is a protocol event · completion needs evidence ·
-budgets are runtime-enforced · security is capability-based · OpenCode is an
-adapter · protocol is vendor-independent · the kernel decides on typed fields,
+budgets are runtime-enforced · security is capability-based · the agent runtime
+is an adapter · protocol is vendor-independent · the kernel decides on typed fields,
 never on prose · an ask to N agents is N obligations · an ask leaves the ledger
 only through a recorded discharge · "gone" is never reported as "answered".
 

@@ -2,7 +2,7 @@ import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type Goal
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
-import { agentKey, missionKey, taskKey, threadKey } from "./budgets";
+import { agentKey, autoRaiseExhausted, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
 /**
@@ -110,6 +110,13 @@ export class DeadlockDetector {
   private scanThreadDepth(state: Projections, goalId: GoalId): DeadlockFinding[] {
     const out: DeadlockFinding[] = [];
     for (const thread of state.threads.values()) {
+      // This guard used to be unreachable-by-omission: nothing wrote a
+      // terminal Thread status, so every thread was OPEN forever and a deep
+      // one kept qualifying as a deadlock long after its conversation ended.
+      // `collab.closed` now writes RESOLVED (or ESCALATED on an overrun), so a
+      // closed collab stops being scanned — which is the reading the guard
+      // always intended: a finished discussion cannot be a live deadlock, and
+      // the overrun already raised its own card.
       if (thread.status !== "OPEN") continue;
       if (thread.depth > this.config.escalation.threadMaxDepth) {
         out.push({
@@ -358,8 +365,21 @@ export class TerminationManager {
         detail: { key: missionTokens.key, consumed: missionTokens.consumed, limit: missionTokens.limit },
       };
     }
+    // `exceeded` alone is not exhaustion — it is a latch, and `reserve` sets it
+    // BEFORE its caller gets to await `tryAutoRaise`. A watchdog firing in that
+    // window reads a flag that is about to be cleared, so this used to escalate
+    // the whole mission over a ledger that was raised in the same second. Two of
+    // five halts in one live run were exactly that, identifiable afterwards only
+    // because a `budget.limit_raised` followed the escalation by sequence number.
+    //
+    // `autoRaiseExhausted` is the conjunct that makes the verdict say what it
+    // means: nothing will raise this ledger, so the latch is final. It mirrors
+    // `tryAutoRaise`'s own bail set, from the same `configuredBudgetLimit` the
+    // sweep uses, so the two cannot drift. The card that survives carries real
+    // information — "this mission wants 8x its budget" — which is the judgement
+    // worth waking a human for.
     for (const b of state.budgets.values()) {
-      if (b.exceeded && b.key.startsWith(`agent:${goalId}`)) {
+      if (b.exceeded && b.key.startsWith(`agent:${goalId}/`) && autoRaiseExhausted(state, config, b.key)) {
         return { kind: "escalate", reason: "agent_budget_exhausted", detail: { key: b.key, consumed: b.consumed, limit: b.limit } };
       }
     }
@@ -370,13 +390,39 @@ export class TerminationManager {
     // normal and self-correcting (agents open a fresh thread).
     const deadThreads = [...state.budgets.values()].filter((b) => b.exceeded && b.key.startsWith(`thread:${goalId}`));
     if (deadThreads.length > 0) {
-      const liveThread = [...state.threads.values()].some((t) => {
-        if (t.status !== "OPEN") return false;
-        const ledger = state.budgets.get(threadKey(goalId, t.id));
-        return !ledger || !ledger.exceeded;
+      // "Live" now means what it says. Before `collab.closed` wrote a terminal
+      // Thread status, a closed collab still counted as a live thread and
+      // suppressed this escalation, so a mission whose only remaining threads
+      // were finished discussions with exhausted budgets stalled in silence —
+      // precisely the failure this check exists to catch. Closing a collab can
+      // therefore now let this fire where it previously could not, and that is
+      // the correction, not a regression: work cannot continue in a thread
+      // nobody may speak in.
+      //
+      // The same reasoning reaches further now that a settled ASK also ends its
+      // thread (D13), and one clause is added to keep it honest. The check
+      // asks "is every thread we could still work in dead?" — and a mission
+      // with no open thread at all is not a stall from thread budgets, it is a
+      // mission with nothing running, so demanding a candidate before firing
+      // keeps this from claiming an exhaustion it cannot point at. Without
+      // that clause, an ordinary mission whose asks were all answered would
+      // read as "thread budgets exhausted" the moment the last agent went
+      // idle, which is a false card on a healthy finish.
+      const openThreadsNow = [...state.threads.values()].filter((t) => t.status === "OPEN");
+      const liveThread = openThreadsNow.some((t) => {
+        const key = threadKey(goalId, t.id);
+        const ledger = state.budgets.get(key);
+        // A thread whose ledger is exceeded but still raisable is a thread work
+        // CAN continue in, which is the question this predicate actually asks.
+        // Same read-too-early as the agent arm above: without this clause the
+        // sweep's next pass would have raised it, and the escalation only won a
+        // race. `deadThreads` deliberately keeps every exhausted thread, raisable
+        // or not — that feeds the operator's detail payload, which should show
+        // the whole picture rather than only the unrecoverable part.
+        return !ledger || !ledger.exceeded || !autoRaiseExhausted(state, config, key);
       });
       const busy = [...state.agents.values()].some((a) => !["IDLE", "WAITING", "DONE", "FAILED", "RETIRED"].includes(a.state.lifecycle));
-      if (!liveThread && !busy) {
+      if (openThreadsNow.length > 0 && !liveThread && !busy) {
         return {
           kind: "escalate",
           reason: "thread_budgets_exhausted",

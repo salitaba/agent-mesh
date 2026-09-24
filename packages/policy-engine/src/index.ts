@@ -6,7 +6,8 @@
   PolicyDecisionResult,
 } from "../../protocol/src/index";
 import type { PolicyContext, PolicyEvaluator } from "../../core/src/ports";
-import { checkApprovals, gateForTransition, holdsAuthority } from "../../core/src/projections";
+import { AUTHORITY_DOMAINS, AUTHORITY_TOKENS } from "../../protocol/src/index";
+import { checkApprovals, gateForTransition, holdsAuthority, REVIEW_CAPABILITIES, subjectForArtifactType } from "../../core/src/projections";
 import { approvalKey } from "../../core/src/state";
 import type { RawPolicyRule } from "../../config/src/index";
 import { HUMAN_AGENT_ID } from "../../core/src/supervisor";
@@ -74,7 +75,7 @@ export class PolicyEngine implements PolicyEvaluator {
       }
     }
     if (denied.length > 0 && allowed.length === 0) {
-      const rule = this.matchRule(ctx, { actorId: from, message: message.type });
+      const rule = this.matchRule(ctx, { actorId: from, message: message.type, recipients: to });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `contact ${from}->${denied.join(",")} forbidden by rule ${rule.id}`, ruleId: rule.id };
       return {
         decision: "DENY",
@@ -82,7 +83,10 @@ export class PolicyEngine implements PolicyEvaluator {
         ruleId: "communication",
       };
     }
-    const custom = this.matchRule(ctx, { actorId: from, message: message.type, targets: denied });
+    // `recipients` is the message's whole address list, not `denied`: a rule
+    // scoped by `when.to` is asking whether the message addresses that seat,
+    // which is a different question from whether the matrix refused it.
+    const custom = this.matchRule(ctx, { actorId: from, message: message.type, recipients: to });
     if (custom) {
       if (custom.deny?.message_types?.includes(message.type)) {
         return { decision: "DENY", reason: `denied by policy rule '${custom.id}'`, ruleId: custom.id };
@@ -119,7 +123,7 @@ export class PolicyEngine implements PolicyEvaluator {
     const required = `${subject}.${kind}`;
     const has = holdsAuthority(def.authority, subject, kind);
     if (!has) {
-      const rule = this.matchRule(ctx, { actorId, authority: required });
+      const rule = this.matchRule(ctx, { actorId });
       if (rule?.escalate) return { decision: "ESCALATE", reason: `authority '${required}' missing; rule '${rule.id}' escalates`, ruleId: rule.id };
       // Name who CAN. This is the same remedy-legibility rule the criterion
       // accept path already follows when it names both authorities it tried:
@@ -134,10 +138,29 @@ export class PolicyEngine implements PolicyEvaluator {
         .filter((r) => r.definition.id !== HUMAN_AGENT_ID)
         .filter((r) => holdsAuthority(r.definition.authority, subject, kind))
         .map((r) => r.definition.id);
-      const remedy = holders.length > 0 ? ` — held by: ${holders.join(", ")}` : ` — no agent seat holds it`;
+      // `subject` reaches here as free text — `domainOfSubject` passes an
+      // unrecognised word straight through — so `required` may be a token that
+      // CANNOT exist. `design.approve` is the live example: no seat held it, so
+      // the remedy read "no agent seat holds it", which invites an operator to
+      // grant it in `mesh.yaml`, where `validateAuthorityTokens` then refuses
+      // the token at load and the mesh stops booting. A remedy must not name a
+      // fix that bricks the mesh. So distinguish "nobody has it" from "it is
+      // not a thing", and for the latter give the domains that are.
+      const remedy =
+        holders.length > 0
+          ? ` — held by: ${holders.join(", ")}`
+          : AUTHORITY_TOKENS.includes(required)
+            ? ` — no agent seat holds it`
+            : ` — '${required}' is not a grantable authority (do not add it to mesh.yaml; the config loader rejects it and the mesh will not boot).` +
+              ` Valid domains: ${AUTHORITY_DOMAINS.join(", ")}. Re-issue naming the capacity you are signing in` +
+              ` (for example subject "${AUTHORITY_DOMAINS.includes(subject as (typeof AUTHORITY_DOMAINS)[number]) ? subject : "quality"}"), not the artifact or the topic`;
       return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}`, ruleId: "authority" };
     }
-    const rule = this.matchRule(ctx, { actorId, authority: required });
+    // `required` is not passed to matchRule: there is no `when.authority`, so an
+    // authority is matched on actor and role alone. The deny below is therefore
+    // the rule's *capability* denial applied to an authority that those
+    // capabilities do not describe — see matchRule's doc comment.
+    const rule = this.matchRule(ctx, { actorId });
     if (rule && (rule.deny?.capabilities?.length ?? 0) > 0) {
       return { decision: "DENY", reason: `authority '${required}' denied by rule '${rule.id}'`, ruleId: rule.id };
     }
@@ -289,9 +312,32 @@ export class PolicyEngine implements PolicyEvaluator {
     return ALLOW;
   }
 
+  /**
+   * The first rule in `this.rules` that a given evaluation matches, or
+   * `undefined`. Only the clauses that exist on `when` are compared: actor,
+   * actor_role, to, message_type, capability.
+   *
+   * There is deliberately no `authority` in the match shape. An authority
+   * evaluation passes only its actor, exactly as a capability evaluation passes
+   * only its actor and capability, because there is no `when.authority` clause
+   * for a token to be compared against — an authority matches on actor and role
+   * alone. The parameter that used to carry `${subject}.${kind}` was read by
+   * nothing, and its presence implied a clause that does not exist; deleting it
+   * is what makes the code say what it does.
+   *
+   * What that leaves, recorded rather than silently fixed: `evaluateAuthority`
+   * still denies a HELD authority whenever the matched rule carries any
+   * `deny.capabilities`, even though those capabilities have nothing to do with
+   * `${subject}.${kind}`. Narrowing that is a permission *widening* — it removes
+   * a DENY — so it wants its own decision rather than a cleanup commit. What it
+   * does not get to be is invisible: `config`'s `warnAuthorityStrippingRules`
+   * reports at load every rule that would strip an authority from a seat that
+   * holds one, so the operator meets the trap before the mission does. See
+   * `NOTES-communication-measured-review.md` §7 row 12.
+   */
   private matchRule(
     ctx: PolicyContext,
-    match: { actorId?: string; message?: string; capability?: string; authority?: string; targets?: string[] },
+    match: { actorId?: string; message?: string; capability?: string; recipients?: string[] },
   ): RawPolicyRule | undefined {
     for (const rule of this.rules) {
       const w = rule.when ?? {};
@@ -300,13 +346,59 @@ export class PolicyEngine implements PolicyEvaluator {
         const role = this.agentDef(ctx, match.actorId)?.role;
         if (role !== w.actor_role) continue;
       }
+      // `when.to` scopes a rule to a recipient, so it matches only an
+      // evaluation that HAS recipients and addresses that seat. An evaluation
+      // with no recipients — a capability or authority check, neither of which
+      // is addressed to anyone — therefore never matches a rule carrying one.
+      // Letting those fall through is how a rule scoped to one seat applied to
+      // every seat: `when.to` was read by nothing at all, so a rule written to
+      // bind one recipient silently bound them all.
+      //
+      // The test is "declared", not "truthy". A declared-but-empty `to` — `""`
+      // or `null`, which is what a designer writes when an operator clears the
+      // field (`Designer.tsx`) — is still an operator saying which seat this
+      // rule is about. Reading it as absent inverted the two cases: a WRONG
+      // recipient bound nobody, while an EMPTY one rebound the rule to the
+      // whole mesh, off-messaging checks included. Both now bind nobody, which
+      // is the direction that cannot widen a rule by accident.
+      if (w.to !== undefined && !isAddressed(ctx, match.recipients, w.to)) continue;
       if (w.message_type && match.message && w.message_type !== match.message) continue;
       if (w.capability && match.capability && w.capability !== match.capability) continue;
-      if (w.event && !match.message) continue;
+      // There was a `if (w.event && !match.message) continue` here, and its
+      // removal is a deliberate narrowing of what this loop ignores. The clause
+      // was never compared against anything — it was a boolean flag meaning
+      // "skip this rule unless a message is under evaluation", so it silently
+      // switched OFF capability and authority denial on any rule that also
+      // named capabilities. Config now refuses to load a rule still carrying
+      // it (`validateRemovedRuleClauses`), so no live rule reaches this point
+      // that was relying on it; deleting the guard is what makes the removal
+      // real rather than cosmetic.
       return rule;
     }
     return undefined;
   }
+}
+
+/**
+ * Does an address list reach the seat a rule's `when.to` names?
+ *
+ * Resolved the two ways the communication matrix resolves a recipient, because
+ * `when.to` is the same question the matrix answers: by the seat's id, and by
+ * its role (`may_contact: [qa]` reaches a seat whose role is `qa` whether or
+ * not its id is). A hierarchical child (`qa#1`) answers to its base id as well,
+ * which is what `configKeyFor` supplies.
+ *
+ * No recipients means no match: a rule that names a recipient is a statement
+ * about addressing, and an evaluation that addresses nobody cannot satisfy it.
+ */
+function isAddressed(ctx: PolicyContext, recipients: string[] | undefined, want: string): boolean {
+  if (!recipients) return false;
+  for (const recipient of recipients) {
+    if (recipient === want) return true;
+    if (configKeyFor(ctx, recipient) === want) return true;
+    if (ctx.projections.agents.get(recipient)?.definition.role === want) return true;
+  }
+  return false;
 }
 
 /**
@@ -366,38 +458,30 @@ function configKeyFor(ctx: PolicyContext, id: string): string | undefined {
   return undefined;
 }
 
-export const REVIEW_CAPABILITIES: Partial<Record<Artifact["type"], string>> = {
-  ArchitectureDocument: "review.design",
-  ADR: "review.design",
-  ApiSpec: "review.design",
-  DatabaseSchema: "review.design",
-  CodePatch: "code.review",
-  ReleasePlan: "code.review",
-  TestReport: "test.write",
-  SecurityReport: "security.review",
-  RequirementsDoc: "review.design",
-};
+// The table this file used to declare itself now lives in core, because the
+// self-approval screen on the op path and the `review-authority` rule on the
+// transition path must be the same screen. They were not: the two copies
+// disagreed on DatabaseSchema, ReleasePlan, TestReport and RequirementsDoc,
+// so an artifact could be refused here and waved through there. Re-exported
+// so every existing importer of the policy path keeps working.
+export { REVIEW_CAPABILITIES } from "../../core/src/projections";
 
+/**
+ * The same consolidation, now applied to the subject table too.
+ *
+ * This was the surviving twin: it disagreed with core's `domainOfSubject` on
+ * `DatabaseSchema` (architecture vs the caller's word), on `ReleasePlan`
+ * (implementation vs release), and on every unmapped type — where this returned
+ * `architecture` from its `default:` and core returned the artifact's own type
+ * name, which is never a valid authority domain.
+ *
+ * NOTE a deliberate behaviour change: `ReleasePlan` now resolves to `release`
+ * rather than `implementation`, so `canReviewArtifactType` — and through it the
+ * `review-authority` rule — asks for `release.approve`. That is the correct
+ * reading; the `ACCEPTED` transition below already keys off `release.accept`.
+ */
 export function reviewSubject(artifact: Pick<Artifact, "type">): string {
-  switch (artifact.type) {
-    case "ArchitectureDocument":
-    case "ADR":
-    case "ApiSpec":
-    case "DatabaseSchema":
-      return "architecture";
-    case "CodePatch":
-    case "ReleasePlan":
-      return "implementation";
-    case "TestReport":
-      return "quality";
-    case "SecurityReport":
-      return "security";
-    case "RequirementsDoc":
-    case "Requirement":
-      return "requirements";
-    default:
-      return "architecture";
-  }
+  return subjectForArtifactType(artifact.type);
 }
 
 /**

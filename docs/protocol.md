@@ -74,10 +74,46 @@ REQUEST_RESEARCH REQUEST_EXECUTION PROPOSE CHALLENGE APPROVE REJECT VETO BLOCK
 DELEGATE HANDOFF PATCH_READY TEST_RESULT SECURITY_FINDING COMMIT ROLLBACK
 ESCALATE WAIT DONE`
 
-Requests (`REQUEST*`, `ESCALATE`, `CHALLENGE`) open a *pending request*; a
-reply carrying `replyTo` closes it. This is what lets an agent go to `WAITING`
-and be woken on the response, instead of blocking on a call — messages are
-**not RPC**.
+An ask opens a *pending request*; a reply carrying `replyTo` closes it. This is
+what lets an agent go to `WAITING` and be woken on the response, instead of
+blocking on a call — messages are **not RPC**.
+
+Which messages are asks is **two conditions, not one**, and the single
+predicate that answers it is `obligesRecipients` (`protocol/src/catalog.ts`):
+
+1. the **type** creates a debt — a `REQUEST*` name, `ESCALATE` or `CHALLENGE`
+   (prefix-matched, so a new `REQUEST_*` name is obliging without an edit); and
+2. `control.mode` is `"service"` (the default when absent).
+
+The same `REQUEST` type therefore obliges **nobody** under `mode: "broadcast"`
+or `mode: "collab"`. A broadcast addresses every seat, so an ask would open one
+entry owed by the whole roster and the first reply would leave everyone else
+owing an answer nobody was tracking — an announcement is not an ask. A collab is
+bounded by its own clock rather than by a per-recipient debt. Read off
+`control`, never `payload`: a sender able to set its own obligation band could
+promote its chatter above everyone else's real asks.
+
+### A thread has an ending
+
+A thread is a conversation: `goal + artifact + interaction`. It is minted
+`OPEN`, and it reaches `RESOLVED` or `ESCALATED` — a thread opened by an ask
+ends when its **last** ask leaves the ledger, which is the one place in the
+runtime that can know the conversation is over.
+
+Which terminal value is read off *why* the ask left. A discharge that settled
+the ask resolves the thread; one of the four that mean **gone, not answered**
+(`evicted_cap`, `deadlock_break`, `expired`, `refused_cap`) escalates it,
+because something went wrong in that conversation and a record that called it
+`RESOLVED` would be lying in the same place an operator looks for the truth.
+
+Three things deliberately do **not** end a thread. A thread that never opened a
+commitment — a notice, a broadcast, a collab's own discussion — has no ending
+to detect. A live collab owns its own ending (`collab.closed` knows whether the
+discussion was closed or overran). And a thread that keeps receiving messages
+after it is terminal stays terminal: the ending is a fact about the ask, not a
+liveness heuristic. A new **ask** in a terminal thread is the exception, and it
+revives a `RESOLVED` one, because a follow-up belongs in the thread that raised
+it. `ESCALATED` is sticky.
 
 ### Contracts: named asks over guessed type strings
 
@@ -89,7 +125,7 @@ Schema for its request, the refusals it may come back with, the capability a
 seat needs to answer it, and an SLA.
 
 `call` raises one; `contracts` lists them with the seats that can currently
-answer. Three properties matter:
+answer. Five properties matter:
 
 1. **It is sugar.** Every contract desugars to a typed op and re-enters the
    ordinary op path. `call` can reach nothing a typed op could not, and every
@@ -104,7 +140,38 @@ answer. Three properties matter:
    Broadcasting an ask would open an obligation on every qualified seat for
    work only one of them needs to do.
 
+4. **The refusals bind.** A debtor may discharge an ask with prose alone, which
+   is what it always did, or with `refusal: <name>` taken from the set its
+   contract declares. A name outside that set is refused at the edge, before any
+   event exists, listing the legitimate ones — the same teaching failure as an
+   unknown contract name. The asker receives the name as a value beside the
+   prose, which is the point of a closed set: "wrong seat" (re-route), "bad ask"
+   (re-ask) and "I disagree" (escalate) are three different responses, and free
+   text makes them one. The set is rendered on the ask's own line in the
+   debtor's prompt, because a closed set nobody can read is not closed.
+
+5. **Nothing requires a contract.** A contract is what `call` raises, not what
+   makes an ask an ask. A bare send with `type: "REQUEST_REVIEW"` and no
+   contract opens a real pending request — a real debt, a real wake, a real
+   entry on the ledger — with **no request schema, no refusal set and no SLA**.
+   The response check then has nothing to judge: `checkResponse`
+   (`core/src/projections-messaging.ts`) returns `undefined` when the ask
+   carries no contract, or a contract with no response schema, and that absence
+   is recorded as absence rather than failure. It fails **open and silently** —
+   a thin reply to a contractless ask is discharged exactly like a good one,
+   and no event records that nothing was verified. Contracts are a stricter
+   path a sender opts into, not a gate every ask passes through.
+
 A contract's SLA narrows an existing deadline regime and never creates one; see
+`docs/configuration.md`.
+
+`bus.vocabulary: "contracts"` — the setting that collapses a seat's manifest to
+the named asks — is **advertisement only**. It filters the tool *list* a seat is
+offered, but `callTool` resolves a name against the **unfiltered** tool map
+(`apps/mesh-server/src/mcp.ts`), so a hidden tool called by name still runs,
+through every gate, unchanged. A reader must not mistake it for enforcement:
+collapsing the vocabulary changes what a seat is shown, never what the mesh
+accepts, and it cannot take a capability away from a seat. See
 `docs/configuration.md`.
 
 ### One ask to N agents is N obligations
@@ -129,10 +196,69 @@ everyone at once.
 ### Asks leave the ledger exactly one way
 
 Every exit is a recorded discharge with a reason, so "how did this ask
-disappear?" always has an answer. Two reasons mean **gone, not answered**
-(`evicted_cap`, `deadlock_break`); consumers must consult the reason before
-concluding an ask resolved, and escalation cards pointing at such an ask stay
-open rather than auto-closing with a false claim.
+disappear?" always has an answer. Four reasons mean **gone, not answered**
+(`evicted_cap`, `deadlock_break`, `expired`, `refused_cap`); consumers must
+consult the reason before concluding an ask resolved, and escalation cards
+pointing at such an ask stay open rather than auto-closing with a false claim.
+
+`withdrawn_by_sender` is deliberately *not* one of those four, and the
+distinction is the whole point of it. The asker closed its own ask before
+anyone answered, which is a real decision by a party to the ask, so the record
+is a settlement rather than a loss: the debtors are released and told, and the
+escalation card that the stuck ask raised auto-closes instead of keeping a
+human's queue open over a question nobody wants answered. It is the asker's
+counterpart to `refused` — authorized by having *asked* the question, exactly
+where `refused` is authorized by *owing* the answer — and it is the one exit
+whose purpose is to remove an interrupt rather than manufacture one.
+
+### An ask that can answer itself
+
+The ledger's asks all assume the answer is worth waiting for, and most are.
+Some are not: a developer that will use Postgres unless the architect objects
+has an ask whose *whole content* is the objection it does not expect. Raised
+plainly, that ask costs the architect a turn to say "yes, fine", and costs it
+three more turns of nudging if it does not.
+
+`ifUnanswered` lets the asker price that in advance. It goes on any op that
+opens a commitment — `send`, `request`, `call`, `research_request`,
+`request_review` — and carries `assume` (the value the asker will proceed with)
+and optionally `afterMs` (how long it will wait first):
+
+```json
+{ "op": "call", "contract": "decision.challenge",
+  "ifUnanswered": { "assume": "postgres", "afterMs": 900000 } }
+```
+
+What it changes, on all three sides of the ask:
+
+- **The debtor is told, in its own prompt, that silence is a legal move.** The
+  ask's line reads *"if you say nothing: the asker proceeds as `"postgres"`.
+  That is a legitimate ending here and you will not be nudged for it — answer
+  only if that would be WRONG."* This line is the feature. Everything else the
+  prompt says to a debtor is about how to spend a turn, and silence has always
+  read as "still working"; unshown, `ifUnanswered` would spend the debtor's
+  attention on exactly the asks the asker had already said it could do without.
+- **The ask is never chased.** It skips the nudge ladder entirely, so it cannot
+  reach `MAX_NUDGES` and cannot raise a `stalemate:unanswered_request` card.
+- **At the deadline it discharges `defaulted`**, carrying the assumed value and
+  the debtors who never answered, and the **asker** is woken with it — not a
+  human. The asker gets its own commitment handed back and proceeds; nobody's
+  operator queue grows a card over a question that was already settled.
+
+`defaulted` is a **settlement**, not a loss. It is deliberately not among the
+four reasons that mean *gone, not answered*, so a thread whose last ask
+defaulted reaches `RESOLVED`: nothing went wrong in that conversation. It is the
+third exit authorized by a party to the ask rather than by the runtime running
+out of options — `refused` is authorized by *owing* the answer,
+`withdrawn_by_sender` by having *asked* the question, and `defaulted` by having
+said in advance what the answer would be taken to be.
+
+**It needs a clock, and says so.** `afterMs` draws a deadline on a mesh that has
+none; on a mesh with `bus.commitments.ttl_ms` it may be omitted and the mesh's
+own deadline is used. With neither, the op is **refused at the edge** naming
+both ways to fix it, rather than opening an ask that would wait forever under a
+promise to end. `assume` is likewise required: an `ifUnanswered` with no value to
+proceed with describes no ending.
 
 ## Event envelope (`schemas/event.schema.json`)
 
@@ -150,8 +276,66 @@ lifecycle. Events are append-only and **deduplicated by id** (exactly-once).
 ## Artifact URIs & versions (`schemas/artifact.schema.json`)
 
 `artifact://{Type}/{name}/{version}`. Artifact versions are immutable; a change
-produces `design-v2 → design-v3` with `parent` lineage. Messages reference URIs,
-never paste content — the bus is a reference bus. Digests are `sha256:…`.
+produces `design-v2 → design-v3` with `parent` lineage. Digests are `sha256:…`.
+
+Messages reference URIs rather than pasting content, but **"the bus is a
+reference bus" is a discipline, not a runtime rule.** Nothing rejects or strips
+a pasted body: `payload` is an unconstrained object in
+`schemas/message.schema.json`, so a whole file can ride in it and validate. The
+only payload policing is `RESERVED_PAYLOAD_KEYS` (`mode`, `delivery`,
+`cacheServed`, `contract`, `contractVersion`, `downgraded` — control fields
+deleted on input by `sanitizeAgentMessageInput`), and the only bounds on free
+prose in a message are `note` and `requires[].text`, both 2000 characters. What
+a pasted body costs a *reader* is bounded separately, at render time:
+`renderMailPayload` prints at most 20 lines of 400 characters and marks the
+remainder omitted. The rule itself is carried by the role prompts, which
+`docs/architecture.md` classes as layer 1 (prompt awareness) — a rule the agent
+is told, not one the runtime enforces.
+
+### Publishing a body: three ways, one of them expensive
+
+`publish_artifact` takes exactly one of `content`, `fromPath` or `edits`, and
+the choice is the largest cost decision in a turn. `content` is typed by the
+model and billed at the output rate — five times fresh input — so a document
+moved that way is paid for at the most expensive rate the mesh has. Measured on
+one real mission: 44 inline publishes carried 1,178,479 characters, about 17% of
+everything written, and most of it was already a file on disk or a previous
+version being retyped to change a paragraph.
+
+- `fromPath` — a path inside the seat's own workspace (`agentWorkspace`,
+  the same directory its Write/Edit tools land in). The runtime reads the file,
+  so the body never passes through the model. Resolved on the real path and
+  refused if it escapes that root, so `../` and a symlink out are the same
+  refusal.
+- `edits` — `[{old, new}]` against the version named by `asVersionOf`. Same
+  contract as the Edit tool: each `old` must appear exactly once, and if any
+  one fails, nothing is written. An artifact version is immutable and gets
+  cited as evidence, so a half-applied revision is worse than a refused one.
+- `content` — inline, for a document that was never a file. Capped at 48,000
+  characters, below the 60,000 a single `read_artifact` returns, so anything
+  publishable in one call is readable in one call. Over the cap the publish is
+  **refused and the refusal names the other two fields** — never truncated, since
+  a truncated artifact still digests, versions and satisfies gates.
+
+Note which seats can actually choose. `fromPath` reads from the seat's own
+worktree, and a worktree is only granted to holders of an edit capability
+(`repository.write`, `architecture.write`, `test.write`). A seat with
+`repository.read` alone — which is the shipped shape for `pm` — has no worktree
+and therefore **no** `fromPath`, so the cheap route is closed to exactly the
+seats whose job is publishing documents. For them `content` is the only body, and
+the cost note above is advice they cannot act on.
+
+A payload containing its own markdown code fence is safe. It did not used to be:
+the ops-block parser ended the block at the first following fence marker, so a
+document carrying a fenced diagram truncated its own ops mid-JSON-string and the
+whole turn was discarded. Ops are now recovered per entry by brace balance, so a
+fence inside a JSON string is just three more characters, and one malformed op in
+an array no longer destroys the valid ones beside it.
+
+This is the one place the reference-bus discipline became a runtime rule rather
+than prompt advice — and note what it corrects: telling agents "never paste into
+messages, publish an artifact instead" moved the paste out of the cheapest
+channel (mail, which is ~0.2% of input) and into the most expensive one.
 
 ## Typed state machines
 
@@ -162,6 +346,23 @@ never paste content — the bus is a reference bus. Digests are `sha256:…`.
 - **document**: `DRAFT → READY_FOR_REVIEW → UNDER_REVIEW → APPROVED/FINAL`
 
 Transitions are gated by approvals/evidence recorded in the event stream.
+
+`MERGED` is terminal — the code machine has no edge out of it — so it is only
+recorded **after** the change is actually on the product branch. `merge` runs the
+git merge (or, without a workspace, materializes the patch's files) first and
+transitions only on success; a failure leaves the artifact `MERGEABLE`, which is
+both true and retryable once the conflict is fixed. The order used to be
+reversed, and because `MERGED` on a `CodePatch` also mirrors `patch.merged` and
+`implementation.completed`, a failed merge announced finished work that no
+commit contained.
+
+A verdict outside a reviewable status records a signature and moves nothing —
+approving a `DRAFT` artifact, or rejecting one already `MERGED`. That is
+intentional: a `<role>.approve` gate token is a signature, and seats legitimately
+sign artifacts sitting where no approval can advance them. What the op result now
+carries is a caveat saying so, with a route (`move it to review first`; `already
+MERGED — open a revert or publish a new version`), because the silent version let
+a reviewer believe it had rejected shipped code.
 
 ## Trust / provenance classes
 

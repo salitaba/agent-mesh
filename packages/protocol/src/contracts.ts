@@ -9,7 +9,7 @@ import type { MessageType } from "./types";
  * and HANDOFF and COMMIT are written by the kernel and never read by identity.
  * Exactly one — DONE — carries a semantic distinction anything acts on, and
  * that is an observability edge label. So a seat guesses among 24 names of
- * which 7 mean something, gets it wrong, and `op-aliases.ts` (49 name aliases,
+ * which 7 mean something, gets it wrong, and `op-aliases.ts` (60 name aliases,
  * 31 type aliases) exists to catch the guesses. One agent burned 18 turns on
  * `RESULT`.
  *
@@ -61,6 +61,28 @@ export interface Contract {
   provider?: string;
   /** JSON Schema for the request body. Validated before anything is sent. */
   request: Record<string, unknown>;
+  /**
+   * JSON Schema for the ANSWER.
+   *
+   * Without this a contract is half a contract. The mesh checked the ask
+   * (`request`) and the "no" (`refusals`) and never once checked the "yes":
+   * discharge is structural -- a reply naming the ask settles it -- so an
+   * empty INFORM, a bare acknowledgement, or "sure, will do" closed a
+   * commitment exactly as firmly as a real answer. The asker then discovers
+   * the hole a turn later and re-asks, which is the expensive shape: every
+   * re-ask is a full turn, and the nudge ladder beneath it ends at a human.
+   *
+   * Checked at DISCHARGE and deliberately FAIL-OPEN: an answer that does not
+   * match still settles the ask, and the mismatch is recorded on the ledger
+   * (`responseValid: false`) and surfaced in the run report. Failing closed
+   * would hold asks open on formatting, feed the nudge ladder, and escalate
+   * disagreements about shape to the operator as if they were stalls -- worse
+   * than the gap it fixes. A mark is cheap and honest; a block is neither.
+   *
+   * Absent means "any reply settles this" -- the pre-existing behaviour, kept
+   * for asks a peer does not answer at all (see decision.escalate).
+   */
+  response?: Record<string, unknown>;
   /** The closed set of legitimate "no"s. */
   refusals: string[];
   /** Deadline the resulting commitment opens with. */
@@ -76,6 +98,39 @@ const MINUTES = 60_000;
  * three situations that free-text refusal made indistinguishable.
  */
 const COMMON_REFUSALS = ["not-my-capability", "insufficient-detail", "out-of-scope", "blocked-on-dependency"];
+
+/**
+ * "The reply carried an answer", as a schema.
+ *
+ * Generous on shape and strict on emptiness, because the two mistakes are not
+ * symmetric. Agents disagree on the field name for an answer -- `answer`,
+ * `content`, `summary`, `result` all appear in this repo's own fixtures -- and
+ * rejecting a good answer for calling itself the wrong thing would produce a
+ * false mark on a real settlement, teaching the operator to ignore the marks.
+ * Missing a thin answer merely leaves us where we already were. So: ANY of the
+ * listed keys satisfies it, and `additionalProperties` stays open because a
+ * reply is not wrong for being richer than the contract asked.
+ *
+ * `minLength` is what actually bites, and it only bites strings -- a
+ * structured answer under one of these keys passes untouched, while
+ * `{ answer: "" }` and `{ answer: "   " }` do not. That is the case this
+ * exists for: a reply that is well-formed, settles the debt, and says nothing.
+ */
+function answeredWith(keys: readonly string[]): Record<string, unknown> {
+  return {
+    type: "object",
+    anyOf: keys.map((k) => ({ required: [k] })),
+    // `pattern` alongside `minLength` because `minLength` counts whitespace:
+    // `{ answer: "   " }` is length 3 and would otherwise pass as an answer.
+    // "empty or whitespace-only" is already how this repo judges an artifact's
+    // content (`validateArtifact`), and an answer deserves the same bar.
+    properties: Object.fromEntries(keys.map((k) => [k, { minLength: 1, pattern: "\\S" }])),
+    additionalProperties: true,
+    // Named so a failing reply is told what would have satisfied it, rather
+    // than being handed an Ajv path it cannot act on.
+    description: `answer must carry a non-empty one of: ${keys.join(", ")}`,
+  };
+}
 
 export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
   {
@@ -98,6 +153,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["artifact"],
       additionalProperties: false,
     },
+    response: answeredWith(["verdict", "decision", "result", "findings", "summary", "review", "content"]),
     refusals: [...COMMON_REFUSALS, "not-ready-for-review", "already-reviewed"],
     slaMs: 30 * MINUTES,
   },
@@ -118,6 +174,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["question"],
       additionalProperties: false,
     },
+    response: answeredWith(["answer", "findings", "summary", "content", "result", "sources"]),
     refusals: [...COMMON_REFUSALS, "already-answered"],
     slaMs: 20 * MINUTES,
   },
@@ -137,6 +194,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["question"],
       additionalProperties: false,
     },
+    response: answeredWith(["answer", "content", "summary", "result"]),
     refusals: [...COMMON_REFUSALS, "already-answered"],
     slaMs: 10 * MINUTES,
   },
@@ -157,6 +215,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["what"],
       additionalProperties: false,
     },
+    response: answeredWith(["artifactId", "artifact", "uri", "artifactRefs", "published", "summary"]),
     refusals: [...COMMON_REFUSALS, "already-exists", "needs-decision-first"],
     slaMs: 45 * MINUTES,
   },
@@ -177,6 +236,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["what"],
       additionalProperties: false,
     },
+    response: answeredWith(["result", "output", "exitCode", "summary", "content", "status"]),
     refusals: [...COMMON_REFUSALS, "unsafe-to-run"],
     slaMs: 20 * MINUTES,
   },
@@ -196,6 +256,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["ask"],
       additionalProperties: false,
     },
+    response: answeredWith(["result", "summary", "answer", "content", "done", "artifactId"]),
     refusals: COMMON_REFUSALS,
     slaMs: 30 * MINUTES,
   },
@@ -215,6 +276,7 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["claim", "reason"],
       additionalProperties: false,
     },
+    response: answeredWith(["response", "answer", "verdict", "resolution", "stands", "content"]),
     refusals: [...COMMON_REFUSALS, "withdrawn", "stands-as-written"],
     slaMs: 30 * MINUTES,
   },
@@ -234,6 +296,9 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       required: ["reason"],
       additionalProperties: false,
     },
+    // No `response` schema, for the same reason there are no refusals: an
+    // operator card is not answered by a peer at all. A human settles it
+    // through the escalation path, which this ledger does not shape.
     // An operator card is not refused by a peer; it is answered by a human.
     refusals: [],
   },
@@ -247,6 +312,43 @@ export function findContract(name: string): Contract | undefined {
 
 export function contractNames(): string[] {
   return BUILTIN_CONTRACTS.map((c) => c.name);
+}
+
+/**
+ * The contract that governs a message type when the sender named none.
+ *
+ * DERIVED from the catalogue's own `messageType` fields, never enumerated. A
+ * hand-written table here would be a second place to state a mapping the
+ * contracts already carry, and the two would drift the first time a contract
+ * changed the type it speaks for -- the failure mode `OBLIGING_MESSAGE_TYPES`
+ * and `WORK_MOVING_MESSAGE_TYPES` are both built to avoid.
+ *
+ * Returns undefined for every type no contract claims, which is the honest
+ * answer and the one that keeps this safe: `isObligingType` is a PREFIX match
+ * (`startsWith("REQUEST")`), so a `REQUEST_*` type added later is obliging
+ * from the moment it exists and has no contract until someone writes one.
+ * That case gets no default rather than a wrong one.
+ *
+ * Nothing here decides whether the default is USED. This only answers "which
+ * contract speaks for this type"; `bus.contracts_by_type` decides whether an
+ * ask that named none is held to it. See `contractOf` in
+ * `packages/core/src/projections-messaging.ts`.
+ */
+const CONTRACT_BY_MESSAGE_TYPE: ReadonlyMap<string, Contract> = (() => {
+  const byType = new Map<string, Contract>();
+  for (const c of BUILTIN_CONTRACTS) {
+    // First wins, deliberately. Two contracts claiming one type is a
+    // catalogue bug, not a precedence question -- `tests/protocol/
+    // contracts.test.ts` asserts the claim is unique so this branch stays
+    // unreachable rather than silently picking a winner.
+    if (!byType.has(c.messageType)) byType.set(c.messageType, c);
+  }
+  return byType;
+})();
+
+export function contractForMessageType(type: string): Contract | undefined {
+  if (typeof type !== "string") return undefined;
+  return CONTRACT_BY_MESSAGE_TYPE.get(type);
 }
 
 /**

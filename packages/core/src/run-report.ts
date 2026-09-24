@@ -22,18 +22,39 @@
  *
  * ## Import weight (deliberate — do not add value imports)
  *
- * The only *value* import below is `../../protocol/src/catalog`, a const table
- * that itself imports nothing but types. That used to be load-bearing here,
- * because the dashboard deep-imported the verdict phrasing from this file; the
- * phrasing now lives in the catalog, so the browser reads it there and nothing
- * in the bundle touches this module. The discipline is still worth keeping:
- * `apps/mesh-server` resolves this module lazily so a build without it answers
- * 501 on one route instead of failing to boot, and that stays cheap only while
- * importing it does not drag AJV and the supervisor graph in behind it.
+ * Two *value* imports below. The bar for a third is the test both already pass:
+ * does importing it drag AJV or the supervisor graph in behind it?
+ *
+ *   - `../../protocol/src/catalog`, a const table that itself imports nothing
+ *     but types. That used to be load-bearing here, because the dashboard
+ *     deep-imported the verdict phrasing from this file; the phrasing now lives
+ *     in the catalog, so the browser reads it there and nothing in the bundle
+ *     touches this module.
+ *   - `./state`, for `outstandingDebtors` and `UNANSWERED_DISCHARGE_REASONS`.
+ *     It carries no transitive weight at all: its only two imports are an
+ *     `import type` and a type-position `import(...)`, both fully erased, so the
+ *     emitted require reaches a module body of plain consts and functions and
+ *     stops. Both symbols answer questions this file MUST answer the same way
+ *     the ledger does, and a hand-copy of either diverges silently rather than
+ *     loudly — an unanswered reason added to the real set and not mirrored here
+ *     would under-count the one section that exists to report silent loss.
+ *
+ * The discipline is still worth keeping: `apps/mesh-server` resolves this module
+ * lazily so a build without it answers 501 on one route instead of failing to
+ * boot, and that stays cheap only while the rule above holds.
  */
 import { isSettledArtifactStatus, verdictText } from "../../protocol/src/catalog";
-import type { Artifact, ArtifactStatus, Escalation, Goal } from "../../protocol/src/types";
-import type { Projections } from "./state";
+import type {
+  Artifact,
+  ArtifactStatus,
+  Escalation,
+  Goal,
+  InteractionMode,
+  MeshMessage,
+} from "../../protocol/src/types";
+import { outstandingDebtors, UNANSWERED_DISCHARGE_REASONS } from "./state";
+import type { DischargeReason, Projections } from "./state";
+import type { AliasStats } from "../../protocol/src/op-aliases";
 
 /** An artifact as the report talks about it — flattened, no content. */
 export interface RunReportArtifact {
@@ -84,6 +105,228 @@ export interface RunReportUnfinished {
   claimed: Array<{ id: string; title: string; claimedBy?: string }>;
   /** Requests that never got an answer. */
   pendingRequests: Array<{ id: string; from: string; to: string[]; type: string }>;
+  /**
+   * Asks that WERE settled, by a reply that did not answer them.
+   *
+   * The counterpart to `pendingRequests`, and the more dangerous half. An
+   * unanswered ask is visible: it sits on the ledger, it gets nudged, it shows
+   * up above. An ask closed by an empty or contentless reply looks finished
+   * from every angle -- the debt is gone, the asker's loop moved on -- so
+   * before the contract `response` schema existed there was nothing anywhere
+   * that recorded the difference between "answered" and "replied to".
+   *
+   * This is a report, not a verdict: the settlement stood, and the mesh kept
+   * running. Listing them is how an operator finds out.
+   */
+  thinAnswers: Array<{ id: string; from: string; to: string[]; type: string; issues: string[] }>;
+  /**
+   * Discussions that ran to the edge of their box instead of being closed.
+   *
+   * Reported next to the unfinished work rather than under spend, because
+   * that is what an overrun IS: two agents who never reached the point where
+   * one of them could say it was done. The tokens are already counted in
+   * `spend` -- this says which conversation to blame them on.
+   */
+  collabOverruns: Array<{
+    threadId: string;
+    topic: string;
+    participants: string[];
+    exchanges: number;
+    maxExchanges: number;
+    reason: string;
+  }>;
+}
+
+/**
+ * What the agents said to each other, and what the saying cost.
+ *
+ * Every other section of this report is about WORK -- what was made, what was
+ * owed, what was left. This one is about the CHANNEL, and it is separate from
+ * `unfinished` because the channel fails in ways that leave no mark on the
+ * work at all. Mail delivered into a box and never read, mail the box cap
+ * destroyed, a send a policy turned away: in every other projection each of
+ * those is indistinguishable from a mesh whose agents simply had nothing to
+ * say. A run that "finished cleanly" having thrown away half its traffic
+ * looks, from the rest of this report, exactly like one that did not.
+ *
+ * The bar for a field here is that an operator can DO something about it. A
+ * message count is not that -- which is why `volume` exists but never renders
+ * on its own: it is the denominator the findings are read against, not a
+ * finding. The text renderer emits nothing at all for a mission whose comms
+ * were clean, however much it talked.
+ */
+export interface RunReportComms {
+  /**
+   * Traffic shape, by the mode that decides what a message obliges.
+   *
+   * Not a scoreboard. It is here so the findings below have a size to be read
+   * against -- "5 unread" means one thing out of 8 messages and another out
+   * of 800 -- and so the low-contact question ("what KIND of talking was
+   * this?") has an answer at all. A mesh that is nearly all `broadcast` is
+   * announcing into the void: broadcasts oblige nobody and cannot be replied
+   * to, so they buy attention without buying an answer.
+   */
+  volume: {
+    total: number;
+    /** `service`: a directed ask or answer between named seats. The default. */
+    service: number;
+    /** `collab`: bounded discussion, obliges nobody, metered by its own clock. */
+    collab: number;
+    /** `broadcast`: addressed to the roster, unanswerable. */
+    broadcast: number;
+    /**
+     * The two seats that carried the most traffic between them, directed
+     * only. Absent when nothing was sent.
+     *
+     * The actionable form of "who talked to whom": it names the one coupling
+     * worth looking at, where a full matrix would name every pair and
+     * therefore none of them.
+     */
+    heaviestPair?: { from: string; to: string; messages: number };
+  };
+  /**
+   * Mail sitting unread in a mailbox when the run ended, worst box first.
+   *
+   * The run report has never been able to say this, and it is the difference
+   * between a seat that considered its mail and a seat that never saw it. An
+   * ask in here was made, delivered, counted against the asker's patience,
+   * and read by nobody -- so the asker's nudges, its stalemate, and any
+   * escalation that followed were all chasing a message that was never shown.
+   *
+   * Counts message IDS -- deliberately NOT `readableMailDepth`, which every
+   * other depth in the tree now uses. Those two answer different questions and
+   * this one is the accounting question: an id whose body fell off the
+   * snapshot's message tail still counts here, because the mail was owed
+   * whether or not its body survived. `readableMailDepth` answers "can this
+   * seat open it", which is what an attention signal and a wake gate need and
+   * what this report must not ask.
+   */
+  unread: Array<{ agent: string; messages: number }>;
+  /**
+   * Mail the `MAX_UNREAD_PER_AGENT` cap destroyed, per agent.
+   *
+   * Distinct from `unread` in the only way that matters: unread mail is still
+   * there, and this is not. The cap drops oldest-first and silently, so
+   * without this line a flooded seat and a quiet one are the same seat. There
+   * is nothing to re-read and no turn that will show it -- the only actions
+   * left are to raise the box or to stop the flood, and an operator cannot
+   * choose either without knowing it happened.
+   */
+  dropped: Array<{ agent: string; messages: number }>;
+  /**
+   * Sends the mesh refused, grouped by who refused them and why.
+   *
+   * `refusedBy` is the first thing to read, because only one of the two is
+   * the operator's to change: `policy` means a rule in this mesh's own config
+   * said no, and `protocol` means the envelope failed validation, which is a
+   * defect in the sending agent or the tool it used. Answering a run of
+   * refusals with a config edit when validation was rejecting them is how an
+   * operator loosens a policy that was never the problem.
+   *
+   * Grouped rather than listed: the finding is "this rule stopped four
+   * sends", not four near-identical lines. `from`/`to`/`type` are one example
+   * from the group, so the line names a real pair rather than a statistic.
+   */
+  refused: Array<{
+    refusedBy: "policy" | "protocol";
+    /** The policy rule that refused it. Absent when validation did. */
+    rule?: string;
+    reason: string;
+    count: number;
+    from: string;
+    to: string[];
+    type: string;
+  }>;
+  /**
+   * Asks that left the ledger without ever being answered.
+   *
+   * The gap between `unfinished.pendingRequests` (asks still open, visible,
+   * nudged) and `unfinished.thinAnswers` (asks answered badly). These are
+   * neither: the ask was taken off the ledger by the runtime -- the cap
+   * evicted it, a deadlock break voided it, its deadline passed, or the
+   * ledger was full and never accepted it -- and in every one of those cases
+   * the ASKER WAS NOT TOLD. It is still parked on a reply that no longer
+   * exists anywhere in the system, and nothing else in this report or the
+   * dashboard records that the ask was ever made.
+   *
+   * A refusal (`refused`) is deliberately not here: the debtor said no and
+   * the asker heard it. That is an answer.
+   */
+  lostAsks: Array<{ id: string; from: string; to: string[]; type: string; reason: DischargeReason }>;
+  /**
+   * Prose alias rewrites the CALLER observed, or absent when it supplied none.
+   *
+   * The one field here that is not a projection, which is why it arrives as an
+   * argument rather than a module read: `op-aliases.ts` counts process-wide and
+   * deliberately so, and a report that quietly reached for that global would
+   * stop being pure -- and would answer a different question from the one it
+   * claims to, since the counter is not scoped to this goal.
+   *
+   * Present even when `total` is 0, because that zero is the finding that
+   * matters: it is the precondition for ever retiring the tables. The TEXT
+   * prints a line only when it is non-zero (`volume` is never the reason a
+   * section appears, and neither is this) -- the JSON always carries it, which
+   * is where anything measuring across runs should read it.
+   */
+  aliases?: AliasStats;
+  /**
+   * What the mesh spent buying turns, and who spent it.
+   *
+   * The delivery-class regime was built to move exactly one number -- how many
+   * model turns the mesh buys in order to say something -- and until this field
+   * existed nothing the mesh emitted could answer it. Every other number in
+   * this section is a SHAPE (how many messages, of what mode, still unread),
+   * and a shape cannot falsify a claim about cost. `volume.total` in particular
+   * is the trap: a mesh that cut its wakes in half by moving chatter from
+   * `interrupt` to `accrue` sends exactly the same number of messages.
+   *
+   * Global rather than goal-scoped, like `spend.byModel` and unlike `volume`.
+   * The counters live on the projection, which knows one active goal and does
+   * not re-key them per goal; a report over an old goal in a long log reads
+   * cumulative wake counts and should say so rather than implying otherwise.
+   */
+  wakes: RunReportWakes;
+}
+
+/**
+ * The wake ledger: what bought turns, and who bought them.
+ *
+ * Four readings, in the order they are worth looking at:
+ *
+ * 1. `downgraded` non-empty means the attention price BOUND -- senders asked
+ *    for wakes they could not pay for and got mail instead. That is the
+ *    regime doing its job, and it is invisible everywhere else in the system,
+ *    because a downgraded message ships as `deliver` and looks like any other
+ *    coalesced send.
+ * 2. `commsWakes` against `byKind`'s total answers "was this mission mostly
+ *    talking?". The mesh has never been able to say this, and it is the
+ *    headline the low-contact work exists to move.
+ * 3. `byClass` with `unclassed` at zero means the classifier ran on every
+ *    send. An all-`unclassed` mix in a mesh that enabled `classes` is the
+ *    opposite finding: the regime is configured and never fired.
+ * 4. `interruptsBySender` names who spends other seats' attention. Read
+ *    against `volume.heaviestPair`, it separates a pair that talks a lot from
+ *    a pair that talks expensively -- which are different problems with
+ *    different fixes.
+ */
+export interface RunReportWakes {
+  /** Every activation, split by what asked for it. `unknown` for an old log. */
+  byKind: Array<{ kind: string; count: number }>;
+  /**
+   * The part of `byKind` that was bought by communication.
+   *
+   * `message` and `interest_event` are the two activation kinds a colleague's
+   * act can cause. `startup`, `timer`, `manual` and `recovery` are the mesh's
+   * own machinery, and counting them here would let a seat that a stall
+   * watchdog keeps poking look like a seat its peers keep interrupting.
+   */
+  commsWakes: number;
+  /** Sends by delivery class; `unclassed` is a mesh with no regime. */
+  byClass: Array<{ deliveryClass: string; count: number }>;
+  /** Interrupts bought, per sender, most first. */
+  interruptsBySender: Array<{ agent: string; interrupts: number }>;
+  /** Interrupts refused their class, per sender, most first. */
+  downgraded: Array<{ agent: string; refused: number }>;
 }
 
 export interface RunReportSpend {
@@ -138,6 +381,8 @@ export interface RunReport {
     items: RunReportEscalation[];
   };
   unfinished: RunReportUnfinished;
+  /** What the mission's agents said to each other, and what it cost. */
+  comms: RunReportComms;
   spend: RunReportSpend;
 }
 
@@ -232,14 +477,167 @@ function summarizeEscalation(e: Escalation): RunReportEscalation {
 }
 
 /**
+ * What mode a message was sent in, defaulting an absent one to `service`.
+ *
+ * A THIRD local copy of that default. The other two are the `message.sent`
+ * reducer (`projections-messaging.ts`, `(m.control?.mode ?? "service")`,
+ * which decides whether the ask opens a ledger entry) and `obligesRecipients`
+ * (`context.ts`, which decides inbox order). This module may not take a value
+ * import from either -- see "Import weight" at the top of this file -- so the
+ * duplication is deliberate, and named here so it is findable from any of the
+ * three.
+ *
+ * The default is load-bearing rather than defensive: every message written
+ * before `control.mode` existed has no mode, and reading those as a fourth,
+ * unnamed traffic class would put the whole pre-mode history in a bucket that
+ * means nothing. `service` is what they all were.
+ *
+ * Read off `control`, never `payload`: `payload` is verbatim agent input, so
+ * a sender could otherwise relabel its own chatter as an announcement and
+ * disappear from this report's directed-traffic count.
+ */
+function messageMode(m: MeshMessage): InteractionMode {
+  const mode = m.control?.mode;
+  return mode === "broadcast" || mode === "collab" ? mode : "service";
+}
+
+/**
+ * The comms section, composed from projections alone.
+ *
+ * Only `messages` carries a `goalId`, so only traffic is scoped to the
+ * mission. The bounded rings (`refusedSends`, `discharged`) and the mailbox
+ * maps carry no goal, so they are mesh-wide -- the same treatment
+ * `collabOverruns` already gives `collabSessions`, and the honest one: a
+ * refusal or a destroyed message has no mission to be attributed to.
+ */
+function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasStats): RunReportComms {
+  const messages = [...state.messages.values()].filter((m) => !goal || m.goalId === goal.id);
+
+  let service = 0;
+  let collab = 0;
+  let broadcast = 0;
+  const pairs = new Map<string, { from: string; to: string; messages: number }>();
+  for (const m of messages) {
+    const mode = messageMode(m);
+    if (mode === "broadcast") {
+      // Counted, but never paired. A broadcast addresses the whole roster, so
+      // letting it contribute pairs would make the heaviest pair a function
+      // of headcount rather than of who actually talks to whom -- and in a
+      // mesh of six seats one announcement would outweigh five real asks.
+      broadcast++;
+      continue;
+    }
+    if (mode === "collab") collab++;
+    else service++;
+    for (const to of m.to) {
+      // The delivery reducer skips the sender's own box; a self-addressed
+      // recipient is an addressing artefact, not a conversation.
+      if (to === m.from) continue;
+      const key = `${m.from}\u0000${to}`;
+      const entry = pairs.get(key);
+      if (entry) entry.messages++;
+      else pairs.set(key, { from: m.from, to, messages: 1 });
+    }
+  }
+  const rankedPairs = [...pairs.values()].sort(
+    (a, b) => b.messages - a.messages || a.from.localeCompare(b.from) || a.to.localeCompare(b.to),
+  );
+
+  const byCountThenName = (a: { agent: string; messages: number }, b: { agent: string; messages: number }) =>
+    b.messages - a.messages || a.agent.localeCompare(b.agent);
+
+  // Raw ids, on purpose -- see this field's comment in `RunReportComms`. This
+  // is the one depth in the tree that is NOT `readableMailDepth`.
+  const unread = [...state.unread.entries()]
+    .map(([agent, ids]) => ({ agent, messages: ids.length }))
+    .filter((u) => u.messages > 0)
+    .sort(byCountThenName);
+
+  const dropped = [...state.mailOverflowDropped.entries()]
+    .map(([agent, messages]) => ({ agent, messages }))
+    .filter((d) => d.messages > 0)
+    .sort(byCountThenName);
+
+  // `ruleId` present means a policy rule said no; absent means protocol
+  // validation did. That is the whole distinction, and it is recorded at the
+  // refusal site rather than inferred from the reason string, which is prose.
+  const refusedGroups = new Map<string, RunReportComms["refused"][number]>();
+  for (const r of state.refusedSends) {
+    const refusedBy = r.ruleId ? "policy" : "protocol";
+    const key = `${refusedBy}\u0000${r.ruleId ?? ""}\u0000${r.reason}`;
+    const existing = refusedGroups.get(key);
+    if (existing) {
+      existing.count++;
+      continue;
+    }
+    refusedGroups.set(key, {
+      refusedBy,
+      rule: r.ruleId,
+      reason: r.reason,
+      count: 1,
+      from: r.from,
+      to: r.to,
+      type: r.type,
+    });
+  }
+  const refused = [...refusedGroups.values()].sort((a, b) => {
+    // Policy first: it is the half the operator can actually change.
+    if (a.refusedBy !== b.refusedBy) return a.refusedBy === "policy" ? -1 : 1;
+    return b.count - a.count || a.reason.localeCompare(b.reason);
+  });
+
+  const lostAsks = state.discharged
+    .filter((d) => UNANSWERED_DISCHARGE_REASONS.has(d.reason))
+    .map((d) => ({ id: d.messageId, from: d.from, to: d.to, type: d.type, reason: d.reason }));
+
+  const byKind = [...state.comms.wakesByKind.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
+  const COMMS_WAKE_KINDS = new Set(["message", "interest_event"]);
+  const commsWakes = byKind.reduce((n, k) => (COMMS_WAKE_KINDS.has(k.kind) ? n + k.count : n), 0);
+  const byClass = [...state.comms.sendsByClass.entries()]
+    .map(([deliveryClass, count]) => ({ deliveryClass, count }))
+    .sort((a, b) => b.count - a.count || a.deliveryClass.localeCompare(b.deliveryClass));
+
+  const counters = (m: Map<string, number>) =>
+    [...m.entries()]
+      .map(([agent, n]) => ({ agent, n }))
+      .filter((e) => e.n > 0)
+      .sort((a, b) => b.n - a.n || a.agent.localeCompare(b.agent));
+
+  return {
+    volume: {
+      total: messages.length,
+      service,
+      collab,
+      broadcast,
+      ...(rankedPairs.length > 0 ? { heaviestPair: rankedPairs[0] } : {}),
+    },
+    unread,
+    dropped,
+    refused,
+    lostAsks,
+    ...(aliases ? { aliases } : {}),
+    wakes: {
+      byKind,
+      commsWakes,
+      byClass,
+      interruptsBySender: counters(state.comms.interruptsBySender).map((e) => ({ agent: e.agent, interrupts: e.n })),
+      downgraded: counters(state.comms.downgradedInterrupts).map((e) => ({ agent: e.agent, refused: e.n })),
+    },
+  };
+}
+
+/**
  * Compose the report for the active goal (or `goalId`, to report on an older
  * mission in the same log).
  *
- * Pure and synchronous: everything it needs is already in projections, so it
- * can be called from a shutdown path, an HTTP handler, or a test without a
- * supervisor, a content store, or an await.
+ * Pure and synchronous: everything it needs is either in projections or handed
+ * to it, so it can be called from a shutdown path, an HTTP handler, or a test
+ * without a supervisor, a content store, or an await. `opts.aliases` is the
+ * one non-projection input, passed explicitly so that stays true.
  */
-export function buildRunReport(state: Projections, goalId?: string): RunReport {
+export function buildRunReport(state: Projections, goalId?: string, opts?: { aliases?: AliasStats }): RunReport {
   const id = goalId ?? state.activeGoalId;
   const goal = (id ? state.goals.get(id) : undefined) ?? null;
   const scoped = <T extends { goalId: string }>(v: Iterable<T>): T[] =>
@@ -297,8 +695,37 @@ export function buildRunReport(state: Projections, goalId?: string): RunReport {
     unfinished: {
       open: tasks.filter((t) => t.status === "OPEN").map((t) => ({ id: t.id, title: t.title })),
       claimed: tasks.filter((t) => t.status === "CLAIMED").map((t) => ({ id: t.id, title: t.title, claimedBy: t.claimedBy })),
-      pendingRequests: pending.map((p) => ({ id: p.messageId, from: p.from, to: p.to, type: p.type })),
+      // `outstandingDebtors`, not `p.to`: once one recipient of a multi-addressed
+      // ask has answered, the remainder ARE the debt. Rendering `to` named every
+      // original recipient as never having answered — the same over-count the
+      // catalog's obligation note describes, where nudges and stalemate detection
+      // pointed at agents who were never individually asked. `context.ts:457` and
+      // `supervisor.ts:6227` both already ask it this way; this was the last site
+      // that did not. Byte-identical output whenever `outstanding` is absent.
+      pendingRequests: pending.map((p) => ({ id: p.messageId, from: p.from, to: outstandingDebtors(p), type: p.type })),
+      // `responseValid === false` is the meaningful signal, exactly as with
+      // `EvidenceRef.verified`: absent means the ask carried no contract or
+      // the contract specified no answer shape, which is "not checked", not
+      // "failed". Only an explicit false is a finding.
+      thinAnswers: state.discharged
+        .filter((d) => d.responseValid === false)
+        .map((d) => ({ id: d.messageId, from: d.from, to: d.to, type: d.type, issues: d.responseIssues ?? [] })),
+      // OVERRUN only. A session still OPEN at report time is reported as part
+      // of the run being unfinished, and a CLOSED one cost nothing worth
+      // saying: someone decided it was done, which is the outcome this whole
+      // mode is trying to produce.
+      collabOverruns: [...state.collabSessions.values()]
+        .filter((c) => c.status === "OVERRUN")
+        .map((c) => ({
+          threadId: c.threadId,
+          topic: c.topic,
+          participants: c.participants,
+          exchanges: c.exchanges,
+          maxExchanges: c.maxExchanges,
+          reason: c.closedReason ?? "overrun",
+        })),
     },
+    comms: summarizeComms(state, goal, opts?.aliases),
     spend: {
       tokens: byModel.reduce((n, m) => n + m.tokens, 0),
       events: state.eventCount,
@@ -418,6 +845,97 @@ export function renderRunReport(report: RunReport): string {
     for (const t of unfinished.claimed) out.push(bullet(`· ${t.title} — claimed by ${t.claimedBy ?? "?"}, never finished`));
     for (const t of unfinished.open) out.push(bullet(`· ${t.title} — never picked up`));
     for (const p of unfinished.pendingRequests) out.push(bullet(`· ${p.from} → ${p.to.join(", ")} (${p.type}) — never answered`));
+  }
+
+  if (unfinished.thinAnswers.length > 0) {
+    out.push("");
+    out.push(`  ANSWERED THINLY (${unfinished.thinAnswers.length})`);
+    for (const t of unfinished.thinAnswers) {
+      out.push(bullet(`· ${t.to.join(", ")} → ${t.from} (${t.type}) — settled, but the reply carried no answer`));
+      if (t.issues.length > 0) out.push(bullet(`    ${t.issues.join("; ")}`));
+    }
+  }
+
+  if (unfinished.collabOverruns.length > 0) {
+    out.push("");
+    out.push(`  RAN LONG (${unfinished.collabOverruns.length})`);
+    for (const c of unfinished.collabOverruns) {
+      const how = c.reason === "expired" ? "ran out of time" : `used all ${c.maxExchanges} exchanges`;
+      out.push(bullet(`· "${c.topic}" — ${c.participants.join(", ")} ${how} (${c.exchanges} messages), never closed it`));
+    }
+  }
+
+  const { comms } = report;
+  // The section renders only when it has a FINDING. `volume` is never a
+  // reason to print: a mission that talked a lot and lost nothing has nothing
+  // here an operator can act on, and a header over one message count is how a
+  // report starts training people to skip it. The numbers stay in the JSON
+  // either way, for anyone measuring across runs.
+  // A non-zero alias count IS a finding: a seat is inventing names the mesh has
+  // to translate, which is something an operator can act on. A ZERO is not, and
+  // must not open the section -- else every clean run prints a COMMS header over
+  // nothing, which is how a report starts training people to skip it.
+  const commsFindings =
+    comms.unread.length +
+    comms.dropped.length +
+    comms.refused.length +
+    comms.lostAsks.length +
+    // A refused interrupt is a finding and the class mix is not, which is the
+    // same line `volume` sits on. "The regime is on and these seats spent
+    // their attention" is something an operator can act on; "nine sends were
+    // coalesced" is a working system reporting that it worked.
+    comms.wakes.downgraded.length +
+    (comms.aliases && comms.aliases.total > 0 ? 1 : 0);
+  if (commsFindings > 0) {
+    out.push("");
+    out.push("  COMMS");
+    if (comms.volume.total > 0) {
+      const { total, service, collab, broadcast, heaviestPair } = comms.volume;
+      const shape = `${total} message${total === 1 ? "" : "s"} — ${service} directed, ${collab} collab, ${broadcast} broadcast`;
+      const heaviest = heaviestPair ? `; heaviest ${heaviestPair.from} → ${heaviestPair.to} (${heaviestPair.messages})` : "";
+      out.push(bullet(`· ${shape}${heaviest}`));
+    }
+    if (comms.unread.length > 0) {
+      const boxes = comms.unread.map((u) => `${u.agent} ${u.messages}`).join(", ");
+      out.push(bullet(`· delivered and never read: ${boxes} — the run ended with mail nobody was shown`));
+    }
+    if (comms.dropped.length > 0) {
+      const boxes = comms.dropped.map((d) => `${d.agent} ${d.messages}`).join(", ");
+      out.push(bullet(`· destroyed by the mailbox cap: ${boxes} — those messages are gone, not queued`));
+    }
+    // Rendered when the section is open for any other reason, so a mesh whose
+    // regime bound also shows what the mix was -- the ratio is the evidence
+    // for whether the refusal was a correction or a wall.
+    const { byClass, interruptsBySender, downgraded } = comms.wakes;
+    if (byClass.length > 0) {
+      const mix = byClass.map((c) => `${c.count} ${c.deliveryClass}`).join(", ");
+      const talk = comms.wakes.byKind.length > 0 ? `; ${comms.wakes.commsWakes} of ${comms.wakes.byKind.reduce((n, k) => n + k.count, 0)} wakes were bought by communication` : "";
+      out.push(bullet(`· sends by delivery class: ${mix}${talk}`));
+    }
+    if (downgraded.length > 0) {
+      const who = downgraded.map((d) => `${d.agent} ${d.refused}`).join(", ");
+      out.push(bullet(`· interrupts refused their wake, shipped as mail: ${who} — the attention price bound`));
+    }
+    if (interruptsBySender.length > 0) {
+      const who = interruptsBySender.slice(0, 4).map((i) => `${i.agent} ${i.interrupts}`).join(", ");
+      out.push(bullet(`· interrupts bought, by sender: ${who}`));
+    }
+    if (comms.aliases && comms.aliases.total > 0) {
+      const { total, byRewrite } = comms.aliases;
+      const worst = byRewrite.slice(0, 3).map((b) => `${b.rewrite} x${b.count}`).join(", ");
+      out.push(bullet(`· ${total} prose rewrite${total === 1 ? "" : "s"} went through the alias tables — ${worst}. A seat is inventing names; the tables are load-bearing until it stops.`));
+    }
+    for (const r of comms.refused) {
+      const who = r.refusedBy === "policy" ? `policy rule ${r.rule} refused` : "protocol validation refused";
+      out.push(bullet(`· ${who} ${r.count} send${r.count === 1 ? "" : "s"} — e.g. ${r.from} → ${r.to.join(", ")} (${r.type}): ${r.reason}`));
+    }
+    if (comms.lostAsks.length > 0) {
+      out.push(bullet(`· ${comms.lostAsks.length} ask${comms.lostAsks.length === 1 ? " was" : "s were"} settled without an answer, and the asker was never told`));
+      for (const a of comms.lostAsks.slice(0, 5)) {
+        out.push(bullet(`  · ${a.from} → ${a.to.join(", ")} (${a.type}) — ${a.reason}`));
+      }
+      if (comms.lostAsks.length > 5) out.push(bullet(`  · (+${comms.lostAsks.length - 5} more)`));
+    }
   }
 
   if (report.spend.byModel.length > 0) {

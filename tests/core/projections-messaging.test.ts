@@ -105,11 +105,11 @@ function send(state: Projections, m: MeshMessage, config?: { commitmentSemantic?
 test("messaging projection: returns false for a type it does not own, so dispatch falls through", () => {
   const state = createInitialState();
   assert.equal(applyMessagingEvent(state, evt("goal.created", {}), {}), false, "unowned type must not be claimed");
-  assert.equal(applyMessagingEvent(state, evt("message.rejected", {}), {}), true, "message.rejected is owned but inert");
+  assert.equal(applyMessagingEvent(state, evt("message.rejected", {}), {}), true, "message.rejected is owned, and now projected");
   assert.equal(applyMessagingEvent(state, evt("thread.created", { thread: thread() }), { thread: thread() }), true);
 });
 
-test("messaging projection: message.rejected records nothing — a refused send leaves no trace in the views", () => {
+test("messaging projection: a refused send is recorded for the operator but never reaches a mailbox", () => {
   const state = seed();
   applyEvent(state, evt("message.rejected", { from: "dev", to: ["qa"], type: "REQUEST_REVIEW", reason: "schema invalid" }));
 

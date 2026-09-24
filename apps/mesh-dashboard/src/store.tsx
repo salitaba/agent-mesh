@@ -38,6 +38,15 @@ export interface TurnStep {
   messageIds: string[];
   artifactIds: string[];
   tokens: number;
+  /**
+   * The split behind `tokens` — fresh input, output, and transcript replayed
+   * from cache. Absent when the backend reported none; mirrored from the server
+   * step (`packages/observability/src/steps.ts`), which is the authority.
+   */
+  tokensInput?: number;
+  tokensOutput?: number;
+  tokensCacheRead?: number;
+  tokensThinking?: number;
   model?: string;
   error?: string;
   seqStart: number;

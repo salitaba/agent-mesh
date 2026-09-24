@@ -10,20 +10,22 @@ import type {
   HardActionsPolicy,
   MeshMessage,
   Task,
+  ThreadId,
 } from "../../protocol/src/index";
-import { episodeOf } from "../../protocol/src/index";
+import { CODE_ARTIFACT_TRANSITIONS, episodeOf } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   MESSAGE_TYPES,
   HARD_OP_CAPABILITY,
   effectiveHardActions,
   artifactScope,
-} from "../../protocol/src/catalog";
+  obligesRecipients, movesWork } from "../../protocol/src/catalog";
+import { BUILTIN_CONTRACTS, contractForMessageType, findContract } from "../../protocol/src/contracts";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
-import { agentKey, missionKey } from "./budgets";
-import { outstandingDebtors, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
+import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
+import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
 import { holdsAuthority } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
@@ -35,8 +37,33 @@ const MAX_UNREAD = 12;
 const MAX_DECISIONS = 10;
 const MAX_ARTIFACT_REFS = 20;
 const MAX_ACTIVITY = 15;
+/**
+ * Refusals shown back to the seat that caused them.
+ *
+ * Small on purpose: this is a "do not retry that" signal, not a log. The
+ * newest few carry it; older ones have either been acted on or stopped
+ * mattering.
+ */
+const MAX_REFUSALS = 5;
 const MAX_OUTSTANDING = 10;
 const MAX_MEMORY = 20;
+
+/**
+ * How many conversations the "Open threads" section may name.
+ *
+ * Fixed rather than scaled down the degradation ladder, unlike every cap above
+ * it. The ladder exists to shrink sections whose per-item size is unbounded —
+ * a mail payload, a decision blob — and this one renders a single short line
+ * per thread, so six of them cost less than one mail item.
+ *
+ * The cap itself is not optional, though. A collab thread now reaches a
+ * terminal status when its session closes (`collab.closed` moves it to
+ * RESOLVED, or ESCALATED on an overrun), but that is the only exit any thread
+ * has: an ordinary service thread is minted OPEN and nothing ever closes it,
+ * so the pool still grows for the life of the mission wherever agents are not
+ * collaborating.
+ */
+const MAX_OPEN_THREADS = 6;
 
 /**
  * Per-item clamp on a rendered decision blob, mirroring the 400 chars mail
@@ -45,6 +72,271 @@ const MAX_MEMORY = 20;
  * items, so the count cap above was load-bearing for the wrong quantity.
  */
 const MAX_DECISION_CHARS = 600;
+/**
+ * One payload, budgeted in characters before it is expanded and in LINES once
+ * it is -- because the two cases have different units. A payload that fits
+ * stays a single compact line, which is what almost every payload is; only a
+ * payload too big to fit is worth spending field boundaries on, and then the
+ * field, not the character, is the unit the reader needs.
+ */
+const MAX_PAYLOAD_LINE_CHARS = 400;
+const MAX_PAYLOAD_LINES = 20;
+
+/**
+ * Message priority as a number, mirroring the scheduler's `PRIORITY_BY_MESSAGE`.
+ *
+ * Copied rather than imported, and that is the lesser of two evils: the
+ * dependency runs scheduler → core, so core cannot import it back, and the
+ * constant is module-private in `packages/scheduler/src/index.ts` besides. The
+ * `?? 4` fallback below is the scheduler's too, so a priority neither side
+ * recognises sorts as NORMAL in both rather than at one end or the other.
+ */
+const PRIORITY_RANK: Record<string, number> = { URGENT: 9, HIGH: 6, NORMAL: 4, LOW: 2 };
+
+/**
+ * Does this message put the agents it is addressed to under an obligation?
+ *
+ * Re-exported, not re-implemented. This was a hand-copy — term for term — of
+ * the predicate inside the `message.sent` case of `projections-messaging.ts`,
+ * kept in step by a comment that said so, which is exactly how the catalog's
+ * `REQUEST_TYPES` came to be a third answer disagreeing with both. The one
+ * definition and the whole argument for it now live in
+ * `protocol/src/catalog.ts`; read it there before changing what the band means
+ * here, because the ledger reads the same call.
+ */
+export { obligesRecipients };
+
+/**
+ * Which slice of the window a message competes in.
+ *
+ * 0 — an unanswered ask: work this reader OWES a named agent who is parked
+ *     waiting for the reply.
+ * 1 — a speech act that MOVES this reader's work: a MISSION, a DELEGATE, a
+ *     HANDOFF, a verdict. Nobody is blocked on a reply, but it is the
+ *     instruction the rest of the turn is supposed to serve.
+ * 2 — news.
+ *
+ * Band 1 used to be folded into news, which put a MISSION below every routine
+ * REQUEST in the box and below the 12-slot cap with it. A seat can answer its
+ * mail correctly and still do the wrong work, if the brief defining that work
+ * was the thing that did not fit.
+ */
+function mailBand(m: MeshMessage): number {
+  if (obligesRecipients(m)) return 0;
+  if (movesWork(m.type)) return 1;
+  return 2;
+}
+
+/**
+ * Mail order: band first, then priority, then recency.
+ *
+ * The band leads because the classes answer different questions. A reader that
+ * spends its turn on news while an ask sits ten lines below has not been badly
+ * informed, it has been mis-prompted — and the asker waits another whole turn
+ * for the answer.
+ *
+ * Priority is compared INSIDE a band rather than ahead of it, which is what
+ * makes the URGENT reservation in `selectUnread` necessary rather than
+ * redundant.
+ */
+function byObligationThenPriority(a: MeshMessage, b: MeshMessage): number {
+  const band = mailBand(a) - mailBand(b);
+  if (band !== 0) return band;
+  const priority = (PRIORITY_RANK[b.priority] ?? 4) - (PRIORITY_RANK[a.priority] ?? 4);
+  if (priority !== 0) return priority;
+  return b.timestamp.localeCompare(a.timestamp);
+}
+
+/**
+ * Choose `cap` messages out of the mailbox, with URGENT guaranteed a seat.
+ *
+ * This replaces `unreadIds.slice(0, cap)` — the OLDEST `cap`, which is not the
+ * FIFO fairness it reads as. The supervisor emits `message.delivered` for up to
+ * MAX_DELIVERED_PER_TURN (100) queued ids on every turn, whether or not the
+ * context actually showed them, so a message outside this window is not "shown
+ * on a later turn", it is gone from the mailbox unseen. The window decides what
+ * the agent ever reads, which is why a thirteenth-arriving URGENT message could
+ * lose permanently to twelve pieces of chatter.
+ *
+ * URGENT is reserved rather than left to the comparator because the comparator
+ * ranks priority within a band: an URGENT INFORM sorts below every ordinary
+ * REQUEST, so a mailbox holding `cap` routine asks would bury it exactly as
+ * arrival order did. The reservation is capped by `cap` itself — there is no
+ * guarantee to be made beyond the size of the window.
+ */
+export function selectUnread(mail: MeshMessage[], cap: number): MeshMessage[] {
+  if (mail.length <= cap) return mail;
+  const ranked = [...mail].sort(byObligationThenPriority);
+  const kept = new Set<MeshMessage>(ranked.filter((m) => m.priority === "URGENT").slice(0, cap));
+  for (const m of ranked) {
+    if (kept.size >= cap) break;
+    kept.add(m);
+  }
+  return ranked.filter((m) => kept.has(m));
+}
+
+/**
+ * Group the chosen mail into conversations, best conversation first and each
+ * one read in the direction it was written.
+ *
+ * Interleaved by arrival, a three-message exchange renders as three unrelated
+ * lines with other people's mail between them, and the reader has to
+ * reconstruct the conversation before it can answer — or, more usually,
+ * answers the first line without having noticed the last two.
+ *
+ * A thread takes the rank of its most consequential message, so an URGENT ask
+ * drags the rest of its own exchange up with it. That is the trade this makes
+ * on purpose: the context an ask needs is the thread it sits in, and splitting
+ * the two to keep a strict priority order would put the answer to the ask
+ * somewhere further down the page.
+ *
+ * Inside a thread the order is oldest-first, because that is the direction a
+ * conversation happened in. The comparator's recency tiebreak decides between
+ * threads, never within one.
+ *
+ * Both sorts are stable and `Map` preserves insertion order, so messages that
+ * tie on every key keep the arrival order they came in with.
+ */
+export function groupMailByThread(mail: MeshMessage[]): MeshMessage[][] {
+  const groups = new Map<string, MeshMessage[]>();
+  for (const m of mail) {
+    const existing = groups.get(m.threadId);
+    if (existing) existing.push(m);
+    else groups.set(m.threadId, [m]);
+  }
+  const best = (g: MeshMessage[]): MeshMessage =>
+    g.reduce((top, m) => (byObligationThenPriority(m, top) < 0 ? m : top));
+  return [...groups.values()]
+    .sort((a, b) => byObligationThenPriority(best(a), best(b)))
+    .map((g) => [...g].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+}
+
+/**
+ * Could this message be dropped from the page when a NEWER one from the same
+ * sender supersedes it, without losing anything the reader can act on?
+ *
+ * The test is deliberately narrow, and the narrowness is the design. "Superseded"
+ * is only true of pure news: a second status report from one seat in one thread
+ * makes the first one's content stale, but almost nothing else in this protocol
+ * works that way.
+ *
+ *  - INFORM only. The other non-obliging types are not news, they are verdicts
+ *    and work movements — APPROVE and REJECT and VETO settle review rounds, and
+ *    HANDOFF/DELEGATE/PATCH_READY change who holds what. "APPROVE, then REJECT"
+ *    is not a stale announcement, it is a reversal, and dropping the first half
+ *    of it hides the reversal. `obligesRecipients` is the wrong test here for
+ *    exactly that reason: it answers "does this open a debt", and these types
+ *    open none, yet every one of them is still load-bearing.
+ *  - Not a reply. An answer settles a commitment, and this mailbox is examined
+ *    by the discharge ledger as well as by the model; dropping the latest of two
+ *    answers would remove a settlement from the page while the ledger still
+ *    counted it. INFORMs may carry `replyTo` (a status sent back into an ask's
+ *    thread), and those are answers the asker is owed.
+ *  - NORMAL only. An URGENT INFORM is the one class of news this page goes out of
+ *    its way to protect (`selectUnread` reserves it a seat), so collapsing it
+ *    would undo that in the renderer.
+ *  - No `note`, no `artifactRefs`. Both are unique content rather than a
+ *    restatement: a note is prose in the sender's own words and an artifact ref
+ *    is a pointer somebody needs. Two INFORMs may carry the same `status` field
+ *    and two different notes; only the payload is discardable.
+ *
+ * The default is to keep. A message this function declines to collapse costs a
+ * few lines; one it wrongly collapses is gone from the page while both the
+ * mailbox and the ledger still treat it as live.
+ */
+function isSupersedable(m: MeshMessage): boolean {
+  return m.type === "INFORM" && !m.replyTo && m.priority === "NORMAL" && !m.note && m.artifactRefs.length === 0;
+}
+
+/** What collapsing one thread's mail withheld, kept so the page can say so. */
+export interface SupersededRun {
+  /** The thread the withheld messages belong to. */
+  threadId: ThreadId;
+  /** The sender whose later message made these stale. Always the same seat. */
+  from: string;
+  /** Oldest first, as they arrived. */
+  messages: MeshMessage[];
+}
+
+/**
+ * Split one thread's mail into what to render and what a later message made
+ * redundant, without losing the second set.
+ *
+ * This is the piece `state.ts` says cannot be done: it rejects digesting because
+ * "without a model you cannot compress meaning, only join and truncate." That is
+ * right about compressing MEANING and wrong about collapsing STRUCTURE. Nothing
+ * here reads a payload or judges what it says. It discards a message only when a
+ * later message from the same seat in the same thread is on the page anyway, and
+ * then only when the discarded one is pure news — so the reader loses no fact it
+ * does not hold, and the fact is still in the mailbox if it wants to pull it.
+ *
+ * Two properties this preserves on purpose:
+ *
+ * 1. The withheld messages are NOT drained. `supervisor.ts` marks delivered only
+ *    the mail a model was actually handed, and the caller of this function feeds
+ *    the rendered set, not the withheld one — so a superseded INFORM stays owed
+ *    and renders on a later turn, once the message that superseded it has been
+ *    delivered and left the box. Collapsing is a deferral, never a deletion, and
+ *    the page says so rather than implying the mail is gone.
+ * 2. Everything withheld is counted and named in its thread. The failure mode
+ *    this repo keeps fixing is the silent truncation — a list that looks complete
+ *    and is not — so a collapse that says nothing would be the same bug wearing a
+ *    smaller token count.
+ *
+ * `mail` must be one thread's messages, oldest first, as `groupMailByThread`
+ * returns them; "later" means later in that order.
+ */
+export function collapseSuperseded(mail: MeshMessage[]): { shown: MeshMessage[]; withheld: SupersededRun[] } {
+  // The last supersedable message per sender is the one that is still current.
+  const current = new Map<string, MeshMessage>();
+  for (const m of mail) if (isSupersedable(m)) current.set(m.from, m);
+
+  const shown: MeshMessage[] = [];
+  const bySender = new Map<string, MeshMessage[]>();
+  for (const m of mail) {
+    if (isSupersedable(m) && current.get(m.from) !== m) {
+      const run = bySender.get(m.from);
+      if (run) run.push(m);
+      else bySender.set(m.from, [m]);
+      continue;
+    }
+    shown.push(m);
+  }
+
+  const threadId = mail[0]?.threadId;
+  const withheld: SupersededRun[] = threadId
+    ? [...bySender].map(([from, messages]) => ({ threadId, from, messages }))
+    : [];
+  return { shown, withheld };
+}
+
+/**
+ * The mail a turn would actually PUT IN FRONT OF the reader, from the mail it
+ * selected.
+ *
+ * Exported and used by the supervisor's drain as well as by the renderer, and
+ * that is the whole reason it exists. `supervisor.ts` marks a message delivered
+ * only once a model has been handed it -- "delivered means rendered AND
+ * answered; everything else stays owed" -- so the drain has to know what the
+ * page showed. The alternative was a second copy of the collapse predicate
+ * inside the supervisor, and a predicate with two homes is a predicate that
+ * drifts: the day the two disagree, the drain marks read exactly the mail the
+ * renderer withheld, silently, and an emptied mailbox is indistinguishable from
+ * a read one.
+ *
+ * Takes the same list the renderer takes and returns what survives collapsing,
+ * so the two cannot differ by construction.
+ */
+export function renderableMail(mail: MeshMessage[]): { shown: MeshMessage[]; withheld: SupersededRun[] } {
+  const shown: MeshMessage[] = [];
+  const withheld: SupersededRun[] = [];
+  for (const group of groupMailByThread(mail)) {
+    const split = collapseSuperseded(group);
+    shown.push(...split.shown);
+    withheld.push(...split.withheld);
+  }
+  return { shown, withheld };
+}
 
 /**
  * Words too common to carry a signal. Kept deliberately short: a long stop list
@@ -132,6 +424,7 @@ export interface ContextLimits {
   maxDecisions?: number;
   maxArtifactRefs?: number;
   maxActivity?: number;
+  maxRefusals?: number;
   maxOutstanding?: number;
   maxMemory?: number;
 }
@@ -149,6 +442,7 @@ export function buildAgentContext(
   const maxDecisions = cap(limits?.maxDecisions, MAX_DECISIONS);
   const maxArtifactRefs = cap(limits?.maxArtifactRefs, MAX_ARTIFACT_REFS);
   const maxActivity = cap(limits?.maxActivity, MAX_ACTIVITY);
+  const maxRefusals = cap(limits?.maxRefusals, MAX_REFUSALS);
   const maxOutstanding = cap(limits?.maxOutstanding, MAX_OUTSTANDING);
   const maxMemory = cap(limits?.maxMemory, MAX_MEMORY);
   const state = kernel.state;
@@ -168,8 +462,12 @@ export function buildAgentContext(
    */
   const missionText = goal?.description?.trim() || config.goalText;
 
-  const unreadIds = state.unread.get(agentId) ?? [];
-  const unread: MeshMessage[] = unreadIds.slice(0, maxUnread).map((id) => state.messages.get(id)!).filter(Boolean);
+  // The whole mailbox is materialised before anything is chosen, because the
+  // choice now depends on what is IN it. That is bounded work, not a scan:
+  // `state.unread` is capped at MAX_UNREAD_PER_AGENT (200) by the reducer, and
+  // each id is a Map lookup.
+  const inbox = resolveUnread(state, agentId);
+  const unread: MeshMessage[] = groupMailByThread(selectUnread(inbox, maxUnread)).flat();
 
   /**
    * Counts what this turn had available but did not show, per section.
@@ -184,7 +482,11 @@ export function buildAgentContext(
   const countOmitted = (key: keyof NonNullable<AgentContextBundle["omitted"]>, available: number, shown: number): void => {
     if (available > shown) omitted[key] = available - shown;
   };
-  countOmitted("unread", unreadIds.length, unread.length);
+  // `inbox`, not the raw box: an id with no message behind it was never
+  // "available" to show, so counting it as omitted tells the seat that more
+  // mail exists than it can ever be shown -- "still queued; they stay unread
+  // until a later turn shows them" about mail that no later turn can show.
+  countOmitted("unread", inbox.length, unread.length);
 
   // What this turn is actually about. Hoisted out of the bundle literal below
   // because selection now depends on it rather than only reporting it.
@@ -231,6 +533,10 @@ export function buildAgentContext(
       status: a.status,
       name: a.name,
       version: a.version,
+      // Narrow on purpose: a CodePatch mid-ladder, and nothing else.
+      ...(a.type === "CodePatch" && (a.status === "APPROVED" || a.status === "VERIFIED" || a.status === "MERGEABLE")
+        ? { pendingRung: (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0] }
+        : {}),
     }));
 
   // Bounded recency window instead of sorting the whole log per turn: turns
@@ -257,6 +563,34 @@ export function buildAgentContext(
     countOmitted("activity", window.length, recentOwnActivity.length);
   }
 
+  // What this seat asked for and did not get.
+  //
+  // Both rings are projected for the operator and were read by nobody else:
+  // the failure digest and the run report see them, `context.ts` did not. The
+  // agent that caused a refusal was handed `{ ok: true }` in the same turn and
+  // told nothing afterwards, so a denial it could have worked around was
+  // instead repeated verbatim — twice in a live mission by one seat, three
+  // times by another. Newest first, because the last wall is the one still in
+  // front of it.
+  const refusedOps: string[] = [];
+  {
+    const mine: Array<{ at: string; line: string }> = [];
+    for (const d of state.deniedActions) {
+      if (d.agentId !== agentId) continue;
+      const rule = d.ruleId ? ` [${d.ruleId}]` : "";
+      const subject = d.subject ? ` (${d.subject})` : "";
+      mine.push({ at: d.at, line: `${d.decision ?? "DENY"}: ${d.action}${subject} — ${d.reason}${rule}` });
+    }
+    for (const r of state.refusedSends) {
+      if (r.from !== agentId) continue;
+      const rule = r.ruleId ? ` [${r.ruleId}]` : "";
+      mine.push({ at: r.at, line: `REFUSED: ${r.type} to ${r.to.join(", ")} — ${r.reason}${rule}` });
+    }
+    mine.sort((a, b) => b.at.localeCompare(a.at));
+    for (const m of mine.slice(0, maxRefusals)) refusedOps.push(m.line);
+    countOmitted("refusals", mine.length, refusedOps.length);
+  }
+
   // Agent-authored notes outrank auto-written turn summaries for the same
   // reason they get their own eviction budget in `state.ts`: one is a
   // deliberate act, the other is exhaust that `recentOwnActivity` already
@@ -281,9 +615,35 @@ export function buildAgentContext(
   const goalForEpisode = state.goals.get(goalId);
   const episode = goalForEpisode ? episodeOf(goalForEpisode) : undefined;
 
-  const openThreads = [...state.threads.values()].filter(
-    (t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId),
-  );
+  /**
+   * Conversations this agent is in that are still live.
+   *
+   * Newest first, because threads of a given mission are opened far faster
+   * than they are answered, so the list is dominated by its fresh end and that
+   * is the end the renderer must show.
+   *
+   * A thread leaves this list two ways now: a collab's `collab.closed`, and —
+   * since D13 — a settled ask, which ends the thread its conversation was for.
+   * A thread that never opened a commitment (an INFORM, a broadcast, a
+   * collab's own chatter) still has no ending at all, so for those "open"
+   * really does mean "every thread the mission opened that this agent was
+   * party to". Either way the list is capped at the renderer, never here.
+   *
+   * The session screen on the second line is now REDUNDANT for any collab
+   * closed by this build, and it stays anyway. It is not belt-and-braces for
+   * its own sake: a snapshot written before the reducer learned to close the
+   * thread brings the thread back OPEN and the session back CLOSED, and the
+   * tail replay starts strictly above `throughSeq`, so the `collab.closed`
+   * that would fix it is never applied again. Without this line every mesh
+   * restored from an existing snapshot would hand its agents back discussions
+   * they had deliberately ended, every turn, for the rest of the mission. A
+   * thread with no session reads as open, which is what every ordinary thread
+   * is.
+   */
+  const openThreads = [...state.threads.values()]
+    .filter((t) => t.goalId === goalId && t.status === "OPEN" && t.participants.includes(agentId))
+    .filter((t) => (state.collabSessions.get(t.id)?.status ?? "OPEN") === "OPEN")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const agentBudget = state.budgets.get(agentKey(goalId, agentId));
   const missionBudget = state.budgets.get(missionKey(goalId));
@@ -298,9 +658,20 @@ export function buildAgentContext(
       // Report who is STILL silent, not everyone originally addressed: after
       // one of three reviewers answers, telling the asker it is waiting on all
       // three sends it chasing agents that already replied.
-      awaitingResponse.push({ messageId: pr.messageId, to: outstandingDebtors(pr), type: pr.type, since: pr.createdAt });
+      awaitingResponse.push({
+        messageId: pr.messageId,
+        to: outstandingDebtors(pr),
+        type: pr.type,
+        since: pr.createdAt,
+        dueBy: pr.dueBy,
+      });
     } else if (stillOwes(pr, agentId)) {
-      owedByYou.push({ messageId: pr.messageId, from: pr.from, type: pr.type, since: pr.createdAt });
+      // The clock travels with the obligation. `dueBy` was computed at open and
+      // read only by the sweep and the operator's audit file, so the seat being
+      // asked could be timed out on a deadline it was never shown — §11k of
+      // `NOTES-communication-measured-review.md`. Absent stays absent: a mesh
+      // with no TTL regime has no deadline, and `undefined` says that.
+      owedByYou.push({ messageId: pr.messageId, from: pr.from, type: pr.type, since: pr.createdAt, dueBy: pr.dueBy });
     }
   }
   const byAge = <T extends { since: string }>(list: T[]): T[] =>
@@ -332,12 +703,21 @@ export function buildAgentContext(
     relevantArtifacts,
     unreadMail: unread,
     recentOwnActivity,
+    refusedOps,
+    mailDropped: state.mailOverflowDropped.get(agentId) ?? 0,
     agentMemory,
     elidedMemory,
     continuity,
     episode,
     omitted,
     openThreads,
+    // Every conversation the mail names, plus every live one. Computed from
+    // the STATE rather than from `openThreads`, because a thread that settled
+    // this turn is not in `openThreads` and its answer is in `unread`.
+    threadSubjects: Object.fromEntries([
+      ...unread.map((m) => [m.threadId, state.threads.get(m.threadId)?.subject] as const),
+      ...openThreads.map((t) => [t.id, t.subject] as const),
+    ].filter((pair): pair is readonly [string, string] => Boolean(pair[1]))),
     budgetSnapshot: {
       agentTokensUsed: agentBudget?.consumed ?? record.state.tokensConsumed,
       agentTokenBudget: agentBudget?.limit ?? config.agents[agentId]?.budget.tokens ?? 0,
@@ -362,6 +742,12 @@ export function buildAgentContext(
     criterionAcceptanceEnabled:
       holdsAuthority(config.agents[agentId]?.authority, "requirements", "accept") ||
       holdsAuthority(config.agents[agentId]?.authority, "requirements", "approve"),
+    /* The same discipline one channel over, and the first thing in this
+     * contract that reads the bus rather than the seat. Under typed-only the
+     * supervisor refuses every prose-parsed op, so the block contract below
+     * describes a turn that cannot land -- it is not merely redundant there,
+     * it is wrong, and the seat pays a whole turn to find out. */
+    typedOpsOnly: config.bus.transport === "typed-only",
     /* Same "never advertise a rule that cannot fire" discipline as
      * delegationEnabled above. The declared capability list is narrowed twice
      * before it reaches the prompt:
@@ -374,6 +760,28 @@ export function buildAgentContext(
      *     agent has no legal way to satisfy.
      * What survives is exactly the set the gate can reject the agent for. */
     hardActions: hardActionsFor(config, agentId),
+    /* Materialised, unlike the config's own `wake` block. The bundle is read by
+     * the renderer and by adapters that never see the config, so "absent means
+     * full" has to become a value somewhere; this is that place. Defaulting to
+     * `"full"` here is also what keeps every existing fixture -- which builds a
+     * bundle with no wake policy at all -- rendering exactly as it did. */
+    wakeMail: config.agents[agentId]?.wake?.mail ?? "full",
+    /* Quoted only when it can be charged. `chargeInterrupt` no-ops on a
+     * non-positive cost and the whole regime is absent without
+     * `bus.delivery.classes`, so anywhere else this would name a price that
+     * is never debited. */
+    ...(config.bus.deliveryClasses && config.bus.deliveryClasses.interruptCostTokens > 0
+      ? { interruptCostTokens: config.bus.deliveryClasses.interruptCostTokens }
+      : {}),
+    ...(config.bus.contractsByType ? { contractsByType: true } : {}),
+    /* Same absent-by-default shape as contractsByType above, and for the same
+     * reason: a mesh that never collapsed its vocabulary renders byte-for-byte
+     * what it rendered before this key existed. */
+    ...(config.bus.vocabulary === "contracts" ? { commsVocabulary: "contracts" as const } : {}),
+    ...(config.bus.style === "low-contact" ? { lowContact: true as const } : {}),
+    ...(config.bus.deliveryClasses?.congestionEvery !== undefined && config.bus.deliveryClasses.interruptCostTokens > 0
+      ? { interruptCongestionEvery: config.bus.deliveryClasses.congestionEvery }
+      : {}),
   };
 }
 
@@ -418,6 +826,50 @@ export function isRelevantArtifact(a: Artifact, agentId: string, unread: MeshMes
   // — and escalates "no ArchitectureDoc" while one exists.
   if (artifactScope(a) === "mission") return !RETIRED_STATUSES.has(a.status);
   return false;
+}
+
+/**
+ * A message payload, as JSON the reader can parse and skim.
+ *
+ * This was `JSON.stringify(payload).slice(0, 400)` -- one line, cut at an
+ * arbitrary character. For the small payload that is almost all of them the
+ * two agree exactly, byte for byte, which is why the compact form is kept: the
+ * blob was only ever wrong about the case it could not fit.
+ *
+ * That case is bad in three ways at once. The model cannot parse it, because
+ * it is truncated mid-token; it cannot skim it either, because it is one long
+ * line with no field boundaries; and the cut is positional, so a payload whose
+ * first key holds a paragraph spends the whole budget and buries every later
+ * field -- including the one the reader is being asked for.
+ *
+ * Deliberately still JSON, and specifically NOT `key: value`. A JSON string
+ * escapes its newlines, so no value can forge a line of its own; a value
+ * rendered raw can end with `ANSWER OWED` on a line of its own and mint a mark
+ * the reader believes. Indenting keeps that property and adds the one thing
+ * the blob lacked.
+ *
+ * Both budgets SAY what they dropped. A silently shortened payload is worse
+ * than a short one: a reader cannot tell a field that was never sent from a
+ * field the renderer ate, and will answer the question it can still see.
+ */
+function renderMailPayload(payload: unknown): string[] {
+  // `JSON.stringify` returns `undefined` only for `undefined` and functions,
+  // which no payload is -- but it is typed `string`, so the guard is stated
+  // for the reader rather than for the compiler.
+  const compact = JSON.stringify(payload) as string | undefined;
+  if (compact === undefined) return [];
+  if (compact.length <= MAX_PAYLOAD_LINE_CHARS) return [`  ${compact}`];
+
+  const pretty = (JSON.stringify(payload, null, 2) as string).split("\n");
+  const kept = pretty.slice(0, MAX_PAYLOAD_LINES);
+  if (pretty.length > kept.length) {
+    kept.push(`… ${pretty.length - kept.length} more line(s) of this payload omitted`);
+  }
+  return kept.map((line) =>
+    line.length > MAX_PAYLOAD_LINE_CHARS
+      ? `  ${line.slice(0, MAX_PAYLOAD_LINE_CHARS)}… ${line.length - MAX_PAYLOAD_LINE_CHARS} more character(s) on this line omitted`
+      : `  ${line}`,
+  );
 }
 
 function summarizePayload(m: MeshMessage): string {
@@ -605,7 +1057,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("");
   lines.push("## Your runtime state");
   lines.push(
-    `lifecycle=${bundle.agentState.lifecycle} mailbox=${bundle.agentState.mailboxDepth} tokens=${bundle.budgetSnapshot.agentTokensUsed}/${bundle.budgetSnapshot.agentTokenBudget} activeTask=${bundle.currentTask?.id ?? "-"}`,
+    // `mission=` is here because the bundle has carried
+    // `missionTokensUsed`/`missionTokenBudget` since it was written and no
+    // renderer has ever read them: the seat was told its own wallet and never
+    // the shared purse. A mesh that asks a seat to ration its contact -- to
+    // weigh an interrupt against what it costs someone else -- and then hides
+    // the common budget is quoting half a price.
+    `lifecycle=${bundle.agentState.lifecycle} mailbox=${bundle.agentState.mailboxDepth} tokens=${bundle.budgetSnapshot.agentTokensUsed}/${bundle.budgetSnapshot.agentTokenBudget} mission=${bundle.budgetSnapshot.missionTokensUsed}/${bundle.budgetSnapshot.missionTokenBudget} activeTask=${bundle.currentTask?.id ?? "-"}`,
   );
   lines.push("");
   lines.push("## Relevant policy");
@@ -638,7 +1096,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (bundle.relevantArtifacts.length > 0) {
     lines.push("## Artifact references (fetch via mesh_artifact_read — do not paste contents)");
     for (const a of bundle.relevantArtifacts) {
-      lines.push(`- ${a.ref} (${a.type}, ${a.status})`);
+      // The pending rung, said where the seat is already reading the artifact.
+      // Without it the status line says "APPROVED", which a seat reasonably reads
+      // as finished rather than as "waiting for you to walk it to MERGED".
+      const rung = a.pendingRung ? ` — needs ${a.pendingRung} next; nothing advances it automatically` : "";
+      lines.push(`- ${a.ref} (${a.type}, ${a.status})${rung}`);
     }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
@@ -713,14 +1175,220 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     }
     lines.push("");
   }
+  // Ahead of the mail, and deliberately: this is the only section that tells
+  // the seat something it tried and could not do. A refusal it does not see is
+  // a refusal it repeats byte-for-byte on the next turn, which is what a live
+  // mission recorded three times from one seat.
+  const refusals = bundle.refusedOps ?? [];
+  if (refusals.length > 0) {
+    lines.push("## Refused last time (do not simply retry these)");
+    for (const r of refusals) lines.push(`- ${r}`);
+    partial(bundle.omitted?.refusals, "refusal(s)", "older ones; the newest are the ones still in your way");
+    lines.push("");
+  }
+  // Thread subjects live on the Thread, not on the message, and this is the
+  // only place both are in hand. Read from the bundle's own map when it has
+  // one: the live set and the mailed set no longer coincide, and a thread that
+  // settled this turn is missing from `openThreads` while the answer that
+  // settled it is still in `unreadMail`.
+  const threadSubjects = new Map<string, string>(
+    bundle.threadSubjects
+      ? Object.entries(bundle.threadSubjects)
+      : bundle.openThreads.map((t) => [t.id, t.subject] as [string, string]),
+  );
   if (bundle.unreadMail.length > 0) {
-    lines.push("## Unread mail");
-    for (const m of bundle.unreadMail) {
-      lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type} (thread ${m.threadId})`);
-      lines.push(`  ${JSON.stringify(m.payload).slice(0, 400)}`);
-      if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+    // The seat's own wake policy decides how much of each message's CONTENT
+    // this page carries. Under `claims` a message's payload, note and artifact
+    // refs are withheld and the header line stands alone as a claim, to be
+    // filled in by `mesh_inbox` if the reader wants it.
+    //
+    // Applied to mail that owes NOTHING, and only to that. Mail that obliges
+    // the reader keeps its body in both modes, because the drain marks a
+    // message delivered once the turn ends -- "delivered means rendered AND
+    // answered" -- and a seat that was handed a bare line and then had the mail
+    // marked answered has been made to answer blind. Splitting at the
+    // obligation rather than at a size threshold is what makes the deferral
+    // safe: what is deferred is the reading of news, never of a question.
+    const claimsOnly = (bundle.wakeMail ?? "full") === "claims";
+    let claimed = false;
+    // Re-grouped here rather than trusted from the bundle. The builder already
+    // emits `unreadMail` in this order, and the operation is idempotent on an
+    // ordered list, but the renderer is also called on bundles assembled
+    // elsewhere (runtime adapters, tests) and a section whose whole point is
+    // the grouping must not depend on its caller having done it.
+    // "A digest, not a queue" -- the header names the three restructurings the
+    // section performs, because they are the reader's only warning that what it
+    // is looking at is not a transcript of its inbox: ordered by obligation,
+    // grouped by conversation, and collapsed where one sender restated itself.
+    lines.push("## Unread mail (what you owe an answer to first, then by priority, grouped into conversations, restatements collapsed)");
+    for (const group of groupMailByThread(bundle.unreadMail)) {
+      const threadId = group[0]!.threadId;
+      const subject = threadSubjects.get(threadId);
+      lines.push(`### thread ${threadId}${subject ? ` — ${subject}` : ""}`);
+      // A sender that restated itself in this thread renders once: the current
+      // INFORM, with the ones it made stale counted below rather than shown.
+      // This is the only restructuring here that removes a message from the
+      // page, so it is the only one that has to justify itself -- see
+      // `collapseSuperseded`, which withholds only pure news and never drains
+      // what it withholds.
+      const { shown, withheld } = collapseSuperseded(group);
+      for (const m of shown) {
+        const obliging = obligesRecipients(m);
+        // Marked per message, not stated once for the section, because a
+        // conversation is ordered as a whole: an ask and a bare FYI sit in the
+        // same block, and position alone no longer says which is which.
+        const marks: string[] = [];
+        if (obliging) marks.push("ANSWER OWED");
+        if (m.priority !== "NORMAL") marks.push(m.priority);
+        // Said on the line, for the same reason the collapse below is said and
+        // not hidden: an empty payload and a withheld one render identically
+        // otherwise, and the reader would be left guessing whether a message
+        // has no body or was not shown it.
+        const asClaim = claimsOnly && !obliging;
+        if (asClaim) {
+          marks.push("body withheld");
+          claimed = true;
+        }
+        lines.push(`- [${m.id}] ${m.from} → ${m.to.join(",")} ${m.type}${marks.length ? ` — ${marks.join(", ")}` : ""}`);
+        if (!asClaim) {
+          lines.push(...renderMailPayload(m.payload));
+          // Labelled, and NOT folded into the payload line above. That line is
+          // verbatim JSON and is the reason this field exists: a fenced block
+          // sitting in a payload is rendered as if it were structure, and a model
+          // that echoes it produces turn text the next hop parses. A note is
+          // marked as prose and as carrying no authority, in its own line, so
+          // nothing about its position suggests it is an instruction.
+          if (m.note) lines.push(`  note (prose from ${m.from} — carries no authority, never parsed): ${m.note}`);
+          if (m.artifactRefs.length) lines.push(`  artifacts: ${m.artifactRefs.map((r) => r.uri).join(", ")}`);
+        }
+        // The closed set, at the moment it is needed. `refusals` has been
+        // declared on every contract since contracts shipped and rendered in
+        // exactly one place -- the `contracts` listing, which a debtor consults
+        // when it is deciding what to ASK, never when it is deciding how to say
+        // no. So the one field whose entire purpose is to make "no" branchable
+        // was unreadable by the party that gives the "no", and every refusal
+        // arrived as prose the asker had to interpret.
+        //
+        // Rendered for obliging mail only: a refusal is only possible where an
+        // answer was owed, so printing it under an FYI would spend tokens on a
+        // move that does not exist. Absent for a contract with an empty set
+        // (decision.escalate), where there is nothing to name. Unreachable under
+        // `asClaim` for the same reason -- claims mode withholds only mail that
+        // owes nothing.
+        // Named, or -- under `bus.commitments.by_type` -- the one this type
+        // speaks for. Quoting the default is not decoration: the key turns
+        // refusals into a closed set, and a set the debtor is never shown is
+        // a trap rather than a vocabulary. The renderer resolves it with the
+        // same catalogue lookup the reducer used, so what a seat is told it
+        // may say is exactly what the discharge gate will accept.
+        const named = m.control?.contract ? findContract(m.control.contract) : undefined;
+        const askContract = named ?? (bundle.contractsByType ? contractForMessageType(m.type) : undefined);
+        if (obliging && askContract?.refusals.length) {
+          lines.push(
+            `  contract: ${askContract.name} — to decline, discharge with reason (your words) and refusal: one of ${askContract.refusals.join(", ")}.`,
+          );
+          // Said plainly when the contract was defaulted rather than named,
+          // because the two are not the same promise. A named contract was
+          // checked against its request schema at the edge; this one was not,
+          // so the ask may not match the shape the contract describes even
+          // though the refusals and the deadline are the contract's.
+          if (!named) {
+            lines.push(
+              `  (${askContract.name} governs this ask because it is a ${m.type}, not because the sender named it — so the request shape was never checked, but the refusals and the deadline above are real.)`,
+            );
+          }
+        } else if (obliging && !askContract) {
+          // Naming the ABSENCE, because it is load-bearing rather than merely
+          // absent. With no contract this ask carries no request schema, no
+          // refusal set and no SLA, and the answer check fails OPEN on exactly
+          // this shape (see `checkResponse`). A debtor that cannot tell a
+          // structured ask from an unstructured one reads silence as "same
+          // bar" when the bar is lower — which is the one thing a closed set
+          // is supposed to make impossible.
+          lines.push(
+            "  contract: none — no request schema was named, so any reply that answers this settles it. Discharge it with a reason if you will not.",
+          );
+        }
+        // The one line on an obliging ask that tells a debtor it may do
+        // nothing.
+        //
+        // Every other thing this section says to a debtor is about how to
+        // spend a turn: answer it, or discharge it and say which no. Silence
+        // was never a move — it reads as "still working", so the runtime
+        // nudges three times and then wakes a human. On an ask carrying a
+        // default it IS a move, and a cheap correct one, but only if the
+        // debtor knows the ask carries one and what it will be taken to mean.
+        // Unshown, this key would quietly spend the debtor's attention on
+        // asks the asker had already said it could do without — which is the
+        // whole cost it exists to remove, paid anyway because only one side
+        // was told.
+        const assumed = obliging ? m.control?.ifUnanswered : undefined;
+        if (assumed) {
+          lines.push(
+            `  if you say nothing: the asker proceeds as ${JSON.stringify(assumed.assume)}. That is a legitimate ending here and you will not be nudged for it — answer only if that would be WRONG.`,
+          );
+        }
+      }
+      // Said, not hidden. The failure this repo keeps fixing is the list that
+      // looks complete and is not, so a collapse that removed lines silently
+      // would be that same bug with a smaller token count. The ids are given
+      // because the reader may still cite or answer one, and the wording says
+      // these are LATER mail rather than lost mail -- they stay in the mailbox
+      // and reappear once the message above has been delivered and left it.
+      for (const run of withheld) {
+        const ids = run.messages.map((m) => `[${m.id}]`).join(", ");
+        lines.push(`  · not shown — ${run.messages.length} earlier INFORM(s) from ${run.from} (${ids}), superseded by the message above. Still unread; they appear on a later turn.`);
+      }
+    }
+    // The fetch instruction, said once for the section rather than per line.
+    // Placed after the mail, with the other section footnotes, because it is
+    // advice about what to do with the lines above rather than a header. Only
+    // when something was actually withheld: a seat with no claims to read would
+    // otherwise be taught to reach for a tool it has no reason to call.
+    if (claimed) {
+      lines.push("- Bodies marked `body withheld` are in your mailbox, not lost: read them with `mesh_inbox` (this seat receives non-urgent mail as claims).");
     }
     partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");
+    if (bundle.mailDropped && bundle.mailDropped > 0) {
+      lines.push(
+        `- (${bundle.mailDropped} earlier message(s) were dropped from your mailbox before you read them — the queue outran the cap. They are gone; if you are waiting on something that never arrived, ask again rather than keep waiting.)`,
+      );
+    }
+    lines.push("");
+  }
+  /**
+   * Conversations the reader is in that nothing else in this prompt shows.
+   *
+   * The gap this closes is in the messaging reducer, and the reducer is right:
+   * `projections-messaging.ts` skips the sender's own mailbox
+   * (`if (target === m.from) continue;`) because nobody should be handed their
+   * own mail. The consequence is that the agent which OPENS a thread has no
+   * record of it anywhere in its context. `collab` is the sharp case — the op
+   * sends exactly one INFORM and creates the session, so the discussion appears
+   * in every peer's mail and nowhere at all for the agent running it. It then
+   * re-opens the same discussion, or lets the box expire into an overrun card
+   * that costs a human a decision.
+   *
+   * Threads that already carry unread mail are skipped: they are rendered above
+   * in full, and naming them twice spends tokens to repeat the section above.
+   * What is left is exactly the quiet half the reader could not otherwise see.
+   */
+  const mailedThreads = new Set(bundle.unreadMail.map((m) => m.threadId));
+  const quietThreads = bundle.openThreads.filter((t) => !mailedThreads.has(t.id));
+  if (quietThreads.length > 0) {
+    const me = bundle.agentState.agentId;
+    lines.push("## Open threads (you are in these; no new mail in them this turn)");
+    for (const t of quietThreads.slice(0, MAX_OPEN_THREADS)) {
+      const others = t.participants.filter((p) => p !== me);
+      lines.push(
+        `- [${t.id}] ${t.subject} — with ${others.join(", ") || "(nobody else)"}, ${t.messageIds.length} message(s)${t.initiator === me ? ", opened by you" : ""}`,
+      );
+    }
+    partial(
+      quietThreads.length - Math.min(quietThreads.length, MAX_OPEN_THREADS),
+      "open thread(s)",
+      "the newest are shown; absence from this page is not a closure",
+    );
     lines.push("");
   }
   if (bundle.recentOwnActivity.length > 0) {
@@ -740,10 +1408,21 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       // How to clear this (replyTo / discharge) is covered once, below, under
       // "## Answering" — restating it per loop here duplicated with every
       // additional owed message instead of just once.
-      lines.push(`- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since}.`);
+      //
+      // The deadline is the exception: it is per-ask, and it is the one fact
+      // the seat cannot derive from `since`. Without it the mesh could time the
+      // ask out on a clock the debtor was never shown, and close it as
+      // "decided without you" for an answer that was never late on any screen
+      // the debtor could read.
+      const due = o.dueBy ? ` — due by ${o.dueBy}, after which it closes unanswered and ${o.from} decides without you` : "";
+      lines.push(`- YOU OWE ${o.from} an answer to ${o.type} [${o.messageId}] since ${o.since}${due}.`);
     }
     for (const a of awaitingResponse) {
-      lines.push(`- WAITING on ${a.to.join(",")} for your ${a.type} [${a.messageId}] since ${a.since} — already sent; do NOT send it again. Follow up only if it is stale, otherwise 'wait'.`);
+      // Same clock, other side: the asker is told when its ask stops being
+      // waited on, so "is it stale" is answerable from the loop rather than by
+      // guessing or re-sending.
+      const due = a.dueBy ? ` (closes ${a.dueBy} if unanswered)` : "";
+      lines.push(`- WAITING on ${a.to.join(",")} for your ${a.type} [${a.messageId}] since ${a.since}${due} — already sent; do NOT send it again. Follow up only if it is stale, otherwise 'wait'.`);
     }
     partial(
       bundle.omitted?.outstanding,
@@ -763,13 +1442,27 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // than kept "for safety": duplicating an instruction doesn't make it more
   // likely to be followed, just more expensive to say.
   lines.push("## Ops block contract (must follow exactly — otherwise your turn does nothing)");
-  lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type`, `content`.");
-  lines.push("```mesh-json");
-  lines.push('[{"op":"send","type":"REQUEST","to":["tech-lead"],"newThread":{"subject":"review X"},"payload":{"question":"please review"}},');
-  lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","content":"...full text..."},');
-  lines.push(' {"op":"wait","reason":"awaiting review"}]');
-  lines.push("```");
-  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload — the raw channel, for asks no contract covers), publish_artifact (name/type/content), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
+  // Heading kept identical across both branches on purpose: it is the anchor
+  // `tests/core/context-degradation.test.ts` and NOTES-prompt-audit.md locate
+  // this section by, and under typed-only it is still the ops contract — what
+  // changes is which channel carries an op, not that there is a contract.
+  if (bundle.typedOpsOnly) {
+    // The tool names are NOT `mesh_` plus the op name, and saying so is the
+    // point of this line: `close_collab` is reached through mesh_collab_close,
+    // `respond` through mesh_reply, `broadcast` through mesh_announce. A seat
+    // told to prefix would invent tools that do not exist, which is the prose
+    // failure mode moved rather than removed. So the catalogue below is framed
+    // as what the seat can DO and the manifest stays authoritative for names.
+    lines.push("Every op is issued as an MCP TOOL CALL. A fenced `mesh-json` block is parsed and then REFUSED — none of its ops execute, and the turn lands zero side effects. Your tool list is authoritative for names and arguments; the ops named below say what you can DO, and the tool that performs one is not always `mesh_` plus its name (`close_collab` is `mesh_collab_close`, answering a request is `mesh_reply`).");
+  } else {
+    lines.push("Emit ONE fenced block named `mesh-json` containing a JSON array of ops. Op names are bare words with NO `mesh_` prefix (`send`, NOT `mesh_send`). The `mesh_*` names you also see (e.g. `mesh_artifact_read`) are the MCP TOOLS — a separate channel with its own naming; inside this block always use the bare op name (`read_artifact`). `to` and `reviewers` are arrays. Publish needs `name`, `type` and exactly ONE body: `fromPath` (a file you wrote — the mesh reads it, so it costs you nothing), `edits` (with `asVersionOf`), or `content` inline.");
+    lines.push("```mesh-json");
+    lines.push('[{"op":"send","type":"REQUEST","to":["tech-lead"],"newThread":{"subject":"review X"},"payload":{"question":"please review"}},');
+    lines.push(' {"op":"publish_artifact","name":"notes","type":"ResearchReport","fromPath":"docs/notes.md"},');
+    lines.push(' {"op":"wait","reason":"awaiting review"}]');
+    lines.push("```");
+  }
+  lines.push("Common ops: call (contract/request — raise a NAMED ask; prefer it over `send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back; when you can say in ADVANCE what you will do if nobody answers, add `ifUnanswered: {assume: <the value you will proceed with>, afterMs: <how long you will wait>}` — it works on `send` too, and it makes silence a legal ending: nobody is chased for the ask, and at the deadline the mesh hands your own default back to you instead of raising a card for a human), contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), publish_artifact (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file), request_review (artifactId/reviewers), create_task (title/description/assignedTo), claim_task, complete_task, propose_decision (topic/decision), escalate (reason/detail), remember (key/value), discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence), withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with close_collab the moment you have what you came for), close_collab (threadId/outcome), done (summary — the turn summary the mesh records, so make it say what actually happened), wait (reason), plan (steps: array of {text, capabilities}), plan_step (stepId/status DONE|PENDING), write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that emits no valid ops changes nothing.");
   // The `send` type is a CLOSED enum, and until this line existed the contract
   // never said so — it showed one example ("REQUEST") and left the rest to be
   // guessed. Models guessed RESULT / RESPONSE / ResearchReport, every such
@@ -777,7 +1470,18 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // never woken. In one live run 23 of 30 messages died this way. Listing the
   // enum costs ~40 tokens per turn and removes the single largest source of
   // wasted turns in the mesh.
-  lines.push(`\`send\` type MUST be exactly one of: ${MESSAGE_TYPES.join(", ")}. Any other value is rejected and your message is never delivered. Answering someone? Use INFORM in their thread — there is no RESULT/RESPONSE/REPLY type.`);
+  //
+  // That argument is about PROSE specifically, which is why the line is gated
+  // rather than unconditional. What made an invented type expensive is that
+  // this channel has no schema at its edge: the message is built, travels,
+  // fails validation somewhere else and is dropped silently. Every type-taking
+  // TOOL carries `enum: [...MESSAGE_TYPES]` (`mcp.ts`), so a typed seat is
+  // already holding the same closed set and a wrong value comes back refused
+  // at the call with the field named. Repeating it costs a typed-only seat the
+  // same ~40 tokens every turn and buys it nothing it did not already have.
+  if (!bundle.typedOpsOnly) {
+    lines.push(`\`send\` type MUST be exactly one of: ${MESSAGE_TYPES.join(", ")}. Any other value is rejected and your message is never delivered. Answering someone? Use INFORM in their thread — there is no RESULT/RESPONSE/REPLY type.`);
+  }
   lines.push("");
   // Everything below was implemented but absent from this contract, so agents
   // could not use it: 18 of 30 ops were undocumented. The costly one is
@@ -819,7 +1523,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push("- request_research (to/question) — ask the explorer a read-only question.");
   lines.push("- broadcast (type/payload) — inform everyone you may contact; prefer a targeted send.");
   lines.push("- ratify_decision (decisionId) — promote a proposed decision to a shared fact.");
-  lines.push("- commit / request_commit / merge — version-control moves, subject to your capabilities.");
+  lines.push(
+    "- commit / request_commit / merge — version-control moves, subject to your capabilities. " +
+      "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with transition_artifact " +
+      "and then `merge`; approval alone lands nothing, and no step happens on its own.",
+  );
   lines.push("- delegate (taskId/to), acquire_lease / release_lease (resource) — hand off work, avoid collisions.");
   // Shown only when usable: with delegation off (the v1 default, max_depth 0)
   // every spawn_worker is denied, so advertising it would only buy wasted turns.
@@ -829,13 +1537,118 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     );
   }
   lines.push("");
+  // The half of a seat's comms surface nobody generates.
+  //
+  // `bus.vocabulary: "contracts"` collapses the MCP manifest down to eight
+  // tools, none of which takes a message type. What it cannot collapse is
+  // `roles/*.md`, which is prose a human wrote in the typed vocabulary and
+  // which still says "send REQUEST_RESEARCH to the explorer" and "request a
+  // review from the tech lead". The seat then holds a tool list those
+  // sentences do not appear in, and its only way to learn the replacements is
+  // to spend a whole turn on `contracts` before it can ask for anything --
+  // assuming it thinks to, rather than reaching for a tool its brief named
+  // and its manifest does not have.
+  //
+  // So the mapping is rendered, and it is DERIVED from BUILTIN_CONTRACTS
+  // rather than written beside it. A hand-kept table here would be a second
+  // statement of the same fact in a third place, and the first contract to
+  // change the type it speaks for would leave it wrong -- which is the exact
+  // failure this section exists to fix, moved one file over. Same reasoning
+  // as `CONTRACT_BY_MESSAGE_TYPE` in `protocol/src/contracts.ts`.
+  //
+  // Rendered only under the collapsed vocabulary: on a typed mesh the brief
+  // and the manifest already agree, and this would be ~160 tokens a turn
+  // restating it.
+  if (bundle.commsVocabulary === "contracts") {
+    lines.push("## How you ask for things here (your role brief is written in the older vocabulary)");
+    lines.push(
+      "This mesh routes asks by CONTRACT, not by message type. The asks it will route are the ones `contracts` lists, with who answers each and the refusals you may get back — that list is authoritative. Your role brief is not: it is written in the typed vocabulary and names moves your tool list does not have. The type names it quotes are still the right WORDS for what you mean; these are how you say them here.",
+    );
+    for (const c of BUILTIN_CONTRACTS) {
+      // `desugarsTo` named only when it is not `send`, because those three are
+      // the ones a brief says in prose ("request a review", "escalate it") and
+      // so the ones a seat looks for a tool by name for.
+      const alsoOp = c.desugarsTo === "send" ? "" : ` / the \`${c.desugarsTo}\` op`;
+      lines.push(`- \`${c.messageType}\`${alsoOp} → \`call ${c.name}\` — ${c.summary}`);
+    }
+    lines.push(
+      "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `announce` — it obliges no one and costs no one a turn. An answer to an ask is `reply`, naming the message you are answering.",
+    );
+    if (!bundle.typedOpsOnly) {
+      // True on this channel and only this one: under typed-only the prose
+      // block is parsed and refused, so pointing at `send` there would be
+      // pointing at a turn that lands nothing.
+      lines.push(
+        "The raw `send` op still works for the asks no contract covers. Reach for it last — a `call` is checked before anyone is woken and names its refusals up front, and a `send` is neither.",
+      );
+    }
+    lines.push("");
+  }
+  // The style's own paragraph, and the only place the runtime tells a seat
+  // that the machinery which chases it has been turned down.
+  //
+  // It is short on purpose, and it is four SPENDING rules rather than a
+  // description of the configuration. A seat cannot act on "coalesce_ms is
+  // 300000"; it can act on "your message may sit for minutes, so do not send
+  // it twice". The one thing it must not say is that silence is free — it is
+  // free only on an ask whose asker priced it, which is why the first rule
+  // points at `ifUnanswered` rather than at saying nothing.
+  if (bundle.lowContact) {
+    lines.push("## This mesh is LOW-CONTACT (it will not chase, and neither should you)");
+    lines.push(
+      "- When you raise an ask and can say in advance what you will do if nobody answers, pass `ifUnanswered`. The mesh then stops chasing it for anyone, and at the deadline hands your own default back to you. An ask you cannot name a default for is still a normal ask — raise it.",
+    );
+    lines.push(
+      "- Asks here have DEADLINES and end at them, answered or not. That is the mesh's way of not pestering anyone, not a licence to sit on one: an ask you let expire cost the asker the whole wait and gave them nothing.",
+    );
+    lines.push(
+      "- Waking someone is BILLED, and gets dearer the fuller their mailbox. Say it once. A message that has not been answered yet has not been lost — it is waiting for the recipient's next turn, and sending it again costs you again and them again.",
+    );
+    lines.push(
+      "- Prefer `announce` to asking, and prefer an artifact to an announcement. Something published is read when it is needed and wakes nobody; an ask spends a turn of someone's life whether or not it was worth one.",
+    );
+    lines.push("");
+  }
   lines.push("## Answering (this is how the mesh knows a question is settled)");
   lines.push(
-    'Always set `replyTo` to the id of the request you are answering. That is the only exact signal the runtime has; without it it must guess from thread and timing, and a wrong guess either strands the asker waiting forever or closes a question nobody actually answered.',
+    'Always set `replyTo` to the id of the request you are answering. It is the only way an ANSWER closes an ask — on a strict mesh (the default) nothing else you write counts as one, so without it your answer is delivered and read while the request stays open, you keep being nudged for it, and it can end up escalated to a human as a question nobody answered. `discharge` below is the only other move you have; the rest — the deadline passing, the asker withdrawing, an operator stepping in — is not yours to trigger.',
   );
   lines.push(
     'If you cannot or will not answer a request addressed to you, say so with `discharge` (messageId + reason). Never just stay silent: silence is indistinguishable from "still working", so the runtime keeps nudging you, burns budget, and eventually escalates it to a human as a stalemate.',
   );
+  // The other half of the same rule, and it was missing entirely: `discharge`
+  // is the DEBTOR's exit, so a seat that raised an ask and then stopped
+  // needing it had no move at all. Its only options were to wait or to chase,
+  // and a chase is an interrupt charged to someone else's attention asking for
+  // an answer to a question that no longer matters. The ask then aged into the
+  // nudge ladder and raised a card, so the operator was woken to arbitrate a
+  // question nobody wanted answered. Withdrawing is the asker's own cheap
+  // exit, and saying so is what makes the low-contact path reachable.
+  lines.push(
+    'If an ask YOU raised stops mattering, close it with `withdraw` (messageId + reason) instead of waiting for it. The agents who still owe you an answer are told to stop and released, and it costs them no turn. Leaving it open is not harmless: the runtime keeps nudging them for an answer you no longer want, and the ask eventually escalates to a human as a stalemate.',
+  );
+  // The price, quoted to the seat that pays it. Everything above this point
+  // tells an agent what to send; this is the first thing that tells it what
+  // sending costs. Rendered only when the tariff can fire -- see
+  // AgentContextBundle.interruptCostTokens.
+  if (bundle.interruptCostTokens !== undefined) {
+    lines.push("");
+    lines.push("## What interrupting someone costs you");
+    lines.push(
+      `Waking another agent is charged to YOUR attention budget: ${bundle.interruptCostTokens} tokens for every recipient woken. Marking a message URGENT is the deliberate way to buy that wake, so an URGENT to three agents costs you ${bundle.interruptCostTokens * 3}. Answering an ask someone is parked on, and re-asking in a thread where they already owe you, are charged the same way -- they are worth it, and they are not free.`,
+    );
+    if (bundle.interruptCongestionEvery !== undefined) {
+      lines.push(
+        `Waking a busy agent costs more than waking an idle one. Every ${bundle.interruptCongestionEvery} messages already unread in someone's mailbox adds another ${bundle.interruptCostTokens} to the price of waking them, up to ${MAX_INTERRUPT_SURCHARGE}x -- so interrupting the agent everyone else is already interrupting can cost ${bundle.interruptCostTokens * MAX_INTERRUPT_SURCHARGE} instead of ${bundle.interruptCostTokens}. You cannot see inside their mailbox, but ${MAX_INTERRUPT_SURCHARGE}x is the worst it ever gets. The cheap way to reach someone who is buried is ordinary mail, which they read on the turn they were going to take anyway.`,
+      );
+    }
+    lines.push(
+      "Waking the same agent twice in one turn costs you once: the second wake buys nothing, because they are already coming.",
+    );
+    lines.push(
+      "When you can no longer afford a wake, the message is still delivered in full -- only the wake is refused, and it is not announced. So an URGENT that stops feeling urgent is what running out looks like. Ordinary mail costs you nothing and is read on the recipient's next turn: prefer it, and keep URGENT for work that is genuinely blocked on being seen now.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -899,6 +1712,7 @@ export function buildContextManifest(
     slot("task", bundle.currentTask ? 1 : 0, 0, bundle.currentTask),
     slot("decisions", bundle.relevantDecisions.length, omitted.decisions, bundle.relevantDecisions),
     slot("artifacts", bundle.relevantArtifacts.length, omitted.artifacts, bundle.relevantArtifacts),
+    slot("refusals", (bundle.refusedOps ?? []).length, omitted.refusals, bundle.refusedOps ?? []),
     slot("mail", bundle.unreadMail.length, omitted.unread, bundle.unreadMail),
     slot("own_activity", bundle.recentOwnActivity.length, omitted.activity, bundle.recentOwnActivity),
     slot("memory", bundle.agentMemory.length, omitted.memory, bundle.agentMemory),

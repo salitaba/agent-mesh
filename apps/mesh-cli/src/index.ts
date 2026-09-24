@@ -4,6 +4,7 @@ import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/conf
 import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
+import { aliasStats } from "../../../packages/protocol/src/op-aliases";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
@@ -278,6 +279,11 @@ usage:
   mesh reject --subject s [--artifact id] [--comment text]
   mesh respond <escalationId> <text>       human escalation response
   mesh artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
+  mesh budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
+  mesh ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written
+    vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
+    Offline: reads logs/turn-audit.jsonl, needs no running mesh. Ratios are published Anthropic
+    units (cache read 0.1x, write 1.25x, output 5x) — a comparable unit, not a price.
   mesh host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git]
     multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
     git flags force every child on/off; without them each child obeys its own mesh.workspace.git
@@ -390,7 +396,7 @@ async function launchMesh(opts: {
         if (reported) return;
         reported = true;
         try {
-          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
+          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state, undefined, { aliases: aliasStats() })));
         } catch (err) {
           // A report that throws must not swallow the run's outcome.
           console.log(fallback);
@@ -552,7 +558,12 @@ export async function main(argv: string[]): Promise<number> {
         console.log(`Goal:      ${st.goal?.description?.split("\n")[0]?.slice(0, 60) ?? "(none)"} [${st.goal?.status ?? "-"}]`);
         console.log(`Progress:  ${bar(st.progress?.ratio ?? 0)} ${Math.round((st.progress?.ratio ?? 0) * 100)}%`);
         const tokens = st.budgets?.find?.((b: any) => b.key.startsWith("mission:"));
-        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}`);
+        // `aliases` rides on the events line because it is the same kind of
+        // number: a process-wide diagnostic that is only interesting when it
+        // moves. It prints the zero rather than hiding it -- a zero is the
+        // answer the operator is looking for when asking whether the prose
+        // alias tables can be retired.
+        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}   aliases: ${st.aliases?.total ?? "-"}`);
         console.log("");
         for (const a of st.agents ?? []) {
           const dot = ["THINKING", "WORKING", "REQUESTING", "AWAKENED", "OBSERVING", "REVIEWING"].includes(a.lifecycle) ? "â—" : "â—‹";
@@ -717,6 +728,9 @@ export async function main(argv: string[]): Promise<number> {
         for (const b of body.entries) console.log(`  ${b.key.padEnd(36)} ${String(b.consumed).padStart(8)}/${String(b.limit ?? "?").padStart(8)}${b.exceeded ? "  EXCEEDED" : ""}`);
         return 0;
       }
+      case "ledger": {
+        return await offlineLedger(args);
+      }
       case "bench": {
         return runBenchmark(args.flags);
       }
@@ -768,6 +782,122 @@ async function offlineEvents(args: Args, limit: number, type?: string): Promise<
   const events = await store.read({ types: type ? ([type] as never) : undefined, tail: limit * 4 }).finally(() => store.close());
   const { eventTimeline } = await import("../../../packages/observability/src/index");
   return eventTimeline(events, limit);
+}
+
+/**
+ * `mesh ledger` — what each settled turn cost, from the audit file, and since
+ * the written column got a breakdown, what the most expensive line was spent on.
+ *
+ * Offline on purpose: `logs/turn-audit.jsonl` is append-only and independent of
+ * the live store, so this reads a mission that has stopped, a mission on another
+ * machine, or an archived state dir. It exists because the per-turn split was
+ * reconstructed by hand once (review §1, §11) and nothing in the repo could do it
+ * again — the numbers §11 acts on were only reachable by writing a script.
+ *
+ * `--json` prints the parsed rows, so the arithmetic downstream can be done on
+ * the same figures this prints rather than re-parsed from the log.
+ */
+async function offlineLedger(args: Args): Promise<number> {
+  const candidate = args.positional[0] ?? process.env.MESH_CONFIG ?? "mesh.yaml";
+  // A path that does not resolve must not fall back to `./mesh.yaml`: the ledger
+  // it would print is real, and about the wrong mission. Only the built-in
+  // default is allowed to be absent (the audit check below reports that case).
+  if (candidate !== "mesh.yaml" && !fs.existsSync(candidate)) {
+    console.error(`mesh ledger: no config at ${candidate}`);
+    return 1;
+  }
+  const dir = stateDirFor(candidate);
+  const audit = path.join(dir, "logs", "turn-audit.jsonl");
+  if (!fs.existsSync(audit)) {
+    console.error(`mesh ledger: no audit file at ${audit}\nthe mesh writes one line per settled turn once it has run`);
+    return 1;
+  }
+  const { parseTurnAudit, buildCacheLedger } = await import("../../../packages/observability/src/index");
+  const { rows, damaged } = parseTurnAudit(fs.readFileSync(audit, "utf8"));
+  if (args.flags.json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return 0;
+  }
+  const wantTop = Number(args.flags.top ?? 10);
+  const led = buildCacheLedger(rows, Number.isFinite(wantTop) && wantTop > 0 ? wantTop : 10);
+  if (led.turns === 0) {
+    console.log(`turn ledger — no turn records in ${audit} (${damaged} damaged lines)`);
+    return 0;
+  }
+
+  const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+  const total = led.units.freshInput + led.units.cachedRead + led.units.output;
+  const share = (u: number) => (total ? `${((100 * u) / total).toFixed(1)}%` : "—");
+
+  console.log(`turn ledger — ${fmt(led.turns)} turns from ${audit}`);
+  const notes: string[] = [];
+  // Only damage is worth an operator's attention: the file's prose lines and
+  // their continuation lines are normal, and saying so every run trains the
+  // reader to ignore the line that matters.
+  if (damaged) notes.push(`${fmt(damaged)} damaged lines`);
+  if (led.unmeasured) notes.push(`${fmt(led.unmeasured)} turns carry no cacheRead (older records — unmeasured, never cold)`);
+  if (notes.length) console.log(`  ${notes.join(", ")}`);
+  console.log("");
+  console.log("  tokens                     bill, in fresh-input units");
+  console.log(`  fresh input ${fmt(led.freshInput).padStart(12)}     ${share(led.units.freshInput).padStart(6)}`);
+  console.log(`  cache read  ${fmt(led.cacheRead).padStart(12)}     ${share(led.units.cachedRead).padStart(6)}  at 0.1x`);
+  console.log(`  written     ${fmt(led.output).padStart(12)}     ${share(led.units.output).padStart(6)}  at 5x`);
+
+  // The written line is usually the biggest on the bill and was, until this
+  // block existed, the only one with nothing under it. Both sub-lines are
+  // printed as "of written", not as a share of the whole, so a reader cannot
+  // mistake an estimate for the billed total.
+  const w = led.written;
+  const ofWritten = (n: number) => (led.output ? `${((100 * n) / led.output).toFixed(1)}% of written` : "—");
+  if (w.thinking === null) {
+    // Said out loud rather than printed as 0: this backend does not report the
+    // split, and a zero here would be read as a mission that did no thinking.
+    console.log(`    thinking    ${"unmeasured".padStart(12)}             (no turn reported the split)`);
+  } else if (w.thinkingZeroThroughout) {
+    // Not the same as unmeasured, and not a finding either: the backend sent
+    // the field and put 0 in it every time. Printing a bare 0 would let a
+    // reader conclude the mission never deliberated, which this figure cannot
+    // support — so say what was seen and leave the conclusion open.
+    console.log(`    thinking    ${"0 every turn".padStart(12)}             (a backend that reports the field but never fills it looks exactly like this)`);
+  } else {
+    const caveat = w.thinkingUnmeasured ? `, ${fmt(w.thinkingUnmeasured)} turns unmeasured` : "";
+    console.log(`    thinking    ${fmt(w.thinking).padStart(12)}     ${ofWritten(w.thinking).padStart(17)}${caveat}`);
+  }
+  if (w.publishCalls) {
+    const est = `~${fmt(w.estPublishTokens)}`;
+    console.log(
+      `    inline bodies ${est.padStart(10)}     ${ofWritten(w.estPublishTokens).padStart(17)}` +
+        `  (${fmt(w.publishChars)} chars over ${fmt(w.publishCalls - w.publishByRef)} of ${fmt(w.publishCalls)} publishes, est.)`,
+    );
+    if (w.publishByRef) {
+      console.log(`                                                  ${fmt(w.publishByRef)} published by reference, costing nothing`);
+    }
+  }
+  console.log("");
+  console.log(`  concentration  top ${led.top.length} turns hold ${(100 * led.topFreshShare).toFixed(1)}% of fresh input`);
+  if (led.coldTurns) {
+    console.log(
+      `  cold turns     ${fmt(led.coldTurns)} of ${fmt(led.turns)} (${((100 * led.coldTurns) / led.turns).toFixed(1)}%) ` +
+        `hold ${(100 * led.coldFreshShare).toFixed(1)}% of fresh input`,
+    );
+  }
+  if (led.gaps.length) {
+    console.log("\n  fresh input by gap since that seat last finished");
+    for (const g of led.gaps) {
+      console.log(`    ${g.label.padEnd(10)} n=${String(g.turns).padStart(4)}  median ${fmt(g.medianFresh).padStart(10)}  max ${fmt(g.maxFresh).padStart(10)}`);
+    }
+  }
+  if (led.top.length) {
+    console.log("\n  most expensive turns by fresh input");
+    for (const r of led.top) {
+      console.log(
+        `    ${r.at.slice(0, 19)}  ${r.agentId.padEnd(12)} ${(r.kind ?? "-").padEnd(9)}` +
+          ` fresh ${fmt(r.input).padStart(10)}  cached ${fmt(r.cacheRead ?? 0).padStart(11)}  written ${fmt(r.output).padStart(8)}`,
+      );
+    }
+  }
+  console.log("");
+  return 0;
 }
 
 void systemClock;

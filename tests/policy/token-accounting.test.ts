@@ -94,6 +94,23 @@ test("stall: one dead thread while another still has budget is not an escalation
   assert.equal(v.kind, "continue", "agents routinely abandon a spent thread for a fresh one — that is not a stall");
 });
 
+test("stall: a mission with nothing open is not a thread-budget stall", () => {
+  // D13 gave a settled ask the power to end its thread, which adds a third way
+  // for "every thread we could still work in is dead" to become true: there may
+  // be no open thread at all. That is a FINISHED mission, not an exhausted one,
+  // and the card would name thread budgets as the reason a healthy run stopped.
+  // So the check now demands a candidate before it fires.
+  const state = terminationState({
+    threads: new Map([["t1", { id: "t1", status: "RESOLVED", depth: 1, participants: ["dev"] }]]),
+    budgets: new Map([
+      ["thread:goal-1/t1", { key: "thread:goal-1/t1", exceeded: true, consumed: 427613, limit: 60000 }],
+    ]),
+    agents: new Map([["dev", { state: { agentId: "dev", lifecycle: "IDLE" } }]]),
+  });
+  const v = new TerminationManager().evaluate({ state, config: CONFIG, wallClockMs: 1 });
+  assert.equal(v.kind, "continue", "no conversation left to speak in is not a budget fault");
+});
+
 test("stall: a busy agent means the mission is working, not stalled", () => {
   const state = terminationState({
     threads: new Map([["t1", { id: "t1", status: "OPEN", depth: 1, participants: ["dev"] }]]),

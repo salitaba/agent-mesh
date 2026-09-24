@@ -29,6 +29,15 @@ export interface AgentSpec {
   persistent?: boolean;
   delegation?: { allow: boolean; max_depth: number; max_workers: number; worker_budget_tokens?: number };
   hardActions?: { mode: "off" | "warn" | "enforce"; capabilities?: string[] };
+  /**
+   * What this seat is willing to be woken for. Absent means "everything".
+   *
+   * `mail` is the other half of the same question: `deferNonObliging` decides
+   * whether an FYI becomes a wake at all, and `mail: "claims"` decides how much
+   * of a woken message's CONTENT the prompt carries. They compose, and a mesh
+   * that wants low contact sets both.
+   */
+  wake?: { deferNonObliging?: boolean; mail?: "full" | "claims"; notFor?: string[] };
 }
 
 export interface TestMeshOptions {
@@ -57,18 +66,59 @@ export interface TestMeshOptions {
   autoRaise?: { enabled?: boolean; factor?: number; maxMultiple?: number };
   waitWakeupMs?: number;
   turnTimeoutMs?: number;
+  /** How long the mesh must be quiet before the scheduler declares it idle. */
+  idleQuietPeriodMs?: number;
   stallIdleMs?: number;
   stallCooldownMs?: number;
   stallNoopRetryMs?: number;
   bus?: {
+    /**
+     * A whole coherent bus written as one word. Emitted LITERALLY, like
+     * `vocabulary` below and for the same reason: what a fixture has to be
+     * able to prove is the EXPANSION, and it cannot if the builder performs
+     * it first.
+     */
+    style?: "high-contact" | "balanced" | "low-contact";
     commitments?: {
       semantic?: "compat" | "strict";
       /** Deadline for an outstanding ask. 0 / unset means asks never expire. */
       ttlMs?: number;
       /** Per-role override of `ttlMs`, keyed by role name. */
       ttlMsByRole?: Record<string, number>;
+      /**
+       * Let a bare typed ask inherit the contract its message type names.
+       *
+       * Off in every fixture that does not ask for it, because turning it on
+       * turns the refusal list into a CLOSED set: suites that open an ask with
+       * no contract and expect no verdict depend on the default staying false.
+       */
+      byType?: boolean;
     };
     transport?: "mixed" | "typed-only";
+    /**
+     * Which comms vocabulary the mesh advertises to its seats.
+     *
+     * `"typed"` is emitted LITERALLY rather than folded away here, even though
+     * `resolveBusVocabulary` folds it back to absent: that fold is the thing a
+     * fixture has to be able to prove, and it cannot if the builder quietly
+     * performs it first.
+     */
+    vocabulary?: "typed" | "contracts";
+    /** Bounds a collab session opens with. Unset means the shipped defaults. */
+    collab?: { boxMs?: number; maxExchanges?: number };
+    /**
+     * Price attention. Omitting the block entirely is not the same as setting
+     * `classes: false` -- absent is the behaviour of every mesh that never
+     * opted in, and most suites here depend on getting exactly that.
+     */
+    delivery?: {
+      classes?: boolean;
+      coalesceMs?: number;
+      interruptCostTokens?: number;
+      attentionTokens?: number;
+      /** Unread messages per surcharge step. Unset means the flat tariff. */
+      congestionEvery?: number;
+    };
   };
 }
 
@@ -93,7 +143,32 @@ export function evidenceContent(subject: string): string {
   ].join("\n");
 }
 
-export /**
+/**
+ * The whole `bus:` block, or "" when it would be empty.
+ *
+ * A bare `bus:` with nothing under it parses as null, and the schema rejects
+ * it with `/bus: must be object` -- so passing `{ commitments: {} }` to ask
+ * for defaults has to produce no block at all, not an empty one. Every
+ * sub-block below therefore contributes to `body` and returns "" when it has
+ * nothing to say, and this function decides on the header afterwards.
+ *
+ * Key order matches `schemas/mesh.schema.json`. It is not load-bearing --
+ * YAML mappings are unordered -- but a generated fixture that reads like the
+ * file an operator would have written is easier to check by eye.
+ */
+function busYaml(bus: TestMeshOptions["bus"]): string {
+  if (!bus) return "";
+  const body =
+    (bus.style ? `  style: ${bus.style}\n` : "") +
+    busCommitmentsYaml(bus.commitments) +
+    (bus.transport ? `  transport: ${bus.transport}\n` : "") +
+    busVocabularyYaml(bus.vocabulary) +
+    busCollabYaml(bus.collab) +
+    busDeliveryYaml(bus.delivery);
+  return body ? `bus:\n${body}` : "";
+}
+
+/**
  * The `bus.commitments` block, or "" when nothing about it was asked for.
  *
  * Built as a function rather than inline so an omitted key stays OMITTED:
@@ -101,26 +176,63 @@ export /**
  * (the resolver's default only applies to an absent key), and that difference
  * decides whether asks in a fixture can expire at all.
  */
-/**
- * The whole `bus:` block, or "" when it would be empty.
- *
- * A bare `bus:` with nothing under it parses as null, and the schema rejects
- * it with `/bus: must be object` -- so passing `{ commitments: {} }` to ask
- * for defaults has to produce no block at all, not an empty one.
- */
-function busYaml(bus: TestMeshOptions["bus"]): string {
-  if (!bus) return "";
-  const body = busCommitmentsYaml(bus.commitments) + (bus.transport ? `  transport: ${bus.transport}\n` : "");
-  return body ? `bus:\n${body}` : "";
-}
-
 function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"]): string {
   if (!c) return "";
   const parts: string[] = [];
   if (c.semantic) parts.push(`semantic: ${c.semantic}`);
   if (c.ttlMs !== undefined) parts.push(`ttl_ms: ${c.ttlMs}`);
   if (c.ttlMsByRole !== undefined) parts.push(`ttl_ms_by_role: ${JSON.stringify(c.ttlMsByRole)}`);
+  // Written only when asked for. `by_type: false` and an absent key resolve
+  // the same way, but a fixture that says nothing about contracts should
+  // produce a mesh.yaml that says nothing about them either.
+  if (c.byType !== undefined) parts.push(`by_type: ${c.byType}`);
   return parts.length ? `  commitments: { ${parts.join(", ")} }\n` : "";
+}
+
+function busCollabYaml(c: NonNullable<TestMeshOptions["bus"]>["collab"]): string {
+  if (!c) return "";
+  const parts: string[] = [];
+  if (c.boxMs !== undefined) parts.push(`box_ms: ${c.boxMs}`);
+  if (c.maxExchanges !== undefined) parts.push(`max_exchanges: ${c.maxExchanges}`);
+  return parts.length ? `  collab: { ${parts.join(", ")} }\n` : "";
+}
+
+/** The `bus.vocabulary` line, or "" when the fixture did not choose one. */
+function busVocabularyYaml(v: NonNullable<TestMeshOptions["bus"]>["vocabulary"]): string {
+  return v ? `  vocabulary: ${v}\n` : "";
+}
+
+/**
+ * The `bus.delivery` block, or "" when the fixture wants no delivery regime.
+ *
+ * `classes` defaults to TRUE when the block is present at all, which is the
+ * one place this builder supplies a value the config would not. The reason is
+ * `resolveDeliveryClasses`: it returns undefined unless `classes` is truthy,
+ * so a block carrying only `coalesce_ms` resolves to no regime and the key
+ * that was set is silently discarded. Defaulting it means "I wrote a delivery
+ * block" and "I want the regime" cannot come apart by omission, while an
+ * explicit `classes: false` still says the other thing.
+ *
+ * `!== undefined` rather than truthiness on the numbers, because
+ * `interrupt_cost_tokens: 0` is a real tariff -- the free-interrupt case --
+ * and not a request for the shipped default.
+ */
+function busDeliveryYaml(d: NonNullable<TestMeshOptions["bus"]>["delivery"]): string {
+  if (!d) return "";
+  const parts = [`classes: ${d.classes ?? true}`];
+  if (d.coalesceMs !== undefined) parts.push(`coalesce_ms: ${d.coalesceMs}`);
+  if (d.interruptCostTokens !== undefined) parts.push(`interrupt_cost_tokens: ${d.interruptCostTokens}`);
+  // Same rule as the tariff above, and `0` is again the case that matters:
+  // `attention_tokens: 0` means "never buy a wake", which is a real policy and
+  // the sharpest way for a test to exhaust a cap. Written only when the caller
+  // asked for it, because an absent count is what keeps every mesh that
+  // predates this key on its own agent line.
+  if (d.attentionTokens !== undefined) parts.push(`attention_tokens: ${d.attentionTokens}`);
+  // Not `!== undefined` here: the resolver floors this at 1 and treats 0 as
+  // absent, so there is no zero case to preserve and writing one would only
+  // produce a key the schema then rejects for being below its minimum.
+  if (d.congestionEvery !== undefined) parts.push(`congestion_every: ${d.congestionEvery}`);
+  return `  delivery: { ${parts.join(", ")} }\n`;
 }
 
 export function testConfigYaml(opts: TestMeshOptions): string {
@@ -136,6 +248,7 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
       if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
+      if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false}${a.wake.mail ? `, mail: ${a.wake.mail}` : ""}${a.wake.notFor ? `, not_for: [${a.wake.notFor.join(", ")}] }` : " }"}`);
       if (a.delegation) lines.push(`    delegation: { allow: ${a.delegation.allow}, max_depth: ${a.delegation.max_depth}, max_workers: ${a.delegation.max_workers}${a.delegation.worker_budget_tokens ? `, worker_budget_tokens: ${a.delegation.worker_budget_tokens}` : ""} }`);
       return lines.join("\n");
     })
@@ -192,7 +305,7 @@ scheduling:
   mode: event-driven
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}
   concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4}${opts.maxTotalAgents !== undefined ? `, max_total_agents: ${opts.maxTotalAgents}` : ""} }
-  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: 300, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
+  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: ${opts.idleQuietPeriodMs ?? 300}, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
 `;
 }
 

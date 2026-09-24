@@ -29,6 +29,13 @@ export function mergeTurnSteps(fromLog: TurnStep[], live: TurnRecord[]): TurnSte
       messageIds: prev?.messageIds ?? [],
       artifactIds: prev?.artifactIds ?? [],
       tokens: t.tokens ?? prev?.tokens ?? 0,
+      // The split lives on `TurnRecord` and on the log-derived step; carrying it
+      // here is what lets the drawer show in/out for a turn that has aged out of
+      // the tracker's ring, where only the log-reconstructed step survives.
+      tokensInput: t.tokensInput ?? prev?.tokensInput,
+      tokensOutput: t.tokensOutput ?? prev?.tokensOutput,
+      tokensCacheRead: t.tokensCacheRead ?? prev?.tokensCacheRead,
+      tokensThinking: t.tokensThinking ?? prev?.tokensThinking,
       model: t.model ?? prev?.model,
       error: t.error ?? prev?.error,
       seqStart: prev?.seqStart ?? 0,

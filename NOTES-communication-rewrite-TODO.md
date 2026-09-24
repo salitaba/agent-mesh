@@ -392,6 +392,102 @@ is answered, not deferred.
 
 ---
 
+## Stage 6 — the modes from §2.1, and the three bugs Stage 4 left — DONE
+
+Green at the end of the stage: 1396 tests / 0 fail, `tsc --noEmit` clean, eslint 0 errors.
+
+### 6.1 — a contract's `response` schema, restored — DONE
+
+The shipped `Contract` had lost the `response: JSONSchema` field the design doc specifies,
+so a contract constrained the ask and nothing at all about the answer. Restored, and the
+reducer now validates a reply against it.
+
+It **fails open with a mark**: an invalid reply still discharges the commitment and still
+lands in the thread, but the ledger entry carries `responseValid: false`
+(`core/src/state.ts:209`, set at `projections-messaging.ts:62-64`) and the run report lists
+it. Failing closed would have been the wrong trade — a reply the schema rejects is still an
+answer a human can read, and refusing it leaves the asker blocked on a deadline with no way
+to say anything at all.
+
+### 6.2 — `computeDueBy`'s unreachable guard — DONE
+
+Fixed at the resolver rather than at the call site, so every caller gets the fix. The
+uncovered cell (a contract SLA present *and* a TTL configured) now has a test, and the
+assertions that could not fail were repaired rather than deleted — a no-op assertion is
+worse than no assertion, because it reads as coverage.
+
+### 6.3 — `contract` / `contractVersion` moved out of `payload` — DONE
+
+They were runtime facts living in the agent-verbatim object, which made them forgeable by
+anything that could write a payload. They are `control` now, stamped by the runtime through
+`sendMessage`'s second argument — the argument that exists precisely so runtime fields
+cannot travel inside the sanitized one.
+
+### 6.4 — `service` / `collab` / `broadcast` — DONE
+
+The three-mode table at `NOTES-communication-rewrite.md:123-142`, shipped. `mode` is
+`control`, never payload, for the same reason as 6.3: three separate behaviours key off it
+and all three have to be unforgeable.
+
+**`service`** is the default and is what the mesh already did: one reply per recipient,
+mandatory deadline, typed against a contract.
+
+**`broadcast`** obliges nobody, and now costs accordingly.
+
+- The reducer opens no commitment for one. Before, a `REQUEST_REVIEW` addressed to the whole
+  roster opened a *single* pending entry owed by everyone — so the first reply discharged
+  the obligation of seats nobody had individually asked, while the nudge timer chased the
+  rest.
+- It cannot be replied to at all (`sendMessage` refuses it). N seats each replying to one
+  announcement is the exact N-way chatter the mode exists to avoid; a seat with something to
+  say opens its own ask.
+- It wakes only seats that declared a matching interest. The interest gate alone turned out
+  to be **cosmetic**, and finding that out is the substance of this item: `tickWaiting()`
+  counted all unread mail as pressure, so the uninterested seat was correctly not woken by
+  the broadcast and then woken by the wait timer one tick later, for the same message, at the
+  same cost, carrying a note telling it to close a loop that never existed. Announcements are
+  now filtered out of that count. Measured on a two-seat mesh: two turns before, one after.
+  Delivery is never suppressed — only the wakeup; the mail is read on the seat's next real
+  activation.
+
+**`collab`** is the expensive mode, made visible rather than forbidden. Open-ended discussion
+did not stop existing when the mesh standardised on narrow asks — it moved into threads that
+kept going after the ask that opened them was discharged, where no deadline could fire and
+nothing counted the turns. A collab session is that conversation declared, bounded at the
+moment it opens, and billed.
+
+- Bounds are computed in the supervisor and **carried in the `collab.opened` event**, not
+  derived at sweep time: editing `bus.collab` mid-mission must not retroactively widen a
+  running session, and a replay has to reproduce the expiry the live run used.
+- An agent may shorten its own box but never lengthen it (`Math.min` against the operator
+  ceiling). `0` or negative in config reads as "use the default" — there is deliberately no
+  way to spell an unbounded collab.
+- Metering lives in the reducer, so the exchange count survives replay.
+- Overrun is swept from the wall clock (`checkStall`), not from traffic — a session that goes
+  quiet past its clock is precisely the case an event-driven watchdog cannot see.
+- The overrun card is `advisory: true`, with a stable `conflictKey` so it cannot storm. A
+  session that ran long is a bill, not a fault; blocking mission completion on it would turn
+  "these two talked a lot" into a halted mission needing a human.
+
+### Honest scope note on "charged to a budget line"
+
+§2.1 says a collab is *charged to a budget line*. What shipped meters **exchanges and
+wall-clock duration** and records the pre-existing per-thread ledger key
+(`thread:<goalId>/<threadId>`) on the session, which the overrun card names so an operator
+knows where to read the spend. It does **not** introduce a second token meter. The tokens
+were always counted; what was missing was anything that bounded the conversation or said
+whose conversation it was.
+
+### Withdrawn, and why (unchanged from Stage 5's reasoning)
+
+The full `control` / `body` / `note` envelope rewrite and the `Commitment` inversion are
+still not built. Both are large agent-facing changes whose benefit was already obtained by
+the narrower work above: 6.3 moved the fields that actually needed runtime ownership, and
+the commitment ledger's problem was never its shape — it was that broadcasts were opening
+entries in it.
+
+---
+
 ## Ground rules for this run
 
 - Baseline before any edit: typecheck clean, test result recorded. Red tests that were
