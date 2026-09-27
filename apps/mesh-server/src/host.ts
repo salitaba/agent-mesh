@@ -104,6 +104,34 @@ const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-aut
 /** Wire status for a project the registry has never heard of. */
 export const UNKNOWN_PROJECT_STATUS = "unknown";
 
+/**
+ * The sentence the host uses when a project's mission is not running: parked,
+ * with an ACTIVE goal.
+ *
+ * A deliberate copy of `PARKED_MISSION_NOTICE` in `./index`, which owns the
+ * canonical version (it returns the same string on `/status` and on
+ * `POST /goals/:id/resume`). Copy rather than import because that module is the
+ * whole single-mesh server — core, scheduler, the Claude SDK — and the host
+ * process must not load it to print one line. The call to action is what tests
+ * hold together: both copies must name `POST /mission/start`.
+ */
+const PARKED_MISSION_NOTICE =
+  "the mission is not running: the scheduler is parked — POST /mission/start (the dashboard's Start control) makes it live";
+
+/**
+ * An operator-facing line the host raises itself, as opposed to child output.
+ *
+ * Straight to stderr: under `npm run dev` that is the host half of the console
+ * the operator is already watching, and under a service manager it is the unit's
+ * log. The host has no other voice — it holds no kernel, so there is no event
+ * catalog to write to, and the one host-shaped escalation route a child exposes
+ * (`/escalations/host-ceiling`) is narrowed by design to the ceiling and would
+ * be the wrong place to mint cards from.
+ */
+function hostAudit(line: string): void {
+  process.stderr.write(`[mesh-host] ${line}\n`);
+}
+
 export interface HostOptions {
   /** Registry home; defaults to `MESH_HOME` or `~/.agent-mesh`. */
   home?: string;
@@ -848,6 +876,10 @@ export function createHostServer(deps: {
             await registry.remove(id);
             parkedByPolicy.delete(id);
             ceilingEscalated.delete(id);
+            // The mode memory goes with it: a re-add must not inherit what the
+            // folder used to be doing, or a project removed while live would
+            // come back live on a host booted without `--live`.
+            supervisor.forgetMode(id);
             // Drop it from supervision too, or a removed project keeps its
             // crash history and its breaker state for a later re-add.
             await tree.forget(ref);
@@ -1146,8 +1178,47 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   // guard covers the last beats in flight while children are being drained.
   let hosted: HostServer | undefined;
   let shuttingDown = false;
-  supervisorOptions.onHeartbeat = () => {
+
+  /**
+   * Project id -> the child life already told that nothing is running.
+   *
+   * Beats arrive every ~2s from every open child and a parked mission stays
+   * parked until an operator acts, so this is what keeps the line from becoming
+   * a stream. It is keyed by the child's own `startedAt` rather than by the
+   * project: a restart that leaves the mission parked is a new life and gets a
+   * new line (which is exactly the case the operator needs told twice), while a
+   * single parked child is announced once. A beat that reports anything other
+   * than parked-and-ACTIVE clears the entry, so a mission parked again later in
+   * the same child is announced again.
+   */
+  const parkedSignalled = new Map<string, string>();
+
+  /**
+   * Say out loud that a project's mission is not running.
+   *
+   * This state hides itself: a child parked while its goal is ACTIVE reads as a
+   * running mission on every other surface — goal ACTIVE, criteria unmet, the
+   * console's status word "running" — while the scheduler inside it is stopped.
+   * It cost one operator 14.8 hours of a mission believed to be working, with no
+   * line anywhere saying otherwise. Parked with no ACTIVE goal is a legitimate
+   * console state and stays quiet; so does live.
+   */
+  const signalParked = (ref: ProjectRef, mode: "parked" | "live" | undefined, goalActive: boolean | undefined): void => {
+    if (mode !== "parked" || goalActive !== true) {
+      parkedSignalled.delete(ref.id);
+      return;
+    }
+    const life = supervisor.running(ref.id)?.startedAt ?? "";
+    if (parkedSignalled.get(ref.id) === life) return;
+    parkedSignalled.set(ref.id, life);
+    hostAudit(`project '${ref.id}' is parked while its goal is ACTIVE — ${PARKED_MISSION_NOTICE}`);
+  };
+
+  supervisorOptions.onHeartbeat = ({ ref, mode, goalActive }) => {
     if (shuttingDown || !hosted) return;
+    // Notify before enforcing: a project the ceiling is about to park is
+    // already worth a line, and the park itself lands on a later beat.
+    signalParked(ref, mode, goalActive);
     void hosted.enforceLimits().catch(() => {
       /* best-effort: a failed park retries on the next beat */
     });
@@ -1159,15 +1230,49 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   let tree: SupervisionTree | undefined;
   supervisorOptions.onExit = (info) => tree?.handleExit(info);
 
+  // Same late binding, same reason: the supervisor learns each project's mode
+  // from its child's beat, and the registry is the thing that persists it. The
+  // registry is constructed below (it needs this supervisor), so the write goes
+  // through a slot filled in then.
+  //
+  // Fire-and-forget on purpose. This runs on the heartbeat path, which is
+  // liveness evidence: a registry that cannot be written must not take a beat
+  // down with it. Nothing about the running host reads the file back — a
+  // restart within this process reads the supervisor's own memory — so the
+  // only cost of a lost write is the pre-existing one, a host restart that
+  // boots this project in the host's default.
+  let registry: FileProjectRegistry | undefined;
+  supervisorOptions.onModeChange = (id, mode) => {
+    void registry?.setMode(id, mode).catch(() => undefined);
+  };
+
   const supervisor = new ChildProcessSupervisor(supervisorOptions);
-  const treeOptions: ConstructorParameters<typeof SupervisionTree>[0] = { supervisor };
-  if (options.onSupervision) treeOptions.onEvent = options.onSupervision;
+  const treeOptions: ConstructorParameters<typeof SupervisionTree>[0] = {
+    supervisor,
+    // From `host.yaml`: how long a child may go silent before the watchdog
+    // treats it as wedged and restarts it. Read here, at host start, because
+    // the tree captures its policy once — a saved change takes effect on the
+    // next host start, like every other spawn-shaped setting.
+    heartbeatTimeoutMs: hostConfig.heartbeatTimeoutMs,
+  };
+  treeOptions.onEvent = (event) => {
+    // Every failure decision also goes to the host's own stderr. The durable
+    // record is the per-project supervision log the tree writes; this is the
+    // operator watching a terminal while it happens, and until now a health
+    // kill was visible in neither place.
+    if (event.reason) {
+      const retry = typeof event.retryInMs === "number" ? ` — restart in ${event.retryInMs}ms` : "";
+      const where = event.logFile ? ` (in ${event.logFile})` : "";
+      hostAudit(`project '${event.ref.id}' ${event.status} (${event.reason}): ${event.detail ?? "no detail"}${retry}${where}`);
+    }
+    options.onSupervision?.(event);
+  };
   tree = new SupervisionTree(treeOptions);
 
   const projects = new SupervisedProjects(tree, supervisor);
   const registryOptions: ConstructorParameters<typeof FileProjectRegistry>[0] = { supervisor: projects };
   if (options.home) registryOptions.home = options.home;
-  const registry = new FileProjectRegistry(registryOptions);
+  registry = new FileProjectRegistry(registryOptions);
 
   // Across *every* registered project, not just the ones about to be opened: a
   // child stranded by a SIGKILLed host still holds its project's state lock,

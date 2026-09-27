@@ -43,11 +43,41 @@ async function completeIt(m: Awaited<ReturnType<typeof completedMesh>>) {
   // nobody at COMPLETED and the revive path under test is never exercised.
   for (const rec of [...m.kernel.state.agents.values()]) {
     if (rec.state.agentId === "human" || rec.state.lifecycle !== "STARTING") continue;
-    await m.kernel.emit("agent.started", { agentId: rec.state.agentId }, { actorId: "system" }).catch(() => undefined);
+    // STARTING -> IDLE is a legal edge, so this must be accepted (the seat may
+    // be swept on to COMPLETED at once if the goal already closed). A swallowed
+    // rejection would leave the agent STARTING, which the completion sweep
+    // skips, and the path under test would quietly go unexercised.
+    await m.kernel.emit("agent.started", { agentId: rec.state.agentId }, { actorId: "system" });
+    assert.notEqual(m.kernel.state.agents.get(rec.state.agentId)!.state.lifecycle, "STARTING", `${rec.state.agentId} started`);
   }
-  await m.kernel.emit("goal.completed", { goalId: gid, reason: "test completion", evidence: [] }, { actorId: "human" });
+  // The watchdog's verdict needs every mandatory criterion proven, and the
+  // reducer now refuses a `goal.completed` that lacks it -- so prove them the
+  // way the watchdog would find them. It may then reach the verdict first, and
+  // a second `goal.completed` on a COMPLETED goal is refused too.
+  if (goalOf(m)!.acceptanceCriteria.some((c) => c.mandatory && c.status !== "EVIDENCED")) await evidenceAll(m);
+  if (goalOf(m)?.status !== "COMPLETED") {
+    await m.kernel.emit("goal.completed", { goalId: gid, reason: "test completion", evidence: [] }, { actorId: "human" });
+  }
   await (m.supervisor as unknown as { completeMission(): Promise<void> }).completeMission();
   await waitFor("mission completed", () => goalOf(m)?.status === "COMPLETED", 8000);
+}
+
+/**
+ * Prove every criterion through the reducer's own `requirement.satisfied`
+ * edge. These tests used to write `c.status = "EVIDENCED"` straight into the
+ * projection, which skips the evidence record the reopen reads and would stay
+ * green if the reducer lost the ability to evidence a criterion at all.
+ */
+async function evidenceAll(m: Awaited<ReturnType<typeof completedMesh>>) {
+  const gid = m.kernel.state.activeGoalId!;
+  for (const c of goalOf(m)!.acceptanceCriteria) {
+    await m.kernel.emit(
+      "requirement.satisfied",
+      { criterionId: c.id, evidence: { verified: true, note: "proven in the test" } },
+      { actorId: "dev", goalId: gid },
+    );
+  }
+  for (const c of goalOf(m)!.acceptanceCriteria) assert.equal(c.status, "EVIDENCED", `precondition: ${c.id} evidenced`);
 }
 
 // Finding 8: `kind: "recovery"` maps to explicit:false, so a circuit-breaker
@@ -101,7 +131,6 @@ test("reopen: revived[] lists only agents that actually left COMPLETED (finding 
 
     assert.ok(r.notRevived?.includes("qa"), "a refused revive must be reported as notRevived, not as a success");
     assert.ok(!r.revived?.includes("qa"), "a refused revive must never appear in revived[]");
-    assert.match(r.warning ?? "", /.*/);
 
     for (const id of r.revived ?? []) {
       const lc = m.kernel.state.agents.get(id)!.state.lifecycle;
@@ -149,9 +178,13 @@ test("reopen: ESCALATED keeps satisfied criteria; COMPLETED invalidates them", a
   const escalated = await completedMesh();
   try {
     const gid = escalated.kernel.state.activeGoalId!;
-    for (const c of goalOf(escalated)!.acceptanceCriteria) c.status = "EVIDENCED";
+    // Halt first, then evidence: proving the only mandatory criterion on an
+    // ACTIVE goal lets the watchdog complete the mission before it can be
+    // escalated at all.
     await escalated.kernel.emit("goal.escalated", { goalId: gid, reason: "halted", detail: {} }, { actorId: "human" });
     await waitFor("escalated", () => goalOf(escalated)?.status === "ESCALATED", 8000);
+    await evidenceAll(escalated);
+    assert.equal(goalOf(escalated)?.status, "ESCALATED", "precondition: evidence does not complete a halted mission");
 
     await escalated.supervisor.reopenGoal({ reason: "unblock" });
     assert.equal(
@@ -165,7 +198,7 @@ test("reopen: ESCALATED keeps satisfied criteria; COMPLETED invalidates them", a
 
   const done = await completedMesh();
   try {
-    for (const c of goalOf(done)!.acceptanceCriteria) c.status = "EVIDENCED";
+    await evidenceAll(done);
     await completeIt(done);
     const r = await done.supervisor.reopenGoal({ reason: "result rejected" });
     // Two things are unsatisfied after a rejected verdict: the criteria the

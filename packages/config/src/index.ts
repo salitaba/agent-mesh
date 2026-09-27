@@ -101,8 +101,74 @@ export interface RawMeshFile {
      * explicit opt-out, and nothing may override it except the CLI flag.
      */
     workspace?: { path?: string; git?: boolean };
-    runtime?: { default?: string; model?: string; variant?: string; requires_approval?: string[] };
+    runtime?: {
+      default?: string;
+      model?: string;
+      variant?: string;
+      requires_approval?: string[];
+      /** Window of `model`, in tokens, for a model the claude adapter cannot place. */
+      context_window?: number;
+      /**
+       * How long a seat's session may sit idle before the adapter rotates it,
+       * in ms. Defaults to the adapter's own 10 minutes, which assumes the
+       * prompt cache died in the gap; a route whose cache outlives that (a
+       * proxy, measured at 94% cached after 10+ minutes) wants an hour.
+       */
+      stale_after_ms?: number;
+    };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
+    /**
+     * What a turn's brief does with a mailbox it cannot read in full.
+     *
+     * All three keys are ON by default, which is the one place in this file
+     * that departs from "absent means the behaviour every existing mesh already
+     * has". The departures are deliberate: the mesh these were built for had
+     * tech-lead holding 145 unread messages and qa 43 while three seats ran at
+     * once, and every turn of those seats began by draining a mailbox. A
+     * rationing key that has to be discovered before it does anything would
+     * have bought nothing on that mission.
+     *
+     * 0 disables any of them.
+     */
+    messages?: {
+      /**
+       * Above this many readable messages, the brief carries ONE digest block
+       * -- count, senders, types, thread subjects, message ids -- instead of a
+       * body per message. The mail is not deleted and not marked read by the
+       * digest: every id it names is still in the mailbox, still owed, and can
+       * be pulled individually while the turn runs.
+       */
+      digest_threshold?: number;
+      /**
+       * Age past which a plain INFORM stops being admitted to the brief. It is
+       * still in the event log and still in the mailbox; it simply no longer
+       * spends brief tokens on a turn that has newer things to read.
+       *
+       * Only mail that owes nothing and moves no work may expire: a REQUEST_*,
+       * an ESCALATION or anything else that opens a debt is admitted at any
+       * age, because the seat that owes the answer is the only one who can
+       * close it.
+       */
+      inform_expiry_ms?: number;
+      /**
+       * How many messages one seat's turn may send before the rest of its
+       * FYI-class chatter is batched into a single digest at turn end. 0
+       * disables.
+       *
+       * The mailbox half of the problem `inform_expiry_ms` and
+       * `digest_threshold` address from the reader's side. Those two decide how
+       * much of a full box a turn READS; this one decides how full the box gets.
+       * Measured on the 2026-09-27 run: 282 messages in a day, 119 of them to
+       * one seat, ~100 never read, one mailbox peaking at 145 unread.
+       *
+       * Only mail that obliges nobody and moves no work is ever held — an ask,
+       * a verdict, a handoff, an URGENT and an answer (`replyTo`) are sent
+       * immediately however far past the budget the turn is, because batching
+       * one of those would change what it means. See
+       * `Supervisor.mergeableSend`.
+       */
+      max_sends_per_turn?: number;
+    };
   };
   startup?: { activate?: string[] };
   agents: Record<string, RawAgent>;
@@ -150,6 +216,15 @@ export interface RawMeshFile {
       /** hard stop as a multiple of the ORIGINAL limit; at it, escalate. */
       max_multiple?: number;
     };
+    /**
+     * Fraction (0..1) of a turn's cache-read tokens billed to its ledgers.
+     * Default 0: reads are free and a turn is billed input + output + cache
+     * writes, exactly as before the key existed. Raise it when budgets should
+     * stop rewarding cache luck — measured 2026-09-25, five cache-miss turns
+     * were 64% of all fresh input while warm turns reading millions billed a
+     * fraction of that.
+     */
+    cache_read_weight?: number;
   };
   bus?: {
     commitments?: {
@@ -235,15 +310,6 @@ export interface RawMeshFile {
       by_type?: boolean;
     };
     /**
-     * How agent turns may issue ops.
-     *
-     * - "mixed" (default): typed MCP tools when mounted, text `mesh-json`
-     *   parsing as fallback for adapters without MCP.
-     * - "typed-only": text parsing is off. Only ops issued through MCP
-     *   tools (or the equivalent structured adapter payload) execute. A
-     *   prose-only turn reports `unproductive` to the circuit breaker.
-     */
-    /**
      * One key that expands to a COHERENT set of the keys below it.
      *
      * Every other key in this block is a dial, and the dials interact: a
@@ -285,7 +351,15 @@ export interface RawMeshFile {
      *   the turns spent producing them.
      */
     style?: "high-contact" | "balanced" | "low-contact";
-    transport?: "mixed" | "typed-only";
+    /**
+     * REMOVED, read by nothing. It chose whether ops parsed out of a prose
+     * `mesh-json` block executed ("mixed") or were refused ("typed-only").
+     * The prose channel is gone — every op is an MCP `mesh_*` tool call — so
+     * there is nothing left for it to choose. Kept in the type and the schema
+     * only so a mesh.yaml that still sets it loads with a warning
+     * (`warnRemovedTransport`) instead of failing `additionalProperties`.
+     */
+    transport?: string;
     /**
      * Which comms vocabulary a seat's MCP manifest advertises.
      *
@@ -305,12 +379,8 @@ export interface RawMeshFile {
      * collapsing the vocabulary can never take a capability away from a seat,
      * and a model that reaches for `mesh_send` still gets it.
      *
-     * Deliberately independent of `transport`, although an operator will
-     * usually set both. `transport` decides HOW an op may arrive (a typed
-     * tool call, or ops parsed out of prose); this decides WHAT the typed
-     * surface offers. A mesh can collapse the vocabulary while still
-     * accepting prose, and a `typed-only` mesh can keep the full manifest —
-     * which is exactly what every mesh written before this key existed does.
+     * Every op arrives as a typed tool call; this decides only WHAT that
+     * surface offers.
      */
     vocabulary?: "typed" | "contracts";
     /**
@@ -514,6 +584,8 @@ export interface RawAgent {
   role: string;
   runtime?: string;
   model?: string;
+  /** This seat's context window in tokens; see `AgentDefinition.contextWindow`. */
+  context_window?: number;
   /**
    * Provider-specific thinking variant (opencode: `low` | `high` | `max`).
    * Inert: that backend was removed, no registered runtime reads this, and the
@@ -637,6 +709,22 @@ export interface ResolvedMeshConfig {
   /** Mesh-wide model applied to agents that leave `model` blank. */
   defaultModel?: string;
   /**
+   * `mesh.runtime.context_window`: the window rotation measures against for a
+   * model the claude adapter's table cannot place (§1 of
+   * NOTES-live-run-20260925-2040.md: a 1M model rotating at the 120k floor).
+   * Ranks below a seat's own `context_window` and below a known model.
+   */
+  defaultContextWindow?: number;
+  /**
+   * `mesh.runtime.stale_after_ms`: how long a seat's session may sit idle
+   * before the adapter rotates it on the theory that its prompt cache died.
+   * The adapter's default (10 minutes) fits Anthropic's own cache TTL; a
+   * proxied route whose cache outlives that keeps paying for rotations it does
+   * not need (2026-09-27: 94% of the prompt was still cached after a 10-minute
+   * gap, and every such rotation costs the seat its working context).
+   */
+  defaultStaleAfterMs?: number;
+  /**
    * Mesh-wide thinking variant, held for a runtime that reads it. Nothing does
    * today: it was the opencode knob, and it never inherited onto seats that
    * leave `variant` blank. Setting it is surfaced as a config warning.
@@ -670,6 +758,8 @@ export interface ResolvedMeshConfig {
     threadSoftCap: number;
     taskTokens: number;
     autoRaise: { enabled: boolean; factor: number; maxMultiple: number };
+    /** 0..1 share of cache-read tokens billed per turn. See RawMeshFile.budgets. */
+    cacheReadWeight: number;
   };
   bus: {
     /** How an outstanding ask may leave the ledger. See RawMeshFile.bus. */
@@ -692,8 +782,6 @@ export interface ResolvedMeshConfig {
      * operator had never given any.
      */
     commitmentTtl?: { defaultMs: number; byRole: Record<string, number> };
-    /** How agent turns may issue ops. See RawMeshFile.bus. */
-    transport: "mixed" | "typed-only";
     /**
      * The collapsed contract vocabulary, or ABSENT when this mesh advertises
      * the full typed manifest. See RawMeshFile.bus.vocabulary.
@@ -731,6 +819,27 @@ export interface ResolvedMeshConfig {
      * seat.
      */
     style?: "high-contact" | "balanced" | "low-contact";
+  };
+  /**
+   * Always present, never absent — the one resolved block in this file that
+   * does not keep the "absent means no regime" shape, because the regime is ON
+   * and an operator who wants the old brief has to say so. See
+   * `RawMeshFile.mesh.messages` for why.
+   */
+  messages: {
+    /** `mesh.messages.digest_threshold`, or 10. 0 disables the digest. */
+    digestThreshold: number;
+    /** `mesh.messages.inform_expiry_ms`, or 90 minutes. 0 disables expiry. */
+    informExpiryMs: number;
+    /**
+     * `mesh.messages.max_sends_per_turn`, or 5. 0 disables the budget.
+     *
+     * Defaulted ON like the two above, and for the same measured reason: the
+     * run this was built against sent 282 messages over 53 turns (5.3 a turn)
+     * and buried one mailbox with 42% of them, so a rationing key that has to
+     * be discovered before it does anything buys nothing on the next such run.
+     */
+    maxSendsPerTurn: number;
   };
   scheduling: {
     mode: "event-driven";
@@ -1038,12 +1147,95 @@ export function resolveBusVocabulary(
   return vocabulary === "contracts" ? "contracts" : undefined;
 }
 
+/**
+ * Suggested digest threshold: the point at which a mailbox stops being read
+ * one message at a time. Ten is roughly the number of messages a turn can
+ * render before the brief's mail section is larger than everything else in it.
+ */
+export const DEFAULT_DIGEST_THRESHOLD = 10;
+
+/**
+ * Suggested inform age: ninety minutes.
+ *
+ * Chosen against the measured shape of a stalled mission rather than for
+ * tidiness. A plain INFORM that nobody has read in ninety minutes is not
+ * pending news, it is a restatement -- in the live run this was built for, 145
+ * unread messages produced 18 merged patches and no criterion movement, and
+ * the informative half of that traffic was three quarters of it. An ask is
+ * never expired at any age, so nothing that is waiting on an answer can be
+ * aged out of the brief.
+ */
+export const DEFAULT_INFORM_EXPIRY_MS = 90 * 60_000;
+
+/**
+ * The knob's floor, in the style of `mesh.runtime.stale_after_ms`'s 60000.
+ *
+ * Checked here rather than in the JSON schema so the operator gets a sentence
+ * instead of `must match a schema in anyOf`. The schema still refuses the
+ * shapes a sentence cannot help with -- a negative, a float, a string -- and
+ * this refuses the one that is a unit typo.
+ */
+export const MIN_INFORM_EXPIRY_MS = 60_000;
+
+/**
+ * Suggested per-turn send budget: five messages.
+ *
+ * Chosen from the evidence, not for roundness. The 2026-09-27 run sent 282
+ * messages across 53 turns — 5.3 a turn — and 42% of the day's traffic went to
+ * one seat, which is what buried it. Five is that average, so an ordinary turn
+ * is untouched and the budget bites on the burst: the seat that answers six
+ * colleagues in one turn, which is the shape that produced the pile-up. The
+ * mailbox-level keys (`digest_threshold`, `inform_expiry_ms`) already make a
+ * full box cheap to READ; this is the only one that stops it filling.
+ *
+ * A budget below the messages a turn genuinely owes would make the exit queue
+ * wait, not the chatter: an ask is never held (`Supervisor.mergeableSend`),
+ * and `validate` refuses nothing here, so a mesh that wants a tighter leash
+ * writes a smaller number and one that wants none writes 0.
+ */
+export const DEFAULT_MAX_SENDS_PER_TURN = 5;
+
+/**
+ * `mesh.messages`, resolved with all three keys defaulted ON.
+ *
+ * Absent is not a regime here: a mesh that never writes this block gets the
+ * digest, the expiry and the send budget, which is the point. `0` is how an
+ * operator restores the pre-digest brief, per key.
+ */
+export function resolveMessages(
+  messages: RawMeshFile["mesh"]["messages"],
+): { digestThreshold: number; informExpiryMs: number; maxSendsPerTurn: number } {
+  const rawThreshold = messages?.digest_threshold;
+  const rawExpiry = messages?.inform_expiry_ms;
+  const rawBudget = messages?.max_sends_per_turn;
+  const digestThreshold =
+    rawThreshold !== undefined && rawThreshold >= 0 ? Math.floor(rawThreshold) : DEFAULT_DIGEST_THRESHOLD;
+  const informExpiryMs =
+    rawExpiry !== undefined && rawExpiry >= 0 ? Math.floor(rawExpiry) : DEFAULT_INFORM_EXPIRY_MS;
+  const maxSendsPerTurn =
+    rawBudget !== undefined && rawBudget >= 0 ? Math.floor(rawBudget) : DEFAULT_MAX_SENDS_PER_TURN;
+  return { digestThreshold, informExpiryMs, maxSendsPerTurn };
+}
+
+/** The sentence an operator gets for a sub-minute `inform_expiry_ms`. Empty when the value is fine. */
+export function validateMessages(messages: RawMeshFile["mesh"]["messages"]): string[] {
+  const raw = messages?.inform_expiry_ms;
+  if (raw === undefined || raw === 0 || raw >= MIN_INFORM_EXPIRY_MS) return [];
+  return [
+    `mesh.messages.inform_expiry_ms: ${raw} is not an age anyone means — write 0 to disable expiry, ` +
+      `or at least ${MIN_INFORM_EXPIRY_MS} (a minute). Anything shorter is seconds where milliseconds belong.`,
+  ];
+}
+
 function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   const errors: string[] = [];
   const configWarnings: string[] = [];
 
   const agentIds = Object.keys(raw.agents);
   if (agentIds.length === 0) errors.push("at least one agent must be defined");
+  // The schema has already refused anything that is not a non-negative
+  // integer; this is the floor the schema cannot express as a sentence.
+  errors.push(...validateMessages(raw.mesh.messages));
 
   // Migration path: a mesh.yaml written before `project.id` existed must still
   // boot. Derive from the folder name and warn — never a hard break. The
@@ -1104,6 +1296,8 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       mode: a.mode ?? "peer",
       runtime: a.runtime ?? defaultRuntime,
       model: a.model,
+      // Not `?? mesh.runtime.context_window`: see AgentDefinition.contextWindow.
+      contextWindow: a.context_window,
       variant: a.variant,
       requiresApproval: (a.requires_approval ?? defaultRequiresApproval)?.map(normalizeCapability),
       prompt: { file: a.prompt },
@@ -1201,6 +1395,11 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   errors.push(...interestErrors);
   errors.push(...validateAuthorityTokens(Object.values(agents)));
   errors.push(...validateCapabilityTokens(Object.values(agents)));
+  // Syntax, not reachability: `|` is new, so a malformed alternative is always
+  // a typo rather than a deliberate placeholder, and it is refused here rather
+  // than warned about below. Plain tokens keep their existing (warning-level)
+  // treatment in `validateTransitionGateActors`.
+  errors.push(...validateTransitionGateSyntax(raw.policies?.transitions ?? {}));
   // Gate-actor problems are reported, not fatal: a gate may legitimately name
   // a role that a larger mesh adds later, and some fixtures assert on a
   // deliberately unsatisfiable gate. Surfacing beats silently deadlocking.
@@ -1235,7 +1434,16 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
   for (const w of warnInertVariant(Object.values(agents), defaultVariant)) {
     configWarnings.push(w);
   }
+  for (const w of warnRemovedTransport(raw.bus)) {
+    configWarnings.push(w);
+  }
   for (const w of warnInertAgentBudgetCaps(Object.values(agents))) {
+    configWarnings.push(w);
+  }
+  for (const w of warnInertInboundContact(Object.values(agents), communication)) {
+    configWarnings.push(w);
+  }
+  for (const w of warnUnreachableMissionCap(Object.values(agents), raw.budgets)) {
     configWarnings.push(w);
   }
   for (const w of warnUngrantedApprovalGates(Object.values(agents))) {
@@ -1287,6 +1495,8 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     workspaceGit: raw.mesh.workspace?.git,
     defaultRuntime,
     defaultModel,
+    defaultContextWindow: raw.mesh.runtime?.context_window,
+    defaultStaleAfterMs: raw.mesh.runtime?.stale_after_ms,
     defaultVariant,
     startupActivate,
     warnings: configWarnings,
@@ -1313,7 +1523,6 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       // otherwise stay open, so turning it on is a behaviour change an
       // operator should choose for a mission, not inherit from an upgrade.
       commitmentTtl: resolveCommitmentTtl(bus?.commitments),
-      transport: bus?.transport ?? "mixed",
       // Absent by default, like `commitmentTtl` and `deliveryClasses`: this
       // one changes the tool list a model is shown, so it is opted into per
       // mesh rather than inherited from an upgrade.
@@ -1329,6 +1538,8 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       // infer from a coalescing window.
       ...(raw.bus?.style ? { style: raw.bus.style } : {}),
     }))(applyBusStyle(raw.bus)),
+    // Defaulted ON rather than absent-when-unset: see `resolveMessages`.
+    messages: resolveMessages(raw.mesh.messages),
     budgets: {
       mission: {
         tokens: raw.budgets?.mission?.tokens ?? 2000000,
@@ -1346,6 +1557,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
         factor: Math.max(1.1, raw.budgets?.auto_raise?.factor ?? 2),
         maxMultiple: Math.max(1, raw.budgets?.auto_raise?.max_multiple ?? 8),
       },
+      cacheReadWeight: Math.min(1, Math.max(0, raw.budgets?.cache_read_weight ?? 0)),
     },
     scheduling: {
       mode: "event-driven",
@@ -1723,8 +1935,16 @@ export function warnUnmergeableGates(
  * auto-evidenced — nothing in the runtime closes it. `examples/greenfield` was
  * shipped in exactly that state with no `requirements.*` holder among its three
  * seats, so returning `[]` on a null list would have hidden the very defect this
- * check was written for. Generated criteria are a genuine exception: they do not
- * exist yet at load time, so there is nothing to name.
+ * check was written for.
+ *
+ * Generated criteria do not exist yet at load time, so there are no ids to name
+ * and no count to weigh — but the no-holder tier does not need either. A
+ * generated id is a free-form slug, never one of `AUTO_EVIDENCED_CRITERIA`, and
+ * a generator that fails or answers nothing falls back to `DEFAULT_CRITERIA`,
+ * whose `requirements-documented` needs the same token. So whatever the model
+ * writes, a mesh with no `requirements.*` holder cannot finish, and that is
+ * said at load. Only the one-holder tier is skipped: its threshold is a count
+ * nobody has until the model answers.
  */
 /**
  * Above how many manually-accepted mandatory criteria a lone holder is worth a
@@ -1737,7 +1957,16 @@ export function warnUnacceptableCriteria(
   criteria: Array<{ id: string; description: string; mandatory?: boolean }> | null,
   generated = false,
 ): string[] {
-  if (generated && (!criteria || criteria.length === 0)) return [];
+  const holders = agents
+    .filter((a) => a.authority.some((t) => t === "*" || t === "requirements.*" || t === "requirements.accept" || t === "requirements.approve"))
+    .map((a) => a.id);
+
+  if (generated && (!criteria || criteria.length === 0)) {
+    if (holders.length > 0) return [];
+    return [
+      `the mandatory criteria this mesh generates at mission start can never be satisfied — generated ids are not auto-evidenced by the runtime, and a failed generation falls back to the built-in defaults, whose 'requirements-documented' is not either, so every one closes only via \`approve subject:"criterion:<id>"\`, and no agent holds 'requirements.accept' or 'requirements.approve'. The goal cannot reach completion. Grant one of those tokens to the seat that owns acceptance.`,
+    ];
+  }
   const effective = criteria && criteria.length > 0 ? criteria : DEFAULT_CRITERIA;
   // `mandatory ?? true` mirrors the resolver at the `goalCriteria` mapping: an
   // omitted `mandatory` means mandatory. Reading it as falsy instead made this
@@ -1746,10 +1975,6 @@ export function warnUnacceptableCriteria(
     .filter((c) => (c.mandatory ?? true) && c.id && !AUTO_EVIDENCED_CRITERIA.includes(c.id))
     .map((c) => c.id!);
   if (manual.length === 0) return [];
-
-  const holders = agents
-    .filter((a) => a.authority.some((t) => t === "*" || t === "requirements.*" || t === "requirements.accept" || t === "requirements.approve"))
-    .map((a) => a.id);
 
   // Long lists are elided: the point is the shape, and a warning nobody reads
   // to the end names nothing.
@@ -1868,6 +2093,88 @@ export function warnInertAgentBudgetCaps(agents: AgentDefinition[]): string[] {
   ];
 }
 
+/**
+ * `may_be_contacted_by` reads like an inbound allow-list and cannot deny anything.
+ *
+ * `communicationAllows` is a chain of `return true` grants ending in a single
+ * `return false`, so the key only ever ADDS a route: contact is decided by the
+ * SENDER's `may_contact` just as much, and whichever fires first wins. A seat that
+ * declares `may_be_contacted_by: [pm]` expecting to hear from pm alone still hears
+ * from every seat whose own `may_contact` names it, and nothing said so — the key
+ * validates (unknown ids are already an error), the mesh boots, and the intent is
+ * silently discarded.
+ *
+ * Warned only when the list is non-empty AND someone outside it gets through
+ * anyway: that is the case where the declaration is actively misleading rather
+ * than merely redundant. An empty list is the normal way to write "no extra
+ * grants" and says nothing about restriction, so it is not warned.
+ *
+ * Not enforced, because making it restrictive would silently reroute every
+ * existing mesh that declares one.
+ */
+export function warnInertInboundContact(
+  agents: AgentDefinition[],
+  communication: Record<string, { mayContact: string[]; mayBeContactedBy: string[] }>,
+): string[] {
+  const warnings: string[] = [];
+  const roleOf = new Map(agents.map((a) => [a.id, a.role]));
+  for (const agent of agents) {
+    const declared = communication[agent.id]?.mayBeContactedBy ?? [];
+    if (declared.length === 0) continue;
+    const role = roleOf.get(agent.id);
+    const uninvited = agents
+      .filter((other) => other.id !== agent.id)
+      .filter((other) => !declared.includes(other.id) && !(other.role !== undefined && declared.includes(other.role)))
+      .filter((other) => {
+        const out = communication[other.id]?.mayContact ?? [];
+        return out.includes(agent.id) || (role !== undefined && out.includes(role));
+      })
+      .map((other) => other.id);
+    if (uninvited.length === 0) continue;
+    warnings.push(
+      `policies.communication.${agent.id}.may_be_contacted_by lists ${declared.join(", ")} but does not restrict anything — it is an additive grant, never a filter, so ${uninvited.join(", ")} may still open a thread with '${agent.id}' via their own may_contact. Remove the sender's may_contact entry if you meant to block it`,
+    );
+  }
+  return warnings;
+}
+
+/**
+ * A mission token cap that no run can ever reach.
+ *
+ * Every halt this mesh can take comes from a per-agent ledger: the 8x auto-raise
+ * ladder is anchored to each seat's configured limit, and `agent_budget_exhausted`
+ * escalates the whole mission. So when `budgets.mission.tokens` exceeds what every
+ * seat could spend at its ceiling combined, the mission line is decoration — it
+ * reports a fraction of a percent used while a seat is a quarter of the way to
+ * halting everything. Measured 2026-09-24: 120,000,000 declared against 12,640,000
+ * reachable, so the dashboard read 0.9% at the moment the run died.
+ *
+ * Compared against the ladder rather than the base limits because the ladder is
+ * what actually bounds a seat; with auto-raise off, the base limits are the bound.
+ *
+ * A cap merely ABOVE the reachable total is a sane backstop and is not warned —
+ * that is the ordinary shape, including the test fixtures and every shipped
+ * example. Only a cap so far above it that it can never be informative trips this.
+ */
+export const MISSION_CAP_WARN_MULTIPLE = 5;
+
+export function warnUnreachableMissionCap(
+  agents: AgentDefinition[],
+  budgets: { mission?: { tokens?: number }; auto_raise?: { enabled?: boolean; max_multiple?: number } } | undefined,
+): string[] {
+  const missionTokens = budgets?.mission?.tokens;
+  if (missionTokens === undefined || missionTokens <= 0) return [];
+  const autoRaiseOn = budgets?.auto_raise?.enabled ?? true;
+  const multiple = autoRaiseOn ? Math.max(1, budgets?.auto_raise?.max_multiple ?? 8) : 1;
+  const base = agents.reduce((sum, a) => sum + (a.budget?.tokens ?? 0), 0);
+  if (base <= 0) return [];
+  const reachable = base * multiple;
+  if (missionTokens <= reachable * MISSION_CAP_WARN_MULTIPLE) return [];
+  return [
+    `budgets.mission.tokens is ${missionTokens.toLocaleString("en-US")} but no run can reach it — every seat at its ${autoRaiseOn ? `${multiple}x auto-raise ceiling` : "configured limit (auto-raise is off)"} sums to ${reachable.toLocaleString("en-US")}, and a mission halts on the first per-agent exhaustion. The mission bar will read under ${Math.max(1, Math.round((reachable / missionTokens) * 100))}% for the whole run. Lower it to about ${reachable.toLocaleString("en-US")}, or raise the per-seat budgets that actually bind`,
+  ];
+}
+
 export function warnInertVariant(agents: AgentDefinition[], defaultVariant: string | undefined): string[] {
   const paths = [
     ...(defaultVariant ? ["mesh.runtime.variant"] : []),
@@ -1878,6 +2185,21 @@ export function warnInertVariant(agents: AgentDefinition[], defaultVariant: stri
   if (paths.length === 0) return [];
   return [
     `${paths.join(", ")} ${paths.length === 1 ? "is" : "are"} set but inert — 'variant' was the opencode runtime's thinking knob, that backend was removed, and no registered runtime reads the field. Remove the key, or leave it for a runtime that consumes it`,
+  ];
+}
+
+/**
+ * `bus.transport` chose whether prose-parsed ops executed. There are no prose
+ * ops any more — a seat acts only through MCP `mesh_*` tool calls — so the key
+ * is read by nothing. Warned rather than rejected, for the same reason as
+ * `warnInertActivationKeys`: the bus block is `additionalProperties: false`,
+ * and dropping the property would turn every mesh that set it into a load
+ * error over a key that no longer changes anything.
+ */
+export function warnRemovedTransport(bus: RawBus | undefined): string[] {
+  if (bus?.transport === undefined) return [];
+  return [
+    `bus.transport (${JSON.stringify(bus.transport)}) was removed and is ignored — ops are MCP-only: a seat acts through mesh_* tool calls, and fenced ops blocks in prose are never parsed. Remove the key`,
   ];
 }
 
@@ -2271,10 +2593,15 @@ export function warnUngrantedApprovalGates(agents: AgentDefinition[]): string[] 
 
 /**
  * A transition gate names the approvals a state change requires, as
- * `<actorRole|actorId>.<kind>` (e.g. `tech-lead.approve`, `qa.pass`). If no
+ * `<actorRole|actorId>.<kind>` (e.g. `tech-lead.approve`, `qa.pass`), or as
+ * several such tokens joined by `|` meaning "any ONE of these". If no
  * configured agent can ever produce one of those approvals, the gate is
  * unsatisfiable and every artifact that needs it deadlocks — the mission
  * stalls with no error anywhere. Catch it at load.
+ *
+ * Each alternative is resolved independently: a requirement that names three
+ * seats is unsatisfiable only if all three are unknown, so one reachable
+ * alternative is enough.
  */
 export function validateTransitionGateActors(
   agents: AgentDefinition[],
@@ -2288,23 +2615,55 @@ export function validateTransitionGateActors(
   }
   for (const [gate, spec] of Object.entries(transitions)) {
     for (const requirement of spec.requires ?? []) {
-      const actor = requirement.slice(0, requirement.lastIndexOf("."));
-      if (!actor) {
+      const alternatives = requirement.split("|").map((part) => part.slice(0, part.lastIndexOf(".")));
+      // A requirement where ANY alternative resolves to a known actor can be
+      // met, so it is only reported when none do. A malformed entry (empty
+      // alternative, no dot) contributes no name and is refused by
+      // `validateTransitionGateSyntax` before this runs.
+      if (alternatives.some((actor) => actor === "human" || actors.has(actor))) continue;
+      if (alternatives.some((actor) => actor !== "")) {
+        const named = alternatives.filter((a) => a !== "");
+        // Wording is load-bearing for a one-name gate: it is the message
+        // operators and fixtures have read since this check existed.
+        const who =
+          named.length === 1
+            ? `no agent or role '${named[0]}' exists`
+            : `no agent or role exists for ${named.map((a) => `'${a}'`).join(" or ")}`;
+        errors.push(`transition gate '${gate}' requires '${requirement}', but ${who} — the gate can never be satisfied`);
+      } else {
         errors.push(`transition gate '${gate}' requirement '${requirement}' must be '<agent-or-role>.<kind>'`);
-        continue;
       }
-      // The human seat satisfies gates but is not an agent, so it never lands
-      // in `actors` above. Without this exemption every `human.approve` gate is
-      // reported as permanently unsatisfiable — a false alarm on a supported
-      // pattern (tests/integration/human.test.ts: "humans are a mesh seat not
-      // an external oracle"). The policy-engine's validateTransitionGates has
-      // always skipped it; this check had drifted from it.
-      // Literal rather than core's HUMAN_AGENT_ID (core/src/supervisor.ts:140):
-      // config imports only protocol, which hardcodes the same string.
-      if (actor === "human") continue;
-      if (!actors.has(actor)) {
+    }
+  }
+  return errors;
+}
+
+/**
+ * Structural validation of a gate requirement that uses `|` alternatives.
+ *
+ * `"tech-lead.approve|architect.approve"` is one requirement any of the two
+ * seats can meet; `"|architect.approve"`, `"tech-lead.approve|"` and `"x.|y.z"`
+ * are typos that would silently mean something other than intended — an empty
+ * alternative matches nothing and a trailing dot names a kind that is empty.
+ * Refused at load, since they can only be mistakes.
+ *
+ * Plain tokens (no `|`) are left to `validateTransitionGateActors`, which has
+ * always reported them as a warning: a gate may legitimately name a role that a
+ * larger mesh adds later, and some fixtures assert on a deliberately
+ * unsatisfiable gate.
+ */
+export function validateTransitionGateSyntax(
+  transitions: Record<string, { requires?: string[] }>,
+): string[] {
+  const errors: string[] = [];
+  for (const [gate, spec] of Object.entries(transitions)) {
+    for (const requirement of spec.requires ?? []) {
+      if (!requirement.includes("|")) continue;
+      for (const part of requirement.split("|")) {
+        const idx = part.lastIndexOf(".");
+        if (idx > 0 && idx < part.length - 1) continue;
         errors.push(
-          `transition gate '${gate}' requires '${requirement}', but no agent or role '${actor}' exists — the gate can never be satisfied`,
+          `transition gate '${gate}' requirement '${requirement}' is malformed: each '|'-separated alternative must be '<agent-or-role>.<kind>', but '${part}' is not — write e.g. 'tech-lead.approve|architect.approve'`,
         );
       }
     }

@@ -5,15 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import { bootstrapMesh } from "../../apps/mesh-server/src/index";
 import { testConfigYaml } from "../helpers";
-
-const hasGit = (() => {
-  try {
-    require("child_process").execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import { gitSkip } from "../support/git";
 
 function boot(dir: string, opts: { useGit?: boolean } = {}): Promise<Awaited<ReturnType<typeof bootstrapMesh>>> {
   const configPath = path.join(dir, "mesh.yaml");
@@ -74,7 +66,7 @@ test("reset: the archive still holds the pre-reset events", async () => {
   }
 });
 
-test("reset: deletes the old run's git worktrees", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: deletes the old run's git worktrees", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-git-"));
   const m = await boot(dir, { useGit: true });
   try {
@@ -93,7 +85,7 @@ test("reset: deletes the old run's git worktrees", { skip: !hasGit && "git unava
   }
 });
 
-test("reset: archives and wipes the product checkout", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: archives and wipes the product checkout", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-product-"));
   const m = await boot(dir, { useGit: true });
   try {
@@ -119,7 +111,7 @@ test("reset: archives and wipes the product checkout", { skip: !hasGit && "git u
   }
 });
 
-test("reset: leaves the fresh product checkout as its own git repo", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: leaves the fresh product checkout as its own git repo", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-reinit-"));
   const m = await boot(dir, { useGit: true });
   try {
@@ -173,7 +165,7 @@ test("reset: leaves the fresh product checkout as its own git repo", { skip: !ha
  * that boot now refuses the layout outright, a reset that leaves it behind
  * would turn the corruption into an unstartable project.
  */
-test("reset: archives a product stranded at the workspace root", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: archives a product stranded at the workspace root", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-stray-"));
   let m = await boot(dir, { useGit: true });
   try {
@@ -209,7 +201,7 @@ test("reset: archives a product stranded at the workspace root", { skip: !hasGit
   }
 });
 
-test("reset: a healthy git workspace reports no stray archive", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: a healthy git workspace reports no stray archive", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-nostray-"));
   const m = await boot(dir, { useGit: true });
   try {
@@ -224,7 +216,7 @@ test("reset: a healthy git workspace reports no stray archive", { skip: !hasGit 
   }
 });
 
-test("boot: defaults to git mode when mesh.workspace.git is absent", { skip: !hasGit && "git unavailable" }, async () => {
+test("boot: defaults to git mode when mesh.workspace.git is absent", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-boot-git-default-"));
   // No flag, no config key. This is the case that used to leave
   // `deps.workspace` undefined, refusing every mesh_commit — so no criterion
@@ -280,7 +272,7 @@ test("reset: archives and wipes the non-git product workspace", async () => {
   }
 });
 
-test("reset: git-inits the fresh non-git product workspace", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: git-inits the fresh non-git product workspace", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-nogit-init-"));
   const m = await boot(dir, { useGit: false });
   try {
@@ -340,7 +332,7 @@ function gitIn(cwd: string, args: string[]): string {
     .trim();
 }
 
-test("reset: archives worktree work and bundles the branches before deleting them", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: archives worktree work and bundles the branches before deleting them", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-worktrees-"));
   const m = await boot(dir);
   try {
@@ -385,7 +377,7 @@ test("reset: archives worktree work and bundles the branches before deleting the
   }
 });
 
-test("reset: every archive it produces shares one stamp", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: every archive it produces shares one stamp", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-stamp-"));
   const m = await boot(dir);
   try {
@@ -408,7 +400,7 @@ test("reset: every archive it produces shares one stamp", { skip: !hasGit && "gi
   }
 });
 
-test("reset: archiveWorktrees:false deletes without copying", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset: archiveWorktrees:false deletes without copying", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-noarchive-"));
   const m = await boot(dir);
   try {
@@ -423,6 +415,56 @@ test("reset: archiveWorktrees:false deletes without copying", { skip: !hasGit &&
     assert.equal(report.worktreesArchivedTo, null, "no copy when the caller opted out");
     assert.equal(report.worktreeBundleTo, null, "no bundle when the caller opted out");
     assert.ok(!fs.existsSync(wt), "the worktree is still removed");
+    // The record survives the opt-out, precisely because the files do not. This
+    // is the one path that really destroys uncommitted work, so it is the one
+    // that most needs to say what was destroyed.
+    assert.equal(report.uncommittedByAgent.a, 1, "the count is reported even when the copy is skipped");
+    assert.ok(report.uncommittedManifestTo, "and the manifest is still written — it is text, not a copy");
+    const manifest = JSON.parse(fs.readFileSync(report.uncommittedManifestTo!, "utf8"));
+    assert.deepEqual(
+      manifest.worktrees.find((w: { agentId: string }) => w.agentId === "a")?.dirty,
+      ["scrap.txt"],
+      "the manifest names the file that was about to be deleted",
+    );
+  } finally {
+    await m.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset: records what each worktree never committed", { skip: gitSkip }, async () => {
+  // A mission can write real source that reaches no repository: files land in a
+  // worktree only when the seat calls `commit`, and publishing a CodePatch does
+  // not. One measured run ended with 1,847 lines of source and tests uncommitted
+  // while the product branch held its scaffold commit, and no reset report
+  // mentioned it — the files were archived, but nothing said they had never been
+  // part of the product.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-reset-uncommitted-"));
+  const m = await boot(dir);
+  try {
+    const workspace = m.supervisor.deps.workspace;
+    assert.ok(workspace, "git mode must expose a workspace");
+    const wt = await workspace.ensureWorktree("backend");
+    // Nested, and more than one: `git status --porcelain` without `-uall`
+    // collapses an untracked directory to a single entry, which undercounts the
+    // thing the record exists to state.
+    fs.mkdirSync(path.join(wt, "src/core"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "src/core/digest.js"), "export const d = () => {};\n", "utf8");
+    fs.writeFileSync(path.join(wt, "src/core/canonical.js"), "export const c = () => {};\n", "utf8");
+    fs.writeFileSync(path.join(wt, "src/core/render.js"), "export const r = () => {};\n", "utf8");
+
+    const report = await m.reset({});
+
+    assert.equal(report.uncommittedByAgent.backend, 3, "every file is counted, not the directory holding them");
+    assert.ok(report.uncommittedManifestTo, "the manifest is written");
+    const manifest = JSON.parse(fs.readFileSync(report.uncommittedManifestTo!, "utf8"));
+    const seat = manifest.worktrees.find((w: { agentId: string }) => w.agentId === "backend");
+    assert.deepEqual(
+      [...seat.dirty].sort(),
+      ["src/core/canonical.js", "src/core/digest.js", "src/core/render.js"],
+      "each path is named individually",
+    );
+    assert.equal(seat.untracked, 3, "and all three are untracked, not merely modified");
   } finally {
     await m.close();
     fs.rmSync(dir, { recursive: true, force: true });

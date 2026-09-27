@@ -32,12 +32,22 @@ interface HaltInternals {
   checkStall(): Promise<void>;
   escalate(input: { reason: string; raisedBy: string; conflictKey?: string; advisory?: boolean; detail?: unknown }): Promise<unknown>;
   lastTurnAt: number;
+  haltWatchFloorAt: number;
+  haltStartedAtMs(now: number): number;
 }
 const internals = (m: Mesh): HaltInternals => m.supervisor as unknown as HaltInternals;
 
-/** Push the last turn far enough back to clear `stallIdleMs * HALT_NEGLECT_IDLE_MULTIPLE`. */
+/**
+ * Push the halt far enough back to clear `stallIdleMs * HALT_NEGLECT_IDLE_MULTIPLE`.
+ * Neglect is measured from the halt (dated from the log) and floored at boot,
+ * not from the last turn, so both are rewound; the last turn is too, so the
+ * quiet is genuine rather than a halt with a turn just behind it.
+ */
 function longQuiet(m: Mesh): void {
-  internals(m).lastTurnAt = Date.now() - 60 * 60_000;
+  const hourAgo = Date.now() - 60 * 60_000;
+  internals(m).lastTurnAt = hourAgo;
+  internals(m).haltWatchFloorAt = hourAgo;
+  internals(m).haltStartedAtMs = () => hourAgo;
 }
 
 function stallOpts() {

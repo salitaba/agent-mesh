@@ -154,7 +154,28 @@ export class PolicyEngine implements PolicyEvaluator {
             : ` — '${required}' is not a grantable authority (do not add it to mesh.yaml; the config loader rejects it and the mesh will not boot).` +
               ` Valid domains: ${AUTHORITY_DOMAINS.join(", ")}. Re-issue naming the capacity you are signing in` +
               ` (for example subject "${AUTHORITY_DOMAINS.includes(subject as (typeof AUTHORITY_DOMAINS)[number]) ? subject : "quality"}"), not the artifact or the topic`;
-      return { decision: "DENY", reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}`, ruleId: "authority" };
+      // A delegated worker inherits its parent's ROLE but is minted with
+      // `authority: []`, so the plain wording produced a denial that contradicts
+      // itself: "agent tech-lead#worker-2 (role tech-lead) lacks authority
+      // 'quality.approve' — held by: tech-lead". Observed live 2026-09-24, and
+      // the worker read it as a mistake and retried twice.
+      //
+      // Emptying a worker's authority is deliberate — a spawned helper must not
+      // be able to sign off its own parent's work — so the fix is to say that
+      // plainly and route the verdict back to the seat that can give it, rather
+      // than to widen the authority model.
+      const parentSeat = actorId.includes("#") ? actorId.slice(0, actorId.indexOf("#")) : undefined;
+      const delegationNote =
+        parentSeat && holders.includes(parentSeat)
+          ? `. You are a delegated worker: workers hold NO authority of their own even though they carry` +
+            ` ${def.role}'s role, so this verdict is not yours to give. Hand your finding back to ${parentSeat}` +
+            ` (the \`submit_result\` op, or a REQUEST naming what you concluded) and let it sign.`
+          : "";
+      return {
+        decision: "DENY",
+        reason: `agent ${actorId} (role ${def.role}) lacks authority '${required}'${remedy}${delegationNote}`,
+        ruleId: "authority",
+      };
     }
     // `required` is not passed to matchRule: there is no `when.authority`, so an
     // authority is matched on actor and role alone. The deny below is therefore
@@ -255,8 +276,22 @@ export class PolicyEngine implements PolicyEvaluator {
     }
     const budgetKey = `agent:${ctx.projections.activeGoalId}/${agentId}`;
     const budget = ctx.projections.budgets.get(budgetKey);
+    // This rule is what PARKS a seat on its own budget: its activations are
+    // deferred while the latch holds, and only its own — an exhausted seat no
+    // longer escalates the goal, so every other seat keeps being admitted. The
+    // latch is also set below the limit, by a door check the seat's next turn
+    // could not pass (`BudgetManager.latchShort`); say which, since "exhausted
+    // (99706/180000)" reads as a bookkeeping error.
     if (budget?.exceeded) {
-      return { decision: "DEFER", reason: `agent budget exhausted (${budget.consumed}/${budget.limit ?? "?"})`, ruleId: "budget" };
+      const short = budget.limit !== null && budget.consumed <= budget.limit;
+      const spent = `${budget.consumed}/${budget.limit ?? "?"}`;
+      return {
+        decision: "DEFER",
+        reason: short
+          ? `agent budget cannot cover this seat's next turn (${spent} spent) — parked until its budget is raised`
+          : `agent budget exhausted (${spent}) — parked until its budget is raised`,
+        ruleId: "budget",
+      };
     }
     // A turn bound to a blown thread budget fails instantly at reservation
     // time; parking the activation beats spinning fail-turns (which starve
@@ -541,29 +576,46 @@ export function validateTransitionGates(
   for (const [gate, entry] of Object.entries(transitions ?? {})) {
     const artifactType = GATE_ARTIFACT_TYPES[gate];
     for (const token of entry?.requires ?? []) {
-      const idx = token.lastIndexOf(".");
-      if (idx <= 0) {
+      // `a.b|c.d` is ONE requirement any alternative satisfies, so an issue is
+      // raised only when NO alternative can be met — an unreachable `ghost` in
+      // `ghost.approve|qa.pass` is not a deadlock, and reporting it as one would
+      // be a false alarm. A token with no `|` is a one-element list and keeps
+      // its exact previous behaviour, message included.
+      const alternatives = token.split("|").map((part) => {
+        const idx = part.lastIndexOf(".");
+        return idx > 0 ? { actor: part.slice(0, idx), kind: part.slice(idx + 1) } : null;
+      });
+      if (alternatives.every((a) => a === null)) {
         issues.push({ gate, token, reason: `token '${token}' is not '<actor>.<kind>'; it can never match an approval` });
         continue;
       }
-      const actor = token.slice(0, idx);
-      const kind = token.slice(idx + 1);
-      if (actor === HUMAN_AGENT_ID) continue;
-      const matches = Object.entries(agents ?? {}).filter(([id, a]) => id === actor || a?.role === actor);
-      if (matches.length === 0) {
-        issues.push({ gate, token, reason: `no agent has id or role '${actor}'` });
-        continue;
-      }
-      if (kind !== "approve" || !artifactType) continue;
-      const reviews = matches.map(([, a]) => canReviewArtifactType(a ?? {}, artifactType));
-      if (!reviews.some((r) => r.ok)) {
+      let satisfiable = false;
+      let reason: string | null = null;
+      for (const alt of alternatives) {
+        if (alt === null) continue;
+        const { actor, kind } = alt;
+        if (actor === HUMAN_AGENT_ID) {
+          satisfiable = true;
+          break;
+        }
+        const matches = Object.entries(agents ?? {}).filter(([id, a]) => id === actor || a?.role === actor);
+        if (matches.length === 0) {
+          reason ??= `no agent has id or role '${actor}'`;
+          continue;
+        }
+        if (kind !== "approve" || !artifactType) {
+          satisfiable = true;
+          break;
+        }
+        const reviews = matches.map(([, a]) => canReviewArtifactType(a ?? {}, artifactType));
+        if (reviews.some((r) => r.ok)) {
+          satisfiable = true;
+          break;
+        }
         const need = reviews[0];
-        issues.push({
-          gate,
-          token,
-          reason: `${matches.map(([id]) => id).join("/")} cannot review ${artifactType}: needs authority '${need.required}' or capability '${need.capability}'`,
-        });
+        reason ??= `${matches.map(([id]) => id).join("/")} cannot review ${artifactType}: needs authority '${need.required}' or capability '${need.capability}'`;
       }
+      if (!satisfiable && reason) issues.push({ gate, token, reason });
     }
   }
   return issues;

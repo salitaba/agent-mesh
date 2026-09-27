@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { bootstrapMesh, type MeshInstance } from "../apps/mesh-server/src/index";
 import type { CriteriaGeneratorPort } from "../packages/core/src/ports";
-import type { AgentDefinition } from "../packages/protocol/src/index";
+import type { AgentDefinition, Clock } from "../packages/protocol/src/index";
 
 export interface AgentSpec {
   id: string;
@@ -68,9 +68,41 @@ export interface TestMeshOptions {
   turnTimeoutMs?: number;
   /** How long the mesh must be quiet before the scheduler declares it idle. */
   idleQuietPeriodMs?: number;
+  /**
+   * `scheduling.timeouts.turn_silence_ms`: how long a turn that has streamed
+   * its first token may go quiet before the silence watchdog interrupts it.
+   * Only reachable with `stub(m).setStreaming(true)`, since `onToken` never
+   * fires on the `send` path. The watchdog ticks at `stallIdleMs / 3`
+   * (floor 100ms), so a test of it wants a small `stallIdleMs` too.
+   */
+  turnSilenceMs?: number;
   stallIdleMs?: number;
   stallCooldownMs?: number;
   stallNoopRetryMs?: number;
+  /**
+   * Boot a REAL git workspace: `mkdtemp` root, `workspace/main` product repo,
+   * one worktree per seat, and a real `GitWorkspace` on `deps.workspace`.
+   *
+   * Implies `persist`: `bootstrapMesh` refuses git on an in-memory boot
+   * (`useGit = !inMemory && ...`), because an in-memory mesh has no
+   * workspace on disk. Default off, and with it off `deps.workspace` stays
+   * undefined — so every MERGED in a default fixture is a projection status,
+   * never a commit.
+   */
+  git?: boolean;
+  /**
+   * Boot file-backed: a real `JsonlEventStore` at
+   * `<root>/workspace/.mesh-state/logs/events.jsonl`, the file artifact store,
+   * snapshots, the session registry and the state lock. Without `git` the
+   * workspace is explicitly non-git. Default off (in-memory).
+   */
+  persist?: boolean;
+  /**
+   * The mesh's clock. Pass a `ManualClock` (tests/support/manual-clock.ts) to
+   * drive every time read and timer in the supervisor and scheduler by hand.
+   * Default: the wall clock and the real event loop.
+   */
+  clock?: Clock;
   bus?: {
     /**
      * A whole coherent bus written as one word. Emitted LITERALLY, like
@@ -94,7 +126,6 @@ export interface TestMeshOptions {
        */
       byType?: boolean;
     };
-    transport?: "mixed" | "typed-only";
     /**
      * Which comms vocabulary the mesh advertises to its seats.
      *
@@ -120,6 +151,13 @@ export interface TestMeshOptions {
       congestionEvery?: number;
     };
   };
+  /**
+   * `mesh.messages`, written verbatim. Omitted entirely when unset, which is
+   * the case that proves the defaults apply — so a fixture that wants a
+   * specific per-turn send budget writes one, and one that wants none writes
+   * `{ maxSendsPerTurn: 0 }`.
+   */
+  messages?: { maxSendsPerTurn?: number; digestThreshold?: number; informExpiryMs?: number };
 }
 
 /**
@@ -161,7 +199,6 @@ function busYaml(bus: TestMeshOptions["bus"]): string {
   const body =
     (bus.style ? `  style: ${bus.style}\n` : "") +
     busCommitmentsYaml(bus.commitments) +
-    (bus.transport ? `  transport: ${bus.transport}\n` : "") +
     busVocabularyYaml(bus.vocabulary) +
     busCollabYaml(bus.collab) +
     busDeliveryYaml(bus.delivery);
@@ -235,6 +272,16 @@ function busDeliveryYaml(d: NonNullable<TestMeshOptions["bus"]>["delivery"]): st
   return `  delivery: { ${parts.join(", ")} }\n`;
 }
 
+/** The `mesh.messages` line, or "" when the fixture wants the shipped defaults. */
+function meshMessagesYaml(msg: TestMeshOptions["messages"]): string {
+  if (!msg) return "";
+  const parts: string[] = [];
+  if (msg.maxSendsPerTurn !== undefined) parts.push(`max_sends_per_turn: ${msg.maxSendsPerTurn}`);
+  if (msg.digestThreshold !== undefined) parts.push(`digest_threshold: ${msg.digestThreshold}`);
+  if (msg.informExpiryMs !== undefined) parts.push(`inform_expiry_ms: ${msg.informExpiryMs}`);
+  return `  messages: { ${parts.join(", ")} }\n`;
+}
+
 export function testConfigYaml(opts: TestMeshOptions): string {
   const agents = opts.agents
     .map((a) => {
@@ -245,7 +292,11 @@ export function testConfigYaml(opts: TestMeshOptions): string {
       if (a.authority) lines.push(`    authority: [${a.authority.join(", ")}]`);
       if (a.requiresApproval) lines.push(`    requires_approval: [${a.requiresApproval.join(", ")}]`);
       if (a.interests) lines.push(`    interests: [${a.interests.join(", ")}]`);
-      if (a.persistent !== false) lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
+      // Always written. This used to skip the line for `persistent: false`,
+      // and an absent `session` resolves to persistent -- so a fixture asking
+      // for a non-persistent seat silently got a persistent one, and its
+      // "first failure is terminal" test ran the whole restart ladder instead.
+      lines.push(`    session: { persistent: ${a.persistent ?? true} }`);
       if (a.tokens) lines.push(`    budget: { tokens: ${a.tokens} }`);
       if (a.hardActions) lines.push(`    hard_actions: { mode: ${a.hardActions.mode}${a.hardActions.capabilities ? `, capabilities: [${a.hardActions.capabilities.join(", ")}]` : ""} }`);
       if (a.wake) lines.push(`    wake: { defer_non_obliging: ${a.wake.deferNonObliging ?? false}${a.wake.mail ? `, mail: ${a.wake.mail}` : ""}${a.wake.notFor ? `, not_for: [${a.wake.notFor.join(", ")}] }` : " }"}`);
@@ -277,7 +328,7 @@ ${criteriaBlock}${generateBlock}  workspace:
     path: ./workspace
   runtime:
     default: stub
-
+${meshMessagesYaml(opts.messages)}
 startup:
   activate: [${(opts.startup ?? []).join(", ")}]
 
@@ -305,11 +356,17 @@ scheduling:
   mode: event-driven
 ${opts.triage ? `  triage:\n    mode: ${opts.triage.mode}\n    rules: ${JSON.stringify(opts.triage.rules ?? [])}` : ""}
   concurrency: { max_active_agents: ${opts.maxActiveAgents ?? 4}${opts.maxTotalAgents !== undefined ? `, max_total_agents: ${opts.maxTotalAgents}` : ""} }
-  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: ${opts.idleQuietPeriodMs ?? 300}, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""} }
+  timeouts: { turn_timeout_ms: ${opts.turnTimeoutMs ?? 15000}, wait_wakeup_ms: ${opts.waitWakeupMs ?? 200}, idle_quiet_period_ms: ${opts.idleQuietPeriodMs ?? 300}, stall_idle_ms: ${opts.stallIdleMs ?? 180000}, stall_cooldown_ms: ${opts.stallCooldownMs ?? 300000}${opts.stallNoopRetryMs !== undefined ? `, stall_noop_retry_ms: ${opts.stallNoopRetryMs}` : ""}${opts.turnSilenceMs !== undefined ? `, turn_silence_ms: ${opts.turnSilenceMs}` : ""} }
 `;
 }
 
-export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { cleanup(): Promise<void> }> {
+export type TestMesh = MeshInstance & {
+  /** The mkdtemp root holding `mesh.yaml`, `roles/` and `workspace/`. */
+  dir: string;
+  cleanup(): Promise<void>;
+};
+
+export async function makeMesh(opts: TestMeshOptions): Promise<TestMesh> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-test-"));
   const configPath = path.join(dir, "mesh.yaml");
   fs.writeFileSync(configPath, testConfigYaml(opts), "utf8");
@@ -322,12 +379,18 @@ export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { 
     fs.writeFileSync(roleFile, a.prompt, "utf8");
   }
   const mode = opts.mode ?? (opts.uiOnly ? "parked" : "live");
+  // `git` implies `persist`; see TestMeshOptions.git. When persisting WITHOUT
+  // git, say so explicitly: an absent `workspace.git` defaults ON, so leaving
+  // `useGit` unset would quietly turn every `persist` fixture into a git one.
+  const persist = opts.persist === true || opts.git === true;
   const instance = await bootstrapMesh({
     configPath,
-    inMemory: true,
+    inMemory: !persist,
+    ...(persist ? { useGit: opts.git === true } : {}),
     mode,
     uiOnly: mode === "parked",
     ...(opts.criteriaGenerator ? { criteriaGenerator: opts.criteriaGenerator } : {}),
+    ...(opts.clock ? { clock: opts.clock } : {}),
   });
   (globalThis as unknown as Record<string, unknown>).__meshDebug = () => {
     const st = instance.kernel.state;
@@ -340,8 +403,12 @@ export async function makeMesh(opts: TestMeshOptions): Promise<MeshInstance & { 
     return `goal ${goal?.status} [${crit}] | ${agents} | artifacts: ${arts} | pending: ${pend} | escalations: ${esc}`;
   };
   return Object.assign(instance, {
+    dir,
     async cleanup() {
       await instance.close();
+      // After close, not before: a released hang would otherwise answer into a
+      // live supervisor. Released at all only so no closure outlives the test.
+      instance.stubRuntimes.get("stub")?.releaseHangs();
       fs.rmSync(dir, { recursive: true, force: true });
     },
   });

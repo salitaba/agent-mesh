@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { ago, dur, fmt, opsSummary, outcomeOf, plainReason, refusalSummary, OUTCOME_META, type Outcome } from "../format";
+import { ago, dur, fmt, opsSummary, outcomeOf, plainBlocker, plainReason, refusalSummary, spanLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
 import { rowKey, agentColor, AgentAvatar, Button, ErrorState, useNow } from "../components";
+import { compactNow, nowLine, timeLeftText, type CurrentTool } from "../livework";
 
 /* The page is a ledger: one console strip on top (who is working, what the
    run has cost, who was busy when), one sticky toolbar (the outcome legend is
@@ -57,12 +58,14 @@ const OPS_LABEL: Record<keyof typeof ICON, [string, string]> = {
 };
 
 function OpsBadges({ s }: { s: TurnStep }): React.JSX.Element | null {
-  const keys = (Object.keys(ICON) as (keyof typeof ICON)[]).filter((k) => s.ops?.[k] > 0);
+  const ops = s.ops;
+  if (!ops) return null;
+  const keys = (Object.keys(ICON) as (keyof typeof ICON)[]).filter((k) => ops[k] > 0);
   if (!keys.length) return null;
   return (
     <span className="st-ops" aria-label={opsSummary(s)}>
       {keys.map((k) => {
-        const n = s.ops[k];
+        const n = ops[k];
         return (
           <span key={k} className="st-op" title={`${n} ${OPS_LABEL[k][n === 1 ? 0 : 1]}`}>
             {ICON[k]}<span>{n}</span>
@@ -148,13 +151,17 @@ function autoWindow(steps: TurnStep[], now: number): string {
   return "all";
 }
 
+/**
+ * Ticks count back from the right edge in whole steps. Aligning them to the
+ * epoch instead put every tick a ragged distance from "now", so the labels
+ * read "-704m 41s", "-584m 17s" — exact, and useless at a glance.
+ */
 function axisTicks(t0: number, t1: number): { at: number; label: string }[] {
   const span = Math.max(1, t1 - t0);
   const step = TICK_STEPS.find((s) => span / s <= 6) ?? TICK_STEPS[TICK_STEPS.length - 1];
   const out: { at: number; label: string }[] = [];
-  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-    const back = t1 - t;
-    out.push({ at: ((t - t0) / span) * 100, label: back < step / 2 ? "now" : `-${dur(back)}` });
+  for (let back = 0; back <= span; back += step) {
+    out.unshift({ at: ((span - back) / span) * 100, label: back ? `-${spanLabel(back)}` : "now" });
   }
   return out;
 }
@@ -237,7 +244,7 @@ function Console({
               key={s.turnId}
               className="st-now"
               onClick={() => onPick(s)}
-              title={`${s.agentId} · woken by ${plainReason(s.reasonKind)}`}
+              title={`${s.agentId} · woke: ${plainReason(s.reasonKind)}${s.currentTool ? ` · ${nowLine(s.currentTool, now)}` : ""}`}
             >
               <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
               <span className="st-now-name">{s.agentId}</span>
@@ -288,6 +295,9 @@ function Console({
         <div className="st-tl">
           <div className="st-tl-head">
             <span className="st-tl-cap">Who was busy, when</span>
+            {/* Beside the caption, not on the axis: there it sat on top of the
+                "now" tick, which is always at the right edge. */}
+            {model.hidden ? <span className="st-axis-note">{model.hidden} older turn{model.hidden > 1 ? "s" : ""} outside this window</span> : null}
             <span className="st-win" role="group" aria-label="timeline window">
               {WINDOWS.map((w) => (
                 <button
@@ -345,9 +355,8 @@ function Console({
           </div>
           <div className="st-axis">
             {model.ticks.map((t) => (
-              <span key={t.at} className={`st-tick ${t.label === "now" ? "now" : ""}`} style={{ left: `${t.at}%` }}>{t.label}</span>
+              <span key={t.at} className={`st-tick${t.label === "now" ? " now" : t.at === 0 ? " edge" : ""}`} style={{ left: `${t.at}%` }}>{t.label}</span>
             ))}
-            {model.hidden ? <span className="st-axis-note">{model.hidden} older turn{model.hidden > 1 ? "s" : ""} outside this window</span> : null}
           </div>
         </div>
       ) : null}
@@ -362,6 +371,28 @@ function LiveElapsed({ startedAt }: { startedAt: string }): React.JSX.Element {
   return <>{dur(now - Date.parse(startedAt)) || "—"}</>;
 }
 
+/** "Edit model.ts · 4s" — what a live row is doing, instead of its lifecycle word. */
+function LiveVerb({ tool }: { tool: CurrentTool }): React.JSX.Element {
+  const now = useNow(1000);
+  return <span className={`st-verb st-now-tool${tool.status === "running" ? " run" : ""}`} title={nowLine(tool, now)}>{compactNow(tool, now)}</span>;
+}
+
+/** "4m left" against the turn's current deadline. */
+function LiveLeft({ deadlineAt, ceilingAt }: { deadlineAt: number; ceilingAt?: number }): React.JSX.Element | null {
+  const now = useNow(1000);
+  const text = timeLeftText(deadlineAt, now);
+  if (!text) return null;
+  const tight = deadlineAt - now < 60_000;
+  return (
+    <span
+      className={tight ? "st-left warn" : "st-left"}
+      title={`stopped at ${new Date(deadlineAt).toLocaleTimeString()} unless extended${ceilingAt ? ` · hard stop ${new Date(ceilingAt).toLocaleTimeString()}` : ""}`}
+    >
+      {text}
+    </span>
+  );
+}
+
 const StepRow = memo(function StepRow({ s, maxTokens, onPick }: { s: TurnStep; maxTokens: number; onPick: (s: TurnStep) => void }): React.JSX.Element {
   const oc = outcomeOf(s);
   const meta = OUTCOME_META[oc];
@@ -370,7 +401,8 @@ const StepRow = memo(function StepRow({ s, maxTokens, onPick }: { s: TurnStep; m
   const live = oc === "live";
   const elapsed = live ? Date.now() - Date.parse(s.startedAt) : s.durationMs;
   const share = maxTokens && s.tokens ? Math.max(4, Math.round((s.tokens / maxTokens) * 100)) : 0;
-  const note = s.reasonNote && s.reasonNote !== s.triggerEventType ? s.reasonNote.slice(0, 110) : "";
+  const note = s.reasonNote && s.reasonNote !== s.triggerEventType ? s.reasonNote : "";
+  const liveTok = live && typeof s.liveTokens === "number";
   return (
     <li
       className={`st-row ${meta.cls}`}
@@ -386,27 +418,49 @@ const StepRow = memo(function StepRow({ s, maxTokens, onPick }: { s: TurnStep; m
       <div className="st-main">
         <div className="st-l1">
           <b className="st-agent">{s.agentId}</b>
-          <span className="st-verb">{oc === "live" ? (s.lifecycle ? s.lifecycle.toLowerCase().replace(/_/g, " ") : "thinking") + "…" : opsSummary(s)}</span>
+          {live && s.currentTool
+            ? <LiveVerb tool={s.currentTool} />
+            : <span className="st-verb">{oc === "live" ? (s.lifecycle ? s.lifecycle.toLowerCase().replace(/_/g, " ") : "thinking") + "…" : opsSummary(s)}</span>}
           <span className="otag" title={meta.hint}>{meta.label}</span>
           {s.attempt && s.attempt > 1 ? (
             <span className="st-retry" title="the scheduler re-activated this agent after a timeout">attempt {s.attempt}</span>
           ) : null}
         </div>
+        {/* The reasons are phrases of mixed grammar ("new message", "restarted
+            after a problem"), so a "woken by" prefix only fit some of them;
+            the icon carries the "why it woke" and the phrase stands alone. */}
         <div className="st-l2">
-          <span className="st-woke">woken by {plainReason(s.reasonKind)}</span>
-          {note ? <span className="st-note">{note}</span> : null}
+          <span className="st-woke" title="why it woke up">
+            <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+              <circle cx="6" cy="6" r="1.9" />
+              <path d="M6 .9v1.2M6 9.9v1.2M.9 6h1.2M9.9 6h1.2M2.4 2.4l.85.85M8.75 8.75l.85.85M2.4 9.6l.85-.85M8.75 3.25l.85-.85" />
+            </svg>
+            <span className="sr-only">woke: </span>{plainReason(s.reasonKind)}
+          </span>
+          {note ? <span className="st-note" title={note}>{note}</span> : null}
         </div>
-        {refusal ? <div className="st-refusal" title="the kernel rejected this op">kernel refused: {refusal.slice(0, 160)}</div> : null}
-        {s.error ? <div className="st-err">{s.error.slice(0, 160)}</div> : null}
+        {/* Clamped by CSS to two lines, the full text in the tooltip: slicing
+            at 160 characters cut words in half with no ellipsis. */}
+        {refusal ? <div className="st-refusal" title={`the kernel refused this op: ${refusal}`}><b>refused</b> {refusal}</div> : null}
+        {s.error ? <div className="st-err" title={s.error}>{plainBlocker(s.error)}</div> : null}
       </div>
       <OpsBadges s={s} />
       <div className="st-num">
         <b>{live ? <LiveElapsed startedAt={s.startedAt} /> : (dur(elapsed) || "—")}</b>
-        <span className="st-tok" title={s.tokens ? `${fmt(s.tokens)} tokens — bar is relative to the costliest loaded turn` : "no tokens spent"}>
+        <span
+          className="st-tok"
+          title={s.tokens
+            ? `${fmt(s.tokens)} tokens — bar is relative to the costliest loaded turn`
+            : liveTok ? "billable tokens the runtime has reported so far (cache reads excluded)" : live ? "no token figure reported yet" : "no tokens spent"}
+        >
           {share ? <i style={{ width: `${share}%` }} /> : null}
-          {s.tokens ? `${fmt(s.tokens)} tok` : "no cost"}
+          {/* A running turn has spent nothing *final* yet; "no cost" read as a
+              free turn while it burned tokens for seventeen minutes. */}
+          {s.tokens ? `${fmt(s.tokens)} tok` : liveTok ? `${fmt(s.liveTokens)} tok so far` : live ? "— tok" : "no cost"}
         </span>
-        <span>{ago(s.startedAt)}</span>
+        {/* A live row's start is its elapsed time, already above; how long it
+            has left is the number that is not on screen anywhere else. */}
+        {live && typeof s.deadlineAt === "number" ? <LiveLeft deadlineAt={s.deadlineAt} ceilingAt={s.ceilingAt} /> : <span>{ago(s.startedAt)}</span>}
       </div>
     </li>
   );
@@ -600,7 +654,10 @@ export default function Steps(): React.JSX.Element {
               <ol className="st-list">
                 {g.rows.map((r) =>
                   r.kind === "fold" ? (
-                    <FoldRow key={`fold-${r.items[0].turnId}`} items={r.items} maxTokens={maxTokens} onPick={pick} />
+                    // Keyed on the run's oldest turn: new quiet turns join at
+                    // the top, and keying on the first remounted the fold —
+                    // snapping shut one the reader had opened.
+                    <FoldRow key={`fold-${r.items[r.items.length - 1].turnId}`} items={r.items} maxTokens={maxTokens} onPick={pick} />
                   ) : (
                     <StepRow key={r.s.turnId} s={r.s} maxTokens={maxTokens} onPick={pick} />
                   ),

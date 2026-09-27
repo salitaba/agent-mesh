@@ -2,13 +2,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import { URL } from "url";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal, SessionRotated, MuteSuspected } from "../../../packages/protocol/src/index";
 import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
-import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, generateAcceptanceCriteria, projectionConfigFor, readableMailDepth, resolveUnread, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
+import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, WORK_TURN_TIMEOUT_MULTIPLE, generateAcceptanceCriteria, projectionConfigFor, readableMailDepth, resolveUnread, secretsEqual, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
 import { missionKey } from "../../../packages/core/src/budgets";
 import { JsonlEventStore, MemoryEventStore, type EventStore } from "../../../packages/event-store/src/index";
 import { PolicyEngine, validateTransitionGates } from "../../../packages/policy-engine/src/index";
@@ -33,7 +33,7 @@ import {
   type StateLockHandle,
 } from "../../../packages/persistence/src/index";
 import { LocalEventBus } from "../../../packages/core/src/event-bus";
-import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, aliasStats, type GitMode } from "../../../packages/protocol/src/index";
+import { systemClock, HOST_LIMITER_RAISER, HOST_SPEND_CEILING_REASON, type Clock, type GitMode } from "../../../packages/protocol/src/index";
 import {
   buildMeshGraph,
   buildCostReport,
@@ -51,14 +51,39 @@ import { createMcpToolset } from "./mcp";
 import { applyStagedProposal, matchesMeshId } from "./staging";
 import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
-import { mergeTurnSteps } from "./steps-view";
+import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
-import { ClaudeRuntimeAdapter, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
-import { requireAuth, resolveActor } from "./auth";
+import { ClaudeRuntimeAdapter, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
+import { getApiToken, requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
 export type ServerMode = "parked" | "live";
+
+/**
+ * The one sentence an operator sees when the mission is parked while its goal
+ * is ACTIVE — on `/status` (so the console's banner can render it), on
+ * `POST /goals/:id/resume`, and on the host's own audit line.
+ *
+ * Held as one string on purpose. This state hides itself: the goal reads
+ * ACTIVE, the console shows a running mission, and the scheduler is stopped, so
+ * a parked mesh spent 14.8 hours doing nothing while its operator believed it
+ * was working. The wording that ends that has to be identical everywhere it
+ * appears, or the banner and the resume response become two accounts of one
+ * state and the operator has to reconcile them.
+ *
+ * The host process writes the same sentence from its own copy
+ * (`PARKED_MISSION_NOTICE` in `./host`) rather than importing this one: the
+ * host must not load this whole module — core, scheduler, the Claude SDK — just
+ * to print a line. A test asserts the two carry the same call to action.
+ */
+export const PARKED_MISSION_NOTICE =
+  "the mission is not running: the scheduler is parked — POST /mission/start (the dashboard's Start control) makes it live";
+
+/** True for the state that hides itself: parked, with an ACTIVE goal. */
+function isParkedNoticeState(mode: ServerMode, goalStatus: string | undefined): boolean {
+  return mode === "parked" && goalStatus === "ACTIVE";
+}
 
 export interface BootstrapOptions {
   configPath: string;
@@ -86,6 +111,35 @@ export interface BootstrapOptions {
    * gets the designer adapter.
    */
   criteriaGenerator?: CriteriaGeneratorPort;
+  /**
+   * The mesh's clock: event timestamps, and every time read and timer in the
+   * supervisor and scheduler. Tests pass a manual clock (one that also
+   * implements `Timers`) to advance watchdogs deterministically; production
+   * leaves it unset and gets the wall clock and the real event loop.
+   */
+  clock?: Clock;
+  /**
+   * Runs after the mesh instance exists and before the initial activation — the
+   * one seam in a live boot where the caller can still stand something up that
+   * the first wake depends on.
+   *
+   * `startServer` uses it to bind the HTTP port (and so to settle
+   * `MESH_BUS_URL`) before `supervisor.boot` wakes anyone: the seats' MCP bridge
+   * is spawned against this server's URL, which does not exist until `listen()`
+   * has run, and a child asks for port 0 so the configured fallback is not even
+   * the right port. Without this seam the first seat of every live boot — and of
+   * every child restart — spawns a bridge at a URL nothing answers yet.
+   */
+  beforeInitialActivation?: (instance: MeshInstance) => Promise<void>;
+  /**
+   * Bridge readiness, forwarded to `supervisor.boot` (which holds the first
+   * live wake on it). `startServer` supplies one that resolves when its own
+   * listener is up; a caller that embeds the mesh with no bridge passes nothing
+   * and boot proceeds immediately.
+   */
+  bridgeReady?: (() => Promise<void>) | Promise<void>;
+  /** `supervisor.boot`'s bound on that wait; see `BRIDGE_READY_TIMEOUT_MS`. */
+  bridgeReadyTimeoutMs?: number;
 }
 
 export interface MeshInstance {
@@ -230,6 +284,21 @@ export interface ResetReport {
    */
   worktreeBundleTo: string | null;
   /**
+   * Absolute path of a JSON record of what each worktree still had uncommitted
+   * when the reset deleted it, null when nothing was uncommitted or git mode is
+   * off.
+   *
+   * Written even when `archiveWorktrees` is false — that flag is precisely the
+   * path that destroys the files, so it is the one that most needs to leave a
+   * number behind. A run measured on 2026-09-24 ended with 1,847 lines of source
+   * and tests uncommitted across one seat's worktree, and no reset report said
+   * so; the files were archived, but nothing recorded that they were never part
+   * of the product.
+   */
+  uncommittedManifestTo: string | null;
+  /** Uncommitted file count per seat at reset time, for the summary line. */
+  uncommittedByAgent: Record<string, number>;
+  /**
    * Absolute path of the archived stray entries found at the workspace root in
    * git mode, null when there were none. Git mode owns only `main/` and
    * `worktrees/` there, so anything else is a file no repository tracks —
@@ -301,15 +370,17 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         return {
           write: (envelope: { meshId: string; throughSeq: number; data: Record<string, unknown[]> }): Promise<void> =>
             snaps.write({ meshId: envelope.meshId, throughSeq: envelope.throughSeq, data: envelope.data as never }),
-          read: (): { meshId: string; throughSeq: number; data: Record<string, unknown[]> } | null => {
+          // `version` travels through: the kernel refuses a layout it does not
+          // read, and it can only do that if the adapter does not drop it.
+          read: (): { version: number; meshId: string; throughSeq: number; data: Record<string, unknown[]> } | null => {
             const s = snaps.read();
-            return s ? { meshId: s.meshId, throughSeq: s.throughSeq, data: s.data as unknown as Record<string, unknown[]> } : null;
+            return s ? { version: s.version, meshId: s.meshId, throughSeq: s.throughSeq, data: s.data as unknown as Record<string, unknown[]> } : null;
           },
         };
       })();
   const kernel = new Kernel(
     store,
-    systemClock,
+    options.clock ?? systemClock,
     auditLog,
     projectionConfigFor(config),
     snapshotProvider ? { provider: snapshotProvider, meshId: config.meshId, every: 200 } : undefined,
@@ -361,17 +432,30 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   // until an agent is actually started, so an installation that runs only stub
   // or http seats pays nothing for its presence.
   const claudeAdapter = new ClaudeRuntimeAdapter({
-      // Same rule as the opencode adapter: the runtime's own deadline must
-      // outlive the supervisor's turn timeout, which fires first and
-      // interrupts the turn.
-      turnTimeoutMs: config.scheduling.turnTimeoutMs + 30000,
+      // A backstop past the supervisor's CEILING, not its base. The supervisor
+      // owns the turn deadline, including the task and activity extensions that
+      // carry a working turn up to base x WORK_TURN_TIMEOUT_MULTIPLE, and stops
+      // the turn itself; this timer only catches a supervisor that failed to.
+      // At base + 30s it fired first and killed every extended turn anyway.
+      turnTimeoutMs: config.scheduling.turnTimeoutMs * WORK_TURN_TIMEOUT_MULTIPLE + 30000,
       // Only inherit the mesh-wide default when it actually names a Claude
       // model. Older configs wrote `mesh.runtime.model` for opencode
       // ("openrouter/anthropic/..."), and forwarding one of those would hand
       // the SDK an id it cannot resolve — a confusing hard failure on turn 1.
       // Per-agent `model` still wins and is passed through verbatim.
       model: claudeDefaultModel,
-      transport: config.bus.transport,
+      // `mesh.runtime.context_window`: the window rotation measures against for
+      // a model the adapter cannot place. Unlike `model`, never gated on the id
+      // being a Claude one — a proxied non-Claude model (the 2026-09-25 run's
+      // `deepseek-v4.1-flash`) is exactly the case it exists for.
+      contextWindow: config.defaultContextWindow,
+      // `mesh.runtime.stale_after_ms`: how long a session may idle before the
+      // adapter rotates it, assuming the prompt cache died in the gap. Unset
+      // keeps the adapter's own 10 minutes (right for Anthropic's cache TTL).
+      staleAfterMs: config.defaultStaleAfterMs,
+      // So a restart that resumes a transcript knows how big it is.
+      stateDir: options.inMemory ? undefined : config.stateDir,
+      onNotice: (n) => auditLog(`claude runtime: ${n.message}`),
       mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
       // Rotation is the one moment a seat loses everything it was holding in
       // its head. It used to be invisible: this hook existed and nothing was
@@ -400,6 +484,25 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
           .catch((err: unknown) => auditLog(`agent.mute_suspected emit failed: ${(err as Error).message}`));
       },
       onRotate: (info) => {
+        // Persist the NEW session id, not just announce it.
+        //
+        // `record` was called once per seat, from `ensureSession`, and never
+        // again -- so `sessions.json` kept each seat's FIRST session for the life
+        // of the mission while rotation moved the live one. Measured on a run of
+        // 2026-09-24: 6 of 7 seats stale, tech-lead eight rotations behind.
+        //
+        // That file is what a restart reads (`supervisor.ensureSession` ->
+        // `sessionRegistry.lookup`; `state.sessionMap` is never written), so a
+        // seat whose turn timed out was "restored" onto a transcript it had
+        // abandoned five rotations earlier -- and the stale id was then written
+        // back with a fresh timestamp, which made it look current.
+        //
+        // It must be `info.sdkSessionId`: rotation deliberately keeps
+        // `AgentSession.sessionId` (the mesh-side id) stable across rotations, so
+        // the session object itself never carries the new id.
+        void sessionRegistry
+          ?.record(info.agentId, info.sdkSessionId, "claude")
+          .catch((err: unknown) => auditLog(`session registry update failed for ${info.agentId}: ${(err as Error).message}`));
         void kernel
           .emit(
             "session.rotated",
@@ -492,7 +595,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
     // reconstructs step shape, never this data.
     turnsFile: options.inMemory ? undefined : path.join(layout.logs, "turns.jsonl"),
   });
-  const scheduler = new Scheduler(config, kernel.state, policy, supervisor, options.triageModel);
+  const scheduler = new Scheduler(config, kernel.state, policy, supervisor, options.triageModel, kernel.clock);
   supervisor.setScheduler(scheduler);
 
   bus.subscribe((event) => {
@@ -533,12 +636,28 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   if (!options.inMemory) openIndex(await store.read());
 
   await kernel.replayFromStore();
+  // `load()` already repaired what it could (skipped a corrupt line, cut a torn
+  // tail); each count is an event the mission had and no longer has. Said at
+  // boot, beside the other launch warnings, and kept on /health.
+  if (store instanceof JsonlEventStore) {
+    const integrity = store.integrity();
+    if (integrity.corruptLines > 0 || integrity.truncatedTailBytes > 0) {
+      const msg =
+        `event log ${store.path()} was repaired on load: ${integrity.corruptLines} corrupt line(s) skipped, ` +
+        `${integrity.truncatedTailBytes} byte(s) of torn tail truncated — those events are lost`;
+      console.warn(`warn: ${msg}`);
+      auditLog(`[log-integrity] ${msg}`);
+    }
+  }
   const resume = kernel.state.eventCount > 0;
   if (resume) {
     scheduler.rebuildInterestRegistry();
   }
   const mode: ServerMode = options.mode ?? (options.uiOnly ? "parked" : "live");
-  await supervisor.boot({ resume, mode });
+  // The boot itself is at the bottom of this function, past the instance it is
+  // handed back at the end. `beforeInitialActivation` sits in between so a
+  // caller (the HTTP server) can bind its port first — the seats' MCP bridge is
+  // spawned against a URL that does not exist until it has. See that option.
 
   const mainProductPath = path.join(config.workspacePath, "main");
   let lastBoot: MeshInstance["lastBoot"] = null;
@@ -639,6 +758,29 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         //    copies are taken here, while the branches still exist.
         let worktreesArchivedTo: string | null = null;
         let worktreeBundleTo: string | null = null;
+        let uncommittedManifestTo: string | null = null;
+        const uncommittedByAgent: Record<string, number> = {};
+        // Record what was never committed, BEFORE anything is deleted and
+        // regardless of whether the copy is enabled. The files themselves were
+        // already being archived; what was missing was any statement that they
+        // existed, so a mission could write 1,847 lines that reached no repository
+        // and nothing in the reset report mentioned it. Cheap (one `git status`
+        // per worktree) and text, so it also runs on the `archiveWorktrees: false`
+        // path — the one that really does destroy the files.
+        if (workspace && !options.inMemory) {
+          const states = await workspace.worktreeStates().catch(() => []);
+          for (const s of states) uncommittedByAgent[s.agentId] = s.dirty.length;
+          if (states.length > 0) {
+            const manifest = path.join(archiveRoot, `worktrees-uncommitted.bak-${stamp}.json`);
+            try {
+              fs.mkdirSync(archiveRoot, { recursive: true });
+              fs.writeFileSync(manifest, JSON.stringify({ meshId: config.meshId, stamp, worktrees: states }, null, 2));
+              uncommittedManifestTo = manifest;
+            } catch (err) {
+              auditLog(`uncommitted-work manifest not written: ${(err as Error).message}`);
+            }
+          }
+        }
         if (workspace && !options.inMemory && resetOpts.archiveWorktrees !== false) {
           worktreesArchivedTo = await copyDir(workspace.worktreesPath, { archiveRoot, stamp });
           // Walking away from a failed copy would delete the only copy, so a
@@ -736,6 +878,8 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
           worktreesRemoved,
           worktreesArchivedTo,
           worktreeBundleTo,
+          uncommittedManifestTo,
+          uncommittedByAgent,
           strayRootArchivedTo,
           goalId: kernel.state.activeGoalId ?? null,
           mode: self.mode,
@@ -831,6 +975,16 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       }
     },
   };
+  // Anything the caller must have standing before the first live wake. Runs with
+  // the instance in hand and before `boot`, which is the only ordering that can
+  // gate that wake on something the caller owns (the HTTP listener).
+  if (options.beforeInitialActivation) await options.beforeInitialActivation(instance);
+  await supervisor.boot({
+    resume,
+    mode,
+    ...(options.bridgeReady ? { bridgeReady: options.bridgeReady } : {}),
+    ...(options.bridgeReadyTimeoutMs !== undefined ? { bridgeReadyTimeoutMs: options.bridgeReadyTimeoutMs } : {}),
+  });
   return instance;
 }
 
@@ -1119,16 +1273,30 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       hub.stream("turn.tool", { type: "turn.tool", turnId, agentId, tool: ev, at: new Date().toISOString() });
     },
   };
-  const mcp = createMcpToolset(supervisor);
+  // The human seat's bridge credential. It used to be the literal
+  // `human-local` (or any `human:` prefix), and because `/internal/mcp` is
+  // served before operator auth, that literal was a second operator door any
+  // local process could walk through. It is now a random secret minted per
+  // server and handed only to this server's own designer bridge
+  // (`designerBus` below). The operator token is accepted too, so an operator
+  // can still attach `mesh mcp --agent human --token $MESH_API_TOKEN`; with no
+  // operator token configured, only the minted secret opens the human seat.
+  const humanBridgeToken = randomBytes(32).toString("hex");
+  const humanAuth = (token: string): boolean => {
+    if (secretsEqual(token, humanBridgeToken)) return true;
+    const operator = getApiToken();
+    return operator.length > 0 && secretsEqual(token, operator);
+  };
+  const mcp = createMcpToolset(supervisor, { humanAuth });
   // Served to local observers (the designer's mesh_observe MCP) via
   // `/internal/mcp/:agent?readOnly=1`: observability tools only.
-  const mcpReadOnly = createMcpToolset(supervisor, { readOnly: true });
+  const mcpReadOnly = createMcpToolset(supervisor, { readOnly: true, humanAuth });
   // Staging surface for the dashboard assistant: the same six observability
   // tools plus `mesh_stage_*`, reached on the same bridge route with an
   // `x-mesh-designer-turn` header. Writes land in `designerTurns`, never in the
   // mesh — the operator applies them through POST /designer/staged/apply.
   const designerTurns = new DesignerTurnBuffer();
-  const mcpStaging = createDesignerStagingToolset(supervisor, designerTurns);
+  const mcpStaging = createDesignerStagingToolset(supervisor, designerTurns, humanAuth);
   const startedAt = instance.startedAt;
 
   /**
@@ -1139,7 +1307,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const designerBus = (): { busUrl: string; token: string } | undefined => {
     const addr = server.address();
     if (!addr || typeof addr === "string") return undefined;
-    return { busUrl: `http://127.0.0.1:${addr.port}`, token: "human-local" };
+    return { busUrl: `http://127.0.0.1:${addr.port}`, token: humanBridgeToken };
   };
 
   /**
@@ -1313,6 +1481,12 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     };
     try {
       // --------------------------------------------------------- MCP bridge
+      // Deliberately ahead of `requireAuth`: seats carry no operator token (in
+      // strict mode requireAuth would refuse them all). That is sound only
+      // because every toolset below refuses a request whose token fails
+      // `McpToolset.verifyToken` — a seat HMAC under a per-process secret, or
+      // for `human` the minted bridge secret / operator token, all compared in
+      // constant time. None of them is derivable from public ids.
       if (parts[0] === "internal" && parts[1] === "mcp") {
         const agentId = decodeURIComponent(parts[2] ?? "");
         const token = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
@@ -1352,6 +1526,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           uptimeMs: Date.now() - startedAt,
           eventCount: kernel.state.eventCount,
           lastSeq: kernel.state.lastEventSeq,
+          // What load() threw away to make the log replayable (counters only:
+          // O(1) once loaded, so the probe stays zero-work). Absent for an
+          // in-memory store, which has no file to damage.
+          ...(instance.store instanceof JsonlEventStore ? { logIntegrity: instance.store.integrity() } : {}),
           sseClients: hub.clientCount,
           eventLoopLagMs: loopLagMs,
           eventLoopLagMaxMs: loopLagMaxMs,
@@ -1373,7 +1551,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
         if (parts[2] === "resume" && req.method === "POST") {
           await supervisor.resumeGoal(goalId);
-          return json(200, { ok: true });
+          // 200 either way — the goal really did resume. But on a parked mission
+          // a resumed goal is indistinguishable from a running one on every
+          // surface, and it runs nothing: say so, in the same words the console's
+          // banner and the host's audit line use. Re-read after the call: the
+          // projection is what resumed it, and `goal` above is the pre-resume
+          // reading.
+          const resumed = kernel.state.goals.get(goalId);
+          const parked = isParkedNoticeState(instance.mode, resumed?.status);
+          return json(200, { ok: true, mode: instance.mode, notice: parked ? PARKED_MISSION_NOTICE : null });
         }
         if (parts[2] === "replay" && req.method === "GET") {
           const upTo = u.searchParams.get("upToSeq");
@@ -1392,10 +1578,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               code: "run_report_unavailable",
             });
           }
-          // Process-scoped, handed in rather than read inside the builder --
-          // see `RunReportComms.aliases`. Same process as this handler, so the
-          // counters are this mesh's, not some other child's.
-          const report = await buildRunReport(kernel.state, goalId, { aliases: aliasStats() });
+          const report = await buildRunReport(kernel.state, goalId);
           if (report == null) return json(404, { error: `no run report for goal ${goalId}` });
           return json(200, report);
         }
@@ -1421,44 +1604,23 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // (same budget as /steps) keeps this fast on large logs.
           const limitRaw = u.searchParams.get("limit");
           const stepLimit = limitRaw ? Math.min(Math.max(Number(limitRaw) || 10, 1), 30) : 10;
+          // The gate the seat actually runs under, described by the same function
+          // that enforces it. The dashboard used to derive this itself from a
+          // mirror of the deleted OpenCode runtime, and showed "edit: deny" on
+          // seats whose Write calls went through. Null: no local gate to describe
+          // (http, stub) — the backend decides. "claude" always resolves to the
+          // real adapter: bootstrap registers it after any runtime overrides.
+          const permissions = rec.definition.runtime === "claude"
+            ? { runtime: rec.definition.runtime, families: describeToolPermissions(rec.definition.capabilities ?? [], rec.definition.requiresApproval ?? []) }
+            : null;
           let detail: ReturnType<typeof buildAgentDetail> = null;
           try {
             const events = await store.read({ tail: 800 });
-            const fromLog = buildTurnSteps(events, stepLimit * 2);
+            // The shared fill, not a private merge: this route's copy invented
+            // zero ops for every tracker turn older than its 800-event window.
             const live = supervisor.getRecentTurns(stepLimit * 2);
-            const merged = new Map<string, (typeof fromLog)[number]>();
-            for (const s of fromLog) merged.set(s.turnId, s);
-            for (const t of live) {
-              const prev = merged.get(t.turnId);
-              merged.set(t.turnId, {
-                turnId: t.turnId,
-                agentId: t.agentId,
-                reasonKind: t.reason.kind,
-                reasonNote: t.reason.note ?? (t.reason as unknown as Record<string, unknown>).eventType as string | undefined,
-                triggerEventType: (t.reason as unknown as Record<string, unknown>).eventType as string | undefined,
-                startedAt: t.startedAt,
-                endedAt: t.endedAt ?? prev?.endedAt,
-                durationMs: t.durationMs ?? prev?.durationMs,
-                status: t.status === "ok" ? "ok" : t.status === "waiting" ? "waiting" : t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : prev?.status ?? "running",
-                lifecycle: prev?.lifecycle ?? (t.status === "running" ? "THINKING" : "IDLE"),
-                ops: prev?.ops ?? { messages: 0, artifacts: 0, tasks: 0, decisions: 0 },
-                messageIds: prev?.messageIds ?? [],
-                artifactIds: prev?.artifactIds ?? [],
-                tokens: t.tokens ?? prev?.tokens ?? 0,
-                model: t.model ?? prev?.model,
-                error: t.error ?? prev?.error,
-                seqStart: prev?.seqStart ?? 0,
-                seqEnd: prev?.seqEnd ?? 0,
-                eventCount: prev?.eventCount ?? 0,
-                phases: t.phases ?? prev?.phases,
-                attempt: t.attempt ?? prev?.attempt,
-                streamChars: t.streamChars ?? prev?.streamChars,
-                toolFrames: t.toolFrames ?? prev?.toolFrames,
-                errorDetail: t.errorDetail ?? prev?.errorDetail,
-                opTimings: t.opTimings ?? prev?.opTimings,
-              });
-            }
-            const steps = [...merged.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+            const steps = (await fillTurnSteps(events, live, store, stepLimit * 2))
+              .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
             const currentTurnId = live.find((t) => t.agentId === id && t.status === "running")?.turnId
               ?? steps.find((s) => s.agentId === id && s.status === "running")?.turnId;
             detail = buildAgentDetail(kernel.state, config, id, { steps, events, currentTurnId });
@@ -1472,17 +1634,34 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               unread: resolveUnread(kernel.state, id),
               memory: [...(kernel.state.memory.get(id)?.values() ?? [])],
               session: kernel.state.sessionMap.get(id) ?? null,
+              permissions,
             });
           }
-          return json(200, detail);
+          return json(200, { ...detail, permissions });
         }
         if (req.method === "POST" && parts[2] === "wake") {
             const result = await supervisor.activateAgent(id, { kind: "manual", note: "manual wake via API" });
             return json(result.queued ? 200 : 409, { ok: result.queued, queued: result.queued, reason: result.blocked });
           }
+        // Stop the seat's running turn. Not a failure: the turn is discarded as
+        // `interrupted`, billed what it spent, and the seat goes IDLE with its
+        // task and mail — or SUSPENDED with `suspend: true`, until /resume.
+        if (req.method === "POST" && parts[2] === "interrupt") {
+          if (!rec) return json(404, { error: "agent not found" });
+          const b = await body();
+          if (b.reason !== undefined && typeof b.reason !== "string") return json(400, { error: "`reason` must be a string" });
+          if (b.suspend !== undefined && typeof b.suspend !== "boolean") return json(400, { error: "`suspend` must be a boolean" });
+          const res = await supervisor.interruptTurn(id, { reason: b.reason, suspend: b.suspend === true });
+          if (!res.ok) {
+            return json(res.code === "unknown_agent" ? 404 : 409, { ok: false, error: res.error, code: res.code, ...(res.lifecycle ? { lifecycle: res.lifecycle } : {}) });
+          }
+          return json(200, { ok: true, turnId: res.turnId, settled: res.settled, endedAs: res.endedAs, lifecycle: res.lifecycle });
+        }
+        // A seat mid-turn is stopped first (the operator path above, with
+        // `suspend`), so the suspension is not undone by that turn's own ending.
         if (req.method === "POST" && parts[2] === "suspend") {
-          await supervisor.suspendAgent(id);
-          return json(200, { ok: true });
+          const res = await supervisor.suspendAgent(id);
+          return json(200, { ok: true, ...(res.stoppedTurnId ? { stoppedTurnId: res.stoppedTurnId, settled: res.settled } : {}) });
         }
         if (req.method === "POST" && parts[2] === "resume") {
           await supervisor.resumeAgent(id);
@@ -1845,14 +2024,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // reconstruction so “any step” is visible live and after replay.
       if (parts[0] === "steps" && req.method === "GET") {
         const limit = Math.min(Number(u.searchParams.get("limit") ?? 60) || 60, 200);
-        // Scale the scan to the requested output (a turn spans a handful of
-        // events; in-memory live turns cover the freshest ones anyway).
-        const events = await store.read({ tail: Math.min(2000, Math.max(400, limit * 10)) });
-        const fromLog = buildTurnSteps(events, limit * 2);
-        const steps = mergeTurnSteps(fromLog, supervisor.getRecentTurns(limit))
-          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-          .slice(0, limit);
-        return json(200, steps);
+        // The tail scan is scaled to the requested output; tracker turns older
+        // than it are read through the correlation index instead of being
+        // reported with counts nobody measured (see `fillTurnSteps`).
+        return json(200, await recentTurnSteps(store, supervisor.getRecentTurns(limit), limit));
       }
       if (parts[0] === "turns" && parts.length === 1 && req.method === "GET") {
         return json(200, supervisor.getRecentTurns(Math.min(Number(u.searchParams.get("limit") ?? 60) || 60, 200)));
@@ -1863,19 +2038,17 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         // Indexed trace lookup, merged with a bounded scan: in-turn operator
         // messages carry no correlationId, so the index alone would omit them.
         const byCorrelation = await store.read({ correlationId: id });
-        const seen = new Set(byCorrelation.map((e) => e.id));
         const scanned = await store.read({ tail: 2000 });
-        const related = [
-          ...byCorrelation,
-          ...scanned.filter(
-            (e) =>
-              !seen.has(e.id) &&
-              ((e.payload as Record<string, unknown> | null)?.turnId === id ||
-                e.causationId === id),
-          ),
-        ];
+        // Back in log order: the extras used to be appended after the indexed
+        // events, so the timeline showed them after the turn had closed.
+        const related = turnEvents(byCorrelation, scanned.filter((e) => namesTurn(e, id)));
         if (!turn && related.length === 0) return json(404, { error: "turn not found" });
-        return json(200, { turn: turn ?? null, events: related, timeline: eventTimeline(related, related.length) });
+        // The log's own account of the turn, counted from exactly the events
+        // shown beside it. The drawer used to take its ops from the `/steps`
+        // row, which could be a different (and, past the window, invented)
+        // answer to the same question.
+        const step = buildTurnSteps(related, Infinity).find((s) => s.turnId === id) ?? null;
+        return json(200, { turn: turn ?? null, events: related, timeline: eventTimeline(related, related.length), step });
       }
       if (parts[0] === "scheduler" && req.method === "GET") {
         const queue = typeof (instance.scheduler as unknown as { queueSnapshot?: () => Array<{ agentId: string; priority: number; reason: { kind: string; note?: string } }> }).queueSnapshot === "function"
@@ -1921,6 +2094,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           meshId: config.meshId,
           mode: instance.mode,
           uiOnly: instance.uiOnly,
+          // The state that hides itself, said out loud: parked, with an ACTIVE
+          // goal. Non-null only then, so a client that renders it whenever it is
+          // present shows exactly the banner this exists for — and reads the
+          // wording from here rather than keeping a copy that can drift from the
+          // one `POST /goals/:id/resume` returns.
+          parkedNotice: isParkedNoticeState(instance.mode, kernel.state.goals.get(kernel.state.activeGoalId ?? "")?.status)
+            ? PARKED_MISSION_NOTICE
+            : null,
           // How many seats boot was *asked* to activate. Lets the console tell
           // "nobody was ever configured to start" apart from "they were
           // configured and something stopped them".
@@ -1938,7 +2119,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           // `triagedAway` rides the same channel for a different kind of loss:
           // not a block that clears, but events dropped before anything was
           // queued, which no surface could otherwise report.
-          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue, waits: instance.scheduler.queueWaits?.() ?? [], triagedAway: instance.scheduler.triagedAwayCount?.() ?? 0 },
+          // `suppressed` is the same kind of loss broken out by reason, so an
+          // escalation hold or a redundant progress tick is readable too.
+          scheduler: { pending: instance.scheduler.pending(), running: instance.scheduler.running(), queue, waits: instance.scheduler.queueWaits?.() ?? [], triagedAway: instance.scheduler.triagedAwayCount?.() ?? 0, suppressed: instance.scheduler.suppressedWakes?.() ?? {} },
           recentTurns: supervisor.getRecentTurns(10),
           commitments: supervisor.commitmentStats(),
           sseClients: hub.clientCount,
@@ -2070,11 +2253,19 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         }
         const cleaned = report.worktreesRemoved.length ? `${report.worktreesRemoved.length} worktree(s) removed; ` : "";
         const product = report.productArchivedTo ? "product checkout archived; " : "";
+        // Name the uncommitted work explicitly. It is the one thing a reset
+        // touches that never reached the product, so an operator reading only
+        // "worktrees removed" has no way to know work was lost from the mission
+        // even though the files were copied aside.
+        const uncommittedTotal = Object.values(report.uncommittedByAgent).reduce((a, b) => a + b, 0);
+        const uncommitted = uncommittedTotal
+          ? `${uncommittedTotal} uncommitted file(s) across ${Object.keys(report.uncommittedByAgent).length} worktree(s) never reached the product${report.uncommittedManifestTo ? ` (listed in ${report.uncommittedManifestTo})` : ""}; `
+          : "";
         return json(200, {
           ...report,
           note: report.archivedTo
-            ? `mission reset to zero; ${cleaned}${product}previous state archived outside the workspace at ${report.archivedTo}. Mesh is parked — press continue to start the new run.`
-            : `mission reset to zero; ${cleaned}${product}mesh is parked — press continue to start the new run.`,
+            ? `mission reset to zero; ${cleaned}${uncommitted}${product}previous state archived outside the workspace at ${report.archivedTo}. Mesh is parked — press continue to start the new run.`
+            : `mission reset to zero; ${cleaned}${uncommitted}${product}mesh is parked — press continue to start the new run.`,
         });
       }
       // The archives reset has left behind, newest first. Read-only, and the
@@ -2233,7 +2424,20 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           let createdPrompts: ReturnType<typeof materializeRolePrompts> = [];
           if (parts[1] === "save") {
             if (!b.path) return json(400, { valid: false, errors: ["save requires a path"] });
-            target = path.resolve(String(b.path));
+            // Contained to the project's config directory by the same rule the
+            // workspace file routes use. This route writes a file, creates
+            // directories and materializes prompt files next to it, so an
+            // uncontained `b.path` was an arbitrary-write primitive for anyone
+            // holding (or, unauthenticated, not needing) the operator token.
+            // A relative path now resolves against the config dir rather than
+            // the server's cwd, so the designer's "save a copy" still works for
+            // `examples/my-mesh/mesh.yaml`-shaped paths — inside the project.
+            const configRoot = path.resolve(config.dir);
+            const contained = resolveInside(configRoot, String(b.path));
+            if (!contained) {
+              return json(400, { valid: false, errors: [`save path escapes the project directory (${configRoot})`] });
+            }
+            target = contained;
             if (fs.existsSync(target) && fs.statSync(target).isDirectory()) target = path.join(target, "mesh.yaml");
             fs.mkdirSync(path.dirname(target), { recursive: true });
             // Keep the bytes we are about to overwrite as a recoverable version:
@@ -2717,16 +2921,8 @@ function artifactVersion(instance: MeshInstance, id: string, version: number): A
 
 /** Composer for the end-of-run report, shaped like the other state-derived
  * builders (`buildGoalView`, `buildMetrics`): projections first, goal id next.
- *
- * The third argument is the one input that is not a projection -- the alias
- * counters, which are process-scoped. It is optional and typed loosely here
- * because this module is loaded by `require` and the builder may be an older
- * one that never heard of it. */
-type RunReportBuilder = (
-  state: unknown,
-  goalId: string,
-  opts?: { aliases?: unknown },
-) => unknown | Promise<unknown>;
+ */
+type RunReportBuilder = (state: unknown, goalId: string) => unknown | Promise<unknown>;
 
 /**
  * Resolve core's run-report composer lazily. `packages/core/src/run-report.ts`
@@ -2800,11 +2996,37 @@ interface ActiveRun {
 const runs = new Map<string, ActiveRun>();
 let runSeq = 0;
 
+/**
+ * Credentials the mesh itself runs on, by exact name, beyond the `MESH_*`
+ * family: the model backend's keys. An agent-authored build has no use for
+ * the operator's Anthropic credential either.
+ */
+const RUN_ENV_WITHHELD = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"]);
+
+/**
+ * The environment a product script runs in. The script body comes from a
+ * package.json the seats write, so whatever this server's environment holds,
+ * that code can read — `process.env` used to hand it MESH_API_TOKEN, i.e. the
+ * operator's credential for this very server. Every `MESH_*` variable is
+ * withheld (the operator token, strict-auth and bus plumbing are all mesh
+ * internals, none of them an input to a product build), plus the model keys
+ * above. The rest passes through so PATH, HOME, npm config and the like keep
+ * builds working. The bridge secrets are never in the environment at all.
+ */
+function productRunEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.toUpperCase().startsWith("MESH_") || RUN_ENV_WITHHELD.has(k.toUpperCase())) continue;
+    env[k] = v;
+  }
+  return env;
+}
+
 function startRun(root: string, script: string, def: { cmd: string; args: readonly string[] }): ActiveRun | null {
   if ([...runs.values()].some((r) => !r.done)) return null;
   const id = `run-${++runSeq}-${Date.now().toString(36)}`;
   fs.mkdirSync(path.join(root, ".mesh-state", "run"), { recursive: true });
-  const proc = spawn(def.cmd, [...def.args], { cwd: root, env: process.env, shell: process.platform === "win32" });
+  const proc = spawn(def.cmd, [...def.args], { cwd: root, env: productRunEnv(), shell: process.platform === "win32" });
   const run: ActiveRun = { id, proc, log: `$ ${def.cmd} ${def.args.join(" ")}\n`, startedAt: Date.now(), done: false, exitCode: null };
   runs.set(id, run);
   const cap = (chunk: Buffer): void => {
@@ -3174,53 +3396,97 @@ export function gitFacts(root: string): Record<string, string> {
 }
 
 export async function startServer(options: BootstrapOptions & { port?: number; host?: string; dashboardDir?: string }): Promise<ServerHandle> {
-  const instance = await bootstrapMesh(options);
-  // Vite SPA build (npm run build:ui emits apps/mesh-dashboard/dist).
-  const dashboardDir =
-    options.dashboardDir ??
-    [
-      path.resolve(process.cwd(), "apps", "mesh-dashboard", "dist"),
-      path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-dashboard", "dist"),
-      path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
-    ].find((d) => fs.existsSync(d));
-  // `server.dashboard: false` used to be a key that did nothing: the SPA was
-  // mounted unconditionally while its two siblings (`host`, `port`) were both
-  // read two lines below. Withholding the directory is the whole mechanism --
-  // the static route is last and already no-ops without one, so the `/api`
-  // surface is untouched and only the HTML stops being served.
-  const server = createHttpServer(instance, {
-    dashboardDir: instance.config.server.dashboard === false ? undefined : dashboardDir,
-  });
-  const port = options.port ?? instance.config.server.port;
-  const host = options.host ?? instance.config.server.host;
-  await new Promise<void>((resolve, reject) => {
-    const onError = (err: Error & { code?: string }): void => {
-      if (err?.code === "EADDRINUSE") {
-        reject(
-          new Error(
-            `port ${port} is already in use — another mesh server (possibly a lingering one from Ctrl-C) still holds it. ` +
-              `Stop it first (or pick another --port).`,
-          ),
-        );
-      } else {
-        reject(err);
-      }
-    };
-    server.once("error", onError);
-    server.listen(port, host, () => {
-      server.off("error", onError);
-      resolve();
+  // The listener is bound BEFORE the mesh boots, through the
+  // `beforeInitialActivation` seam, because the seats' MCP bridge is spawned
+  // against this server's own URL — and for a child of the host, which asks the
+  // OS for port 0, that URL (port included) does not exist until `listen()` has
+  // run. Booted the other way round, the first wake of every live boot spawns a
+  // bridge at a URL nothing answers, spends the adapter's whole respawn ladder
+  // (5 spawns, 30s) on it, and loses the turn. Measured 2026-09-27: the child's
+  // bridge stayed unreachable for more than 35s after a restart, one lost turn
+  // each time.
+  let server: http.Server | undefined;
+  let actualPort = 0;
+  let boundHost = "";
+  const bind = async (instance: MeshInstance): Promise<void> => {
+    // A caller that supplied its own pre-activation work still gets it, and
+    // still gets it first: this seam is not exclusive.
+    if (options.beforeInitialActivation) await options.beforeInitialActivation(instance);
+    // Vite SPA build (npm run build:ui emits apps/mesh-dashboard/dist).
+    const dashboardDir =
+      options.dashboardDir ??
+      [
+        path.resolve(process.cwd(), "apps", "mesh-dashboard", "dist"),
+        path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-dashboard", "dist"),
+        path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
+      ].find((d) => fs.existsSync(d));
+    // `server.dashboard: false` used to be a key that did nothing: the SPA was
+    // mounted unconditionally while its two siblings (`host`, `port`) were both
+    // read two lines below. Withholding the directory is the whole mechanism --
+    // the static route is last and already no-ops without one, so the `/api`
+    // surface is untouched and only the HTML stops being served.
+    const s = createHttpServer(instance, {
+      dashboardDir: instance.config.server.dashboard === false ? undefined : dashboardDir,
     });
+    const port = options.port ?? instance.config.server.port;
+    const host = options.host ?? instance.config.server.host;
+    await new Promise<void>((resolve, reject) => {
+      const onError = (err: Error & { code?: string }): void => {
+        if (err?.code === "EADDRINUSE") {
+          reject(
+            new Error(
+              `port ${port} is already in use — another mesh server (possibly a lingering one from Ctrl-C) still holds it. ` +
+                `Stop it first (or pick another --port).`,
+            ),
+          );
+        } else {
+          reject(err);
+        }
+      };
+      s.once("error", onError);
+      s.listen(port, host, () => {
+        s.off("error", onError);
+        resolve();
+      });
+    });
+    server = s;
+    boundHost = host;
+    actualPort = (s.address() as { port: number }).port;
+    // Read afresh by every seat's runtime context, so it has to be settled
+    // before the first seat can be woken — which is exactly what the ordering
+    // above buys. Before this, a boot on an ephemeral port advertised the
+    // CONFIGURED port to its own seats.
+    process.env.MESH_BUS_URL = `http://${host}:${actualPort}`;
+  };
+  /** Ready when this server's bridge route is being served. */
+  const listenerReady = (): Promise<void> => {
+    if (!server || server.listening) return Promise.resolve();
+    return new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+  };
+  const instance = await bootstrapMesh({
+    ...options,
+    beforeInitialActivation: bind,
+    // The probe `supervisor.boot` holds the first live wake on. By the time boot
+    // runs, `bind` has already listened — so this resolves the moment it is
+    // asked and the boot's audit line reports a 0.0s wait, which is the truth
+    // here: readiness was established before the wake, not waited for. A caller
+    // that supplied its own probe is still honoured; the boot's own bound covers
+    // a probe that never answers.
+    bridgeReady: () => {
+      const caller = options.bridgeReady;
+      const theirs = caller === undefined ? undefined : typeof caller === "function" ? caller() : caller;
+      return theirs ? Promise.all([listenerReady(), theirs]).then(() => undefined) : listenerReady();
+    },
   });
-  const actualPort = (server.address() as { port: number }).port;
-  process.env.MESH_BUS_URL = `http://${host}:${actualPort}`;
+  if (!server) throw new Error("mesh booted without binding its HTTP port");
+  const listening = server;
   return {
-    server,
+    server: listening,
     instance,
     port: actualPort,
-    url: `http://${host}:${actualPort}`,
+    url: `http://${boundHost}:${actualPort}`,
     async close() {
-      await closeHttpServer(server);
+      await closeHttpServer(listening);
       try {
         await instance.close();
       } finally {

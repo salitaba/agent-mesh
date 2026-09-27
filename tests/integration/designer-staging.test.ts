@@ -44,6 +44,18 @@ async function stagingHarness() {
 
   m.designerRuntime.prompt = async (text, opts) => runTurn(text, opts);
   m.designerRuntime.promptStream = async (text, opts) => ({ reply: await runTurn(text, opts), thinking: "" });
+  // The human bridge credential is a secret the server mints and hands to its
+  // designer runtime through this locator — the same channel a real runtime
+  // uses. There is no fixed human token to hard-code any more.
+  let observe: (() => { busUrl: string; token: string } | undefined) | undefined;
+  m.designerRuntime.setDesignerObserve = (provider) => {
+    observe = provider;
+  };
+  const humanToken = (): string => {
+    const token = observe?.()?.token;
+    if (!token) throw new Error("the server handed its designer runtime no bridge token");
+    return token;
+  };
 
   const server = createHttpServer(m, { dashboardDir: undefined });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -51,6 +63,7 @@ async function stagingHarness() {
 
   return {
     base,
+    humanToken,
     script(fn: typeof turnScript) {
       turnScript = fn;
     },
@@ -65,7 +78,7 @@ async function stagingHarness() {
     async listTools(): Promise<string[]> {
       const res = await fetch(`${base}/internal/mcp/human?staging=1`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-mesh-token": "human-local" },
+        headers: { "content-type": "application/json", "x-mesh-token": humanToken() },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
       });
       const body = (await res.json()) as { result?: { tools?: { name: string }[] } };
@@ -255,7 +268,7 @@ test("designer staging: with two turns open and no turn header, staging is refus
     h.script(async (call) => {
       await bothStarted();
       // Drop the header the way opencode's shared, spawn-time bridge does.
-      const r = await call("mesh_stage_run_pause", {}, { headers: { "x-mesh-token": "human-local" } });
+      const r = await call("mesh_stage_run_pause", {}, { headers: { "x-mesh-token": h.humanToken() } });
       if (r.isError) errors.push(String(r.payload.error ?? ""));
       await bothCalled();
       return "done";
@@ -275,7 +288,7 @@ test("designer staging: a single open turn needs no header, which is how opencod
   const h = await stagingHarness();
   try {
     h.script(async (call) => {
-      const r = await call("mesh_stage_run_pause", { reason: "cooling off" }, { headers: { "x-mesh-token": "human-local" } });
+      const r = await call("mesh_stage_run_pause", { reason: "cooling off" }, { headers: { "x-mesh-token": h.humanToken() } });
       assert.equal(r.isError, false, JSON.stringify(r.payload));
       return "staged a pause";
     });

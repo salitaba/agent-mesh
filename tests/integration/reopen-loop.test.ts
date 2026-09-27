@@ -47,9 +47,18 @@ async function completeIt(m: Awaited<ReturnType<typeof mesh>>) {
   const gid = m.kernel.state.activeGoalId!;
   for (const rec of [...m.kernel.state.agents.values()]) {
     if (rec.state.agentId === "human" || rec.state.lifecycle !== "STARTING") continue;
-    await m.kernel.emit("agent.started", { agentId: rec.state.agentId }, { actorId: "system" }).catch(() => undefined);
+    // STARTING -> IDLE is a legal edge, so this must be accepted (the seat may
+    // be swept on to COMPLETED at once if the goal already closed). A swallowed
+    // rejection would leave the agent STARTING, which the completion sweep
+    // skips, and the path under test would quietly go unexercised.
+    await m.kernel.emit("agent.started", { agentId: rec.state.agentId }, { actorId: "system" });
+    assert.notEqual(m.kernel.state.agents.get(rec.state.agentId)!.state.lifecycle, "STARTING", `${rec.state.agentId} started`);
   }
-  await m.kernel.emit("goal.completed", { goalId: gid, reason: "test completion", evidence: [] }, { actorId: "human" });
+  // The watchdog may have reached the verdict first; a second `goal.completed`
+  // on a COMPLETED goal is refused (a verdict is not re-issued).
+  if (goalOf(m)?.status !== "COMPLETED") {
+    await m.kernel.emit("goal.completed", { goalId: gid, reason: "test completion", evidence: [] }, { actorId: "human" });
+  }
   await (m.supervisor as unknown as { completeMission(): Promise<void> }).completeMission();
   await waitFor("mission completed", () => goalOf(m)?.status === "COMPLETED", 8000);
 }

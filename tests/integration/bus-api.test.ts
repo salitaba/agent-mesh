@@ -4,7 +4,8 @@ import * as http from "http";
 import { makeMesh, waitFor, goalOf, stub } from "../helpers";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
 import { createHttpServer } from "../../apps/mesh-server/src/index";
-import { shortHash, type MeshOp } from "../../packages/protocol/src/index";
+import { type MeshOp } from "../../packages/protocol/src/index";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 
 function mcpReq(method: string, params: unknown, id = 1) {
   return { jsonrpc: "2.0", id, method, params };
@@ -21,7 +22,7 @@ test("mcp bus: initialize, tools/list, and a policy-governed tools/call", async 
   const goalId = m.kernel.state.activeGoalId!;
   const mcp = createMcpToolset(m.supervisor);
 
-  const tok = `${m.config.meshId}:dev:${shortHash(goalId)}`;
+  const tok = mintSeatToken(m.config.meshId, "dev", goalId);
   const init = (await mcp.handle("dev", tok, mcpReq("initialize", { protocolVersion: "2025-06-18" }))) as { result: { protocolVersion: string; serverInfo: { name: string } } };
   assert.ok(init.result.serverInfo.name.startsWith("mesh-bus-"));
 
@@ -61,7 +62,7 @@ test("mcp bus: read-only observability tools answer run questions", async () => 
   });
   const goalId = m.kernel.state.activeGoalId!;
   const mcp = createMcpToolset(m.supervisor);
-  const tok = `${m.config.meshId}:dev:${shortHash(goalId)}`;
+  const tok = mintSeatToken(m.config.meshId, "dev", goalId);
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const res = (await mcp.handle("dev", tok, mcpReq("tools/call", { name, arguments: args }))) as { result: { isError: boolean; content: Array<{ text: string }> } };
     assert.equal(res.result.isError, false, res.result.content[0]?.text);
@@ -111,7 +112,7 @@ test("mcp bus: read-only observability tools answer run questions", async () => 
 test("mcp bus: read-only toolset serves only read tools", async () => {
   const m = await makeMesh({ agents: [{ id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] }], mayContact: { dev: [] } });
   const mcp = createMcpToolset(m.supervisor, { readOnly: true });
-  const tok = `${m.config.meshId}:dev:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = mintSeatToken(m.config.meshId, "dev", m.kernel.state.activeGoalId);
 
   const list = (await mcp.handle("dev", tok, mcpReq("tools/list", {}))) as { result: { tools: Array<{ name: string }> } };
   assert.deepEqual(
@@ -347,7 +348,9 @@ test("http api: config designer — validate/parse/save + designer page served",
     assert.equal(parsed.status, 200);
     assert.equal(parsed.json.config.mesh.id, "y");
 
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-design-"));
+    // Under the running project's config dir: /config/save is contained to it
+    // (auth-surface.test.ts 8.2), so a sibling tmp dir would be refused.
+    const dir = fs.mkdtempSync(path.join(path.dirname(current.filePath), "mesh-design-"));
     const target = path.join(dir, "mesh.yaml");
     const saved = await post("/config/save", { config: doc, path: target });
     assert.equal(saved.status, 200, JSON.stringify(saved.json));
@@ -387,7 +390,7 @@ test("http api: config designer — validate/parse/save + designer page served",
     // skips (packages/config/src/index.ts:720 `if (!ref || path.isAbsolute(ref))
     // continue`), so the file is still absent when the warning loop runs. This
     // is the discrimination the split exists for, so it is asserted, not assumed.
-    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-dangle-"));
+    const dir2 = fs.mkdtempSync(path.join(path.dirname(current.filePath), "mesh-dangle-"));
     const dangling = JSON.parse(JSON.stringify(doc));
     dangling.agents.qa.prompt = path.join(dir2, "nowhere", "qa.md");
     const dw = await post("/config/save", { config: dangling, path: path.join(dir2, "mesh.yaml") });

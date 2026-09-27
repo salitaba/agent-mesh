@@ -21,6 +21,7 @@ mesh:
   workspace: { path: ./workspace }
   runtime:   { default: claude }    # + optional model: provider/model for the whole mesh.
                                      #   `variant` is inert here — see the note under agents.
+                                     #   + optional context_window: tokens — see "context_window" below.
   defaults:                         # mesh-wide session/delegation defaults every agent inherits
     session:    { persistent: true, max_context_tokens: 120000 }
     delegation: { allow: false, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }
@@ -72,6 +73,42 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 > keys are enforced. Note that `delegation.allow` and `max_depth` only take effect
 > alongside `max_workers: ≥ 1`; the supervisor denies `spawn_worker` when the
 > worker cap is 0.
+
+### context_window
+
+`mesh.runtime.context_window` (and a seat's own `agents.<id>.context_window`) is the
+context window, in tokens, that the Claude adapter measures a session against when
+it decides to rotate it. Rotation happens at 60% of the window. Resolution order:
+the seat's own `context_window`, then the window the adapter knows for the model the
+backend reports running, then `mesh.runtime.context_window`, then a 120,000-token
+floor. A mesh-wide value never raises a model the adapter knows to be smaller.
+
+Set it when seats run a model the adapter does not know. A proxied
+`deepseek-v4.1-flash` is one example: it fell to the 120k floor while having a 1M
+window, and each such fallback is logged once. The adapter measures a session's
+context as the largest single prompt of its last turn. It reads the usage on
+`message_start`, on `message_delta` (the only frame some proxies fill) and on
+assistant frames. When no frame reports usage, it estimates the size from the
+turn's summed reads and logs "context unmeasurable" once per seat session
+(NOTES-live-run-20260925-2040.md §1).
+
+`session.max_context_tokens` is parsed but read by no runtime; it does not
+control rotation. Use `context_window`.
+
+### stale_after_ms
+
+`mesh.runtime.stale_after_ms` is how long a seat's session may sit idle before the
+adapter rotates it, on the theory that the prompt cache expired in the gap and the
+next turn would re-read the whole transcript at full price. The adapter's own
+default is 10 minutes, which fits Anthropic's cache TTL.
+
+A route whose cache outlives that pays for rotations it does not need: measured on
+a proxied `deepseek-v4.1-flash` on 2026-09-27, 94% of the prompt was still cached
+after a 10-minute idle gap, and each rotation discards the seat's working context
+and costs it a re-orientation turn. Set an hour (`stale_after_ms: 3600000`) there.
+Mesh-wide only; there is no per-seat form. `mesh validate` refuses a value below
+a minute (60000), because anything shorter is a seconds-written-as-milliseconds
+typo rather than a window anyone means.
 
 ## agents
 
@@ -203,10 +240,11 @@ hazard rather than a design:
 
 - the `## Answering requests (the mesh tracks what you owe)` block, identical in
   all seven; and
-- the opening sentence of `## Close every turn` — *"Act through mesh tools when
-  available, else the `mesh-json` ops block — Mesh Context defines the exact
-  contract; never communicate outside the mesh."* — which each role then extends
-  with its own ending (`wait` vs `done`, and what the one-line summary says).
+- the opening sentence of `## Close every turn` — *"Act ONLY through the
+  `mesh_*` tools — Mesh Context lists them; nothing written in your reply text
+  is read as an op, and never communicate outside the mesh."* — which each role
+  then extends with its own ending (`mesh_wait` vs `mesh_done`, and what the
+  one-line summary says).
 
 Changing either means changing all seven, or the roles drift and the prompt
 stops describing one mesh. Edit them together; do not restructure the files
@@ -235,6 +273,38 @@ policies:
       when: { actor_role: developer, to: qa }      # `to` scopes to a recipient
       deny: { message_types: [INFORM] }
 ```
+
+### transitions
+
+Each key is a gate name; `requires` lists the approvals a transition through it
+demands, each written `<agent-id-or-role>.<kind>`. **Every entry must hold** —
+the list is ANDed.
+
+Join alternatives with `|` when one entry could be met by more than one seat:
+
+```yaml
+  patch.merge: { requires: [tech-lead.approve|architect.approve, qa.pass] }
+```
+
+This is still one requirement, satisfied by **any one** of the alternatives —
+`tech-lead.approve` alone, or `architect.approve` alone. `qa.pass` is a separate
+entry and is still required on top of it.
+
+Reach for it when a gate's single holder is a bottleneck. A gate on one seat
+queues every artifact through that seat's inbox: on a live mission one seat that
+was both the coordination hub and the merge gate received 42% of all messages
+and left 145 unread at the peak, while the work behind it stalled. Naming a pool
+of seats — by role, so the pool grows with the mesh — turns a queue into
+whichever of them is free.
+
+An `approve` is satisfied by a compatible stronger record (`accept`, `merge`,
+`pass`), as it always was, and a `block` by one alternative's actor sinks **only
+that alternative** — it never cancels the others. Alternatives are resolved
+independently; only if none is met does the refusal name them, joined by `|`:
+`missing: tech-lead.approve|architect.approve`.
+
+A malformed alternative (`|architect.approve`, `tech-lead.approve|`, `x.|y.z`)
+is refused at load.
 
 ### rules
 
@@ -394,12 +464,46 @@ scheduling:
 server: { host: 127.0.0.1, port: 7420, state_dir: ./workspace/.mesh-state, dashboard: true }
 ```
 
+`turn_timeout_ms` is a turn's budget. A turn that holds a task, or is still
+producing frames, runs on to a ceiling of three times it, and is warned at the
+budget and shortly before the ceiling; see "Turn deadlines" in `runtime.md`.
+Size it for a coordination turn, not for the longest build.
+
 Budgets are hierarchical: `mission → agent/task/thread/tool`. Overrun emits
 `budget.exceeded` and the termination manager escalates (it does **not** silently
 halt). `mesh run` writes `events.jsonl`, snapshots, turn audit, and a projection
 rejection log under `server.state_dir`.
 
-## bus: style, commitments, transport, vocabulary & delivery
+A seat whose own ledger is spent past its auto-raise ceiling is **parked**, not
+the mission: it takes no turns, its mail and the asks it owes wait, and an
+`agent_budget_exhausted` card for that seat goes to the operator while every other
+seat keeps working. Raising the seat's budget un-parks and wakes it. The goal
+halts only on the mission ledger, or when every live seat is parked. On a seat's
+last rung the pre-turn hold is the seat's real per-turn estimate (1.5x its moving
+average, uncapped), so a turn it cannot afford is refused at the door.
+
+```yaml
+budgets:
+  cache_read_weight: 0.1   # default 0
+```
+
+`cache_read_weight` (0..1) is the share of a turn's cache-read tokens billed to
+its ledgers. At the default 0 a turn is billed input + output + cache writes, and
+cache reads are free — which makes budgets bill cache luck: a turn that misses the
+cache is charged its whole prompt while a warm one reading millions is charged a
+fraction. Every `budget.consumed` on an agent ledger carries `cacheRead` and
+`cacheReadRatio` (reads over the whole prompt) either way, and `cacheReadBilled`
+when the weight is above 0.
+
+The Claude adapter's usage guard has no key; it is always on. Some backends
+drop their cache report partway through a turn. A call that then reports zero
+cache, after the same turn's previous call sent a prompt of at least 8,000
+tokens, has that prefix billed as `cache_read` rather than `input`
+(docs/runtime.md, `runtime-claude`). When it fires, the audit log gets one
+`usage re-attributed` line per seat session, and the moved tokens show up in
+that seat's `cacheRead`, not its billed total.
+
+## bus: style, commitments, vocabulary & delivery
 
 ```yaml
 bus:
@@ -411,7 +515,6 @@ bus:
     ttl_ms_by_role: { security: 7200000 }
     by_type: true           # and what `mesh init` writes; a bare typed ask inherits its
                             #   type's contract (refusals + SLA). Omit to leave it ungoverned.
-  transport: typed-only     # or omit for "mixed"
   vocabulary: contracts     # and what `mesh init` writes; omit (or "typed") for the full manifest
   delivery:
     classes: true           # omit for "every message wakes its recipients"
@@ -580,23 +683,12 @@ The ledger is capacity-bounded, and a full ledger **refuses the new ask**
 rather than evicting an old one: the refusal is recorded with reason
 `refused_cap` and the asker gets one immediate, visible failure. The message
 itself is still delivered — the cap bounds the obligation ledger, not the bus.
-- `transport: typed-only`: turns whose ops came from prose parsing are refused
-  (visible warning in the turn summary, counts toward the circuit breaker);
-  only MCP `mesh_*` tool calls execute. Use when models are strong enough to
-  reliably call tools and you want the text-parsing lottery off entirely.
-
-Under `typed-only` two further things change, both about vocabulary rather than
-delivery:
-
-- The advertised tool manifest drops the four tools a contract fully covers
-  (`mesh_request`, `mesh_request_review`, `mesh_research_request`,
-  `mesh_escalate`). This is **advertisement only** — a seat that names a hidden
-  tool still gets it, so nothing can be stranded by the filter. `mesh_send`
-  stays, because no contract covers answering or the message types the
-  catalogue does not name.
-- The invented-name tables in `op-aliases.ts` stop firing, so an op name or
-  message type a model made up is refused **by name** instead of being quietly
-  rewritten into the nearest real one.
+- `transport` was **removed**. It chose whether ops parsed out of a prose
+  `mesh-json` block executed (`mixed`) or were refused (`typed-only`); there is
+  no prose channel any more — every op is an MCP `mesh_*` tool call, and a
+  fenced ops block in a reply is never parsed. A mesh.yaml that still sets the
+  key loads, with the warning `bus.transport (...) was removed and is ignored`.
+  Delete the key.
 
 ### vocabulary
 
@@ -627,12 +719,13 @@ which is authorized by *owing* the answer rather than by having asked the
 question.
 
 `mesh_send`, `mesh_broadcast` and `mesh_respond` leave the advertised list,
-along with the four `typed-only` already drops. `mesh_reply` answers with the
+along with the four tools a contract fully covers (`mesh_request`,
+`mesh_request_review`, `mesh_research_request`, `mesh_escalate`). `mesh_reply` answers with the
 message id and the answer itself; `mesh_announce` broadcasts when you omit `to`
 and tells named seats when you give it. Both send `INFORM`, which the seat never
 writes — what settles an ask is `replyTo`, not the type.
 
-As with `typed-only`, hiding is **advertisement only**: `mesh_send` with a
+Hiding is **advertisement only**: `mesh_send` with a
 hand-written type still works for a model that reaches for it, so collapsing the
 vocabulary can never take a capability away from a seat or strand a mission.
 This is not a convention to trust — it is what the code does: `callTool`
@@ -644,8 +737,8 @@ runs, through every gate, unchanged. `MessageType` is untouched on the wire and
 stays what it should always have been — a rendering and telemetry detail.
 
 Be honest about the payoff: the token saving is small (the manifest shrink
-measured **−96 tokens/turn** when `typed-only` dropped four tools, and this
-drops three more while adding two). The real win is that a seat can no longer
+measured **−96 tokens/turn** for dropping the four contract-covered tools, and
+this drops three more while adding two). The real win is that a seat can no longer
 invent `RESULT`, because the manifest offers no field to invent it in — which is
 the entire reason `op-aliases.ts` exists (60 name aliases, 31 type aliases,
 thirteen words for "here is your answer" folded onto `INFORM`). An alias table
@@ -657,13 +750,6 @@ that scaffold is the **only** place the default is applied — exactly like
 "keep the full manifest", so a mesh that already exists advertises the same tool
 list it did before, tool for tool, and cannot acquire a different vocabulary by
 being upgraded. Set `vocabulary: typed`, or delete the key, to opt back out.
-
-This is independent of `transport`, although operators will usually set both.
-`transport` decides *how* an op may arrive (a typed tool call, or ops parsed out
-of prose); `vocabulary` decides *what* the typed surface offers. In particular
-the `op-aliases.ts` tables are still live under `vocabulary: contracts` with
-`transport: mixed`, because hiding a tool does not unteach its name to a model
-writing prose.
 
 ### delivery.classes
 
@@ -882,3 +968,213 @@ It is the one thing in the bus that makes an ask *cheaper for the recipient*,
 which is why it is worth reaching for on any mesh and not only a low-contact
 one. `afterMs` supplies a deadline on a mesh with no `commitments.ttl_ms`; with
 neither, the op is refused rather than left to wait forever.
+
+## messages: the digest, the inform expiry and the send budget
+
+```yaml
+mesh:
+  messages:
+    digest_threshold: 10      # default
+    inform_expiry_ms: 5400000 # default — 90 minutes
+    max_sends_per_turn: 5     # default
+```
+
+Three keys, all **on by default**, which makes this the one block in `mesh.yaml`
+that does not keep the repo's "absent means the behaviour every existing mesh
+already has" shape. That is deliberate. The mission these exist for had 145
+unread messages in the tech lead's box, 43 in qa's and 22 in the architect's,
+with `scheduling.concurrency.max_active_agents: 3` letting three seats run at
+once — and 18 code patches merged while not one acceptance criterion moved,
+because every seat's turn opened by draining a mailbox. The runtime's interest
+registry is nearly inert (4 wakes from 74 eligible events), so **mail, not
+interests, is what wakes a seat**, and a knob nobody has heard of would have
+bought that mission nothing. Set any key to `0` to get the old behaviour back.
+
+They are one story read from either end: `max_sends_per_turn` decides how full a
+box gets, `digest_threshold` decides how much of a full box a turn reads whole,
+and `inform_expiry_ms` decides what of it a turn stops reading at all.
+
+None of the three changes how many seats may run at once. That is an operator
+decision (`scheduling.concurrency`), and this block is not a way around it.
+
+### digest_threshold
+
+Above this many readable messages, the turn's brief collapses the **news** in it
+into **one digest block**. The block names the count, the sender tallies, the
+type tallies, the thread ids and their subjects, and **every message id**,
+grouped by thread and sender. No payload, note or artifact ref is printed for
+them.
+
+"News" is everything that owes no answer and moves no work. **Asks, work
+movements and `URGENT` mail are never collapsed** — a `REQUEST_*`, an
+`ESCALATE`, a `HANDOFF`, a `FAILED` verdict, a `MISSION` — and are rendered
+body-by-body exactly as before, because `message.delivered` means "rendered AND
+answered" and a seat handed a summary of an ask it owes has been made to answer
+blind. A mailbox of nothing but asks therefore produces no digest at all,
+however deep it is.
+
+Nothing is deleted and nothing is marked read by the digest: every message it
+names is still in the mailbox, still owed, and can still be pulled individually
+with `mesh_inbox` while the turn runs. `message.delivered` keeps its meaning and
+its timing — it fires at turn end, for the mail the turn was handed, exactly as
+before. Measured on a fixture of 145 INFORMs with 180-character bodies, the one
+block is ~571 estimated tokens against ~8,238 for the bodies it replaces.
+
+Exactly `digest_threshold` messages still renders normally; the block appears
+one message later.
+
+### inform_expiry_ms
+
+A plain `INFORM` older than this is no longer admitted to the brief. It is still
+in the **event log** and still in the **mailbox** — it simply stops spending
+brief tokens on a turn that has newer things to read, which is what a stalled
+mission's mail section mostly consisted of.
+
+"Plain INFORM" is a narrow, closed test, and the narrowness is the design:
+
+- **Asks never expire, at any age.** `REQUEST_*`, `ESCALATE`, `CHALLENGE`,
+  `PROPOSE` and anything else that opens a `pendingRequests` entry is admitted
+  forever, because the seat that owes the answer is the only one who can close
+  it. The test is the runtime's single obligation predicate, read off the
+  `control` envelope — never off agent-written payload.
+- **Work movement never expires.** A `MISSION`, `DELEGATE`, `HANDOFF` or
+  `FAILED` verdict is this seat's next piece of work; an expiry would be work
+  nobody was ever handed.
+- **An answer never expires.** A message with `replyTo` settles a commitment,
+  and the ledger counts the settlement whether or not the page showed it.
+- **`URGENT` never expires**, nor does anything carrying a `note`, an
+  `artifactRefs` entry or an `ifUnanswered` default — each is unique content
+  rather than a restatement.
+
+An expired INFORM is still **accounted for by the turn**, so it is marked
+delivered at turn end like any other mail. That is not an accounting trick: an
+INFORM that is neither shown nor delivered stays unread forever, which both
+keeps buying `STALE_MAIL` wakes for it and — at the 200-message box cap —
+starts evicting fresh mail as `mailOverflowDropped`.
+
+The loader refuses an `inform_expiry_ms` below a minute (60000), with a
+sentence rather than a schema keyword: anything shorter is seconds written where
+milliseconds belong, the same typo `mesh.runtime.stale_after_ms` is floored
+against. `mesh.messages` is closed (`additionalProperties: false`), so a
+misspelled key is a load error rather than a silent default.
+
+> **Wiring.** The brief is assembled in `packages/core/src/context.ts`, which
+> calls `mailBrief` (`packages/core/src/projections-messaging.ts`) and renders
+> its digest as a sub-heading of the unread-mail section, with the
+> obligations still rendering body by body below it. `brief.expired` feeds the
+> turn-end drain in the same call, so an expired INFORM is still delivered —
+> see the section above.
+
+### max_sends_per_turn
+
+How many messages **one seat's turn** may send before the rest of its
+FYI-class chatter is held back and delivered as **one digest** when the turn
+ends. `0` disables the budget.
+
+The other two keys make a full box cheap to read. This one is the only thing
+here that stops it filling: the mailbox cost of the 2026-09-27 run was 282
+messages in a day landing in eight boxes, 119 of them at one seat, ~100 never
+read. Its default of 5 is that run's own average (282 messages / 53 turns), so
+an ordinary turn is untouched and the budget bites on the burst — the seat
+answering six colleagues in one turn, which is the shape that produced the
+pile-up.
+
+What is **never** held, however far past the budget the turn is:
+
+- **An ask** (`REQUEST_*`, `ESCALATE`, `CHALLENGE`). It goes out as itself, with
+  its own thread, contract, deadline and `pendingRequests` entry, and the
+  semantic events it derives (`review.requested`, task binding, criterion
+  evidence) fire exactly as before. Batching one into a digest would deliver the
+  news of a question without the question.
+- **A work movement** — `MISSION`, `DELEGATE`, `HANDOFF`, `PATCH_READY`, a
+  verdict, a `FAILED` result. A digest cannot hand over custody of work.
+- **An answer** (anything with `replyTo`). `replyTo` is what discharges the ask
+  it answers; folded into a digest, a debt would stay open that was settled in
+  prose.
+- **`URGENT` mail**, and anything addressed to the human operator. The sender
+  ranked the first above everything else; the second is outside the mesh's
+  attention economy, and a notice to the operator buried in a digest aimed at
+  seats is the one message it was never told about.
+
+Held chatter is **not refused and not dropped**. At turn end the seat's held
+messages become one `INFORM` addressed to the union of their recipients, whose
+`payload.entries` carries **each held message whole** — type, recipients,
+thread, priority, artifact refs, requirements, note and payload — in send order. It opens no commitment, and on
+a mesh with `bus.delivery` it classes `accrue`, so a batch of FYIs cannot buy a
+wake per line through the back door. The flush runs from the turn's `finally`,
+so a turn that timed out mid-flight still ships what it had written; if the
+digest itself is refused by a communication rule, the entries are replayed
+individually rather than lost.
+
+The seat is told on the send that crosses the line: the op returns `ok: true`
+with no `messageId`, `merged: true`, and a sentence naming the key — so a model
+does not read the missing id as a failed send and write it again. That caveat
+also rides the turn summary.
+
+**Item 2 of the same redesign — pooling a review ask across several valid
+recipients — is not implemented, and cannot be expressed in this model.** The
+envelope addresses a list of seats and opens **one obligation per recipient**
+(`pendingRequests.outstanding`), and the ledger is explicit that one debtor
+answering settles only that debtor's debt. There is no first-responder
+semantics anywhere to reuse: the pooled *gate* (`"tech-lead.approve|architect.approve"`
+in `policies.transitions`) decides whose approval may ADVANCE an artifact, which
+is a different question from who owes an answer. Making an ask answerable by any
+of N seats would mean adding a distribution mode to the obligation predicate and
+the discharge rules (`packages/protocol/src/catalog.ts`,
+`packages/core/src/projections-messaging.ts`) — a change to what a debt IS, not
+a config key.
+
+## host.yaml — the multi-project host
+
+Everything above lives in a project's `mesh.yaml`, and describes one mission.
+`mesh host` supervises many of them and keeps its own settings in
+`<home>/host.yaml` (default `~/.agent-mesh/host.yaml`), beside `projects.json`:
+each knob here is **cross-project**, and a value declared by one project would
+be one of N conflicting ones. The file is optional — absent, unreadable or
+malformed all resolve to the defaults below — and every key may sit inside a
+`host:` block or at the top level.
+
+```yaml
+host:
+  project_memory_mb: 512        # per-child --max-old-space-size
+  max_concurrent_turns: null    # null = unlimited
+  spend_ceiling_usd: 50         # aggregate across open projects; null disables
+  heartbeat_timeout_ms: 60000   # silence before a child is treated as wedged
+  default_usd_per_mtok: 3       # fallback price for a model with no entry
+  model_prices:                 # USD per million tokens
+    anthropic/claude-sonnet-4: { input_per_mtok: 3, output_per_mtok: 15 }
+```
+
+`heartbeat_timeout_ms` is how long a child may go **silent** before the
+supervision watchdog stops it and restarts it with backoff. The child beats
+every 2s and the reading must be stale on **two consecutive polls**, so a single
+late poll is never a kill — but the window is what decides whether a busy
+host's unread pipe looks like a wedged child. It is 60s by default because the
+two errors are not symmetric: a false positive kills a working project mid-turn
+and costs its in-flight work, while a slow true positive leaves a wedged tab
+stale for another minute, and a wedged child spends nothing. Raise it (or set a
+very large value to make a silent child effectively unkillable) on a host whose
+child does long synchronous work; `null` is refused with a warning rather than
+read as "off". It is **not** editable from the Host settings screen and takes
+effect when the host starts, like every other value the supervision tree
+captures at construction.
+
+Every supervision decision — a crash, a health kill, a breaker trip — is
+appended as one line to `<project>/.mesh/host-supervision.log`: timestamp,
+project id, reason, the measured silence in ms, the restart count, and the
+action (`restart-with-backoff` with `retryInMs`, or `breaker-tripped`). The
+host prints the same decision on its own stderr. The kill path used to leave no
+durable trace at all, which is how a mission stopped as "unhealthy" while it
+was demonstrably working went undiagnosed.
+
+Each project's entry in `<home>/projects.json` also carries a `lastMode`
+(`live` or `parked`): the scheduler mode its child last reported on a beat,
+written only when it changes. It is there so a **host** restart restores what
+each project was doing — a child restart never needed it, since the supervisor
+remembers the mode in memory for as long as it lives. When a project is opened,
+the mode to spawn it with is decided in this order: what this host heard from
+its child, then `lastMode`, then the host's own default (`parked`, or `live`
+under `mesh host --live`). `lastMode` outranks `--live` on purpose: `--live`
+answers "this project's mode is unknown", and the same field records a park the
+aggregate ceiling imposed — a host that overrode it would spend straight back
+through the ceiling. Resume a parked project with `POST /mission/start`.

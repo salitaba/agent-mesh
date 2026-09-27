@@ -4,7 +4,7 @@ import { makeMesh, stub, waitFor } from "../helpers";
 import { buildAgentContext, renderContextInstructions } from "../../packages/core/src/context";
 import { createInitialState } from "../../packages/core/src/state";
 import { applyEvent } from "../../packages/core/src/projections";
-import type { Escalation, MeshOp } from "../../packages/protocol/src/index";
+import type { MeshOp } from "../../packages/protocol/src/index";
 
 /**
  * Deadlines and refusals: the two ways an ask ends without being answered by
@@ -212,16 +212,18 @@ test("deadlines: an ask an OPEN escalation points at is not expired out from und
       newThread: { subject: "which db?" }, payload: { q: "which db?" },
     });
     await quiet(m);
-    // The operator has been asked to resolve this exact ask.
-    m.kernel.state.escalations.set("esc-1", {
-      id: "esc-1",
-      goalId: m.kernel.state.activeGoalId ?? "goal-1",
+    // The operator has been asked to resolve this exact ask — raised through
+    // the supervisor's own `escalate`, so the card is in the log and the
+    // projection alike (it used to be written straight into the map).
+    const esc = await m.supervisor.escalate({
       reason: "stalemate:unanswered_request",
-      detail: { requestMessageId: ask.messageId!, agentId: "architect" },
       raisedBy: "termination-manager",
       conflictKey: `stuck:${ask.messageId}:architect`,
-      status: "OPEN",
-    } as Escalation);
+      detail: { requestMessageId: ask.messageId!, agentId: "architect" },
+    });
+    assert.equal(m.kernel.state.escalations.get(esc.id)?.status, "OPEN", "precondition: the card is open");
+    // Else a frozen goal, not the card, would be what spares the ask.
+    assert.equal(m.kernel.state.goals.get(m.kernel.state.activeGoalId!)?.status, "ACTIVE", "precondition: the mission is still live");
     const due = m.kernel.state.pendingRequests.get(ask.messageId!)!.dueBy!;
     await waitFor("the deadline passed", () => Date.now() > Date.parse(due));
     await internals(m).checkStall();

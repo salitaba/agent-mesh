@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { makeMesh, evidenceContent } from "../helpers";
 import type { MeshInstance } from "../../apps/mesh-server/src/index";
 import type { MeshOp, SubAgentResult } from "../../packages/protocol/src/index";
+import { FakeWorkspace } from "../support/fake-workspace";
 
 /**
  * The supervisor methods that no other test file reaches: commitment
@@ -800,11 +801,9 @@ test("a lease records the worktree the workspace handed out", async () => {
   });
   const saved = m.supervisor.deps.workspace;
   try {
-    m.supervisor.deps.workspace = {
-      ensureWorktree: async (agentId: string) => `/tmp/worktree-${agentId}`,
-      commitWorktree: async () => ({ commit: "abc1234", diffDigest: "sha256:fake", diff: "" }),
-      mergeWorktree: async () => ({ commit: "abc1234" }),
-    } as never;
+    m.supervisor.deps.workspace = new FakeWorkspace({
+      behaviour: { ensureWorktree: async (agentId: string) => `/tmp/worktree-${agentId}` },
+    });
     const artifactId = await publish(m, "dev", "patch", "CodePatch", evidenceContent("patch"));
     const res = await m.supervisor.executeOp("dev", { op: "acquire_lease", artifactId, files: ["src/a.ts"] } as MeshOp, fakeTurn("dev"));
     assert.equal(res.ok, true, res.reason);
@@ -869,12 +868,10 @@ test("only an agent that may write gets its own worktree", async () => {
   });
   const saved = m.supervisor.deps.workspace;
   try {
-    m.supervisor.deps.workspace = {
+    m.supervisor.deps.workspace = new FakeWorkspace({
       mainPath: "/tmp/product-main",
-      ensureWorktree: async (agentId: string) => `/tmp/worktree-${agentId}`,
-      commitWorktree: async () => ({ commit: "abc1234", diffDigest: "sha256:fake", diff: "" }),
-      mergeWorktree: async () => ({ commit: "abc1234" }),
-    } as never;
+      behaviour: { ensureWorktree: async (agentId: string) => `/tmp/worktree-${agentId}` },
+    });
     assert.equal(await m.supervisor.agentWorkspace("dev"), "/tmp/worktree-dev");
     assert.equal(
       await m.supervisor.agentWorkspace("architect"),

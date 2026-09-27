@@ -674,8 +674,10 @@ input.search { min-width: 220px; }
 .st-lane-sum span { font: 10px var(--mono); color: var(--muted); }
 .st-axis { position: relative; height: 18px; margin: 6px 0 0 124px; }
 .st-tick { position: absolute; top: 0; transform: translateX(-50%); font: 10px var(--mono); color: var(--muted); white-space: nowrap; }
-.st-tick.now { color: var(--text-dim); font-weight: 600; }
-.st-axis-note { position: absolute; right: 0; top: 0; font: 10px var(--mono); color: var(--text-dim); background: var(--panel); padding-left: var(--s2); }
+/* The edge ticks sit flush instead of centred, so neither hangs off the track. */
+.st-tick.edge { transform: none; }
+.st-tick.now { transform: translateX(-100%); color: var(--text-dim); font-weight: 600; }
+.st-axis-note { margin-right: auto; font: 10.5px var(--mono); color: var(--muted); }
 
 /* ---- sticky toolbar: the legend is the filter ---- */
 .st-toolbar {
@@ -733,15 +735,30 @@ input.search { min-width: 220px; }
 .st-l1 { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: 13.5px; line-height: 1.3; }
 .st-agent { color: var(--text); letter-spacing: -.005em; }
 .st-verb { color: var(--text-dim); }
+/* A live row's current tool: a path or command, so mono and clipped rather
+   than wrapping the row onto a third line. */
+.st-now-tool { font: 12px var(--mono); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-now-tool.run { color: var(--text); }
+.st-num span.st-left.warn { color: var(--warn); }
 .st-retry { font: 10.5px var(--mono); color: var(--warn); }
 .st-l2 { display: flex; gap: var(--s1-5); font-size: 12px; margin-top: var(--s0); color: var(--muted); overflow: hidden; white-space: nowrap; }
-.st-woke { flex: none; }
+.st-woke { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.st-woke svg { flex: none; opacity: .8; }
 .st-note { overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
 .st-note::before { content: "—"; margin-right: var(--s1-5); color: var(--muted); }
-.st-err { margin-top: 5px; font: 11.5px var(--mono); color: var(--bad); }
-/* Refusals are not crashes, so they must not wear --bad; they take the row's
-   own outcome colour, which is the refused orange on a refused row. */
-.st-refusal { margin-top: 5px; font: 11.5px var(--mono); color: var(--oc); }
+/* Two lines at most; the tooltip has the rest. */
+.st-err, .st-refusal {
+  margin-top: 5px; font: 11.5px/1.45 var(--mono); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.st-err { color: var(--bad); }
+/* On a blocked row the error is the blocker ("mission budget used up"), not a crash. */
+.st-row.o-block .st-err { color: var(--oc); }
+/* Refusals are not crashes, so they must not wear --bad — and they are the
+   refused orange on every row. Taking the row's outcome colour printed a live
+   row's refusal in accent blue and a producing row's in success green. */
+.st-refusal { color: var(--rej); }
+.st-refusal b { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; margin-right: var(--s1); }
 .otag { border-radius: 20px; padding: 1px 9px; font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .05em;
         color: var(--oc); background: color-mix(in srgb, var(--oc) 13%, transparent); border: 1px solid color-mix(in srgb, var(--oc) 32%, transparent); white-space: nowrap; }
 
@@ -822,18 +839,6 @@ input.search { min-width: 220px; }
    The step drawer is the one panel read under time pressure, so its header
    stays put while the body scrolls and every section carries a label instead
    of relying on the reader's memory of what order things came in. */
-/* `stepd-` prefix, not `step-`: the Steps list cards already own `.step-top`
-   and `.step-sub`, and a shared name here silently restyled that view. */
-.stepd-head { position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-sticky); margin: calc(var(--s5) * -1) -22px 0; padding: var(--s5) 22px 0;
-  background: color-mix(in srgb, var(--drawer) 92%, transparent); backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line); }
-.stepd-title { display: flex; align-items: center; gap: var(--s2-5); font-size: 17px; min-width: 0; }
-.stepd-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.15; }
-.stepd-who b { font-size: 17px; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stepd-id { font-size: 10.5px; color: var(--muted); letter-spacing: .02em; }
-.stepd-ctx { margin: 4px 0 0 38px; font-size: 12px; }
-.stepd-head .tabs { margin: var(--s3) 0 0; }
-
 .tabpanel { padding-top: var(--s4); }
 .tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--r); }
 .step-sec { margin: 0 0 var(--s5); }
@@ -855,32 +860,27 @@ input.search { min-width: 220px; }
   border: 1px solid color-mix(in srgb, var(--sc) 35%, var(--line)); border-left: 3px solid var(--sc);
   border-radius: var(--r); padding: 12px 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--sc) 7%, var(--bg-2)), var(--bg-2) 60%); }
-.sstat-live { --sc: var(--accent); } .sstat-ship { --sc: var(--ok); } .sstat-wait { --sc: var(--warn); }
+/* The same palette as the list's `.o-*`: the row a reader clicked was amber
+   for blocked and grey for a parked turn, and the drawer it opened said red
+   and amber for the same two verdicts. */
+.sstat-live { --sc: var(--accent); } .sstat-ship { --sc: var(--ok); } .sstat-wait { --sc: var(--muted); }
 .sstat-quiet { --sc: var(--muted); } .sstat-rej { --sc: var(--rej); }
-.sstat-block, .sstat-crash { --sc: var(--bad); }
-.sstat-top { display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; }
+.sstat-block { --sc: var(--warn); } .sstat-crash { --sc: var(--bad); }
 .sstat-badge { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--sc);
   background: color-mix(in srgb, var(--sc) 15%, transparent); border: 1px solid color-mix(in srgb, var(--sc) 30%, var(--line));
   border-radius: 20px; padding: var(--s0) var(--s2-5); white-space: nowrap; cursor: default; }
 .sstat-head { margin: 0; font-size: 15.5px; letter-spacing: -.01em; }
-.sstat-why { margin: 0; font-size: 13px; color: var(--text-dim); max-width: 62ch; }
+/* Labelled like "Next" below it, in a quieter tone: it is the kernel's wake
+   note, quoted, not the dashboard's reading of the step. */
+.sstat-why { display: flex; gap: var(--s2); align-items: baseline; }
+.sstat-why-l { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); flex: none; }
+.sstat-why p { margin: 0; font-size: 13px; color: var(--text-dim); max-width: 62ch; }
 .sstat-next { display: flex; gap: var(--s2); align-items: baseline; border-top: 1px dashed color-mix(in srgb, var(--sc) 35%, var(--line)); padding-top: var(--s2); }
 .sstat-next-l { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--sc); flex: none; }
 .sstat-next p { margin: 0; font-size: 12.5px; color: var(--text-dim); }
-.sstat-att { margin-left: auto; font-size: 11px; color: var(--muted); }
 .exec-foot { margin-top: var(--s5); padding-top: var(--s2); border-top: 1px solid var(--line); }
-.stepd-env { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); margin: 0 0 var(--s5); }
-.stepd-env > summary { display: flex; align-items: baseline; gap: var(--s2-5); padding: 9px 12px; cursor: pointer; list-style: none; }
-.stepd-env > summary::-webkit-details-marker { display: none; }
-.stepd-env > summary::before { content: "▸"; color: var(--muted); font-size: 11px; }
-.stepd-env[open] > summary::before { content: "▾"; }
-.stepd-env > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.stepd-env-line { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stepd-env-body { padding: 0 var(--s3) var(--s3); }
-.stepd-env-body > .sbx { margin-top: 0; }
-.stepd-env-body > .stepd-kpis { margin-top: var(--s2-5); }
 
-/* ---------- sandbox strip: what this agent was allowed to touch ---------- */
+/* ---------- permission strip: what the runtime's gate lets this agent touch ---------- */
 .sbx { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin: var(--s4) 0 0; }
 .sbx-label { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-right: var(--s0); }
 .sbx-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 9px 2px 7px; border-radius: 20px; font: 12px var(--sans);
@@ -889,54 +889,32 @@ input.search { min-width: 220px; }
 .sbx-chip small { font: 600 9.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
 .sbx-allow { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); background: color-mix(in srgb, var(--ok) 8%, transparent); }
 .sbx-allow i { background: var(--ok); }
-.sbx-ask { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, transparent); }
-.sbx-ask i { background: var(--warn); }
+.sbx-approval { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.sbx-approval i { background: var(--warn); }
+/* A partial grant (shell narrowed to the commit path): open, but not the
+   blanket "allowed" green — info, with a dashed edge for "only some of it". */
+.sbx-scoped { color: var(--info); border-style: dashed; border-color: color-mix(in srgb, var(--info) 45%, var(--line)); background: color-mix(in srgb, var(--info) 8%, transparent); }
+.sbx-scoped i { background: var(--info); }
 .sbx-deny { color: var(--muted); border-style: dashed; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
 .sbx-deny small { text-decoration: none; }
+.sbx-none { color: var(--text-dim); border-style: dashed; }
 .sbx-rt { margin-left: auto; font-size: 10.5px; color: var(--muted); }
 .sbx-sk { width: 64px; height: 20px; border-radius: 20px; }
 
 /* ---------- KPI grid: cost, time, tool volume, ops landed ---------- */
-.stepd-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: var(--s3) 0 0;
-  border: 1px solid var(--line); border-radius: var(--r); background: var(--line); overflow: hidden; }
-.stepd-kpis .kpi, .kpi-tile { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; background: var(--raised); min-width: 0; }
+.kpi-tile { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; background: var(--raised); min-width: 0; }
 .kpi-l { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
 .kpi-v { font: 600 15px var(--mono); letter-spacing: -.01em; display: flex; align-items: baseline; gap: var(--s1-5); flex-wrap: wrap; min-width: 0; }
 .kpi-s { font: 400 10.5px var(--sans); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-bar { display: block; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--accent-2) 22%, transparent); overflow: hidden; margin-top: var(--s0); }
 .kpi-bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 .kpi-part .kpi-v { color: var(--warn); }
-.stepd-model { font-family: var(--mono); }
-.stepd-skel { display: flex; flex-direction: column; gap: var(--s3); padding-top: var(--s1); }
 
 /* Empty states teach the next move instead of announcing absence. */
 .step-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1-5);
   border: 1px dashed var(--line-strong); border-radius: var(--r); padding: 16px 18px;
   font-size: 13px; color: var(--text-dim); max-width: 68ch; }
 .step-empty b { color: var(--text); font-size: 13.5px; }
-
-/* ---------- tool calls grouped by sandbox family ---------- */
-.tcg-list { display: flex; flex-direction: column; gap: var(--s1-5); }
-.tcg { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
-.tcg-blocked { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.tcg-head { display: flex; align-items: center; gap: var(--s2); padding: 7px 10px; cursor: pointer; user-select: none; font-size: 13px; }
-.tcg-head:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.tcg-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.tcg-caret { color: var(--muted); font-size: 11px; transition: transform .15s ease; width: 10px; }
-.tcg-caret.open { transform: rotate(90deg); }
-.tcg-name { font-weight: 600; }
-.tcg-n { font-size: 11px; color: var(--muted); padding: 0 var(--s1-5); border-radius: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
-.tcg-flag { margin-left: auto; font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--bad);
-  padding: var(--s0) var(--s2); border-radius: 20px; background: color-mix(in srgb, var(--bad) 14%, transparent); white-space: nowrap; }
-.tcg-flag.ask { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.tcg-rows { border-top: 1px solid var(--line); }
-.tcg-row { display: grid; grid-template-columns: 26px 78px minmax(0, 1fr); gap: var(--s2); align-items: baseline; padding: 5px 10px; font-size: 11.5px; border-top: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
-.tcg-row:first-child { border-top: 0; }
-.tcg-i { color: var(--muted); font-size: 10.5px; text-align: right; }
-.tcg-tool { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcg-arg { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcg-res { grid-column: 3; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcg-more { padding: 5px 10px; font-size: 11px; }
 
 /* ---------- live token stream (running step) ---------- */
 .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); flex: none; animation: blink 1.1s infinite; }
@@ -1013,6 +991,21 @@ input.search { min-width: 220px; }
 .toast.ok { background: color-mix(in srgb, var(--ok) 8%, var(--panel)); } .toast.bad { background: color-mix(in srgb, var(--bad) 9%, var(--panel)); } .toast.warn { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
 .toast b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin-bottom: var(--s0); }
 .toast-msg { display: block; }
+/* Repeat count on a toast that fired again while still up: one card saying
+   "×3" instead of three identical cards stacked over the page. */
+.toast-n { margin-left: var(--s1-5); font: 600 10.5px var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); }
+/* With a drawer open the right-hand corner is the step view's side column —
+   the inspector and the permission strip — and toasts sat on top of it. The
+   left corner is under the scrim, where nothing is being read. Phones keep the
+   full-width bar below. */
+@media (min-width: 801px) {
+  #drawer:not(.hidden) ~ #toasts { right: auto; left: 18px; }
+  /* Kept to the gutter the wide step drawer leaves where there is one (260px
+     at 1440): at the full 420px a toast reached into the ledger's first
+     column. Narrower screens have no gutter; 240px is the floor. */
+  #drawer:not(.hidden):has(.stepv) ~ #toasts { max-width: max(240px, calc(100vw - min(1180px, 96vw) - 36px)); }
+  #drawer:not(.hidden) ~ #toasts .toast-msg { overflow-wrap: anywhere; }
+}
 /* Full-width so it is a target, not a link buried in a sentence; 28px clears
    the 24px pointer floor with room, because this is the one control a user
    reaches for in a hurry. */
@@ -1257,16 +1250,68 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .grid.agents .agent-card.v-bad { border-left-color: var(--bad); }
 .agent-foot { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .agent-live { font-size: 11.5px; color: var(--text-dim); }
+.agent-now { margin-top: var(--s1-5); font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-now.run { color: var(--text); }
+
+/* ============ live work (liveview.tsx) ============
+   What a running turn is doing while it does it. The tone classes carry one
+   hue each, the same three the vitals strip uses. */
+.lw-ok   { --lw: var(--ok); }
+.lw-warn { --lw: var(--warn); }
+.lw-bad  { --lw: var(--bad); }
+.sv-metrics .lw-warn, .sv-metrics .lw-bad { color: var(--lw); }
+.lw { display: flex; flex-direction: column; gap: var(--s2-5); margin: 0 0 var(--s4); }
+.lw-now { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-size: 13px;
+  padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); }
+.lw-now-k { flex: none; font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.lw-now.run .lw-now-k { color: var(--ok); }
+.lw-now.fail .lw-now-k, .lw-now.fail .lw-now-w { color: var(--bad); }
+.lw-now-n { flex: none; font-size: 12.5px; color: var(--text); }
+.lw-now-t { min-width: 0; flex: 0 1 auto; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-now-w { flex: none; margin-left: auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.lw-dl-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; font-size: 12px; margin-bottom: var(--s1); }
+.lw-dl-left { color: var(--lw, var(--text)); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lw-dl-ext { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .05em; padding: 1px 7px; border-radius: 20px;
+  color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+.lw-dl-hard { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.lw-dl-el { margin-left: auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; }
+.lw-dl-track { position: relative; height: 8px; border-radius: 3px; background: var(--sunken); }
+.lw-dl-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--lw, var(--text-dim)); opacity: .75; transition: width .3s ease; }
+.lw-dl-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.lw-dl-mark.ceil { background: var(--bad); }
+.lw-adv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.lw-adv li { display: flex; align-items: baseline; gap: var(--s2); font-size: 12px; color: var(--text-dim);
+  padding: var(--s1-5) var(--s2-5); border-radius: var(--r-sm); background: color-mix(in srgb, var(--warn) 6%, var(--bg-2)); border: 1px solid var(--line); }
+.lw-adv-x { flex: none; margin-left: auto; font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--bad); }
+.lw-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
+.lw-tools { display: flex; flex-direction: column; }
+.lw-tool { display: grid; grid-template-columns: 16px minmax(64px, auto) minmax(0, 1fr) auto; align-items: baseline; gap: var(--s2);
+  padding: 4px var(--s2); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+.lw-tool.lw-failed { border-left-color: var(--bad); }
+.lw-mark { font-size: 10px; color: var(--muted); text-align: center; }
+.lw-running .lw-mark { color: var(--ok); animation: pulse-soft 1.6s ease-in-out infinite; }
+.lw-completed .lw-mark { color: var(--ok); }
+.lw-failed .lw-mark { color: var(--bad); }
+.lw-tool-n { font-size: 11.5px; color: var(--text); }
+.lw-tool-a { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-tool-w { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lw-tool-err { grid-column: 2 / -1; font-size: 11px; color: var(--bad); white-space: pre-wrap; word-break: break-word; }
+.lw-tools > .linklike { align-self: flex-start; margin-top: var(--s1-5); }
+.lw-file-list { list-style: none; margin: 0; padding: 0; font-size: 11px; color: var(--text-dim); max-height: 240px; overflow: auto; }
+.lw-file-list li { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-files { margin-bottom: 0; }
+.lw-cp { padding: var(--s2) var(--s3); border: 1px solid color-mix(in srgb, var(--info) 40%, var(--line)); border-radius: var(--r); background: var(--bg-2); font-size: 12.5px; }
+.lw-cp-ref { display: flex; align-items: center; gap: var(--s2); margin: var(--s1-5) 0; min-width: 0; }
+.lw-cp-ref code { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-cp .sv-fold { margin: var(--s1-5) 0 0; }
+.lw-quiet { font-size: 12px; margin: var(--s2) 0 0; }
 
 @media (max-width: 620px) {
   .vitals-nums, .agent-vitals { grid-template-columns: repeat(2, 1fr); }
   .tabs { overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tab-btn { flex: none; }
-  .stepd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sbx-rt { margin-left: 0; width: 100%; }
-  .stepd-head { top: -16px; margin: -16px -14px 0; padding: 16px 14px 0; }
-  .stepd-id { display: none; }
 }
 
 /* ============ crash detail + op latency ============ */
@@ -1280,16 +1325,20 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .crash-chain { font-size: 11px; margin-top: var(--s1); font-family: var(--mono); }
 .crash-stack { font: 400 11px var(--mono); max-height: 220px; overflow: auto; color: var(--text-dim); }
 
+/* Folded to one summary line; see OpLatency. */
+.oplat-fold { margin-top: var(--s3); }
+.oplat-sum-x { color: var(--rej); }
 .oplat { display: flex; flex-direction: column; gap: 3px; }
 .oplat-row { display: grid; grid-template-columns: minmax(90px, 150px) 1fr auto auto; gap: var(--s2);
   align-items: center; font-size: 12px; padding: var(--s0) 0; }
 .oplat-name { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oplat-bar { height: 6px; border-radius: 20px; background: var(--panel); overflow: hidden; }
 .oplat-bar i { display: block; height: 100%; background: var(--ok); border-radius: 20px; }
-.oplat-row.bad .oplat-bar i { background: var(--bad); }
-.oplat-row.bad .oplat-name { color: var(--bad); }
+/* `bad` here is a refusal, so it wears the refused orange like every other one. */
+.oplat-row.bad .oplat-bar i { background: var(--rej); }
+.oplat-row.bad .oplat-name { color: var(--rej); }
 .oplat-ms { font: 600 11px var(--mono); }
-.oplat-x { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--bad); }
+.oplat-x { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--rej); }
 
 /* ---------------------------------------------------------------------- *
  * Mission Debrief — what a COMPLETED goal actually shipped.
@@ -1403,6 +1452,20 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .fv-md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .fv-md .md-code { font: 400 12px/1.55 var(--mono); background: var(--sunken); border: 1px solid var(--line);
   border-radius: var(--r-sm); padding: var(--s2-5) var(--s3); overflow: auto; white-space: pre; margin: var(--s2) 0; }
+.fv-md ol { margin: 6px 0 6px 22px; padding: 0; }
+.fv-md li > ul, .fv-md li > ol { margin: 2px 0 2px 18px; }
+/* GFM tables, in a file and in a turn's narration alike. The wrapper scrolls
+   sideways so a wide table never scrolls the drawer at 390px. */
+/* `word-break: normal` undoes the prose's break-word, which let a column
+   shrink to a few letters and split `ArchitectureDocument` mid-word; a long
+   word now widens its column, and the wrapper scrolls if the table outgrows it. */
+.md-table { max-width: 100%; overflow-x: auto; margin: var(--s2) 0 var(--s3); word-break: normal; overflow-wrap: break-word; }
+.md-table table { border-collapse: collapse; font-size: 12.5px; line-height: 1.5; }
+.md-table th, .md-table td { border: 1px solid var(--line); padding: 5px var(--s2-5); text-align: left; vertical-align: top; }
+.md-table th { background: var(--sunken); font-weight: 600; color: var(--text); white-space: nowrap; }
+.md-table td { color: var(--text-dim); }
+.md-table .al-c { text-align: center; }
+.md-table .al-r { text-align: right; }
 
 /* version picker, filters, workspace search */
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
@@ -1566,14 +1629,15 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
    Replaces the five-tab step drawer. The reader's four jobs — follow the
    reasoning, debug the failure, audit the tool calls, move between turns —
    were mutually exclusive under tabs; here they share one scroll and a sticky
-   inspector column. `sv-` prefix: `stepd-` still dresses the skeleton and the
-   two not-found branches, and `step-` belongs to the Steps list cards. */
+   inspector column. `sv-` prefix: `step-` belongs to the Steps list cards. */
 
 /* Only a step earns the wide drawer; message/decide/artifact panels keep the
    reading width they were designed for. */
 .drawer:has(.stepv) { width: min(1180px, 96vw); }
 
 .stepv { display: flex; flex-direction: column; min-height: 0; }
+/* Walking: the previous step stays up, dimmed, until the next one arrives. */
+.stepv.pending .sv-body { opacity: .5; transition: opacity .12s ease .08s; pointer-events: none; }
 
 /* --- header --- */
 .sv-head {
@@ -1585,6 +1649,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
 .sv-walk { display: flex; align-items: center; gap: var(--s1); }
 .sv-walk-n { font-size: 11px; color: var(--muted); min-width: 78px; text-align: center; }
+.sv-walk .sv-walk-more { font-size: 11px; margin-left: var(--s1); }
 .sv-ident { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; margin-top: var(--s1); }
 .sv-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.15; }
 .sv-who b { font-size: 18px; letter-spacing: -.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1593,7 +1658,9 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-why { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 0 38px; font-size: 12px; color: var(--text-dim); }
 .sv-why-k { color: var(--text-dim); }
 .sv-why-x { font-size: 10.5px; color: var(--muted); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 6px; }
-.sv-why-a { font-size: 10.5px; color: var(--warn); }
+.sv-why-a { font-size: 10.5px; color: var(--warn); white-space: nowrap; }
+/* Scrolled: the reason line goes, the rest of the header stays put. */
+.sv-head.stuck .sv-why { display: none; }
 
 .sv-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s4); margin: var(--s2-5) 0 0 38px; font-size: 12px; color: var(--text); }
 .sv-metrics > span { display: inline-flex; align-items: center; gap: var(--s1-5); white-space: nowrap; }
@@ -1613,14 +1680,23 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-jump-b:hover { color: var(--text); background: var(--raised); }
 .sv-jump-b.on { color: var(--text); background: var(--raised); border-color: var(--line-strong); }
 .sv-jump-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.sv-jump-n { font-size: 10px; color: var(--muted); }
+.sv-jump-n { font-size: 11px; color: var(--muted); }
 
 /* --- two columns --- */
 .sv-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s5); align-items: start; padding-top: var(--s4); }
 .sv-main { min-width: 0; display: flex; flex-direction: column; gap: var(--s6); }
-.sv-side { position: sticky; top: 132px; display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+/* --sv-head-h is measured by StepDrawer (the header wraps); the header itself
+   sticks at -s5 against the drawer's padding, hence the correction. */
+/* Capped at the space under the header and scrolled as one: a sticky column
+   taller than the viewport can never show its bottom, and the inspector's
+   payloads used to scroll inside a scroller inside this one. */
+.sv-side {
+  position: sticky; top: calc(var(--sv-head-h, 150px) - var(--s5) + var(--s3));
+  max-height: calc(100vh - var(--sv-head-h, 150px) - var(--s3) * 2); overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: var(--s3); min-width: 0;
+}
 
-.sv-sec { scroll-margin-top: 148px; }
+.sv-sec { scroll-margin-top: calc(var(--sv-head-h, 150px) + var(--s3)); }
 .sv-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2-5); margin-bottom: var(--s2-5); border-bottom: 1px solid var(--line); padding-bottom: var(--s1-5); }
 .sv-sec-h h4 { margin: 0; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
 .sv-sec-n { font-size: 11px; color: var(--muted); }
@@ -1632,6 +1708,27 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   color: var(--text); white-space: pre-wrap; word-break: break-word;
 }
 .sv-prose.dim { color: var(--text-dim); font-size: 12.5px; }
+/* The narration as the markdown the model wrote: the source's own line
+   breaks are markup now, not layout, so pre-wrap would double them. Tighter
+   than a file's markdown — this is a reply, not a document. */
+.sv-md { white-space: normal; }
+.sv-md > :first-child { margin-top: 0; }
+.sv-md > :last-child { margin-bottom: 0; }
+.sv-md p { margin: 0 0 var(--s2); }
+.sv-md h1, .sv-md h2, .sv-md h3, .sv-md h4, .sv-md h5, .sv-md h6 { margin: var(--s3) 0 var(--s1-5); font-size: 13.5px; line-height: 1.35; }
+.sv-md h1, .sv-md h2 { font-size: 15px; }
+.sv-md ul, .sv-md ol { margin: 0 0 var(--s2); padding-left: 22px; }
+.sv-md li { margin: 3px 0; }
+.sv-md li > ul, .sv-md li > ol { margin: 2px 0 0; }
+.sv-md li::marker { color: var(--muted); }
+.sv-md strong { font-weight: 600; color: var(--text); }
+.sv-md a { color: var(--accent); }
+.sv-md code { font: 12px var(--mono); background: color-mix(in srgb, var(--line) 55%, transparent); padding: 1px 4px; border-radius: 4px; }
+.sv-md blockquote { margin: var(--s2) 0; padding: var(--s1) var(--s3); border-left: 3px solid var(--line-strong); color: var(--text-dim); }
+.sv-md hr { border: 0; border-top: 1px solid var(--line); margin: var(--s3) 0; }
+.sv-md .md-code { font: 12px/1.55 var(--mono); background: var(--sunken); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: var(--s2) var(--s2-5); overflow: auto; white-space: pre; margin: var(--s2) 0; }
+.sv-md .md-table { margin: var(--s2) 0 var(--s2-5); }
 
 /* --- op ledger --- */
 .sv-ops { display: flex; flex-direction: column; gap: var(--s1-5); margin-bottom: var(--s3); }
@@ -1647,42 +1744,64 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-op-ok { border-left-color: var(--ok); }
 .sv-op-miss { border-left-color: var(--warn); }
 .sv-op-na { border-left-color: var(--line-strong); }
+/* Refused is orange on the list page; red here said "crashed" for the same verdict. */
+.sv-op-refused { border-left-color: var(--rej); }
 .sv-op-i { font-size: 10.5px; color: var(--muted); }
 .sv-op-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .sv-op-r1 { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
-.sv-op-t { font: 600 13px var(--sans); letter-spacing: -.005em; }
+.sv-op-t { font: 600 13px var(--sans); letter-spacing: -.005em; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A refused row's title names what it tried, not what happened. */
+.sv-op-refused .sv-op-t { color: var(--text-dim); }
+.sv-op-why {
+  font: 11.5px/1.45 var(--mono); color: var(--rej); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.sv-op-note { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* The chip is clamped to its row and the value ellipsizes inside it; the full
+   text is the chip's title. Bare text in a nowrap chip ignored max-width and
+   scrolled the drawer sideways at 390px. */
 .sv-op-f {
-  display: inline-flex; align-items: baseline; gap: var(--s1); max-width: 100%;
+  display: inline-flex; align-items: baseline; gap: var(--s1); max-width: 100%; min-width: 0; overflow: hidden;
   padding: 1px 6px; border-radius: var(--r-sm); background: var(--raised);
   font: 11px var(--mono); color: var(--text-dim); white-space: nowrap;
 }
-.sv-op-f b { font: 600 9px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.sv-op-f b { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); flex: none; }
+.sv-op-fv { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sv-op-d { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-op-fx { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: var(--r-sm); white-space: nowrap; }
+.sv-op-fx { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: var(--r-sm); white-space: nowrap; }
 .sv-op-fx-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .sv-op-fx-miss { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .sv-op-fx-na { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.sv-op-fx-refused { color: var(--rej); background: color-mix(in srgb, var(--rej) 14%, transparent); }
+/* A pairing decided by order alone: same hue, no fill, so it reads as softer
+   than a confirmed one without inventing a fourth status colour. */
+.sv-op-fx-guess { color: var(--ok); border: 1px dashed color-mix(in srgb, var(--ok) 50%, transparent); }
+.sv-op-fx-missguess { color: var(--warn); border: 1px dashed color-mix(in srgb, var(--warn) 50%, transparent); }
 
 /* --- tool calls: flat and in execution order --- */
 .sv-tools { display: flex; flex-direction: column; }
 .sv-tool {
-  display: grid; grid-template-columns: 22px 52px minmax(80px, auto) minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 24px 64px minmax(80px, auto) minmax(0, 1fr) auto;
   align-items: baseline; gap: var(--s2-5); cursor: pointer;
   padding: 6px var(--s2-5); border-bottom: 1px solid var(--line); border-left: 2px solid transparent;
 }
 .sv-tool:hover { background: var(--raised); }
 .sv-tool.on { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
 .sv-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.sv-tool.blocked { border-left-color: var(--bad); }
-.sv-tool-i { font-size: 10px; color: var(--muted); }
-.sv-tool-fam { font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.sv-fam-edit { color: var(--warn); }
-.sv-fam-bash { color: var(--rej); }
-.sv-fam-webfetch { color: var(--info); }
+.sv-tool.failed { border-left-color: var(--bad); }
+/* A denied call is the sandbox saying no — a refusal, not a failure. */
+.sv-tool.denied { border-left-color: var(--rej); }
+.sv-tool-i { font-size: 11px; color: var(--muted); }
+/* Family is a label, not a verdict: status hues (warn, rej) made every edit
+   and shell call read as a problem and drowned out the one red that means
+   something here — a call the runtime recorded as denied or failed. Only
+   mesh calls, which are the actions, get the accent. */
+.sv-tool-fam { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); }
+.sv-fam-read, .sv-fam-other { color: var(--muted); }
 .sv-fam-mesh { color: var(--accent-2); }
 .sv-tool-n { font-size: 11.5px; color: var(--text); }
 .sv-tool-a { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-tool-blk { font: 600 9.5px var(--sans); text-transform: uppercase; color: var(--bad); }
+.sv-tool-x { font: 600 10.5px var(--sans); text-transform: uppercase; color: var(--bad); }
 
 /* --- events --- */
 .sv-evs { display: flex; flex-direction: column; margin-bottom: var(--s3); }
@@ -1692,29 +1811,53 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   padding: 5px var(--s2-5); border-bottom: 1px solid var(--line); border-left: 2px solid transparent;
 }
 .sv-ev:hover { background: var(--raised); }
+.sv-ev:not([role]) { cursor: default; }
 .sv-ev.on { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
 .sv-ev:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sv-ev-off { font-size: 10.5px; color: var(--muted); text-align: right; }
 .sv-ev-t { font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .04em; }
 .sv-ev-s { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-ev-q { font-size: 10px; color: var(--muted); }
+.sv-ev-q { font-size: 11px; color: var(--muted); }
+/* Bookkeeping, shown on request: present but a step back from the rest. */
+.sv-ev.quiet .sv-ev-t, .sv-ev.quiet .sv-ev-s { opacity: .6; }
+.sv-evs > .linklike { align-self: flex-start; margin-top: var(--s2); }
 
 /* --- inspector --- */
 .sv-insp { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
 .sv-insp-empty { padding: var(--s4); }
 .sv-insp-empty p { margin: 0; font-size: 12px; line-height: 1.5; }
 .sv-insp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2-5) var(--s3); border-bottom: 1px solid var(--line); background: var(--raised); }
-.sv-insp-head h4 { margin: 0; font: 600 12px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-insp-body { padding: var(--s3); max-height: min(58vh, 560px); overflow: auto; }
-.sv-insp-body h5 { margin: var(--s3) 0 var(--s1-5); font: 600 9.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sv-insp-head h4 { margin: 0; font: 600 12px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sv-insp-tools { display: inline-flex; align-items: center; gap: var(--s1); flex: none; }
+.sv-insp-body { padding: var(--s3); }
+.sv-insp-body h5 { margin: var(--s3) 0 var(--s1-5); font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .sv-insp-body h5:first-child { margin-top: 0; }
 .sv-insp-body p { font-size: 12px; line-height: 1.5; }
 .sv-insp-meta { font-size: 10.5px; color: var(--muted); margin-bottom: var(--s2); }
 .sv-json {
   margin: 0; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm);
   padding: var(--s2-5); font: 11px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word;
-  max-height: 300px; overflow: auto; color: var(--text-dim);
+  overflow-x: auto; color: var(--text-dim);
 }
+.sv-json + .linklike, .sv-diff + .linklike { margin-top: var(--s1-5); }
+.sv-h5-n { margin-left: var(--s1-5); font: 400 10.5px var(--mono); letter-spacing: 0; text-transform: none; }
+.sv-insp-body p.sv-insp-path { margin: 0; font-size: 11px; color: var(--text); overflow-wrap: anywhere; }
+/* A file edit, as text: fileview's diff line styles, wrapped to the column. */
+.sv-diff { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 11px; overflow-x: auto; }
+.sv-diff .fv-text { white-space: pre-wrap; word-break: break-word; }
+.sv-diff-gap { padding: var(--s0) var(--s2); font: 11px var(--mono); color: var(--muted); }
+.sv-insp-body p.sv-tool-err, .sv-insp-body p.sv-refused { margin: 0 0 var(--s2); padding: var(--s2) var(--s2-5); border-radius: var(--r-sm);
+  border-left: 2px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); color: var(--text); overflow-wrap: anywhere; }
+.sv-insp-body p.sv-refused { border-left-color: var(--rej); background: color-mix(in srgb, var(--rej) 8%, transparent); }
+.sv-refused b { font-weight: 600; }
+/* An argument the server cut at storage: without this the stored start reads
+   as the whole value, and "show all" cannot bring the rest back. */
+.sv-insp-body p.sv-clip { margin: 0 0 var(--s2); padding: var(--s1-5) var(--s2-5); border-radius: var(--r-sm); font-size: 11.5px;
+  border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--text-dim); overflow-wrap: anywhere; }
+.sv-clip b { color: var(--warn); font-weight: 600; }
+.sv-clip .mono { font-size: 11px; color: var(--text); }
+/* Inline under a row (narrow layout): set off from the list it interrupts. */
+.sv-ops > .sv-insp, .sv-tools > .sv-insp, .sv-evs > .sv-insp { margin: var(--s1-5) 0 var(--s2) var(--s4); }
 
 /* --- folds --- */
 .sv-fold { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); margin-bottom: var(--s2); }
@@ -1724,19 +1867,41 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sv-fold[open] > summary::before { content: "\25BE"; }
 .sv-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sv-fold > *:not(summary) { margin: 0 var(--s3) var(--s3); }
-.sv-base { display: flex; flex-wrap: wrap; gap: var(--s3); font-size: 11.5px; color: var(--text-dim); margin-top: var(--s2); }
+/* Side column with nothing selected: this step against the agent's usual. */
+.sv-ctx { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); padding: var(--s3); }
+.sv-ctx h5 { margin: var(--s3) 0 var(--s1-5); font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sv-ctx h5:first-child { margin-top: 0; }
+.sv-ctx dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1-5) var(--s3); margin: 0; font-size: 12px; }
+.sv-ctx dt { color: var(--muted); }
+.sv-ctx dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.sv-ctx dd.mono { font-size: 11px; color: var(--text-dim); }
+.sv-ctx .sbx { margin: 0; }
+/* The strip has no heading of its own above it: set it off from the list. */
+.sv-ctx > * + .sbx { margin-top: var(--s3); }
+.sv-ctx .sv-sec-n { margin: var(--s1-5) 0 0; }
+.sv-gone { margin: var(--s4) 0 var(--s3); }
+.sv-gone-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
+.sv-metrics .sv-met-rej { color: var(--rej); }
+/* What the kernel told the seat about its own turn, set above the narration:
+   worth reading before the prose, but advice, not an alarm. */
+.sv-notices { list-style: none; margin: 0 0 var(--s3); padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: var(--s1-5);
+  border: 1px solid color-mix(in srgb, var(--warn) 25%, var(--line)); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-2)); max-width: 68ch; }
+.sv-notice { font-size: 12.5px; line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
+.sv-notice::before { content: "▲"; color: var(--warn); font-size: 9px; margin-right: var(--s1-5); vertical-align: 1px; }
+.stepv > .sv-fold { margin-top: var(--s2); }
+.sv-tools > .linklike { align-self: flex-start; margin-top: var(--s2); }
 
 /* Narrow: the inspector stops being a column and becomes the last block, so
    nothing needs a horizontal scrollbar to be reachable. */
 @media (max-width: 1100px) {
   .drawer:has(.stepv) { width: min(760px, 96vw); }
   .sv-body { grid-template-columns: minmax(0, 1fr); }
-  .sv-side { position: static; }
-  .sv-insp-body { max-height: 420px; }
+  .sv-side { position: static; max-height: none; overflow: visible; }
 }
 @media (max-width: 640px) {
   .sv-metrics, .sv-why { margin-left: 0; }
-  .sv-tool { grid-template-columns: 22px 52px minmax(0, 1fr); }
+  .sv-tool { grid-template-columns: 24px 56px minmax(0, 1fr) auto; }
   .sv-tool-a, .sv-ev-q { display: none; }
   .sv-ev { grid-template-columns: 52px minmax(0, 1fr); }
   .sv-ev-t { display: none; }

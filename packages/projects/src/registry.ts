@@ -209,6 +209,38 @@ export class FileProjectRegistry implements ProjectRegistry {
     return this.open(id);
   }
 
+  /**
+   * Persist the mode a project's child is in, so a host that restarts opens it
+   * the way it was left rather than in the host's own default.
+   *
+   * Written through the registry — not a file of its own — because this *is*
+   * the host's durable per-project state: `projects.json`, with the same lock
+   * (`add`, `touch` and `remove` all read-modify-write under it) and the same
+   * temp-file-plus-rename writer, which is what makes a host killed mid-write
+   * leave the previous list intact rather than a half-written one.
+   *
+   * Silent when the value has not changed, which is the common case: the child
+   * reports its mode on every ~2s beat and only a change is worth a disk write.
+   * Silent too for an id that is no longer registered — a project removed while
+   * a late beat was in flight must not be resurrected as an entry.
+   *
+   * Throws only what the lock or the writer throws; the caller is on a
+   * heartbeat path and is expected to swallow it. Nothing about the *running*
+   * host depends on this succeeding: the supervisor's own memory is what a
+   * restart within this process reads.
+   */
+  async setMode(id: string, mode: "parked" | "live"): Promise<void> {
+    await withRegistryLock(this.file, () => {
+      const current = readProjectsFile(this.file);
+      const idx = current.findIndex((r) => r.id === id);
+      if (idx < 0) return;
+      if (current[idx].lastMode === mode) return;
+      current[idx] = { ...current[idx], lastMode: mode };
+      writeProjectsFile(this.file, current);
+      this.refs = current;
+    });
+  }
+
   private loadConfig(configPath: string): { projectId: string; projectName: string } {
     try {
       const resolved = resolveConfig(configPath);

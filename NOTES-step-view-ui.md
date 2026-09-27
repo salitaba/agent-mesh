@@ -213,3 +213,54 @@ the ledger distinguishes "no effect to find" from "effect missing". That distinc
 2. Fix NEW FINDING 1 — audit all `opHead` cases against `types.ts`, one pass.
 3. Then NEW FINDING 2 — the outcome classifier. Diagnose before editing.
 4. Scope guard still holds: step view only.
+
+## Session 6 (2026-09-26) — UX review, all findings fixed (uncommitted)
+Review run against the live skill-panel mesh; 21 findings, all addressed. Session 5's three
+NEW FINDINGS are CLOSED:
+1. `opHead` field names — audited against `types.ts` (send reads `artifactRefs`, create_task
+   reads `description`); the ledger now lives in DOM-free `apps/mesh-dashboard/src/ledger.ts`
+   with a vocabulary test over every MCP op tool (`tests/dashboard/ledger.test.ts`).
+2. Outcome block contradicting the ledger — root cause was server-side: `/steps` zero-filled
+   `ops` for any turn older than its tail scan, and the drawer trusted the list entry. Fixed by
+   `fillTurnSteps` (`apps/mesh-server/src/steps-view.ts`) and the drawer counting from its own
+   timeline first.
+3. Snake_case titles — every op has a sentence-case title.
+Also: the ledger is built from the uncapped `turn.ops` (tool-call args are capped at 30),
+refusals join from `opTimings`, the sandbox strip reads the Claude gate via
+`GET /agents/:id` `permissions` (the OpenCode mirror is gone), and tool rows flag only from
+the recorded `status`/`error`. Server-side parts need `npm run build` + host restart to be
+live; the dashboard parts are live under vite.
+Follow-ups the same day (also uncommitted):
+- Dashboard: Reasoning renders markdown through the shared `markdown.ts` (escape-first, tables and
+  ordered lists); the walker places a turn outside the loaded list by time and offers "load older"
+  (`stepwalk.ts`); uncaptured ledger rows take their title from a non-guess paired effect; the
+  inspector shows storage clips (`argsClipped`); Tools rows are numbered by the call's own `index`.
+- Core: `claimIsVerified` treated every live MCP criterion acceptance as verified. Fixed with a
+  turn-start tally fed from live tool frames; see tests/core/verification-gate-live.test.ts.
+  Stored tool args are bounded (4000 chars per string, `argsClipped` records original lengths),
+  and mesh op calls are captured past the 30-call cap (30 non-mesh plus 120 mesh, each with `index`).
+- MCP: `mesh_contracts` returns its catalogue; result ids come back under named keys (decisionId,
+  leaseId, commit, workerId), and caveats come back as `note`. A concurrent session co-owned
+  mcp.ts, supervisor.ts and turn-tracker.ts.
+
+## Session 7 (2026-09-26) — list + drawer polish from live screenshots (uncommitted)
+Shot against the live skill-panel mesh under vite :5173 (script: `/tmp/stepshot/shot.mjs`).
+- Timeline axis read "-704m 41s": `dur` had no hours tier (and could print "3m 60s"). `dur`
+  now goes `Xh Ym` past an hour; ticks count back from "now" in whole steps with `spanLabel`
+  ("-12h … -2h now"); the "N older turns" note moved beside the caption (it covered "now").
+- Rows: "woken by restarted after a problem" → a wake icon plus the phrase alone. Refusal and
+  error lines are 2-line CSS clamps with the full text in the tooltip (the 160-char slice cut
+  words); refusals are always `--rej` (they took `--oc`: blue on live rows, green on producing
+  ones); a blocked row's error takes its amber; `plainBlocker` renders the budget gate's
+  `budget mission:goal-… exhausted (13065531/12640000)` as "mission budget used up — 13.1M of 12.6M".
+- FoldRow keyed on its oldest turn, so a new quiet turn no longer snaps an open fold shut.
+- Drawer: a refused ledger row shows the kernel's reason inline (it was tooltip-only, under a
+  past-tense title like "Merged …"); titles are one clipped line; refused is `--rej`
+  everywhere (ledger border/badge, header count, inspector, op latency, denied tools); the
+  status palette matches the list (blocked amber, parked grey); OpLatency names ops in sentence case.
+- Server: `/steps` re-applies `boundOpTiming`. Records persisted before write-time bounding
+  carry every read_artifact body as `reason` — 1.45 MB of the 1.56 MB list payload, polled
+  every 3.5s. Live only after `npm run build` + host restart.
+Still open: `hhmmss` renders UTC (event rows, inspector) beside local times elsewhere — it is
+shared with the Events view, so left for a decision; `<li role="button">` rows replace their
+content with `aria-label`; the timeline bars are one tab stop each.

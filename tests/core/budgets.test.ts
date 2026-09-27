@@ -65,10 +65,24 @@ test("reserve: an unlimited ledger never blocks and grants exactly what was aske
   assert.equal(ledgerOf(kernel, "mission:g1").reserved, 9_999_999);
 });
 
-test("reserve: partial headroom grants less than requested instead of refusing", async () => {
-  const { kernel, budget } = makeBudget();
+test("reserve: partial headroom is refused by default — a hold cannot cap the spend it admits", async () => {
+  const { kernel, store, budget } = makeBudget();
   await budget.reserve("mission:g1", "tokens", 60, 100);
   const r = await budget.reserve("mission:g1", "tokens", 50, 100);
+
+  assert.equal(r.blocked, true);
+  assert.equal(r.granted, 0);
+  assert.equal(r.reservationId, "");
+  assert.match(r.reason ?? "", /short: 40 left/);
+  assert.equal(ledgerOf(kernel, "mission:g1").reserved, 60, "a refused ask holds nothing");
+  // Headroom remains, so this is not an exhaustion and must not spend the once-per-key latch.
+  assert.equal((await types(store)).includes("budget.exceeded"), false);
+});
+
+test("reserve: with allowPartial, partial headroom grants less than requested instead of refusing", async () => {
+  const { kernel, budget } = makeBudget();
+  await budget.reserve("mission:g1", "tokens", 60, 100);
+  const r = await budget.reserve("mission:g1", "tokens", 50, 100, { allowPartial: true });
 
   // The point of this branch: not blocked, but the caller must be able to SEE
   // it did not get what it asked for. A `granted === requested` here would be

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { vitalsOf, phaseLegs, STALL_BAD_MS, type TurnPhases } from "../../apps/mesh-dashboard/src/vitals";
+import { vitalsOf, phaseLegs, toolWorkLabel, STALL_BAD_MS, type TurnPhases } from "../../apps/mesh-dashboard/src/vitals";
 
 /**
  * The bug these cover: an agent that designs by writing files never streams a
@@ -19,6 +19,7 @@ test("a turn working through tools reads as working, not as no response", () => 
     // used to be slandered as dead.
     phases: base({ firstActivityAt: NOW - 80_000, lastActivityAt: NOW - 1_000 }),
     toolFrames: 6,
+    toolCallCount: 3,
     running: true,
     now: NOW,
   });
@@ -26,14 +27,15 @@ test("a turn working through tools reads as working, not as no response", () => 
   assert.equal(v.health, "streaming");
   assert.equal(v.label, "working");
   assert.equal(v.toolFrames, 6);
-  assert.match(v.detail, /6 tool calls/);
+  assert.match(v.detail, /3 tool calls/, "the count is of calls, not of their start+result frames");
   assert.equal(v.silentMs, 1_000, "silence runs from the last sign of life, not the last token");
 });
 
 test("tool work that then stops still reports a stall", () => {
   const v = vitalsOf({
     phases: base({ firstActivityAt: NOW - 80_000, lastActivityAt: NOW - (STALL_BAD_MS + 5_000) }),
-    toolFrames: 2,
+    toolFrames: 4,
+    toolCallCount: 2,
     running: true,
     now: NOW,
   });
@@ -86,4 +88,58 @@ test("a turn that streamed gets no duplicate tool leg", () => {
 
   assert.equal(legs.filter((l) => l.key === "work").length, 0, "tokens stamp activity too — that leg would double-count the stream");
   assert.ok(legs.some((l) => l.key === "stream"));
+});
+
+test("a finished turn's legs are described in the past tense", () => {
+  // "prompt sent, nothing back yet" was printed under turns that had ended
+  // an hour earlier: the hint described a wait that was long over.
+  const done = phaseLegs(
+    base({ contextAt: NOW - 89_000, firstTokenAt: NOW - 70_000, llmDoneAt: NOW - 10_000, opsDoneAt: NOW - 9_000, endedAt: NOW - 9_000 }),
+    false,
+    NOW,
+  );
+  const wait = done.find((l) => l.key === "wait");
+  assert.ok(wait, `expected a wait leg, got ${done.map((l) => l.key).join(",")}`);
+  assert.doesNotMatch(wait.hint, /nothing back yet/);
+  assert.ok(done.every((l) => !l.open), "every leg of a finished turn is closed");
+  assert.equal(done.find((l) => l.key === "stream")?.hint, "streamed its reply");
+});
+
+test("only the leg still accruing on a live turn reads as happening now", () => {
+  const live = phaseLegs(base({ contextAt: NOW - 89_000, firstTokenAt: NOW - 70_000 }), true, NOW);
+  const wait = live.find((l) => l.key === "wait");
+  const stream = live.find((l) => l.key === "stream");
+  assert.ok(wait && stream);
+  assert.equal(stream.open, true);
+  assert.equal(stream.hint, "streaming its reply");
+  assert.equal(wait.open, false);
+  assert.doesNotMatch(wait.hint, /nothing back yet/, "the wait is over once the first token landed, live turn or not");
+});
+
+test("an older record with frames only is labelled in frames, never as calls", () => {
+  // A call's start and its result are both frames, so "N tool calls" off the
+  // frame count doubled every figure (94 calls read as 188).
+  const v = vitalsOf({
+    phases: base({ firstActivityAt: NOW - 80_000, lastActivityAt: NOW - 1_000 }),
+    toolFrames: 188,
+    running: true,
+    now: NOW,
+  });
+  assert.match(v.detail, /188 tool frames/);
+  assert.doesNotMatch(v.detail, /tool calls?\b/);
+  assert.equal(toolWorkLabel(94, 188), "94 tool calls");
+  assert.equal(toolWorkLabel(1, 2), "1 tool call");
+  assert.equal(toolWorkLabel(undefined, 1), "1 tool frame");
+  assert.equal(toolWorkLabel(0, 0), "tool calls", "nothing counted: the generic phrase, not a zero");
+});
+
+test("the deadline and ceiling stamps never become a phase leg", () => {
+  // They are future promises, not marks: read as marks, a live turn grew a leg
+  // that ran to its stop time, and a finished turn's span stretched to it.
+  const marks = base({ contextAt: NOW - 89_000, firstTokenAt: NOW - 70_000, llmDoneAt: NOW - 10_000, opsDoneAt: NOW - 9_000, endedAt: NOW - 9_000 });
+  const withStops = { ...marks, deadlineAt: NOW + 600_000, ceilingAt: NOW + 1_800_000 };
+  assert.deepEqual(phaseLegs(withStops, false, NOW), phaseLegs(marks, false, NOW));
+  const live = { ...base({ firstActivityAt: NOW - 80_000, lastActivityAt: NOW - 1_000 }), deadlineAt: NOW + 60_000, ceilingAt: NOW + 900_000 };
+  const legs = phaseLegs(live, true, NOW);
+  assert.ok(legs.every((l) => l.offset + l.ms <= 90_000), "no leg reaches into the future");
 });

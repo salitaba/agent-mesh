@@ -25,10 +25,21 @@ function walk(dir: string, ext: string, out: string[] = []): string[] {
   return out;
 }
 
-test("every compiled file in dist still has a source", () => {
-  const root = process.cwd();
-  const dist = path.join(root, "dist");
-  if (!fs.existsSync(dist)) return; // nothing built, nothing to contradict
+/** The source tree the compiled tree was built from. The repo's own `dist/`
+ *  sits directly under it; an out-of-tree build (one that symlinks the repo's
+ *  `package.json` into its output root) is traced back through that link. */
+function sourceRootOf(dist: string): string {
+  const linked = path.join(dist, "package.json");
+  if (fs.existsSync(linked) && fs.lstatSync(linked).isSymbolicLink()) return path.dirname(fs.realpathSync(linked));
+  return path.dirname(dist);
+}
+
+test("every compiled file in dist still has a source", (t) => {
+  // The tree this very file was compiled into (`<dist>/tests/build/`). This
+  // used to be `<cwd>/dist` with a bare `return` when absent, so running the
+  // suite from any other directory reported a pass that checked nothing.
+  const dist = path.resolve(__dirname, "..", "..");
+  const root = sourceRootOf(dist);
 
   const sources = new Set<string>();
   for (const top of ["packages", "apps", "tests"]) {
@@ -38,6 +49,11 @@ test("every compiled file in dist still has a source", () => {
       if (file.endsWith(".d.ts")) continue;
       sources.add(path.relative(root, file).replace(/\.ts$/, ""));
     }
+  }
+
+  if (sources.size === 0) {
+    t.skip(`no TypeScript sources under ${root}: cannot tell which compiled files are orphans`);
+    return;
   }
 
   const orphans = walk(dist, ".js")

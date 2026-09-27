@@ -15,6 +15,22 @@ export type ProjectRef = {
   configPath: string;
   addedAt: string;
   lastOpenedAt?: string;
+  /**
+   * The scheduler mode this project's child was last in, as the child itself
+   * reported it on a heartbeat.
+   *
+   * Persisted — unlike the host's other bookkeeping (the crash breaker, the
+   * policy parks), which is deliberately per-process — because this fact
+   * outlives the process that learned it. A host that restarts with an empty
+   * memory spawns each child in the host's own default, which on a host booted
+   * without `--live` is `parked`: a mission the operator had running stops
+   * running, and every surface still reads "running".
+   *
+   * Optional, like `lastOpenedAt`, and for a related reason: a project added
+   * and never opened has nothing to restore, and an entry written by a build
+   * that predates this field must keep loading.
+   */
+  lastMode?: "parked" | "live";
 };
 
 export type ProjectStatus =

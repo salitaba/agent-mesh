@@ -34,7 +34,11 @@ export interface TurnStep {
   durationMs?: number;
   status: "running" | "ok" | "waiting" | "blocked" | "failed";
   lifecycle: string;
-  ops: { messages: number; artifacts: number; tasks: number; decisions: number };
+  /**
+   * Absent when the server found no log events for the turn: unknown, which is
+   * not the same as zero (a zero read as "produced nothing" on turns that had).
+   */
+  ops?: { messages: number; artifacts: number; tasks: number; decisions: number };
   messageIds: string[];
   artifactIds: string[];
   tokens: number;
@@ -57,10 +61,25 @@ export interface TurnStep {
   /** >1 when the scheduler re-activated this agent after a timeout. */
   attempt?: number;
   streamChars?: number;
-  /** Tool frames seen — the only throughput a file-writing turn produces. */
+  /** Tool frames seen — the only throughput a file-writing turn produces.
+   *  FRAMES (start + result per call), so never label this as calls. */
   toolFrames?: number;
   errorDetail?: import("./vitals").TurnError;
   opTimings?: import("./vitals").OpTiming[];
+  /* Live work, mirrored from the server step (packages/observability steps.ts).
+     Only for turns still in the server's memory; absent means unknown. */
+  /** Tool calls announced so far — calls, not frames. */
+  toolCallCount?: number;
+  /** The newest running call, else the newest. The full list is on /turns/:id. */
+  currentTool?: import("./livework").CurrentTool;
+  /** When the turn will be stopped as things stand (epoch ms); moves later when extended. */
+  deadlineAt?: number;
+  /** The hard stop no extension passes (epoch ms). */
+  ceilingAt?: number;
+  /** Billable tokens so far; superseded by `tokens` once the turn ends. */
+  liveTokens?: number;
+  filesTouchedCount?: number;
+  advisoryCount?: number;
 }
 
 export interface Toast {
@@ -75,6 +94,8 @@ export interface Toast {
    * read is worse than none at all.
    */
   action?: { label: string; run: () => void };
+  /** How many identical notices this toast stands for (absent means one). */
+  count?: number;
 }
 
 /** Live token buffer for one running turn (out-of-band, never in the log). */
@@ -196,6 +217,8 @@ const StreamsCtx = createContext<{ streams: Record<string, StreamBuf> }>({ strea
 export const useMeshStreams = (): { streams: Record<string, StreamBuf> } => useContext(StreamsCtx);
 
 let toastId = 1;
+/** Events older than this are history being replayed, not something to announce. */
+const TOAST_FRESH_MS = 60_000;
 
 /**
  * One instance per open project, mounted with `key={projectId}` so React gives
@@ -237,6 +260,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const [vocab, setVocab] = useState<any>(null);
   const [goalId, setGoalId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastsRef = useRef<Toast[]>([]);
+  const toastTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const [drawerStack, setDrawerStack] = useState<ReactNode[]>([]);
 
   const eventById = useRef(new Map<string, TimelineEvent>());
@@ -247,6 +272,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const lastSeqRef = useRef(0);
   const stepsAt = useRef(0);
   const statusInflight = useRef<Promise<void> | null>(null);
+  const stepsInflight = useRef<{ limit: number; p: Promise<void> } | null>(null);
+  const overviewStepsInflight = useRef(false);
 
   // Every call this store makes is bound to its own project, so two mounted
   // providers can never answer each other's requests.
@@ -295,13 +322,37 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const subscribe = projectsCtx?.subscribe;
 
   const toast = useCallback((title: string, msg: string, kind = "", action?: Toast["action"]) => {
-    const id = toastId++;
-    const dismiss = () => setToasts((t) => t.filter((x) => x.id !== id));
-    const wrapped = action ? { ...action, run: () => { dismiss(); action.run(); } } : undefined;
-    setToasts((t) => [...t.slice(-3), { id, title, msg, kind, action: wrapped }]);
+    // A ref mirrors the list so a repeat can be found and its timer re-armed
+    // synchronously; a state updater runs too late to know which toast it hit.
+    const put = (next: Toast[]): void => {
+      toastsRef.current = next;
+      setToasts(next);
+    };
+    const dismiss = (id: number): void => {
+      clearTimeout(toastTimers.current.get(id));
+      toastTimers.current.delete(id);
+      put(toastsRef.current.filter((x) => x.id !== id));
+    };
     // 4.8s is enough to read a confirmation but not to notice, aim at and press
     // an Undo button — so an actionable toast gets roughly twice the window.
-    setTimeout(dismiss, action ? 10000 : kind === "bad" ? 7600 : 4800);
+    const life = action ? 10000 : kind === "bad" ? 7600 : 4800;
+    const arm = (id: number): void => {
+      clearTimeout(toastTimers.current.get(id));
+      toastTimers.current.set(id, setTimeout(() => dismiss(id), life));
+    };
+    // The same notice twice becomes one toast with a count: four identical
+    // "budget exceeded" cards stacked over the step view said nothing the
+    // first did not. An actionable toast is never merged — each Undo is its own.
+    const same = action ? undefined : toastsRef.current.find((x) => !x.action && x.title === title && x.msg === msg && x.kind === kind);
+    if (same) {
+      put(toastsRef.current.map((x) => (x.id === same.id ? { ...x, count: (x.count ?? 1) + 1 } : x)));
+      arm(same.id);
+      return;
+    }
+    const id = toastId++;
+    const wrapped = action ? { ...action, run: () => { dismiss(id); action.run(); } } : undefined;
+    put([...toastsRef.current.slice(-3), { id, title, msg, kind, action: wrapped }]);
+    arm(id);
   }, []);
 
   useEffect(() => {
@@ -389,16 +440,32 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const refreshSteps = useCallback(async (force = false) => {
     if (viewRef.current !== "steps" && !force) return;
     if (Date.now() - stepsAt.current < 1800 && !force) return;
-    try {
-      const { json } = await clientRef.current.api("GET", `/steps?limit=${stepLimitRef.current}`);
-      if (Array.isArray(json)) {
-        setStepsState(json);
-        setStepsLoaded(true);
-        stepsAt.current = Date.now();
+    // The throttle above only counts from a *finished* fetch, so without this
+    // every SSE event in a burst started its own request: opening a step on a
+    // live run fired ~150 parallel 1.2 MB `/steps` calls in the first second.
+    // Keyed by limit — "load older turns" must not be answered by a request
+    // for the smaller page that happened to be in flight.
+    const limit = stepLimitRef.current;
+    const inflight = stepsInflight.current;
+    if (inflight && inflight.limit === limit) return inflight.p;
+    const p = (async () => {
+      try {
+        const { json } = await clientRef.current.api("GET", `/steps?limit=${limit}`);
+        // A reply for a limit the view has since moved off would shrink the list.
+        if (Array.isArray(json) && limit === stepLimitRef.current) {
+          setStepsState(json);
+          setStepsLoaded(true);
+          stepsAt.current = Date.now();
+        }
+      } catch {
+        /* keep stale */
       }
-    } catch {
-      /* keep stale */
-    }
+    })();
+    stepsInflight.current = { limit, p };
+    void p.finally(() => {
+      if (stepsInflight.current?.p === p) stepsInflight.current = null;
+    });
+    return p;
   }, []);
 
   const ingestEvent = useCallback((raw: any) => {
@@ -428,6 +495,12 @@ export function MeshProvider({ children, projectId = null, background = false }:
     // operator is not looking at, and the project's own tab already carries
     // its status.
     if (backgroundRef.current) return;
+    // History arrives through this same path — the stream's backlog on
+    // connect, `/events` refills, the Events view's prime — so opening a step
+    // on a long run toasted every old "budget exceeded" at once. A toast is
+    // news; an event older than a minute is not.
+    const at = Date.parse(e.timestamp);
+    if (!Number.isFinite(at) || Date.now() - at > TOAST_FRESH_MS) return;
     if (e.type === "goal.completed") toast("goal completed", "all mandatory criteria evidenced", "ok");
     if (e.type === "goal.escalated") toast("mission escalated", String(e.payload?.reason || ""), "bad");
     if (e.type === "goal.failed") toast("mission failed", String(e.payload?.reason || ""), "bad");
@@ -497,13 +570,18 @@ export function MeshProvider({ children, projectId = null, background = false }:
     if (backgroundRef.current) return;
     void refreshStatus();
     if (viewRef.current === "steps") void refreshSteps(false);
-    if (viewRef.current === "overview" && Date.now() - stepsAt.current > 5000) {
+    // Same burst problem as refreshSteps: the 5s window only starts once a
+    // reply lands, so one request at a time.
+    if (viewRef.current === "overview" && Date.now() - stepsAt.current > 5000 && !overviewStepsInflight.current) {
+      overviewStepsInflight.current = true;
       clientRef.current.api("GET", "/steps?limit=6").then(({ json }) => {
         if (Array.isArray(json)) {
           setSteps(json);
           stepsAt.current = Date.now();
         }
-      }).catch(() => undefined);
+      }).catch(() => undefined).finally(() => {
+        overviewStepsInflight.current = false;
+      });
     }
   }, [refreshStatus, refreshSteps, setSteps]);
 

@@ -76,7 +76,14 @@ export function resolveBus(flags: Flags, fallbackBus: string): string {
   return `${base}/api/p/${encodeURIComponent(project)}`;
 }
 
-function authHeaders(flags: Flags): Record<string, string> {
+/**
+ * Bearer header for an authenticated mesh, or nothing when no token is known.
+ *
+ * Exported because the plain `--bus` commands need it too. They sent no
+ * `Authorization` at all, so every direct call to a child (which always demands
+ * a token) came back 401 — and the CLI rendered that body as data.
+ */
+export function authHeaders(flags: Flags): Record<string, string> {
   const token = flagString(flags, "token") ?? (process.env.MESH_API_TOKEN ?? "").trim();
   return token ? { authorization: `Bearer ${token}` } : {};
 }
@@ -280,6 +287,9 @@ export const HOST_HELP = `usage:
     --home       registry home (default $MESH_HOME or ~/.agent-mesh)
     --memory     per-child --max-old-space-size in MB
     --live       children boot live; default is parked, like 'mesh console'
+                 (either way, a project's remembered mode wins once its child
+                 has reported one: restarting a project that was started live
+                 brings it back live)
     --git        force git worktrees on for every child
     --no-git     force them off for every child
                  neither flag: each child obeys its own mesh.workspace.git,
@@ -291,6 +301,7 @@ export const HOST_HELP = `usage:
       project_memory_mb: 512        # per-child --max-old-space-size
       max_concurrent_turns: null    # null = unlimited
       spend_ceiling_usd: 50         # aggregate across open projects; null disables
+      heartbeat_timeout_ms: 60000   # silence (2 polls) before a child is restarted
       model_prices:                 # USD per million tokens
         anthropic/claude-sonnet-4: { input_per_mtok: 3, output_per_mtok: 15 }`;
 

@@ -107,6 +107,14 @@
               "type": "string",
               "maxLength": 200
             },
+            "context_window": {
+              "type": "integer",
+              "minimum": 1000
+            },
+            "stale_after_ms": {
+              "type": "integer",
+              "minimum": 60000
+            },
             "variant": {
               "type": "string",
               "maxLength": 200
@@ -178,6 +186,24 @@
             }
           },
           "additionalProperties": false
+        },
+        "messages": {
+          "type": "object",
+          "properties": {
+            "digest_threshold": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inform_expiry_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_sends_per_turn": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -216,6 +242,10 @@
           "model": {
             "type": "string",
             "maxLength": 200
+          },
+          "context_window": {
+            "type": "integer",
+            "minimum": 1000
           },
           "variant": {
             "type": "string",
@@ -415,6 +445,7 @@
             "properties": {
               "requires": {
                 "type": "array",
+                "description": "Approvals this transition demands, each '<agent-id-or-role>.<kind>'. Entries are ANDed; alternatives within one entry are written 'a.approve|b.approve' and any ONE of them satisfies it.",
                 "items": {
                   "type": "string",
                   "maxLength": 200
@@ -502,11 +533,7 @@
           ]
         },
         "transport": {
-          "type": "string",
-          "enum": [
-            "mixed",
-            "typed-only"
-          ]
+          "type": "string"
         },
         "vocabulary": {
           "type": "string",
@@ -624,6 +651,11 @@
             }
           },
           "additionalProperties": false
+        },
+        "cache_read_weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       },
       "additionalProperties": false

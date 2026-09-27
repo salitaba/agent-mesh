@@ -19,15 +19,7 @@ import { runBackupsCommand, runRestoreCommand } from "../../apps/mesh-cli/src/ba
 import { acquireStateLock } from "../../packages/persistence/src/index";
 import { resolveConfig } from "../../packages/config/src/index";
 import { testConfigYaml } from "../helpers";
-
-const hasGit = (() => {
-  try {
-    require("child_process").execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import { gitSkip } from "../support/git";
 
 /** Captures stdout/stderr so command output can be asserted, not just eyeballed. */
 async function capture(fn: () => number): Promise<{ code: number; out: string; err: string }> {
@@ -70,7 +62,7 @@ async function meshWithOneBackup(dir: string): Promise<string> {
   }
 }
 
-test("mesh backups lists one reset's archives and marks only the state one restorable", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh backups lists one reset's archives and marks only the state one restorable", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-backups-"));
   try {
     const configPath = writeMesh(dir);
@@ -96,7 +88,7 @@ test("mesh backups lists one reset's archives and marks only the state one resto
   }
 });
 
-test("mesh backups on a mesh that never reset says so instead of printing nothing", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh backups on a mesh that never reset says so instead of printing nothing", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-backups-empty-"));
   try {
     const configPath = writeMesh(dir);
@@ -111,7 +103,7 @@ test("mesh backups on a mesh that never reset says so instead of printing nothin
   }
 });
 
-test("mesh restore brings the mission back offline", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh restore brings the mission back offline", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-"));
   try {
     const configPath = writeMesh(dir);
@@ -139,7 +131,7 @@ test("mesh restore brings the mission back offline", { skip: !hasGit && "git una
   }
 });
 
-test("mesh restore refuses an unknown stamp and names the command that lists them", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh restore refuses an unknown stamp and names the command that lists them", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-unknown-"));
   try {
     const configPath = writeMesh(dir);
@@ -150,7 +142,7 @@ test("mesh restore refuses an unknown stamp and names the command that lists the
   }
 });
 
-test("mesh restore refuses while another process holds the state lock, naming its pid", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh restore refuses while another process holds the state lock, naming its pid", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-locked-"));
   let child: ReturnType<typeof spawn> | undefined;
   try {
@@ -200,7 +192,7 @@ setInterval(() => {}, 1 << 30);
   }
 });
 
-test("mesh restore with no stamp prints usage rather than guessing", { skip: !hasGit && "git unavailable" }, async () => {
+test("mesh restore with no stamp prints usage rather than guessing", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-usage-"));
   try {
     const configPath = writeMesh(dir);

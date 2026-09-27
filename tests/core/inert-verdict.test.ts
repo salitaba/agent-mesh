@@ -146,8 +146,10 @@ test("reject on an artifact under review does move it", () => {
 });
 
 test("the predicate agrees with the reducer at every status it can reach", () => {
-  // The anti-drift guard. `verdictAdvances` is a hand-written mirror of three
-  // reducer guards; if either side is edited alone this fails.
+  // The anti-drift guard. `verdictAdvances` is a hand-written mirror of the
+  // `review.approved` / `review.rejected` reducer guards (a derived
+  // `architecture.approved` moves nothing); if either side is edited alone this
+  // fails.
   // Each type gets a reviewer that can actually settle it, so the only thing
   // varying across the sweep is the STATUS.
   const ladders: { type: ArtifactType; owner: string; reviewer: string; steps: ArtifactStatus[] }[] = [

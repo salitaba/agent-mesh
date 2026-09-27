@@ -34,6 +34,7 @@ interface StallProbe {
   turnInFlight: Set<string>;
   activeTurnByAgent: Map<string, string>;
   interruptedTurnIds: Set<string>;
+  forceSettleTurn: Map<string, (err: Error) => void>;
   sessions: Map<string, { session: { sessionId: string; agentId: string }; runtime: { interrupt(s: unknown): Promise<void> } }>;
   turns: {
     push(rec: unknown): void;
@@ -219,7 +220,9 @@ test("runTurn: a turn the budget cannot cover raises the ceiling once, then esca
     const turn = m.supervisor.getRecentTurns().find((t) => t.agentId === "pm");
     assert.equal(turn?.status, "blocked", "a turn with no headroom is blocked, not run");
     assert.match(String(turn?.error), /exhausted/);
-    const esc = [...m.kernel.state.escalations.values()].filter((e) => e.reason === "budget_exhausted");
+    // The SEAT's card (`agent_budget_exhausted`, keyed to its ledger), whichever
+    // of the door and the watchdog raised it first: they share the key.
+    const esc = [...m.kernel.state.escalations.values()].filter((e) => e.reason === "agent_budget_exhausted");
     assert.equal(esc.length, 1, "the exhausted budget must reach the operator exactly once");
     assert.equal(m.kernel.state.agents.get("pm")?.state.lifecycle, "BLOCKED");
     // The raise happened even though it did not save the turn.
@@ -595,22 +598,25 @@ test("silence watch: an agent in flight with no session or turn id is skipped", 
 
 test("silence watch: a no-op interrupt is force-settled so the turn cannot hang forever", async () => {
   // The stub's interrupt does nothing, which is exactly the runtime whose
-  // send() would otherwise never reject. The supervisor's 2s grace must close
-  // the turn itself and route it through the normal failure handling.
+  // send() would otherwise never reject. The supervisor's 2s grace must end
+  // the pending runtime call itself, so `runTurn`'s own catch/finally settles
+  // the turn exactly once (the end-to-end half is in streaming-liveness-e2e).
+  // A posed turn has no `runTurn`, so the call's settle handle is posed too.
   const m = await makeMesh({ agents: AGENTS, mode: "parked" });
   try {
     const p = probe(m);
     (m.supervisor.config.scheduling as { turnSilenceMs: number }).turnSilenceMs = 100;
     const posed = poseStreamingTurn(m, "dev", 5000);
+    const settled: Error[] = [];
+    p.forceSettleTurn.set(posed.turnId, (err) => settled.push(err));
 
     p.interruptSilentTurns(Date.now());
     await new Promise((r) => setTimeout(r, 2300));
 
-    const turn = p.turns.get(posed.turnId);
-    assert.equal(turn?.status, "failed", "the forced settle must close the turn");
-    const failed = (await m.store.read()).filter((e) => e.type === "agent.failed" && (e.payload as { agentId: string }).agentId === "dev");
-    assert.equal(failed.length, 1, "the settled turn must go through handleAgentFailure");
-    assert.match(String((failed[0].payload as { error: string }).error), /turn silence exceeded 100ms/);
+    assert.equal(settled.length, 1, "the forced settle must end the hung runtime call");
+    assert.match(settled[0]!.message, /turn silence exceeded 100ms/);
+    assert.equal(p.turns.get(posed.turnId)?.status, "running", "and leave the turn's record to runTurn, which owns its one ending");
+    p.forceSettleTurn.delete(posed.turnId);
   } finally {
     await m.cleanup();
   }
@@ -622,13 +628,17 @@ test("silence watch: a turn already replaced by a newer one is not force-settled
     const p = probe(m);
     (m.supervisor.config.scheduling as { turnSilenceMs: number }).turnSilenceMs = 100;
     const posed = poseStreamingTurn(m, "dev", 5000);
+    const settled: Error[] = [];
+    p.forceSettleTurn.set(posed.turnId, (err) => settled.push(err));
 
     p.interruptSilentTurns(Date.now());
     // The interrupt landed and the agent moved on before the grace elapsed.
     p.turnInFlight.delete("dev");
     p.activeTurnByAgent.delete("dev");
     await new Promise((r) => setTimeout(r, 2300));
+    p.forceSettleTurn.delete(posed.turnId);
 
+    assert.deepEqual(settled, [], "the grace must not settle a call for a turn that already moved on");
     assert.equal(p.turns.get(posed.turnId)?.status, "running", "the grace must not clobber a turn that already moved on");
     const failed = (await m.store.read()).filter((e) => e.type === "agent.failed");
     assert.equal(failed.length, 0);

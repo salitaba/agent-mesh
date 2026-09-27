@@ -1,4 +1,4 @@
-import { COLLAB_CLOSE_PLAIN, fmt, friendlyBudgetKey, MESSAGE_PLAIN, plainArtifact, plainEvent, plainLifecycle, plainReason } from "./format";
+import { activationDeniedKind, COLLAB_CLOSE_PLAIN, fmt, friendlyBudgetKey, MESSAGE_PLAIN, plainArtifact, plainEvent, plainLifecycle, plainReason } from "./format";
 import type { TimelineEvent } from "./store";
 // Deep import, not the package barrel: `packages/protocol/src/index` star-exports
 // the AJV-backed validators and schemas, and none of that belongs in a browser
@@ -103,8 +103,13 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
   switch (e.type) {
     case "message.sent":
       return <><b>{p.message?.from}</b>{" → "}{(p.message?.to || []).join(", ")}{" · "}{MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase()}</>;
-    case "message.rejected":
+    case "message.rejected": {
+      // An activation denial names the seat that could not be woken, not a
+      // message that could not be delivered — see `activationDeniedKind`.
+      const kind = activationDeniedKind(p);
+      if (kind !== undefined) return <><b>{p.from}</b> couldn't be woken ({plainReason(kind)}) — {String(p.reason || "").slice(0, 90)}</>;
       return <>Couldn't deliver — {String(p.reason || "").slice(0, 90)}</>;
+    }
     case "plan.updated": {
       const steps = p.plan?.steps || [];
       const done = steps.filter((s: any) => s.status === "DONE").length;
@@ -174,7 +179,7 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
       return <>{COLLAB_CLOSE_PLAIN[String(p.reason || "")] || "ended"}{count}{outcome}</>;
     }
     default:
-      return <>{e.actorId ? plainEvent(e.type) || e.actorId : plainEvent(e.type)}</>;
+      return <>{e.actorId ? plainEvent(e.type, p) || e.actorId : plainEvent(e.type, p)}</>;
   }
 }
 
@@ -184,5 +189,5 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
 export function evSearchText(e: TimelineEvent): string {
   const p = e.payload || {};
   if (typeof p.summary === "string" && p.summary) return p.summary;
-  return `${plainEvent(e.type)} ${e.actorId || ""}`;
+  return `${plainEvent(e.type, p)} ${e.actorId || ""}`;
 }

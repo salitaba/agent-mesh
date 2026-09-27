@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
+import { FakeWorkspace, installWorkspace } from "../support/fake-workspace";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
 /**
@@ -44,14 +45,12 @@ const turnFor = (agentId: string) =>
     results: [],
   }) as never;
 
-type Workspace = { mergeWorktree(artifactId: string, agentId: string, message: string): Promise<{ commit: string }> };
-
 /** A patch walked all the way to MERGEABLE, with a workspace double installed. */
-async function mergeable(workspace: Workspace) {
+async function mergeable(workspace: FakeWorkspace) {
   const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", criteria: CRITERIA } as never);
   // The arm under test is only reachable when `deps.workspace` is set, and the
   // in-memory bootstrap never sets it.
-  (m.supervisor as unknown as { deps: { workspace?: Workspace } }).deps.workspace = workspace;
+  installWorkspace(m, workspace);
 
   const created = await m.supervisor.createArtifact({ actorId: "dev", name: "slice-1", type: "CodePatch", content: "the whole patch, at length" });
   if (!("artifact" in created)) throw new Error("create failed");
@@ -71,19 +70,16 @@ const criterion = (m: Awaited<ReturnType<typeof mergeable>>["m"], id: string) =>
 };
 
 test("a successful git merge reports the commit it produced", async () => {
-  let sawMessage = "";
-  const { m, id } = await mergeable({
-    async mergeWorktree(_a, _who, message) {
-      sawMessage = message;
-      return { commit: "0123456789abcdef0123456789abcdef01234567" };
-    },
+  const ws = new FakeWorkspace({
+    behaviour: { merge: async () => ({ commit: "0123456789abcdef0123456789abcdef01234567" }) },
   });
+  const { m, id } = await mergeable(ws);
   try {
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: id, comment: "land slice 1" } as MeshOp, turnFor("lead"));
 
     assert.equal(res.ok, true, res.reason ?? "");
     assert.match(String(res.reason), /merged as 0123456789ab/, "the sha was discarded by a bare `void` before");
-    assert.equal(sawMessage, "land slice 1", "the seat's comment becomes the commit message");
+    assert.equal(ws.callsTo("mergeWorktree")[0]?.message, "land slice 1", "the seat's comment becomes the commit message");
     assert.equal(m.kernel.state.artifacts.get(id)?.status, "MERGED");
     assert.equal(criterion(m, "implementation-merged")?.status, "EVIDENCED", "a real merge is runtime-derived evidence");
   } finally {
@@ -92,12 +88,8 @@ test("a successful git merge reports the commit it produced", async () => {
 });
 
 test("a conflicted git merge refuses the op instead of throwing out of the turn", async () => {
-  const { m, id } = await mergeable({
-    async mergeWorktree() {
-      // What `git merge` actually produces on a conflict, via execFile.
-      throw new Error("Command failed: git merge --no-edit -m land mesh/dev\nCONFLICT (content): Merge conflict in src/app.ts");
-    },
-  });
+  // The fake's `conflict` is what `git merge` actually produces, via execFile.
+  const { m, id } = await mergeable(new FakeWorkspace({ behaviour: { merge: "conflict" } }));
   try {
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: id } as MeshOp, turnFor("lead"));
 
@@ -122,11 +114,7 @@ test("a failed merge lands nothing: no MERGED, no mirrors, no evidence", async (
   // on 2026-09-23 shipped that state at 20:23:57 — artifact MERGED, both
   // mirrors on the log, and `git log` without the patch. `opMerge` now lands
   // the change before recording it, so there is nothing to walk back.
-  const { m, id } = await mergeable({
-    async mergeWorktree() {
-      throw new Error("Command failed: git merge --no-edit -m x mesh/dev");
-    },
-  });
+  const { m, id } = await mergeable(new FakeWorkspace({ behaviour: { merge: "fail" } }));
   try {
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: id } as MeshOp, turnFor("lead"));
     assert.equal(res.ok, false, "the op fails, so the result reaches the agent's turn");
@@ -168,11 +156,7 @@ test("a successful merge records itself exactly once", async () => {
   // re-fired. Each duplicate wrote a second `implementation|pass` approval
   // record attributed to the artifact OWNER: a gate signature the owner never
   // gave. Counts, not presence, are what catch that.
-  const { m, id } = await mergeable({
-    async mergeWorktree() {
-      return { commit: "abcdef0123456789" };
-    },
-  });
+  const { m, id } = await mergeable(new FakeWorkspace());
   try {
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactId: id } as MeshOp, turnFor("lead"));
     assert.equal(res.ok, true, res.reason);

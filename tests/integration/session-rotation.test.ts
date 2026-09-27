@@ -306,6 +306,14 @@ test("the rotation threshold is derived from the seated model's context window",
   // mesh.yaml may carry a provider-qualified ref for the sake of one `model:`
   // key across runtimes; the threshold resolves off the reduced id.
   assert.equal(rotateAtFor("anthropic/claude-opus-5"), 600_000);
+  // `lastModel` — the id the BACKEND reports it actually seated — is DATED, and
+  // it is the PREFERRED lookup key, ahead of the configured one. A test that
+  // only fed hand-written bare ids could not see that every real session missed
+  // the table and took the floor. Measured 2026-09-24: seats on a 1M window
+  // rotated against 120,000.
+  assert.equal(rotateAtFor("claude-opus-5-20260401"), 600_000, "a dated snapshot has its family's window");
+  assert.equal(rotateAtFor("anthropic/claude-sonnet-5-20260401"), 600_000, "provider prefix and date suffix both normalize away");
+  assert.equal(rotateAtFor("claude-haiku-4-5-20251001"), 120_000, "and a dated small-window id still gets its own share, not the floor by accident");
 });
 
 test("a model id nobody recognises rotates at the conservative floor", () => {
@@ -313,10 +321,17 @@ test("a model id nobody recognises rotates at the conservative floor", () => {
   // — so this table lookup is the only thing between a typo and a seat that
   // rotates hundreds of thousands of tokens after its window has overflowed.
   assert.equal(rotateAtFor("totally-not-a-model"), 120_000);
+  // A dated id whose FAMILY is also unknown still misses. Normalizing the date
+  // must not promote an id the table cannot place — that is the one direction
+  // this lookup is never allowed to move. (The previous version of this case
+  // asserted `claude-opus-5-20260401 -> 120_000` on the grounds that "dated ids
+  // are not this repo's convention". True of what mesh.yaml writes, false of
+  // what the backend reports — and the backend's value is the preferred lookup
+  // key, so that assertion was pinning the defect as the contract.)
   assert.equal(
-    rotateAtFor("claude-opus-5-20260401"),
+    rotateAtFor("claude-opus-6-20260401"),
     120_000,
-    "dated ids are not this repo's convention; a near-miss is not read as Opus",
+    "normalizing a date must not promote an id the table still cannot place",
   );
   assert.equal(
     rotateAtFor("openrouter/anthropic/claude-opus-5"),

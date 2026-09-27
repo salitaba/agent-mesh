@@ -124,7 +124,7 @@ test("an APPROVE message is delivered, records a refusal naming the op, and wake
     assert.ok(denial, "the refusal is recorded");
     const reason = String((denial.payload as { reason?: string }).reason);
     assert.match(reason, /reads verdicts only from the `approve` op/, "and names the op to use");
-    assert.match(reason, new RegExp(`"artifactId":"${id}"`), "with the artifact already filled in, so the remedy is copy-pasteable");
+    assert.match(reason, new RegExp(`mesh_approve.*artifactId "${id}"`), "naming the tool, with the artifact already filled in");
   } finally {
     await m.cleanup();
   }

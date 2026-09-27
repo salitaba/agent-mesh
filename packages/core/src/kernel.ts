@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "util";
 import type { Clock, EventId, EventType, GoalId, MeshEvent } from "../../protocol/src/index";
 import { PROTOCOL_VERSION } from "../../protocol/src/index";
 import type { EventStore } from "../../event-store/src/index";
@@ -17,10 +18,66 @@ export interface EmitOptions {
 
 export class KernelRejectedError extends ProjectionError {}
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Map) && Object.getPrototypeOf(v) === Object.prototype;
+
+/**
+ * Put back into `live` every entry that differs between `before` and `after`
+ * (two copies of one pre-state, `after` with the refused event applied), taking
+ * the value from `before`. Maps are compared per key so a restore never touches
+ * an entry the refused event did not; plain objects recurse; anything else is
+ * restored whole. A Map entry the event deleted is re-inserted in its original
+ * position -- export order is observable.
+ */
+function restoreTouched(live: Record<string, unknown>, before: Record<string, unknown>, after: Record<string, unknown>): void {
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const b = before[key];
+    const a = after[key];
+    if (b instanceof Map && a instanceof Map && live[key] instanceof Map) {
+      const l = live[key] as Map<unknown, unknown>;
+      let reorder = false;
+      for (const k of new Set([...b.keys(), ...a.keys()])) {
+        if (b.has(k) === a.has(k) && isDeepStrictEqual(b.get(k), a.get(k))) continue;
+        if (b.has(k)) {
+          if (!l.has(k)) reorder = true;
+          l.set(k, b.get(k));
+        } else l.delete(k);
+      }
+      if (reorder) {
+        const entries = [...l];
+        const order = new Map([...b.keys()].map((k, i) => [k, i]));
+        entries.sort(([x], [y]) => (order.get(x) ?? Infinity) - (order.get(y) ?? Infinity));
+        l.clear();
+        for (const [k, v] of entries) l.set(k, v);
+      }
+    } else if (isPlainObject(b) && isPlainObject(a) && isPlainObject(live[key])) {
+      restoreTouched(live[key] as Record<string, unknown>, b, a);
+    } else if (!isDeepStrictEqual(b, a)) {
+      if (Array.isArray(b) && Array.isArray(live[key])) {
+        // In place: a holder of the array keeps seeing the live one.
+        (live[key] as unknown[]).splice(0, (live[key] as unknown[]).length, ...b);
+      } else live[key] = b;
+    }
+  }
+}
+
 export interface KernelSnapshotProvider {
   write(envelope: { meshId: string; throughSeq: number; data: Record<string, unknown[]> }): Promise<void>;
-  read(): { meshId: string; throughSeq: number; data: Record<string, unknown[]> } | null;
+  /**
+   * `version` is the envelope layout the provider stored. Optional because an
+   * in-process provider that hands back exactly what the kernel wrote has no
+   * layout to disagree about; a provider that reads a file must carry it, or
+   * the kernel cannot refuse a layout it does not understand.
+   */
+  read(): { version?: number; meshId: string; throughSeq: number; data: Record<string, unknown[]> } | null;
 }
+
+/**
+ * The snapshot envelope layout `importState` reads. Must match what the file
+ * provider stamps (`SNAPSHOT_VERSION` in persistence); core does not import
+ * persistence, so the number is restated here rather than shared.
+ */
+export const SNAPSHOT_ENVELOPE_VERSION = 1;
 
 export class Kernel {
   readonly state: Projections = createInitialState();
@@ -129,9 +186,18 @@ export class Kernel {
   }
 
   private async applyAndAppend(event: MeshEvent): Promise<MeshEvent> {
+    this.ensureCheckpoint();
     try {
-      applyEvent(this.state, event, this.gates);
+      applyEvent(this.state, event, this.gates, { live: true });
     } catch (err) {
+      // A refused event must leave memory exactly where the log is. Reducers
+      // are written to refuse before their first mutation, but not all of them
+      // can: `review.approved` records the signature BEFORE the gate check on
+      // purpose (the signature may be what satisfies the gate), so a gate
+      // refusal used to leave an approval in memory that the log never
+      // received -- the next replay silently dropped it. The kernel is the one
+      // place that can make every reducer transactional at once.
+      this.rollbackRefused(event);
       if (err instanceof ProjectionError) {
         this.audit(`projection rejected ${event.type}: ${err.message}`);
         throw new KernelRejectedError(err.message, event.type);
@@ -164,9 +230,80 @@ export class Kernel {
     // dropping them from every future replay with no error. So it only ever
     // moves forward.
     if (stored.seq !== undefined) this.state.lastEventSeq = Math.max(this.state.lastEventSeq, stored.seq);
+    if (this.checkpoint) {
+      this.checkpoint.journal.push(stored);
+      this.checkpoint.eventCount = this.state.eventCount;
+    }
     this.emitCount++;
     await this.maybeSnapshot();
     return stored;
+  }
+
+  /**
+   * Keep a pre-state to roll a refused live emit back to.
+   *
+   * A deep clone per emit was measured and rejected: 14ms on the state a
+   * 12,619-event mission leaves behind (1,004 messages), paid by every emit, and
+   * growing with the mission. Refusals are rare -- four in one whole live
+   * mission's `projection-rejections.log`. So the cost is moved onto them: a
+   * clone every `CHECKPOINT_EVERY` live emits, plus the events applied since.
+   * Replay and rebuild never take one; they are not transactional and do not
+   * need to be (a log that fails to replay throws out of the whole replay).
+   *
+   * `eventCount` is how a checkpoint notices it went stale: anything other
+   * than a live emit that applies events (rebuild, snapshot import) moves the
+   * count without adding to the journal, and the next emit takes a fresh one.
+   */
+  private checkpoint: { base: Projections; journal: MeshEvent[]; eventCount: number } | null = null;
+  private static readonly CHECKPOINT_EVERY = 256;
+
+  private ensureCheckpoint(): void {
+    const cp = this.checkpoint;
+    if (cp && cp.eventCount === this.state.eventCount && cp.journal.length < Kernel.CHECKPOINT_EVERY) return;
+    try {
+      this.checkpoint = { base: structuredClone(this.state), journal: [], eventCount: this.state.eventCount };
+    } catch (err) {
+      // Something uncloneable in state (a test double, a function) must not
+      // fail the emit; it only costs this emit its rollback.
+      this.checkpoint = null;
+      this.audit(`kernel checkpoint failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Undo whatever a refused reducer wrote before it threw -- and nothing else.
+   *
+   * The pre-state is re-derived as checkpoint + journal. It is NOT simply put
+   * back wholesale, because not every write to `state` is an event: the budget
+   * manager's `declare` creates ledgers directly, and a wholesale restore would
+   * delete every ledger declared since the checkpoint. Instead the refused event
+   * is re-run against a second copy of that pre-state, and only the entries it
+   * changed there are restored here. Reducers are deterministic in the event,
+   * so "what it touched there" is "what it touched here".
+   */
+  private rollbackRefused(event: MeshEvent): void {
+    const cp = this.checkpoint;
+    if (!cp || cp.eventCount !== this.state.eventCount) {
+      this.audit(`no checkpoint to roll back refused ${event.type}; memory may hold its partial writes`);
+      return;
+    }
+    try {
+      const derive = (): Projections => {
+        const s = structuredClone(cp.base);
+        for (const e of cp.journal) applyEvent(s, e, this.gates);
+        return s;
+      };
+      const before = derive();
+      const after = derive();
+      try {
+        applyEvent(after, event, this.gates, { live: true });
+      } catch {
+        // Expected: this is the refusal being reproduced.
+      }
+      restoreTouched(this.state as unknown as Record<string, unknown>, before as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
+    } catch (err) {
+      this.audit(`rollback of refused ${event.type} failed: ${(err as Error).message}`);
+    }
   }
 
   private serialized<T>(task: () => Promise<T>): Promise<T> {
@@ -187,6 +324,7 @@ export class Kernel {
     const fresh = createInitialState();
     Object.assign(this.state, fresh);
     this.appliedIds = new Set();
+    this.checkpoint = null;
     for (const event of events) {
       applyEvent(this.state, event, this.gates);
       this.appliedIds.add(event.id);
@@ -261,6 +399,23 @@ export class Kernel {
       try {
         const snap = this.snapshots.provider.read();
         if (snap && typeof snap.throughSeq === "number") {
+          // A snapshot is a cache of the log, never a second source of truth,
+          // so an ordinary boot trusts it only when it provably describes a
+          // prefix of THIS log. The same guard used to exist only in
+          // `restoreStateDir`, i.e. only when an operator restored an archive.
+          // Checked before `importState` so a refusal leaves nothing
+          // half-imported; the throw lands in the audited fallback below.
+          if (snap.version !== undefined && snap.version !== SNAPSHOT_ENVELOPE_VERSION) {
+            throw new Error(`snapshot version ${snap.version} is not ${SNAPSHOT_ENVELOPE_VERSION}, the only layout this build reads`);
+          }
+          if (snap.meshId !== this.snapshots.meshId) {
+            throw new Error(`snapshot belongs to mesh '${snap.meshId}', not '${this.snapshots.meshId}'`);
+          }
+          const tailSeq = await this.store.lastSeq();
+          if (snap.throughSeq > tailSeq) {
+            // Everything past the tail is state the log no longer says happened.
+            throw new Error(`snapshot runs through seq ${snap.throughSeq}, past the log tail at ${tailSeq}`);
+          }
           const { importState } = await import("./state");
           importState(this.state, { ...((snap.data ?? {}) as object), throughSeq: snap.throughSeq } as Parameters<typeof importState>[1]);
           this.appliedIds = new Set();

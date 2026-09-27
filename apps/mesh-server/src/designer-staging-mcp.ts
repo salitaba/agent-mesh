@@ -8,7 +8,7 @@ import type {
 } from "../../../packages/protocol/src/index";
 import { DESTRUCTIVE_KINDS } from "../../../packages/protocol/src/index";
 import type { Supervisor } from "../../../packages/core/src/index";
-import { McpToolset, type McpToolDefinition } from "./mcp";
+import { McpToolset, type McpToolDefinition, type McpToolsetOptions } from "./mcp";
 
 /**
  * Authoring half of the staged-mutation surface: the tools the dashboard
@@ -327,8 +327,11 @@ export class DesignerStagingToolset {
   constructor(
     private supervisor: Supervisor,
     private buffer: DesignerTurnBuffer,
+    humanAuth?: McpToolsetOptions["humanAuth"],
   ) {
-    this.inner = new McpToolset(supervisor, { readOnly: true });
+    // The inner toolset is the one token check this class has (see handle), so
+    // it carries the same human credential check as the ordinary bridge.
+    this.inner = new McpToolset(supervisor, { readOnly: true, humanAuth });
   }
 
   /**
@@ -586,6 +589,10 @@ export class DesignerStagingToolset {
   }
 }
 
-export function createDesignerStagingToolset(supervisor: Supervisor, buffer: DesignerTurnBuffer): DesignerStagingToolset {
-  return new DesignerStagingToolset(supervisor, buffer);
+export function createDesignerStagingToolset(
+  supervisor: Supervisor,
+  buffer: DesignerTurnBuffer,
+  humanAuth?: McpToolsetOptions["humanAuth"],
+): DesignerStagingToolset {
+  return new DesignerStagingToolset(supervisor, buffer, humanAuth);
 }

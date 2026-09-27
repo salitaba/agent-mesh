@@ -17,15 +17,7 @@ import * as path from "path";
 import { bootstrapMesh } from "../../apps/mesh-server/src/index";
 import { closeHttpServer, createHttpServer, type MeshInstance } from "../../apps/mesh-server/src/index";
 import { testConfigYaml } from "../helpers";
-
-const hasGit = (() => {
-  try {
-    require("child_process").execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import { gitSkip } from "../support/git";
 
 interface Bed {
   dir: string;
@@ -89,7 +81,7 @@ async function resetOnce(bed: Bed): Promise<string> {
   return stamp;
 }
 
-test("GET /mission/backups groups one reset's archives under its stamp", { skip: !hasGit && "git unavailable" }, async () => {
+test("GET /mission/backups groups one reset's archives under its stamp", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     await bed.mesh.kernel.emit("human.input", { action: "before-reset" }, { actorId: "human" });
     // Cut a worktree so the reset has something to archive in all three
@@ -117,7 +109,7 @@ test("GET /mission/backups groups one reset's archives under its stamp", { skip:
   });
 });
 
-test("POST /mission/restore brings the archived mission back", { skip: !hasGit && "git unavailable" }, async () => {
+test("POST /mission/restore brings the archived mission back", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     for (let i = 0; i < 4; i++) {
       await bed.mesh.kernel.emit("human.input", { action: `probe-${i}` }, { actorId: "human" });
@@ -152,7 +144,7 @@ test("POST /mission/restore brings the archived mission back", { skip: !hasGit &
   });
 });
 
-test("restore leaves the archive in place, so it can be used twice", { skip: !hasGit && "git unavailable" }, async () => {
+test("restore leaves the archive in place, so it can be used twice", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     await bed.mesh.kernel.emit("human.input", { action: "keepme" }, { actorId: "human" });
     const stamp = await resetOnce(bed);
@@ -172,7 +164,7 @@ test("restore leaves the archive in place, so it can be used twice", { skip: !ha
   });
 });
 
-test("restore drops a snapshot that claims more history than the log has", { skip: !hasGit && "git unavailable" }, async () => {
+test("restore drops a snapshot that claims more history than the log has", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     await bed.mesh.kernel.emit("human.input", { action: "real-work" }, { actorId: "human" });
     const stamp = await resetOnce(bed);
@@ -206,7 +198,7 @@ test("restore drops a snapshot that claims more history than the log has", { ski
   });
 });
 
-test("restore does not resurrect archived agent sessions by default", { skip: !hasGit && "git unavailable" }, async () => {
+test("restore does not resurrect archived agent sessions by default", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     await bed.mesh.kernel.emit("human.input", { action: "x" }, { actorId: "human" });
     const stamp = await resetOnce(bed);
@@ -237,7 +229,7 @@ test("restore does not resurrect archived agent sessions by default", { skip: !h
   });
 });
 
-test("restore refuses what it cannot do, each with its own reason", { skip: !hasGit && "git unavailable" }, async () => {
+test("restore refuses what it cannot do, each with its own reason", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     const stamp = await resetOnce(bed);
     const meshId = bed.mesh.config.meshId;
@@ -270,7 +262,7 @@ test("restore refuses what it cannot do, each with its own reason", { skip: !has
   });
 });
 
-test("reset itself requires the mesh id, not just a boolean", { skip: !hasGit && "git unavailable" }, async () => {
+test("reset itself requires the mesh id, not just a boolean", { skip: gitSkip }, async () => {
   await withMesh(async (bed) => {
     // `confirm:true` is a constant anyone can type, and the route is reachable
     // without a token when MESH_API_TOKEN is unset.

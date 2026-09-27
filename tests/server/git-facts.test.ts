@@ -5,15 +5,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { gitFacts, initProductRepo } from "../../apps/mesh-server/src/index";
-
-const hasGit = (() => {
-  try {
-    execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import { gitSkip } from "../support/git";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-facts-"));
@@ -37,7 +29,7 @@ test("git facts: a directory with no repo reads as no repo, never as a clean tre
   }
 });
 
-test("git facts: an enclosing repo is not adopted as the product's own", { skip: !hasGit && "git unavailable" }, () => {
+test("git facts: an enclosing repo is not adopted as the product's own", { skip: gitSkip }, () => {
   const outer = tempDir();
   try {
     execFileSync("git", ["init", "-b", "main"], { cwd: outer, stdio: "ignore" });
@@ -60,7 +52,7 @@ test("git facts: an enclosing repo is not adopted as the product's own", { skip:
   }
 });
 
-test("git facts: an initialized product root reports its own real facts", { skip: !hasGit && "git unavailable" }, () => {
+test("git facts: an initialized product root reports its own real facts", { skip: gitSkip }, () => {
   const dir = tempDir();
   try {
     const stateDir = path.join(dir, ".mesh-state");
@@ -80,7 +72,7 @@ test("git facts: an initialized product root reports its own real facts", { skip
   }
 });
 
-test("git facts: the state dir inside the workspace does not make the product dirty", { skip: !hasGit && "git unavailable" }, () => {
+test("git facts: the state dir inside the workspace does not make the product dirty", { skip: gitSkip }, () => {
   const dir = tempDir();
   try {
     const stateDir = path.join(dir, ".mesh-state");

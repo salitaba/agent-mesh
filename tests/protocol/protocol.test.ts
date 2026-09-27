@@ -15,7 +15,6 @@ import {
   newEventId,
   FixedClock,
   PROTOCOL_VERSION,
-  aliasTextOp,
   type MeshMessage,
 } from "../../packages/protocol/src/index";
 import { loadMeshFile, resolveConfig, validateInterestExpressions, interestMatches } from "../../packages/config/src/index";
@@ -46,15 +45,6 @@ test("protocol: message with non-canonical type is rejected", () => {
   const r = validateMessage(validMessage({ type: "CHAT_FREELY" as MeshMessage["type"] }));
   assert.equal(r.valid, false);
   assert.ok(r.errors.some((e) => e.path === "/type"));
-});
-
-test("protocol: invented REPLY type aliases to INFORM (resolves, not re-asks)", () => {
-  // Regression: reply used to alias to REQUEST, minting a NEW pending ask on
-  // a NEW thread — an answered question became two open ones and escalated.
-  const aliased = aliasTextOp({ op: "send", type: "REPLY", to: ["pm"], threadId: "t-1", payload: { answer: "done" } });
-  assert.equal(aliased?.type, "INFORM");
-  const lower = aliasTextOp({ op: "send", type: "reply", to: ["pm"], threadId: "t-1", payload: {} });
-  assert.equal(lower?.type, "INFORM");
 });
 
 test("protocol: message without thread/goal ids is rejected", () => {

@@ -49,8 +49,14 @@ export class FileSessionRegistry {
 
   async forget(agentId: string): Promise<void> {
     this.load();
-    this.records.delete(agentId);
+    if (!this.records.delete(agentId)) return;
     this.flush();
+  }
+
+  /** Every row, for the boot-time reconcile against the log and the roster. */
+  async list(): Promise<SessionRecord[]> {
+    this.load();
+    return [...this.records.values()].map((r) => ({ ...r }));
   }
 
   /**
@@ -95,27 +101,72 @@ export interface SnapshotEnvelope {
   data: ReturnType<typeof exportState>;
 }
 
+/** The only envelope layout this build writes, and so the only one it reads. */
+export const SNAPSHOT_VERSION = 1;
+
+/**
+ * Why a snapshot envelope must not seed a boot, or null when it may.
+ *
+ * A snapshot is a cache of the log, never a second source of truth, so it is
+ * trusted only when it provably describes a prefix of THIS mesh's log in a
+ * layout this build reads. Each check is optional because each caller knows a
+ * different subset: `SnapshotStore.read` knows the mesh it belongs to,
+ * `restoreStateDir` knows the log tail, the kernel knows both.
+ */
+export function snapshotRefusal(
+  envelope: { version?: unknown; meshId?: unknown; throughSeq?: unknown } | null | undefined,
+  expect: { meshId?: string; tailSeq?: number | null } = {},
+): string | null {
+  if (!envelope || typeof envelope !== "object") return "unreadable snapshot";
+  if (envelope.version !== SNAPSHOT_VERSION) return `snapshot version ${String(envelope.version)} is not ${SNAPSHOT_VERSION}, the only layout this build reads`;
+  if (typeof envelope.throughSeq !== "number") return "snapshot has no throughSeq";
+  if (expect.meshId !== undefined && envelope.meshId !== expect.meshId) {
+    return `snapshot belongs to mesh '${String(envelope.meshId)}', not '${expect.meshId}'`;
+  }
+  if ("tailSeq" in expect) {
+    if (expect.tailSeq === null || expect.tailSeq === undefined) return "the log tail could not be read";
+    if (envelope.throughSeq > expect.tailSeq) return `snapshot runs through seq ${envelope.throughSeq}, past the log tail at ${expect.tailSeq}`;
+  }
+  return null;
+}
+
 export class SnapshotStore {
   private file: string;
-  constructor(stateDir: string, meshId: string) {
+  constructor(
+    stateDir: string,
+    private readonly meshId: string,
+  ) {
     this.file = path.join(stateDir, `snapshot-${meshId}.json`);
   }
 
   async write(envelope: Omit<SnapshotEnvelope, "version" | "takenAt">): Promise<void> {
-    const full: SnapshotEnvelope = { version: 1, takenAt: new Date().toISOString(), ...envelope };
+    const full: SnapshotEnvelope = { version: SNAPSHOT_VERSION, takenAt: new Date().toISOString(), ...envelope };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(full), "utf8");
     fs.renameSync(tmp, this.file);
   }
 
+  /**
+   * The envelope on disk, or null when there is none (or it does not parse).
+   *
+   * Throws — rather than returning null — for an envelope that parses but must
+   * not be trusted (another mesh's, or a layout this build does not write), so
+   * the kernel's fallback audits WHY it replayed the whole log instead of
+   * doing it silently. The file is left in place for an operator to inspect;
+   * the next snapshot overwrites it.
+   */
   read(): SnapshotEnvelope | null {
     if (!fs.existsSync(this.file)) return null;
+    let parsed: SnapshotEnvelope;
     try {
-      return JSON.parse(fs.readFileSync(this.file, "utf8")) as SnapshotEnvelope;
+      parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as SnapshotEnvelope;
     } catch {
       return null;
     }
+    const refusal = snapshotRefusal(parsed, { meshId: this.meshId });
+    if (refusal) throw new Error(`${refusal} (${this.file})`);
+    return parsed;
   }
 }
 
@@ -398,8 +449,8 @@ export function archiveDir(dir: string, opts: ArchiveOptions = {}): string | nul
  * Async on purpose. `fs.cpSync` blocks the event loop for as long as the copy
  * runs, and a reset copies every agent worktree: a 300MB one wedges the child
  * for ~18s. The child's 2s heartbeat cannot fire while it is blocked, so the
- * host watchdog (`HEARTBEAT_TIMEOUT_MS`, 15s) read the silence as a wedged
- * child, stopped it, and — SIGTERM being unrunnable on a blocked loop — SIGKILLed
+ * host watchdog (`HEARTBEAT_TIMEOUT_MS`, 15s then and 60s now) read the silence
+ * as a wedged child, stopped it, and — SIGTERM being unrunnable on a blocked loop — SIGKILLed
  * it mid-copy. The reset died right here, leaving a half-written worktree
  * archive, no branch bundle, and a state dir that was never wiped, so the
  * mission came back on the next boot. Awaiting per entry keeps the heartbeat
@@ -678,17 +729,19 @@ export function restoreStateDir(
   for (const name of fs.readdirSync(target)) {
     if (!/^snapshot-.*\.json$/.test(name)) continue;
     const file = path.join(target, name);
-    let throughSeq: number | null = null;
+    let parsed: { version?: unknown; meshId?: unknown; throughSeq?: unknown } | null = null;
     try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { throughSeq?: unknown };
-      throughSeq = typeof parsed.throughSeq === "number" ? parsed.throughSeq : null;
+      parsed = JSON.parse(fs.readFileSync(file, "utf8")) as typeof parsed;
     } catch {
-      throughSeq = null;
+      parsed = null;
     }
     // An unreadable snapshot is as dangerous as a stale one: `replayFromStore`
     // falls back to a full replay on a parse error, but leaving it in place
-    // means the next boot retries a file that is known to be broken.
-    if (throughSeq === null || tail === null || throughSeq > tail) {
+    // means the next boot retries a file that is known to be broken. Same
+    // guard an ordinary boot applies (`snapshotRefusal`), minus the mesh id:
+    // an archive may legitimately be restored under a renamed mesh, and the
+    // file name, not the envelope, is what the booting mesh looks up.
+    if (snapshotRefusal(parsed, { tailSeq: tail }) !== null) {
       fs.rmSync(file, { force: true });
       snapshotDropped = true;
     }

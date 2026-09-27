@@ -1,6 +1,6 @@
-﻿import { MESSAGE_TYPES, obligesRecipients, shortHash, type AgentDefinition, type MeshEvent, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
+﻿import { ARTIFACT_TYPES, MESSAGE_TYPES, obligesRecipients, type AgentDefinition, type Artifact, type MeshEvent, type MeshMessage, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
-import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, readableMailDepth, resolveUnread } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, approverMayAdvance, hasPeerReviewerFor, readableMailDepth, resolveUnread, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
 import {
   buildAgentActivity,
   buildCostReport,
@@ -9,7 +9,7 @@ import {
   buildTurnSteps,
   eventTimeline,
 } from "../../../packages/observability/src/index";
-import { mergeTurnSteps } from "./steps-view";
+import { recentTurnSteps } from "./steps-view";
 
 export interface McpToolDefinition {
   name: string;
@@ -21,6 +21,30 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 /** Artifact statuses that mean the artifact reached the end of its state machine. */
 const TERMINAL_ARTIFACT_STATUS = new Set(["MERGED", "ACCEPTED", "FINAL", "ARCHIVED", "REJECTED"]);
+
+/**
+ * The verdict types, which a seat is no longer offered as a MESSAGE type.
+ *
+ * Still valid on the wire — the operator and the HTTP API send them, and old
+ * logs hold them — but a verdict typed as a message records nothing, and the
+ * enum was an invitation: seats did `mesh_approve` and then `mesh_respond
+ * type:APPROVE` to close the ask, and every one of those was refused and woke
+ * the sender (10 in the 2026-09-25 run). The verdict op already answers the
+ * review ask (`settleReviewAsks`), which the approve/reject descriptions now say.
+ */
+const VERDICT_MESSAGE_TYPES: ReadonlySet<string> = new Set(["APPROVE", "REJECT", "VETO"]);
+
+/**
+ * `mesh_query_events` type families: one word for a set a seat otherwise has
+ * to know by heart. `verdict` is every recorded verdict — a derived
+ * `architecture.approved` is dropped from it (it restates the `review.approved`
+ * it names), but one written before 2026-09-26 is the only record of that
+ * approval and stays. tech-lead queried `review.approved` alone, missed its own
+ * architecture approval, and called it "unbacked".
+ */
+const EVENT_FAMILIES: Record<string, MeshEvent["type"][]> = {
+  verdict: ["review.approved", "review.rejected", "architecture.approved"],
+};
 
 /**
  * Read-only tools. They never pass through `executeOp`, so they touch no policy
@@ -48,8 +72,8 @@ const TOOL_REQUIREMENT: Record<string, (def: AgentDefinition | undefined) => boo
 
 /**
  * Tools whose entire job a named contract now does, mapped to the contract
- * that replaces them. Under `bus.transport: "typed-only"` these are dropped
- * from the advertised manifest: a seat that has `mesh_call` and
+ * that replaces them. Under `bus.vocabulary: "contracts"` these are dropped
+ * from the advertised manifest (via `HIDDEN_BY_CONTRACT_VOCABULARY`): a seat that has `mesh_call` and
  * `mesh_contracts` can raise every one of these asks, and raising it that way
  * is strictly better — the request shape is validated before anyone is woken,
  * the mesh picks a recipient that policy will actually let you reach, and the
@@ -125,6 +149,24 @@ const HIDDEN_BY_CONTRACT_VOCABULARY: Record<string, string> = {
 const CONTRACT_VOCABULARY_TOOLS = new Set(["mesh_reply", "mesh_announce"]);
 
 /**
+ * Ops whose accepted `reason` is an id or sha the caller needs next, and the
+ * key `summarize` returns it under. Named rather than a generic `result` so the
+ * key matches the argument that consumes it (`mesh_decision_ratify` takes a
+ * `decisionId`). An accepted reason from any other op that is not a caveat
+ * still reaches the caller, as `result`.
+ */
+const RESULT_KEY_BY_OP: Partial<Record<string, string>> = {
+  propose_decision: "decisionId",
+  acquire_lease: "leaseId",
+  release_lease: "leaseId",
+  commit: "commit",
+  spawn_worker: "workerId",
+};
+
+/** Ops whose accepted `reason` is the caller's own `reason` argument, echoed. */
+const ECHOED_REASON_OPS: ReadonlySet<string> = new Set(["discharge", "withdraw"]);
+
+/**
  * `mesh_announce`'s recipient list, normalised to "did the caller name
  * anyone?".
  *
@@ -138,12 +180,18 @@ function namedRecipients(raw: unknown): string[] {
   return list.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
 }
 
+export interface McpToolsetOptions {
+  readOnly?: boolean;
+  /** Accepts a human-seat credential. Absent = the human seat is refused. */
+  humanAuth?: (token: string) => boolean;
+}
+
 export class McpToolset {
   private tools: Map<string, McpToolDefinition>;
 
   constructor(
     private supervisor: Supervisor,
-    private opts: { readOnly?: boolean } = {},
+    private opts: McpToolsetOptions = {},
   ) {
     this.tools = new Map();
     for (const t of this.buildTools()) {
@@ -169,7 +217,6 @@ export class McpToolset {
     const all = [...this.tools.values()];
     if (this.opts.readOnly) return all;
     const def = this.supervisor.state.agents.get(agentId)?.definition;
-    const typedOnly = this.supervisor.config.bus.transport === "typed-only";
     // Absent is every mesh written before the key existed, and those must
     // advertise exactly the list they always did — see `bus.vocabulary` in
     // the config package for why this resolves to absent rather than to
@@ -178,21 +225,26 @@ export class McpToolset {
     return all.filter((t) => {
       if (!collapsed && CONTRACT_VOCABULARY_TOOLS.has(t.name)) return false;
       if (collapsed && HIDDEN_BY_CONTRACT_VOCABULARY[t.name]) return false;
-      if (typedOnly && SUPERSEDED_BY_CONTRACT[t.name]) return false;
       const requirement = TOOL_REQUIREMENT[t.name];
       return requirement ? requirement(def) : true;
     });
   }
 
+  /**
+   * The bridge route answers before operator auth, so this check is the whole
+   * of its protection and must not accept anything a caller can guess.
+   *
+   * Seats: an HMAC over meshId/agent/goal under a per-process secret
+   * (seat-token.ts). The human seat: whatever `opts.humanAuth` accepts — the
+   * HTTP layer supplies a check against a random secret it minted for its own
+   * designer bridge, plus the operator token. A toolset built without one
+   * refuses the human seat outright; there is no fixed human credential any
+   * more (it used to be the literal `human-local`, or any `human:` prefix).
+   */
   verifyToken(agentId: string, token: string): boolean {
-    if (agentId === HUMAN_AGENT_ID) return token === "human-local" || token.startsWith("human:");
-    const parts = token.split(":");
-    if (parts.length < 3) return false;
-    const [meshId, tokenAgent, hash] = parts;
-    if (tokenAgent !== agentId) return false;
-    if (meshId !== this.supervisor.config.meshId) return false;
-    const goalId = this.supervisor.state.activeGoalId ?? "";
-    return hash === shortHash(goalId);
+    if (!token) return false;
+    if (agentId === HUMAN_AGENT_ID) return this.opts.humanAuth?.(token) === true;
+    return verifySeatToken(this.supervisor.config.meshId, agentId, this.supervisor.state.activeGoalId, token);
   }
 
   async handle(agentId: string, token: string, request: Record<string, any>): Promise<unknown> {
@@ -228,17 +280,9 @@ export class McpToolset {
             return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false } };
           }
           const op = this.toOp(name, args);
-          const turn = {
-            turnId: `mcp-${Date.now()}`,
-            agentId,
-            reason: { kind: "manual" as const, note: "mcp call" },
-            sentOps: 0,
-            publishedOps: 0,
-            waitRequested: false,
-            escalated: false,
-            results: [],
-          };
-          const result = await this.supervisor.executeOp(agentId, op, turn as never);
+          // Runs against the seat's in-flight turn, so the op counts toward
+          // that turn exactly like one the runtime returned.
+          const result = await this.supervisor.executeToolOp(agentId, op);
           const isError = !result.ok;
           return {
             jsonrpc: "2.0",
@@ -263,6 +307,10 @@ export class McpToolset {
     if (op.op === "read_artifact") {
       const out: Record<string, unknown> = { ok: result.ok, content: result.reason };
       if (result.totalChars !== undefined) out.totalChars = result.totalChars;
+      // Who can settle what the seat just read, so it knows whose review to ask
+      // for — and whether its own verdict could count — before it asks.
+      const read = result.ok ? this.supervisor.findArtifactByUri(op.artifactRef) : undefined;
+      if (read) out.canSettle = this.settlersOf(read);
       if (result.truncated) {
         out.truncated = true;
         out.nextOffset = result.nextOffset;
@@ -281,6 +329,27 @@ export class McpToolset {
     // its box edge and raise an operator card nobody needed.
     if (result.threadId) out.threadId = result.threadId;
     if (result.escalationId) out.escalationId = result.escalationId;
+    // The catalogue IS the answer to `mesh_contracts`. Dropping it here meant
+    // the tool whose description promises "the named asks ... and who can
+    // answer it" returned `{ok: true}` and nothing else.
+    if (result.contracts) out.contracts = result.contracts;
+    // An accepted op's `reason` is either what the op PRODUCED or a caveat on
+    // how it went (see `OpResult.caveat`), and before this the seat got
+    // neither: `reason` was passed only on a refusal. A seat that proposed a
+    // decision never learned the id `mesh_decision_ratify` needs, and a seat
+    // whose criterion landed ASSERTED was told only `ok: true`.
+    //
+    // Products are returned as data under the name of what they are, like
+    // `messageId` above; caveats go in `note`, the voice `truncated` and a
+    // refused wake already use. The two withdraw/discharge echoes are the
+    // seat's own words handed back, so they are not returned at all.
+    const notes: string[] = [];
+    if (result.ok && result.reason) {
+      const key = RESULT_KEY_BY_OP[result.op];
+      if (result.caveat === true) notes.push(result.reason);
+      else if (key) out[key] = result.reason;
+      else if (!ECHOED_REASON_OPS.has(result.op)) out.result = result.reason;
+    }
     // A send that SUCCEEDED while getting less than it asked for. `ok` stays
     // true and no `error` is set, because the message did land -- but a seat
     // that reads the missing wake as a failed send will send the same thing
@@ -289,13 +358,43 @@ export class McpToolset {
     // `truncated` on a partial artifact read.
     if (result.deliveryDowngraded) {
       out.deliveryDowngraded = true;
-      out.note =
+      notes.push(
         `Sent, but it did not wake anyone: ${result.deliveryDowngraded}. ` +
-        `The message IS delivered and is in the recipient's mailbox -- they will read it on their next turn. ` +
-        `Do not send it again; if it truly cannot wait, say so to the operator instead.`;
+          `The message IS delivered and is in the recipient's mailbox -- they will read it on their next turn. ` +
+          `Do not send it again; if it truly cannot wait, say so to the operator instead.`,
+      );
     }
+    // Joined, not overwritten: a review request can name a reviewer who cannot
+    // settle the artifact AND have its wake refused, and both are true.
+    if (notes.length > 0) out.note = notes.join(" ");
     if (!result.ok && result.reason) out.error = result.reason;
-    if (result.op === "publish_artifact" && result.artifact) out.artifact = { id: result.artifact.id, version: result.artifact.version, status: result.artifact.status };
+    if (result.op === "publish_artifact" && result.artifact) {
+      out.artifact = { id: result.artifact.id, version: result.artifact.version, status: result.artifact.status };
+      out.canSettle = this.settlersOf(this.supervisor.state.artifacts.get(result.artifact.id) ?? result.artifact);
+    }
+    return out;
+  }
+
+  /**
+   * The seats whose approval would SETTLE this artifact — `approverMayAdvance`,
+   * the reducer's own test, not the narrower review-capability table.
+   *
+   * Put on read and publish results because the only place a seat learned it
+   * before was a refusal: request_review told the asker after the fact, and a
+   * mixed list left the seats that could not settle owing a verdict anyway —
+   * frontend was named on 6 design reviews in the 2026-09-25 run and could
+   * settle none, while architect, who held `review.design`, was named on 0.
+   * The owner is listed only where no peer could review (the single-seat case).
+   */
+  private settlersOf(a: Artifact): string[] {
+    const state = this.supervisor.state;
+    const out: string[] = [];
+    for (const rec of state.agents.values()) {
+      const id = rec.definition.id;
+      if (id === HUMAN_AGENT_ID || rec.state.lifecycle === "RETIRED") continue;
+      if (id === a.owner && hasPeerReviewerFor(state, id, a, HUMAN_AGENT_ID)) continue;
+      if (approverMayAdvance(state, id, a, HUMAN_AGENT_ID)) out.push(id);
+    }
     return out;
   }
 
@@ -408,6 +507,8 @@ export class McpToolset {
         return { op: "release_lease", artifactId: a.artifactId };
       case "mesh_commit":
         return { op: "commit", artifactId: a.artifactId, message: a.message, files: a.files };
+      case "mesh_request_commit":
+        return { op: "request_commit", artifactId: a.artifactId, comment: a.comment };
       case "mesh_merge":
         return { op: "merge", artifactId: a.artifactId, comment: a.comment };
       case "mesh_wait":
@@ -507,9 +608,8 @@ export class McpToolset {
         subject: state.threads.get(m.threadId)?.subject,
         replyTo: m.replyTo,
         timestamp: m.timestamp,
-        // The same predicate the obligation opens with, so the queue and the
-        // prompt agree about which of these the seat owes an answer to.
-        answerOwed: obligesRecipients(m),
+        // `answerOwed`, and `closed` when an ask no longer is — see `owedState`.
+        ...this.owedState(m, agentId),
         // The ask's clock, from the ledger entry the reducer opened at
         // `message.sent`. Absent for mail that owes nothing, and for a mesh
         // with no TTL regime — which is not the same as a deadline that passed.
@@ -520,6 +620,26 @@ export class McpToolset {
         payload: m.payload,
       })),
     };
+  }
+
+  /**
+   * Does `agentId` still owe an answer on this message, and if it no longer
+   * does, how did the ask close?
+   *
+   * The type says whether a message ever obliged (the same predicate the
+   * obligation opens with); only the ledger says whether THIS seat still owes
+   * on it. Read off the type alone, an ask closed `superseded` still read as
+   * owed, and pm discharged one 10 minutes after it had closed.
+   */
+  private owedState(m: MeshMessage, agentId: string): { answerOwed: boolean; closed?: { reason: string; by: string; at: string } } {
+    const state = this.supervisor.state;
+    const obliging = obligesRecipients(m);
+    const open = state.pendingRequests.get(m.id);
+    const answerOwed = obliging && !!open && stillOwes(open, agentId);
+    if (!obliging || answerOwed) return { answerOwed };
+    // This seat's own share when one debtor of several answered; else the close.
+    const rec = [...state.discharged].reverse().find((d) => d.messageId === m.id && (!d.partial || d.by === agentId));
+    return rec ? { answerOwed, closed: { reason: rec.reason, by: rec.by, at: rec.at } } : { answerOwed };
   }
 
   private eventStore() {
@@ -566,12 +686,23 @@ export class McpToolset {
 
   private async queryEvents(a: Record<string, any>): Promise<Record<string, unknown>> {
     const limit = this.clampInt(a.limit, 30, 200);
-    const events = await this.eventStore().read({
-      types: a.type ? [String(a.type) as MeshEvent["type"]] : undefined,
+    // `type` may name a family (`EVENT_FAMILIES`) and `types` adds more; an
+    // array in `type` is taken as `types`, since that is the mistake to expect.
+    const asList = (v: unknown): string[] => (Array.isArray(v) ? v : v ? [v] : []).map(String).filter((s) => s.length > 0);
+    const requested = [...asList(a.type), ...asList(a.types)];
+    const verdict = requested.includes("verdict");
+    const types = [...new Set(requested.flatMap((t) => (Object.hasOwn(EVENT_FAMILIES, t) ? EVENT_FAMILIES[t]! : [t as MeshEvent["type"]])))];
+    const read = await this.eventStore().read({
+      types: types.length > 0 ? types : undefined,
       actorId: a.actorId ? String(a.actorId) : undefined,
       sinceSeq: a.sinceSeq === undefined ? undefined : Number(a.sinceSeq),
-      tail: limit,
+      // The verdict family drops rows after the read, so it cannot let the
+      // store cut the tail first. Verdicts are few; the whole match is small.
+      tail: verdict ? undefined : limit,
     });
+    const events = verdict
+      ? read.filter((e) => !(e.type === "architecture.approved" && (e.payload as { derived?: unknown } | undefined)?.derived === true)).slice(-limit)
+      : read;
     const timeline = eventTimeline(events, events.length);
     const trimmed = a.includePayload
       ? timeline
@@ -591,15 +722,15 @@ export class McpToolset {
 
   private async stepsView(a: Record<string, any>): Promise<Record<string, unknown>> {
     const limit = this.clampInt(a.limit, 20, 100);
-    // Scale the scan to the requested output; the in-memory turns cover the
-    // freshest ones even when the log tail is short.
-    const events = await this.eventStore().read({ tail: Math.min(2000, Math.max(400, limit * 10)) });
-    let steps = mergeTurnSteps(buildTurnSteps(events, limit * 2), this.supervisor.getRecentTurns(limit));
-    if (a.agentId) steps = steps.filter((s) => s.agentId === String(a.agentId));
-    if (a.status) steps = steps.filter((s) => s.status === String(a.status));
-    if (a.turnId) steps = steps.filter((s) => s.turnId === String(a.turnId));
-    steps.sort((x, y) => y.startedAt.localeCompare(x.startedAt));
-    steps = steps.slice(0, limit);
+    // Same list as `/steps`, so a seat and the dashboard cannot disagree about
+    // what a turn did: tracker turns older than the tail scan are read through
+    // the correlation index, and a turn with no log behind it reports no ops
+    // rather than four zeros that read as "did nothing".
+    const steps = await recentTurnSteps(this.eventStore(), this.supervisor.getRecentTurns(limit), limit, (s) =>
+      (!a.agentId || s.agentId === String(a.agentId)) &&
+      (!a.status || s.status === String(a.status)) &&
+      (!a.turnId || s.turnId === String(a.turnId)),
+    );
     return { count: steps.length, steps };
   }
 
@@ -801,7 +932,12 @@ export class McpToolset {
     // separately, by `projections-messaging`. Narrowing here would refuse
     // legal messages on the strength of a list that answers a different
     // question.
-    const msgType = (desc: string) => ({ ...str(desc), enum: [...MESSAGE_TYPES] });
+    //
+    // The one exception is the verdicts (`VERDICT_MESSAGE_TYPES`): offering
+    // APPROVE/REJECT/VETO as a message type offered a verdict that records
+    // nothing. Removed from what a seat is SHOWN only — `callTool` does not
+    // check the enum, and the wire still carries them.
+    const msgType = (desc: string) => ({ ...str(desc), enum: MESSAGE_TYPES.filter((t) => !VERDICT_MESSAGE_TYPES.has(t)) });
     // The only field on an ask that lets the asker spend LESS of everyone
     // else's attention, so it is declared on every tool that opens a
     // commitment rather than only on the contract path. An ask carrying one
@@ -870,8 +1006,8 @@ export class McpToolset {
       { name: "mesh_announce", description: "Say something that obliges nobody to answer. Omit 'to' and every seat in the mesh hears it; name seats and only they do. Use mesh_call when you actually want something back — an announcement nobody owes an answer to is nobody's turn.", inputSchema: { type: "object", required: ["payload"], properties: { payload: obj("what you are telling them"), note: str("free prose for the recipient; never parsed by the mesh, carries no authority"), to: strArr("recipient agent ids; omit to tell everyone"), threadId: str("existing thread id"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_delegate", description: "Delegate a task to another agent (creates a task and a DELEGATE message).", inputSchema: { type: "object", required: ["to", "title", "description"], properties: { to: str("delegate target"), title: str("task title"), description: str("task spec"), requiredCapabilities: strArr("capabilities the target must hold"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects"), budgetHint: obj("{maxTokens}") }, additionalProperties: false } },
       { name: "mesh_block", description: "Exercise blocking authority (quality.block / security.block) on a subject.", inputSchema: { type: "object", required: ["subject", "reason"], properties: { subject: str("domain subject e.g. release / artifact id domain"), artifactId: str("artifact"), reason: str("blocking reason") }, additionalProperties: false } },
-      { name: "mesh_approve", description: "Approve a subject domain or artifact review.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain: architecture|implementation|quality|security|requirements|release|criterion:<id>"), artifactId: str("artifact if applicable"), comment: str("rationale") }, additionalProperties: false } },
-      { name: "mesh_reject", description: "Reject a subject domain or artifact review.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
+      { name: "mesh_approve", description: "Approve a subject domain or artifact review. On an artifact this also answers the review request that asked you for it — do not follow it with a mesh_respond or mesh_send; a verdict typed as a message records nothing. If the verdict is recorded but does less than you meant (it cannot advance the artifact, you already recorded it on this version, or a criterion lands ASSERTED rather than EVIDENCED), the result says so in note.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain: architecture|implementation|quality|security|requirements|release|criterion:<id>"), artifactId: str("artifact if applicable"), comment: str("rationale") }, additionalProperties: false } },
+      { name: "mesh_reject", description: "Reject a subject domain or artifact review. On an artifact this also answers the review request that asked you for it — do not follow it with a mesh_respond or mesh_send; a verdict typed as a message records nothing.", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_veto", description: "Veto an action (requires explicit veto authority in the subject domain).", inputSchema: { type: "object", required: ["subject"], properties: { subject: str("domain"), artifactId: str("artifact"), comment: str("reason") }, additionalProperties: false } },
       { name: "mesh_escalate", description: "Escalate a disagreement or blocker to the human seat.", inputSchema: { type: "object", required: ["reason"], properties: { reason: str("escalation reason"), detail: obj("structured detail"), conflictKey: str("stable key for repeated conflicts") }, additionalProperties: false } },
       // Three bodies, one rule: exactly one of content/fromPath/edits. The
@@ -880,7 +1016,7 @@ export class McpToolset {
       // head and typing it out feels like the shortest path. It is the longest:
       // output is billed at five times fresh input, and on the mission this was
       // measured against, inline publishes were 17% of everything written.
-      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content. Give exactly ONE body: fromPath (a file you already wrote — cheapest, the mesh reads it), edits (changes to a previous version, with asVersionOf), or content (inline — only for something that was never a file).", inputSchema: { type: "object", required: ["name", "type"], properties: { name: str("artifact name"), type: str("ArtifactType"), fromPath: str("path to a file in YOUR workspace, relative to its root. Prefer this: the mesh reads the file, so the content costs you nothing to publish."), edits: { type: "array", description: "exact replacements against the version named by asVersionOf — use instead of re-sending a whole revised document", items: { type: "object", required: ["old", "new"], properties: { old: str("text to replace; must appear exactly once in the previous version"), new: str("what replaces it; empty string deletes") }, additionalProperties: false } }, content: str("full content, inline. Only when the document is not already a file and does not revise one."), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
+      { name: "mesh_artifact_publish", description: "Publish an immutable artifact version; messages reference artifacts instead of pasting content. Give exactly ONE body: fromPath (a file you already wrote — cheapest, the mesh reads it), edits (changes to a previous version, with asVersionOf), or content (inline — only for something that was never a file).", inputSchema: { type: "object", required: ["name", "type"], properties: { name: str("artifact name"), type: { ...str("artifact type — the mesh accepts only these"), enum: [...ARTIFACT_TYPES] }, fromPath: str("path to a file in YOUR workspace, relative to its root. Prefer this: the mesh reads the file, so the content costs you nothing to publish."), edits: { type: "array", description: "exact replacements against the version named by asVersionOf — use instead of re-sending a whole revised document", items: { type: "object", required: ["old", "new"], properties: { old: str("text to replace; must appear exactly once in the previous version"), new: str("what replaces it; empty string deletes") }, additionalProperties: false } }, content: str("full content, inline. Only when the document is not already a file and does not revise one."), status: str("optional initial status"), scope: str("'mission' = every agent sees it all mission; 'work' = you and its reviewers. Defaults by type."), metadata: obj("metadata"), asVersionOf: str("artifact id to version (you must be its owner)"), parentArtifactId: str("lineage parent") }, additionalProperties: false } },
       { name: "mesh_artifact_read", description: "Read the content of an artifact version by URI or id. Large artifacts come back in parts: if the result says truncated, call again with the offset it gives you.", inputSchema: { type: "object", required: ["artifactRef"], properties: { artifactRef: str("artifact:// URI or artifact id"), offset: { type: "number", description: "character offset to resume from, taken from a previous truncated result's nextOffset" } }, additionalProperties: false } },
       { name: "mesh_artifact_transition", description: "Request an artifact state-machine transition (runtime-enforced gates apply).", inputSchema: { type: "object", required: ["artifactId", "to"], properties: { artifactId: str("artifact id"), to: str("target ArtifactStatus"), evidence: str("evidence description") }, additionalProperties: false } },
       { name: "mesh_request_review", description: "Move an artifact to review and request reviewers.", inputSchema: { type: "object", required: ["artifactId", "reviewers"], properties: { artifactId: str("artifact id"), reviewers: strArr("reviewer agent ids"), ifUnanswered }, additionalProperties: false } },
@@ -888,12 +1024,13 @@ export class McpToolset {
       { name: "mesh_task_complete", description: "Complete a claimed task with a summary and artifact evidence.", inputSchema: { type: "object", required: ["taskId", "summary"], properties: { taskId: str("task id"), summary: str("what was done"), artifacts: strArr("evidence artifact URIs") }, additionalProperties: false } },
       { name: "mesh_task_create", description: "Create a task in the shared backlog.", inputSchema: { type: "object", required: ["title", "description"], properties: { title: str("task title"), description: str("spec"), assignedTo: str("optional assignee"), requiredCapabilities: strArr("capabilities"), artifactRefs: strArr("artifact:// URIs or {uri,...} objects") }, additionalProperties: false } },
       { name: "mesh_research_request", description: "Ask a service-mode explorer for repository/system research.", inputSchema: { type: "object", required: ["to", "question"], properties: { to: str("explorer agent id"), question: str("research question"), ifUnanswered }, additionalProperties: false } },
-      { name: "mesh_decision_propose", description: "Propose an organizational decision (goes to the decision registry).", inputSchema: { type: "object", required: ["topic", "decision"], properties: { topic: str("decision topic"), decision: obj("structured decision"), evidence: strArr("artifact refs") }, additionalProperties: false } },
+      { name: "mesh_decision_propose", description: "Propose an organizational decision (goes to the decision registry). Returns its decisionId, which mesh_decision_ratify takes.", inputSchema: { type: "object", required: ["topic", "decision"], properties: { topic: str("decision topic"), decision: obj("structured decision"), evidence: strArr("artifact refs") }, additionalProperties: false } },
       { name: "mesh_decision_ratify", description: "Ratify a proposed decision (requires architecture.approve authority).", inputSchema: { type: "object", required: ["decisionId"], properties: { decisionId: str("decision id") }, additionalProperties: false } },
-      { name: "mesh_lease_acquire", description: "Acquire the single-writer lease on an artifact you own.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), files: strArr("files you intend to touch") }, additionalProperties: false } },
+      { name: "mesh_lease_acquire", description: "Acquire the single-writer lease on an artifact you own. Returns the leaseId.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), files: strArr("files you intend to touch") }, additionalProperties: false } },
       { name: "mesh_lease_release", description: "Release your write lease on an artifact.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id") }, additionalProperties: false } },
-      { name: "mesh_commit", description: "Commit staged work in your git worktree into a new artifact version (gate-checked).", inputSchema: { type: "object", required: ["artifactId", "message"], properties: { artifactId: str("CodePatch artifact"), message: str("commit message"), files: strArr("optional explicit file list") }, additionalProperties: false } },
-      { name: "mesh_merge", description: "Merge a MERGEABLE patch (requires git.merge capability and configured approvals).", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), comment: str("merge note") }, additionalProperties: false } },
+      { name: "mesh_request_commit", description: "Ask the tech lead(s) holding implementation.approve to commit a CodePatch you cannot commit yourself.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("CodePatch artifact"), comment: str("optional note for the committer") }, additionalProperties: false } },
+      { name: "mesh_commit", description: "Commit staged work in your git worktree into a new artifact version (gate-checked). Returns the commit sha.", inputSchema: { type: "object", required: ["artifactId", "message"], properties: { artifactId: str("CodePatch artifact"), message: str("commit message"), files: strArr("optional explicit file list") }, additionalProperties: false } },
+      { name: "mesh_merge", description: "Merge a MERGEABLE patch (requires git.merge capability and configured approvals). Returns what landed, as result.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), comment: str("merge note") }, additionalProperties: false } },
       { name: "mesh_wait", description: "Declare that you are waiting for responses (runtime state becomes WAITING).", inputSchema: { type: "object", properties: { reason: str("what you await") }, additionalProperties: false } },
       { name: "mesh_done", description: "Finish your current activation turn.", inputSchema: { type: "object", properties: { summary: str("turn summary") }, additionalProperties: false } },
       { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
@@ -906,19 +1043,19 @@ export class McpToolset {
       // sees the refusal in its tool result and can call mesh_plan immediately.
       { name: "mesh_plan", description: "Record your PRIVATE ordered checklist for the task you have claimed (not visible to other agents, not claimable by them). Replaces any previous plan. Required before hard actions when your mesh enables the plan gate — list the capabilities each step will use.", inputSchema: { type: "object", required: ["steps"], properties: { steps: { type: "array", description: "ordered steps", items: { type: "object", required: ["text"], properties: { id: str("stable step id (generated if omitted)"), text: str("what this step does"), status: { type: "string", enum: ["PENDING", "DONE"], description: "defaults to PENDING" }, capabilities: strArr("capability tokens this step will use, e.g. repository.write, git.commit") }, additionalProperties: false } }, taskId: str("defaults to your currently claimed task") }, additionalProperties: false } },
       { name: "mesh_plan_step", description: "Mark one step of your plan done (or reopen it).", inputSchema: { type: "object", required: ["stepId"], properties: { stepId: str("step id from your plan"), status: { type: "string", enum: ["PENDING", "DONE"], description: "defaults to DONE" } }, additionalProperties: false } },
-      { name: "mesh_spawn_worker", description: "Spawn a depth-1 delegated worker (only if your delegation policy allows). Parent receives only the structured result contract.", inputSchema: { type: "object", required: ["title", "taskSpec"], properties: { title: str("worker task title"), taskSpec: str("precise task specification"), capabilities: strArr("required capabilities"), budgetTokens: { type: "number", description: "worker token budget" } }, additionalProperties: false } },
+      { name: "mesh_spawn_worker", description: "Spawn a depth-1 delegated worker (only if your delegation policy allows). Returns its workerId and taskId. Parent receives only the structured result contract.", inputSchema: { type: "object", required: ["title", "taskSpec"], properties: { title: str("worker task title"), taskSpec: str("precise task specification"), capabilities: strArr("required capabilities"), budgetTokens: { type: "number", description: "worker token budget" } }, additionalProperties: false } },
       { name: "mesh_submit_result", description: "Worker-only: submit the fractal result contract {status,summary,artifacts,findings,risks,recommendation}.", inputSchema: { type: "object", required: ["taskId", "result"], properties: { taskId: str("delegated task"), result: obj("SubAgentResult contract") }, additionalProperties: false } },
       { name: "mesh_run_status", description: "Read-only mission snapshot: goal status and criteria progress, event/message/task/token counters and rates, per-agent lifecycle/cost/last error, open escalations. Use to answer 'how is the run doing?'.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-      { name: "mesh_query_events", description: "Read-only query over the event log, newest first. Returns compact timeline entries; lastSeq is a cursor for incremental polling. Use includePayload only when the summary is not enough.", inputSchema: { type: "object", properties: { type: str("exact event type, e.g. message.sent or agent.failed"), actorId: str("only events acted by this agent"), sinceSeq: { type: "number", description: "only events after this sequence number (poll cursor)" }, limit: { type: "number", description: "max events (default 30, max 200)" }, includePayload: { type: "boolean", description: "include full event payloads (default false)" } }, additionalProperties: false } },
+      { name: "mesh_query_events", description: "Read-only query over the event log, newest first. Returns compact timeline entries; lastSeq is a cursor for incremental polling. Use includePayload only when the summary is not enough. To find verdicts, use type \"verdict\": approvals are review.approved, and an architecture.approved without one is from before that rule.", inputSchema: { type: "object", properties: { type: str("exact event type, e.g. message.sent or agent.failed — or \"verdict\" for every recorded approve/pass/reject/veto"), types: strArr("several exact event types at once; combined with type"), actorId: str("only events acted by this agent"), sinceSeq: { type: "number", description: "only events after this sequence number (poll cursor)" }, limit: { type: "number", description: "max events (default 30, max 200)" }, includePayload: { type: "boolean", description: "include full event payloads (default false)" } }, additionalProperties: false } },
       { name: "mesh_steps", description: "Read-only turn/step traces: lifecycle, status, ops, tokens, timing, errors for recent agent turns (log reconstruction merged with live turns). Filter by agent, status or exact turn id to find failures or slow/no-op turns.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max steps (default 20, max 100)" }, agentId: str("filter to one agent"), status: { ...str("filter by turn status"), enum: ["running", "ok", "waiting", "blocked", "failed"] }, turnId: str("exact turn id") }, additionalProperties: false } },
       { name: "mesh_failures", description: "Read-only failure report: runtime agent failures, policy denials (ops and activations policy turned away), sends policy refused, rejected ops, turns where every op was rejected, turns with zero tool calls, gate-blocked/non-terminal artifacts, open escalations. Start here when asked what went wrong. Denials and refused sends are read from projections, so they survive a restart and ignore the window; window bounds only the event-derived sections.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max rows per section (default 20, max 100)" }, window: { type: "number", description: "how many recent events to scan; bounds the event-derived sections only (default 2000, max 10000)" } }, additionalProperties: false } },
       { name: "mesh_agent_activity", description: "Read-only per-agent activity snapshot: lifecycle, running turn, mailbox depth, activations, tokens, last error. Optionally filter to one agent.", inputSchema: { type: "object", properties: { agentId: str("filter to one agent") }, additionalProperties: false } },
       { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" } }, additionalProperties: false } },
-      { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones that owe a reply and dueBy giving the deadline they will be closed at where the mesh sets one. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
+      { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones you still owe a reply (an ask that already closed says how, in closed) and dueBy giving the deadline they will be closed at where the mesh sets one. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
     ];
   }
 }
 
-export function createMcpToolset(supervisor: Supervisor, opts: { readOnly?: boolean } = {}): McpToolset {
+export function createMcpToolset(supervisor: Supervisor, opts: McpToolsetOptions = {}): McpToolset {
   return new McpToolset(supervisor, opts);
 }

@@ -179,9 +179,38 @@ test("a mesh declaring no criteria is checked against the built-in defaults, and
   assert.match(out[0], /inherited from the built-in defaults/, "the operator did not write this id and must be told where it came from");
 });
 
-test("criteria the mesh has not generated yet are not second-guessed", () => {
-  const out = warnUnacceptableCriteria([seat("dev", [])], null, true);
-  assert.deepEqual(out, [], "with generation on there is no list at load time, so there is nothing to name");
+test(
+  "generation on with no requirements.* holder is still flagged — the mesh cannot finish whatever the model writes",
+  () => {
+    // What IS known at load: generated ids are free-form kebab slugs
+    // (core/src/criteria.ts `slugify`), so they are not in AUTO_EVIDENCED_CRITERIA
+    // and close only via `approve criterion:<id>`; and a generator that fails or
+    // answers nothing falls back to DEFAULT_CRITERIA (`deriveAcceptanceCriteria`),
+    // whose `requirements-documented` needs the same token. Either way a mesh
+    // with no requirements.accept / requirements.approve holder cannot complete.
+    // This test used to assert `[]` here, pinning the gap as intended behaviour.
+    const out = warnUnacceptableCriteria([seat("dev", []), seat("qa", ["quality.pass"])], null, true);
+    assert.equal(out.length, 1, "no holder is a deadlock whether the list is generated or defaulted");
+    assert.match(out[0], /requirements\.accept/);
+    assert.match(out[0], /requirements\.approve/);
+    assert.match(out[0], /cannot reach completion/);
+
+    const resolved = resolveRaw(
+      mesh(`  generate_acceptance_criteria: true
+agents:
+  pm:
+    role: pm
+    capabilities: [repository.read]
+    authority: []`),
+    );
+    assert.ok(criteriaWarning(resolved.warnings), "and it reaches resolveConfig's warnings for a generated-criteria mesh");
+  },
+);
+
+test("generation on with a holder is not second-guessed — the load is unknown until the model answers", () => {
+  // The second tier (one holder owing many ops) needs a count, and there is none
+  // at load time. Only the no-holder tier can be decided before generation.
+  assert.deepEqual(warnUnacceptableCriteria([seat("pm", ["requirements.approve"]), seat("dev", [])], null, true), []);
 });
 
 test("a long list is elided rather than dumped, and the count stays exact", () => {

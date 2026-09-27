@@ -36,26 +36,65 @@ Every turn's inputs/outputs/model/tokens are appended to `turn-audit.jsonl` so
 the **orchestration** layer is deterministic and replayable even though the LLM
 is not (§41).
 
+### Turn deadlines
+
+`scheduling.timeouts.turn_timeout_ms` is a turn's **budget**, not a kill switch.
+The supervisor owns the deadline; the runtime adapter's own timer is only a
+backstop past the ceiling (`turn_timeout_ms × 3 + 30 s`).
+
+- A seat holding a claimed task gets the ceiling, `turn_timeout_ms × 3`, from
+  the start, or from the moment it claims mid-turn.
+- Any other turn that reaches its budget while still producing frames (a token
+  or a tool call within `min(turn_silence_ms, turn_timeout_ms)`) is extended by
+  that window and checked again, up to the same ceiling. A quiet one is stopped.
+- A turn that goes silent — no frame for `turn_silence_ms` and no tool call
+  still running — is interrupted by the silence watchdog, whether it ever
+  streamed prose or only called tools.
+
+The seat is warned, not just stopped. At the budget, and again shortly before
+the ceiling (`ceiling − min(window, 5 min)`), the supervisor calls
+`AgentRuntime.advise`. The Claude adapter delivers the note at the next tool
+boundary as a PostToolUse/PostToolUseFailure hook `additionalContext`, telling
+the seat to commit (`mesh_commit`), publish, and close with `mesh_done`. Seats
+that can edit files are also told their budget and to work in committed
+increments, in a `## Turn budget` section of every turn's prompt.
+
+When a turn is stopped abnormally (timeout, silence, a live budget stop, a
+runtime failure) with uncommitted files in its worktree, the worktree is
+snapshotted to `refs/mesh/checkpoints/<agent>/<turnId>` — a commit built from a
+temporary index, so the branch, the index and the files are untouched. The next
+turn's `## Your previous turn did not finish` note lists the files and the ref.
+
+While a turn runs, its record (`/turns/:id`, and a summary row on `/steps`)
+carries `phases.deadlineAt` / `phases.ceilingAt`, `toolCallCount` (calls, not
+frames), `liveTools` (the last 60 calls with their target and status),
+`filesTouched`, `liveTokens` (from the adapter's cumulative `usage_update`
+frames, which also feed the mid-turn budget stop), `advisories`, and, once
+stopped, `checkpoint`. All of them survive a failed turn.
+
 ### What counts as a productive turn
 
-A seat can act through **two** channels: the `mesh-json` ops block in its reply,
-and the `mesh_*` MCP tools it calls mid-turn. Both are real, and both are
-counted — a turn is unproductive only when neither moved the mesh.
+A seat acts through **one** channel: the `mesh_*` MCP tools it calls mid-turn.
+Each call runs on the live turn, against the same policy engine as any other op.
+There is no prose channel — a fenced `mesh-json` (or any JSON) block in the
+reply is text, is never parsed, and runs nothing. A turn is unproductive only
+when its tool calls moved nothing.
 
-That distinction is load-bearing. Judging a turn by its ops block alone scored
-the most productive turns of a live run as empty: a seat that published three
-artifacts, opened five threads and sent four messages through the tools, then
-closed without an ops block, was logged *"no work was produced"* and took a
-strike. Because three strikes park a seat, and the recovery path re-woke it, one
-seat burned 537,479 tokens — 3.6× its configured budget — with every turn
-recorded as having produced nothing.
+A seat ends a turn with `mesh_done` (its one-line summary is what the mesh
+records) or `mesh_wait` (with the reason it is blocked). A turn that made no
+mesh tool calls at all is summarised as *"no mesh tool calls this turn"*.
 
-A turn that worked through the tools but emitted no ops block is still told so,
-because closing without `done` leaves no statement of why the turn stopped — but
-it is not discarded and takes no strike.
+The history is why this is counted by effects, not by any one call. When prose
+ops still existed, judging a turn by its ops block alone scored the most
+productive turns of a live run as empty: a seat that published three artifacts,
+opened five threads and sent four messages through the tools, then closed
+without an ops block, was logged *"no work was produced"* and took a strike.
+Because three strikes park a seat, and the recovery path re-woke it, one seat
+burned 537,479 tokens — 3.6× its configured budget — with every turn recorded
+as having produced nothing.
 
 `turn.discarded` records a turn that genuinely produced nothing, with its token
-cost, under one of: `no_ops` (neither channel moved anything), `all_rejected`
+cost, under one of: `no_ops` (no tool call moved anything), `all_rejected`
 (every op refused), `timeout`, `silence`, `budget_blocked`, `failed`. It is a
 notice with no reducer — nothing projects from it — so it is safe to read as a
 pure cost signal.
@@ -90,13 +129,12 @@ survives from it is the interface above, which it was the first implementation
 of.
 
 Note: *which* bus tools an adapter is handed is a property of the mesh, not of
-the adapter. `tools/list` is filtered per seat -- by the agent's capabilities,
-by `bus.transport`, and by `bus.vocabulary`, which under `contracts` replaces
+the adapter. `tools/list` is filtered per seat -- by the agent's capabilities
+and by `bus.vocabulary`, which under `contracts` replaces
 `mesh_send`/`mesh_broadcast`/`mesh_respond` with the contract verbs
 (`mesh_call`, `mesh_reply`, `mesh_announce`, …). The filtering is
 advertisement-only: every adapter can still *call* a tool that was not listed,
-so an op parsed out of prose, or a name a model remembers from another mesh,
-keeps working. See `docs/configuration.md` § bus.
+so a name a model remembers from another mesh keeps working. See `docs/configuration.md` § bus.
 
 ### `runtime-claude`
 - Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that
@@ -126,8 +164,80 @@ keeps working. See `docs/configuration.md` § bus.
   `input + output + cache_creation`, with `cache_read` **excluded**.
   `total_cost_usd` and `modelUsage` are cumulative across a streaming session,
   so billing a turn off them would re-charge the whole conversation every turn
+- a **usage guard**, always on, corrects a backend that drops its cache report.
+  Behind a translating proxy (2026-09-26), a seat's calls began reporting
+  `input_tokens` = the whole prompt and `cache_read_input_tokens` = 0 mid-turn,
+  while the proxy logged cache hits on the same calls. 55 such calls billed 6.41M
+  phantom tokens in 13 minutes, and the ledger, the live counter and seat
+  parking all acted on them. A call is re-attributed when it meets all three
+  conditions: both of its cache terms are 0, the prompt the evidence names was at
+  least 8,000, and its own prompt is at least that large. That evidenced prompt
+  is then billed as `cache_read` and only the remainder as `input`. The evidence
+  is the previous call's prompt (`input + cache_read + cache_creation`) when the
+  call has one **within its turn**, and — for a turn's **first call** — the
+  previous **turn's** final prompt of the same session, which the adapter records
+  per session as a measurement and reads back through
+  `mesh.runtime.stale_after_ms`: the window that already says how long a session
+  may idle before its cache is assumed cold. That window is the only one; a
+  prompt measured through the live proxy was still 94% cached upstream after a
+  10-minute idle gap (2026-09-27), so a turn boundary is not by itself a cold
+  cache. The record belongs to the session, so a rotation — which opens a fresh
+  session — starts with none, and so does a session's first turn. A shrunk
+  prompt, a call reporting any cache term, and `output` are never touched. The
+  adapter applies the move before `usage_update` frames leave it, so the live
+  figure, the settled `turn_end` figure and the ledger agree. Rotation sizing is
+  unchanged, because the move does not change a prompt's size. To recognise it:
+  the audit log carries one `claude runtime: <seat>: usage re-attributed …` line
+  per seat session, and the adapter's `turn_end` (and `send` output) carries
+  `usageGuard`, which holds `adjustedCalls`, `reattributedTokens`,
+  `firstCallAdjustments` (how many of those calls were a turn's first; absent
+  when none were) and the `raw` versus `adjusted` totals. A backend that truly
+  never caches is under-billed by the guard, and the audit line is how you would
+  spot one
 - the mesh MCP bridge is wired through the SDK's `mcpServers` option, the same
-  `mesh mcp` stdio bridge the other adapters spawn
+  `mesh mcp` stdio bridge the other adapters spawn. A bridge that is not
+  connected in the `init` frame is read as a **startup race before it is read as
+  a mute seat**: the CLI settles that status once, as the query starts, so the
+  adapter tears the query down and respawns it — up to 3 times, waiting 1s, 2s
+  then 4s (7s in all, against a `turn_silence_ms` window of 300s and a ceiling
+  of `turn_timeout_ms × 3`) — and retries the whole turn on the new query: same
+  mesh session id, same input, same armed deadlines. A query that was a resume
+  is re-resumed, so the seat keeps its transcript; one that was a fresh start
+  gets a fresh id, having nothing to lose. If the bridge is still down after the
+  budget, the turn fails with exactly the message it always did, and only then
+  does `onMuteSuspected` fire — a transient retry is not a mute seat. The
+  `turn_end` carries `bridgeRespawns` when any spawn was spent, and the audit
+  log carries one `claude runtime: <seat>: the mesh MCP bridge was not up at
+  init …` line per seat session, which is what tells a race from a real failure.
+  A `pending` bridge — the CLI's non-blocking connect still dialling — is not
+  down, and costs no spawn and no delay
+- **a bound on one `mcp__mesh__*` tool result** (`meshToolResultMaxChars`,
+  default 8,000 characters — an adapter option, not a `mesh.yaml` key, like
+  `staleAfterMs`). Over the 2026-09-27 skill-panel run the five read tools
+  (`mesh_artifact_read`, `mesh_inbox`, `mesh_query_events`, `mesh_failures`,
+  `mesh_run_status`) returned 3.0M of the 3.1M characters the whole `mesh_*`
+  surface produced: p90 20k-40k per call, a 52k worst case, and no
+  `mesh_failures` or `mesh_run_status` result under 11k. A result that size is
+  not paid once — it stays in the prompt for every later call of the turn
+  (~20 measured) and every later turn of the session until a rotation. The
+  adapter clips an oversized result at the bound in a `PostToolUse` hook via
+  `updatedToolOutput`, appending a notice that names the tool's own resume
+  protocol (`offset` for `mesh_artifact_read`/`mesh_inbox`, `sinceSeq` for
+  `mesh_query_events`, a smaller `limit` otherwise) and forbids re-issuing the
+  call unchanged. Only `mcp__mesh__*` is touched — the SDK's own `Read`/`Bash`
+  are not this adapter's to rewrite — and only the two shapes the SDK delivers
+  (a bare string, or `{content:[…]}` with `text` blocks); anything else is
+  passed through rather than mangled. A failed mesh call cannot be clipped:
+  `PostToolUseFailure` carries `additionalContext` and no rewrite field
+- **a `## Reading` brief in the system prompt** (`withReadingDiscipline`,
+  appended beside the shared output-voice rules and written into `ROLE.md` for
+  the same reason those are). Growth in a turn's prompt is spread over its
+  calls — measured median +1,285 tokens per call, p90 +5,659, top 5% of calls
+  only 30% of the total — so no bound on one result reaches it; how the seat
+  reads does. The SDK's `Read` returned 2.79M characters over 114 calls in that
+  run, 24,485 per call, each re-sent with every call after it. Five lines:
+  `grep -n … | head` to locate, `sed -n 'a,bp'` to read the range, never re-read
+  a file you already have, and cite paths rather than pasting contents
 - no `reasoning` token field (Claude's usage has none), and the system prompt is
   snapshotted at a session's first request, so mid-run `ROLE.md` edits land only
   after compaction
@@ -181,6 +291,29 @@ changing the protocol.
   place. `POST /mission/park` parks it again.
   `mesh status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
   talk to `/api`.
+- `mesh host` supervises one child per registered project. Each child's mode is
+  remembered **per project**, taken from the mode that child reports on its
+  heartbeat — the host only ever proxies `/mission/start` and `/mission/park`,
+  so the child is the only process that knows which mode it is in. Opening or
+  restarting a project re-spawns its child in that remembered mode, which is
+  what stops an operator restart from silently parking a live mission; a project
+  nothing is known about still launches in the host's own default (`--live`, or
+  parked). A park the host itself applied — the aggregate spend ceiling or the
+  turn cap — is remembered the same way, so a restart does not walk back over
+  the limit that parked it.
+  A child parked while its goal is ACTIVE is the one state that reads as a
+  running mission and runs nothing: `/status` carries `parkedNotice` (rendered
+  as a banner with a **Start** button by the console), `POST /goals/:id/resume`
+  returns it as `notice` on an otherwise normal 200, and the host prints the
+  same sentence on its own stderr when it sees that state on a heartbeat.
+- The host also watches liveness: a child silent past `heartbeat_timeout_ms`
+  (`host.yaml`, 60s) on two consecutive polls is stopped and restarted with
+  backoff. The window is wide because the cost is asymmetric — killing a working
+  project costs its in-flight turns, killing a wedged one late costs nothing but
+  a stale tab. Every such decision, and every crash and breaker trip, is
+  appended as one line to `<project>/.mesh/host-supervision.log` and printed on
+  the host's stderr, so a kill that used to be visible only in a rotated child
+  log is durably recorded.
 - `mesh init` templates `runtime: default: claude`. There is no PATH probe for
   it and there should not be: its executable ships with the SDK, so a check
   would fail on a working install. `mesh run` needs no backend preflight to

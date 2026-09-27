@@ -7,7 +7,7 @@ import type { AgentContextBundle } from "../../packages/protocol/src/index";
 import { makeMesh } from "../helpers";
 
 /**
- * The ops block in the agent context is the ONLY place an agent learns what
+ * The ops contract in the agent context is the ONLY place an agent learns what
  * moves exist. Anything implemented but missing from it is, from the model's
  * point of view, not part of the system.
  *
@@ -45,12 +45,35 @@ function implementedOps(): Set<string> {
   return new Set([...src.matchAll(/\bop: "(\w+)"/g)].map((m) => m[1]));
 }
 
-/** Only usable when delegation is enabled, so documented conditionally. */
-const DELEGATION_OPS = new Set(["spawn_worker", "submit_result"]);
+/**
+ * The MCP tools that issue each op, read from the `toOp` switch in the MCP
+ * bridge. Ops are issued ONLY as tool calls, and a tool's name is not `mesh_`
+ * plus its op (`claim_task` is `mesh_task_claim`), so "is this op taught" means
+ * "is a tool that issues it named".
+ */
+function mcpSource(): string {
+  return fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-server", "src", "mcp.ts"), "utf8");
+}
 
-test("ops contract: every implemented op is named in the agent's instructions", () => {
+function toolsByOp(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const [, tool, body] of mcpSource().matchAll(/case "(mesh_\w+)":([\s\S]*?)(?=case "mesh_|default:)/g)) {
+    for (const [, op] of body.matchAll(/\bop: "(\w+)"/g)) out.set(op, [...(out.get(op) ?? []), tool]);
+  }
+  return out;
+}
+
+/** Only usable when delegation is enabled, so documented conditionally. */
+const DELEGATION_TOOLS = new Set(["mesh_spawn_worker", "mesh_submit_result"]);
+
+test("ops contract: every implemented op has a tool the agent's instructions name", () => {
   const text = renderContextInstructions(emptyBundle());
-  const missing = [...implementedOps()].filter((op) => !DELEGATION_OPS.has(op) && !text.includes(op)).sort();
+  const tools = toolsByOp();
+  const noTool = [...implementedOps()].filter((op) => !tools.has(op)).sort();
+  assert.deepEqual(noTool, [], `ops with no MCP tool cannot be issued at all: ${noTool.join(", ")}`);
+  const missing = [...implementedOps()]
+    .filter((op) => !tools.get(op)!.some((t) => DELEGATION_TOOLS.has(t) || text.includes(t)))
+    .sort();
   assert.deepEqual(
     missing,
     [],
@@ -58,17 +81,17 @@ test("ops contract: every implemented op is named in the agent's instructions", 
   );
 });
 
-test("ops contract: delegation ops appear exactly when they are usable", () => {
+test("ops contract: delegation tools appear exactly when they are usable", () => {
   const off = renderContextInstructions(emptyBundle());
-  for (const op of DELEGATION_OPS) {
+  for (const tool of DELEGATION_TOOLS) {
     assert.ok(
-      !off.includes(op),
-      `${op} is denied outright with delegation off (v1 default max_depth 0) — advertising it only buys failed turns`,
+      !off.includes(tool),
+      `${tool} is denied outright with delegation off (v1 default max_depth 0) — advertising it only buys failed turns`,
     );
   }
   const on = renderContextInstructions(emptyBundle({ delegationEnabled: true }));
-  for (const op of DELEGATION_OPS) {
-    assert.ok(on.includes(op), `${op} must be documented once delegation is actually permitted`);
+  for (const tool of DELEGATION_TOOLS) {
+    assert.ok(on.includes(tool), `${tool} must be documented once delegation is actually permitted`);
   }
 });
 
@@ -139,63 +162,43 @@ test("ops contract: criterion acceptance appears exactly when the seat can perfo
 
 test("ops contract: artifact review lifecycle is documented", () => {
   const text = renderContextInstructions(emptyBundle());
-  assert.match(text, /transition_artifact/, "a DRAFT nobody transitions is never reviewed and never becomes evidence");
+  assert.match(text, /mesh_artifact_transition/, "a DRAFT nobody transitions is never reviewed and never becomes evidence");
   assert.match(text, /READY_FOR_REVIEW/, "agents need the target status by name");
   assert.match(text, /owner/i, "only the owner may transition — otherwise agents burn turns on rejections");
 });
 
-test("ops contract: the ops block still shows an exact, parseable example", () => {
-  const text = renderContextInstructions(emptyBundle());
-  const fence = text.indexOf("```mesh-json");
-  assert.ok(fence > 0, "the fenced example is the contract agents copy from");
-  const block = text.slice(fence + "```mesh-json".length, text.indexOf("```", fence + 12));
-  const parsed = JSON.parse(block.trim()) as Array<{ op: string }>;
-  assert.ok(Array.isArray(parsed) && parsed.length > 0, "the documented example must itself be valid JSON");
-  for (const op of parsed) assert.ok(implementedOps().has(op.op), `example uses a non-existent op: ${op.op}`);
-});
-
-// --------------------------------------------------------- typed-only ------
-
 /**
- * Under `bus.transport: "typed-only"` the supervisor parses a `mesh-json`
- * block and then REFUSES every op in it (`supervisor.ts`, the
- * `typedOnlyRefusal` branch). Until this gate existed the contract above told
- * every such seat to emit one anyway -- so the prompt taught, in its most
- * emphatic section, the one thing the runtime is guaranteed to throw away, and
- * the seat spent a full turn to be told so.
- *
- * The tests come in pairs on purpose. A render that branches on a flag nobody
- * sets is dead code that reads like a feature, so the wiring is asserted from
- * a booted mesh, and the prose is asserted from a hand-made bundle.
+ * Ops are MCP tool calls and nothing else. The contract used to teach a fenced
+ * `mesh-json` block as the way to act; that channel is gone, so a prompt that
+ * still showed one would teach, in its most emphatic section, a move that
+ * lands nothing — and the seat would spend a whole turn to find out.
  */
+test("ops contract: the seat is told to act through mesh tools only", () => {
+  const text = renderContextInstructions(emptyBundle());
+  assert.ok(text.includes("## Ops contract"), "the section anchor is load-bearing for other suites");
+  assert.ok(!text.includes("mesh-json"), "the prose ops block no longer exists and must not be taught");
+  assert.ok(!/"op"\s*:/.test(text), "no inline JSON op example — every move is named by its tool");
+  assert.match(text, /ONLY by calling the `mesh_\*` MCP tools/);
+  assert.match(text, /ignored/, "a seat that remembers the block must be told it lands nothing");
+  assert.match(text, /`mesh_done`/, "the turn-ending tool must be named");
+  assert.match(text, /`mesh_wait`/);
+});
 
-const FENCE = "```mesh-json";
-/** The tail of the 24-name enum line, chosen because no other line carries it. */
-const ENUM_LINE = "`send` type MUST be exactly one of:";
-
-test("typed-only: the config reaches the bundle, not just the renderer", async () => {
-  const agents = [
-    { id: "architect", role: "architect", interests: [] },
-    { id: "dev", role: "developer", interests: [] },
-  ];
-  const typed = await makeMesh({ agents, mode: "parked" as const, bus: { transport: "typed-only" as const } });
-  const mixed = await makeMesh({ agents, mode: "parked" as const });
-  try {
-    assert.equal(mixed.config.bus.transport, "mixed", "precondition: the default mesh must not be typed-only");
-    assert.equal(
-      buildAgentContext({ config: typed.config, kernel: typed.kernel }, "dev").typedOpsOnly,
-      true,
-      "bus.transport never reached the bundle, so the gate below can never fire",
-    );
-    assert.equal(buildAgentContext({ config: mixed.config, kernel: mixed.kernel }, "dev").typedOpsOnly, false);
-  } finally {
-    await typed.cleanup();
-    await mixed.cleanup();
-  }
+test("ops contract: every tool it names is one the bridge actually serves", () => {
+  // The inverse of the coverage test: a name the prompt invents is a call the
+  // bridge answers with "unknown tool", which is the invented-op failure the
+  // prose channel had, moved rather than removed.
+  const served = new Set([...mcpSource().matchAll(/case "(mesh_\w+)":/g)].map((m) => m[1]));
+  const text = renderContextInstructions(
+    emptyBundle({ delegationEnabled: true, criterionAcceptanceEnabled: true, commsVocabulary: "contracts" }),
+  );
+  const named = new Set([...text.matchAll(/\bmesh_[a-z_]*[a-z]\b/g)].map((m) => m[0]));
+  const unknown = [...named].filter((t) => !served.has(t)).sort();
+  assert.deepEqual(unknown, [], `the prompt names tools the bridge does not serve: ${unknown.join(", ")}`);
 });
 
 /**
- * The same pairing, one channel over: the tariff prose above is only worth
+ * The tariff prose above is only worth
  * anything if a real `bus.delivery` block reaches the bundle, and only safe if
  * a mesh that charges nothing renders no price.
  */
@@ -238,31 +241,4 @@ test("the interrupt tariff reaches the bundle, and only when it can be charged",
     await free.cleanup();
     await none.cleanup();
   }
-});
-
-test("typed-only: the prose block contract and the type enum are withheld", () => {
-  const prose = renderContextInstructions(emptyBundle());
-  // Precondition. Without it this test passes just as well against a renderer
-  // that stopped emitting the block for everyone.
-  assert.ok(prose.includes(FENCE), "precondition: a mixed mesh must still be shown the mesh-json block");
-  assert.ok(prose.includes(ENUM_LINE), "precondition: a mixed mesh must still be shown the closed type enum");
-
-  const typed = renderContextInstructions(emptyBundle({ typedOpsOnly: true }));
-  assert.ok(!typed.includes(FENCE), "a typed-only seat was told to emit a block whose ops are refused");
-  assert.ok(
-    !typed.includes(ENUM_LINE),
-    "the enum is ~40 tokens a turn that every type-taking tool already carries as `enum: [...MESSAGE_TYPES]`",
-  );
-  assert.match(typed, /parsed and then REFUSED/, "and it must be told why, or it will keep writing blocks");
-});
-
-test("typed-only: withholding the block does not withhold the ops", () => {
-  // The failure this guards is the obvious over-correction: gating the whole
-  // section rather than the half of it that is about prose syntax. The ops
-  // catalogue is the ONLY place a seat learns a move exists, and that is true
-  // on either channel -- see the 18-undocumented-ops mission at the top.
-  const typed = renderContextInstructions(emptyBundle({ typedOpsOnly: true }));
-  const missing = [...implementedOps()].filter((op) => !DELEGATION_OPS.has(op) && !typed.includes(op)).sort();
-  assert.deepEqual(missing, [], `typed-only seats lost ops from their contract: ${missing.join(", ")}`);
-  assert.ok(typed.includes("## Ops block contract"), "the section anchor is load-bearing for other suites");
 });

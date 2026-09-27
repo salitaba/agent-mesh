@@ -4,6 +4,8 @@
  * testable without mounting a provider.
  */
 
+import { toolTarget } from "./livework";
+
 /** One tool call in a running turn, as the live stream knows it. */
 export interface ToolLive {
   toolCallId: string;
@@ -15,8 +17,16 @@ export interface ToolLive {
    * arguments are in the event log.
    */
   argsPreview: string;
+  /**
+   * The one argument a reader looks at (a path, a command), taken from the raw
+   * arguments before they are cut down to `argsPreview` — a preview clipped
+   * mid-JSON no longer parses. Correlates with the polled `liveTools` by id.
+   */
+  target?: string;
   status: "running" | "completed" | "failed";
   resultDigest?: string;
+  /** The runtime's error text, when the update said the call failed. */
+  error?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -51,7 +61,7 @@ export function previewArgs(args: unknown): string {
  * is worse than no row.
  */
 export function foldToolEvent(prev: ToolLive[] | undefined, raw: unknown, now: number): ToolLive[] | null {
-  const ev = raw as { kind?: unknown; toolCallId?: unknown; name?: unknown; args?: unknown; status?: unknown; resultDigest?: unknown } | null;
+  const ev = raw as { kind?: unknown; toolCallId?: unknown; name?: unknown; args?: unknown; status?: unknown; resultDigest?: unknown; error?: unknown } | null;
   if (!ev || typeof ev !== "object") return null;
   const id = typeof ev.toolCallId === "string" ? ev.toolCallId : "";
   if (!id) return null;
@@ -61,10 +71,13 @@ export function foldToolEvent(prev: ToolLive[] | undefined, raw: unknown, now: n
   if (ev.kind === "tool_call") {
     const name = typeof ev.name === "string" && ev.name ? ev.name : "tool";
     const digest = typeof ev.resultDigest === "string" ? ev.resultDigest : undefined;
+    const target = toolTarget(ev.args) ?? (at >= 0 ? list[at].target : undefined);
     const call: ToolLive = {
       toolCallId: id,
       name,
       argsPreview: previewArgs(ev.args),
+      ...(target ? { target } : {}),
+      ...(at >= 0 && list[at].error ? { error: list[at].error } : {}),
       // A re-announced call keeps whatever terminal status it already reached:
       // the adapters may repeat a call frame, and downgrading a finished row
       // back to "running" would make the UI flap.
@@ -82,6 +95,10 @@ export function foldToolEvent(prev: ToolLive[] | undefined, raw: unknown, now: n
     const status = ev.status === "completed" || ev.status === "failed" ? ev.status : list[at].status;
     const digest = typeof ev.resultDigest === "string" ? ev.resultDigest : list[at].resultDigest;
     const merged: ToolLive = { ...list[at], status, resultDigest: digest, updatedAt: now };
+    // Same rule as the runtime's own fold: an error belongs to a failure only,
+    // so a later "completed" for the same id cannot carry a stale one.
+    if (status === "failed" && typeof ev.error === "string" && ev.error) merged.error = ev.error.slice(0, TOOL_ARGS_MAX);
+    else if (status !== "failed") delete merged.error;
     return [...list.slice(0, at), merged, ...list.slice(at + 1)];
   }
 

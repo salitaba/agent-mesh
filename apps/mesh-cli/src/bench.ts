@@ -281,6 +281,15 @@ interface Sim {
   patches: number;
   rework: number;
   doneOps: number;
+  /**
+   * Set only when the mesh has a git workspace. There a merge lands COMMITS,
+   * not artifact content, so the developer does what a real seat does: write
+   * the file into its worktree and `commit` it before asking for review. The
+   * in-memory run (bench, journey.test) has no workspace and materializes
+   * `metadata.path` on merge instead, so it leaves this unset and its script
+   * is unchanged.
+   */
+  git?: { writeWorktreeFile(agentId: string, rel: string, body: string): Promise<void> };
 }
 
 function find(board: BoardEntry[], type: string, namePart: string): BoardEntry | undefined {
@@ -496,6 +505,27 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
     },
   );
 
+  // Publish a revision of the pipeline patch, and under git also land it in
+  // the seat's branch: write the file, lease it, commit it, release the lease.
+  // `acquire_lease` and `commit` accept the artifact:// URI of the patch this
+  // same turn publishes, so no second turn is needed to learn its id.
+  const PATCH_PATH = "src/tx/Pipeline.java";
+  async function authorPatch(n: number, content: string, ready: MeshOp): Promise<MeshOp[]> {
+    const name = `patch-tx-pipeline-${n}`;
+    const ops: MeshOp[] = [{ op: "publish_artifact", name, type: "CodePatch", metadata: { path: PATCH_PATH }, content }];
+    if (sim.git) {
+      await sim.git.writeWorktreeFile("developer", PATCH_PATH, content);
+      const ref = `artifact://CodePatch/${name}/1`;
+      ops.push(
+        { op: "acquire_lease", artifactId: ref, files: [PATCH_PATH] },
+        { op: "commit", artifactId: ref, message: `feat(tx): pipeline revision ${n}`, files: [PATCH_PATH] },
+        { op: "release_lease", artifactId: ref },
+      );
+    }
+    ops.push(ready);
+    return ops;
+  }
+
   scripts.set(
     "developer",
     async (input): Promise<any> => {
@@ -510,21 +540,20 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
         const ops: MeshOp[] = [];
         if (!claimed) ops.push({ op: "claim_task", taskId: String((task.payload as any)?.taskId ?? "") });
         sim.patches++;
-        ops.push({
-          op: "publish_artifact",
-          name: `patch-tx-pipeline-${sim.patches}`,
-          type: "CodePatch",
-          // `metadata.path` is not decoration: without it (or `## File:`
-          // sections) `extractPatchFiles` finds nothing, materialization fails,
-          // and the merge writes zero bytes. The demo used to converge anyway,
-          // because a failed merge still moved the artifact to MERGED — so this
-          // journey asserted a merge that had never written a file. `opMerge`
-          // now lands the change before recording it, and the demo has to
-          // produce something real to land.
-          metadata: { path: "src/tx/Pipeline.java" },
-          content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ idempotency-safe pipeline (revision ${sim.patches}) handles ${spec.coupledWrites} coupled classes${demoBody("transaction pipeline patch")}`,
-        });
-        ops.push({ op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "tests green locally" } });
+        // `metadata.path` is not decoration: without it (or `## File:`
+        // sections) `extractPatchFiles` finds nothing, materialization fails,
+        // and the merge writes zero bytes. The demo used to converge anyway,
+        // because a failed merge still moved the artifact to MERGED — so this
+        // journey asserted a merge that had never written a file. `opMerge`
+        // now lands the change before recording it, and the demo has to
+        // produce something real to land.
+        ops.push(
+          ...(await authorPatch(
+            sim.patches,
+            `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ idempotency-safe pipeline (revision ${sim.patches}) handles ${spec.coupledWrites} coupled classes${demoBody("transaction pipeline patch")}`,
+            { op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "tests green locally" } },
+          )),
+        );
         ops.push({ op: "wait" });
         return { text: "patch authored", operations: ops };
       }
@@ -536,8 +565,11 @@ function buildMeshScripts(sim: Sim): Map<string, StubScript> {
           return {
             text: "rework",
             operations: [
-              { op: "publish_artifact", name: `patch-tx-pipeline-${sim.patches}`, type: "CodePatch", metadata: { path: "src/tx/Pipeline.java" }, content: `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})${demoBody("transaction pipeline patch")}` },
-              { op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "rework addressing the block" } },
+              ...(await authorPatch(
+                sim.patches,
+                `diff --git a/src/tx/Pipeline.java b/src/tx/Pipeline.java\n+ fixed (${sim.patches})${demoBody("transaction pipeline patch")}`,
+                { op: "send", type: "PATCH_READY", to: ["qa", "tech-lead"], newThread: { subject: `patch revision ${sim.patches} ready` }, artifactRefs: [{ uri: `artifact://CodePatch/patch-tx-pipeline-${sim.patches}/1` }], payload: { summary: "rework addressing the block" } },
+              )),
               { op: "wait" },
             ],
           };
@@ -714,7 +746,14 @@ function wireSim(instance: MeshInstance, sim: Sim): () => void {
   return instance.kernel.subscribe((e) => {
     if (e.type === "artifact.created" || e.type === "artifact.versioned") {
       const a = (e.payload as any).artifact;
-      if (a && !sim.board.find((b) => b.id === a.id)) sim.board.push({ id: a.id, type: a.type, name: a.name, version: a.version, status: a.status });
+      const known = a ? sim.board.find((b) => b.id === a.id) : undefined;
+      if (a && !known) sim.board.push({ id: a.id, type: a.type, name: a.name, version: a.version, status: a.status });
+      // A `commit` re-versions the patch under the same id; refs built from the
+      // board must name the version reviewers will actually see.
+      else if (a && known) {
+        known.version = a.version;
+        known.status = a.status;
+      }
     }
     if (e.type === "artifact.transition") {
       const b = sim.board.find((x) => x.id === (e.payload as any).artifactId);
@@ -751,12 +790,43 @@ export function attachDemoTeam(instance: MeshInstance): { cleanup(): void } {
     rework: 0,
     doneOps: 0,
   };
+  const workspace = instance.supervisor.deps.workspace;
+  if (workspace) {
+    sim.git = {
+      async writeWorktreeFile(agentId, rel, body) {
+        const target = path.join(await instance.supervisor.agentWorkspace(agentId), rel);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, body, "utf8");
+      },
+    };
+  }
   const stub = instance.stubRuntimes.get("stub");
   if (!stub) throw new Error("no stub runtime registered — attachDemoTeam requires runtime: stub agents");
   for (const [agentId, script] of buildMeshScripts(sim)) stub.setScript(agentId, script);
-  const unsub = wireSim(instance, sim);
+  const unsubSim = wireSim(instance, sim);
+  // The developer closes its task when QA's pass reaches it, and a pass is a
+  // verdict that moves no work: it lands in the mailbox without buying a wake
+  // (delivery class `accrue`). The demo only converged because that mail
+  // happened to arrive while the developer's previous turn was still running,
+  // and the post-turn "mail queued while running" retry picked it up -- a
+  // race, which a slower turn lost, stranding a CLAIMED task that holds the
+  // finished mission open forever. The merge is the moment the task is really
+  // done, so the scripted team takes it as the developer's cue, the way an
+  // `implementation.completed` interest would in a real mesh.
+  const unsubMerged = instance.kernel.subscribe((e) => {
+    if (e.type !== "patch.merged") return;
+    setImmediate(() => {
+      void instance.supervisor.activateAgent("developer", { kind: "timer", note: "your patch merged; close out the task" }).catch(() => undefined);
+    });
+  });
   void instance.supervisor.activateAgent("pm", { kind: "startup", note: "demo kickoff" }).catch(() => undefined);
-  return { cleanup: () => { unsub(); void instance.supervisor.shutdown(); } };
+  return {
+    cleanup: () => {
+      unsubSim();
+      unsubMerged();
+      void instance.supervisor.shutdown();
+    },
+  };
 }
 
 export interface RunResult {

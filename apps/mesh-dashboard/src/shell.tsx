@@ -100,6 +100,7 @@ function Help(): React.JSX.Element {
           <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl K</kbd></td><td>command palette (commands + agents)</td></tr>
           <tr><td><kbd>/</kbd></td><td>focus search (events / steps)</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>back one level / close panel</td></tr>
+          <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>older / newer step (in a step)</td></tr>
           <tr><td><kbd>p</kbd> / <kbd>r</kbd></td><td>pause / resume mission</td></tr>
           <tr><td><kbd>t</kbd></td><td>toggle theme</td></tr>
           <tr><td><kbd>?</kbd></td><td>this help</td></tr>
@@ -215,6 +216,13 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const decisionHint = escOpen ? `${escOpen} open decision${escOpen === 1 ? "" : "s"} — review in Needs you` : "No decisions waiting on you";
   const paused = goal.status === "PAUSED" || ["COMPLETED", "FAILED"].includes(goal.status);
   const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
+  // Parked with an ACTIVE goal: the one state that reads as a running mission —
+  // the goal is ACTIVE, the checks are unmet, the status word below says
+  // "running" — and runs nothing at all. Every surface agrees it is fine and it
+  // is not, so it gets a line of its own. The wording is the server's
+  // (`/status.parkedNotice`, the same string `POST /goals/:id/resume` returns),
+  // never a copy kept here: two accounts of one state is how this stayed hidden.
+  const parkedNotice = parked && goal.status === "ACTIVE" && typeof status?.parkedNotice === "string" ? status.parkedNotice : null;
   // The console's own connection to the truth: live, parked, reconnecting, or dead.
   const liveState = serverDown ? "offline" : sseState === "reconnecting" ? "reconnecting" : parked ? "parked" : sseState === "open" ? "live" : "connecting";
   const liveTitle: Record<string, string> = {
@@ -289,6 +297,23 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const openHelp = useCallback(() => openDrawer(
     <><Help /><CloseX extra="close-x-float" /></>,
   ), [openDrawer]);
+
+  /* One click out of a parked mission. The endpoint already says what it did —
+   * which seats it activated, which it refused and why — so the toast carries
+   * its `note` verbatim rather than a summary invented here. */
+  const startMission = useCallback(() => void (async () => {
+    try {
+      const res = await client.post("/mission/start");
+      if (res.status !== 200) {
+        toast("start failed", String(res.json?.error ?? `the server answered ${res.status}`), "bad");
+      } else {
+        toast(res.json?.started === false ? "mission already live" : "mission live", String(res.json?.note ?? "scheduler started"), "ok");
+      }
+    } catch {
+      toast("start failed", "the server did not answer", "bad");
+    }
+    void refreshStatus();
+  })(), [client, toast, refreshStatus]);
 
   // Global palette commands: every view, help, and one "jump to agent" per
   // agent. Picking an agent only leaves a pending id in commands.ts and asks
@@ -467,7 +492,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const detailNode = !detail
     ? null
     : detail.kind === "step"
-      ? <StepDrawer turnId={detail.id} steps={steps || []} />
+      ? <StepDrawer turnId={detail.id} steps={steps || []} routed />
       : detail.kind === "agent"
         ? <AgentDrawer id={detail.id} />
         : null;
@@ -705,6 +730,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               <Button variant="banner-act" onClick={() => void refreshStatus()}>Retry now</Button>
             </div>
           ) : null}
+          {parkedNotice ? (
+            <div className="banner warn server-banner" role="status" id="parked-banner">
+              <b>Mission parked.</b> <span className="muted">{parkedNotice}</span>
+              <Button id="btn-mission-start" variant="banner-act" title="Start the mission — the scheduler begins running work" onClick={startMission}>▶ Start mission</Button>
+            </div>
+          ) : null}
           {/* Host settings is the one view that outranks the empty state: its
               keys are host-wide, they already have values nobody chose, and an
               operator with no project open is exactly who should be able to set
@@ -733,7 +764,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>
-            <b>{t.title}</b>
+            <b>{t.title}{t.count && t.count > 1 ? <span className="toast-n">×{t.count}</span> : null}</b>
             <span className="toast-msg">{t.msg}</span>
             {t.action ? <button type="button" className="toast-act" onClick={t.action.run}>{t.action.label}</button> : null}
           </div>

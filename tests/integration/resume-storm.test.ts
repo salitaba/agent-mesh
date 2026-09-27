@@ -58,9 +58,13 @@ function hasFixture(): boolean {
  * The incident froze the server the moment recovery turns started; every
  * health probe must answer promptly and the log must keep growing.
  */
-test("resume storm: continue + set&resume on a real mission log stays responsive", async () => {
+test("resume storm: continue + set&resume on a real mission log stays responsive", async (t) => {
+  // A bare `return` here was counted as a PASS on every machine without the
+  // log (every fresh clone, every CI run). The fixture cannot be synthesised:
+  // its value is the shape of a real 1000+ event mission, which the stub
+  // runtime does not produce. So say it did not run.
   if (!hasFixture()) {
-    console.log("skip: no real line-follower mission log present (run the example to record one)");
+    t.skip(`no real line-follower mission log with > ${MIN_REAL_LOG_EVENTS} events at ${SOURCE_EVENTS} (run the example to record one)`);
     return;
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-resume-"));

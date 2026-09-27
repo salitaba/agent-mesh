@@ -151,21 +151,206 @@ export function autoRaiseExhausted(state: Projections, config: ResolvedMeshConfi
   return next <= ledger.limit;
 }
 
+/**
+ * Is this ledger on its LAST ladder rung — the one no auto-raise will lift it off?
+ *
+ * Narrower than `autoRaiseExhausted`: that one also answers true for a ledger
+ * whose raise would not move the limit because it still has room, which is the
+ * right answer for "is the latch final" and the wrong one for "may the door
+ * check trust a raise to cover this turn". This asks only the second question:
+ * with auto-raise off, no anchor to raise from, or the limit already at (or,
+ * after an operator raise, past) `original x max_multiple`, nothing will add
+ * headroom before this seat's next turn settles.
+ *
+ * An unlimited ledger has no rungs at all, so it is never on the last one.
+ */
+export function onFinalBudgetRung(state: Projections, config: ResolvedMeshConfig, key: BudgetKey): boolean {
+  const ledger = state.budgets.get(key);
+  if (!ledger || ledger.limit === null) return false;
+  const cfg = config.budgets?.autoRaise;
+  if (!cfg?.enabled) return true;
+  const original = configuredBudgetLimit(state, config, key);
+  if (original === null || !Number.isFinite(original) || original <= 0) return true;
+  if (!Number.isFinite(cfg.maxMultiple) || cfg.maxMultiple <= 0) return true;
+  return ledger.limit >= Math.floor(original * cfg.maxMultiple);
+}
+
+/**
+ * Seats of the active goal whose OWN ledger is spent past anything auto-raise
+ * will do: exactly the ledgers the termination verdict used to halt the whole
+ * goal on. They are parked instead — the policy's `budget` rule defers their
+ * activations while `exceeded` holds — and only when every live seat is on this
+ * list does the mission stop, because then nobody can take a turn at all.
+ *
+ * Live means a seat that could otherwise still run: not the operator seat, not
+ * retired/completed/suspended, and not terminally failed.
+ */
+export function budgetParkedSeats(state: Projections, config: ResolvedMeshConfig): string[] {
+  const goalId = state.activeGoalId;
+  if (!goalId) return [];
+  const out: string[] = [];
+  for (const b of state.budgets.values()) {
+    if (!b.exceeded || !b.key.startsWith(`agent:${goalId}/`)) continue;
+    if (!autoRaiseExhausted(state, config, b.key)) continue;
+    out.push(b.key.slice(`agent:${goalId}/`.length));
+  }
+  return out;
+}
+
+/** Seats that could take a turn if nothing else stopped them. See `budgetParkedSeats`. */
+export function liveSeats(state: Projections): string[] {
+  const out: string[] = [];
+  // Keyed by the map key, which IS the agent id; several termination fixtures
+  // build records with neither `state.agentId` nor `definition.id`.
+  for (const [id, rec] of state.agents) {
+    if (!id || id === "human") continue;
+    const lc = rec.state?.lifecycle;
+    if (lc === "RETIRED" || lc === "COMPLETED" || lc === "SUSPENDED") continue;
+    if (lc === "FAILED" && rec.state?.restartable !== true) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+/**
+ * What one settled turn is billed, and how lucky its cache was.
+ *
+ * `total` is the backend's billable work (input + output + cache writes); cache
+ * reads are reported beside it and, by default, cost nothing. Measured
+ * 2026-09-25: that made budgets bill cache LUCK — five cache-miss turns were 64%
+ * of all fresh input, while a turn that read 6.77M from cache billed 267k.
+ * `budgets.cache_read_weight` (0..1, default 0) lets a mesh charge reads at a
+ * fraction so a cold transcript and a warm one cost comparably; at 0 the billed
+ * figure is byte-for-byte what it always was.
+ *
+ * `cacheReadRatio` is reads over the whole prompt (fresh input + reads): the
+ * number an operator needs to tell "this turn was expensive" from "this turn
+ * missed the cache". Absent when the backend reported no reads.
+ */
+export function billedTurnTokens(
+  usage: { input?: number; output?: number; total?: number; cacheRead?: number } | undefined,
+  cacheReadWeight: number | undefined,
+): { billed: number; cacheRead?: number; cacheReadRatio?: number; cacheReadBilled?: number } {
+  const total = Number.isFinite(usage?.total) ? Math.max(0, usage!.total!) : 0;
+  const cacheRead = Number.isFinite(usage?.cacheRead) ? Math.max(0, usage!.cacheRead!) : undefined;
+  const weight = Number.isFinite(cacheReadWeight) ? Math.min(1, Math.max(0, cacheReadWeight!)) : 0;
+  const cacheReadBilled = cacheRead !== undefined && weight > 0 ? Math.round(cacheRead * weight) : undefined;
+  const input = Number.isFinite(usage?.input) ? Math.max(0, usage!.input!) : 0;
+  const prompt = input + (cacheRead ?? 0);
+  return {
+    billed: total + (cacheReadBilled ?? 0),
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheRead !== undefined && prompt > 0 ? { cacheReadRatio: Math.round((cacheRead / prompt) * 1000) / 1000 } : {}),
+    ...(cacheReadBilled !== undefined ? { cacheReadBilled } : {}),
+  };
+}
+
+/**
+ * What an operator should be told before a seat's limit moves past the mission.
+ *
+ * Measured 2026-09-25: tech-lead was raised to 22,000,000 on a mesh whose
+ * mission cap was 12,640,000, and nothing said that the seat's limit no longer
+ * bound anything — the mission ledger would stop it first — or that the seats'
+ * ceilings now summed well past the cap the mesh.yaml comment claimed they
+ * matched. Both are facts, not refusals: the raise still happens.
+ *
+ * A seat's ceiling is the most its ledger can reach without an operator: its
+ * live limit, or `original x max_multiple` while auto-raise can still climb.
+ */
+export function missionCapWarnings(state: Projections, config: ResolvedMeshConfig, key: BudgetKey, next: number): string[] {
+  const goalId = state.activeGoalId;
+  if (!goalId || !key.startsWith(`agent:${goalId}/`)) return [];
+  const mKey = missionKey(goalId);
+  const cap = state.budgets.get(mKey)?.limit ?? config.budgets?.mission?.tokens ?? null;
+  if (cap === null || !Number.isFinite(cap) || cap <= 0) return [];
+  const seat = key.slice(`agent:${goalId}/`.length);
+  const out: string[] = [];
+  if (next > cap) {
+    out.push(`${seat} limit ${next} is above the mission cap (${cap}): the mission ledger, not this seat's, is now what stops it`);
+  }
+  const cfg = config.budgets?.autoRaise;
+  let sum = 0;
+  for (const id of liveSeats(state)) {
+    const k = agentKey(goalId, id);
+    const limit = k === key ? next : (state.budgets.get(k)?.limit ?? configuredBudgetLimit(state, config, k));
+    if (limit === null || !Number.isFinite(limit)) continue;
+    const original = configuredBudgetLimit(state, config, k);
+    const climb = cfg?.enabled && original !== null && original > 0 && Number.isFinite(cfg.maxMultiple) ? Math.floor(original * cfg.maxMultiple) : 0;
+    sum += Math.max(limit, climb);
+  }
+  if (sum > cap) {
+    out.push(`seat ceilings now sum to ${sum}, above the mission cap ${cap}: seats can jointly spend past it, so the mission ledger will halt the goal before every seat's own ceiling binds`);
+  }
+  return out;
+}
+
+export interface ReserveOptions {
+  actorId?: string;
+  goalId?: string;
+  causationId?: string;
+  /**
+   * Accept a grant smaller than the ask instead of being refused.
+   *
+   * Off by default, because a hold cannot cap the spend it admits: under a
+   * partial grant the caller's full cost is still consumed and the ledger passes
+   * its limit. Callers turn it on only where a short hold is honest -- an ask
+   * that is a worst-case bound rather than an estimate (a seat's first turn), a
+   * ledger whose shortfall the caller answers by shrinking the work (threads),
+   * or a top-up on a turn that is already admitted.
+   */
+  allowPartial?: boolean;
+}
+
+export interface ReserveResult {
+  reservationId: string;
+  blocked: boolean;
+  reason?: string;
+  requested: number;
+  granted: number;
+}
+
 export class BudgetManager {
   private exceededEmitted = new Set<string>();
+  /** Tail of the in-flight `reserve` chain per key; see `reserve`. */
+  private reserving = new Map<string, Promise<unknown>>();
   constructor(private kernel: Kernel) {}
 
   declare(key: BudgetKey, kind: BudgetProjectionEntry["limitKind"], limit: number | null): void {
     ensureBudget(this.kernel.state, key, kind, limit);
   }
 
-  async reserve(
+  /**
+   * Reserve `amount` against `key`.
+   *
+   * Serialized per key. The headroom is read from state and the hold lands only
+   * when the emit applies, so two concurrent reserves on one ledger both read the
+   * headroom before either hold existed and were both granted it -- which is how
+   * two seats' turns jointly overran a mission cap that could pay for one.
+   */
+  reserve(
     key: BudgetKey,
     kind: BudgetProjectionEntry["limitKind"],
     amount: number,
     limit: number | null,
-    opts: { actorId?: string; goalId?: string; causationId?: string } = {},
-  ): Promise<{ reservationId: string; blocked: boolean; reason?: string; requested: number; granted: number }> {
+    opts: ReserveOptions = {},
+  ): Promise<ReserveResult> {
+    const prev = this.reserving.get(key) ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(() => this.reserveNow(key, kind, amount, limit, opts));
+    const tail = next.catch(() => undefined);
+    this.reserving.set(key, tail);
+    void tail.then(() => {
+      if (this.reserving.get(key) === tail) this.reserving.delete(key);
+    });
+    return next;
+  }
+
+  private async reserveNow(
+    key: BudgetKey,
+    kind: BudgetProjectionEntry["limitKind"],
+    amount: number,
+    limit: number | null,
+    opts: ReserveOptions,
+  ): Promise<ReserveResult> {
     const state = this.kernel.state;
     const ledger = ensureBudget(state, key, kind, limit);
     const requested = amount;
@@ -177,13 +362,25 @@ export class BudgetManager {
           await this.exceeded(key, ledger.limit, ledger.consumed, opts);
           return { reservationId: "", blocked: true, reason: `budget ${key} exhausted (${ledger.consumed}/${ledger.limit})`, requested, granted: 0 };
         }
-        // Partial headroom: hold what is left rather than refusing outright.
+        // Partial headroom. Refused unless the caller opted in: a hold does not
+        // cap what the holder goes on to spend, so a short grant admitted a turn
+        // whose full cost was then consumed past the limit -- a 32k ask against
+        // 5k of headroom became a 5k decoration and the cap never bound.
         //
-        // On its own this is a LIE — the caller was told "not blocked" and then
-        // spent whatever it liked, so a 32k ask against 5k of headroom became a
-        // 5k decoration and the cap never bound. `granted < requested` is the
-        // signal that made it honest: the caller can see it did not get what it
-        // asked for and shrink the turn to fit.
+        // Not an exhaustion, so no `budget.exceeded`: the ledger still has
+        // headroom, just less than this ask, and the latch is once per key.
+        if (!opts.allowPartial) {
+          return {
+            reservationId: "",
+            blocked: true,
+            reason: `budget ${key} short: ${headroom} left of ${ledger.limit} (consumed ${ledger.consumed}, held ${ledger.reserved}), ${requested} asked`,
+            requested,
+            granted: 0,
+          };
+        }
+        // Opted in: hold what is left. `granted < requested` is the signal that
+        // keeps this honest -- the caller can see it did not get what it asked
+        // for, and owns what it does about that.
         amount = Math.min(amount, headroom);
       } else {
         await this.exceeded(key, ledger.limit, ledger.consumed, opts);
@@ -191,9 +388,22 @@ export class BudgetManager {
       }
     }
     const reservationId = monotonicId("res");
+    // `requested` rides along because `amount` alone cannot be read. A hold below
+    // TURN_RESERVE_TOKENS has two unrelated causes — a partial grant against thin
+    // headroom, and a smaller ask sized down from the EWMA of past turns — and the
+    // event recorded only the outcome, so the log could not tell them apart. On
+    // 2026-09-24 two seats reserved 16,470 and 12,865 against a 32,000 ceiling and
+    // there was no way to say from the log whether either was short.
+    //
+    // `limit` is the ledger's LIVE limit, not the caller's argument: callers pass
+    // the declared figure (it only seeds a ledger that does not exist yet), so an
+    // auto-raised 1.44M ledger logged its holds against 180,000 and a reader
+    // could not tell what the hold was actually measured against. Replay-safe:
+    // the reducer only uses this to seed a missing ledger, and `ensureBudget`
+    // above already made the two equal in that case.
     await this.kernel.emit(
       "budget.reserved",
-      { key, limitKind: kind, limit, amount, reservationId },
+      { key, limitKind: kind, limit: ledger.limit, amount, requested, reservationId },
       { actorId: opts.actorId, goalId: opts.goalId, causationId: opts.causationId },
     );
     return { reservationId, blocked: false, requested, granted: amount };
@@ -237,6 +447,33 @@ export class BudgetManager {
   }
 
   /**
+   * Latch a ledger whose seat can no longer afford a turn, although it is not
+   * yet overdrawn.
+   *
+   * The door check on a seat's last rung holds the seat's real per-turn estimate
+   * (see `Supervisor.sizedTurnReserve`), so a refusal there means "the headroom
+   * left is less than what this seat's turns cost, and nothing will raise it".
+   * Without a latch that seat stayed activatable: every wake reached the door,
+   * was turned away, and went BLOCKED again. Latching it parks it exactly like
+   * an overdrawn seat — the policy's `budget` rule defers its activations, the
+   * watchdog carries its card to the operator, and a raise clears the latch the
+   * same way (`budget.limit_raised` recomputes `exceeded`).
+   *
+   * `short: true` is what tells this apart from an overrun in the log: consumed
+   * is still below the limit, and the payload says how much was asked for.
+   */
+  async latchShort(
+    key: BudgetKey,
+    detail: { requested: number; headroom: number },
+    opts: { actorId?: string; goalId?: string; causationId?: string } = {},
+  ): Promise<void> {
+    const ledger = this.kernel.state.budgets.get(key);
+    if (!ledger || ledger.limit === null || ledger.exceeded || this.exceededEmitted.has(key)) return;
+    this.exceededEmitted.add(key);
+    await this.kernel.emit("budget.exceeded", { key, limit: ledger.limit, consumed: ledger.consumed, short: true, ...detail }, opts);
+  }
+
+  /**
    * Raise a budget limit at runtime (operator action from an escalation).
    * Emits `budget.limit_raised` so the change survives replay. Clears the
    * exceeded latch when the new limit covers current spend, and re-arms
@@ -259,6 +496,12 @@ export class BudgetManager {
        * the only way to tell them apart was to parse the prose in `reason`.
        */
       decidedBy?: "auto" | "operator";
+      /**
+       * Facts the operator should see about this raise (see
+       * `missionCapWarnings`). On the event, so the log says it was known at
+       * the time and not only in an HTTP response nobody kept.
+       */
+      warnings?: string[];
     } = {},
   ): Promise<{ previous: number | null; limit: number; unblocked: boolean }> {
     const ledger = ensureBudget(this.kernel.state, key, "tokens", null);
@@ -273,6 +516,7 @@ export class BudgetManager {
         previous,
         reason: opts.reason ?? "operator raise",
         decidedBy: opts.decidedBy ?? "operator",
+        ...(opts.warnings && opts.warnings.length > 0 ? { warnings: opts.warnings } : {}),
       },
       { actorId: opts.actorId, goalId: opts.goalId, causationId: opts.causationId },
     );

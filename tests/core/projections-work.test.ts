@@ -189,12 +189,48 @@ test("claiming an already claimed task is rejected as a projection error", () =>
   assert.equal(state.tasks.get("t-1")?.claimedBy, "dev");
 });
 
-test("reassign:true overrides the already-claimed guard", () => {
+/**
+ * `reassign` is set in exactly one place, `Supervisor.claimTask`, as
+ * `task.assignedTo && task.assignedTo !== actorId` -- and that method has
+ * already refused any non-OPEN task not assigned to the claimant. So the flag
+ * is only ever truthy on an OPEN task still earmarked for a seat that released
+ * it, where the already-claimed guard does not fire anyway. That is the shape
+ * pinned here.
+ */
+test("reassign:true hands an OPEN task earmarked for another seat to the claimant", () => {
   const state = createInitialState();
-  state.tasks.set("t-1", task({ id: "t-1", status: "CLAIMED", claimedBy: "dev" }));
+  state.tasks.set("t-1", task({ id: "t-1", status: "OPEN", assignedTo: "dev" }));
+  const qa = seedAgent(state, "qa");
   applyEvent(state, evt("task.claimed", { taskId: "t-1", agentId: "qa", reassign: true }));
   assert.equal(state.tasks.get("t-1")?.claimedBy, "qa");
+  assert.equal(state.tasks.get("t-1")?.assignedTo, "qa");
+  assert.equal(qa.state.activeTaskId, "t-1");
 });
+
+/**
+ * The waiver the reducer ALSO grants -- reassign on a task that is still
+ * CLAIMED -- has no emitter (see above), and taking it strands the previous
+ * claimer: `dev` keeps `activeTaskId: "t-1"` for a task now claimed by `qa`,
+ * so two seats believe they own one task. Written fix-agnostic: refusing the
+ * event (what the supervisor does, `tests/core/reducer-conformance.test.ts`
+ * row 05) and releasing `dev` both pass it.
+ */
+test(
+  "a reassign never leaves two seats pointing at one task",
+  () => {
+    const state = createInitialState();
+    state.tasks.set("t-1", task({ id: "t-1", status: "CLAIMED", claimedBy: "dev", assignedTo: "dev" }));
+    seedAgent(state, "dev", "t-1");
+    seedAgent(state, "qa");
+    try {
+      applyEvent(state, evt("task.claimed", { taskId: "t-1", agentId: "qa", reassign: true }));
+    } catch (err) {
+      if (!(err instanceof ProjectionError)) throw err;
+    }
+    const pointing = [...state.agents.values()].filter((r) => r.state.activeTaskId === "t-1").map((r) => r.definition.id);
+    assert.deepEqual(pointing, [state.tasks.get("t-1")?.claimedBy], "exactly one seat, and it is the claimer");
+  },
+);
 
 test("task.completed clears the claimant's active task and marks completion time", () => {
   const state = createInitialState();

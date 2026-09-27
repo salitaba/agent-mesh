@@ -10,15 +10,21 @@ import type {
   MeshOp,
   RuntimeContext,
   RotationPendingInfo,
+  ToolCallRecord,
 } from "../../protocol/src/index";
-import { newAgentSessionId, aliasTextOp, scanJsonObjects, type AliasOptions } from "../../protocol/src/index";
+import {
+  newAgentSessionId,
+  InterruptedTurnError,
+  BackendUnreachableError,
+  RequestTimeoutError,
+} from "../../protocol/src/index";
 
 export type StubScript = (input: AgentInput, turnIndex: number, session: AgentSession) => StubTurn | Promise<StubTurn>;
 
 export interface StubTurn {
   text?: string;
   operations?: MeshOp[];
-  /** Simulate a typed (MCP) turn vs a prose-parsed one. */
+  /** Mark the turn's ops as typed (MCP) rather than structured-output ops. */
   typedOps?: boolean;
   tokensUsed?: { input: number; output: number; total: number };
   summary?: string;
@@ -38,29 +44,107 @@ export interface StubTurn {
    * Pass `[]` explicitly to model a turn that checked NOTHING — that is what
    * the gate's own tests do.
    */
-  toolCalls?: Array<{ name: string; args: unknown; resultDigest: string }>;
+  toolCalls?: ToolCallRecord[];
   fail?: string;
   crash?: boolean;
   delayMs?: number;
+  /**
+   * Usage the backend reports when this turn's `delayMs` is aborted by
+   * `interrupt` — the real CLI answers a mesh-ordered abort with a `result` frame
+   * carrying one, and that figure is the only cost a killed turn ever has.
+   *
+   * Only meaningful together with `delayMs`, since an immediate turn has nothing
+   * to abort. Omitted means the backend did not report, which is the other case
+   * worth testing: the turn must then be billed nothing rather than zero.
+   */
+  interruptUsage?: { input: number; output: number; total: number };
+
+  // ---- hostile modes -------------------------------------------------------
+  // Everything below exists so a fixture can be a BAD agent. Each is opt-in per
+  // turn and leaves a turn that sets none of them exactly as it was.
+
+  /**
+   * Never answer, and IGNORE `interrupt()`, like a backend that has stopped
+   * reading its socket. The turn only ends when the supervisor gives up on it
+   * (turn timeout + grace, or the silence watchdog's forced settle). Release
+   * stragglers at teardown with `StubRuntime.releaseHangs()`.
+   */
+  hang?: boolean;
+  /**
+   * Like `hang`, but answer normally after this many ms — still ignoring any
+   * interrupt. Models the late answer that arrives after the mesh already
+   * settled the turn as failed.
+   */
+  hangMs?: number;
+  /**
+   * Fail with the typed error the supervisor classifies on, after `delayMs` if
+   * set:
+   * - `backend_unreachable` → `BackendUnreachableError` (dead backend, respawn ladder)
+   * - `request_timeout`     → `RequestTimeoutError` (slow backend, timeout-retry ladder)
+   * - `interrupted`         → `InterruptedTurnError` carrying `interruptUsage`
+   * - `generic`             → plain `Error`
+   * `crash: true` is the older generic form and also marks the seat UNREACHABLE.
+   */
+  throwKind?: "backend_unreachable" | "request_timeout" | "interrupted" | "generic";
+  /** Message for `throwKind`. */
+  throwMessage?: string;
+  /**
+   * Streaming only (see `StubRuntime.setStreaming`): text deltas emitted as
+   * `agent_message_chunk` frames before the turn resolves. They reach
+   * `input.onToken`, which is what stamps `phases.firstTokenAt/lastTokenAt`.
+   * Omitted in streaming mode means one chunk holding the turn's text (if any).
+   */
+  tokens?: string[];
+  /** Streaming only: pause between token frames, in ms. */
+  tokenIntervalMs?: number;
+  /**
+   * Streaming only: cumulative usage figures emitted as `usage_update` frames
+   * after the token frames and before the turn body (delay, hang, failure), so
+   * a fixture can put live spend in front of the supervisor while the turn is
+   * still running — which is the only time the mid-turn budget check can act.
+   */
+  liveUsage?: Array<AgentOutput["tokensUsed"]>;
+  /**
+   * Streaming only: emit this many token frames and then go SILENT — no more
+   * frames until `interrupt()`, which then aborts with `InterruptedTurnError`
+   * (combine with `hang: true` to also ignore the interrupt). This is the shape
+   * the silence watchdog exists for.
+   */
+  silentAfterTokens?: number;
+  /**
+   * Streaming only: close the stream after this many frames WITHOUT a
+   * `turn_end`, i.e. the transport died mid-turn. `collectAgentOutput` turns
+   * that into a thrown error.
+   */
+  dieAfterFrames?: number;
 }
 
 export interface StubOptions {
   scripts: Map<string, StubScript | StubTurn[]>;
   defaultTokens?: number;
+  /** Start with `stream()` exposed. Same as calling `setStreaming(true)`. */
+  streaming?: boolean;
 }
+
+type StubStreamFn = (session: AgentSession, input: AgentInput) => AsyncIterable<AgentEvent>;
+
+/** Fields that only mean something on the streaming path. */
+const STREAM_ONLY_FIELDS = ["tokens", "tokenIntervalMs", "liveUsage", "silentAfterTokens", "dieAfterFrames"] as const;
 
 /**
  * What a scripted turn reports when it says nothing about tools: one real
  * (non-`mesh_*`) invocation, i.e. "this agent went and did something". See
  * StubTurn.toolCalls.
  */
-export const DEFAULT_STUB_TOOL_CALLS: Array<{ name: string; args: unknown; resultDigest: string }> = [
+export const DEFAULT_STUB_TOOL_CALLS: ToolCallRecord[] = [
   { name: "stub_work", args: {}, resultDigest: "stub" },
 ];
 
 export class StubRuntime implements AgentRuntime {
   readonly name = "stub";
   private turnIndex = new Map<string, number>();
+  /** Rejectors for in-flight delayed turns, so `interrupt` can actually abort one. */
+  private pendingAborts = new Map<string, () => void>();
   private statuses = new Map<string, AgentRuntimeStatus>();
   private sessions = new Map<string, AgentSession>();
   /**
@@ -74,8 +158,64 @@ export class StubRuntime implements AgentRuntime {
    * last-wins so a restart (resume/recovery) stays visible.
    */
   private startContexts = new Map<string, RuntimeContext[]>();
+  /**
+   * Seats whose backend process is dead. `permanent` survives a restart;
+   * otherwise the next `start`/`restoreSession`/`resume` (a respawn) clears it.
+   */
+  private dead = new Map<string, { permanent: boolean }>();
+  /** Resolvers for `hang`/`hangMs` turns, so a test can release them at teardown. */
+  private hangs = new Set<() => void>();
+  private streaming: boolean;
 
-  constructor(private options: StubOptions) {}
+  constructor(private options: StubOptions) {
+    this.streaming = options.streaming === true;
+  }
+
+  /**
+   * Expose (or hide) `stream()`.
+   *
+   * Runtime-wide rather than per turn because the supervisor picks
+   * `stream` vs `send` by asking whether the METHOD exists
+   * (`session.runtime.stream ? ... : send`), before any script runs. Off by
+   * default so every existing fixture stays on the `send` path it was written
+   * against: `collectAgentOutput` rebuilds `toolCalls` from frames and fires
+   * `onToolEvent`, which is observable.
+   */
+  setStreaming(on: boolean): void {
+    this.streaming = on;
+  }
+
+  /** `stream` exists only while streaming is on; see `setStreaming`. */
+  get stream(): StubStreamFn | undefined {
+    return this.streaming ? (session, input) => this.streamTurn(session, input) : undefined;
+  }
+
+  /** Let every in-flight `hang`/`hangMs` turn answer now. Call at teardown. */
+  releaseHangs(): void {
+    for (const release of [...this.hangs]) release();
+  }
+
+  /** Notes `advise` accepted, per agent, oldest first. */
+  private advice = new Map<string, string[]>();
+
+  /**
+   * Accepts a note only while the seat has a turn running, like a real
+   * adapter, which has no turn to fold it into otherwise. Recorded rather than
+   * delivered: the stub has no model to show it to, so a test asserts on
+   * `advisedFor` instead.
+   */
+  advise(session: AgentSession, text: string): boolean {
+    if (this.statuses.get(session.agentId) !== "RUNNING") return false;
+    const seen = this.advice.get(session.agentId) ?? [];
+    seen.push(text);
+    this.advice.set(session.agentId, seen);
+    return true;
+  }
+
+  /** Every note `advise` accepted for this agent, oldest first. */
+  advisedFor(agentId: string): string[] {
+    return [...(this.advice.get(agentId) ?? [])];
+  }
 
   setScript(agentId: string, script: StubScript | StubTurn[]): void {
     this.options.scripts.set(agentId, script);
@@ -111,6 +251,7 @@ export class StubRuntime implements AgentRuntime {
   }
 
   async start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession> {
+    this.respawn(agent.id);
     const seen = this.startContexts.get(agent.id) ?? [];
     seen.push(context);
     this.startContexts.set(agent.id, seen);
@@ -138,7 +279,27 @@ export class StubRuntime implements AgentRuntime {
   }
 
   async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
+    const { turn, idx } = await this.nextTurn(session, input);
+    const stray = STREAM_ONLY_FIELDS.filter((k) => turn[k] !== undefined);
+    if (stray.length > 0) {
+      // Loud rather than ignored: a fixture that scripts tokens on the `send`
+      // path would otherwise pass while never touching the path it names.
+      throw new Error(`stub turn for ${session.agentId} sets ${stray.join(", ")} but streaming is off — call setStreaming(true)`);
+    }
+    await this.playTurnBody(session.agentId, turn);
+    return this.outputFor(session.agentId, idx, turn);
+  }
+
+  /** Resolve the scripted turn, after the death and crash checks every path shares. */
+  private async nextTurn(session: AgentSession, input: AgentInput): Promise<{ turn: StubTurn; idx: number }> {
     const agentId = session.agentId;
+    if (this.dead.has(agentId)) {
+      // The process is gone but nothing noticed between turns (the status was
+      // not updated), so the failure surfaces where it does for a real
+      // adapter: on the next send, as a dead backend.
+      this.statuses.set(agentId, "UNREACHABLE");
+      throw new BackendUnreachableError(`stub:${agentId}`, "the stub process was killed by simulateProcessDeath");
+    }
     const idx = this.turnIndex.get(agentId) ?? 0;
     this.turnIndex.set(agentId, idx + 1);
     this.statuses.set(agentId, "RUNNING");
@@ -156,7 +317,67 @@ export class StubRuntime implements AgentRuntime {
       this.statuses.set(agentId, "UNREACHABLE");
       throw new Error(`stub crash for ${agentId} on turn ${idx}`);
     }
-    if (turn.delayMs) await new Promise((r) => setTimeout(r, turn.delayMs));
+    return { turn, idx };
+  }
+
+  /** Delay, hang and typed failure: everything between "turn started" and "turn answered". */
+  private async playTurnBody(agentId: string, turn: StubTurn): Promise<void> {
+    if (turn.delayMs) await this.abortableDelay(agentId, turn.delayMs, turn);
+    if (turn.hang || turn.hangMs !== undefined) {
+      // Deliberately NOT registered in `pendingAborts`: `interrupt()` must not
+      // reach this turn. That is the whole mode.
+      await new Promise<void>((resolve) => {
+        const release = (): void => {
+          if (timer) clearTimeout(timer);
+          this.hangs.delete(release);
+          resolve();
+        };
+        const timer = turn.hang ? undefined : setTimeout(release, turn.hangMs);
+        this.hangs.add(release);
+      });
+    }
+    if (turn.throwKind) {
+      this.statuses.set(agentId, "IDLE");
+      const msg = turn.throwMessage ?? `stub ${turn.throwKind} for ${agentId}`;
+      switch (turn.throwKind) {
+        case "backend_unreachable":
+          this.statuses.set(agentId, "UNREACHABLE");
+          throw new BackendUnreachableError(`stub:${agentId}`, msg);
+        case "request_timeout":
+          throw new RequestTimeoutError(`stub:${agentId}`, msg, turn.delayMs ?? 0);
+        case "interrupted":
+          throw new InterruptedTurnError(msg, turn.interruptUsage);
+        case "generic":
+          throw new Error(msg);
+      }
+    }
+  }
+
+  private abortableDelay(agentId: string, ms: number, turn: StubTurn): Promise<void> {
+    // A delayed turn is abortable, so a fixture can model the one case that
+    // matters for cost accounting: the mesh orders an interrupt and the backend
+    // answers it with real usage. Without this the stub's `interrupt` was a
+    // no-op, every timed-out turn reported no tokens, and the billing path for
+    // a killed turn could not be exercised by any test at all.
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAborts.delete(agentId);
+        resolve();
+      }, ms);
+      this.pendingAborts.set(agentId, () => {
+        clearTimeout(timer);
+        this.pendingAborts.delete(agentId);
+        this.statuses.set(agentId, "IDLE");
+        reject(
+          turn.interruptUsage
+            ? new InterruptedTurnError(`stub turn for ${agentId} aborted`, turn.interruptUsage)
+            : new InterruptedTurnError(`stub turn for ${agentId} aborted`),
+        );
+      });
+    });
+  }
+
+  private outputFor(agentId: string, idx: number, turn: StubTurn): AgentOutput {
     this.statuses.set(agentId, "IDLE");
     const def = this.options.defaultTokens ?? 1200;
     return {
@@ -174,8 +395,88 @@ export class StubRuntime implements AgentRuntime {
     };
   }
 
-  async interrupt(): Promise<void> {
-    /* stub turns are synchronous and immediate */
+  /**
+   * The streaming twin of `send`: token frames, then the same body (delay,
+   * hang, typed failure), then one `tool_call`/`tool_call_update` pair per
+   * tool call and a `turn_end`. `collectAgentOutput` folds it back into the
+   * same `AgentOutput` `send` would have returned.
+   */
+  private async *streamTurn(session: AgentSession, input: AgentInput): AsyncGenerator<AgentEvent, void> {
+    const agentId = session.agentId;
+    const { turn, idx } = await this.nextTurn(session, input);
+    const out = (): AgentOutput => this.outputFor(agentId, idx, turn);
+    const tokens = turn.tokens ?? (turn.text ? [turn.text] : []);
+    let frames = 0;
+    const cut = (): boolean => turn.dieAfterFrames !== undefined && frames >= turn.dieAfterFrames;
+    for (let i = 0; i < tokens.length; i++) {
+      if (turn.silentAfterTokens !== undefined && i >= turn.silentAfterTokens) break;
+      if (cut()) return;
+      if (i > 0 && turn.tokenIntervalMs) await new Promise((r) => setTimeout(r, turn.tokenIntervalMs));
+      yield { kind: "agent_message_chunk", delta: tokens[i] };
+      frames++;
+    }
+    for (const tokensUsed of turn.liveUsage ?? []) {
+      if (cut()) return;
+      yield { kind: "usage_update", tokensUsed };
+      frames++;
+    }
+    if (turn.silentAfterTokens !== undefined) {
+      // Silent until interrupted. `hang` makes the interrupt a no-op as well,
+      // handled by playTurnBody below; without it the interrupt aborts here.
+      if (!turn.hang) {
+        await new Promise<void>((_, reject) => {
+          this.pendingAborts.set(agentId, () => {
+            this.pendingAborts.delete(agentId);
+            this.statuses.set(agentId, "IDLE");
+            reject(new InterruptedTurnError(`stub turn for ${agentId} aborted while silent`, turn.interruptUsage));
+          });
+        });
+      }
+    }
+    await this.playTurnBody(agentId, turn);
+    const output = out();
+    const calls = output.toolCalls ?? [];
+    for (let i = 0; i < calls.length; i++) {
+      const id = `stub-tc-${idx}-${i}`;
+      if (cut()) return;
+      yield { kind: "tool_call", toolCallId: id, name: calls[i].name, args: calls[i].args, resultDigest: calls[i].resultDigest };
+      frames++;
+      if (cut()) return;
+      // A scripted call may say it failed, so a fixture can model the refused
+      // tool call the Claude gate produces; one that says nothing completed,
+      // which is what every fixture written before the field meant.
+      yield {
+        kind: "tool_call_update",
+        toolCallId: id,
+        status: calls[i].status ?? "completed",
+        resultDigest: calls[i].resultDigest,
+        ...(calls[i].error !== undefined ? { error: calls[i].error } : {}),
+      };
+      frames++;
+    }
+    if (cut()) return;
+    yield {
+      kind: "turn_end",
+      stopReason: output.error !== undefined ? "error" : "end_turn",
+      text: output.text,
+      operations: output.operations,
+      ...(output.typedOps !== undefined ? { typedOps: output.typedOps } : {}),
+      tokensUsed: output.tokensUsed,
+      model: output.model,
+      modelVersion: output.modelVersion,
+      temperature: output.temperature,
+      ...(output.summary !== undefined ? { summary: output.summary } : {}),
+      ...(output.declaredSummary !== undefined ? { declaredSummary: output.declaredSummary } : {}),
+      ...(output.error !== undefined ? { error: output.error } : {}),
+    };
+  }
+
+  async interrupt(session: AgentSession): Promise<void> {
+    // Undelayed stub turns are synchronous and immediate, so there is nothing to
+    // abort; a delayed turn (or a stream gone silent) parks a rejector here and
+    // answers with `InterruptedTurnError`, carrying `interruptUsage` when the
+    // fixture set it. `hang`/`hangMs` turns deliberately never register one.
+    this.pendingAborts.get(session.agentId)?.();
   }
 
   async suspend(session: AgentSession): Promise<void> {
@@ -183,6 +484,7 @@ export class StubRuntime implements AgentRuntime {
   }
 
   async resume(session: AgentSession, _agent: AgentDefinition, _context: RuntimeContext): Promise<AgentSession | null> {
+    this.respawn(session.agentId);
     this.statuses.set(session.agentId, "IDLE");
     return session;
   }
@@ -197,6 +499,7 @@ export class StubRuntime implements AgentRuntime {
   }
 
   async restoreSession(agent: AgentDefinition, sessionId: string, _context: RuntimeContext): Promise<AgentSession | null> {
+    this.respawn(agent.id);
     const existing = this.sessions.get(sessionId);
     if (existing) return existing;
     return {
@@ -208,9 +511,35 @@ export class StubRuntime implements AgentRuntime {
     };
   }
 
-  simulateProcessDeath(agentId: string): void {
-    this.statuses.set(agentId, "UNREACHABLE");
-    this.options.scripts.set(`__dead__${agentId}`, []);
+  /**
+   * Kill the seat's backend process between turns.
+   *
+   * The next `send`/`stream` throws `BackendUnreachableError`, which is what a
+   * real adapter raises when its process is gone. This used to write a script
+   * under `__dead__<id>`, a key nothing read, so a "dead" seat answered its
+   * next turn with a well-formed success.
+   *
+   * The status is left as it was on purpose: `ensureSession` respawns a seat
+   * whose status already reads UNREACHABLE before ever calling `send`, so
+   * reporting it would model a death the mesh noticed and routed around, not
+   * one it has to recover from. Pass `detected: true` for that case.
+   *
+   * A respawn (`start`, `restoreSession`, `resume`) brings the process back,
+   * unless `permanent` — then every turn fails, which is what drives the
+   * restart ladder to its `backend_unreachable` escalation.
+   */
+  simulateProcessDeath(agentId: string, opts: { permanent?: boolean; detected?: boolean } = {}): void {
+    this.dead.set(agentId, { permanent: opts.permanent === true });
+    if (opts.detected) this.statuses.set(agentId, "UNREACHABLE");
+  }
+
+  /** Is this seat's simulated process currently dead? */
+  isDead(agentId: string): boolean {
+    return this.dead.has(agentId);
+  }
+
+  private respawn(agentId: string): void {
+    if (this.dead.get(agentId)?.permanent === false) this.dead.delete(agentId);
   }
 }
 
@@ -250,9 +579,7 @@ export const NO_OP_OUTPUT: AgentOutput = {
  * Runtime commons rather than adapter-local: the Claude adapter needs one to
  * feed the SDK's streaming input, and every adapter implementing
  * `AgentRuntime.stream` needs one to hand events back. It lives here so the
- * second caller does not have to import the first adapter sideways — the
- * mistake already flagged in packages/runtime-claude/src/index.ts for the mesh
- * op parser.
+ * second caller does not have to import the first adapter sideways.
  */
 export class PushQueue<T> {
   private items: T[] = [];
@@ -292,7 +619,7 @@ export class PushQueue<T> {
  *
  * 1. `toolCalls` is rebuilt from `tool_call` / `tool_call_update` frames. It is
  *    the only field genuinely reconstructed here; everything else rides on
- *    `turn_end`, because prose parsing is still per-backend.
+ *    `turn_end`.
  * 2. Text deltas are forwarded to `input.onToken`. This is NOT optional
  *    bookkeeping: the supervisor force-settles a silent turn based on
  *    `phases.firstTokenAt` / `lastTokenAt`, which are set only as a side effect
@@ -305,10 +632,10 @@ export class PushQueue<T> {
  */
 export async function collectAgentOutput(
   events: AsyncIterable<AgentEvent>,
-  input: Pick<AgentInput, "onToken" | "onToolEvent">,
+  input: Pick<AgentInput, "onToken" | "onToolEvent" | "onUsage">,
 ): Promise<AgentOutput> {
-  const toolCalls: Array<{ name: string; args: unknown; resultDigest: string }> = [];
-  const byId = new Map<string, { name: string; args: unknown; resultDigest: string }>();
+  const toolCalls: ToolCallRecord[] = [];
+  const byId = new Map<string, ToolCallRecord>();
   let end: AgentEventTurnEnd | undefined;
 
   for await (const ev of events) {
@@ -321,8 +648,7 @@ export async function collectAgentOutput(
         }
         break;
       case "agent_thought_chunk":
-        // Reasoning is not transcript: deliberately not forwarded to onToken,
-        // and deliberately not parsed for ops.
+        // Reasoning is not transcript: deliberately not forwarded to onToken.
         break;
       case "tool_call": {
         const call = { name: ev.name, args: ev.args, resultDigest: ev.resultDigest ?? "" };
@@ -340,6 +666,17 @@ export async function collectAgentOutput(
       case "tool_call_update": {
         const call = byId.get(ev.toolCallId);
         if (call && ev.resultDigest !== undefined) call.resultDigest = ev.resultDigest;
+        // The outcome is kept, not just the digest. Dropping it here is what
+        // made a refused call indistinguishable from a successful one in every
+        // record downstream: the digest is a hash of whatever came back, and a
+        // permission denial hashes as readily as a file's contents. `error` is
+        // only ever carried on a failure, so a stale one cannot outlive a later
+        // "completed" for the same id.
+        if (call) {
+          call.status = ev.status;
+          if (ev.status === "failed" && ev.error !== undefined) call.error = ev.error;
+          else delete call.error;
+        }
         try {
           input.onToolEvent?.(ev);
         } catch {
@@ -347,6 +684,15 @@ export async function collectAgentOutput(
         }
         break;
       }
+      case "usage_update":
+        // Observability and the live budget check only: the billed figure is
+        // still `turn_end.tokensUsed`, so nothing here is folded into the output.
+        try {
+          input.onUsage?.(ev.tokensUsed);
+        } catch {
+          /* observer must never break the turn */
+        }
+        break;
       case "turn_end":
         end = ev;
         break;
@@ -368,223 +714,21 @@ export async function collectAgentOutput(
     ...(end.declaredSummary !== undefined ? { declaredSummary: end.declaredSummary } : {}),
     ...(end.error !== undefined ? { error: end.error } : {}),
     ...(end.heldTools !== undefined ? { heldTools: end.heldTools } : {}),
+    ...(end.usageGuard !== undefined ? { usageGuard: end.usageGuard } : {}),
   };
 }
 
-// ---- mesh op parsing (runtime commons) --------------------------------------
-// The mesh op protocol is one contract, so it gets one parser. These lived in
-// the opencode adapter until that backend was removed, purely because it was
-// written first; they are pure text functions with no backend coupling. Any
-// runtime that has to recover ops from prose rather than from typed tool calls
-// uses these. The claude runtime takes ops from typed mesh_* MCP tools and
-// only falls back here, which is why `typedOps` can be trusted on that path.
-// Every ``` marker, opening or closing, with its language tag. Pairing them is
-// deliberately NOT done here: which marker closes a block cannot be decided
-// left to right, because a payload may contain its own fence. See
-// `opsCandidates`.
-const FENCE = /```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n?/g;
-const OPS_FENCE_TAGS = new Set(["", "mesh-json", "meshjson", "json", "mesh-op", "meshop"]);
-const MAX_FENCES = 16;
-const MAX_CANDIDATES = 24;
-
 /**
- * Block bodies worth trying, best first.
- *
- * The old parser used one lazy regex, which took the FIRST later ``` as the
- * close. A `publish_artifact` whose `content` carries a markdown fence
- * therefore truncated mid-JSON-string — and worse, `exec` advanced past that
- * truncated close, so the real closing fence became the NEXT candidate's
- * OPENING fence and the correct body was never generated as a candidate at
- * all. That is why "try every candidate" did not already rescue it. One live
- * run lost an 18,492-char turn, and the mission's requirements brief with it.
- *
- * So: collect every marker, then offer every (open, close) pair, preferring a
- * recognised tag and then the LONGEST span — the outermost close, which is the
- * one a nested fence cannot fake.
+ * The turn's summary when the seat did not declare one through `mesh_done`:
+ * the first non-empty line of its reply. Ops arrive only as typed tool calls,
+ * so the reply is plain prose and needs no op-block filtering.
  */
-function opsCandidates(text: string): string[] {
-  const marks: { tag: string; at: number; bodyAt: number }[] = [];
-  const re = new RegExp(FENCE.source, "g");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null && marks.length < MAX_FENCES) {
-    marks.push({ tag: (m[1] ?? "").toLowerCase(), at: m.index, bodyAt: m.index + m[0].length });
-  }
-  const scored: { body: string; score: number }[] = [];
-  for (let i = 0; i < marks.length; i++) {
-    const open = marks[i];
-    const tagged = OPS_FENCE_TAGS.has(open.tag) ? 1000 : 0;
-    for (let j = marks.length - 1; j > i; j--) {
-      scored.push({ body: text.slice(open.bodyAt, marks[j].at), score: tagged + (j - i) });
-    }
-    // A reply cut off mid-block still carries ops; ranked below any closed span.
-    scored.push({ body: text.slice(open.bodyAt), score: tagged - 1 });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  const out = scored.slice(0, MAX_CANDIDATES).map((s) => s.body);
-  const trimmed = text.trim();
-  if (trimmed.startsWith("[") || trimmed.startsWith("{")) out.push(trimmed);
-  return out;
-}
-
-export interface OpsParseDiagnostic {
-  /** True when ops were recovered entry-by-entry after the block as a whole failed. */
-  salvaged: boolean;
-  /** Entries that could not be read at all, and why. */
-  dropped: { index: number; reason: string }[];
-}
-
-export interface OpsParseResult {
-  ops: MeshOp[];
-  diagnostic: OpsParseDiagnostic;
-}
-
-/**
- * Parse ops from prose, reporting what could not be read.
- *
- * `parseMeshOps` returns a bare array and therefore cannot distinguish "the
- * model emitted no block" from "the block was malformed" — a distinction the
- * turn summary needs, because one is a contract miss and the other is a bug.
- */
-export function parseMeshOpsDetailed(text: string, opts: AliasOptions = {}): OpsParseResult {
-  const candidates = opsCandidates(text);
-  const clean: OpsParseDiagnostic = { salvaged: false, dropped: [] };
-
-  // 1. The block parses whole — the common case, and the only one that was
-  //    ever supported.
-  for (const candidate of candidates) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      continue;
-    }
-    const ops = normalizeOps(parsed, opts);
-    // An array whose entries all fail aliasing normalizes to `[]`, which used
-    // to be truthy here and short-circuited every remaining candidate AND both
-    // salvage paths below. Length is the question, not existence.
-    if (ops && ops.length > 0) return { ops, diagnostic: clean };
-  }
-
-  // 2. Entry-by-entry salvage. `JSON.parse` on the whole array is
-  //    all-or-nothing: in one live run a brace error in the fourth op
-  //    destroyed a well-formed `transition_artifact` in the first, and with it
-  //    the fix for a deadlock three seats were waiting on. Take the candidate
-  //    that yields the most ops, not merely the first that yields any — a
-  //    truncated span can produce one valid op while the right span produces
-  //    all of them.
-  let best: { ops: MeshOp[]; dropped: { index: number; reason: string }[] } | null = null;
-  for (const candidate of candidates) {
-    const { objects, dropped } = scanJsonObjects(candidate);
-    if (objects.length === 0) continue;
-    const ops: MeshOp[] = [];
-    const bad = [...dropped];
-    objects.forEach((obj, i) => {
-      const aliased = aliasTextOp(obj, opts);
-      if (aliased && typeof aliased.op === "string") ops.push(aliased as unknown as MeshOp);
-      else bad.push({ index: i, reason: "no recognisable `op` field" });
-    });
-    if (ops.length > 0 && (best === null || ops.length > best.ops.length)) best = { ops, dropped: bad };
-  }
-  if (best) return { ops: best.ops, diagnostic: { salvaged: true, dropped: best.dropped } };
-
-  // 3. Salvage path: small models sometimes emit YAML-ish blocks (```mesh-op
-  // with `op:` lines) instead of JSON. Only runs when JSON found nothing.
-  for (const candidate of candidates) {
-    const op = parseYamlishOp(candidate, opts);
-    if (op) return { ops: [op], diagnostic: clean };
-  }
-  return { ops: [], diagnostic: clean };
-}
-
-export function parseMeshOps(text: string, opts: AliasOptions = {}): MeshOp[] {
-  return parseMeshOpsDetailed(text, opts).ops;
-}
-
-/**
- * Minimal single-op parser for `key: value` blocks. Narrow by design: only
- * fenced content starting an `op:` key qualifies, multi-line values continue
- * until the next `key:` line. Anything JSON-shaped is left alone.
- */
-export function parseYamlishOp(content: string, opts: AliasOptions = {}): MeshOp | null {
-  if (/^\s*[{[]/.test(content)) return null;
-  if (!/^\s*op\s*:/m.test(content)) return null;
-  const out: Record<string, unknown> = {};
-  let cur = "";
-  let started = false;
-  for (const line of content.split(/\r?\n/)) {
-    const kv = /^([A-Za-z_][\w.-]*)\s*:\s*(.*)$/.exec(line);
-    if (kv) {
-      cur = kv[1];
-      started = true;
-      out[cur] = stripQuotes(kv[2].trim());
-    } else if (started && line.trim().length > 0) {
-      out[cur] = `${String(out[cur] ?? "").trimEnd()}\n${line.trim()}`.trim();
-    }
-  }
-  if (!started) return null;
-  const aliased = aliasTextOp(out, opts);
-  if (!aliased || typeof aliased.op !== "string") return null;
-  return aliased as unknown as MeshOp;
-}
-
-function stripQuotes(s: string): string {
-  if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
-    return s.slice(1, -1);
-  }
-  return s;
-}
-
-function normalizeOps(parsed: unknown, opts: AliasOptions = {}): MeshOp[] | null {
-  const aliased = (x: unknown): MeshOp | null => {
-    const a = aliasTextOp(x, opts);
-    return a && typeof a.op === "string" ? (a as unknown as MeshOp) : null;
-  };
-  if (Array.isArray(parsed)) {
-    const ops = parsed.map(aliased).filter((x): x is MeshOp => x !== null);
-    // Empty array parses but means nothing; fall through to salvage paths.
-    if (parsed.length === 0) return null;
-    return ops;
-  }
-  if (parsed && typeof parsed === "object") {
-    const obj = parsed as Record<string, unknown>;
-    if (Array.isArray(obj.operations)) {
-      return obj.operations.map(aliased).filter((x): x is MeshOp => x !== null);
-    }
-    const single = aliased(parsed);
-    if (single) return [single];
-  }
-  return null;
-}
-
 export function extractSummary(text: string): string | undefined {
-  // Skip fenced op blocks AND bare JSON op lines: previously the first line
-  // of a ```mesh-json array ("[") became the turn summary, which then rode
-  // into agent memory as `turn:<id>: [` — the agent "remembered" success
-  // while learning nothing about what actually ran.
   const line = text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    // Closing delimiters were missed by the original guard (it skipped "[" but
-    // not "]" or "},"), so a turn whose ops block ended the reply produced the
-    // summary "]" — and that rode into agent memory as `turn:<id>: ]`. Agents
-    // then carried a memory of having succeeded at something unnameable. Live
-    // runs showed 5+ such entries per agent.
-    .find((l) => l.length > 0 && !l.startsWith("```") && !/^[[\]{}(),;]+$/.test(l) && !/^\s*[{[]/.test(l));
+    .find((l) => l.length > 0);
   return line?.slice(0, 200);
-}
-
-export function extractDeclaredSummary(operations: MeshOp[]): string | undefined {
-  // The agent's OWN account of the turn, taken from the `done` op it emitted.
-  // `extractSummary` guesses this from the first prose line that is not an op
-  // block, which drifts with the model's formatting; a declared summary is
-  // what the seat meant to say. Absent when no `done` op carried one, which is
-  // the signal to fall back to the scrape.
-  for (const op of operations) {
-    if (op.op !== "done") continue;
-    const summary = op.summary;
-    if (typeof summary === "string" && summary.trim().length > 0) return summary.trim().slice(0, 200);
-  }
-  return undefined;
 }
 
 export function shortDigest(s: string): string {

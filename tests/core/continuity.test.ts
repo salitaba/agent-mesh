@@ -65,7 +65,10 @@ function replayed(m: Mesh, events: Awaited<ReturnType<typeof m.store.read>>) {
  */
 async function endAndReopen(m: Mesh, reason: string): Promise<void> {
   const goalId = m.kernel.state.activeGoalId!;
-  await m.kernel.emit("goal.completed", { goalId, reason: "test completion", evidence: [] }, { actorId: "human" });
+  // `goal.failed`, not `goal.completed`: nothing here proves the criteria, and
+  // the reducer refuses a completion verdict on unproven ones. Either verdict
+  // ends the run the same way for a reopen.
+  await m.kernel.emit("goal.failed", { goalId, reason: "test verdict" }, { actorId: "human" });
   await m.kernel.emit("goal.reopened", { goalId, reason }, { actorId: "human" });
 }
 

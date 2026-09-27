@@ -61,8 +61,62 @@ export interface WorkspacePort {
   ensureRepo(): Promise<void>;
   ensureWorktree(agentId: string): Promise<string>;
   commitWorktree(agentId: string, message: string, files?: string[]): Promise<{ commit: string; diffDigest: string; diff: string }>;
-  mergeWorktree(artifactId: string, agentId: string, message: string): Promise<{ commit: string }>;
+  /**
+   * Land one artifact's work on the product branch.
+   *
+   * `commit` is the sha `opCommit` recorded on the artifact. Pass it and the
+   * merge is scoped to THAT commit and its ancestors; omit it and the whole
+   * agent branch merges, which also lands commits the approval never covered;
+   * that arm reports what it over-merged through `leftBehind`.
+   *
+   * The parameter is REQUIRED (its value may still be undefined). It used to be
+   * optional so pre-fix test doubles kept compiling, and the effect was that no
+   * double ever had to model the scoped arm at all. `tests/support/fake-workspace.ts`
+   * is the one double; change it with the port.
+   *
+   * `alreadyUpToDate` distinguishes "nothing to do" from "landed": `git merge`
+   * exits 0 on an up-to-date branch, so without it a merge that moved nothing
+   * is indistinguishable from one that did.
+   */
+  mergeWorktree(
+    artifactId: string,
+    agentId: string,
+    message: string,
+    commit: string | undefined,
+  ): Promise<{ commit: string; alreadyUpToDate?: boolean; leftBehind?: string[] }>;
   removeWorktree(agentId: string): Promise<void>;
+  /**
+   * Uncommitted state of an agent's worktree, or null when it has none.
+   *
+   * Required, not optional-for-mocks: while it was optional the untracked-work
+   * detector bailed on every double and was a no-op in the whole suite. Its one
+   * caller warns a seat that wrote files and never committed them -- work that
+   * is in no repository, invisible to reviewers, and archived rather than
+   * landed by the next reset.
+   */
+  worktreeState(agentId: string): Promise<WorktreeState | null>;
+  /**
+   * Snapshot an agent's uncommitted worktree (tracked changes AND untracked,
+   * non-ignored files) as a commit stored under `ref`, WITHOUT touching the
+   * branch, the index, or any file in the worktree. Null when there is nothing
+   * to snapshot or the snapshot was skipped (too many files, git failure).
+   *
+   * Taken when a turn is stopped mid-work, so the files it wrote survive a
+   * later reset or a retry that overwrites them. Optional because only a git
+   * workspace can answer it; test doubles that never write files omit it.
+   */
+  checkpointWorktree?(agentId: string, ref: string, message: string): Promise<{ commit: string; files: string[] } | null>;
+}
+
+/** What a seat has in its worktree that has not reached the product. */
+export interface WorktreeState {
+  agentId: string;
+  /** Paths reported by `git status --porcelain`, tracked-but-modified included. */
+  dirty: string[];
+  /** How many of `dirty` are untracked (`??`) -- files no commit would pick up by name. */
+  untracked: number;
+  /** Commits on the agent branch that are not on the product branch. */
+  unmergedCommits: string[];
 }
 
 export interface SchedulerActivationRequest {
@@ -139,6 +193,12 @@ export interface SchedulerPort {
    * not a wait: nothing is queued and nothing will resolve. Optional for mocks.
    */
   triagedAwayCount?(): number;
+  /**
+   * Every deliberate interest-wake drop this mission, by reason (triage IGNORE,
+   * escalation hold, redundant observation). Polled like `triagedAwayCount`,
+   * which is one of its entries. Optional for mocks.
+   */
+  suppressedWakes?(): Record<string, number>;
   pending(): number;
   running(): number;
   start(): void;
@@ -177,6 +237,8 @@ export interface SessionRegistryPort {
   record(agentId: string, sessionId: string, runtime: string): Promise<void>;
   lookup(agentId: string): Promise<{ sessionId: string; runtime: string } | null>;
   forget(agentId: string): Promise<void>;
+  /** Every row, so boot can reconcile the registry against the log and the roster. */
+  list?(): Promise<Array<{ agentId: string; sessionId: string; runtime: string; updatedAt: string }>>;
 }
 
 export type TerminationAction =

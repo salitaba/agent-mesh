@@ -2,6 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor } from "../helpers";
 import type { MeshOp } from "../../packages/protocol/src/index";
+import { ManualClock, makeClockedMesh, settle } from "../support/manual-clock";
+
+/**
+ * A turn the test ends by hand. Replaces the fixed sleeps these tests used to
+ * hold a seat busy with: a 300ms nap is a guess about how long the assertions
+ * in between take, a held promise is a fact.
+ */
+function heldTurn(): { wait: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => {
+    release = r;
+  });
+  return { wait, release };
+}
 
 function fakeTurn(agentId: string) {
   return {
@@ -48,8 +62,12 @@ test("scheduler: only interest-matched agents wake (no broadcast-all)", async ()
 
   const artId = await publishDraftPatch(m, "dev");
   await m.kernel.emit("patch.ready", { artifactId: artId }, { actorId: "dev" });
-  await new Promise((r) => setTimeout(r, 700));
   const acts = (id: string) => m.kernel.state.agents.get(id)?.state.activations ?? 0;
+  // Wait for the wakes that must happen, then for the mesh to drain: any wrong
+  // wake was admitted in the same `handleEvent` pass, so once nothing is queued
+  // or running it has either run or never existed.
+  await waitFor("lead and qa woke", () => acts("lead") >= 1 && acts("qa") >= 1);
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(acts("lead"), 1);
   assert.equal(acts("qa"), 1);
   assert.equal(acts("sec"), 0, "security must not wake for patch.ready");
@@ -66,17 +84,20 @@ test("scheduler: concurrency cap bounds parallel agent turns", async () => {
   });
   const s = stub(m);
   let peak = 0;
+  let done = 0;
   for (let i = 0; i < 5; i++) {
     s.setScript(`a${i}`, async () => {
       peak = Math.max(peak, m.scheduler.running());
+      // Real time on purpose: the overlap between turns is what is measured.
       await new Promise((r) => setTimeout(r, 120));
+      done++;
       return { operations: [{ op: "done" } as MeshOp] };
     });
   }
   for (let i = 0; i < 5; i++) {
     await m.supervisor.activateAgent(`a${i}`, { kind: "manual" });
   }
-  await new Promise((r) => setTimeout(r, 900));
+  await waitFor("all five turns ran", () => done === 5);
   assert.ok(peak > 0);
   assert.ok(peak <= 2, `peak concurrent turns ${peak} exceeded cap 2`);
   await m.cleanup();
@@ -92,13 +113,18 @@ test("scheduler: a queued agent with no slot says which ceiling binds, and is no
     maxActiveAgents: 1,
   });
   const s = stub(m);
+  const hold = heldTurn();
+  let waiterRan = false;
   s.setScript("holder", async () => {
-    await new Promise((r) => setTimeout(r, 300));
+    await hold.wait;
     return { operations: [{ op: "done" } as MeshOp] };
   });
-  s.setScript("waiter", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+  s.setScript("waiter", async () => {
+    waiterRan = true;
+    return { operations: [{ op: "done" } as MeshOp] };
+  });
   await m.supervisor.activateAgent("holder", { kind: "manual" });
-  await new Promise((r) => setTimeout(r, 20));
+  await waitFor("holder occupies the only slot", () => m.scheduler.running() === 1);
   await m.supervisor.activateAgent("waiter", { kind: "manual" });
 
   const waiting = m.scheduler.queueWaits().find((w) => w.agentId === "waiter");
@@ -115,7 +141,8 @@ test("scheduler: a queued agent with no slot says which ceiling binds, and is no
 
   // …and it clears itself when the slot frees, which is why it never earns an
   // event of its own.
-  await new Promise((r) => setTimeout(r, 600));
+  hold.release();
+  await waitFor("the waiter got the freed slot", () => waiterRan);
   assert.equal(m.scheduler.queueWaits().length, 0, "the wait must clear once a slot frees");
   await m.cleanup();
 });
@@ -131,19 +158,21 @@ test("scheduler: urgent mail outranks routine activations", async () => {
     maxActiveAgents: 1,
   });
   const s = stub(m);
+  const hold = heldTurn();
   s.setScript("slow", async () => {
-    await new Promise((r) => setTimeout(r, 250));
+    await hold.wait;
     return { operations: [{ op: "done" } as MeshOp] };
   });
   s.setScript("urgent", async () => ({ operations: [{ op: "done" } as MeshOp] }));
   s.setScript("busy", async () => ({ operations: [{ op: "done" } as MeshOp] }));
   await m.supervisor.activateAgent("slow", { kind: "manual" });
-  await new Promise((r) => setTimeout(r, 20));
+  await waitFor("slow occupies the only slot", () => m.scheduler.running() === 1);
   await m.supervisor.sendMessage({ from: "busy", to: ["urgent"], type: "INFORM", priority: "NORMAL", payload: { n: 1 }, newThread: { subject: "routine" } });
   await m.supervisor.sendMessage({ from: "busy", to: ["urgent"], type: "ESCALATE", priority: "URGENT", payload: { n: 2 }, newThread: { subject: "urgent" } });
   const snap = m.scheduler.queueSnapshot();
   assert.ok(snap.length >= 1);
-  await new Promise((r) => setTimeout(r, 700));
+  hold.release();
+  await waitFor("the queue drained", () => m.supervisor.isIdle());
   await m.cleanup();
 });
 
@@ -162,7 +191,7 @@ test("scheduler: mailbox depth tracks undelivered mail", async () => {
     return { operations: [{ op: "done" } as MeshOp] };
   });
   await m.supervisor.sendMessage({ from: "sender", to: ["recv"], type: "INFORM", payload: { a: 1 }, newThread: { subject: "t1" } });
-  await new Promise((r) => setTimeout(r, 500));
+  await waitFor("recv was activated", () => seenMailboxAtActivation !== -1);
   assert.equal(seenMailboxAtActivation, 1);
   await m.cleanup();
 });
@@ -184,10 +213,15 @@ test("scheduler: cheap triage suppresses irrelevant wakeups", async () => {
   const s = stub(m);
   s.setScript("qa", async () => ({ operations: [{ op: "done" } as MeshOp] }));
   await m.kernel.emit("dependency.changed", { files: ["README.md"], summary: "docs bump" }, { actorId: "trigger" });
-  await new Promise((r) => setTimeout(r, 400));
+  // The drop counter is the proof the scheduler has actually judged the event,
+  // so the zero below is a verdict rather than "not processed yet".
+  const triagedAway = () => (m.scheduler as unknown as { triagedAwayCount(): number }).triagedAwayCount();
+  await waitFor("triage judged the README event", () => triagedAway() === 1);
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(m.kernel.state.agents.get("qa")?.state.activations, 0, "triage should IGNORE README churn");
   await m.kernel.emit("dependency.changed", { files: ["pom.xml"], summary: "spring boot upgrade" }, { actorId: "trigger" });
-  await new Promise((r) => setTimeout(r, 400));
+  await waitFor("qa woke for pom.xml", () => (m.kernel.state.agents.get("qa")?.state.activations ?? 0) >= 1);
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(m.kernel.state.agents.get("qa")?.state.activations, 1, "triage should ACT on pom.xml change");
   await m.cleanup();
 });
@@ -255,10 +289,7 @@ test("scheduler: whole-team cap bounds peers and services combined", async () =>
   for (const a of ["p0", "p1", "p2", "svc"]) {
     await m.supervisor.activateAgent(a, { kind: "manual" });
   }
-  const deadline = Date.now() + 10000;
-  while (done < 4 && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 25));
-  }
+  await waitFor("all four turns drained", () => done === 4, 10000).catch(() => undefined);
   assert.equal(done, 4, "all queued turns must still drain (cap waits, never drops)");
   assert.ok(peak > 0 && peak <= 2, `peak concurrent turns ${peak} must respect the whole-team cap of 2`);
   await m.cleanup();
@@ -280,13 +311,15 @@ test("scheduler: unproductive turns (zero ops / all rejected) trip the circuit b
   const wake = () => m.supervisor.activateAgent("dev", { kind: "timer", note: "nudge" });
   for (let i = 0; i < 3; i++) {
     await wake();
-    await new Promise((r) => setTimeout(r, 150));
+    await waitFor(`unproductive turn ${i + 1} ran`, () => turns === i + 1);
+    await waitFor("the seat was released", () => m.supervisor.isIdle());
   }
   assert.equal(turns, 3, "three unproductive turns must actually have run");
   assert.equal(m.scheduler.isParkedForBackoff("dev"), true, "three zero-op turns must park the agent");
   const before = turns;
-  await wake();
-  await new Promise((r) => setTimeout(r, 150));
+  const refused = await wake();
+  assert.equal(refused.queued, false, "a parked agent's timer wake must be refused, not queued");
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(turns, before, "a parked agent must not burn another turn");
   await m.cleanup();
 });
@@ -304,7 +337,8 @@ test("scheduler: a productive turn keeps the agent unparked", async () => {
   });
   for (let i = 0; i < 4; i++) {
     await m.supervisor.activateAgent("dev", { kind: "timer", note: "nudge" });
-    await new Promise((r) => setTimeout(r, 150));
+    await waitFor(`productive turn ${i + 1} ran`, () => turns === i + 1);
+    await waitFor("the seat was released", () => m.supervisor.isIdle());
   }
   assert.equal(turns, 4, "productive turns must never be parked");
   assert.equal(m.scheduler.isParkedForBackoff("dev"), false);
@@ -327,14 +361,17 @@ test("scheduler: idle subscribers are not woken by pure progress events", async 
   // Idle subscribers: a scoreboard tick teaches them nothing, and each wakeup
   // would cost a full model turn.
   await m.kernel.emit("goal.progress", { completed: 1, total: 5, ratio: 0.2 }, { actorId: "trigger" });
-  await new Promise((r) => setTimeout(r, 500));
+  // Let the bus hand the event to the scheduler, then require it to be quiet:
+  // a wake it admitted would show as queued or running here.
+  await settle();
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(acts("pm"), 0, "idle subscriber must not burn a turn on a progress tick");
   assert.equal(acts("lead"), 0, "idle subscriber must not burn a turn on a progress tick");
 
   // With real work outstanding the same event still wakes them: suppression
   // must never hide actual mail.
   await m.supervisor.humanSend(["pm"], "INFORM", { note: "please review" });
-  await new Promise((r) => setTimeout(r, 400));
+  await waitFor("pm woke for its mail", () => acts("pm") >= 1);
   assert.ok(acts("pm") >= 1, "an agent with mail is always woken");
   await m.cleanup();
 });
@@ -351,7 +388,8 @@ test("scheduler: interest wakeups still fire for events that carry work", async 
   for (const a of ["qa", "dev"]) s.setScript(a, async () => ({ operations: [{ op: "done" } as MeshOp] }));
   const artId = await publishDraftPatch(m, "dev");
   await m.kernel.emit("patch.ready", { artifactId: artId }, { actorId: "dev" });
-  await new Promise((r) => setTimeout(r, 500));
+  await waitFor("qa woke", () => (m.kernel.state.agents.get("qa")?.state.activations ?? 0) >= 1);
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(m.kernel.state.agents.get("qa")?.state.activations, 1, "work-carrying events must still wake subscribers");
   await m.cleanup();
 });
@@ -379,13 +417,20 @@ test("scheduler: a finished mission drops stale agent-mail requeues, human mail 
   await m.supervisor.sendMessage({ from: "qa", to: ["pm1"], type: "INFORM", payload: { n: 1 }, newThread: { subject: "stale" } });
   await m.supervisor.humanSend(["pm2"], "INFORM", { note: "please answer" });
   const goalId = m.kernel.state.activeGoalId!;
-  await m.kernel.emit("goal.completed", { goalId, reason: "test done" }, { actorId: "human" });
+  // A completion verdict needs its mandatory criteria proven; the reducer
+  // refuses one that does not have them. The watchdog may then get there first.
+  for (const c of m.kernel.state.goals.get(goalId)!.acceptanceCriteria.filter((x) => x.mandatory)) {
+    await m.kernel.emit("requirement.satisfied", { criterionId: c.id, evidence: { verified: true, note: "test" } }, { actorId: "human", goalId });
+  }
+  if (m.kernel.state.goals.get(goalId)?.status !== "COMPLETED") {
+    await m.kernel.emit("goal.completed", { goalId, reason: "test done" }, { actorId: "human" });
+  }
   m.scheduler.start();
   // As if both agents' in-flight turns just ended with unread mail.
   m.scheduler.notifyTurnFinished("pm1");
   m.scheduler.notifyTurnFinished("pm2");
   await waitFor("human follow-up turn to run", () => turns.pm2 === 1, 5000);
-  await new Promise((r) => setTimeout(r, 150));
+  await waitFor("the mesh drained", () => m.supervisor.isIdle());
   assert.equal(turns.pm1, 0, "stale agent mail must not wake anyone on a finished mission");
   assert.equal(turns.pm2, 1, "human feedback must still reach its recipient");
   await m.cleanup();
@@ -444,11 +489,17 @@ test("scheduler: a policy refusal reaches the operator instead of collapsing to 
  * back to the old behaviour.
  */
 test("scheduler: an idle moment waits out the quiet period instead of firing on the instant", async () => {
-  const m = await makeMesh({
-    idleQuietPeriodMs: 700,
-    agents: [{ id: "dev", role: "developer", interests: [] }],
-    mayContact: { dev: [] },
-  });
+  // On a manual clock, so "has the quiet period elapsed" is a statement about
+  // the exact millisecond rather than about how long the host took.
+  const clock = new ManualClock();
+  const m = await makeClockedMesh(
+    {
+      idleQuietPeriodMs: 700,
+      agents: [{ id: "dev", role: "developer", interests: [] }],
+      mayContact: { dev: [] },
+    },
+    clock,
+  );
   const s = stub(m);
   s.setScript("dev", async () => ({ operations: [{ op: "done" } as MeshOp] }));
 
@@ -459,35 +510,39 @@ test("scheduler: an idle moment waits out the quiet period instead of firing on 
 
   await m.supervisor.humanSend(["dev"], "INFORM", { note: "go" });
   await waitFor("the turn ran", () => m.supervisor.isIdle(), 8000);
+  // The pump that released the seat is what arms the dwell; let it finish.
+  await settle();
 
   // The mesh is quiet, and `isIdle()` says so — it is a live predicate and does
   // not consult this dwell. What must not have happened yet is the *idle
   // moment*: the pump that drained the queue used to declare it on the spot.
-  await new Promise((r) => setTimeout(r, 200));
-  assert.equal(fired, 0, "700ms of quiet cannot have elapsed 200ms in");
-
-  await waitFor("the mesh declares itself idle", () => fired > 0, 8000);
+  assert.equal(fired, 0, "no time has passed, so no quiet period can have elapsed");
+  clock.advance(699);
+  assert.equal(fired, 0, "one millisecond short of the 700ms quiet period");
+  clock.advance(1);
+  assert.equal(fired, 1, "the idle moment is declared exactly when the quiet period has run, and once");
   await m.cleanup();
 });
 
 test("scheduler: work during the quiet period abandons the idle moment", async () => {
-  const m = await makeMesh({
-    idleQuietPeriodMs: 400,
-    agents: [{ id: "dev", role: "developer", interests: [] }],
-    mayContact: { dev: [] },
-  });
+  const clock = new ManualClock();
+  const m = await makeClockedMesh(
+    {
+      idleQuietPeriodMs: 400,
+      agents: [{ id: "dev", role: "developer", interests: [] }],
+      mayContact: { dev: [] },
+    },
+    clock,
+  );
   const s = stub(m);
-  let release!: () => void;
-  const held = new Promise<void>((r) => {
-    release = r;
-  });
+  const hold = heldTurn();
   let turn = 0;
   s.setScript("dev", async () => {
     turn += 1;
     // Held open, so the mesh is demonstrably busy at the moment the first quiet
     // period's deadline passes. A timer left armed through that would announce
     // an idle mesh that is running a turn.
-    if (turn === 2) await held;
+    if (turn === 2) await hold.wait;
     return { operations: [{ op: "done" } as MeshOp] };
   });
 
@@ -498,18 +553,25 @@ test("scheduler: work during the quiet period abandons the idle moment", async (
 
   await m.supervisor.humanSend(["dev"], "INFORM", { note: "first" });
   await waitFor("the first turn ran", () => m.supervisor.isIdle(), 8000);
+  await settle();
 
   // Back to work well inside the 400ms window.
-  await new Promise((r) => setTimeout(r, 100));
+  clock.advance(100);
   await m.supervisor.humanSend(["dev"], "INFORM", { note: "second" });
   await waitFor("the second turn started", () => turn >= 2, 8000);
 
-  await new Promise((r) => setTimeout(r, 500));
+  // Past the first dwell's deadline (t=400) by a margin, with the turn held.
+  clock.advance(500);
   assert.equal(fired, 0, "a mesh running a turn is not idle, whatever the abandoned timer would have said");
 
-  release();
+  hold.release();
   await waitFor("the second turn finished", () => m.supervisor.isIdle(), 8000);
-  await waitFor("the mesh declares itself idle once it is quiet again", () => fired > 0, 8000);
+  await settle();
+  // A fresh quiet period, counted from when the mesh went quiet again.
+  clock.advance(399);
+  assert.equal(fired, 0, "the new quiet period started when the second turn ended, not before");
+  clock.advance(1);
+  assert.equal(fired, 1, "the mesh declares itself idle once it has been quiet for the full period again");
   await m.cleanup();
 });
 

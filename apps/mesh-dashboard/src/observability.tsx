@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { dur, fmt, plainEvent, HEALTH_CLS, type OpHead } from "./format";
+import { sentenceCase } from "./ledger";
 import { PHASE_PLAIN, deviation, phaseLegs, slowestLeg, type Baseline, type OpTiming, type PhaseLeg, type TurnError, type TurnPhases, type Vitals } from "./vitals";
 import type { TimelineEvent, TurnStep } from "./store";
 
@@ -134,7 +135,12 @@ export function BaselineChip({ value, base, kind }: { value: number; base: Basel
   const dev = deviation(value, b, base.n);
   if (!b || base.n < 4) return null;
   const ratio = value / b;
-  const word = dev === "high" ? `${ratio.toFixed(1)}× its usual` : dev === "low" ? "faster than usual" : "typical";
+  // Each chip names its quantity. The two sat side by side reading "3.8× its
+  // usual" and "typical" — which one was the time? — and a low token count
+  // was called "faster than usual".
+  const word = kind === "duration"
+    ? dev === "high" ? `${ratio.toFixed(1)}× usual time` : dev === "low" ? "quicker than usual" : "typical time"
+    : dev === "high" ? `${ratio.toFixed(1)}× usual tokens` : dev === "low" ? "fewer tokens than usual" : "typical tokens";
   return (
     <span className={`bchip ${dev}`} title={`this agent's median over ${base.n} finished turns is ${kind === "duration" ? dur(b) : `${fmt(b)} tokens`}`}>
       {word}
@@ -168,7 +174,7 @@ export function causalLinks(turnId: string, events: TimelineEvent[], steps: Turn
       const pTurn = parent.correlationId && String(parent.correlationId).startsWith("turn-") ? parent.correlationId : undefined;
       const pAgent = pTurn ? steps.find((s) => s.turnId === pTurn)?.agentId : undefined;
       cause = {
-        label: pAgent ? `${pAgent} — ${plainEvent(parent.type)}` : plainEvent(parent.type),
+        label: pAgent ? `${pAgent} — ${plainEvent(parent.type, parent.payload)}` : plainEvent(parent.type, parent.payload),
         seq: parent.seq,
         turnId: pTurn,
       };
@@ -188,7 +194,7 @@ export function causalLinks(turnId: string, events: TimelineEvent[], steps: Turn
       const agent = steps.find((s) => s.turnId === tid)?.agentId ?? e.actorId;
       effects.push({ label: `${agent ?? "an agent"} woke up`, turnId: tid, seq: e.seq });
     } else if (effects.length < 6) {
-      effects.push({ label: plainEvent(e.type), seq: e.seq });
+      effects.push({ label: plainEvent(e.type, e.payload), seq: e.seq });
     }
   }
   return { cause, effects: effects.slice(0, 6) };
@@ -269,30 +275,44 @@ export function ErrorPanel({ err, fallback }: { err?: TurnError; fallback?: stri
 
 /* ---------------------------- op latency ------------------------------ */
 
+/** An op this slow is worth the fold opening by itself. */
+const SLOW_OP_MS = 1000;
+
 /**
  * Which op made the ops leg slow. The phase rail can say "applying changes:
  * 4.2s"; only this says that 4.0s of it was one artifact publish.
+ *
+ * Folded to its one-line answer by default. Open, it was a full-height bar
+ * list on every step — 23 bars of "0ms" to say the apply leg took 63ms. It
+ * opens on its own only when one op took a second or more, which is the one
+ * case the bars are for.
  */
 export function OpLatency({ timings }: { timings?: OpTiming[] }): React.JSX.Element | null {
   if (!timings?.length) return null;
   const total = timings.reduce((a, t) => a + t.ms, 0);
   const max = Math.max(1, ...timings.map((t) => t.ms));
+  const refused = timings.filter((t) => !t.ok).length;
   // Sub-millisecond op lists are noise: the ops leg was not the problem.
-  if (total < 50 && timings.every((t) => t.ok)) return null;
+  if (total < 50 && !refused) return null;
+  const n = timings.length;
   return (
-    <>
-      <h4>Where the apply time went <span className="muted" style={{ fontWeight: 400 }}>({dur(total)} across {timings.length} op{timings.length === 1 ? "" : "s"})</span></h4>
+    <details className="sv-fold oplat-fold" open={timings.some((t) => t.ms >= SLOW_OP_MS) || undefined}>
+      <summary>
+        Applied {n} action{n === 1 ? "" : "s"} in {dur(total) || "0ms"}
+        {refused ? <span className="oplat-sum-x"> · {refused} refused</span> : null}
+      </summary>
       <div className="oplat">
         {timings.map((t, i) => (
-          <div className={`oplat-row${t.ok ? "" : " bad"}`} key={i} title={t.reason ?? (t.ok ? "accepted by the kernel" : "rejected")}>
-            <span className="oplat-name mono">{t.op}</span>
+          <div className={`oplat-row${t.ok ? "" : " bad"}`} key={i} title={t.reason ?? (t.ok ? "accepted by the kernel" : "refused")}>
+            {/* Sentence case, as the ledger right above names the same ops. */}
+            <span className="oplat-name">{sentenceCase(t.op)}</span>
             <span className="oplat-bar"><i style={{ width: `${(t.ms / max) * 100}%` }} /></span>
             <span className="oplat-ms">{dur(t.ms) || "0ms"}</span>
-            {!t.ok ? <span className="oplat-x" title={t.reason}>rejected</span> : null}
+            {!t.ok ? <span className="oplat-x" title={t.reason}>refused</span> : null}
           </div>
         ))}
       </div>
-    </>
+    </details>
   );
 }
 

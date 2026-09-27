@@ -57,7 +57,7 @@ test("a turn that publishes through the tools and emits no ops block is not disc
   }
 });
 
-test("the seat is still told it skipped the ops block, so the contract miss is not silent", async () => {
+test("the seat is still told it closed without `mesh_done`, so the contract miss is not silent", async () => {
   const m = await makeMesh({ agents: AGENTS, mayContact: { dev: [] }, mode: "live" });
   try {
     stub(m).setScript("dev", async () => {
@@ -76,8 +76,8 @@ test("the seat is still told it skipped the ops block, so the contract miss is n
     const notes = (await collectEvents(m))
       .filter((e) => e.type === "memory.updated")
       .map((e) => String(((e.payload as { note?: { value?: unknown } }).note ?? {}).value ?? ""));
-    const note = notes.find((v) => v.includes("ops block"));
-    assert.ok(note, `expected a note about the missing ops block, got ${JSON.stringify(notes)}`);
+    const note = notes.find((v) => v.includes("mesh_done"));
+    assert.ok(note, `expected a note about the missing mesh_done, got ${JSON.stringify(notes)}`);
     assert.ok(note.includes("the work stands"), "and it must say the work was kept, not lost");
     assert.ok(!note.startsWith("⚠"), "not flagged as a warning — the turn moved the mesh");
   } finally {

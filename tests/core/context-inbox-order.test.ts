@@ -332,9 +332,19 @@ test("the builder hands the reader its obligations first, out of a full mailbox"
   });
 
   const bundle = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev");
-  assert.equal(bundle.unreadMail.length, 12, "the window is 12, and it was overfull");
+  // 13 messages are handed to the turn, and they are handed in two different
+  // ways. The twelve FYIs are NEWS, and a box past `digest_threshold` names
+  // news instead of printing it, so they ride `unreadMail` (the drain reads
+  // that list) with one digest block standing for them. The one ask is not
+  // news: it is rendered whole, first.
+  assert.equal(bundle.unreadMail.length, 13, "every message is handed to the turn, rendered or named");
   assert.equal(bundle.unreadMail[0]!.id, ask.messageId, "the one message that obliges the reader reads first");
-  assert.equal(bundle.omitted?.unread, 1, "13 waiting, 12 shown");
+  assert.equal(bundle.mailDigest?.count, 12, "the chatter is one block, not twelve bodies");
+  assert.equal(
+    bundle.omitted?.unread,
+    undefined,
+    "nothing was withheld from the seat: the twelve are named in the digest, and `omitted` means invisible",
+  );
 
   const text = renderContextInstructions(bundle);
   const mail = text.slice(text.indexOf("## Unread mail"));
@@ -342,9 +352,24 @@ test("the builder hands the reader its obligations first, out of a full mailbox"
   assert.match(mail, /URGENT/);
   assert.match(mail, /review the retry policy/, "the thread subject names the conversation the reader is about to read");
   assert.ok(
-    mail.indexOf(String(ask.messageId)) < mail.indexOf("nothing to do here"),
-    "the ask must be above the chatter in the rendered text, not merely in the array",
+    mail.indexOf("nothing to do here") === -1,
+    "the digest names the chatter and prints none of its bodies",
   );
+  const digestAt = mail.indexOf("### News (digest");
+  const askAt = mail.indexOf(`- [${ask.messageId}]`);
+  assert.ok(
+    digestAt !== -1 && askAt !== -1 && digestAt < askAt,
+    "the block that stands for the chatter leads; the ask is rendered under it, body and all",
+  );
+  assert.equal(
+    mail.split("## Unread mail").length - 1,
+    1,
+    "one section heading: the digest is a sub-heading under it, not a second '## Unread mail'",
+  );
+  // Named, not lost: every digested message is still one call away.
+  for (const id of bundle.unreadMail.slice(1).map((x) => x.id)) {
+    assert.ok(mail.includes(`[${id}]`), `${id} is named in the digest`);
+  }
 
   // Ordering is presentation. Nothing here may touch delivery.
   assert.equal(m.kernel.state.unread.get("dev")!.length, 13, "the mailbox is untouched by having been read");

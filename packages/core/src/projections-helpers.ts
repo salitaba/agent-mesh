@@ -210,6 +210,60 @@ export function clearPendingForTask(state: Projections, taskId: string, at: stri
 }
 
 /**
+ * The dependencies of `task` that still hold it back, in declared order.
+ *
+ * COMPLETED releases a dependent, and so does CANCELLED: abandoned upstream
+ * work will never complete, and no op edits a task's dependency list, so
+ * treating it as blocking would strand the dependent forever with no move for
+ * anyone. An id the board does not hold blocks nothing for the same reason —
+ * `create_task` refuses unknown ids, so only a hand-built log can carry one.
+ *
+ * Pure over `state.tasks`, so the claim reducer, `claimTask` and the context
+ * builder all ask the same question.
+ */
+export function unmetTaskDependencies(state: Projections, task: Pick<Task, "dependsOn">): string[] {
+  const out: string[] = [];
+  for (const id of task.dependsOn ?? []) {
+    const dep = state.tasks.get(id);
+    if (dep && dep.status !== "COMPLETED" && dep.status !== "CANCELLED") out.push(id);
+  }
+  return out;
+}
+
+/** "<Type>/<name> v<from> → v<to>" for an artifact that moved on from a recorded version. */
+function movedOn(a: Artifact, from: number): string {
+  return `${a.type}/${a.name} v${from} → v${a.version}`;
+}
+
+/**
+ * Artifacts a task was pinned to that have a newer version now.
+ *
+ * A pin is an `artifactRefs` entry carrying `version` (stamped by `newTask`
+ * when the create op cited an artifact). pm cut frontend's W6-S3 from
+ * architecture v2 while v3 was being written, and v3 re-split it — nothing on
+ * the task could say so (skill-panel 2026-09-25, §16).
+ */
+export function staleTaskPins(state: Projections, task: Pick<Task, "artifactRefs">): string[] {
+  const out: string[] = [];
+  for (const ref of task.artifactRefs ?? []) {
+    if (typeof ref.version !== "number") continue;
+    const a = artifactForRef(state, undefined, ref.uri);
+    if (a && a.version > ref.version) out.push(movedOn(a, ref.version));
+  }
+  return out;
+}
+
+/** Inputs `a` was built on (see `Artifact.inputs`) that have a newer version now. */
+export function staleArtifactInputs(state: Projections, a: Pick<Artifact, "inputs">): string[] {
+  const out: string[] = [];
+  for (const input of a.inputs ?? []) {
+    const src = state.artifacts.get(input.artifactId);
+    if (src && src.version > input.version) out.push(movedOn(src, input.version));
+  }
+  return out;
+}
+
+/**
  * Does this authority list grant `<subject>.<kind>`?
  *
  * The single definition of "holds authority" for the whole runtime. The
@@ -278,6 +332,11 @@ export const REVIEW_CAPABILITIES: Record<Artifact["type"], string> = {
   Requirement: "review.design",
   TaskSpec: "review.design",
   BenchmarkResult: "test.write",
+  // The capability every design reviewer in the measured mesh already held
+  // (architect, ux-designer, tech-lead in skill-panel). The mesh has no `ux` or
+  // `ui` authority domain to key on, so this row is what lets a designer who
+  // is not an architect settle a design document.
+  DesignSpec: "review.design",
 };
 
 /**
@@ -318,6 +377,15 @@ export function subjectForArtifactType(type: Artifact["type"]): string {
     case "ResearchReport":
     case "Decision":
     case "DisagreementRecord":
+      return "architecture";
+    // Design documents are settled by the same seats that settled them when
+    // they had to be filed as ArchitectureDocument — `architecture.approve`
+    // holders and `review.design` capability holders — because AUTHORITY_DOMAINS
+    // has no design domain and inventing one would refuse every existing
+    // config's tokens. What changes is the TYPE: `markTypeKeyedCriteria` and
+    // `design.question` key on ArchitectureDocument/ApiSpec, so approving a
+    // design system no longer evidences `architecture-approved`.
+    case "DesignSpec":
       return "architecture";
   }
 }
@@ -375,13 +443,13 @@ export function verdictAdvances(
   actorId: string | undefined,
   artifact: Artifact,
   kind: "approve" | "pass" | "reject" | "veto",
-  viaArchitecture = false,
 ): boolean {
   if (kind === "reject" || kind === "veto") return artifact.status === "UNDER_REVIEW";
   if (!approverMayAdvance(state, actorId, artifact)) return false;
-  const reviewable = viaArchitecture
-    ? artifact.status === "UNDER_REVIEW"
-    : artifact.status === "UNDER_REVIEW" || artifact.status === "READY_FOR_REVIEW";
+  // Every approval is recorded as `review.approved` now (an architecture one
+  // too, with `architecture.approved` only derived after it), so one guard
+  // covers them all.
+  const reviewable = artifact.status === "UNDER_REVIEW" || artifact.status === "READY_FOR_REVIEW";
   return reviewable && approvalPath(artifact.type, artifact.status).length > 0;
 }
 
@@ -622,14 +690,95 @@ export interface ApprovalToken {
   kind: string;
 }
 
-export function parseGateTokens(requires: string[]): ApprovalToken[] {
-  const out: ApprovalToken[] = [];
-  for (const token of requires) {
-    const idx = token.lastIndexOf(".");
-    if (idx <= 0) continue;
-    out.push({ actor: token.slice(0, idx), kind: token.slice(idx + 1) });
+/**
+ * One entry in a gate's `requires` list, as a list of ALTERNATIVES of which any
+ * one satisfies the entry: `"tech-lead.approve|architect.approve"` is one
+ * requirement that either seat can meet. A plain token parses to a one-element
+ * list, so its behaviour is exactly what it always was.
+ */
+export type ApprovalRequirement = ApprovalToken[];
+
+function parseGateToken(token: string): ApprovalToken | null {
+  const idx = token.lastIndexOf(".");
+  if (idx <= 0) return null;
+  return { actor: token.slice(0, idx), kind: token.slice(idx + 1) };
+}
+
+/**
+ * Split one requirement entry on `|` into its alternatives.
+ *
+ * An alternative that is not `<actor>.<kind>` is dropped (it could never match
+ * an approval), and an entry that yields no alternatives at all is dropped by
+ * the caller — the same skip the plain path has always applied to a token with
+ * no dot. Config load refuses both forms outright, so this is the defensive
+ * reading for a config that never passed validation.
+ */
+export function parseGateAlternatives(token: string): ApprovalRequirement {
+  const out: ApprovalRequirement = [];
+  for (const part of token.split("|")) {
+    const parsed = parseGateToken(part);
+    if (parsed) out.push(parsed);
   }
   return out;
+}
+
+/** Every requirement of a gate, each as its list of alternatives. Entries stay
+ *  separate: requirements are ANDed, alternatives within one are ORed. */
+export function parseGateRequirements(requires: string[]): ApprovalRequirement[] {
+  const out: ApprovalRequirement[] = [];
+  for (const token of requires) {
+    const alternatives = parseGateAlternatives(token);
+    if (alternatives.length > 0) out.push(alternatives);
+  }
+  return out;
+}
+
+/**
+ * Flattened view of `parseGateRequirements`: every alternative of every
+ * requirement, with the AND/OR grouping discarded. Retained for callers that
+ * only ever wanted the token list; `checkApprovals` uses the grouped parser so
+ * that a `|` alternative is an OR and not a second AND.
+ */
+export function parseGateTokens(requires: string[]): ApprovalToken[] {
+  return parseGateRequirements(requires).flat();
+}
+
+type ApprovalRecordOf = import("../../protocol/src/index").ApprovalRecord;
+
+/**
+ * Whether one ALTERNATIVE of a gate requirement is met.
+ *
+ * This is the whole of the pre-existing single-token rule, unchanged: an
+ * approval by the named actor (by id or by role) of a compatible kind, and a
+ * `block` by that same actor recorded after the latest such approval sinks it.
+ * The block is scoped to the alternative's actor alone, which is what makes
+ * alternatives independent: a `tech-lead.block` cannot sink `architect.approve`
+ * in the same requirement.
+ *
+ * `label` is exactly the string the old code pushed to `missing` — so for a
+ * plain token the refusal text is byte-for-byte what it was.
+ */
+function alternativeStatus(
+  all: ApprovalRecordOf[],
+  actor: string,
+  kind: string,
+  artifactId?: string,
+): { ok: boolean; label: string } {
+  const label = `${actor}.${kind}`;
+  const relevant = all.filter(
+    (r) =>
+      (r.actorId === actor || r.actorRole === actor) &&
+      (artifactId === undefined || r.artifactId === undefined || r.artifactId === artifactId),
+  );
+  const satisfiedKind = (r: ApprovalRecordOf) =>
+    r.kind === kind ||
+    (kind === "approve" && (r.kind === "accept" || r.kind === "merge" || r.kind === "pass")) ||
+    (kind === "pass" && (r.kind === "accept" || r.kind === "merge"));
+  const approving = relevant.filter(satisfiedKind);
+  if (approving.length === 0) return { ok: false, label };
+  const latest = approving.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))[0];
+  const laterBlock = relevant.find((r) => r.kind === "block" && r.recordedAt > latest.recordedAt);
+  return laterBlock ? { ok: false, label: `${label} (superseded by ${actor}.block)` } : { ok: true, label };
 }
 
 export function checkApprovals(
@@ -637,29 +786,16 @@ export function checkApprovals(
   requires: string[],
   artifactId?: string,
 ): { ok: boolean; missing: string[] } {
-  const all: import("../../protocol/src/index").ApprovalRecord[] = [];
+  const all: ApprovalRecordOf[] = [];
   for (const list of state.approvals.values()) all.push(...list);
   const missing: string[] = [];
-  for (const { actor, kind } of parseGateTokens(requires)) {
-    const relevant = all.filter(
-      (r) =>
-        (r.actorId === actor || r.actorRole === actor) &&
-        (artifactId === undefined || r.artifactId === undefined || r.artifactId === artifactId),
-    );
-    const satisfiedKind = (r: import("../../protocol/src/index").ApprovalRecord) =>
-      r.kind === kind ||
-      (kind === "approve" && (r.kind === "accept" || r.kind === "merge" || r.kind === "pass")) ||
-      (kind === "pass" && (r.kind === "accept" || r.kind === "merge"));
-    const approving = relevant.filter(satisfiedKind);
-    if (approving.length === 0) {
-      missing.push(`${actor}.${kind}`);
-      continue;
-    }
-    const latest = approving.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))[0];
-    const laterBlock = relevant.find(
-      (r) => r.kind === "block" && r.recordedAt > latest.recordedAt,
-    );
-    if (laterBlock) missing.push(`${actor}.${kind} (superseded by ${actor}.block)`);
+  for (const alternatives of parseGateRequirements(requires)) {
+    const statuses = alternatives.map(({ actor, kind }) => alternativeStatus(all, actor, kind, artifactId));
+    if (statuses.some((s) => s.ok)) continue;
+    // Every alternative failed, so name them all — joined by the `|` they were
+    // written with, so the refusal reads as "any of these" and not "all of
+    // these". A one-element list joins to itself: unchanged for plain tokens.
+    missing.push(statuses.map((s) => s.label).join("|"));
   }
   return { ok: missing.length === 0, missing };
 }
@@ -749,16 +885,16 @@ export function planCoversHardOp(
 
   const plan = st.plan;
   if (!plan || plan.steps.length === 0) {
-    return `no plan — ${op.op} needs '${cap}', so emit {"op":"plan","steps":[{"text":"…","capabilities":["${cap}"]}]} first`;
+    return `no plan — ${op.op} needs '${cap}', so call \`mesh_plan\` with a step whose capabilities include "${cap}" first`;
   }
   // A plan written for the PREVIOUS task is not a plan for this one. Compared
   // at read time rather than cleared by a reducer, so replay and snapshot
   // restore always agree (see the plan.updated reducer).
   if (plan.taskId && st.activeTaskId && plan.taskId !== st.activeTaskId) {
-    return `your plan is for task ${plan.taskId} but you are working ${st.activeTaskId} — re-emit {"op":"plan"} for the current task`;
+    return `your plan is for task ${plan.taskId} but you are working ${st.activeTaskId} — call \`mesh_plan\` again for the current task`;
   }
   if (!plan.steps.some((s) => s.capabilities.includes(cap))) {
-    return `no plan step declares '${cap}' — re-emit {"op":"plan"} with a step whose capabilities include "${cap}"`;
+    return `no plan step declares '${cap}' — call \`mesh_plan\` again with a step whose capabilities include "${cap}"`;
   }
   return null;
 }

@@ -142,7 +142,14 @@ test("freeze: mission-over blocks agent writes but keeps reads", async () => {
   const goalId = m.kernel.state.activeGoalId!;
   const pub = await m.supervisor.executeOp("dev", { op: "publish_artifact", name: "postmortem", type: "ADR", content: "x" }, fakeTurn("dev"));
   assert.equal(pub.ok, true);
-  await m.kernel.emit("goal.completed", { goalId, reason: "test done" }, { actorId: "human" });
+  // A completion verdict needs its mandatory criteria proven; the reducer
+  // refuses one that does not have them. The watchdog may then get there first.
+  for (const c of m.kernel.state.goals.get(goalId)!.acceptanceCriteria.filter((x) => x.mandatory)) {
+    await m.kernel.emit("requirement.satisfied", { criterionId: c.id, evidence: { verified: true, note: "test" } }, { actorId: "human", goalId });
+  }
+  if (m.kernel.state.goals.get(goalId)?.status !== "COMPLETED") {
+    await m.kernel.emit("goal.completed", { goalId, reason: "test done" }, { actorId: "human" });
+  }
   assert.equal((await m.supervisor.executeOp("dev", { op: "publish_artifact", name: "late", type: "ADR", content: "x" }, fakeTurn("dev"))).ok, false);
   assert.equal((await m.supervisor.executeOp("dev", { op: "escalate", reason: "too late", detail: {} }, fakeTurn("dev"))).ok, false);
   assert.equal((await m.supervisor.executeOp("dev", { op: "read_artifact", artifactRef: pub.artifactId! }, fakeTurn("dev"))).ok, true);

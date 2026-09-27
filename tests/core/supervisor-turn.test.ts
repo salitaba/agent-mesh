@@ -5,6 +5,7 @@ import * as path from "path";
 import { makeMesh, evidenceContent } from "../helpers";
 import type { MeshInstance } from "../../apps/mesh-server/src/index";
 import type { MeshOp } from "../../packages/protocol/src/index";
+import { FakeWorkspace, installWorkspace } from "../support/fake-workspace";
 
 /**
  * Supervisor op execution, message admission, decision recording and commit.
@@ -692,13 +693,10 @@ test("a successful commit versions the artifact and emits a change event per tou
 
     // A diff touching a manifest AND an auth path must raise both signals.
     const diff = ["diff --git a/package.json b/package.json", "+  \"jsonwebtoken\": \"^9\"", "diff --git a/src/login.ts b/src/login.ts", "+export function login(password: string) {}"].join("\n");
-    const deps = m.supervisor.deps as { workspace?: unknown };
-    const saved = deps.workspace;
-    deps.workspace = {
-      ensureWorktree: async () => "/tmp/mesh-fake-worktree",
-      commitWorktree: async () => ({ commit: "abc1234", diffDigest: "sha256:fake", diff }),
-      mergeWorktree: async () => ({ commit: "abc1234" }),
-    };
+    const restore = installWorkspace(
+      m,
+      new FakeWorkspace({ behaviour: { commit: async () => ({ commit: "abc1234", diffDigest: "sha256:fake", diff }) } }),
+    );
     try {
       const res = await m.supervisor.executeOp("dev", { op: "commit", artifactId: artId, message: "add auth" } as MeshOp, fakeTurn("dev"));
       assert.equal(res.ok, true, res.reason);
@@ -707,7 +705,7 @@ test("a successful commit versions the artifact and emits a change event per tou
       assert.equal(res.artifact?.version, 2);
       assert.equal((res.artifact?.metadata as { commit: string }).commit, "abc1234");
     } finally {
-      deps.workspace = saved;
+      restore();
     }
 
     const emitted = (await m.store.read()).map((e) => e.type);

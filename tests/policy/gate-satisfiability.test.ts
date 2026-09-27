@@ -6,12 +6,16 @@ import { analyzeMeshConfig, parseMeshSource } from "../../packages/config/src/in
 import { validateTransitionGates } from "../../packages/policy-engine/src/index";
 import { TEMPLATES } from "../../apps/mesh-dashboard/src/designer/model";
 
-const ROOT = path.resolve(__dirname, "..", "..", "..");
-const EXAMPLES = path.join(ROOT, "examples");
+// Against the cwd, as `journey.test.ts` does: `__dirname/../../..` is the repo
+// root only for the repo's own `dist/`, and an isolated build's output tree has
+// no `examples/` two levels above it, so this file died with ENOENT there.
+const EXAMPLES = path.resolve(process.cwd(), "examples");
 
 // Every shipped config must have gates some agent can actually produce. An
 // unsatisfiable gate passes schema validation and then stalls every mission at
-// that transition, which is exactly what AJV cannot see.
+// that transition, which is exactly what AJV cannot see. This is the parse-only
+// check; `tests/config/examples-completable.test.ts` boots each example and asks
+// the booted PolicyEngine whether a seat can actually issue each token.
 for (const dir of fs.readdirSync(EXAMPLES).filter((d) => fs.existsSync(path.join(EXAMPLES, d, "mesh.yaml")))) {
   test(`example ${dir}: every transition gate is satisfiable`, () => {
     const raw = parseMeshSource(fs.readFileSync(path.join(EXAMPLES, dir, "mesh.yaml"), "utf8"));

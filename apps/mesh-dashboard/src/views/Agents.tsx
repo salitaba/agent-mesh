@@ -6,6 +6,7 @@ import { agentAction } from "../drawers";
 import { vitalsOf } from "../vitals";
 import { useTick } from "../observability";
 import { planSummary, planSummaryStale } from "../plan";
+import { compactNow, nowLine } from "../livework";
 
 /**
  * A card that says what the agent is doing, not merely that it exists. The
@@ -28,8 +29,11 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
     : a.lifecycle === "COMPLETED" ? "finished"
     : a.lifecycle === "STARTING" ? "starting up"
     : "idle";
-  const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, toolFrames: step.toolFrames ?? 0, running: true, startedAt: step.startedAt }) : null;
+  const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, toolFrames: step.toolFrames ?? 0, toolCallCount: step.toolCallCount, running: true, startedAt: step.startedAt }) : null;
   const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;
+  // The one line that says what it is doing this second — a seat writing
+  // files for seventeen minutes otherwise reads "working · 17m" and nothing more.
+  const doing = run && step?.currentTool ? step.currentTool : null;
   // The list payload carries a scalar projection of the plan, not the steps —
   // enough to say how far along it is, which is the one fact a card can act on.
   const plan = planSummary(a);
@@ -67,6 +71,11 @@ function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWak
           </span>
         ) : null}
       </div>
+      {doing ? (
+        <div className={`agent-now mono${doing.status === "running" ? " run" : ""}`} title={nowLine(doing, Date.now())}>
+          {compactNow(doing, Date.now())}
+        </div>
+      ) : null}
     </div>
   );
 }

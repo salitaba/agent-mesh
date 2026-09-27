@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
 import { readableMailDepth } from "../../packages/core/src/index";
-import { shortHash } from "../../packages/protocol/src/index";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 
 function mcpReq(method: string, params: unknown, id = 1) {
   return { jsonrpc: "2.0", id, method, params };
@@ -20,7 +20,7 @@ test("mcp bus: mesh_inbox shows the caller's queue and does not drain it", async
     ],
     mayContact: { dev: ["qa"], qa: ["dev"] },
   });
-  const tok = (id: string) => `${m.config.meshId}:${id}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = (id: string) => mintSeatToken(m.config.meshId, id, m.kernel.state.activeGoalId);
   const mcp = createMcpToolset(m.supervisor);
   const call = async (as: string, args: Record<string, unknown> = {}) => {
     const res = (await mcp.handle(as, tok(as), mcpReq("tools/call", { name: "mesh_inbox", arguments: args }))) as {
@@ -110,7 +110,7 @@ test("mcp bus: an ask's deadline is readable from the queue", async () => {
     mayContact: { dev: ["qa"], qa: ["dev"] },
     bus: { commitments: { ttlMs: 600_000 } },
   });
-  const tok = (id: string) => `${m.config.meshId}:${id}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = (id: string) => mintSeatToken(m.config.meshId, id, m.kernel.state.activeGoalId);
   const mcp = createMcpToolset(m.supervisor);
 
   const ask = await m.supervisor.sendMessage({ from: "qa", to: ["dev"], type: "REQUEST", payload: { please: "review" } });

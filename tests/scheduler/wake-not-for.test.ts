@@ -60,6 +60,20 @@ async function tell(m: MeshInstance, type: string, payload: Record<string, unkno
   return sent.messageId!;
 }
 
+/**
+ * Record, per lead turn, the ids of the mail that turn was handed. A rising
+ * activation count alone says the lead ran; this says it ran ON the message
+ * under test, which is the outcome the mute exists to govern.
+ */
+function watchLead(m: MeshInstance): string[][] {
+  const turns: string[][] = [];
+  stub(m).setScript("tech-lead", async (input) => {
+    turns.push(input.context.unreadMail.map((x) => x.id));
+    return { operations: [{ op: "done" } as MeshOp] };
+  });
+  return turns;
+}
+
 /** Well past the wake window: if anything were going to wake the lead, it has. */
 const settled = () => new Promise((r) => setTimeout(r, 800));
 
@@ -83,9 +97,12 @@ test("a named type stops waking the seat, and is still delivered", async () => {
 test("a type the seat did NOT name still wakes it", async () => {
   const m = await mesh(["INFORM"]);
   try {
+    const turns = watchLead(m);
     const before = acts(m, "tech-lead");
-    await tell(m, "COMMIT", { sha: "deadbeef", summary: "landed" });
+    const id = await tell(m, "COMMIT", { sha: "deadbeef", summary: "landed" });
     await waitFor("lead woken by a type it never muted", () => acts(m, "tech-lead") > before);
+    await waitFor("the lead's woken turn has begun", () => turns.length > 0);
+    assert.ok(turns.some((ids) => ids.includes(id)), `the woken turn must be handed ${id}; turns saw ${JSON.stringify(turns)}`);
   } finally {
     await m.cleanup();
   }
@@ -108,11 +125,14 @@ test("naming an OBLIGING type mutes nothing", async () => {
 test("naming a type that carries the seat's next piece of work mutes nothing", async () => {
   const m = await mesh(["HANDOFF", "PATCH_READY"]);
   try {
+    const turns = watchLead(m);
     const before = acts(m, "tech-lead");
-    await tell(m, "HANDOFF", { what: "the work is ready for you" });
+    const id = await tell(m, "HANDOFF", { what: "the work is ready for you" });
     // A handoff is not chatter, it is this seat's next piece of work, and
     // deferring it leaves the work sitting with nobody awake to do it.
     await waitFor("lead woken for work handed to it", () => acts(m, "tech-lead") > before);
+    await waitFor("the lead's woken turn has begun", () => turns.length > 0);
+    assert.ok(turns.some((ids) => ids.includes(id)), `the woken turn must be handed ${id}; turns saw ${JSON.stringify(turns)}`);
   } finally {
     await m.cleanup();
   }
@@ -121,12 +141,15 @@ test("naming a type that carries the seat's next piece of work mutes nothing", a
 test("a FAILED verdict wakes the seat even when its type is muted", async () => {
   const m = await mesh(["TEST_RESULT"]);
   try {
+    const turns = watchLead(m);
     const before = acts(m, "tech-lead");
     // The consequence, not the type name. A PASSED `TEST_RESULT` is a report
     // and a FAILED one hands work back, and they arrive under the same word.
     // A mute that read the word alone would swallow the red build.
-    await tell(m, "TEST_RESULT", { result: "FAILED", summary: "3 auth tests red" });
+    const id = await tell(m, "TEST_RESULT", { result: "FAILED", summary: "3 auth tests red" });
     await waitFor("lead woken by a muted type carrying an adverse verdict", () => acts(m, "tech-lead") > before);
+    await waitFor("the lead's woken turn has begun", () => turns.length > 0);
+    assert.ok(turns.some((ids) => ids.includes(id)), `the woken turn must be handed ${id}; turns saw ${JSON.stringify(turns)}`);
   } finally {
     await m.cleanup();
   }

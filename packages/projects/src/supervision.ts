@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import type { ChildProcessSupervisor } from "./supervisor";
 import type { ProjectRef, ProjectStatus } from "./types";
 
@@ -22,13 +24,38 @@ export const CRASH_LOOP_WINDOW_MS = 60_000;
 /**
  * Missed-heartbeat window. Generous relative to the child's 2s cadence: the
  * cost of a false positive is killing a working project mid-mission, the cost
- * of a slow true positive is a tab that is stale for a few extra seconds.
+ * of a slow true positive is a tab that stays stale a little longer.
+ *
+ * 60s rather than 15s, and the asymmetry is the whole argument. It was 15s, and
+ * a child running three turns with tool calls in flight — beating normally the
+ * whole time — was killed as "unhealthy" because this process could not read
+ * those beats: a host blocked longer than the window (a long synchronous
+ * operation, a paused GC, a machine under load) leaves them sitting unread in
+ * the pipe, and the next poll then measures a gap that never existed. Killing a
+ * working child costs its in-flight turns, its state lock churn and a replayed
+ * mission; killing a genuinely wedged one 45 seconds later costs 45 seconds. No
+ * budget is spent by a wedged child — it is wedged.
+ *
+ * Overridable per host via `heartbeat_timeout_ms` in `host.yaml`.
  */
-export const HEARTBEAT_TIMEOUT_MS = 15_000;
+export const HEARTBEAT_TIMEOUT_MS = 60_000;
 /** How often the watchdog inspects the last beat of every open child. */
 export const HEALTH_POLL_MS = 2_000;
 /** Whole-host shutdown deadline, shared across all children. */
 export const SHUTDOWN_DEADLINE_MS = 10_000;
+
+/**
+ * Where the tree records what it decided about a project's child.
+ *
+ * Beside the pidfile and the child's rotated stderr, inside the project's own
+ * `.mesh/`: a decision about one project belongs with that project, and a
+ * project moved or deleted takes its own history with it.
+ */
+export const SUPERVISION_LOG_NAME = "host-supervision.log";
+
+export function supervisionLogPath(ref: ProjectRef): string {
+  return path.join(path.dirname(ref.configPath), ".mesh", SUPERVISION_LOG_NAME);
+}
 
 /**
  * `1s, 2s, 4s, 8s, ... 30s`. `attempt` is 1-based: the delay *before* the Nth
@@ -56,6 +83,19 @@ export interface SupervisionEvent {
   /** Set when a restart is scheduled rather than performed immediately. */
   retryInMs?: number;
   detail?: string;
+  /**
+   * How long the child had been silent when this decision was taken, for the
+   * `unhealthy` reason. A kill is otherwise indistinguishable from a crash in
+   * every surface an operator has, and "no heartbeat for 17s" next to a
+   * process that was demonstrably working is the whole diagnosis.
+   */
+  silenceMs?: number;
+  /**
+   * The supervision log this event was also appended to, when it was. Absolute,
+   * inside the project's own `.mesh/`, so a UI can point at the file rather
+   * than at a line that scrolled off a terminal.
+   */
+  logFile?: string;
 }
 
 export interface SupervisionTreeOptions {
@@ -386,7 +426,7 @@ export class SupervisionTree {
    * A child died or went silent. Either restart it after a backoff, or trip the
    * breaker and leave a visible dead tab.
    */
-  private onFailure(entry: Supervised, ref: ProjectRef, reason: SupervisionReason, detail: string): void {
+  private onFailure(entry: Supervised, ref: ProjectRef, reason: SupervisionReason, detail: string, silenceMs?: number): void {
     if (this.shuttingDown) return;
     const at = this.now();
     entry.crashes = [...entry.crashes.filter((t) => at - t < this.opts.crashLoopWindowMs), at];
@@ -396,18 +436,38 @@ export class SupervisionTree {
     if (entry.crashes.length > this.opts.crashLoopThreshold) {
       entry.tripped = true;
       this.clearTimer(entry);
+      const logFile = this.logDecision(ref, {
+        reason,
+        status: "crashed",
+        silenceMs,
+        restarts: entry.restarts,
+        crashes: entry.crashes.length,
+        action: "breaker-tripped",
+        detail,
+      });
       this.setStatus(
         entry,
         "crashed",
         reason,
         `${detail} — ${entry.crashes.length} crashes in ${Math.round(this.opts.crashLoopWindowMs / 1000)}s, ` +
           `auto-restart disabled. A tab that stays dead is honest; a silent restart loop is not.`,
+        undefined,
+        { silenceMs, logFile },
       );
       return;
     }
 
     const delay = this.backoff(entry.restarts + 1);
-    this.setStatus(entry, "crashed", reason, detail, delay);
+    const logFile = this.logDecision(ref, {
+      reason,
+      status: "crashed",
+      silenceMs,
+      restarts: entry.restarts,
+      action: "restart-with-backoff",
+      retryInMs: delay,
+      detail,
+    });
+    this.setStatus(entry, "crashed", reason, detail, delay, { silenceMs, logFile });
     entry.timer = setTimeout(() => {
       entry.timer = undefined;
       if (this.shuttingDown || entry.intentional || entry.tripped) return;
@@ -418,6 +478,37 @@ export class SupervisionTree {
       void this.launch(entry, ref);
     }, delay);
     entry.timer.unref?.();
+  }
+
+  /**
+   * Append one decision to the project's supervision log, and say where.
+   *
+   * The kill path used to leave exactly one trace: a line the child writes into
+   * its own rotated stderr. For the operator whose mission was killed as
+   * "unhealthy" while it was demonstrably working, that trace was invisible —
+   * they had a stopped mission, a restarted child and a terminal that had
+   * scrolled. The decision is the host's, so the host keeps the record: who,
+   * why, how much silence the measurement saw, and what happens next.
+   *
+   * Best-effort by construction. A log that cannot be written must never change
+   * the decision it was recording, so a failure returns undefined and the
+   * caller carries on.
+   */
+  private logDecision(ref: ProjectRef, fields: Record<string, string | number | undefined>): string | undefined {
+    const file = supervisionLogPath(ref);
+    const line = [`${new Date().toISOString()} project=${ref.id}`];
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      // Quoted only when it would otherwise read as several fields.
+      line.push(`${key}=${typeof value === "string" && /[\s"]/.test(value) ? JSON.stringify(value) : String(value)}`);
+    }
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${line.join(" ")}\n`, "utf8");
+      return file;
+    } catch {
+      return undefined;
+    }
   }
 
   private startWatchdog(): void {
@@ -443,13 +534,14 @@ export class SupervisionTree {
       const verdict = heartbeatVerdict(at - last, this.opts.heartbeatTimeoutMs, entry.staleChecks);
       entry.staleChecks = verdict.nextChecks;
       if (!verdict.stop) continue;
-      const silentFor = Math.round((at - last) / 1000);
+      const silenceMs = at - last;
+      const silentFor = Math.round(silenceMs / 1000);
       // Stop it first: the restart path assumes the old process is gone, and
       // the state lock will not be free until it is.
       const ref = entry.ref;
       void this.supervisor.stop(ref).then(() => {
         if (this.shuttingDown || entry.intentional) return;
-        this.onFailure(entry, ref, "unhealthy", `no heartbeat for ${silentFor}s`);
+        this.onFailure(entry, ref, "unhealthy", `no heartbeat for ${silentFor}s`, silenceMs);
       });
       // Prevents the next poll from firing on the same child while the stop is
       // still in flight, which would double-count the crash toward the breaker.
@@ -471,6 +563,7 @@ export class SupervisionTree {
     reason?: SupervisionReason,
     detail?: string,
     retryInMs?: number,
+    extra: { silenceMs?: number; logFile?: string } = {},
   ): void {
     entry.status = status;
     entry.detail = detail ?? entry.detail;
@@ -478,6 +571,8 @@ export class SupervisionTree {
     if (reason) event.reason = reason;
     if (typeof retryInMs === "number") event.retryInMs = retryInMs;
     if (detail) event.detail = detail;
+    if (typeof extra.silenceMs === "number") event.silenceMs = extra.silenceMs;
+    if (extra.logFile) event.logFile = extra.logFile;
     this.onEvent?.(event);
   }
 }

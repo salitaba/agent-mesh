@@ -67,12 +67,67 @@ export class RequestTimeoutError extends Error {
  */
 export class InterruptedTurnError extends Error {
   /** What the backend reported spending before the abort, if it reported at all. */
-  readonly tokensUsed?: { input: number; output: number; total: number };
+  readonly tokensUsed?: TurnUsage;
+  /**
+   * The model the backend reported running, when the adapter saw one before the
+   * abort. Optional for the same reason as `tokensUsed`: absent is unknown, and
+   * the configured model is NOT a stand-in for it — the run this was added for
+   * configured `sonnet` and ran `deepseek-v4.1-flash`.
+   */
+  readonly model?: string;
 
-  constructor(message: string, tokensUsed?: { input: number; output: number; total: number }) {
+  constructor(message: string, tokensUsed?: TurnUsage, model?: string) {
     super(message);
     this.name = "AbortError";
     this.tokensUsed = tokensUsed;
+    this.model = model;
+  }
+}
+
+/**
+ * What a turn that did not finish had spent, as far as the backend said.
+ *
+ * `input`/`output`/`total` are what every adapter reports. `cacheRead` and
+ * `thinking` are optional because not every backend splits them — the Claude
+ * adapter's `usageToTokens` does, and its object always carried them; the type
+ * used to be narrower than the value, so the supervisor could not read them and
+ * a timed-out turn's `budget.consumed` went out with no split at all (NOTES
+ * live-run 2026-09-25 §3, seq 1153). Absent means unmeasured, never zero.
+ */
+export interface TurnUsage {
+  input: number;
+  output: number;
+  total: number;
+  cacheRead?: number;
+  thinking?: number;
+}
+
+/**
+ * The mesh's own turn deadline ran out.
+ *
+ * Typed rather than inferred from a message, for the reason `RequestTimeoutError`
+ * is: it used to be a plain `RuntimeFailure("turn timeout after …")`, which
+ * `isTimeoutError` did not match, so `handleAgentFailure` took the CRASH path
+ * for it. Measured 2026-09-25: backend's 20-minute work turn — 242 tool frames,
+ * last activity 5 s before the kill — spent restart 1 of 3, and the third is
+ * terminal (task released, every ask it owed abandoned). A turn the mesh stopped
+ * for running long is a slow turn, not a dead backend.
+ *
+ * Carries the usage the ordered interrupt came back with, so the stop can still
+ * be billed and stated.
+ */
+export class TurnTimeoutError extends Error {
+  /** The deadline that expired, ms from the runtime call — extensions included. */
+  readonly timeoutMs: number;
+  readonly tokensUsed?: TurnUsage;
+  readonly model?: string;
+
+  constructor(timeoutMs: number, tokensUsed?: TurnUsage, model?: string, note?: string) {
+    super(`turn timeout after ${timeoutMs}ms${note ? ` (${note})` : ""}`);
+    this.name = "TurnTimeoutError";
+    this.timeoutMs = timeoutMs;
+    this.tokensUsed = tokensUsed;
+    this.model = model;
   }
 }
 
@@ -93,6 +148,7 @@ const TIMEOUT_CODES = new Set(["UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"
  */
 export function isTimeoutError(err: unknown): boolean {
   if (err instanceof RequestTimeoutError) return true;
+  if (err instanceof TurnTimeoutError) return true;
   if (err instanceof BackendUnreachableError) return false;
   if (errorCodes(err).some((c) => TIMEOUT_CODES.has(c))) return true;
   if (err instanceof DOMException && err.name === "AbortError") return true;

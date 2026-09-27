@@ -51,7 +51,7 @@ test("plan gate: no plan at all is refused, and says what to emit", () => {
   const miss = planCoversHardOp(PUBLISH, def(), st({ plan: undefined }));
   assert.ok(miss, "a listed hard capability with no plan must be refused");
   assert.match(miss!, /repository\.write/);
-  assert.match(miss!, /"op":"plan"/, "the refusal has to carry the recovery instruction — it is all the agent gets");
+  assert.match(miss!, /mesh_plan/, "the refusal has to carry the recovery instruction — it is all the agent gets");
 });
 
 test("plan gate: an empty plan is the same as no plan", () => {

@@ -2,7 +2,7 @@ import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type Goal
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
-import { agentKey, autoRaiseExhausted, missionKey, taskKey, threadKey } from "./budgets";
+import { agentKey, autoRaiseExhausted, budgetParkedSeats, liveSeats, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
 /**
@@ -54,6 +54,13 @@ export interface DeadlockFinding {
   artifactId?: string;
   description: string;
   participants: string[];
+  /**
+   * `wait_cycle` only: the ring's edges in order (`participants[i]` waits on
+   * `participants[i+1]`, the last on the first), each with the open asks that
+   * make it an edge. The break must void one of THESE — "the newest ask between
+   * any two members" voided asks that were not part of the ring at all.
+   */
+  edges?: Array<{ from: string; to: string; messageIds: string[] }>;
 }
 
 /**
@@ -135,6 +142,14 @@ export class DeadlockDetector {
   private scanConflicts(state: Projections, goalId: GoalId): DeadlockFinding[] {
     const out: DeadlockFinding[] = [];
     for (const conflict of state.conflicts.values()) {
+      // `wait_cycle:` keys are recurrence counters for a finding `scanWaitCycles`
+      // already owns, written by the `deadlock.auto_resolved` reducer so a broken
+      // ring can be told from a fresh one. Reported from here they would arrive
+      // as `repeated_conflict` with no participants and no `blockedRequests`,
+      // and because conflicts are scanned BEFORE wait cycles they would win
+      // `escalate()`'s conflictKey dedupe — the operator would get the vaguer of
+      // two cards describing the same ring.
+      if (conflict.key.startsWith("wait_cycle:")) continue;
       if (conflict.count < this.config.escalation.repeatedConflictThreshold) continue;
       if (this.alreadyEscalated(state, goalId, conflict.key, conflict.lastAt)) continue;
       // `loop:<agent>:<thread>` counters come from the duplicate-message
@@ -204,9 +219,23 @@ export class DeadlockDetector {
    * An edge A->B exists only when A is actually parked (WAITING/BLOCKED) on
    * an open request addressed to B. An outstanding request from a still-
    * working agent is normal business, not a deadlock.
+   *
+   * And only once B has been HANDED that request: it is no longer in B's
+   * unread box, which happens exactly when a turn of B's that rendered it
+   * completed (`message.delivered`). Until then B is not refusing to answer —
+   * it has not been asked yet, and the wake that will ask it is already owed
+   * by the mail path (a message wake, the stash behind a running turn, the
+   * unread requeue, the stale-mail floor). WAITING is the ordinary post-turn
+   * state, so without this clause every pair of seats that asked each other in
+   * consecutive turns was a "provable" deadlock: measured 2026-09-25, 4 of 4
+   * live detections fired within 50 ms of a turn ending, on asks 18–46 s old
+   * that their debtors had never seen. A real ring still surfaces — one turn
+   * per member later, when every member has read its ask and still sits on it.
    */
   private scanWaitCycles(state: Projections, goalId: GoalId): DeadlockFinding[] {
     const waitsOn = new Map<string, Set<string>>();
+    /** `${from}>${to}` -> the asks that make that edge, oldest first. */
+    const edgeAsks = new Map<string, string[]>();
     for (const pr of state.pendingRequests.values()) {
       if (pr.goalId && pr.goalId !== goalId) continue;
       const from = pr.from;
@@ -217,7 +246,10 @@ export class DeadlockDetector {
       for (const target of outstandingDebtors(pr)) {
         if (target === from || target === HUMAN_ID) continue;
         if (!state.agents.has(target)) continue;
+        if (state.unread?.get(target)?.includes(pr.messageId)) continue;
         edges.add(target);
+        const k = `${from}>${target}`;
+        edgeAsks.set(k, [...(edgeAsks.get(k) ?? []), pr.messageId]);
       }
       if (edges.size > 0) waitsOn.set(from, edges);
     }
@@ -280,9 +312,29 @@ export class DeadlockDetector {
             ? `${cycle[0]} is waiting on a request addressed to itself — no turn can ever resolve it`
             : `Circular wait detected: ${cycle.join(" waits on ")} waits on ${cycle[0]}. No agent in this cycle can proceed without an outside decision.`,
         participants: cycle,
+        edges: cycle.map((from, i) => {
+          const to = cycle[(i + 1) % cycle.length];
+          return { from, to, messageIds: edgeAsks.get(`${from}>${to}`) ?? [] };
+        }),
       });
     }
     return out;
+  }
+
+  /**
+   * The wait cycles that hold RIGHT NOW, without the reported-finding filter.
+   *
+   * The watchdog handles one scan's findings in sequence, and a break changes
+   * the graph under the ones that follow: measured 2026-09-25 (seq 553/557),
+   * breaking pm<->tech-lead voided the edge tech-lead->pm, which dissolved the
+   * pm>qa>tech-lead ring too — and that ring was then "broken" anyway, voiding
+   * an ask that was not even one of its edges. Re-reading the graph before each
+   * later break is what stops a stale finding from costing a live ask.
+   */
+  liveWaitCycles(state: Projections): DeadlockFinding[] {
+    const goalId = state.activeGoalId;
+    if (!goalId) return [];
+    return this.scanWaitCycles(state, goalId);
   }
 
   markReported(finding: DeadlockFinding): void {
@@ -378,9 +430,27 @@ export class TerminationManager {
     // sweep uses, so the two cannot drift. The card that survives carries real
     // information — "this mission wants 8x its budget" — which is the judgement
     // worth waking a human for.
-    for (const b of state.budgets.values()) {
-      if (b.exceeded && b.key.startsWith(`agent:${goalId}/`) && autoRaiseExhausted(state, config, b.key)) {
-        return { kind: "escalate", reason: "agent_budget_exhausted", detail: { key: b.key, consumed: b.consumed, limit: b.limit } };
+    //
+    // And even a final latch is ONE SEAT's problem, not the mission's. This arm
+    // used to escalate the goal on the first exhausted seat: measured 2026-09-25,
+    // tech-lead's ceiling flipped the goal ESCALATED, six other seats'
+    // activations were denied "mission is escalated" and ui-designer's publish
+    // was refused mid-turn — and explorer did it again 14 minutes later. The seat
+    // is parked instead (the policy's `budget` rule defers its activations, the
+    // supervisor's watchdog carries its card to the operator), and the mission
+    // halts here only when EVERY live seat is parked: then nobody can take a
+    // turn, which genuinely is goal-wide. The mission ledger above is the cap
+    // on the whole mission, and it still halts on its own.
+    const parked = budgetParkedSeats(state, config);
+    if (parked.length > 0) {
+      const live = liveSeats(state);
+      if (live.every((id) => parked.includes(id))) {
+        const b = state.budgets.get(agentKey(goalId, parked[0]))!;
+        return {
+          kind: "escalate",
+          reason: "agent_budget_exhausted",
+          detail: { key: b.key, consumed: b.consumed, limit: b.limit, parkedSeats: parked },
+        };
       }
     }
     // An exhausted THREAD budget blocks every future turn in that thread, but

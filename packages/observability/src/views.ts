@@ -152,7 +152,17 @@ export function summarize(e: MeshEvent): string {
       // Tests emit this type with stub payloads, so nothing here may assume
       // `slots` is the ten-entry array the real builder always produces.
       const slots: Array<Record<string, any>> = Array.isArray(p.slots) ? p.slots : [];
-      const dropped = slots.filter((sl) => (sl?.dropped ?? 0) > 0).map((sl) => `${sl.slot} -${sl.dropped}`);
+      // Names the dropped ids where the slot carries them (mail does). A bare
+      // `mail -13` cannot tell an operator whether the message the seat was woken
+      // for is in the thirteen, which is the only question this line gets asked.
+      const dropped = slots
+        .filter((sl) => (sl?.dropped ?? 0) > 0)
+        .map((sl) => {
+          const ids: string[] = Array.isArray(sl?.droppedIds) ? sl.droppedIds : [];
+          return ids.length > 0
+            ? `${sl.slot} -${sl.dropped} (${ids.slice(0, 3).join(",")}${sl.dropped > ids.slice(0, 3).length ? ",…" : ""})`
+            : `${sl.slot} -${sl.dropped}`;
+        });
       return `${p.agentId} ${p.usedTokens}/${p.budgetTokens} ${p.tier}${p.overSoftCap ? " OVER" : ""}${dropped.length ? ` · dropped ${dropped.join(" ")}` : ""}`;
     }
     case "agent.resumed":
@@ -177,8 +187,15 @@ export function summarize(e: MeshEvent): string {
       return `${p.message?.from} → ${p.message?.to?.join(",")} : ${p.message?.type}`;
     case "message.delivered":
       return `${p.agentId} ⇐ ${shortId(p.messageId)}`;
-    case "message.rejected":
+    case "message.rejected": {
+      // Two things land here. A refused send carries `to`: there was a message
+      // and it did not leave. An activation denial (`reportActivationDenied`)
+      // carries `action: "activate (<kind>)"` and no recipient: the seat was
+      // never allowed to run, and "blocked" read as though its mail had been.
+      const act = !Array.isArray(p.to) && typeof p.action === "string" ? /^activate \((.*)\)$/.exec(p.action) : null;
+      if (act) return `${p.from} could not be activated (${act[1]}): ${String(p.reason ?? "").slice(0, 80)}`;
       return `${p.from} blocked: ${String(p.reason ?? "").slice(0, 80)}`;
+    }
     case "commitment.discharged":
       // Only the six ledger fields are safe to key on: every caller spreads its
       // own `detail` into this payload and no two agree on what is in it.

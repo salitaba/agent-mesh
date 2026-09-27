@@ -4,13 +4,12 @@ import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/conf
 import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
-import { aliasStats } from "../../../packages/protocol/src/op-aliases";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
-import { DEFAULT_HOST_PORT, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand } from "./projects";
+import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand, type Flags } from "./projects";
 import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
@@ -66,6 +65,41 @@ function takesValue(name: string, next: string): boolean {
   return BOOLEAN_LITERALS.has(next.trim().toLowerCase());
 }
 
+/**
+ * Flags accepted by the launch commands, which is the set this file parses
+ * itself a few lines below (`resolveLaunchMode`, `gitModeFromFlags`, the
+ * `launchMesh` call). Kept beside them so the two cannot drift.
+ */
+const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
+  "port", "tui", "no-tui", "git", "no-git", "fresh", "resume", "live", "parked", "ui-only", "no-demo", "help",
+]);
+
+/**
+ * Unknown flags, for the commands whose flag set is written down here.
+ *
+ * `parseArgs` collects every `--x` into a bag and each command reads the keys it
+ * knows, so anything else is silently dropped: `mesh status --json` printed the
+ * human format and said nothing, and `mesh init --dir /tmp/x` scaffolded into the
+ * cwd because the directory is positional. The flag looked accepted in both.
+ *
+ * Deliberately narrow. Only the launch commands are checked, because their flag
+ * list is parsed in this file and can be kept exact; the bus commands take a
+ * wider, more scattered set, and a table guessed for them would warn on valid
+ * invocations — which trains operators to read past warnings, a worse failure
+ * than the one being fixed. A warning, never an error: refusing an argument that
+ * has always been tolerated would break scripts.
+ */
+export function unknownFlagWarnings(command: string, flags: Record<string, string | boolean>): string[] {
+  const LAUNCH_COMMANDS = new Set(["run", "serve", "up", "console", "ui"]);
+  if (!LAUNCH_COMMANDS.has(command)) return [];
+  const unknown = Object.keys(flags).filter((f) => !LAUNCH_FLAGS.has(f));
+  if (unknown.length === 0) return [];
+  const one = unknown.length === 1;
+  return [
+    `${unknown.map((f) => `--${f}`).join(", ")} ${one ? "is not a flag" : "are not flags"} \`mesh ${command}\` reads, and ${one ? "it was" : "they were"} ignored rather than refused. Accepted here: ${[...LAUNCH_FLAGS].filter((f) => f !== "help").map((f) => `--${f}`).join(", ")}`,
+  ];
+}
+
 export function parseArgs(argv: string[]): Args {
   const [command = "help", ...rest] = argv;
   const positional: string[] = [];
@@ -88,18 +122,47 @@ export function parseArgs(argv: string[]): Args {
   return { command, positional, flags };
 }
 
-async function httpJson(method: string, url: string, body?: unknown): Promise<any> {
+/**
+ * A request to a mesh bus.
+ *
+ * Two things here used to be missing, and together they made an authenticated
+ * mesh read as a dead one. No `Authorization` header was ever sent, so a direct
+ * `--bus` call to a child — which always demands a token — came back 401; and
+ * the status was returned but never checked, so that error body was rendered as
+ * data. `mesh status --bus <child>` printed `Goal: (none)` and `events:
+ * undefined` for a mission that was running fine, and `mesh agents --bus` died
+ * with `body is not iterable`.
+ *
+ * Auth failures THROW rather than return: no call site can do anything useful
+ * with a 401, and `tryServer` already turns a throw into the offline fallback.
+ * Every other status is still returned as data, because the POST commands check
+ * `status === 202`/`200` themselves and turn it into an exit code.
+ *
+ * Without `--bus` this all worked only because port 7420 is the HOST, which
+ * proxies to the child and injects the child's own credential. Nothing was
+ * discovering anything.
+ */
+async function httpJson(method: string, url: string, body?: unknown, flags: Flags = {}): Promise<any> {
   const res = await fetch(url, {
     method,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders(flags) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
+  let parsed: any;
   try {
-    return { status: res.status, body: JSON.parse(text) };
+    parsed = JSON.parse(text);
   } catch {
-    return { status: res.status, body: text };
+    parsed = text;
   }
+  if (res.status === 401 || res.status === 403) {
+    const detail = typeof parsed === "object" && parsed !== null && typeof parsed.error === "string" ? parsed.error : text.slice(0, 200);
+    throw new Error(
+      `${url} refused the request (${res.status}): ${detail} — pass --token <t> or set MESH_API_TOKEN, ` +
+        `or address the project through its host with --project <id>`,
+    );
+  }
+  return { status: res.status, body: parsed };
 }
 
 function stateDirFor(configPath: string): string {
@@ -113,7 +176,15 @@ function stateDirFor(configPath: string): string {
 async function tryServer<T>(fn: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
   try {
     return await fn();
-  } catch {
+  } catch (err) {
+    // A refused connection is the ordinary case this fallback exists for (no
+    // server running, read the log from disk), so it stays silent. A REFUSED
+    // REQUEST is different: the mesh is up and answering, and the operator is
+    // about to be shown offline figures for a live mission without being told
+    // why. Say it once on stderr and still fall back, because the local log is
+    // real data.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/refused the request \((401|403)\)/.test(msg)) console.error(`warning: ${msg}\n         falling back to the local event log`);
     return fallback();
   }
 }
@@ -295,6 +366,10 @@ usage:
     restorable one), the product checkout, and the agent worktrees. The archive
     is copied, never consumed, so the same stamp keeps working.
   any --bus command also takes --project <id> to address one project through a host
+    and --token <t> (or MESH_API_TOKEN) to authenticate. A child mesh started by a
+    host always requires one: its token is internal, so --project through the host
+    is usually the route you want. Without a token the child answers 401 and the
+    command says so rather than printing an empty mission.
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
   designer-mcp                             (internal) stdio MCP server for the config designer
   bench [--mesh config.yaml] [--single config.yaml] [--out report.json]
@@ -396,7 +471,7 @@ async function launchMesh(opts: {
         if (reported) return;
         reported = true;
         try {
-          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state, undefined, { aliases: aliasStats() })));
+          console.log(renderRunReport(buildRunReport(handle.instance.kernel.state)));
         } catch (err) {
           // A report that throws must not swallow the run's outcome.
           console.log(fallback);
@@ -414,6 +489,8 @@ async function launchMesh(opts: {
         // is stopped), so only SIGINT/SIGTERM ends them.
         const goalWatch = setInterval(async () => {
           try {
+            // No flags here: this polls the server THIS process just started,
+            // whose auth (if any) it configured itself.
             const { body } = await httpJson("GET", `${handle.url}/status`);
             if (body?.goal && ["COMPLETED", "FAILED", "ESCALATED"].includes(body.goal.status)) {
               clearInterval(goalWatch);
@@ -438,6 +515,7 @@ async function launchMesh(opts: {
 
 export async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
+  for (const w of unknownFlagWarnings(args.command, args.flags)) console.warn(`warn: ${w}`);
   // `--project id` rewrites the bus to the host's proxy prefix, so every
   // existing command works against one project of a multi-project host
   // without each case knowing that hosts exist.
@@ -491,7 +569,7 @@ export async function main(argv: string[]): Promise<number> {
         const resolved = resolveConfig(file);
         void raw;
         console.log(`OK: ${resolved.agentOrder.length} agents, mesh '${resolved.meshId}', runtime default '${resolved.defaultRuntime}'`);
-        console.log(`   commitments: ${resolved.bus.commitmentSemantic} · transport: ${resolved.bus.transport}`);
+        console.log(`   commitments: ${resolved.bus.commitmentSemantic}`);
         console.log(`   interests wired for: ${resolved.agentOrder.filter((a) => resolved.agents[a].interests.length > 0).join(", ")}`);
         console.log(`   transition gates: ${Object.keys(resolved.transitionGates).join(", ") || "(none)"}`);
         // Non-fatal but mission-ending if ignored: an unsatisfiable gate
@@ -550,7 +628,7 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "status": {
         const result = await tryServer(
-          () => httpJson("GET", `${bus}/status`),
+          () => httpJson("GET", `${bus}/status`, undefined, args.flags),
           async () => ({ status: 200, body: await offlineStatus(args) }),
         );
         const st = result.body;
@@ -558,12 +636,7 @@ export async function main(argv: string[]): Promise<number> {
         console.log(`Goal:      ${st.goal?.description?.split("\n")[0]?.slice(0, 60) ?? "(none)"} [${st.goal?.status ?? "-"}]`);
         console.log(`Progress:  ${bar(st.progress?.ratio ?? 0)} ${Math.round((st.progress?.ratio ?? 0) * 100)}%`);
         const tokens = st.budgets?.find?.((b: any) => b.key.startsWith("mission:"));
-        // `aliases` rides on the events line because it is the same kind of
-        // number: a process-wide diagnostic that is only interesting when it
-        // moves. It prints the zero rather than hiding it -- a zero is the
-        // answer the operator is looking for when asking whether the prose
-        // alias tables can be retired.
-        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}   aliases: ${st.aliases?.total ?? "-"}`);
+        console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}`);
         console.log("");
         for (const a of st.agents ?? []) {
           const dot = ["THINKING", "WORKING", "REQUESTING", "AWAKENED", "OBSERVING", "REVIEWING"].includes(a.lifecycle) ? "â—" : "â—‹";
@@ -576,14 +649,22 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "graph": {
-        const { body } = await httpJson("GET", `${bus}/graph`);
+        const { body } = await httpJson("GET", `${bus}/graph`, undefined, args.flags);
+        if (!Array.isArray(body?.nodes) || !Array.isArray(body?.edges)) {
+          console.error(`mesh graph: unexpected response from ${bus}/graph: ${JSON.stringify(body).slice(0, 200)}`);
+          return 1;
+        }
         for (const n of body.nodes) console.log(`  ${n.lifecycle.padEnd(11)} ${n.id.padEnd(14)} (${n.role})  ${n.tokens}t`);
         console.log("");
         for (const e of body.edges) console.log(`  ${e.from.padEnd(12)} --${e.kind}--> ${e.to.padEnd(12)} x${e.count}`);
         return 0;
       }
       case "agents": {
-        const { body } = await httpJson("GET", `${bus}/agents`);
+        const { body } = await httpJson("GET", `${bus}/agents`, undefined, args.flags);
+        if (!Array.isArray(body)) {
+          console.error(`mesh agents: unexpected response from ${bus}/agents: ${JSON.stringify(body).slice(0, 200)}`);
+          return 1;
+        }
         for (const a of body) console.log(`  ${a.id.padEnd(14)} ${a.role.padEnd(16)} ${a.lifecycle.padEnd(11)} ${a.taskId ? `task:${a.taskId}` : ""}`);
         return 0;
       }
@@ -591,7 +672,7 @@ export async function main(argv: string[]): Promise<number> {
         const id = args.positional[0];
         if (!id) throw new Error("usage: mesh inspect <agentId> [--json] [--limit n]");
         const limit = args.flags.limit ? Number(args.flags.limit) : 10;
-        const { body } = await httpJson("GET", `${bus}/agents/${encodeURIComponent(id)}?limit=${limit}`);
+        const { body } = await httpJson("GET", `${bus}/agents/${encodeURIComponent(id)}?limit=${limit}`, undefined, args.flags);
         if (body.error) {
           console.error(body.error);
           return 1;
@@ -607,9 +688,13 @@ export async function main(argv: string[]): Promise<number> {
         const limit = args.flags.limit ? Number(args.flags.limit) : 40;
         const type = args.flags.type ? String(args.flags.type) : undefined;
         const result = await tryServer(
-          () => httpJson("GET", `${bus}/events?limit=${limit * 4}${type ? `&type=${type}` : ""}`),
+          () => httpJson("GET", `${bus}/events?limit=${limit * 4}${type ? `&type=${type}` : ""}`, undefined, args.flags),
           async () => ({ status: 200, body: await offlineEvents(args, limit, type) }),
         );
+        if (!Array.isArray(result.body)) {
+          console.error(`mesh events: unexpected response: ${JSON.stringify(result.body).slice(0, 200)}`);
+          return 1;
+        }
         const rows = (result.body as any[]).slice(-limit);
         for (const r of rows) {
           console.log(`  ${r.at.replace("T", " ").slice(0, 19)} #${String(r.seq).padStart(5)} ${r.type.padEnd(24)} ${r.actor ?? ""} ${r.summary ?? ""}`);
@@ -620,7 +705,7 @@ export async function main(argv: string[]): Promise<number> {
         const goalId = args.positional[0];
         if (!goalId) throw new Error("usage: mesh replay <goalId>");
         const upTo = args.flags.upToSeq ? `&upToSeq=${args.flags.upToSeq}` : "";
-        const { body } = await httpJson("GET", `${bus}/goals/${encodeURIComponent(goalId)}/replay${upTo}`);
+        const { body } = await httpJson("GET", `${bus}/goals/${encodeURIComponent(goalId)}/replay${upTo}`, undefined, args.flags);
         if (body.error) {
           console.error(body.error);
           return 1;
@@ -633,19 +718,19 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "pause": {
         const goalId = args.positional[0];
-        const { body } = await httpJson("POST", `${bus}/goals/${encodeURIComponent(goalId ?? "")}/pause`);
+        const { body } = await httpJson("POST", `${bus}/goals/${encodeURIComponent(goalId ?? "")}/pause`, undefined, args.flags);
         console.log(JSON.stringify(body));
         return 0;
       }
       case "resume": {
         const goalId = args.positional[0];
-        const { body } = await httpJson("POST", `${bus}/goals/${encodeURIComponent(goalId ?? "")}/resume`);
+        const { body } = await httpJson("POST", `${bus}/goals/${encodeURIComponent(goalId ?? "")}/resume`, undefined, args.flags);
         console.log(JSON.stringify(body));
         return 0;
       }
       case "wake": {
         const id = args.positional[0];
-        const { body } = await httpJson("POST", `${bus}/agents/${encodeURIComponent(id)}/wake`);
+        const { body } = await httpJson("POST", `${bus}/agents/${encodeURIComponent(id)}/wake`, undefined, args.flags);
         console.log(JSON.stringify(body));
         return 0;
       }
@@ -653,7 +738,7 @@ export async function main(argv: string[]): Promise<number> {
         const to = String(args.flags.to ?? "").split(",").filter(Boolean);
         const type = String(args.flags.type ?? "INFORM");
         const payload = args.flags.payload ? JSON.parse(String(args.flags.payload)) : {};
-        const { status, body } = await httpJson("POST", `${bus}/messages`, { to, type, payload, threadId: args.flags.thread });
+        const { status, body } = await httpJson("POST", `${bus}/messages`, { to, type, payload, threadId: args.flags.thread }, args.flags);
         console.log(JSON.stringify(body, null, 2));
         return status === 202 ? 0 : 1;
       }
@@ -665,7 +750,7 @@ export async function main(argv: string[]): Promise<number> {
           artifactId: args.flags.artifact,
           by: args.flags.by,
           comment: args.flags.comment,
-        });
+        }, args.flags);
         console.log(JSON.stringify(body, null, 2));
         return status === 200 ? 0 : 1;
       }
@@ -676,29 +761,37 @@ export async function main(argv: string[]): Promise<number> {
           artifactId: args.flags.artifact,
           by: args.flags.by,
           comment: args.flags.comment,
-        });
+        }, args.flags);
         console.log(JSON.stringify(body, null, 2));
         return status === 200 ? 0 : 1;
       }
       case "respond": {
         const id = args.positional[0];
         const text = args.positional.slice(1).join(" ") || String(args.flags.text ?? "acknowledged");
-        const { status, body } = await httpJson("POST", `${bus}/escalations/${encodeURIComponent(id)}/respond`, { response: text });
+        const { status, body } = await httpJson("POST", `${bus}/escalations/${encodeURIComponent(id)}/respond`, { response: text }, args.flags);
         console.log(JSON.stringify(body, null, 2));
         return status === 200 ? 0 : 1;
       }
       case "escalations": {
-        const { body } = await httpJson("GET", `${bus}/escalations`);
+        const { body } = await httpJson("GET", `${bus}/escalations`, undefined, args.flags);
+        if (!Array.isArray(body)) {
+          console.error(`mesh escalations: unexpected response from ${bus}/escalations: ${JSON.stringify(body).slice(0, 200)}`);
+          return 1;
+        }
         for (const e of body) console.log(`  ${e.status.padEnd(10)} ${e.id}  [${e.reason}] by ${e.raisedBy}`);
         return 0;
       }
       case "artifacts": {
-        const { body } = await httpJson("GET", `${bus}/artifacts`);
+        const { body } = await httpJson("GET", `${bus}/artifacts`, undefined, args.flags);
         // Status is the whole point: a REJECTED draft and a FINAL deliverable
         // printed in one flat list look identical, which is how a failed run
         // gets read as a shipping manifest. Group by settlement, deliverables
         // first, and let `--status` / `--settled` narrow it further.
         const want = args.flags.status ? String(args.flags.status).toUpperCase() : null;
+        if (!Array.isArray(body)) {
+          console.error(`mesh artifacts: unexpected response from ${bus}/artifacts: ${JSON.stringify(body).slice(0, 200)}`);
+          return 1;
+        }
         const rows = (body as any[]).filter((a) => !want || a.status.toUpperCase() === want);
         const line = (a: any) => `  ${a.id}  ${a.type.padEnd(20)} ${a.name.padEnd(28)} v${a.version} ${a.status.padEnd(16)} owner:${a.owner}`;
         const settled = rows.filter((a) => isSettledArtifactStatus(a.status));
@@ -724,7 +817,11 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "budgets": {
-        const { body } = await httpJson("GET", `${bus}/budgets`);
+        const { body } = await httpJson("GET", `${bus}/budgets`, undefined, args.flags);
+        if (!Array.isArray(body?.entries)) {
+          console.error(`mesh budgets: unexpected response from ${bus}/budgets: ${JSON.stringify(body).slice(0, 200)}`);
+          return 1;
+        }
         for (const b of body.entries) console.log(`  ${b.key.padEnd(36)} ${String(b.consumed).padStart(8)}/${String(b.limit ?? "?").padStart(8)}${b.exceeded ? "  EXCEEDED" : ""}`);
         return 0;
       }

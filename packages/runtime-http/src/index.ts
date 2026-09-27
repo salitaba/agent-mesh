@@ -107,8 +107,8 @@ export class HttpRuntimeAdapter implements AgentRuntime {
       return {
         text: out.text ?? "",
         operations: out.operations ?? [],
-        // A backend that reports typed tool invocations bypasses prose
-        // parsing; pass the flag through so typed-only meshes accept them.
+        // Informational: whether the backend issued its ops as typed tool
+        // calls. Passed through when reported, otherwise inferred.
         typedOps: out.typedOps ?? ((out.toolCalls?.length ?? 0) > 0),
         tokensUsed: out.tokensUsed ?? { input: 0, output: 0, total: 0 },
         model: out.model,

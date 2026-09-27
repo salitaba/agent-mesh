@@ -149,7 +149,7 @@ test("a truncated obligation list says so, in the section it truncated", () => {
   assert.match(loops, /PARTIAL/, "the agent must not read a capped list as a finished checklist");
   // The note has to live with the list. A count parked in a different section
   // is a count the model reads as being about that other section.
-  assert.ok(loops.indexOf("+6 more") < loops.indexOf("## Ops block contract"));
+  assert.ok(loops.indexOf("+6 more") < loops.indexOf("## Ops contract"));
 });
 
 test("nothing pending renders as an unqualified negative", () => {

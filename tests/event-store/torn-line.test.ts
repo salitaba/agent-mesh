@@ -131,7 +131,7 @@ test("torn line: a clean log reports no repairs", async () => {
     seed(file, 4);
     const store = new JsonlEventStore(file);
     assert.equal((await store.read()).length, 4);
-    assert.deepEqual(store.integrity(), { truncatedTailBytes: 0, corruptLines: 0 });
+    assert.deepEqual(store.integrity(), { truncatedTailBytes: 0, corruptLines: 0, invalidLines: 0 });
     await store.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -143,7 +143,7 @@ test("torn line: an empty and a nonexistent log both replay as empty", async () 
   try {
     const fresh = new JsonlEventStore(file);
     assert.equal((await fresh.read()).length, 0);
-    assert.deepEqual(fresh.integrity(), { truncatedTailBytes: 0, corruptLines: 0 });
+    assert.deepEqual(fresh.integrity(), { truncatedTailBytes: 0, corruptLines: 0, invalidLines: 0 });
     await fresh.close();
 
     const again = new JsonlEventStore(file);

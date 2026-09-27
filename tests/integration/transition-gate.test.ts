@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, collectEvents, eventTypes, evidenceContent } from "../helpers";
 import type { MeshOp } from "../../packages/protocol/src/index";
+import { FakeWorkspace, installWorkspace } from "../support/fake-workspace";
 
 /**
  * Transition gates, end to end — the refusal path and the way out of it.
@@ -50,10 +51,31 @@ async function op(m: Mesh, actorId: string, o: MeshOp) {
   return m.supervisor.executeOp(actorId, o, turnFor(actorId));
 }
 
+/**
+ * Merge the way a seat actually has to.
+ *
+ * These tests used to drive `transition_artifact { to: "MERGED" }`, which is now
+ * refused: it moved the status and fired `patch.merged` +
+ * `implementation.completed` with no git step anywhere on the path, and a live
+ * run of 2026-09-24 shipped exactly that — two "merges" against a product branch
+ * still holding its scaffold commit. The gate is what these tests are about, and
+ * the gate is enforced identically through the `merge` op, so only the mechanism
+ * changed.
+ *
+ * `makeMesh` runs `inMemory`, so there is no `GitWorkspace`; without a double
+ * `opMerge` falls to materializing product files and fails on content that has no
+ * `## File:` sections. Same shared double `tests/core/merge-git-arm.test.ts` uses.
+ */
+function withWorkspace(m: Mesh): void {
+  installWorkspace(m, new FakeWorkspace());
+}
+const merge = (m: Mesh, actorId: string, artifactId: string) => op(m, actorId, { op: "merge", artifactId } as MeshOp);
+
 const statusOf = (m: Mesh, id: string) => m.kernel.state.artifacts.get(id)?.status;
 
 /** Publishes a patch and walks it to MERGEABLE, the last stop before the gate. */
 async function patchAtMergeable(m: Mesh): Promise<string> {
+  withWorkspace(m);
   const created = await m.supervisor.createArtifact({
     actorId: "dev",
     name: "checkout-patch",
@@ -86,7 +108,7 @@ test("transition gate e2e: an unsatisfied gate refuses the merge and the artifac
     const transitionsBefore = eventTypes(await collectEvents(m)).filter((t) => t === "artifact.transition").length;
 
     // qa never ran: the gate token `qa.approve` has no matching approval.
-    const res = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const res = await merge(m, "tech-lead", id);
 
     assert.equal(res.ok, false, "an unsatisfied gate must refuse the merge");
     assert.match(res.reason ?? "", /patch\.merge/, "the refusal names the gate that blocked it");
@@ -105,6 +127,43 @@ test("transition gate e2e: an unsatisfied gate refuses the merge and the artifac
   }
 });
 
+test("a seat cannot declare MERGED: the bare transition is refused and no merge is announced", async () => {
+  // The regression this whole file's mechanism change exists for.
+  //
+  // `transition_artifact { to: "MERGED" }` reached the state machine directly:
+  // MERGEABLE -> MERGED is a legal edge, holding `git.merge` was the only gate,
+  // and `mirrorTransition` then emitted `patch.merged` AND
+  // `implementation.completed` off type+status alone — with no git step anywhere.
+  // On 2026-09-24 a live mesh did this twice: both mirrors on the log, the
+  // product branch still holding its scaffold commit, and 1,847 lines uncommitted
+  // in the seat's worktree. Every downstream seat read the mission as shipping.
+  //
+  // The gate here is deliberately SATISFIED, so the only thing standing between
+  // the seat and MERGED is the op it chose.
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, transitions: GATES, mode: "parked" });
+  try {
+    const id = await patchAtMergeable(m);
+    assert.equal((await op(m, "tech-lead", { op: "approve", subject: "implementation", artifactId: id })).ok, true);
+
+    const declared = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    assert.equal(declared.ok, false, "a seat holding git.merge still may not simply declare MERGED");
+    assert.match(declared.reason ?? "", /\bmesh_merge\b/, "the refusal names the tool that does land the change");
+
+    assert.equal(statusOf(m, id), "MERGEABLE", "the patch has not moved");
+    const types = eventTypes(await collectEvents(m));
+    assert.ok(!types.includes("patch.merged"), "nothing may announce a merge that never ran");
+    assert.ok(!types.includes("implementation.completed"), "and the mission must not learn implementation is done");
+
+    // And the way through still works, so this is a control and not a deadlock.
+    const merged = await merge(m, "tech-lead", id);
+    assert.equal(merged.ok, true, `the merge op must still land it: ${merged.reason ?? ""}`);
+    assert.equal(statusOf(m, id), "MERGED");
+    assert.ok(eventTypes(await collectEvents(m)).includes("patch.merged"), "now the mirror is earned");
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("transition gate e2e: satisfying the gate lets the same merge through", async () => {
   const m = await makeMesh({
     agents: AGENTS,
@@ -114,13 +173,13 @@ test("transition gate e2e: satisfying the gate lets the same merge through", asy
   });
   try {
     const id = await patchAtMergeable(m);
-    assert.equal((await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" })).ok, false);
+    assert.equal((await merge(m, "tech-lead", id)).ok, false);
 
     // The gate is a control, not a deadlock: the named signature opens it.
     const pass = await op(m, "qa", { op: "approve", subject: "quality", artifactId: id });
     assert.equal(pass.ok, true, `qa must be able to record its pass: ${pass.reason ?? ""}`);
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `the satisfied gate must permit the merge: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
 
@@ -155,7 +214,7 @@ test("transition gate e2e: a `<role>.pass` gate is satisfied by a pass and NOT b
     // `qa.approve` and the verification requirement is gone.
     const approve = await op(m, "qa", { op: "approve", subject: "quality", artifactId: id });
     assert.equal(approve.ok, true, `qa may record a plain approve: ${approve.reason ?? ""}`);
-    const notYet = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const notYet = await merge(m, "tech-lead", id);
     assert.equal(notYet.ok, false, "an approve must not satisfy a required pass");
     assert.match(notYet.reason ?? "", /qa\.pass/, "the refusal still names the missing pass");
     assert.equal(statusOf(m, id), "MERGEABLE", "the patch does not move on an approve alone");
@@ -167,7 +226,7 @@ test("transition gate e2e: a `<role>.pass` gate is satisfied by a pass and NOT b
     const records = [...m.kernel.state.approvals.values()].flat().filter((r) => r.artifactId === id && r.actorRole === "qa");
     assert.ok(records.some((r) => r.kind === "pass"), "the projection records the kind the actor declared, not a generic approve");
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `the satisfied pass gate must permit the merge: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
   } finally {
@@ -190,6 +249,9 @@ test("transition gate e2e: a pass stands in for a required approve, but never th
     mode: "parked",
   });
   try {
+    // This test walks the ladder itself rather than through `patchAtMergeable`,
+    // so it needs the workspace double too — `merge` reaches git.
+    withWorkspace(m);
     const created = await m.supervisor.createArtifact({
       actorId: "dev",
       name: "checkout-patch",
@@ -210,7 +272,7 @@ test("transition gate e2e: a pass stands in for a required approve, but never th
     assert.equal((await op(m, "dev", { op: "transition_artifact", artifactId: id, to: "VERIFIED" })).ok, true);
     assert.equal((await op(m, "dev", { op: "transition_artifact", artifactId: id, to: "MERGEABLE" })).ok, true);
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `a pass satisfies a required approve: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
   } finally {
@@ -252,7 +314,7 @@ test("transition gate e2e: a TEST_RESULT PASSED signs the gate only if the sende
     const signed = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "pass" && r.actorId === "qa");
     assert.equal(signed.length, 0, "an unentitled PASSED records no sign-off");
 
-    const refused = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const refused = await merge(m, "tech-lead", id);
     assert.equal(refused.ok, false, "an asserted payload field must not move an artifact");
     assert.match(refused.reason ?? "", /qa\.pass/, "the gate still reports the signature as missing");
     assert.equal(statusOf(m, id), "MERGEABLE", "the patch stays at the gate");
@@ -288,7 +350,7 @@ test("transition gate e2e: an entitled TEST_RESULT PASSED does sign the gate", a
     const signed = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "pass" && r.actorId === "qa");
     assert.equal(signed.length, 1, "an entitled PASSED records the sign-off");
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `the signed gate must permit the merge: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
   } finally {
@@ -327,7 +389,7 @@ test("transition gate e2e: an owner holding the authority still cannot sign off 
     const signed = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "pass" && r.actorId === "dev");
     assert.equal(signed.length, 0, "an author's sign-off on their own artifact records nothing");
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, false, "the gate is not satisfiable by the artifact's own author");
     assert.equal(statusOf(m, id), "MERGEABLE", "the patch stays at the gate");
 
@@ -372,7 +434,7 @@ test("transition gate e2e: the same sign-off from a peer does open the gate", as
     const signed = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "pass" && r.actorId === "tech-lead");
     assert.equal(signed.length, 1, "a non-owner's sign-off is recorded");
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `the signed gate must permit the merge: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
   } finally {
@@ -391,7 +453,7 @@ test("transition gate e2e: a BLOCK holds the artifact until a new version rework
     const blocked = await op(m, "qa", { op: "block", subject: "quality", artifactId: id, reason: "integration suite fails on checkout" });
     assert.equal(blocked.ok, true, `qa must be able to block: ${blocked.reason ?? ""}`);
 
-    const refused = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const refused = await merge(m, "tech-lead", id);
     assert.equal(refused.ok, false, "an active block must refuse the merge despite a satisfied approval gate");
     assert.match(refused.reason ?? "", /BLOCK|block/, "the refusal names the block");
     assert.equal(statusOf(m, id), "MERGEABLE", "the blocked patch does not move");
@@ -430,7 +492,7 @@ test("transition gate e2e: a BLOCK holds the artifact until a new version rework
     assert.equal((await op(m, "dev", { op: "transition_artifact", artifactId: id, to: "VERIFIED" })).ok, true);
     assert.equal((await op(m, "dev", { op: "transition_artifact", artifactId: id, to: "MERGEABLE" })).ok, true);
 
-    const mergedV2 = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const mergedV2 = await merge(m, "tech-lead", id);
     assert.equal(mergedV2.ok, true, `the reworked version merges: ${mergedV2.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
     assert.equal(m.kernel.state.artifacts.get(id)?.version, (blockedVersion ?? 1) + 1, "it is the REWORKED version that merged");
@@ -460,7 +522,7 @@ test("transition gate e2e: a BLOCK message stalls the merge only if the sender h
     const blocks = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "block");
     assert.equal(blocks.length, 0, "asserting BLOCK is not holding quality.block");
 
-    const merged = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const merged = await merge(m, "tech-lead", id);
     assert.equal(merged.ok, true, `an unentitled block must not stall the gate: ${merged.reason ?? ""}`);
     assert.equal(statusOf(m, id), "MERGED");
 
@@ -584,7 +646,7 @@ test("transition gate e2e: an entitled BLOCK message does stall the merge", asyn
     const blocks = [...m.kernel.state.approvals.values()].flat().filter((r) => r.kind === "block" && r.actorId === "qa");
     assert.equal(blocks.length, 1, "an entitled block is recorded");
 
-    const refused = await op(m, "tech-lead", { op: "transition_artifact", artifactId: id, to: "MERGED" });
+    const refused = await merge(m, "tech-lead", id);
     assert.equal(refused.ok, false, "the entitled block holds the artifact");
     assert.equal(statusOf(m, id), "MERGEABLE");
   } finally {

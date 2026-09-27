@@ -42,6 +42,18 @@ export const DEFAULT_SPEND_CEILING_USD = 50;
  */
 export const DEFAULT_USD_PER_MTOK = 3;
 
+/**
+ * How long a child may go silent before the host treats it as wedged.
+ *
+ * Mirrors `HEARTBEAT_TIMEOUT_MS` in `./supervision` by hand rather than
+ * importing it: that module pulls in the child-spawning supervisor and the
+ * whole `child_process` stack, and this file is loaded to read one YAML file.
+ * A default is the one kind of value that can be safely stated twice, and the
+ * import cycle between the two (supervision reads the config's number, the
+ * config names the tree's default) is the reason not to.
+ */
+export const DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000;
+
 /** Per-million-token prices for one model. */
 export interface ModelPrice {
   inputPerMtok: number;
@@ -58,6 +70,14 @@ export interface HostConfig {
   /** model id -> price. Missing models bill at `defaultUsdPerMtok`. */
   modelPrices: Record<string, ModelPrice>;
   defaultUsdPerMtok: number;
+  /**
+   * Missed-heartbeat window for the supervision watchdog, in ms. A child
+   * silent for longer than this (on two consecutive polls) is stopped and
+   * restarted. Never `null`: "never kill a silent child" is a switch an
+   * operator can get by setting a very large number, and spelling it as `null`
+   * would make every reader carry a branch for a state nobody wants.
+   */
+  heartbeatTimeoutMs: number;
   /** Non-fatal complaints about the file, surfaced by the CLI at boot. */
   warnings: string[];
   /**
@@ -84,6 +104,7 @@ export function defaultHostConfig(): HostConfig {
     spendCeilingUsd: DEFAULT_SPEND_CEILING_USD,
     modelPrices: {},
     defaultUsdPerMtok: DEFAULT_USD_PER_MTOK,
+    heartbeatTimeoutMs: DEFAULT_HEARTBEAT_TIMEOUT_MS,
     warnings: [],
     explicitKeys: [],
   };
@@ -179,6 +200,20 @@ export function parseHostConfig(text: string): HostConfig {
   if (fallback !== undefined && fallback !== null) {
     config.defaultUsdPerMtok = fallback;
     explicit.push("default_usd_per_mtok");
+  }
+  const heartbeat = optionalNumber(raw, "heartbeat_timeout_ms", config.warnings);
+  if (heartbeat !== undefined) {
+    if (heartbeat === null) {
+      // Not silently the default: an operator who wrote `null` believes they
+      // turned the watchdog off, and a host that quietly kept killing silent
+      // children anyway would be the worst of both answers.
+      config.warnings.push(
+        `host.yaml: heartbeat_timeout_ms cannot be null — using ${config.heartbeatTimeoutMs}ms; raise it to a very large number to make a silent child effectively unkillable`,
+      );
+    } else {
+      config.heartbeatTimeoutMs = heartbeat;
+      explicit.push("heartbeat_timeout_ms");
+    }
   }
   config.modelPrices = parsePrices(raw.model_prices, config.warnings);
   if (Object.keys(config.modelPrices).length > 0) explicit.push("model_prices");

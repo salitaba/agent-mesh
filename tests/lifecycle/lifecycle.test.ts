@@ -109,12 +109,23 @@ test("lifecycle: mission completion marks idle agents completed", async () => {
     criteria: [{ id: "done-one", description: "one criterion", mandatory: true }],
   });
   const st = m.kernel.state;
-  st.activeGoalId && m.kernel.state.goals.get(st.activeGoalId);
+  // The sweep freezes IDLE/WAITING seats; one still STARTING (never activated)
+  // is left where it is. Bring pm up through the legal STARTING -> IDLE edge
+  // so there is an idle seat for the sweep to act on.
+  await m.kernel.emit("agent.started", { agentId: "pm" }, { actorId: "system" });
+  assert.equal(st.agents.get("pm")?.state.lifecycle, "IDLE", "precondition: pm is idle");
   await m.supervisor.createArtifact({ actorId: "pm", name: "evidence", type: "ADR", content: evidenceContent("completion evidence") });
   const art = [...st.artifacts.values()][0];
   await m.supervisor.transitionArtifact("pm", art.id, { to: "READY_FOR_REVIEW" });
   await m.supervisor.recordDecision("pm", "accept", "criterion:done-one", art.id, "accepting");
   await waitFor("goal completed", () => goalOf(m)?.status === "COMPLETED", 6000);
+  // What the title promises: the goal closing is the trigger, the sweep that
+  // freezes the idle seat is the behaviour. The goal flipping alone proved
+  // only the first half.
+  assert.equal(goalOf(m)?.acceptanceCriteria.find((c) => c.id === "done-one")?.status, "EVIDENCED", "the accept decision evidenced the criterion");
+  // The sweep runs after `goal.completed` (it drains in-flight turns first).
+  await waitFor("pm swept", () => st.agents.get("pm")?.state.lifecycle !== "IDLE", 6000).catch(() => undefined);
+  assert.equal(st.agents.get("pm")?.state.lifecycle, "COMPLETED", "the idle seat is swept to COMPLETED with the mission");
   await m.cleanup();
 });
 

@@ -1,7 +1,8 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import type { AcceptanceCriterion, Goal } from "../../protocol/src/index";
-import { ProjectionError } from "./projections-helpers";
+import { ProjectionError, artifactForRef, isTerminalGoal } from "./projections-helpers";
+import { criteriaWouldComplete } from "./termination";
 
 /**
  * Progress is a FUNCTION of the acceptance criteria, not an independent
@@ -28,7 +29,15 @@ export function recomputeGoalProgress(state: Projections, goal: Goal, at: string
   });
 }
 
-export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<string, any>): boolean {
+/**
+ * The criterion and verdict guards below restate the supervisor's own checks
+ * (`markCriterionEvidence`, `removeCriterion`, `reviseCriterion`, the watchdog's
+ * `complete` verdict) and run on a LIVE emit only -- see `ApplyOptions` in
+ * projections.ts. Replay applies what the log holds, so a mission written by
+ * older code still boots.
+ */
+export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<string, any>, opts: { live?: boolean } = {}): boolean {
+  const live = opts.live === true;
   switch (event.type) {
     case "goal.created": {
       const goal = p.goal as Goal;
@@ -45,6 +54,16 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
     case "goal.status_changed": {
       const goal = state.goals.get(p.goalId);
       if (!goal) throw new ProjectionError(`unknown goal ${p.goalId}`, event.type);
+      // A side door around the verdict guards on `goal.completed|failed`: the
+      // only live emitter moves an ESCALATED goal back to ACTIVE. A verdict has
+      // its own event (which checks the criteria), and a finished goal leaves
+      // only through `goal.reopened`.
+      if (live && (p.status === "COMPLETED" || p.status === "FAILED")) {
+        throw new ProjectionError(`goal ${goal.id} cannot become ${p.status} by a status change; emit the verdict`, event.type);
+      }
+      if (live && isTerminalGoal(goal.status)) {
+        throw new ProjectionError(`goal ${goal.id} is already ${goal.status}`, event.type);
+      }
       goal.status = p.status;
       state.goalHistory.push({ status: p.status, at: event.timestamp, reason: p.reason });
       if (p.status === "COMPLETED") goal.completedAt = event.timestamp;
@@ -161,6 +180,20 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
     case "goal.failed": {
       const goal = state.goals.get(event.goalId ?? state.activeGoalId ?? "");
       if (goal) {
+        // The watchdog emits a verdict only on a goal that has none yet
+        // (`TerminationManager.evaluate` answers `continue` for COMPLETED and
+        // FAILED), and a verdict leaves only through `goal.reopened`. A second
+        // verdict landing on a finished mission would overwrite it -- a
+        // `goal.failed` rewriting a delivered result as a failure.
+        if (live && isTerminalGoal(goal.status)) {
+          throw new ProjectionError(`goal ${goal.id} is already ${goal.status}`, event.type);
+        }
+        // And `complete` is only ever the verdict when every mandatory
+        // criterion is satisfied -- by the termination manager's own rule, not
+        // a copy of it.
+        if (live && event.type === "goal.completed" && !criteriaWouldComplete(goal, goal.acceptanceCriteria)) {
+          throw new ProjectionError(`goal ${goal.id} has mandatory criteria still unsatisfied`, event.type);
+        }
         const map: Record<string, Goal["status"]> = {
           "goal.completed": "COMPLETED",
           "goal.escalated": "ESCALATED",
@@ -198,6 +231,24 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       if (goal && p.criterionId) {
         const c = goal.acceptanceCriteria.find((x) => x.id === p.criterionId);
         if (c) {
+          // `markCriterionEvidence`'s two identity gates. A reopened criterion
+          // refuses the artifact the operator rejected -- otherwise the reopen
+          // loop closes on the same URI -- and a VERIFIED claim on a mandatory
+          // criterion refuses an artifact nobody ever submitted (DRAFT) or one
+          // that was refused (REJECTED). Resolved with the same exact-match
+          // `artifactForRef` the supervisor uses, against the state the event
+          // lands on, which is the state the supervisor judged.
+          const uri: string | undefined = p.evidence?.artifactRef?.uri;
+          if (live && uri && c.rejectedEvidence?.includes(uri)) {
+            throw new ProjectionError(`criterion ${c.id} refuses rejected evidence ${uri}`, event.type);
+          }
+          const claimedVerified = p.verified !== false && p.evidence?.verified !== false;
+          if (live && claimedVerified && c.mandatory && uri) {
+            const cited = artifactForRef(state, undefined, uri);
+            if (cited && (cited.status === "DRAFT" || cited.status === "REJECTED")) {
+              throw new ProjectionError(`criterion ${c.id} cannot be evidenced by ${cited.status} artifact ${cited.name}`, event.type);
+            }
+          }
           // An UNVERIFIED claim (the claiming turn invoked no verification
           // tool) is recorded but does NOT satisfy the criterion — see
           // CriterionStatus.ASSERTED. `verified !== false` keeps every event
@@ -231,6 +282,15 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       if (goal && p.criterionId) {
         const c = goal.acceptanceCriteria.find((x) => x.id === p.criterionId);
         if (c) {
+          // `reviseCriterion`'s demotion guard, which is removal's: dropping an
+          // unproven criterion out of the mandatory set moves the denominator
+          // exactly as deleting it would. See `requirement.removed`.
+          if (live && p.mandatory === false && c.mandatory) {
+            const remaining = goal.acceptanceCriteria.map((x) => (x.id === c.id ? { ...x, mandatory: false } : x));
+            if (criteriaWouldComplete(goal, remaining) && !criteriaWouldComplete(goal, goal.acceptanceCriteria)) {
+              throw new ProjectionError(`demoting ${c.id} would complete goal ${goal.id} without the work being done`, event.type);
+            }
+          }
           if (typeof p.description === "string" && p.description.trim()) c.description = p.description;
           if (typeof p.mandatory === "boolean") c.mandatory = p.mandatory;
         }
@@ -244,13 +304,33 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
       const goal = state.goals.get(event.goalId ?? state.activeGoalId ?? "");
       if (goal && p.criterionId) {
         const i = goal.acceptanceCriteria.findIndex((x) => x.id === p.criterionId);
+        // The most dangerous event in this file: the mission is now judged
+        // against fewer criteria than it was a moment ago, so a removal can
+        // move a run toward done with no work finished.
+        //
+        // This reducer used to accept any removal and leave the refusal to
+        // `Supervisor.removeCriterion`, on the grounds that a reducer that
+        // dropped events would make replay disagree with the log. That is right
+        // about REPLAY, and replay still applies whatever removal a log holds.
+        // It is wrong about a LIVE emit: a refusal there throws before `append`,
+        // so the event never reaches the log and there is nothing for a replay
+        // to disagree with. What the old split allowed was a raw emit removing
+        // the last unproven criterion. So, live, the supervisor's two refusals
+        // are restated by its own `criteriaWouldComplete` rule:
+        //
+        //   1. never empty the mandatory set;
+        //   2. never let the removal itself be what completes the goal.
+        if (i >= 0 && live) {
+          const removed = goal.acceptanceCriteria[i];
+          const remaining = goal.acceptanceCriteria.filter((_, j) => j !== i);
+          if (removed.mandatory && remaining.every((x) => !x.mandatory)) {
+            throw new ProjectionError(`criterion ${removed.id} is the last mandatory criterion of goal ${goal.id}`, event.type);
+          }
+          if (criteriaWouldComplete(goal, remaining) && !criteriaWouldComplete(goal, goal.acceptanceCriteria)) {
+            throw new ProjectionError(`removing ${removed.id} would complete goal ${goal.id} without the work being done`, event.type);
+          }
+        }
         if (i >= 0) goal.acceptanceCriteria.splice(i, 1);
-        // Intended, and the most dangerous line in this file: the mission is
-        // now judged against fewer criteria than it was a moment ago, so a
-        // removal can move a run toward done with no work finished. The
-        // refusal lives in `Supervisor.removeCriterion`, not here — a reducer
-        // that dropped events would make replay disagree with the log. Any
-        // `requirement.removed` that reached the log was legal when written.
         recomputeGoalProgress(state, goal, event.timestamp);
       }
       break;

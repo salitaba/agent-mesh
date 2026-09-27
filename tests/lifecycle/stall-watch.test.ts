@@ -183,8 +183,14 @@ test("stall: context shows THIS goal's unmet criteria over stale completion memo
   assert.match(ctx, /do not treat them as permission to stop/);
 
   // Evidenced criteria render as done, not as work.
+  // Through the reducer's own edge, not a write into the projection.
   const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId!)!;
-  goal.acceptanceCriteria[0].status = "EVIDENCED";
+  await m.kernel.emit(
+    "requirement.satisfied",
+    { criterionId: "requirements-documented", evidence: { verified: true, note: "proven in the test" } },
+    { actorId: "pm", goalId: goal.id },
+  );
+  assert.equal(goal.acceptanceCriteria.find((c) => c.id === "requirements-documented")?.status, "EVIDENCED", "precondition: evidenced");
   const ctx2 = renderContextInstructions(buildAgentContext(deps, "pm"));
   assert.match(ctx2, /\[x\] requirements-documented/);
   assert.match(ctx2, /1 of 2 mandatory criteria are UNMET/);

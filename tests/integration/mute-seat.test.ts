@@ -136,8 +136,9 @@ test("a seat with no mesh server at all is reported mute", async () => {
     onMuteSuspected: (i) => muted.push(i),
   });
   const s = await rt.start(devDef, runtimeCtx(workspace()));
-  await rt.send(s, agentInput("go"));
-  await rt.stop(s);
+  // The seat cannot issue a single op, so the turn fails rather than running.
+  await assert.rejects(rt.send(s, agentInput("go")), /mesh MCP bridge/);
+  await rt.stop(s).catch(() => undefined);
   assert.equal(muted.length, 1);
   assert.equal(muted[0]!.agentId, "developer");
   assert.equal(muted[0]!.meshBridgeAttached, false);
@@ -155,8 +156,9 @@ test("a mesh server present but not connected still counts as mute", async () =>
     onMuteSuspected: (i) => muted.push(i),
   });
   const s = await rt.start(devDef, runtimeCtx(workspace()));
-  await rt.send(s, agentInput("go"));
-  await rt.stop(s);
+  // The seat cannot issue a single op, so the turn fails rather than running.
+  await assert.rejects(rt.send(s, agentInput("go")), /mesh MCP bridge/);
+  await rt.stop(s).catch(() => undefined);
   assert.equal(muted.length, 1);
   assert.deepEqual(muted[0]!.servers, [{ name: "mesh", status: "failed" }]);
 });
@@ -168,9 +170,9 @@ test("the alarm fires once per session, not once per turn", async () => {
     onMuteSuspected: (i) => muted.push(i),
   });
   const s = await rt.start(devDef, runtimeCtx(workspace()));
-  await rt.send(s, agentInput("one"));
-  await rt.send(s, agentInput("two"));
-  await rt.send(s, agentInput("three"));
-  await rt.stop(s);
+  for (const turn of ["one", "two", "three"]) {
+    await assert.rejects(rt.send(s, agentInput(turn)));
+  }
+  await rt.stop(s).catch(() => undefined);
   assert.equal(muted.length, 1, "three turns on one mute session is still one seat being broken");
 });

@@ -47,13 +47,17 @@ test("mcp bridge: the compiled CLI replies to initialize over a real stdio pipe 
 
 test("mcp bridge: --read-only reaches the bus and exposes only observability tools", async () => {
   const m = await makeMesh({ agents: [{ id: "dev", role: "developer", capabilities: [], interests: [] }], mayContact: { dev: [] } });
+  // An external observer attaches to the human seat with the operator token;
+  // there is no fixed human credential (it used to be `human-local`).
+  const prevToken = process.env.MESH_API_TOKEN;
+  process.env.MESH_API_TOKEN = "operator-observer-token";
   const server = createHttpServer(m, { dashboardDir: undefined });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
   const bin = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs");
   const child = spawn(
     process.execPath,
-    [bin, "mcp", "--agent", "human", "--token", "human-local", "--read-only", "--bus", `http://127.0.0.1:${port}`],
+    [bin, "mcp", "--agent", "human", "--token", "operator-observer-token", "--read-only", "--bus", `http://127.0.0.1:${port}`],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
   const frames: any[] = [];
@@ -95,5 +99,7 @@ test("mcp bridge: --read-only reaches the bus and exposes only observability too
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     await m.cleanup();
+    if (prevToken === undefined) delete process.env.MESH_API_TOKEN;
+    else process.env.MESH_API_TOKEN = prevToken;
   }
 });

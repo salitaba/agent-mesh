@@ -16,6 +16,16 @@ async function park(m: MeshInstance, agentId: string): Promise<void> {
   }
 }
 
+/**
+ * The debtor took a turn that was shown the ask (`message.delivered`). A wait
+ * edge needs it: an ask still unread in its debtor's box is one the debtor has
+ * not been asked yet (NOTES-live-run-20260925 §5), so these fixtures hand each
+ * ask over before they expect a ring.
+ */
+async function handed(m: MeshInstance, debtor: string, messageId: string | undefined): Promise<void> {
+  await m.kernel.emit("message.delivered", { agentId: debtor, messageId, turnId: `turn-test-${debtor}` }, { actorId: debtor });
+}
+
 test("termination: successful completion needs every mandatory criterion evidenced", async () => {
   const m = await makeMesh({
     agents: [{ id: "pm", role: "pm", authority: ["requirements.accept"], interests: [] }],
@@ -431,13 +441,15 @@ test("deadlock: circular wait between two agents is detected exactly, without nu
   assert.equal(detector.scan(state).filter((f) => f.kind === "wait_cycle").length, 0, "open requests alone are not a deadlock");
 
   for (const id of ["architect", "dev"]) await park(m, id);
+  await handed(m, "dev", a.messageId);
+  await handed(m, "architect", b.messageId);
   const cycles = detector.scan(state).filter((f) => f.kind === "wait_cycle");
   assert.equal(cycles.length, 1, "the cycle must be reported exactly once, not once per participant");
   assert.deepEqual([...cycles[0].participants].sort(), ["architect", "dev"]);
   await m.cleanup();
 });
 
-test("deadlock: a circular wait resolves itself instead of freezing the whole mission", async () => {
+test("deadlock: the FIRST circular wait resolves itself instead of freezing the whole mission", async () => {
   const m = await makeMesh({
     agents: [
       { id: "architect", role: "architect", interests: [], capabilities: ["repository.read"] },
@@ -452,10 +464,13 @@ test("deadlock: a circular wait resolves itself instead of freezing the whole mi
   await new Promise((r) => setTimeout(r, 5));
   const newer = await m.supervisor.sendMessage({ from: "dev", to: ["architect"], type: "REQUEST", newThread: { subject: "which schema?" }, payload: {} });
   for (const id of ["architect", "dev"]) await park(m, id);
+  await handed(m, "dev", older.messageId);
+  await handed(m, "architect", newer.messageId);
 
   await m.supervisor.forceWatchdog();
 
-  // The runtime settles the ring itself: no operator card, mission stays live.
+  // The runtime settles the ring itself, ONCE — see the recurrence test below
+  // for what happens when the same ring comes back.
   assert.equal(goalOf(m)?.status, "ACTIVE", "a self-resolvable deadlock must not freeze the mission");
   assert.equal(
     [...state.escalations.values()].filter((e) => e.status === "OPEN" && e.reason.startsWith("deadlock:")).length,
@@ -467,9 +482,67 @@ test("deadlock: a circular wait resolves itself instead of freezing the whole mi
   assert.equal(state.pendingRequests.has(older.messageId!), true, "the older ask must survive");
   const types = eventTypes(await m.store.read());
   assert.ok(types.includes("deadlock.auto_resolved"), "the runtime's decision must be recorded in the log");
+  // The break erases its own evidence — voiding the ask removes the wait-for
+  // edge, so the detector prunes the key and occurrence N looks like occurrence
+  // 1. Counting it is what makes the two distinguishable, and it is the seam the
+  // recurrence test below stands on.
+  assert.equal(
+    state.conflicts.get("wait_cycle:architect>dev")?.count,
+    1,
+    "the break is counted, so a recurrence can be told from a first occurrence",
+  );
   // qa was never in the cycle and must be untouched by the resolution.
   assert.equal(state.agents.get("qa")?.state.lifecycle, "STARTING", "uninvolved agents are not disturbed");
   await m.cleanup();
+});
+
+test("deadlock: a wait cycle that keeps coming back stops being auto-broken and reaches a human", async () => {
+  // Breaking a ring is a repair the first time and a loop the fifth. Measured on
+  // the skill-panel run of 2026-09-24: `wait_cycle:ui-designer>ux-designer` was
+  // detected and broken 5 times in 33 minutes, the two seats spent 383,402
+  // tokens between them after the first break, and NO escalation was ever
+  // raised — because every gate that could have noticed is keyed on something
+  // the break destroys (the nudge ladder on a messageId the void removes, the
+  // stall cap on a streak the recovery activation resets, halt-neglect on a goal
+  // that is still ACTIVE), and `repeated_conflict.threshold` governs a counter
+  // that wait cycles never wrote to.
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [], capabilities: ["repository.read"] },
+      { id: "dev", role: "developer", interests: [], capabilities: ["repository.read"] },
+    ],
+    mayContact: { architect: ["dev"], dev: ["architect"] },
+    mode: "parked",
+  });
+  try {
+    const state = m.kernel.state;
+    const threshold = m.config.escalation.repeatedConflictThreshold;
+    const KEY = "wait_cycle:architect>dev";
+    const breaks = async () => eventTypes(await m.store.read()).filter((t) => t === "deadlock.auto_resolved").length;
+
+    // architect waits on dev for the whole test, so every re-ask from dev closes
+    // the SAME ring and yields the SAME conflictKey — the sorted-participants
+    // property that made each recurrence indistinguishable from the first.
+    const first = await m.supervisor.sendMessage({ from: "architect", to: ["dev"], type: "REQUEST", newThread: { subject: "which db?" }, payload: {} });
+    for (const id of ["architect", "dev"]) await park(m, id);
+    await handed(m, "dev", first.messageId);
+
+    for (let round = 0; round <= threshold; round++) {
+      await m.supervisor.forceWatchdog(); // ring is down; the detector forgets the key
+      const reask = await m.supervisor.sendMessage({ from: "dev", to: ["architect"], type: "REQUEST", newThread: { subject: `re-ask ${round}` }, payload: {} });
+      for (const id of ["architect", "dev"]) await park(m, id);
+      await handed(m, "architect", reask.messageId);
+      await m.supervisor.forceWatchdog(); // ring is live again
+    }
+
+    assert.equal(state.conflicts.get(KEY)?.count, threshold, "the recurrence count must outlive the break that erased the cycle");
+    assert.equal(await breaks(), threshold, "the runtime must stop repairing a ring it has already repaired to the limit");
+    const cards = [...state.escalations.values()].filter((e) => e.status === "OPEN" && e.reason === "deadlock:wait_cycle");
+    assert.equal(cards.length, 1, "a ring the runtime cannot settle must reach a human, exactly once");
+    assert.equal(cards[0]!.conflictKey, KEY, "the card names the ring, not a generic repeated conflict");
+  } finally {
+    await m.cleanup();
+  }
 });
 
 test("deadlock: a waiting chain that terminates is not a false positive", async () => {

@@ -2,6 +2,14 @@ import type { MeshEvent } from "../../protocol/src/index";
 
 export type TurnStatus = "running" | "ok" | "waiting" | "blocked" | "failed";
 
+/** What a turn did, counted off its own events in the log. */
+export interface TurnOps {
+  messages: number;
+  artifacts: number;
+  tasks: number;
+  decisions: number;
+}
+
 export interface TurnStep {
   turnId: string;
   agentId: string;
@@ -13,7 +21,16 @@ export interface TurnStep {
   durationMs?: number;
   status: TurnStatus;
   lifecycle: string;
-  ops: { messages: number; artifacts: number; tasks: number; decisions: number };
+  /**
+   * Absent means no log-derived step was found for this turn, so nothing was
+   * counted. That is not the same claim as four zeros. The server used to fill
+   * the gap with `{0,0,0,0}` for any tracker turn older than the log window it
+   * had scanned, and the dashboard read that as "the kernel refused the
+   * attempted actions" for a turn that had published artifacts. One live turn
+   * read 8/8/0/8 at `?limit=200` and 0/0/0/0 at `?limit=60`: the answer
+   * depended on how far back the query happened to look.
+   */
+  ops?: TurnOps;
   messageIds: string[];
   artifactIds: string[];
   tokens: number;
@@ -56,11 +73,45 @@ export interface TurnStep {
     opsStartAt?: number;
     opsDoneAt?: number;
     endedAt?: number;
+    /**
+     * Future stamps, not phase marks: when the turn will be stopped as things
+     * stand, and the hard stop no extension passes. Anything that walks these
+     * marks as a sequence of legs must skip both. Mirrored at top level below.
+     */
+    deadlineAt?: number;
+    ceilingAt?: number;
   };
   attempt?: number;
   streamChars?: number;
-  /** Tool frames seen — the only throughput a file-writing turn produces. */
+  /**
+   * Tool frames seen — the only throughput a file-writing turn produces.
+   * FRAMES, not calls: a call's start and its result are both frames.
+   */
   toolFrames?: number;
+  /**
+   * The live work of a turn still in the tracker's ring. All of it is
+   * live-only — the log carries none — so every field is optional, and absent
+   * means unknown rather than zero.
+   *
+   * Tool calls announced so far: calls, not frames (`toolFrames` is ~2x this).
+   */
+  toolCallCount?: number;
+  /**
+   * The one call a reader wants on a list row: the newest still running, else
+   * the newest. The full list stays on `/turns/:id` — a /steps response is
+   * polled every few seconds at limit 60 and must not carry 60 calls per row.
+   */
+  currentTool?: CurrentTool;
+  /** When the turn will be stopped as things stand (epoch ms). Moves later when extended. */
+  deadlineAt?: number;
+  /** The hard stop no extension passes (epoch ms). */
+  ceilingAt?: number;
+  /** Billable tokens so far (cache reads excluded). Superseded by `tokens` once the turn ends. */
+  liveTokens?: number;
+  /** Distinct files the turn asked to write or edit. */
+  filesTouchedCount?: number;
+  /** Deadline warnings sent to the seat mid-turn. */
+  advisoryCount?: number;
   /** Structured crash detail (kind, message, frames, cause chain, phase). */
   errorDetail?: {
     kind: string;
@@ -71,6 +122,43 @@ export interface TurnStep {
   };
   /** Per-op kernel latency, in execution order. */
   opTimings?: Array<{ op: string; ms: number; ok: boolean; reason?: string }>;
+}
+
+/** A tool call as a list row shows it — `LiveToolCall` minus its id and error. */
+export interface CurrentTool {
+  name: string;
+  target?: string;
+  status: "running" | "completed" | "failed";
+  startedAt: number;
+  endedAt?: number;
+}
+
+/**
+ * The call to show for a turn: the newest one still running, else the newest.
+ *
+ * Structural rather than core's `LiveToolCall`, so this package does not grow
+ * a dependency on core for one shape. The list is oldest first, as the tracker
+ * keeps it; position decides "newest", not `startedAt`, so two calls stamped in
+ * the same millisecond still resolve to the one announced last.
+ */
+export function currentToolOf(tools: ReadonlyArray<CurrentTool> | undefined): CurrentTool | undefined {
+  if (!Array.isArray(tools) || tools.length === 0) return undefined;
+  let pick: CurrentTool | undefined;
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (tools[i]?.status === "running") {
+      pick = tools[i];
+      break;
+    }
+  }
+  pick ??= tools[tools.length - 1];
+  if (!pick) return undefined;
+  return {
+    name: pick.name,
+    ...(pick.target ? { target: pick.target } : {}),
+    status: pick.status,
+    startedAt: pick.startedAt,
+    ...(pick.endedAt !== undefined ? { endedAt: pick.endedAt } : {}),
+  };
 }
 
 function turnIdOf(e: MeshEvent): string | undefined {
@@ -87,11 +175,14 @@ function turnIdOf(e: MeshEvent): string | undefined {
  * falls back to per-agent running-step attribution for messages/artifacts.
  */
 export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
-  const byTurn = new Map<string, TurnStep>();
+  // A step built here always has its counts: it was built from events, so
+  // zero is a measurement. Only a step with no log behind it lacks `ops`.
+  type CountedStep = TurnStep & { ops: TurnOps };
+  const byTurn = new Map<string, CountedStep>();
   const runningByAgent = new Map<string, string>(); // agentId -> turnId
   const awakenedIdToTurn = new Map<string, string>(); // activation event id -> turnId
 
-  const ensure = (turnId: string, agentId: string, at: string, seq: number): TurnStep => {
+  const ensure = (turnId: string, agentId: string, at: string, seq: number): CountedStep => {
     let s = byTurn.get(turnId);
     if (!s) {
       s = {
@@ -140,7 +231,7 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
 
     if (e.type === "agent.state_changed") {
       const agentId = String(p.agentId ?? e.actorId ?? "");
-      let s: TurnStep | undefined;
+      let s: CountedStep | undefined;
       if (tid) s = byTurn.get(tid) ?? (agentId ? ensure(tid, agentId, e.timestamp, seq) : undefined);
       else if (agentId && runningByAgent.has(agentId)) s = byTurn.get(runningByAgent.get(agentId)!);
       else if (e.causationId && awakenedIdToTurn.has(e.causationId)) {
@@ -226,7 +317,7 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
       e.type === "architecture.approved" ||
       e.type === "artifact.transition"
     ) {
-      let s: TurnStep | undefined;
+      let s: CountedStep | undefined;
       if (tid) s = byTurn.get(tid);
       if (!s && e.actorId && runningByAgent.has(e.actorId)) s = byTurn.get(runningByAgent.get(e.actorId!)!);
       if (!s) continue;
@@ -242,8 +333,13 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
         if (aid) s.artifactIds.push(String(aid));
       } else if (e.type.startsWith("task.")) {
         s.ops.tasks++;
-      } else {
-        // decision.* plus the review/approval family above.
+      } else if (!((e.type === "artifact.transition" || e.type === "architecture.approved") && p.derived === true)) {
+        // decision.* plus the review/approval family above. A `derived`
+        // transition is the supervisor mirroring a move the reducer already
+        // made (a review request moving its artifact to UNDER_REVIEW); counting
+        // it gave an architect who requested four reviews "8 decisions" and no
+        // decision event to show for them. A derived `architecture.approved` is
+        // the same kind of echo: it restates the `review.approved` it names.
         s.ops.decisions++;
       }
       continue;

@@ -52,8 +52,26 @@ export interface ChildProcessSupervisorOptions {
   onExit?: (info: { ref: ProjectRef; code: number | null; signal: NodeJS.Signals | null; expected: boolean }) => void;
   /** Forward child stdout/stderr, minus the handshake lines. */
   onLog?: (info: { ref: ProjectRef; stream: "stdout" | "stderr"; line: string }) => void;
-  /** Each child heartbeat, carrying the RSS the tab indicator shows. */
-  onHeartbeat?: (info: { ref: ProjectRef; rss: number; at: string }) => void;
+  /**
+   * Each child heartbeat, carrying the RSS the tab indicator shows plus the
+   * two facts the host can learn nowhere else: the child's own mode, and
+   * whether its goal is ACTIVE.
+   */
+  onHeartbeat?: (info: { ref: ProjectRef; rss: number; at: string; mode?: "parked" | "live"; goalActive?: boolean }) => void;
+  /**
+   * A project's mode changed to something it was not before.
+   *
+   * On change only, and never on every beat: the child reports its mode every
+   * ~2s and the host persists what it hears, so this is the hook that keeps
+   * that from becoming a disk write per project per beat. The receiving end
+   * (the registry) is likewise a no-op when the value it is handed already
+   * matches what is on disk.
+   *
+   * Called synchronously from the beat parser. A listener that needs to be
+   * async must not let its failure reach here: the beat path is liveness
+   * evidence and must survive a store it cannot write.
+   */
+  onModeChange?: (id: string, mode: "parked" | "live") => void;
 }
 
 /** Billed token counts for one model, as last reported by a child. */
@@ -78,6 +96,24 @@ export interface ChildHeartbeat {
   models: ChildModelTokens[];
   /** Turns in flight in this child, for the aggregate concurrency cap. */
   runningTurns: number;
+  /**
+   * The child's scheduler mode, as the child reported it. Absent from a child
+   * old enough not to send it, which is why every reader treats it as unknown
+   * rather than as "parked".
+   *
+   * The host cannot derive this. `/mission/start` and `/mission/park` are
+   * proxied verbatim, so a mission an operator made live inside a child is
+   * invisible to the host — and the next launch of that project would spawn the
+   * child in the host's *own* default mode, silently parking a live mission.
+   */
+  mode?: "parked" | "live";
+  /**
+   * True while the child's active goal is ACTIVE, as of this beat. Absent when
+   * the child does not report it. Lets the host say "this mission is not
+   * running" about the one state that hides it: a parked child that still holds
+   * an ACTIVE goal, where every surface else reads "running".
+   */
+  goalActive?: boolean;
 }
 
 export interface RunningChild {
@@ -184,6 +220,33 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
   readonly hostId = `${process.pid}-${randomBytes(8).toString("hex")}`;
   private children = new Map<string, RunningChild>();
   private stopping = new Set<string>();
+  /**
+   * Per-project mode, as last reported by that project's own child.
+   *
+   * Mode used to be one host-wide value (`opts.mode`), which is right for the
+   * first launch of a project and wrong for every launch after it: the operator
+   * starts a mission inside the child through the proxied `/mission/start`,
+   * nothing tells the host, and the project's next launch — an operator restart,
+   * or the automatic restart after a crash — spawns the child back in the
+   * host's default mode. On a host started without `--live` that is `parked`,
+   * so a restart parked a running mission and nothing said so.
+   *
+   * Kept here rather than in the host because `launch` is the only place the
+   * decision is consumed, and the registry drives it through the supervision
+   * tree, which has no per-launch options to thread.
+   *
+   * This map is the *running* memory: what this process has heard from its
+   * children. It is not the last word, because a host process that restarts
+   * starts with it empty and the child that knew the answer is gone with it —
+   * so the mode each project was last in also rides on its `ProjectRef`
+   * (`lastMode`), which is the host's durable per-project state. `launch`
+   * consults this map first, then that, then the host's own default; see
+   * `spawnModeFor`. Persistent bookkeeping that stays per-process (the crash
+   * breaker, the policy parks) is a different thing: those describe *this*
+   * host's decisions, and a park they imposed is re-imposed by the limit check
+   * on the next beat rather than remembered across a restart.
+   */
+  private projectModes = new Map<string, "parked" | "live">();
   private readonly opts: Required<Pick<ChildProcessSupervisorOptions, "readyTimeoutMs" | "stopGraceMs" | "mode" | "gitMode">> &
     ChildProcessSupervisorOptions;
 
@@ -203,6 +266,74 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
 
   running(id: string): RunningChild | undefined {
     return this.children.get(id);
+  }
+
+  /**
+   * The mode this project's child last reported, or the host's own configured
+   * default when this host has not heard from it.
+   *
+   * Falling back to `opts.mode` is what keeps two things true at once — a host
+   * booted without `--live` still spawns parked children (nothing is known
+   * about a project it has never run), and a host booted with `--live` still
+   * boots live.
+   *
+   * This is the *running* memory only: it answers "what did my child say",
+   * which is not the same question as `spawnModeFor`'s "what will I spawn".
+   */
+  modeFor(id: string): "parked" | "live" {
+    return this.projectModes.get(id) ?? this.opts.mode;
+  }
+
+  /**
+   * The mode this project's next launch will actually use.
+   *
+   * Three sources, in strict order:
+   *
+   *   1. What this host heard from the child. Freshest by construction, and
+   *      the only one that knows an operator pressed Start inside a project.
+   *   2. What the project was last in before this host started (`ref.lastMode`,
+   *      restored from the registry). This is the whole point of persisting it:
+   *      a host restarted after a crash used to spawn every child in its own
+   *      default and silently park live missions.
+   *   3. The host's own default, which is `parked` unless `--live`.
+   *
+   * The persisted value outranks the default on purpose, `--live` included.
+   * `--live` says what to do about a project *nothing is known about*; it is
+   * not "start whatever was stopped". Letting it win would walk straight back
+   * over the one park that is a policy rather than an opinion — the aggregate
+   * spend ceiling parks a child through its own route, the child reports
+   * parked, and that is what gets persisted. A `--live` host that resurrected
+   * it would spend past a ceiling the operator set, which is the failure mode
+   * the ceiling exists to prevent. `/mission/start` is the way to resume a
+   * project, and it is what the parked notice already names.
+   */
+  private spawnModeFor(ref: ProjectRef): "parked" | "live" {
+    return this.projectModes.get(ref.id) ?? ref.lastMode ?? this.opts.mode;
+  }
+
+  /**
+   * Remember the mode a project's child reports for itself.
+   *
+   * Called on every well-formed beat, so the record follows an operator's
+   * `/mission/start` or `/mission/park` within one beat of it happening, and a
+   * project parked by the host's own ceiling or turn-cap brake stays parked on
+   * its next launch. That last part is the point: a policy park is not a
+   * failure the operator can clear by restarting, it is the host doing what it
+   * was configured to do.
+   *
+   * Records a change, not a repetition: the beat arrives every ~2s and
+   * `onModeChange` is what persists the value, so an unconditional call here
+   * would be a disk write per open project per beat forever.
+   */
+  rememberMode(id: string, mode: "parked" | "live"): void {
+    if (this.projectModes.get(id) === mode) return;
+    this.projectModes.set(id, mode);
+    this.opts.onModeChange?.(id, mode);
+  }
+
+  /** The project is gone from the registry: drop what it was doing. */
+  forgetMode(id: string): void {
+    this.projectModes.delete(id);
   }
 
   runningIds(): string[] {
@@ -287,7 +418,12 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
         MESH_STRICT_AUTH: "1",
         MESH_CHILD_CONFIG: ref.configPath,
         MESH_CHILD_PROJECT_ID: ref.id,
-        MESH_CHILD_MODE: this.opts.mode,
+        // Per project, not per host: a project the operator made live comes
+        // back live, and one the host itself parked (ceiling, turn cap) or the
+        // operator parked comes back parked. `spawnModeFor` reads the restore
+        // order — this process's memory, then what the project was last in
+        // before this process started, then the host's own default.
+        MESH_CHILD_MODE: this.spawnModeFor(ref),
         // Never left undefined: the spread above would let a stray
         // MESH_CHILD_GIT in the host's own environment through, which is the
         // one way a host-wide setting could silently outrank a project's.
@@ -462,11 +598,20 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
             models,
             runningTurns: typeof payload.runningTurns === "number" ? payload.runningTurns : 0,
           };
+          // An unrecognised mode is not a mode: a beat that omits or mangles the
+          // field must leave the memory alone rather than reset it to a guess.
+          if (payload.mode === "live" || payload.mode === "parked") beat.mode = payload.mode;
+          if (typeof payload.goalActive === "boolean") beat.goalActive = payload.goalActive;
+          // Learned before the process guard below, and on purpose: this is a
+          // fact about the *project*, not about the process that reported it, so
+          // the final beats of a child being replaced are still the freshest
+          // thing anyone knows about what that project was doing.
+          if (beat.mode) this.rememberMode(ref.id, beat.mode);
           const child = this.children.get(ref.id);
           // A beat from a child we no longer track is from a process being
           // replaced; recording it would revive a dead entry's health.
           if (child && child.proc === proc) child.lastHeartbeat = beat;
-          this.opts.onHeartbeat?.({ ref, rss: beat.rss, at: beat.at });
+          this.opts.onHeartbeat?.({ ref, rss: beat.rss, at: beat.at, mode: beat.mode, goalActive: beat.goalActive });
         } catch {
           /* a malformed beat is not liveness evidence; let the watchdog fire */
         }

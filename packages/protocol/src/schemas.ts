@@ -160,6 +160,21 @@ export const artifactSchema = {
     // so the field has to be declared here to be writable at all, and required
     // here would invalidate every artifact logged before it existed.
     scope: { type: "string", enum: ARTIFACT_SCOPES },
+    // Optional for the same reason as `scope`. Bounded: it is copied into every
+    // version record, and the runtime keeps only the newest reads of one turn.
+    inputs: {
+      type: "array",
+      maxItems: 20,
+      items: {
+        type: "object",
+        required: ["artifactId", "version"],
+        properties: {
+          artifactId: { type: "string", pattern: "^art-", maxLength: 200 },
+          version: { type: "integer", minimum: 1 },
+        },
+        additionalProperties: false,
+      },
+    },
     metadata: { type: "object" },
     provenance: {
       type: "object",
@@ -183,6 +198,8 @@ const agentConfigSchema = {
     role: { type: "string", minLength: 1, maxLength: 200 },
     runtime: { type: "string", maxLength: 200 },
     model: { type: "string", maxLength: 200 },
+    // Tokens. The floor catches a window written in thousands ("200").
+    context_window: { type: "integer", minimum: 1000 },
     variant: { type: "string", maxLength: 200 },
     mode: { type: "string", enum: ["peer", "service"] },
     prompt: { type: "string", maxLength: 20000 },
@@ -308,6 +325,12 @@ export const meshConfigSchema = {
           properties: {
             default: { type: "string", maxLength: 200 },
             model: { type: "string", maxLength: 200 },
+            context_window: { type: "integer", minimum: 1000 },
+            // Idle time before the adapter rotates a session, believing the
+            // prompt cache died in the gap. The floor is a minute: anything
+            // shorter is a seconds-written-as-ms typo ("3600"), not a window
+            // anyone means, and the adapter's own default is ten minutes.
+            stale_after_ms: { type: "integer", minimum: 60000 },
             variant: { type: "string", maxLength: 200 },
             requires_approval: { type: "array", items: { type: "string", maxLength: 200 } },
           },
@@ -342,6 +365,36 @@ export const meshConfigSchema = {
           },
           additionalProperties: false,
         },
+        /**
+         * What a turn's brief does with a mailbox it cannot read in full.
+         *
+         * Both are ON by default, unlike every other rationing key in this
+         * file, and deliberately: the mission this exists for was spending its
+         * turns draining 145 unread messages per seat while its acceptance
+         * criteria never moved. A knob an operator has to discover before it
+         * does anything buys nothing on the mission already drowning in mail.
+         *
+         * 0 is the off switch for both. `inform_expiry_ms` is additionally
+         * floored at a minute by the loader, because a sub-minute age is a
+         * seconds-written-as-milliseconds typo rather than an age anyone means
+         * -- the same reason `runtime.stale_after_ms` is floored there.
+         */
+        messages: {
+          type: "object",
+          properties: {
+            /** Above this many readable messages the brief carries one digest block. */
+            digest_threshold: { type: "integer", minimum: 0 },
+            /** Age past which a plain INFORM is no longer admitted to the brief. */
+            inform_expiry_ms: { type: "integer", minimum: 0 },
+            /**
+             * Messages one turn may send before its FYI-class chatter is batched
+             * into one digest at turn end. 0 disables. Asks, verdicts, handoffs,
+             * URGENTs and answers are never held.
+             */
+            max_sends_per_turn: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },
@@ -369,7 +422,14 @@ export const meshConfigSchema = {
           type: "object",
           additionalProperties: {
             type: "object",
-            properties: { requires: { type: "array", items: { type: "string", maxLength: 200 } } },
+            properties: {
+              requires: {
+                type: "array",
+                description:
+                  "Approvals this transition demands, each '<agent-id-or-role>.<kind>'. Entries are ANDed; alternatives within one entry are written 'a.approve|b.approve' and any ONE of them satisfies it.",
+                items: { type: "string", maxLength: 200 },
+              },
+            },
             additionalProperties: false,
           },
         },
@@ -400,7 +460,10 @@ export const meshConfigSchema = {
           additionalProperties: false,
         },
         style: { type: "string", enum: ["high-contact", "balanced", "low-contact"] },
-        transport: { type: "string", enum: ["mixed", "typed-only"] },
+        // Removed (ops are MCP-only) and read by nothing. Still declared, as a
+        // bare string, so a mesh.yaml that sets it loads with a warning
+        // instead of failing `additionalProperties: false` below.
+        transport: { type: "string" },
         vocabulary: { type: "string", enum: ["typed", "contracts"] },
         collab: {
           type: "object",
@@ -460,6 +523,7 @@ export const meshConfigSchema = {
           },
           additionalProperties: false,
         },
+        cache_read_weight: { type: "number", minimum: 0, maximum: 1 },
       },
       additionalProperties: false,
     },

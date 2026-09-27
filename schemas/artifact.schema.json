@@ -45,7 +45,8 @@
         "RequirementsDoc",
         "TaskSpec",
         "BenchmarkResult",
-        "DisagreementRecord"
+        "DisagreementRecord",
+        "DesignSpec"
       ]
     },
     "goalId": {
@@ -101,6 +102,29 @@
         "mission",
         "work"
       ]
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "version"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "pattern": "^art-",
+            "maxLength": 200
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "metadata": {
       "type": "object"

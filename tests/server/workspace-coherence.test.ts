@@ -6,15 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import { assertWorkspaceCoherent, bootstrapMesh, ownsGitRepo } from "../../apps/mesh-server/src/index";
 import { ConfigError, writeDefaultMeshYaml } from "../../packages/config/src/index";
-
-const hasGit = (() => {
-  try {
-    execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import { gitSkip } from "../support/git";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mesh-ws-coherence-"));
@@ -72,7 +64,7 @@ test("workspace coherence: product files at the root are refused", () => {
   }
 });
 
-test("workspace coherence: a workspace that is its own repo is refused", { skip: !hasGit && "git unavailable" }, () => {
+test("workspace coherence: a workspace that is its own repo is refused", { skip: gitSkip }, () => {
   const dir = tempDir();
   try {
     // How skill-panel broke: it ran with git off, a reset git-init'd the root,
@@ -88,7 +80,7 @@ test("workspace coherence: a workspace that is its own repo is refused", { skip:
   }
 });
 
-test("workspace coherence: no-git mode owns the root, so nothing there is stray", { skip: !hasGit && "git unavailable" }, () => {
+test("workspace coherence: no-git mode owns the root, so nothing there is stray", { skip: gitSkip }, () => {
   const dir = tempDir();
   try {
     // The same directory that is refused above: without git the product lives
@@ -138,7 +130,7 @@ test("workspace coherence: a workspace that does not exist yet is fine", () => {
  * So the assertion is not "the path looks right" but the thing the mission
  * actually needs: what the scaffolded seat writes can be committed.
  */
-test("scaffold: the seat a fresh init activates can commit what it writes", { skip: !hasGit && "git unavailable" }, async () => {
+test("scaffold: the seat a fresh init activates can commit what it writes", { skip: gitSkip }, async () => {
   const dir = tempDir();
   const configPath = writeDefaultMeshYaml(dir, "scaffold-boot", "stub");
   const m = await bootstrapMesh({ configPath, mode: "parked" });
@@ -160,7 +152,7 @@ test("scaffold: the seat a fresh init activates can commit what it writes", { sk
   }
 });
 
-test("owns git repo: an enclosing repo does not make a directory its own", { skip: !hasGit && "git unavailable" }, () => {
+test("owns git repo: an enclosing repo does not make a directory its own", { skip: gitSkip }, () => {
   const outer = tempDir();
   try {
     execFileSync("git", ["init", "-b", "main"], { cwd: outer, stdio: "ignore" });

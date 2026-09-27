@@ -50,6 +50,21 @@ export interface ChildBeatPayload {
   models: Array<{ model: string; input: number; output: number }>;
   /** Turns in flight in this child's scheduler, for the aggregate turn cap. */
   runningTurns: number;
+  /**
+   * The scheduler mode the child is actually IN, not the one it was launched
+   * in. The two diverge the moment an operator calls `/mission/start` or
+   * `/mission/park`, and the host sees neither call — it proxies them verbatim.
+   * Reporting it here is what lets the host remember "this project is live" and
+   * spawn the next child in the same mode instead of silently parking a running
+   * mission on the next restart.
+   */
+  mode: "parked" | "live";
+  /**
+   * True while the active goal is ACTIVE. A parked child holding an ACTIVE goal
+   * is the state that hides itself: every other surface reads "running", and
+   * nothing is. The host needs it to say so out loud.
+   */
+  goalActive: boolean;
 }
 
 /** Exit codes the supervisor maps onto `ProjectStatus` without parsing prose. */
@@ -112,6 +127,8 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
       pid: process.pid,
       models: [],
       runningTurns: 0,
+      mode: handle.instance.mode,
+      goalActive: false,
     };
     // Best-effort: a beat that throws would take the interval down with it and
     // the host would read a live child as silent. Spend is a view, liveness is
@@ -121,6 +138,8 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
         payload.models.push({ model: m.model, input: m.input, output: m.output });
       }
       payload.runningTurns = handle.instance.scheduler.running();
+      const goalId = handle.instance.kernel.state.activeGoalId;
+      payload.goalActive = !!goalId && handle.instance.kernel.state.goals.get(goalId)?.status === "ACTIVE";
     } catch {
       /* report liveness anyway */
     }

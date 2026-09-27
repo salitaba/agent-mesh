@@ -4,7 +4,8 @@ import type { Projections } from "../../core/src/state";
 export interface SchedulerView {
   pending: number;
   running: number;
-  queue: Array<{ agentId: string; priority: number; reasonKind: string; note?: string }>;
+  /** `afterTurn` marks a wake held behind the seat's running turn rather than queued for dispatch. */
+  queue: Array<{ agentId: string; priority: number; reasonKind: string; note?: string; afterTurn?: true }>;
   runningAgents: string[];
   /** Configured ceilings, so operators can see what caps the queue. */
   limits?: { total: number; peer: number; service: number };
@@ -13,14 +14,14 @@ export interface SchedulerView {
 export function buildSchedulerView(
   pending: number,
   running: number,
-  queue: Array<{ agentId: string; priority: number; reason: { kind: string; note?: string } }>,
+  queue: Array<{ agentId: string; priority: number; reason: { kind: string; note?: string }; afterTurn?: true }>,
   runningAgents: string[] = [],
   limits?: { total: number; peer: number; service: number },
 ): SchedulerView {
   return {
     pending,
     running,
-    queue: queue.map((q) => ({ agentId: q.agentId, priority: q.priority, reasonKind: q.reason.kind, note: q.reason.note })),
+    queue: queue.map((q) => ({ agentId: q.agentId, priority: q.priority, reasonKind: q.reason.kind, note: q.reason.note, ...(q.afterTurn ? { afterTurn: true as const } : {}) })),
     runningAgents,
     ...(limits ? { limits } : {}),
   };

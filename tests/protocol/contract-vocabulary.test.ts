@@ -6,7 +6,8 @@ import * as path from "path";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
 import { makeMesh } from "../helpers";
 import { parseMeshSource, resolveBusVocabulary, writeDefaultMeshYaml } from "../../packages/config/src/index";
-import { MESSAGE_TYPES, shortHash, validateMeshConfig } from "../../packages/protocol/src/index";
+import { MESSAGE_TYPES, validateMeshConfig } from "../../packages/protocol/src/index";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 
 /**
  * `bus.vocabulary: "contracts"` -- the collapsed comms manifest (Move 1).
@@ -76,8 +77,8 @@ test("the mesh schema closes the vocabulary enum", () => {
   // reading the tool list as proof the mode does not work.
   assert.equal(validateMeshConfig({ ...base, bus: { vocabulary: "contract" } }).valid, false);
   assert.equal(validateMeshConfig({ ...base, bus: { vocabulary: true } }).valid, false);
-  // Independent of `transport`: one governs whether prose ops execute, the
-  // other what the manifest advertises, and a mesh may set either alone.
+  // A legacy `transport` beside it still validates: the key was removed, and
+  // is warned about at load rather than rejected by the schema.
   assert.equal(validateMeshConfig({ ...base, bus: { vocabulary: "contracts", transport: "mixed" } }).valid, true);
 });
 
@@ -117,7 +118,7 @@ function mcpReq(method: string, params: unknown, id = 1) {
 /** One seat's view of the bus: the tools it is shown and the calls it can make. */
 function bus(m: Mesh, agentId: string) {
   const mcp = createMcpToolset(m.supervisor);
-  const tok = `${m.config.meshId}:${agentId}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = mintSeatToken(m.config.meshId, agentId, m.kernel.state.activeGoalId);
   return {
     async tools(): Promise<Array<{ name: string; inputSchema: any }>> {
       const list = (await mcp.handle(agentId, tok, mcpReq("tools/list", {}))) as {

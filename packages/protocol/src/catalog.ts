@@ -658,6 +658,7 @@ export const ARTIFACT_TYPES: ArtifactType[] = [
   "TaskSpec",
   "BenchmarkResult",
   "DisagreementRecord",
+  "DesignSpec",
 ];
 
 export const ARTIFACT_STATUSES: ArtifactStatus[] = [
@@ -745,6 +746,7 @@ export const ARTIFACT_MACHINE: Record<ArtifactType, ArtifactStateMachineKind> = 
   TaskSpec: "document",
   BenchmarkResult: "document",
   DisagreementRecord: "document",
+  DesignSpec: "document",
 };
 
 export const INITIAL_ARTIFACT_STATUS: Record<ArtifactStateMachineKind, ArtifactStatus> = {
@@ -1002,6 +1004,11 @@ const MISSION_SCOPE_TYPES = new Set<ArtifactType>([
   "RequirementsDoc",
   "ADR",
   "ApiSpec",
+  // Shared reference material exactly as the ArchitectureDocuments it replaces
+  // were: the frontend builds against the design system the way the backend
+  // builds against the ApiSpec. Keeping it mission-scope keeps every design
+  // document as visible as it was when it had to be filed under another type.
+  "DesignSpec",
 ]);
 
 export function defaultArtifactScope(type: ArtifactType): ArtifactScope {

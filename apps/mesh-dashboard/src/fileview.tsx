@@ -8,6 +8,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip } from "./components";
+// Shared with the step view's narration, and DOM-free so its escaping is
+// covered by tests/dashboard/markdown.test.ts.
+import { renderMarkdown } from "./markdown";
 
 export type FileKind = "text" | "markdown" | "image" | "binary";
 
@@ -44,64 +47,6 @@ function download(name: string, content: string, mime = "text/plain"): void {
   a.download = name.split("/").pop() || "file.txt";
   a.click();
   if (!content.startsWith("data:")) URL.revokeObjectURL(url);
-}
-
-/* Minimal markdown: headings, bold/italic/code, links, lists, fences. Not a
- * full parser on purpose — agent-written docs are plain, and pulling a
- * markdown dependency into the console for this is not worth the bytes. */
-function renderMarkdown(src: string): string {
-  const esc = (s: string): string =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  const fences: string[] = [];
-  let text = src.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
-    fences.push(`<pre class="md-code" data-lang="${esc(lang)}">${esc(code)}</pre>`);
-    return `\u0000FENCE${fences.length - 1}\u0000`;
-  });
-  text = esc(text);
-  const lines = text.split("\n");
-  const out: string[] = [];
-  let inList = false;
-  const inline = (s: string): string =>
-    s
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, href: string) =>
-        `<a href="${/^(https?:|mailto:|#|\/)/i.test(href) ? href : "#"}" target="_blank" rel="noreferrer noopener">${label}</a>`);
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
-    if (bullet) {
-      if (!inList) {
-        out.push("<ul>");
-        inList = true;
-      }
-      out.push(`<li>${inline(bullet[1])}</li>`);
-      continue;
-    }
-    if (inList) {
-      out.push("</ul>");
-      inList = false;
-    }
-    if (heading) {
-      const level = heading[1].length;
-      out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
-    } else if (line.trim() === "") {
-      out.push("");
-    } else if (/^\u0000FENCE\d+\u0000$/.test(line.trim())) {
-      out.push(line.trim());
-    } else if (/^\s*&gt;\s?/.test(line)) {
-      out.push(`<blockquote>${inline(line.replace(/^\s*&gt;\s?/, ""))}</blockquote>`);
-    } else if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
-      out.push("<hr />");
-    } else {
-      out.push(`<p>${inline(line)}</p>`);
-    }
-  }
-  if (inList) out.push("</ul>");
-  return out.join("\n").replace(/\u0000FENCE(\d+)\u0000/g, (_m, i: string) => fences[Number(i)] ?? "");
 }
 
 export function DiffView({ diff }: { diff: DiffPayload }): React.JSX.Element {

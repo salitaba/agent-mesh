@@ -273,6 +273,48 @@ the projections) spans goal/agent/message/artifact/task/review/patch/
 architecture/release/research/decision/escalation/human/lease/memory/budget
 lifecycle. Events are append-only and **deduplicated by id** (exactly-once).
 
+### `turn.discarded`: why a turn's work did not reach the mesh
+
+One event per turn that ended without its work landing, `{ agentId, turnId,
+reason, tokens?, detail? }`. `tokens` is present only when the backend measured
+the turn — absent means unmeasured, never zero — and that figure is billed.
+
+| `reason` | meaning |
+| --- | --- |
+| `no_ops` / `all_rejected` | the turn answered, but did nothing / every op was refused |
+| `rotation_handoff` | the turn was spent writing the session handover |
+| `budget_blocked` | the turn's budget hold was refused; it never reached the model |
+| `timeout` | the turn deadline expired |
+| `silence` | the silence watchdog stopped a stream that went quiet |
+| `budget` | the budget watch stopped the turn: its live spend passed what the seat had left on the last budget rung |
+| `failed` | the backend failed, or the kernel refused the turn after the model answered |
+| `interrupted` | the operator stopped the turn (`POST /agents/:id/interrupt`, or `POST /agents/:id/suspend` on a seat mid-turn) |
+
+A mid-turn budget stop is `budget`, with `turn budget exceeded: N live against M
+left` in `detail`. It carries its own reason since 2026-09-27: the watch's abort
+comes back as the runtime's own (a `silence`-shaped interrupt, or a bare failure
+when the supervisor had to settle the call itself), so before that the only trace
+of what had really happened was the detail prose. The label did not change what
+happens to the seat — it is still a failure, and still walks the same restart
+ladder — only what the log and the seat's own note call it.
+
+`interrupted` is the one abnormal ending that is **not** a failure. Its `detail`
+reads `stopped by the operator[: <reason>][ (seat suspended)]`. There is no
+`agent.failed`, no `agent.restarted` and no recovery wake, and no crash or
+slow-turn counter moves. The seat returns to `IDLE` (an `agent.state_changed`
+carrying the `turnId`), keeping its claimed task and its unread mail; with
+`suspend: true` it is then `agent.suspended` and takes no turn until
+`POST /agents/:id/resume`. Without it the seat is ordinary `IDLE`, so the
+scheduler may wake it again for mail still waiting. Files the turn wrote are left
+in place (and snapshotted like any stopped turn's), and the seat's next turn is
+told the operator stopped it. The route takes an optional body `{ "reason"?:
+string, "suspend"?: boolean }` and answers `200 { turnId, settled, endedAs,
+lifecycle }`, `409` when the seat has no running turn, `404` for an unknown seat
+and `400` for a malformed body. A turn already past its model call when the stop
+arrives finishes normally, and `endedAs` says so. `POST /agents/:id/suspend` on a
+seat mid-turn takes this path with `suspend: true` and names the turn it stopped
+(`stoppedTurnId`); on an idle seat it suspends as before.
+
 ## Artifact URIs & versions (`schemas/artifact.schema.json`)
 
 `artifact://{Type}/{name}/{version}`. Artifact versions are immutable; a change
@@ -325,12 +367,11 @@ and therefore **no** `fromPath`, so the cheap route is closed to exactly the
 seats whose job is publishing documents. For them `content` is the only body, and
 the cost note above is advice they cannot act on.
 
-A payload containing its own markdown code fence is safe. It did not used to be:
-the ops-block parser ended the block at the first following fence marker, so a
-document carrying a fenced diagram truncated its own ops mid-JSON-string and the
-whole turn was discarded. Ops are now recovered per entry by brace balance, so a
-fence inside a JSON string is just three more characters, and one malformed op in
-an array no longer destroys the valid ones beside it.
+A payload containing its own markdown code fence is safe: ops arrive only as
+MCP `mesh_*` tool calls, whose arguments are structured JSON, so a document
+carrying a fenced diagram is just a string. (When ops were still parsed out of a
+prose `mesh-json` block, such a fence ended the block early and the whole turn
+was discarded; that channel is gone.)
 
 This is the one place the reference-bus discipline became a runtime rule rather
 than prompt advice — and note what it corrects: telling agents "never paste into
@@ -356,6 +397,19 @@ reversed, and because `MERGED` on a `CodePatch` also mirrors `patch.merged` and
 `implementation.completed`, a failed merge announced finished work that no
 commit contained.
 
+A `CodePatch`'s `metadata.commit` is what the merge hands git, so it must name a
+commit: a hex sha of 7–40 characters, or a branch/ref name that passes a
+conservative `git check-ref-format` (no whitespace or control characters, none of
+`~ ^ : ? * [ \ ( ) ; ,`, no `..`, `@{` or `//`, no leading `-` or `/`, no
+trailing `/`, `.` or `.lock`). A publish or version that supplies anything else
+is refused with `metadata.commit must be a git commit sha or branch name (got
+"<value>" — …)`; omitting it is fine, and the `commit` op records the real sha
+for you. With a git workspace the value must also resolve to a commit in the
+product repository (`git rev-parse --verify <value>^{commit}`); an in-memory mesh
+checks syntax only. A patch recorded before this rule with an invalid value is
+refused at the transition to `MERGEABLE` with the same sentence, and a merge that
+still meets a missing commit quotes the value whole.
+
 A verdict outside a reviewable status records a signature and moves nothing —
 approving a `DRAFT` artifact, or rejecting one already `MERGED`. That is
 intentional: a `<role>.approve` gate token is a signature, and seats legitimately
@@ -372,8 +426,9 @@ provenance and never acquires `system` authority.
 
 ## MCP as an integration boundary, not the protocol
 
-Agents reach the mesh through MCP tools (transport), but the domain model is the
-typed message/event protocol above:
+Agents reach the mesh ONLY through MCP `mesh_*` tools (transport) — there is no
+prose ops channel — but the domain model is the typed message/event protocol
+above:
 
 ```
 Agent → MCP tool → Mesh API → Policy Engine → Event Store → Scheduler

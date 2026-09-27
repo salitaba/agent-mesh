@@ -63,7 +63,7 @@ test("a typed mesh is rendered exactly as it was before the key existed", () => 
   // op it can call — what it must not get is the catalogue itself, which is
   // ~160 tokens a turn restating a manifest it already agrees with.
   for (const c of BUILTIN_CONTRACTS) {
-    assert.equal(text.includes(`call ${c.name}`), false, `${c.name} leaked into a typed prompt`);
+    assert.equal(text.includes(`mesh_call ${c.name}`), false, `${c.name} leaked into a typed prompt`);
   }
 });
 
@@ -74,40 +74,46 @@ test("under contracts, every builtin is mapped from the name a role brief uses",
     // Both halves matter. The message type is what the brief quotes; the
     // contract name is what the seat can actually call.
     assert.ok(text.includes(`\`${c.messageType}\``), `${c.name}: brief-facing type name missing`);
-    assert.ok(text.includes(`\`call ${c.name}\``), `${c.name}: replacement missing`);
+    assert.ok(text.includes(`\`mesh_call ${c.name}\``), `${c.name}: replacement missing`);
   }
 });
 
 test("the mapping is derived, not listed — it covers the catalogue exactly", () => {
   const text = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
-  const mapped = text.split("\n").filter((l) => l.startsWith("- `") && l.includes("→ `call "));
+  const mapped = text.split("\n").filter((l) => l.startsWith("- `") && l.includes("→ `mesh_call "));
   // Equality, not "at least": a line the catalogue does not back is a
   // hand-written entry that has already started drifting.
   assert.equal(mapped.length, BUILTIN_CONTRACTS.length);
 });
 
-test("the three ops a brief says in prose are named alongside their type", () => {
+test("the three ops a brief says in prose are named alongside their type, by tool", () => {
   const text = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
   // `request_review` / `request_research` / `escalate` are what role prose
   // actually says ("request a review", "escalate it"), so they are the names a
-  // seat hunts its tool list for. `send` is left off deliberately: naming it
-  // on every line would tell a seat the raw channel is the normal move.
+  // seat hunts its tool list for -- and a seat acts only through tools, so
+  // each is named by the tool that issues it. `send` is left off
+  // deliberately: naming it on every line would tell a seat the raw channel
+  // is the normal move.
+  const tool: Record<string, string> = {
+    request_review: "mesh_request_review",
+    request_research: "mesh_research_request",
+    escalate: "mesh_escalate",
+  };
   const desugars = new Set(BUILTIN_CONTRACTS.map((c) => c.desugarsTo));
   for (const op of desugars) {
     if (op === "send") continue;
-    assert.ok(text.includes(`the \`${op}\` op`), `${op} not offered as a name to search for`);
+    assert.ok(text.includes(` / \`${tool[op]}\` →`), `${op} not offered as a tool to search for`);
   }
-  assert.equal(text.includes("the `send` op →"), false);
+  assert.equal(text.includes("/ `mesh_send` →"), false);
 });
 
-test("the raw-send fallback is offered on the prose channel and withheld on typed-only", () => {
-  const mixed = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
-  assert.match(mixed, /The raw `send` op still works/);
-  // Under typed-only a `mesh-json` block is parsed and then refused, so this
-  // line would be pointing a seat at a turn that lands nothing.
-  const typedOnly = renderContextInstructions(bundle({ commsVocabulary: "contracts", typedOpsOnly: true }));
-  assert.equal(typedOnly.includes("The raw `send` op still works"), false);
-  assert.ok(typedOnly.includes(HEADING), "the mapping itself is not what typed-only withholds");
+test("the raw-send fallback is named as a hidden-but-callable tool", () => {
+  // `mesh_send` leaves the advertised manifest under `contracts`, but
+  // `callTool` still resolves it, so the fallback is real -- and a seat with
+  // an ask no contract covers has to be told where to put it.
+  const text = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
+  assert.match(text, /`mesh_send` is not in your tool list but still works/);
+  assert.equal(renderContextInstructions(bundle()).includes("is not in your tool list"), false, "a typed seat has mesh_send listed");
 });
 
 test("buildAgentContext carries the key from the resolved bus, and omits it otherwise", async () => {
@@ -158,7 +164,7 @@ test("a low-contact mesh tells its seats that nothing is coming to chase them", 
   assert.match(rendered, /`ifUnanswered`/, "the one move that makes silence cheap has to be named");
   assert.match(rendered, /Asks here have DEADLINES/);
   assert.match(rendered, /Waking someone is BILLED/);
-  assert.match(rendered, /Prefer `announce` to asking/);
+  assert.match(rendered, /Prefer `mesh_announce` to asking/);
   // The thing it must NOT say. Silence is free only on an ask whose asker
   // priced it; a seat that read this as "you may ignore mail" would be
   // dropping its own debts, which `defersMail` will not let it do anyway.

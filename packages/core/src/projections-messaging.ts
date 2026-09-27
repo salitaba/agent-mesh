@@ -1,13 +1,13 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
-import type { MeshMessage, Thread, ThreadId, CollabSession } from "../../protocol/src/index";
+import type { MeshMessage, Thread, ThreadId, CollabSession, AgentId, MessageId, MessageType, MessagePriority } from "../../protocol/src/index";
 import { RESPONSE_TYPES, contractForMessageType, findContract, validateContractResponse } from "../../protocol/src/index";
 // Straight from the catalog rather than through the package index: this is the
 // ONE obligation predicate, and the two core sites that ask it (here and the
 // prompt's inbox band in `context.ts`) should be visibly reaching for the same
 // module. See `obligesRecipients` there for why neither the type name nor the
 // interaction mode answers on its own.
-import { obligesRecipients } from "../../protocol/src/catalog";
+import { obligesRecipients, movesWorkMessage } from "../../protocol/src/catalog";
 import type { CommitmentTtlConfig, DeniedAction, DischargeRecord, PendingRequest, RefusedSend, ResponseCheck } from "./state";
 import {
   MAX_DENIED_ACTIONS,
@@ -612,4 +612,353 @@ export function applyMessagingEvent(
   }
   evictOverflowingPendingRequests(state, event.timestamp);
   return true;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The mail brief: what a turn is handed when its mailbox is deeper than it can
+ * read.
+ *
+ * The measured problem this answers. A live mission put 145 unread messages in
+ * tech-lead's box, 43 in qa's and 22 in architect's, with three seats allowed
+ * to run at once (`scheduling.concurrency.max_active_agents`). Every seat's
+ * turn opened by draining a mailbox, so 18 code patches merged while the
+ * mission's acceptance criteria did not move at all. The registry of interests
+ * is nearly inert (4 wakes from 74 eligible events), so mail — not interests —
+ * is what wakes a seat, and mail is therefore what a turn mostly spends itself
+ * on.
+ *
+ * So the brief stops carrying every body. Above `digest_threshold` readable
+ * messages, the NEWS in it — everything that owes no answer and moves no work —
+ * is replaced by ONE block that names the count, the senders, the types, the
+ * thread subjects, the thread ids and every message id, and prints no body at
+ * all. Asks, work movements and URGENT mail are never collapsed: they are not
+ * news, and a seat handed a summary of an ask it owes an answer to has been
+ * made to answer blind. Nothing is deleted and nothing here marks anything
+ * read: the mail is still in `state.messages` and still in `state.unread` when
+ * this returns, so `mesh_inbox` can still open any one of them while the turn
+ * runs. `message.delivered` keeps its meaning and its timing — it is emitted at
+ * turn end, by the supervisor, for the mail the turn was handed.
+ *
+ * Everything in this section is a PURE function of (mail, config, now). It is
+ * here, in the messaging module, rather than in `context.ts`, because it is a
+ * rule about what mail means rather than about how a page looks; the renderer
+ * and the turn-end drain both read the same answer so they cannot disagree.
+ *
+ * NOT YET WIRED INTO THE BRIEF. `context.ts` still renders every message in
+ * `bundle.unreadMail`; the integration is one call in `buildAgentContext` plus
+ * one branch in `renderContextInstructions` (see `mailBrief`'s doc comment).
+ * Until it lands, this module is exercised by `tests/core/mail-brief.test.ts`
+ * alone.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** The two `mesh.messages` knobs, as `ResolvedMeshConfig.messages` carries them. */
+export interface MailBriefConfig {
+  /** Above this many readable messages, one digest block replaces the bodies. 0 disables. */
+  digestThreshold: number;
+  /** Age at which a plain INFORM stops being admitted. 0 disables. */
+  informExpiryMs: number;
+}
+
+/** One message the digest stands for. No body: the digest names, it does not quote. */
+export interface MailDigestEntry {
+  id: MessageId;
+  from: AgentId;
+  type: MessageType;
+  threadId: ThreadId;
+  priority: MessagePriority;
+  timestamp: string;
+  /** The thread's subject, when the caller could resolve one. */
+  subject?: string;
+}
+
+/**
+ * The one block a deep mailbox is summarised as.
+ *
+ * `senders` / `types` / `threads` are complete, not a sample: an operator
+ * reading the digest has to be able to see WHO filled the box and with what,
+ * because that is the question the mailbox itself stopped being able to
+ * answer. `entries` carries every message id, so each one can still be pulled
+ * individually.
+ */
+export interface MailDigest {
+  count: number;
+  oldestAt?: string;
+  newestAt?: string;
+  senders: Array<{ from: AgentId; count: number }>;
+  types: Array<{ type: MessageType; count: number }>;
+  threads: Array<{ threadId: ThreadId; count: number; subject?: string }>;
+  entries: MailDigestEntry[];
+}
+
+/**
+ * What `mailBrief` decided, split by what the caller has to do with it.
+ *
+ * - `digest` — present when the brief collapsed the news. Render this block
+ *   INSTEAD of a body per message in `summarised`. Absent means no block.
+ * - `summarised` — the news the block stands for. Named, not quoted: render
+ *   nothing per message for these.
+ * - `pending` — everything else admitted, and it is NOT a leftover bin: these
+ *   are the asks, the work movements and the URGENT mail, and they must still
+ *   be rendered body-by-body exactly as they always were. See `isDigestible`.
+ * - `expired` — plain INFORMs past the age. Still in the log, still in the
+ *   mailbox; not on the page.
+ *
+ * `summarised` is empty whenever `digest` is absent, and `digest` is absent
+ * when there is no news to collapse however deep the box is.
+ *
+ * The caller still owns the drain, and must hand the turn BOTH the mail it
+ * rendered and the mail `expired` names. An expired INFORM that is never
+ * marked delivered pins the box forever: it stays unread, so `oldestUnreadAt`
+ * keeps buying `STALE_MAIL_MS` wakes for it, and at `MAX_UNREAD_PER_AGENT` it
+ * starts evicting fresh mail as `mailOverflowDropped`. What must NOT be added
+ * to the drain is anything past the render cap: "delivered means rendered AND
+ * answered", so a `pending` ask that no page showed has to stay owed.
+ */
+export interface MailBrief {
+  digest?: MailDigest;
+  summarised: MeshMessage[];
+  pending: MeshMessage[];
+  expired: MeshMessage[];
+}
+
+/**
+ * Could this message leave the brief without anything being lost?
+ *
+ * Deliberately the SAME shape as `isSupersedable` in `context.ts`, and narrowed
+ * by one further test. Between them the two answer different questions about
+ * the same mail — "may a later message from this sender replace this one on the
+ * page?" versus "may this one leave the page at all?" — and the second is the
+ * stronger claim, so it is the narrower predicate.
+ *
+ * An INFORM is news. Everything else in the protocol is an instruction, a
+ * verdict or a question, and each of the six escapes below names one of the
+ * ways a message stops being plain news:
+ *
+ *  - `obligesRecipients` — the ONE obligation predicate (see the note on its
+ *    import above). An ask opens a `pendingRequests` entry, so muting it would
+ *    leave a debt on the ledger that nobody was ever shown. This is the whole
+ *    answer to "how do you tell an ask from an inform", and it is read off the
+ *    runtime-owned `control` envelope, never off agent-written payload.
+ *  - `movesWorkMessage` — a MISSION, a DELEGATE, a HANDOFF, a FAILED verdict.
+ *    Nobody is blocked on a reply, but it is this seat's next piece of work; a
+ *    HANDOFF that expired is work nobody was ever handed.
+ *  - `replyTo` — an answer, which settles a commitment. Dropping the latest of
+ *    two answers removes a settlement from the page while the ledger still
+ *    counts it.
+ *  - `priority === "URGENT"` — the one class of news the brief goes out of its
+ *    way to protect (`selectUnread` reserves it a seat), so expiring it would
+ *    undo the reservation one layer down.
+ *  - `note` or `artifactRefs` — unique content rather than a restatement: a
+ *    note is the sender's own prose and a ref is a pointer somebody needs.
+ *  - `control.ifUnanswered` — an ask that carries its own default. Held to the
+ *    news rule as well, because the default is an instruction about what
+ *    happens if nobody speaks.
+ *
+ * REQUEST_*, ESCALATE, REQUEST_REVIEW, CHALLENGE, PROPOSE and the whole
+ * verdict vocabulary never reach the `type === "INFORM"` test at all, so they
+ * are admitted at any age and this function is not the reason.
+ */
+export function isPlainInform(m: MeshMessage): boolean {
+  return (
+    m.type === "INFORM" &&
+    !obligesRecipients(m) &&
+    !movesWorkMessage(m) &&
+    !m.replyTo &&
+    m.priority !== "URGENT" &&
+    !m.note &&
+    m.artifactRefs.length === 0 &&
+    m.control?.ifUnanswered === undefined
+  );
+}
+
+/**
+ * May this message be NAMED in the digest instead of rendered whole?
+ *
+ * Wider than `isPlainInform`, and deliberately, because the two acts are not
+ * the same size. Expiry takes a message off the page entirely; the digest keeps
+ * its id, its sender, its type, its thread and its subject in front of the
+ * reader, and the body is one `mesh_inbox` call away. So the digest may carry
+ * news that expiry may not touch — an INFORM with a note or an artifact ref is
+ * still news, and it is still named.
+ *
+ * What it may NEVER carry is anything the reader has to act on, and that is the
+ * whole of the test:
+ *
+ *  - `obligesRecipients` — an ask. This is also the answer to how asks are told
+ *    from informs, and it is a single call to the runtime's one obligation
+ *    predicate. A digested ask would be answered blind or not at all, which is
+ *    the silent loss `supervisor.ts` writes "delivered means rendered AND
+ *    answered" to prevent.
+ *  - `movesWorkMessage` — a MISSION, DELEGATE, HANDOFF, PATCH_READY, a verdict.
+ *    Nobody has to reply, but it is the reader's next piece of work.
+ *  - `URGENT` — reserved a seat by `selectUnread` precisely so it cannot lose to
+ *    chatter; collapsing it would undo that reservation one layer up.
+ *
+ * Everything else — plain INFORMs, a PASSED sign-off, a broadcast, an FYI with
+ * a note — is news, and news is what a deep mailbox is full of.
+ */
+export function isDigestible(m: MeshMessage): boolean {
+  return !obligesRecipients(m) && !movesWorkMessage(m) && m.priority !== "URGENT";
+}
+
+/**
+ * Split a mailbox into what the brief still admits and what has gone stale.
+ *
+ * Box order is preserved in both halves. `expiryMs <= 0` disables the rule
+ * entirely — the switch `mesh.messages.inform_expiry_ms: 0` documents — and
+ * then every message is admitted, whatever its age.
+ */
+export function admittedMail(
+  mail: readonly MeshMessage[],
+  nowMs: number,
+  expiryMs: number,
+): { admitted: MeshMessage[]; expired: MeshMessage[] } {
+  if (!(expiryMs > 0)) return { admitted: [...mail], expired: [] };
+  const admitted: MeshMessage[] = [];
+  const expired: MeshMessage[] = [];
+  for (const m of mail) {
+    const at = Date.parse(m.timestamp);
+    // An unparseable timestamp is admitted, not expired. The rule is a
+    // judgement about age, and a message whose age cannot be read has not
+    // been judged stale — the same "the default is to keep" discipline
+    // `isSupersedable` documents for the collapse.
+    if (isPlainInform(m) && Number.isFinite(at) && nowMs - at >= expiryMs) expired.push(m);
+    else admitted.push(m);
+  }
+  return { admitted, expired };
+}
+
+/** Most messages first, then by name, so the digest reads the same on every replay. */
+function byCountThenKey<T extends string>(a: { key: T; count: number }, b: { key: T; count: number }): number {
+  return b.count - a.count || a.key.localeCompare(b.key);
+}
+
+/**
+ * Collapse a mailbox into one block's worth of structure.
+ *
+ * Reads no payload and judges nothing about what a message says — the same
+ * line `collapseSuperseded` draws, one level stronger. Counting is all this
+ * does, and it is a pure function of the messages, so two turns over the same
+ * mailbox produce byte-identical digests.
+ */
+export function buildMailDigest(
+  mail: readonly MeshMessage[],
+  subjects?: ReadonlyMap<string, string | undefined>,
+): MailDigest {
+  const subjectOf = (threadId: string): string | undefined => subjects?.get(threadId);
+  const entries: MailDigestEntry[] = [...mail]
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id))
+    .map((m) => ({
+      id: m.id,
+      from: m.from,
+      type: m.type,
+      threadId: m.threadId,
+      priority: m.priority,
+      timestamp: m.timestamp,
+      ...(subjectOf(m.threadId) ? { subject: subjectOf(m.threadId)! } : {}),
+    }));
+  const countBy = <T extends string>(key: (m: MeshMessage) => T): Map<T, number> => {
+    const counts = new Map<T, number>();
+    for (const m of mail) counts.set(key(m), (counts.get(key(m)) ?? 0) + 1);
+    return counts;
+  };
+  const senders = [...countBy((m) => m.from)].map(([key, count]) => ({ key, count })).sort(byCountThenKey);
+  const types = [...countBy((m) => m.type)].map(([key, count]) => ({ key, count })).sort(byCountThenKey);
+  const threads = [...countBy((m) => m.threadId)]
+    .map(([key, count]) => ({ key, count }))
+    .sort(byCountThenKey)
+    .map(({ key, count }) => ({ threadId: key, count, ...(subjectOf(key) ? { subject: subjectOf(key)! } : {}) }));
+  const stamps = mail.map((m) => m.timestamp).filter((t) => Number.isFinite(Date.parse(t))).sort();
+  return {
+    count: mail.length,
+    ...(stamps.length > 0 ? { oldestAt: stamps[0]!, newestAt: stamps[stamps.length - 1]! } : {}),
+    senders: senders.map(({ key, count }) => ({ from: key, count })),
+    types: types.map(({ key, count }) => ({ type: key, count })),
+    threads,
+    entries,
+  };
+}
+
+/**
+ * The digest as prompt lines. Returned rather than pushed so the renderer keeps
+ * owning the page's shape.
+ *
+ * Says out loud what it is not: these messages carry no body here, and they are
+ * still in the mailbox. The failure this repo keeps fixing is the list that
+ * looks complete and is not, so a block that silently replaced 145 bodies would
+ * be that bug with a smaller token count.
+ */
+export function renderMailDigest(digest: MailDigest): string[] {
+  const lines: string[] = [];
+  lines.push(
+    `### News (digest — ${digest.count} message(s) from ${digest.senders.length} sender(s); none of them owes you an answer)`,
+  );
+  const span =
+    digest.oldestAt && digest.newestAt ? `oldest ${digest.oldestAt}, newest ${digest.newestAt}. ` : "";
+  lines.push(
+    `- ${span}None of these owes you an answer and none of them is your next piece of work, so no body is printed here. ` +
+      `They are still in your mailbox and still unread — read any one of them with \`mesh_inbox\` while this turn runs.`,
+  );
+  lines.push(`- senders: ${digest.senders.map((s) => `${s.from} ×${s.count}`).join(", ")}`);
+  lines.push(`- types: ${digest.types.map((t) => `${t.type} ×${t.count}`).join(", ")}`);
+  lines.push(
+    `- threads: ${digest.threads.map((t) => `${t.threadId}${t.subject ? ` "${t.subject}"` : ""} ×${t.count}`).join("; ")}`,
+  );
+  lines.push("- every message id, grouped by thread and sender:");
+  for (const thread of digest.threads) {
+    const ofThread = digest.entries.filter((e) => e.threadId === thread.threadId);
+    const bySender = new Map<AgentId, MailDigestEntry[]>();
+    for (const e of ofThread) {
+      const run = bySender.get(e.from);
+      if (run) run.push(e);
+      else bySender.set(e.from, [e]);
+    }
+    const runs = [...bySender].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    for (const [from, list] of runs) {
+      const head = `  - ${thread.threadId}${thread.subject ? ` "${thread.subject}"` : ""} · ${from} ${list[0]!.type} ×${list.length}`;
+      lines.push(`${head}: ${list.map((e) => `[${e.id}]`).join(" ")}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * What this turn's brief makes of a mailbox.
+ *
+ * The integration, in `buildAgentContext` (`context.ts`), is three lines and
+ * deliberately not more — the selection cap stays where it is:
+ *
+ * ```ts
+ * const inbox = resolveUnread(state, agentId);
+ * const brief = mailBrief(inbox, { config: config.messages, nowMs: Date.now(), subjects });
+ * const unread = groupMailByThread(selectUnread(brief.pending, maxUnread, triggerMessageId)).flat();
+ * ```
+ *
+ * `brief.digest` rides into the bundle beside `unreadMail`, and the renderer
+ * prints `renderMailDigest(brief.digest)` where the mail section starts, before
+ * the per-message loop over `unreadMail` — which is `brief.pending`, so asks
+ * are still rendered whole. The bundle's `unreadMail` must ALSO carry
+ * `brief.summarised` and `brief.expired` so the turn-end drain
+ * (`renderableMail(bundle.unreadMail)` in `supervisor.ts`) marks them delivered;
+ * without that an expired INFORM is never read and never leaves the box, and
+ * the box pins.
+ *
+ * `nowMs` is passed in, never read here: this module has to stay a pure
+ * function of its arguments so a test can move the clock and a replay can
+ * reproduce the turn it is replaying.
+ */
+export function mailBrief(
+  mail: readonly MeshMessage[],
+  opts: { config: MailBriefConfig; nowMs: number; subjects?: ReadonlyMap<string, string | undefined> },
+): MailBrief {
+  const { admitted, expired } = admittedMail(mail, opts.nowMs, opts.config.informExpiryMs);
+  const threshold = opts.config.digestThreshold;
+  const summarised = threshold > 0 && admitted.length > threshold ? admitted.filter(isDigestible) : [];
+  const summarisedIds = new Set(summarised.map((m) => m.id));
+  return {
+    ...(summarised.length > 0 ? { digest: buildMailDigest(summarised, opts.subjects) } : {}),
+    summarised,
+    pending: admitted.filter((m) => !summarisedIds.has(m.id)),
+    expired,
+  };
 }

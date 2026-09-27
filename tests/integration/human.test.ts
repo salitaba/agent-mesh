@@ -71,12 +71,18 @@ test("human: direct approvals satisfy gates; humans are a mesh seat not an exter
 test("human: wake control allows manual steering", async () => {
   const m = await makeMesh({ agents: [{ id: "dev", role: "developer", interests: [], capabilities: [] }], mayContact: { dev: [] } });
   const s = stub(m);
-  let runs = 0;
-  s.setScript("dev", async () => {
-    runs++;
+  const reasons: Array<{ kind: string; note?: string }> = [];
+  s.setScript("dev", async (input) => {
+    reasons.push({ kind: input.activation.kind, note: input.activation.note });
     return { operations: [{ op: "done" } as MeshOp] };
   });
   await m.supervisor.activateAgent("dev", { kind: "manual", note: "steer" });
-  await waitFor("manual wake", () => runs === 1, 5000);
+  await waitFor("manual wake", () => reasons.length >= 1, 5000);
+  // The steering is the operator's reason reaching the seat, not merely a
+  // turn happening: the turn must be told it was a manual wake, and why.
+  assert.deepEqual(reasons[0], { kind: "manual", note: "steer" }, "the turn carries the operator's wake reason");
+  const woke = (await m.store.read()).filter((e) => e.type === "agent.awakened" && (e.payload as { agentId?: string }).agentId === "dev");
+  assert.equal(woke.length, 1, "exactly one wake was recorded");
+  assert.equal((woke[0]!.payload as { reason?: { kind?: string } }).reason?.kind, "manual", "and the log records it as manual");
   await m.cleanup();
 });

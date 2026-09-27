@@ -44,6 +44,11 @@ function coerceRef(value: unknown): ProjectRef | null {
     addedAt: typeof addedAt === "string" ? addedAt : new Date(0).toISOString(),
   };
   if (typeof value.lastOpenedAt === "string") ref.lastOpenedAt = value.lastOpenedAt;
+  // An unrecognised value is not a mode: dropping it means the project falls
+  // back to the host's default, which is exactly what an entry written before
+  // this field existed does. A hand-edited `"lastMode": "running"` must not
+  // become a spawn decision.
+  if (value.lastMode === "live" || value.lastMode === "parked") ref.lastMode = value.lastMode;
   return ref;
 }
 

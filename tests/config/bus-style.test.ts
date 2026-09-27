@@ -152,10 +152,32 @@ test("the expansion is raw, so a style can never produce a shape a hand-written 
   assert.equal(expanded.vocabulary, "contracts");
 
   assert.equal(applyBusStyle(undefined), undefined, "no bus block stays no bus block");
-  assert.deepEqual(applyBusStyle({ transport: "typed-only" }), { transport: "typed-only" }, "and an unstyled one is passed through untouched");
+  assert.deepEqual(applyBusStyle({ vocabulary: "typed" }), { vocabulary: "typed" }, "and an unstyled one is passed through untouched");
   assert.deepEqual(applyBusStyle({ style: "high-contact" }), { style: "high-contact" }, "high-contact adds nothing, because it IS nothing");
 });
 
 test("an unknown style is a config ERROR, not a silently ignored word", () => {
   assert.throws(() => busOf("bus:\n  style: quiet\n"), /style/);
+});
+
+/**
+ * `bus.transport` chose whether ops parsed out of a prose block executed.
+ * There is no prose channel any more, so the key is read by nothing — but a
+ * mesh.yaml written before that must still LOAD (the bus block is
+ * `additionalProperties: false`, so dropping the property from the schema
+ * would have turned it into a load error), and must SAY the key is dead,
+ * because silently accepting it would let an operator believe it still
+ * governs something.
+ */
+test("a legacy `bus.transport` loads, warns by name, and changes nothing", () => {
+  for (const value of ["typed-only", "mixed"]) {
+    const cfg = resolveRaw(mesh(`bus:\n  transport: ${value}\n`));
+    const hits = cfg.warnings.filter((w) => w.includes("bus.transport"));
+    assert.equal(hits.length, 1, `expected one transport warning, got ${JSON.stringify(cfg.warnings)}`);
+    assert.match(hits[0]!, /removed/);
+    assert.match(hits[0]!, /MCP-only/);
+    assert.equal("transport" in cfg.bus, false, "the resolved bus must not carry a key nothing reads");
+    assert.deepEqual(cfg.bus, busOf(""), "a removed key must not change the resolved bus");
+  }
+  assert.equal(resolveRaw(mesh("")).warnings.some((w) => w.includes("bus.transport")), false, "no key, no warning");
 });

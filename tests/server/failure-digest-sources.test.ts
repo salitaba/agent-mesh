@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
 import { applyEvent } from "../../packages/core/src/projections";
-import { shortHash, PROTOCOL_VERSION, type MeshEvent } from "../../packages/protocol/src/index";
+import { PROTOCOL_VERSION, type MeshEvent } from "../../packages/protocol/src/index";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 
 /**
  * Where `mesh_failures` and `mesh_run_digest` get their denials from.
@@ -86,7 +87,7 @@ async function meshWithDenialsOutsideTheWindow() {
 
 function reader(m: Awaited<ReturnType<typeof makeMesh>>) {
   const mcp = createMcpToolset(m.supervisor, { readOnly: true });
-  const tok = `${m.config.meshId}:dev:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = mintSeatToken(m.config.meshId, "dev", m.kernel.state.activeGoalId);
   return async (name: string, args: Record<string, unknown> = {}) => {
     const res = (await mcp.handle("dev", tok, mcpReq("tools/call", { name, arguments: args }))) as {
       result: { isError: boolean; content: Array<{ text: string }> };
@@ -180,7 +181,7 @@ test("a denial the mesh actually made is reported without any hand-applied event
     assert.ok("artifact" in made, JSON.stringify(made));
 
     const mcp = createMcpToolset(m.supervisor);
-    const tok = `${m.config.meshId}:dev:${shortHash(m.kernel.state.activeGoalId!)}`;
+    const tok = mintSeatToken(m.config.meshId, "dev", m.kernel.state.activeGoalId);
     const refused = (await mcp.handle("dev", tok, mcpReq("tools/call", {
       name: "mesh_commit",
       arguments: { artifactId: made.artifact.id, message: "dev holds no git.commit" },

@@ -25,6 +25,10 @@ test("recovery: a crashed agent process is marked FAILED and restarts with its i
   }, 8000);
   const beforeCrash = m.kernel.state.agents.get("dev")!.definition.id;
   assert.equal(beforeCrash, "dev", "agent identity survives the process crash");
+  // The id above cannot change by construction; what can fail is the restart
+  // itself. The second turn writing to dev's memory is the proof it ran.
+  await waitFor("the restarted turn ran", () => m.kernel.state.memory.get("dev")?.has("state") === true, 8000);
+  assert.equal(m.kernel.state.memory.get("dev")!.get("state")!.value, "restored and continuing", "the restarted seat ran its next turn");
   await m.cleanup();
 });
 
@@ -40,6 +44,16 @@ test("recovery: after max restart attempts the mesh escalates a runtime_failure"
   await waitFor("runtime failure escalation", () => {
     return [...m.kernel.state.escalations.values()].some((e) => e.reason === "runtime_failure" && (e.detail as { attempts?: number }).attempts !== undefined);
   }, 15000);
+  // "After max restart attempts" is the claim: three restarts, then the card
+  // on the fourth failure — not a card on the first, not a fifth restart.
+  const cards = [...m.kernel.state.escalations.values()].filter((e) => e.reason === "runtime_failure");
+  assert.equal(cards.length, 1, "one runtime_failure card");
+  assert.equal((cards[0]!.detail as { attempts?: number; agentId?: string }).attempts, 4, "raised on the failure after the third restart");
+  assert.equal((cards[0]!.detail as { agentId?: string }).agentId, "dev");
+  const restarts = (await m.store.read()).filter((e) => e.type === "agent.restarted").map((e) => (e.payload as { attempt?: number }).attempt);
+  assert.deepEqual(restarts, [1, 2, 3], "exactly the three permitted restarts, in order");
+  // The corpse is parked so nothing schedules it again.
+  assert.equal(m.kernel.state.agents.get("dev")?.state.lifecycle, "SUSPENDED", "a terminally failed seat is parked");
   await m.cleanup();
 });
 
@@ -97,6 +111,16 @@ test("delegation: agent-to-agent delegate creates a task and a DELEGATE message 
   });
   await m.supervisor.activateAgent("lead", { kind: "manual" });
   await waitFor("dev claimed the delegated task", () => m.kernel.state.tasks.size === 1 && ["CLAIMED", "COMPLETED"].includes([...m.kernel.state.tasks.values()][0].status), 6000);
+  // The title's three claims, each read back rather than inferred from the
+  // wait: a task exists, a DELEGATE message carried it to dev, and dev (not
+  // the delegator) holds it.
+  const task = [...m.kernel.state.tasks.values()][0]!;
+  const delegate = [...m.kernel.state.messages.values()].find((x) => x.type === "DELEGATE");
+  assert.ok(delegate, "a DELEGATE message was sent");
+  assert.equal(delegate.from, "lead");
+  assert.deepEqual(delegate.to, ["dev"]);
+  assert.equal((delegate.payload as { taskId?: string }).taskId, task.id, "the message names the task it delegates");
+  assert.equal(task.claimedBy, "dev", "the delegate, not the delegator, claimed it");
   await m.cleanup();
 });
 

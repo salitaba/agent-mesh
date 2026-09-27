@@ -209,6 +209,10 @@ test("ledger capacity: a flood cannot hide a circular wait from the deadlock det
   // a waits on b, b waits on a — provably unresolvable, and both asks are old.
   applyEvent(state, askEvent("msg-cycle-a", "a", ["b"]));
   applyEvent(state, askEvent("msg-cycle-b", "b", ["a"]));
+  // Each debtor has taken a turn that was shown its ask: a wait edge needs
+  // that (NOTES-live-run-20260925 §5), or the asks are only unread mail.
+  applyEvent(state, evt("message.delivered", { agentId: "b", messageId: "msg-cycle-a", turnId: "turn-b" }));
+  applyEvent(state, evt("message.delivered", { agentId: "a", messageId: "msg-cycle-b", turnId: "turn-a" }));
 
   const detector = new DeadlockDetector({
     escalation: { threadDepthMax: 999, repeatedConflictMax: 999, artifactReviewRoundsMax: 999 },

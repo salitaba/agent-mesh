@@ -5,6 +5,8 @@ import { randomUUID } from "crypto";
 import {
   query,
   type CanUseTool,
+  type HookCallbackMatcher,
+  type HookEvent,
   type Options,
   type Query,
   type SDKMessage,
@@ -13,7 +15,9 @@ import {
 import {
   BackendUnreachableError,
   InterruptedTurnError,
+  TurnTimeoutError,
   EDIT_CAPABILITIES,
+  TOOL_ERROR_MAX_CHARS,
   normalizeCapability,
   type AgentDefinition,
   type AgentEvent,
@@ -28,18 +32,16 @@ import {
   type DesignerRuntime,
   type DesignerStreamDelta,
   type DesignerStreamResult,
-  type MeshOp,
   type ModelCatalogue,
   type RuntimeContext,
+  type UsageGuardReport,
 } from "../../protocol/src/index";
 // Runtime commons: the queue every adapter needs to hand frames back, and
 // the fold that turns those frames into the struct the supervisor reads.
 import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
-// The mesh op protocol is one contract, so it gets one parser. It lives in
-// packages/agent-runtime as runtime commons; these are pure text functions
-// with no backend coupling. Ops here normally arrive typed via mesh_* MCP
-// tools, so this is the fallback path, not the primary one.
-import { parseMeshOps, extractSummary, extractDeclaredSummary, shortDigest } from "../../agent-runtime/src/index";
+// Ops arrive only as typed mesh_* MCP tool calls, executed on the live turn by
+// the supervisor; the reply text is prose and only yields the fallback summary.
+import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 // The output-voice rules belong to the prompt layer, not to any one adapter:
 // importing them from there is what keeps every runtime byte-identical on
 // the part of the prompt that must not vary by backend.
@@ -88,8 +90,11 @@ export interface ClaudeAdapterOptions {
   /** Path to the Claude Code executable; omit to use the SDK's bundled one. */
   executablePath?: string;
   /**
-   * Wall-clock ceiling for a single turn. A turn that outruns it is aborted
-   * and surfaces as a failed turn rather than wedging the scheduler slot.
+   * Wall-clock BACKSTOP for a single turn — not the turn deadline. The
+   * supervisor owns that, extensions included, and stops the turn itself; this
+   * only catches a turn the supervisor failed to stop, so it must sit past the
+   * supervisor's ceiling. A turn that outruns it is aborted and surfaces as a
+   * `TurnTimeoutError` (slow, never a crash) rather than wedging the slot.
    */
   turnTimeoutMs?: number;
 
@@ -111,17 +116,6 @@ export interface ClaudeAdapterOptions {
    * `confirmAlive`.
    */
   spawnFailureGraceMs?: number;
-  /**
-   * The mesh's `bus.transport`. Under `"typed-only"` the prose-op parser stops
-   * rewriting invented op names and message types.
-   *
-   * It changes nothing about which ops run — a parsed op is already refused
-   * wholesale under typed-only, before it reaches `executeOp`. What it buys is
-   * an honest alias counter: without it, every refused prose turn still
-   * incremented `aliasStats()`, so the one number that says whether the alias
-   * table is still load-bearing was inflated by turns that landed nothing.
-   */
-  transport?: "mixed" | "typed-only";
   /** Extra SDK options merged last, for escape hatches and tests. */
   extraOptions?: Partial<Options>;
   /**
@@ -133,6 +127,37 @@ export interface ClaudeAdapterOptions {
    */
   rotateAtContextTokens?: number;
   /**
+   * `mesh.runtime.context_window`: the window, in tokens, of a model the table
+   * below cannot place. The rotation threshold is derived from it at the usual
+   * ratio. Ranks below a seat's own `AgentDefinition.contextWindow` AND below a
+   * model the table knows, so it can never size a known small-window seat up.
+   *
+   * Measured 2026-09-25: every seat ran `deepseek-v4.1-flash`, a 1M model the
+   * table does not list, rotated at the 120k floor, and nothing could say so —
+   * this option existed only as `rotateAtContextTokens`, which nothing passed.
+   */
+  contextWindow?: number;
+  /**
+   * Where the adapter keeps the last measured context size per SDK session, so
+   * a mesh restart that resumes a transcript knows how big it is instead of
+   * starting the measurement at 0 (a seat resumed onto 224k per call with no
+   * rotation pending, §12 of NOTES-live-run-20260925-2040.md). Omitted: kept in
+   * memory only, which still covers an in-process resume.
+   */
+  stateDir?: string;
+  /**
+   * One-line operator notices the adapter cannot act on by itself: a backend
+   * whose frames report no usage at all, a model whose window is unknown, a
+   * backend whose calls report a prefix sent seconds earlier as uncached input
+   * (`reattributedPrefix`), and a turn that had to wait for the mesh MCP bridge
+   * to come up. Each fires once (per session, and per seat and model).
+   */
+  onNotice?: (info: {
+    agentId: string;
+    kind: "context_unmeasurable" | "unknown_context_window" | "usage_reattributed" | "mesh_bridge_race";
+    message: string;
+  }) => void;
+  /**
    * Pin the idle gap after which a session's prompt cache counts as expired.
    *
    * Defaults to `SESSION_CACHE_STALE_MS`. Overridable for the same reason as
@@ -141,11 +166,33 @@ export interface ClaudeAdapterOptions {
    */
   staleAfterMs?: number;
   /**
+   * Pin the character bound on a single `mcp__mesh__*` tool result.
+   *
+   * Defaults to `MESH_TOOL_RESULT_MAX_CHARS`. An adapter concern rather than a
+   * mesh.yaml key: it bounds what ONE call may put in a seat's context, which
+   * is a property of this runtime's session, not of the mesh — the same reason
+   * `staleAfterMs` and `turnTimeoutMs` live here. Overridable for the same
+   * reason as those two as well: the tests cannot spend a real 47k-character
+   * artifact to reach the bound.
+   */
+  meshToolResultMaxChars?: number;
+  /**
    * Pin the transcript size below which staleness is not worth a rotation.
    *
    * Defaults to `SESSION_STALE_ROTATE_FLOOR_TOKENS`.
    */
   staleFloorTokens?: number;
+  /**
+   * Waiting between bridge-respawn attempts, in ms; its length is the number of
+   * fresh spawns one turn may buy.
+   *
+   * Defaults to `BRIDGE_RESPAWN_DELAYS_MS`, which is sized for a mesh server
+   * that is still wiring its bridge up (measured: a child's bridge was still
+   * "failed" 7s after the seat woke, so the original 3-attempt/7s budget was
+   * spent before the bridge attached). Injected by the tests for the same reason
+   * `rotateAtContextTokens` is: they cannot spend the real half-minute.
+   */
+  bridgeRespawnDelaysMs?: number[];
   /**
    * Seam for the SDK's `query`. Defaults to the real one.
    *
@@ -265,6 +312,127 @@ const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
 const SESSION_CACHE_STALE_MS = 10 * 60_000;
 
 /**
+ * Largest `mcp__mesh__*` tool result the model is shown, in characters.
+ *
+ * The mesh's own tools are the one category of tool output this adapter owns
+ * end to end, and their size is not incidental: measured over the 2026-09-27
+ * skill-panel run, the five read tools returned 3.0M characters of the 3.1M
+ * the whole `mesh_*` surface produced, with a p90 of 20k-40k per call and a
+ * 52k worst case — `mesh_inbox` and `mesh_failures` had no result under 11k.
+ * A result that size is not paid once: it stays in the prompt for every later
+ * call of the turn (measured: ~20 calls a turn) and every later turn of the
+ * session until a rotation, so one 47k-character artifact read is worth about
+ * 12k tokens of context for the rest of the session.
+ *
+ * Every tool this clips already pages (see {@link meshResultCapNote}), so
+ * nothing is lost that a narrower call cannot fetch; the cap bounds ONE call,
+ * not what a seat may read.
+ *
+ * 8,000 characters is ~2,000 tokens: it clears every small mesh result whole
+ * (publish/approve/send/wait all answer in under 700 characters) and cuts the
+ * oversized reads by 55% on the measured run without clipping a single result
+ * a seat asked for narrowly. Overridable per adapter, like `staleAfterMs`.
+ */
+export const MESH_TOOL_RESULT_MAX_CHARS = 8_000;
+
+/** The prefix every mesh bridge tool is namespaced under. */
+const MESH_TOOL_PREFIX = "mcp__mesh__";
+
+/**
+ * What the model is told in place of the characters it was not shown.
+ *
+ * Names the tool's own resume protocol rather than a generic "ask again":
+ * every mesh read tool takes a smaller bound and hands back a cursor, and a
+ * seat that clips a read and then re-issues it identically has paid twice for
+ * nothing — which is the failure this whole hook exists to prevent.
+ */
+export function meshResultCapNote(toolName: string, shown: number, total: number): string {
+  const tool = toolName.slice(MESH_TOOL_PREFIX.length);
+  const resume =
+    tool === "mesh_artifact_read"
+      ? "resume with offset=<the nextOffset it gave you>"
+      : tool === "mesh_inbox"
+        ? "page with offset=<the nextOffset it gave you>"
+        : tool === "mesh_query_events"
+          ? "resume with sinceSeq=<the lastSeq it gave you>"
+          : "ask for less with a smaller limit";
+  return (
+    `\n\n[mesh adapter: showing ${shown} of ${total} characters; ${total - shown} clipped. ` +
+    `This is a bound on one call, not on what you may read — ${resume}, or narrow \`limit\`/filters. ` +
+    `Do not re-issue this call unchanged.]`
+  );
+}
+
+/**
+ * The `tool_response` with its text clipped to `maxChars`, or undefined when
+ * there is nothing to clip or the shape is one this does not understand.
+ *
+ * Undefined is the honest answer for an unrecognised shape: a rewrite that
+ * mangles a result is worse than a large one, so only the two shapes the SDK
+ * delivers for an MCP tool are rewritten — a bare string, and `{ content: [...] }`
+ * with `text` blocks. A response with no text block at all is left alone.
+ */
+export function capMeshToolResult(toolName: string, response: unknown, maxChars: number): unknown | undefined {
+  if (!toolName.startsWith(MESH_TOOL_PREFIX)) return undefined;
+  if (typeof response === "string") {
+    if (response.length <= maxChars) return undefined;
+    return response.slice(0, maxChars) + meshResultCapNote(toolName, maxChars, response.length);
+  }
+  if (!response || typeof response !== "object") return undefined;
+  const content = (response as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const texts = content.filter((b): b is { type: "text"; text: string } => {
+    const blk = b as { type?: unknown; text?: unknown };
+    return blk?.type === "text" && typeof blk.text === "string";
+  });
+  if (texts.length === 0) return undefined;
+  const total = texts.reduce((n, b) => n + b.text.length, 0);
+  if (total <= maxChars) return undefined;
+  // Clipped across the blocks in order, so the head of the result — where every
+  // mesh tool puts the answer — survives whole and only the tail is lost.
+  let budget = maxChars;
+  let shown = 0;
+  const out: unknown[] = [];
+  for (const b of content as Array<Record<string, unknown>>) {
+    if (b?.type !== "text" || typeof b.text !== "string") {
+      out.push(b);
+      continue;
+    }
+    if (budget <= 0) continue;
+    const take = Math.min(budget, b.text.length);
+    budget -= take;
+    shown += take;
+    out.push(take === b.text.length ? b : { ...b, text: b.text.slice(0, take) + meshResultCapNote(toolName, shown, total) });
+  }
+  return { ...(response as Record<string, unknown>), content: out };
+}
+
+/**
+ * The hook that clips an oversized mesh tool result before the model sees it.
+ *
+ * `PostToolUse` only: `PostToolUseFailureHookSpecificOutput` carries
+ * `additionalContext` and no rewrite field, so a FAILED mesh call cannot be
+ * clipped here — its text is a one-line refusal anyway, not a payload.
+ */
+function meshResultCapHooks(maxChars: number): SessionHooks {
+  return {
+    PostToolUse: [
+      {
+        hooks: [
+          async (input) => {
+            const i = input as { tool_name?: unknown; tool_response?: unknown };
+            if (typeof i?.tool_name !== "string") return { continue: true };
+            const capped = capMeshToolResult(i.tool_name, i.tool_response, maxChars);
+            if (capped === undefined) return { continue: true };
+            return { hookSpecificOutput: { hookEventName: "PostToolUse" as const, updatedToolOutput: capped } };
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/**
  * Transcript size below which staleness is not worth a rotation.
  *
  * Re-reading a small transcript is cheap, and the un-externalised reasoning
@@ -278,6 +446,9 @@ const SESSION_CACHE_STALE_MS = 10 * 60_000;
  * admit a 79-call turn over a transcript of a few thousand tokens.
  */
 const SESSION_STALE_ROTATE_FLOOR_TOKENS = 40_000;
+
+/** Rows kept in the adapter's per-SDK-session context record (see `knownContext`). */
+const MAX_KNOWN_CONTEXT_ROWS = 256;
 
 /**
  * Context window per model id, in tokens — the denominator of the ratio above.
@@ -304,11 +475,52 @@ const MODEL_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
+ * Claude Code's marker for a model's 1M-context variant (`claude-sonnet-4-5[1m]`).
+ * The id STATES its window, so honouring it is reading, not guessing upward.
+ */
+const ONE_M_SUFFIX = /\[1m\]$/i;
+
+/**
+ * The key a model id resolves to in the window table above.
+ *
+ * `toClaudeModelId` answers "which model do we ASK for" and must keep a dated
+ * snapshot intact — un-pinning an operator's snapshot choice would be a silent
+ * model swap. This answers a different question, "whose window is this", and a
+ * snapshot has the same window as its family.
+ *
+ * The distinction is load-bearing because the window lookup prefers
+ * `s.lastModel` — the id the BACKEND reports it actually seated, read from the
+ * SDK's system/init and assistant frames — and that id is DATED. The table holds
+ * bare ids, and `toClaudeModelId` strips only a provider segment, so before this
+ * the preferred lookup key was the one key the table could never contain: every
+ * real session took the unknown-model floor. Measured 2026-09-24: seats on a
+ * 1,000,000-token window were rotating against 120,000, which is how a run
+ * recorded "7x past threshold" overshoots that were mostly not overshoots at all.
+ *
+ * Exactly eight trailing digits after a hyphen, the only suffix the published ids
+ * carry. This never rounds UP an id the table cannot place: `claude-opus-6-20260401`
+ * normalizes to `claude-opus-6` and still misses.
+ */
+function windowKeyFor(spec: string | undefined): string | undefined {
+  return toClaudeModelId(spec)?.replace(ONE_M_SUFFIX, "").replace(/-\d{8}$/, "");
+}
+
+/**
+ * The window this model id is known to have — from its `[1m]` marker or the
+ * table — or undefined when nothing places it. Never a guess: see `rotateAtFor`.
+ */
+export function knownContextWindow(model: string | undefined): number | undefined {
+  if (model !== undefined && ONE_M_SUFFIX.test(model.trim())) return 1_000_000;
+  const id = windowKeyFor(model);
+  return id === undefined ? undefined : MODEL_CONTEXT_WINDOWS.get(id);
+}
+
+/**
  * Rotation threshold for the model a session is actually running.
  *
  * AN ID WE CANNOT PLACE GETS THE CONSERVATIVE FLOOR, NEVER A GUESS UPWARD.
- * `toClaudeModelId` validates nothing — it strips a provider segment and hands
- * back whatever remains — so a typo, a model released after the table above was
+ * `windowKeyFor` normalizes a dated snapshot onto its family but validates
+ * nothing beyond that — so a typo, a model released after the table above was
  * written, and a real id are indistinguishable to this lookup. Assuming a large
  * window for an id we cannot place would let a 200k seat run hundreds of
  * thousands of tokens past the point where it overflows, killing a live
@@ -316,8 +528,7 @@ const MODEL_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
  * are not comparable failures, so the unknown case only ever rounds down.
  */
 export function rotateAtFor(model: string | undefined): number {
-  const id = toClaudeModelId(model);
-  const window = id === undefined ? undefined : MODEL_CONTEXT_WINDOWS.get(id);
+  const window = knownContextWindow(model);
   // Not clamped up to the floor: a KNOWN model with a window under 200k must
   // rotate at its own share of it, not at a floor that sits past its ceiling.
   return window === undefined ? SESSION_CONTEXT_ROTATE_TOKENS : Math.floor(window * SESSION_CONTEXT_ROTATE_RATIO);
@@ -352,6 +563,131 @@ export function rotateAtFor(model: string | undefined): number {
 const SEAT_EFFORT = "high" as const;
 
 /**
+ * The CLI's native subagent tools, removed from every session this adapter
+ * starts (seat and designer alike). See the seat options for why the
+ * permission gate alone does not stop them.
+ */
+const ALWAYS_DISALLOWED_TOOLS = ["Task", "Agent"] as const;
+
+/**
+ * `disallowedTools` for a session: ours plus whatever `extraOptions` adds.
+ * Applied AFTER the `extraOptions` spread, so the escape hatch can widen the
+ * list but can never drop Task/Agent from it — a plain spread would have let an
+ * operator's `disallowedTools: ["WebSearch"]` silently re-enable both.
+ */
+export function mergedDisallowedTools(extra: Partial<Options> | undefined): string[] {
+  return [...new Set([...ALWAYS_DISALLOWED_TOOLS, ...(extra?.disallowedTools ?? [])])];
+}
+
+type SessionHooks = Partial<Record<HookEvent, HookCallbackMatcher[]>>;
+
+/**
+ * `hooks` for a session: ours plus whatever `extraOptions` adds, for the same
+ * reason as `mergedDisallowedTools` — a plain spread would let an operator's
+ * own `hooks` replace the advice hook and silently mute every deadline warning.
+ */
+function mergedHooks(ours: SessionHooks, extra: Partial<Options> | undefined): SessionHooks {
+  const out: SessionHooks = { ...(extra?.hooks ?? {}) };
+  for (const event of Object.keys(ours) as HookEvent[]) out[event] = [...(out[event] ?? []), ...(ours[event] ?? [])];
+  return out;
+}
+
+/**
+ * Several sets of ours, concatenated per event.
+ *
+ * A plain `{...a, ...b}` is wrong here and was wrong here: both sets name
+ * `PostToolUse`, so the second spread REPLACED the first and the advice hook
+ * stopped firing the moment the mesh-result bound was added beside it.
+ */
+function combineHooks(...sets: SessionHooks[]): SessionHooks {
+  const out: SessionHooks = {};
+  for (const set of sets)
+    for (const event of Object.keys(set) as HookEvent[]) out[event] = [...(out[event] ?? []), ...(set[event] ?? [])];
+  return out;
+}
+
+/**
+ * The hooks that deliver `advise` notes: at each tool boundary, whatever is
+ * queued for the turn in flight rides back to the model as that tool result's
+ * `additionalContext`, joined, exactly once.
+ *
+ * A hook and not a user message: a message pushed into the inbox mid-turn is a
+ * second user turn to the CLI, answered with a second `result` frame — and the
+ * pump settles the mesh turn on the first `result` it sees, so the note would
+ * end the turn it was meant to warn, or settle the next one.
+ *
+ * Both events, because a failing tool (a red test run, a non-zero Bash exit)
+ * fires `PostToolUseFailure` INSTEAD of `PostToolUse`, and a coding turn near
+ * its deadline is exactly the turn whose tools are failing. The drain is a
+ * synchronous `splice`, so parallel tool calls cannot deliver a note twice.
+ */
+function adviceHooks(turn: () => TurnState | undefined): SessionHooks {
+  const deliver = (hookEventName: "PostToolUse" | "PostToolUseFailure"): HookCallbackMatcher => ({
+    hooks: [
+      async () => {
+        const notes = turn()?.advice.splice(0) ?? [];
+        if (notes.length === 0) return { continue: true };
+        return { hookSpecificOutput: { hookEventName, additionalContext: notes.join("\n\n") } };
+      },
+    ],
+  });
+  return { PostToolUse: [deliver("PostToolUse")], PostToolUseFailure: [deliver("PostToolUseFailure")] };
+}
+
+/**
+ * What a seat is told about reading, appended to the role prompt beside the
+ * shared output-voice rules.
+ *
+ * The measured problem this answers is not any single tool result but their
+ * accumulation: over the 2026-09-27 skill-panel run, growth in a turn's prompt
+ * was spread over its calls — median +1,285 tokens per call, p90 +5,659, and
+ * the top 5% of calls were only 30% of the total — so no bound on one result
+ * can reach it. What does reach it is HOW the seat reads: the SDK's own `Read`
+ * returned 2.79M characters across 114 calls in that run, an average of 24,485
+ * characters per call, and every one of those characters was re-sent with each
+ * of the ~20 calls that followed. A seat that reads a range instead of a file
+ * pays ~8% of what it was paying.
+ *
+ * Five lines, and deliberately without numbers a seat cannot act on: it is
+ * billed on every turn, and it rides in the cached system prefix, so it is
+ * cheap only as long as it is short.
+ */
+const READING_DISCIPLINE = `## Reading
+Your context is the prompt, and everything you read into it is re-sent with every later call of this turn and every later turn of this session — so read the range you need, not the file that contains it: \`grep -n <pattern> <file> | head -n 30\` to locate, then \`sed -n '<a>,<b>p' <file>\` for the lines.
+Never read a file you have already read this session; you still have it.
+Do not paste file contents into a message, an artifact or a report — cite the path and line range instead. The reader has the same repository you do.`;
+
+/** {@link READING_DISCIPLINE}, appended to a role prompt the way `withOutputVoice` appends the voice rules. */
+export function withReadingDiscipline(rolePrompt: string): string {
+  const role = rolePrompt.trim();
+  return role.length > 0 ? `${role}\n\n${READING_DISCIPLINE}` : READING_DISCIPLINE;
+}
+
+/**
+ * Why this seat's mesh MCP bridge cannot carry ops, or undefined when it can.
+ *
+ * Every mesh op is a typed `mesh_*` call now; there is no prose fallback, so a
+ * seat without a connected bridge can spend a whole turn and land nothing.
+ * `pending` is not treated as down: it is the CLI's non-blocking connect mode
+ * still dialling, and the next turn's `init` frame reports the settled status.
+ */
+export function meshBridgeDownReason(servers: Array<{ name: string; status: string }> | undefined): string | undefined {
+  const bridge = (servers ?? []).find((m) => m.name === "mesh");
+  if (bridge?.status === "connected" || bridge?.status === "pending") return undefined;
+  return `claude runtime: the mesh MCP bridge is ${bridgeStatusLabel(servers)}, so this seat has no way to issue mesh ops; turn aborted`;
+}
+
+/**
+ * The same fact as `meshBridgeDownReason`, as a label rather than a sentence:
+ * what an audit line about the bridge should call its state. One producer, so
+ * the line an operator greps and the error a turn fails with cannot disagree.
+ */
+function bridgeStatusLabel(servers: Array<{ name: string; status: string }> | undefined): string {
+  const bridge = (servers ?? []).find((m) => m.name === "mesh");
+  return bridge ? `status "${bridge.status}"` : "not registered";
+}
+
+/**
  * How much conversation the model loaded across a turn's calls, summed.
  *
  * `input + cache_read`, because a cached prefix is still context the model read
@@ -374,6 +710,26 @@ const SEAT_EFFORT = "high" as const;
  */
 export function transcriptSize(t: AgentOutput["tokensUsed"] | undefined): number {
   return (t?.input ?? 0) + (t?.cacheRead ?? 0);
+}
+
+/**
+ * The context a turn was carrying, estimated from its SUMMED reads when no
+ * frame reported a per-call prompt: twice the per-call mean, never more than
+ * the sum.
+ *
+ * Why that bound: within a turn every call re-sends the transcript plus what
+ * the previous call added, so prompts grow call by call. For a non-decreasing
+ * sequence that grows linearly or decelerates, the last (largest) prompt is at
+ * most `2 * mean - first`, so `2 * sum / calls` sits at or above it — the safe
+ * side, rotating early rather than letting a window overflow — and is exact at
+ * one or two calls, where it equals the sum. The raw sum is the figure that
+ * caused the incident: 6,773,313 reported for a turn whose largest call was
+ * 191,576 (frontend seq 1019, 57 calls — this gives 237,661). With no call
+ * count there is nothing to divide by, and the sum is the only safe bound.
+ */
+export function estimateContextFromSum(sum: number, calls: number): number {
+  if (!(calls > 0)) return sum;
+  return Math.min(sum, Math.ceil((2 * sum) / calls));
 }
 
 /**
@@ -432,6 +788,294 @@ export interface ClaudeTurnUsage {
   output_tokens_details?: { thinking_tokens?: number | null } | null;
 }
 
+/** One model call's usage as its frames have reported it so far; see `noteCallUsage`. */
+interface CallUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  /** Absent until a frame reports a breakdown: unknown, not zero, as in `usageToTokens`. */
+  thinking?: number;
+}
+
+/** One model call of the turn: as reported, as billed, and which call came before it. */
+interface CallRecord {
+  /** Per term, the largest figure any of the call's frames reported. */
+  raw: CallUsage;
+  /** `raw`, or `raw` with `reattributed` tokens moved from `input` to `cacheRead`. */
+  billed: CallUsage;
+  reattributed: number;
+  /** Key of the turn's previous call; absent on the turn's first. */
+  prevKey?: string;
+}
+
+/**
+ * Smallest prefix `reattributedPrefix` will move. Below it a missed cache is
+ * cheap and plausibly real (a provider's minimum cacheable prompt is of this
+ * order), so the report is billed as it stands.
+ */
+const REATTRIBUTE_MIN_PREFIX_TOKENS = 8_000;
+
+/**
+ * How many of one call's reported `input` tokens are billed as `cache_read`
+ * instead: the prompt the previous call of the SAME turn was handed, when this
+ * call reports no cache at all and a prompt at least that large.
+ *
+ * Measured 2026-09-26 behind a translating proxy: mid-session a seat's message
+ * ids switched format and every call after reported `input_tokens` = its whole
+ * prompt and `cache_read_input_tokens` = 0, while the proxy's own log showed the
+ * cache hit on the same calls (backend 15:12:12Z: 100,182 reported as input, of
+ * which the proxy logged 99,968 as cached). 55 such calls across two seats billed
+ * 6.41M phantom tokens in 13 minutes; the ledger, the live counter, seat parking
+ * and escalations all acted on them, and an operator stopped the mission.
+ *
+ * Within one turn the conversation only grows, and the previous call sent its
+ * prefix seconds ago, so a same-or-larger prompt reporting zero cache is a
+ * dropped cache report, not a miss. Nothing else is touched: a call whose prompt
+ * shrank (compaction, a rotation), any call that reports a nonzero cache term,
+ * and `output`. The move keeps the prompt size, so rotation sizing is unchanged.
+ *
+ * The turn's FIRST call is judged by the same rule against the previous turn's
+ * final prompt — the one caller `noteCallUsage` supplies — and only while that
+ * turn ended inside the operator's cache window. With no such evidence the call
+ * is billed as reported, because the prefix may really have gone cold between
+ * turns; see {@link previousTurnPrefix} for what counts as evidence.
+ */
+export function reattributedPrefix(call: { input: number; cacheRead: number; cacheWrite: number }, prevPrompt: number | undefined): number {
+  if (prevPrompt === undefined || prevPrompt < REATTRIBUTE_MIN_PREFIX_TOKENS) return 0;
+  if (call.cacheRead !== 0 || call.cacheWrite !== 0) return 0;
+  if (call.input < prevPrompt) return 0;
+  return Math.min(prevPrompt, call.input);
+}
+
+/**
+ * The evidence a turn's FIRST call is judged against: the final prompt of the
+ * session's previous turn, or undefined when that turn is not usable evidence.
+ *
+ * The intra-turn rule reads the previous CALL's prompt, which a turn's first
+ * call does not have. Without a second kind of evidence the guard skipped it by
+ * design — "the prefix may really have gone cold between turns" — and on a route
+ * that drops the cache report that skip is where the largest single cost of a
+ * turn came from: the whole 200k-400k context billed as new input once per turn,
+ * on top of an otherwise correctly-guarded turn (measured 2026-09-27: 400-500k
+ * of input per backend turn against 110-260k for the same seat on an honest
+ * route).
+ *
+ * The turn boundary itself is not what makes a prefix cold — whoever runs the
+ * mesh says what does, and says it with `mesh.runtime.stale_after_ms`: the same
+ * window the staleness rotation already reads. So a call is judged only while
+ * the recorded turn ended inside it. The measurement behind that reuse: through
+ * the live proxy, a prompt was still 94% cached upstream after a 10-minute idle
+ * gap and 99% after 5-10 minutes, so the cache outlives every gap the operator
+ * would call fresh. Past the window nothing is assumed, and the call is billed
+ * exactly as the backend reported it.
+ *
+ * Undefined is the honest answer for every case without usable evidence: the
+ * session's first turn (nothing recorded), a fresh session after a rotation or
+ * compaction (the record does not carry across one), and a gap past the window.
+ * The 8,000-token floor is not re-checked here — {@link reattributedPrefix} owns
+ * it, and it must apply identically to both kinds of evidence.
+ */
+export function previousTurnPrefix(
+  record: { promptTokens: number | undefined; endedAt: number | undefined } | undefined,
+  staleAfterMs: number,
+  now: number,
+): number | undefined {
+  const { promptTokens, endedAt } = record ?? { promptTokens: undefined, endedAt: undefined };
+  if (promptTokens === undefined || endedAt === undefined) return undefined;
+  if (now - endedAt > staleAfterMs) return undefined;
+  return promptTokens;
+}
+
+/**
+ * The turn's usage with `tokens` moved from `input` (and so from `total`) to
+ * `cacheRead` — what `noteCallUsage` did to the live figure, applied to the
+ * `result` frame's sum so the settled figure still equals the last live one.
+ */
+export function reattributeTokens(t: AgentOutput["tokensUsed"], tokens: number): AgentOutput["tokensUsed"] {
+  const moved = Math.min(Math.max(0, tokens), t.input);
+  if (!(moved > 0)) return t;
+  return { ...t, input: t.input - moved, total: t.total - moved, cacheRead: (t.cacheRead ?? 0) + moved };
+}
+
+/**
+ * What the usage guard did to one turn, on the `turn_end` frame and `send`'s
+ * output when it moved anything. `raw` is the backend's summed report and
+ * `adjusted` what was billed (equal to the turn's `tokensUsed`). The protocol
+ * types carry the field now; these names remain for the adapter's callers.
+ *
+ * `firstCallAdjustments` is this runtime's addition to that shape and rides
+ * inside the same object: of the calls counted in `adjustedCalls`, how many were
+ * a turn's FIRST call, judged against the previous turn rather than the previous
+ * call ({@link previousTurnPrefix}). Absent when none were, so a report that
+ * predates the field and one with nothing to say about it read alike.
+ */
+export type ClaudeUsageGuard = UsageGuardReport & { firstCallAdjustments?: number };
+/**
+ * `AgentEventTurnEnd`, plus the diagnostics only this adapter produces.
+ *
+ * `bridgeRespawns` rides here rather than on the protocol's type because it is
+ * a property of this runtime's turn START, not of a turn's result: another
+ * adapter has no equivalent, and widening the shared event for it would put a
+ * Claude-shaped field on every runtime's turn_end. Present only when a fresh
+ * spawn was spent on it (absent, never 0, when the bridge was up at init).
+ *
+ * `usageGuard` is narrowed to {@link ClaudeUsageGuard} for the same reason: the
+ * protocol fields are all still there, and the turn-boundary count is a field
+ * only a runtime that keeps a session record can produce.
+ */
+export type ClaudeTurnEnd = Omit<AgentEventTurnEnd, "usageGuard"> & {
+  usageGuard?: ClaudeUsageGuard;
+  bridgeRespawns?: number;
+};
+/**
+ * What `send` hands back: the shared fold's output, with `usageGuard` narrowed
+ * the same way `ClaudeTurnEnd`'s is. Assignable to `AgentOutput` unchanged — the
+ * extra field is on the guard, and `adjustedCalls` and the totals are untouched.
+ */
+export type ClaudeAgentOutput = Omit<AgentOutput, "usageGuard"> & { usageGuard?: ClaudeUsageGuard };
+
+/** A wire figure as a count: absent, null, or not a finite number reads as 0. */
+const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+const callPrompt = (c: CallUsage): number => c.input + c.cacheRead + c.cacheWrite;
+
+function callUsageToTokens(c: CallUsage): AgentOutput["tokensUsed"] {
+  return usageToTokens({
+    input_tokens: c.input,
+    output_tokens: c.output,
+    cache_creation_input_tokens: c.cacheWrite,
+    cache_read_input_tokens: c.cacheRead,
+    ...(c.thinking !== undefined ? { output_tokens_details: { thinking_tokens: c.thinking } } : {}),
+  });
+}
+
+/**
+ * Fold one frame's per-call usage into the turn: the rotation measurement
+ * (`maxPromptTokens`) always, and — when the frame names its call — the live
+ * cumulative figure, pushed as a `usage_update` whenever it moves.
+ *
+ * The live figure is a sum over CALLS, never over frames. One call is reported
+ * by several frames (`message_start`, one `assistant` frame per content block,
+ * all sharing the call's `message.id`, then `message_delta`), each carrying the
+ * call's usage so far, so a sum over frames bills a call three to five times.
+ * Each call is kept once, per term at the largest figure any of its frames
+ * reported: every term is non-decreasing within a call, and WHICH frame carries
+ * which term depends on the backend. Anthropic puts the input terms on
+ * `message_start` and may send `message_delta` with `output_tokens` alone; the
+ * translating proxy of the 2026-09-25 run sent zeros everywhere but
+ * `message_delta` (NOTES-live-run-20260925-2040.md §1). A whole-record
+ * last-frame-wins would drop the input terms on the first backend.
+ *
+ * `callKey` is undefined for a subagent's frames: they measure another
+ * transcript, and this figure should approach the `result` total, never pass it.
+ *
+ * The sum is of BILLED figures: a call `reattributedPrefix` suspects is folded
+ * with its prefix moved to `cacheRead` here, before any `usage_update` leaves
+ * the adapter, so the live counter and the budget checks fed by it never see
+ * the phantom input. Rotation sizing (`maxPromptTokens`) reads the raw frame;
+ * the move does not change a prompt's size. Returns the call's figures the first
+ * time this frame makes it re-attributed, for the once-per-session notice, and
+ * says whether that call was the turn's first — the notice reads differently for
+ * a prefix sent by the previous call of this turn and one the turn before sent.
+ */
+function noteCallUsage(
+  turn: TurnState,
+  u: ClaudeTurnUsage | undefined,
+  callKey: string | undefined,
+): { prompt: number; prefix: number; firstCall: boolean } | undefined {
+  const prompt = promptSize(u);
+  if (prompt > turn.maxPromptTokens) turn.maxPromptTokens = prompt;
+  if (!u || callKey === undefined) return undefined;
+  let call = turn.callUsage.get(callKey);
+  if (!call) {
+    const none: CallUsage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+    call = { raw: none, billed: none, reattributed: 0, ...(turn.lastCallKey !== undefined ? { prevKey: turn.lastCallKey } : {}) };
+    turn.callUsage.set(callKey, call);
+    turn.lastCallKey = callKey;
+  }
+  const prev = call.raw;
+  const raw: CallUsage = {
+    input: Math.max(prev.input, count(u.input_tokens)),
+    output: Math.max(prev.output, count(u.output_tokens)),
+    cacheWrite: Math.max(prev.cacheWrite, count(u.cache_creation_input_tokens)),
+    cacheRead: Math.max(prev.cacheRead, count(u.cache_read_input_tokens)),
+  };
+  const thinking = u.output_tokens_details?.thinking_tokens;
+  if (prev.thinking !== undefined || typeof thinking === "number") raw.thinking = Math.max(prev.thinking ?? 0, count(thinking));
+  const before = call.prevKey === undefined ? undefined : turn.callUsage.get(call.prevKey);
+  // A call with no predecessor WITHIN the turn — the turn's first, however many
+  // of its frames arrive here — is judged against the previous TURN's final
+  // prompt when this session recorded one ({@link previousTurnPrefix}), and
+  // against nothing otherwise. Derived per frame rather than fixed when the call
+  // is created: under a translating proxy the call's own `message_start` reports
+  // zeros and only a later frame of the same call carries the real prompt, so an
+  // evidence decided at creation time would be judged against input 0.
+  const evidence = before ? callPrompt(before.raw) : turn.firstCallPrevPrompt;
+  const moved = reattributedPrefix(raw, evidence);
+  const billed: CallUsage = moved > 0 ? { ...raw, input: raw.input - moved, cacheRead: raw.cacheRead + moved } : raw;
+  const was = call.billed;
+  const newly = moved > 0 && call.reattributed === 0;
+  const firstCall = call.prevKey === undefined;
+  // A later frame can un-suspect a call (it reports a cache term after all),
+  // so the count and the moved total follow the call rather than only grow.
+  if (newly) {
+    turn.reattributedCalls++;
+    if (firstCall) turn.reattributedFirstCalls++;
+  } else if (moved === 0 && call.reattributed > 0) {
+    turn.reattributedCalls--;
+    if (firstCall) turn.reattributedFirstCalls--;
+  }
+  turn.reattributedTokens += moved - call.reattributed;
+  call.raw = raw;
+  call.billed = billed;
+  call.reattributed = moved;
+  const sum = turn.usageSum;
+  const d = {
+    input: billed.input - was.input,
+    output: billed.output - was.output,
+    cacheWrite: billed.cacheWrite - was.cacheWrite,
+    cacheRead: billed.cacheRead - was.cacheRead,
+    thinking: (billed.thinking ?? 0) - (was.thinking ?? 0),
+  };
+  sum.input += d.input;
+  sum.output += d.output;
+  sum.cacheWrite += d.cacheWrite;
+  sum.cacheRead += d.cacheRead;
+  if (billed.thinking !== undefined) sum.thinking = (sum.thinking ?? 0) + d.thinking;
+  if (d.input || d.output || d.cacheWrite || d.cacheRead || d.thinking) {
+    turn.events.push({ kind: "usage_update", tokensUsed: callUsageToTokens(sum) });
+  }
+  return newly ? { prompt: callPrompt(raw), prefix: moved, firstCall } : undefined;
+}
+
+/** The `result` frame's summed usage, re-attributed exactly as the live figure was. */
+function settledUsage(turn: TurnState, u: ClaudeTurnUsage | undefined): AgentOutput["tokensUsed"] {
+  return reattributeTokens(usageToTokens(u), turn.reattributedTokens);
+}
+
+/** What the turn's frames reported, or undefined when none reported anything: absent is unmeasured, never zero. */
+function liveUsage(turn: TurnState): AgentOutput["tokensUsed"] | undefined {
+  const s = turn.usageSum;
+  return s.input + s.output + s.cacheWrite + s.cacheRead > 0 ? callUsageToTokens(s) : undefined;
+}
+
+/**
+ * The prompt the turn's final model call was handed — the record a NEXT turn's
+ * first call is judged against — or 0 when no call reported usage.
+ *
+ * The FINAL call, not the largest any call reached: what a next turn re-sends is
+ * the conversation as the last call left it, and a turn whose final call shrank
+ * (a compaction) is a turn whose context was reset, whose next first call must
+ * not be re-attributed against a prefix that no longer exists. Calls are keyed by
+ * API message id in insertion order, so the last key created is the turn's last
+ * call; its `raw` is the max over that call's frames, as everywhere.
+ */
+function lastCallPrompt(turn: TurnState): number {
+  const last = turn.lastCallKey !== undefined ? turn.callUsage.get(turn.lastCallKey) : undefined;
+  return last ? callPrompt(last.raw) : 0;
+}
+
 /**
  * git subcommands a seat needs to stage and land a commit. Deliberately short:
  * anything outside it is reachable by granting `shell.execute`, which is the
@@ -488,6 +1132,152 @@ function commitScopeDenial(toolInput: Record<string, unknown>): string | null {
   return null;
 }
 
+/**
+ * The text of a `tool_result` block, whichever of the wire's two shapes it came
+ * in: a bare string, or an array of content blocks of which only the `text`
+ * ones say anything a reader can use (an image block has no words to show).
+ * Anything else reads as empty, never as a JSON dump of the block.
+ */
+export function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
+    .filter((t) => t.length > 0)
+    .join("\n");
+}
+
+/**
+ * The four tool families a seat's capabilities decide, named as an operator
+ * reads them. Mesh MCP tools are not a family: they are never gated, and a seat
+ * that could not reach them would not be a seat.
+ */
+export type ToolFamily = "read" | "edit" | "shell" | "web";
+
+/**
+ * - `allow`    — the seat may use every tool in the family.
+ * - `deny`     — no capability it holds reaches the family.
+ * - `approval` — it holds one, but `requires_approval` gates it: every call is
+ *                refused until the operator unlocks that tool for the session.
+ * - `scoped`   — commit-only shell: `git.commit` without `shell.execute`, so
+ *                `Bash` runs only a bare git command on the commit path.
+ */
+export type ToolPermissionLevel = "allow" | "deny" | "approval" | "scoped";
+
+export interface ToolPermission {
+  level: ToolPermissionLevel;
+  /** The capability that decided it, or what is missing ("needs repository.write"). */
+  via: string;
+}
+
+export type ToolPermissions = Record<ToolFamily, ToolPermission>;
+
+/**
+ * Capability tokens that authorize each gated family, in the order a denial or
+ * a hold names them. `edit` is EDIT_CAPABILITIES itself rather than a copy: the
+ * supervisor gives a seat a worktree on the same list, and a seat with a
+ * worktree and no write tool (or the reverse) is exactly the drift to avoid.
+ */
+const FAMILY_TOKENS: Record<Exclude<ToolFamily, "read">, readonly string[]> = {
+  edit: EDIT_CAPABILITIES,
+  shell: ["shell.execute", "test.execute", "git.commit"],
+  web: ["network.request"],
+};
+
+/** Shell tokens that buy UNSCOPED exec; `git.commit` alone buys the commit path. */
+const FULL_EXEC_TOKENS = new Set(["shell.execute", "test.execute"]);
+
+/** Which family a tool belongs to; `mesh` for the bus, null for a tool nobody mapped. */
+function toolFamily(toolName: string): ToolFamily | "mesh" | null {
+  if (toolName.startsWith(MESH_MCP_PREFIX)) return "mesh";
+  if (READ_TOOLS.has(toolName)) return "read";
+  if (EDIT_TOOLS.has(toolName)) return "edit";
+  if (EXEC_TOOLS.has(toolName)) return "shell";
+  if (NETWORK_TOOLS.has(toolName)) return "web";
+  return null;
+}
+
+/**
+ * One family's verdict for a seat BEFORE any operator grant — the single
+ * decision both {@link buildPermissionGate} and {@link describeToolPermissions}
+ * read, so what the operator is shown and what the seat is refused cannot drift.
+ * The gate applies only what a static description cannot know: which tools the
+ * operator has since unlocked, and the command a commit-only `Bash` carries.
+ */
+interface FamilyVerdict extends ToolPermission {
+  /**
+   * The seat's own tokens in this family that `requires_approval` gates.
+   * Filtered against the seat's grants on purpose: `requires_approval` narrows a
+   * grant and must never widen one, so a token the seat does not hold can
+   * neither gate nor unlock anything.
+   */
+  gated: string[];
+  /** Shell only: the seat holds `git.commit` but no full-exec token. */
+  commitOnly: boolean;
+}
+
+function familyVerdict(family: ToolFamily, caps: ReadonlySet<string>, requires: ReadonlySet<string>): FamilyVerdict {
+  if (family === "read") return { level: "allow", via: "always allowed", gated: [], commitOnly: false };
+  const tokens = FAMILY_TOKENS[family];
+  const held = tokens.filter((t) => caps.has(t));
+  if (held.length === 0) {
+    const [first, ...rest] = family === "shell" ? tokens.filter((t) => FULL_EXEC_TOKENS.has(t)) : tokens;
+    return {
+      level: "deny",
+      via: `needs ${first}${rest.length ? ` (or ${rest.join(", ")})` : ""}`,
+      gated: [],
+      commitOnly: false,
+    };
+  }
+  // `git.commit` once bought blanket exec: opencode rendered it as bash:"ask",
+  // nothing on a mesh turn could answer that prompt, and a pending one would
+  // stall the slot to its timeout — so the seat got exec instead. That backend
+  // is gone and the widening outlived its reason: a seat granted git.commit and
+  // deliberately *not* granted shell.execute was still getting arbitrary bash.
+  // It now buys the commit path only.
+  const commitOnly = family === "shell" && !held.some((t) => FULL_EXEC_TOKENS.has(t));
+  const granting = family === "shell" && !commitOnly ? held.filter((t) => FULL_EXEC_TOKENS.has(t)) : held;
+  const gated = held.filter((t) => requires.has(t));
+  if (gated.length > 0) {
+    return {
+      level: "approval",
+      via: `${gated.join(", ")} (requires_approval)${commitOnly ? "; commit path only once granted" : ""}`,
+      gated,
+      commitOnly,
+    };
+  }
+  if (commitOnly) return { level: "scoped", via: "git.commit (commit path only)", gated, commitOnly };
+  return { level: "allow", via: granting.join(", "), gated, commitOnly };
+}
+
+function familyVerdicts(caps: ReadonlySet<string>, requires: ReadonlySet<string>): Record<ToolFamily, FamilyVerdict> {
+  return {
+    read: familyVerdict("read", caps, requires),
+    edit: familyVerdict("edit", caps, requires),
+    shell: familyVerdict("shell", caps, requires),
+    web: familyVerdict("web", caps, requires),
+  };
+}
+
+/**
+ * What a seat may do with each tool family, as the permission gate would decide
+ * it — for the operator surface, which until now could only show the raw
+ * capability list and leave the reader to work out that `git.commit` does not
+ * mean "has a shell".
+ *
+ * Pure, and built on the same verdict the gate uses. It describes the seat as
+ * configured: an `approval` family stays `approval` here after the operator
+ * unlocks one of its tools, because grants are per tool and per session, and
+ * this is a statement about the seat, not about one session of it.
+ */
+export function describeToolPermissions(capabilities: string[], requiresApproval: string[] = []): ToolPermissions {
+  const caps = new Set(capabilities.map(normalizeCapability));
+  const requires = new Set(requiresApproval.map(normalizeCapability));
+  const v = familyVerdicts(caps, requires);
+  const strip = ({ level, via }: FamilyVerdict): ToolPermission => ({ level, via });
+  return { read: strip(v.read), edit: strip(v.edit), shell: strip(v.shell), web: strip(v.web) };
+}
+
 /** Operator-approval half of {@link buildPermissionGate}. */
 export interface ApprovalGate {
   /** Capability tokens whose tools need a grant. Normalized by the caller. */
@@ -530,84 +1320,50 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
   // Normalized here as well as at config load: capabilityGrants also arrive
   // from direct AgentDefinition construction (tests, bench harnesses).
   const caps = new Set(capabilities.map(normalizeCapability));
-  const canEdit = EDIT_CAPABILITIES.some((t) => caps.has(t));
-  const canExec = caps.has("shell.execute") || caps.has("test.execute");
-  const canFetch = caps.has("network.request");
-  // `git.commit` once bought blanket exec: opencode rendered it as bash:"ask",
-  // nothing on a mesh turn could answer that prompt, and a pending one would
-  // stall the slot to its timeout — so the seat got exec instead. That backend
-  // is gone and the widening outlived its reason: a seat granted git.commit and
-  // deliberately *not* granted shell.execute was still getting arbitrary bash.
-  // It now buys the commit path only.
-  const canCommit = caps.has("git.commit");
+  const requires = new Set((approval?.requires ?? []).map(normalizeCapability));
+  const granted = approval?.granted ?? new Set<string>();
+  // Decided once, from the same function `describeToolPermissions` reads: caps
+  // and `requires` are fixed for the gate's life. `granted` is NOT folded in —
+  // it is the caller's live set, refreshed per turn, and is read per call below.
+  const verdicts = familyVerdicts(caps, requires);
 
   const deny = (message: string) => ({ behavior: "deny" as const, message });
 
-  const requires = new Set((approval?.requires ?? []).map(normalizeCapability));
-  const granted = approval?.granted ?? new Set<string>();
-
-  /**
-   * The seat's OWN tokens that authorize this tool. Filtered against `caps` on
-   * purpose: `requires_approval` narrows a grant and must never widen one, so
-   * a token the seat does not hold can neither gate nor unlock anything.
-   */
-  const authorizing = (toolName: string): string[] => {
-    const candidates = EDIT_TOOLS.has(toolName)
-      ? ["repository.write", "architecture.write", "test.write"]
-      : EXEC_TOOLS.has(toolName)
-        ? ["shell.execute", "test.execute", "git.commit"]
-        : NETWORK_TOOLS.has(toolName)
-          ? ["network.request"]
-          : [];
-    return candidates.filter((t) => caps.has(t));
-  };
-
-  /** A denial when this tool is gated and not yet unlocked, else undefined. */
-  const held = (toolName: string) => {
-    if (requires.size === 0 || granted.has(toolName)) return undefined;
-    const gated = authorizing(toolName).filter((t) => requires.has(t));
-    if (gated.length === 0) return undefined;
-    approval?.onRequest?.(toolName);
-    return deny(
-      `${toolName} needs operator approval: this seat holds ${gated.join(", ")}, which requires_approval gates. ` +
-        "The request is recorded on the operator's gate surface — end your turn rather than retrying, " +
-        "since a grant cannot unlock a call already in flight.",
-    );
-  };
+  /** Why a family with no authorizing capability refuses this tool. Wording is the gate's contract with the model. */
+  const refusal = (family: Exclude<ToolFamily, "read">, toolName: string): string =>
+    family === "edit"
+      ? `${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`
+      : family === "shell"
+        ? `${toolName} denied: this seat holds no shell.execute or test.execute capability.`
+        : `${toolName} denied: this seat holds no network.request capability.`;
 
   return async (toolName, toolInput) => {
-    if (toolName.startsWith(MESH_MCP_PREFIX)) return { behavior: "allow", updatedInput: toolInput };
-    if (READ_TOOLS.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
-    if (EDIT_TOOLS.has(toolName)) {
-      if (!canEdit) {
-        return deny(`${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`);
-      }
-      return held(toolName) ?? { behavior: "allow", updatedInput: toolInput };
-    }
-    if (EXEC_TOOLS.has(toolName)) {
-      if (!canExec && !canCommit) {
-        return deny(`${toolName} denied: this seat holds no shell.execute or test.execute capability.`);
-      }
-      // Checked before the commit-scope narrowing below: an operator gate is
-      // about whether this seat may reach the tool at all, which is a question
-      // that comes before what it may pass to it.
-      const hold = held(toolName);
-      if (hold) return hold;
-      if (canExec) return { behavior: "allow", updatedInput: toolInput };
-      // BashOutput and KillShell address a shell this seat already opened; only
-      // Bash opens a new one, so only Bash needs its command scoped.
-      if (toolName !== "Bash") return { behavior: "allow", updatedInput: toolInput };
-      const why = commitScopeDenial(toolInput);
-      return why ? deny(`Bash denied: ${why}.`) : { behavior: "allow", updatedInput: toolInput };
-    }
-    if (NETWORK_TOOLS.has(toolName)) {
-      if (!canFetch) {
-        return deny(`${toolName} denied: this seat holds no network.request capability.`);
-      }
-      return held(toolName) ?? { behavior: "allow", updatedInput: toolInput };
-    }
+    const family = toolFamily(toolName);
+    if (family === "mesh" || family === "read") return { behavior: "allow", updatedInput: toolInput };
     // Fail closed. A tool nobody mapped is a tool nobody authorized.
-    return deny(`${toolName} is not available to mesh agents under the claude runtime.`);
+    if (family === null) return deny(`${toolName} is not available to mesh agents under the claude runtime.`);
+    const v = verdicts[family];
+    if (v.level === "deny") return deny(refusal(family, toolName));
+    // Checked before the commit-scope narrowing below: an operator gate is
+    // about whether this seat may reach the tool at all, which is a question
+    // that comes before what it may pass to it.
+    if (v.level === "approval" && !granted.has(toolName)) {
+      approval?.onRequest?.(toolName);
+      return deny(
+        `${toolName} needs operator approval: this seat holds ${v.gated.join(", ")}, which requires_approval gates. ` +
+          "The request is recorded on the operator's gate surface — end your turn rather than retrying, " +
+          "since a grant cannot unlock a call already in flight.",
+      );
+    }
+    // BashOutput and KillShell address a shell this seat already opened; only
+    // Bash opens a new one, so only Bash needs its command scoped. `commitOnly`
+    // rather than `level === "scoped"`: an unlocked `approval` seat that holds
+    // only git.commit is still commit-only once through the operator gate.
+    if (v.commitOnly && toolName === "Bash") {
+      const why = commitScopeDenial(toolInput);
+      if (why) return deny(`Bash denied: ${why}.`);
+    }
+    return { behavior: "allow", updatedInput: toolInput };
   };
 }
 
@@ -616,6 +1372,55 @@ interface ClaudeSessionHandle {
   sdkSessionId: string;
   model?: string;
 }
+
+/**
+ * How long a turn the mesh aborted waits for the CLI to answer the abort, in ms.
+ *
+ * Same figure and same reason as the supervisor's TURN_TIMEOUT_USAGE_GRACE_MS:
+ * the answer is a `result` frame carrying the turn's real usage — the only
+ * token figure a killed turn has — and the CLI sends it in milliseconds
+ * (measured: 27ms). Past this, the CLI is taken to have ignored the abort: the
+ * turn is settled without it, and the session torn down, because a CLI that
+ * answers late would hand that `result` to whichever turn is pending by then.
+ */
+const ABORT_ANSWER_GRACE_MS = 2000;
+
+/** Named on every adapter-backstop timeout, so the audit says which deadline fired. */
+const BACKSTOP_NOTE = "claude adapter backstop: the supervisor did not stop the turn";
+
+/**
+ * Fresh spawns a seat gets when the mesh MCP bridge is not up at `init`.
+ *
+ * The status the CLI reports at `init` is fixed for the life of that query —
+ * the bridge is dialled as the query starts — so the only way to re-read it is
+ * a new spawn. That makes a bridge the child has not finished bringing up look
+ * exactly like a permanently broken one, and it is not: measured live
+ * (2026-09-27T08:52:13Z), a child restart woke a seat about a second later and
+ * its turn died on `status "failed"`, while the mission was healthy seconds
+ * after that. Each such turn cost a discard, a restart-ladder step and the
+ * seat's turn.
+ *
+ * So a bridge that is down at init buys a bounded number of fresh spawns, at a
+ * backoff long enough for a starting bridge to attach and short enough to sit
+ * inside every deadline that governs the turn: the supervisor's silence window
+ * (`turn_silence_ms`, 300s by default) and its ceiling (`turn_timeout_ms × 3`,
+ * 30 minutes by default) see 7s of it, and the adapter's own first-frame
+ * watchdog is per-attempt rather than for the whole retry.
+ *
+ * Exported so the tests can assert the budget rather than restate it.
+ */
+export const BRIDGE_RESPAWN_ATTEMPTS = 5;
+
+/**
+ * The wait before each of those spawns, in order: `BRIDGE_RESPAWN_ATTEMPTS`
+ * entries, so the whole retry window is 30s. Short first, because the race this
+ * absorbs is milliseconds wide in the common case; longer after, because a
+ * bridge that is still not up after a second is usually a bridge that is
+ * genuinely failing to start. The tail is long because a restart's bridge was
+ * measured still unready 7s in, which is what the first 3-attempt/7s budget
+ * missed; 30s still sits far inside the supervisor's 300s silence window.
+ */
+export const BRIDGE_RESPAWN_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
 interface TurnState {
   /** Live frames for `stream`. Closed by `settle`, however the turn ends. */
@@ -653,6 +1458,97 @@ interface TurnState {
    * reading this as "nothing to rotate".
    */
   maxPromptTokens: number;
+  /**
+   * Model calls this turn made, counted off `message_start` (one per call).
+   * The divisor of `estimateContextFromSum` when no frame reported usage.
+   */
+  modelCalls: number;
+  /**
+   * Set by `endTurn`: the abort that follows is the mesh closing a turn whose
+   * work already landed, so its error result settles the turn as COMPLETE.
+   */
+  endRequested?: boolean;
+  /**
+   * Set by the adapter's own backstop timer. Implies `interrupted`, but the
+   * abort's answer settles as a `TurnTimeoutError`, not an interrupt: this
+   * turn died of a deadline, and `classifyTurnFailure` reads the type.
+   */
+  timedOut?: boolean;
+  /**
+   * Set with a failure the `init` frame attributes to the mesh MCP bridge.
+   *
+   * `stream` reads it to tell a startup race — the child was still bringing the
+   * bridge up when this seat's query started — from a real fault, and to retry
+   * the turn on a fresh spawn instead of reporting a permanently mute seat.
+   * The error itself is unchanged, and is what the turn still fails with once
+   * the retry budget is spent.
+   */
+  bridgeDown?: boolean;
+  /**
+   * Fresh spawns already spent on that, carried onto the turn's `turn_end` so
+   * a race is visible in the record rather than only in the audit line.
+   */
+  bridgeRespawns?: number;
+  /** The give-up on an abort the CLI has not answered yet; cleared by `settle`. */
+  abortGrace?: NodeJS.Timeout;
+  /**
+   * Per-call usage the frames reported, keyed by API message id, and the
+   * running sum of its billed half: the live figure `usage_update` carries.
+   * See `noteCallUsage`.
+   */
+  callUsage: Map<string, CallRecord>;
+  usageSum: CallUsage;
+  /** The call opened most recently: the next call's predecessor. */
+  lastCallKey?: string;
+  /** Calls `reattributedPrefix` moved tokens for, and the tokens moved. */
+  reattributedCalls: number;
+  reattributedTokens: number;
+  /**
+   * Of `reattributedCalls`, how many were the turn's FIRST call — the ones
+   * judged against the previous turn rather than against the previous call
+   * (see `previousTurnPrefix`). Reported as `usageGuard.firstCallAdjustments`.
+   */
+  reattributedFirstCalls: number;
+  /**
+   * The evidence this turn's first call is judged against: the final prompt of
+   * the session's previous turn, when that turn ended inside the operator's
+   * `stale_after_ms` window — and undefined whenever there is no such evidence
+   * (the session's first turn, a fresh session after a rotation, a gap past the
+   * window, or a previous turn whose calls reported nothing). Undefined means a
+   * zero-cache first call is billed exactly as reported: the prefix may really
+   * have gone cold. Fixed for the turn at setup, from the session record.
+   */
+  firstCallPrevPrompt?: number;
+  /**
+   * The message id of the call in progress, from its `message_start`.
+   * `message_delta` names no call and always follows its own call's
+   * `message_start`, so this is how its usage finds the right one.
+   */
+  callId?: string;
+  /**
+   * Notes `advise` queued for THIS turn, drained by the tool-boundary hook.
+   * Held on the turn, not the session, so a note that never met a tool call
+   * dies with its turn instead of surfacing in the next one.
+   */
+  advice: string[];
+}
+
+/**
+ * What one attempt tells `stream` about why it failed, so the retry decision
+ * never has to sniff an error: `bridge` is set only where the `init` frame said
+ * the mesh bridge was down, and `live` is the session that reported it (the one
+ * a respawn and the mute alarm both read from).
+ */
+interface BridgeRespawnState {
+  live?: LiveSession;
+  bridge?: boolean;
+  /**
+   * How the failing `init` described the bridge — `status "failed"`, or
+   * `not registered` when the CLI listed no `mesh` server at all. Captured when
+   * the failure is, not read off the session at the end, because the session the
+   * retry ends on is the one whose bridge came up.
+   */
+  status?: string;
 }
 
 /**
@@ -762,6 +1658,8 @@ interface LiveSession {
   mcpStatus?: Array<{ name: string; status: string }>;
   /** Whether the mute warning already fired, so a reconnect does not re-alarm. */
   mutedReported?: boolean;
+  /** Set from `init` when the mesh bridge is down; fails the turn fast. */
+  bridgeDown?: string;
   /** Model the assistant frames actually reported. Authoritative when present. */
   lastModel?: string;
   /** Model we asked for, used until the backend tells us what it really ran. */
@@ -776,6 +1674,16 @@ interface LiveSession {
   agent: AgentDefinition;
   context: RuntimeContext;
   /**
+   * Whether this query was opened as a `resume` of a transcript that already
+   * exists, rather than as a brand-new session.
+   *
+   * Decides how a bridge respawn reopens it (see `respawnForBridge`): a resumable
+   * query is re-resumed, because its transcript is on disk and losing it would
+   * silently drop everything this seat remembers; a brand-new one has nothing to
+   * lose, and its id may not be on disk yet, so the respawn gives it a new one.
+   */
+  wasResumed: boolean;
+  /**
    * The context this session is carrying: the largest prompt a single model
    * call of the last turn was handed (`input + cache_read + cache_creation`,
    * see `promptSize`).
@@ -789,10 +1697,16 @@ interface LiveSession {
    * measured mission that reported 5,219,210 against a largest real prompt of
    * 165,129 (`NOTES-communication-measured-review.md` §11c).
    *
-   * Falls back to that sum only when no frame reported usage at all, so a
-   * backend that reports nothing rotates early rather than never.
+   * When no frame reported usage at all it is ESTIMATED from that sum
+   * (`estimateContextFromSum`), so a backend that reports nothing rotates early
+   * rather than never — but not at the raw sum, which made ~half of one live
+   * run's turns handovers (NOTES-live-run-20260925-2040.md §1).
    */
   contextTokens: number;
+  /** Whether "context unmeasurable" was already reported for this session. */
+  unmeasurableReported?: boolean;
+  /** Whether "usage re-attributed" was already reported for this session. */
+  reattributionReported?: boolean;
   /** Turns served by the CURRENT sdk session, and rotations so far. */
   turns: number;
   rotations: number;
@@ -802,6 +1716,20 @@ interface LiveSession {
    * prompt cache, and is then re-reading itself at full price.
    */
   lastTurnEndedAt?: number;
+  /**
+   * The final prompt of this session's last COMPLETED turn, in tokens — the
+   * evidence the next turn's first call is judged against (`previousTurnPrefix`)
+   * for the same reason `lastTurnEndedAt` is recorded beside it: a turn boundary
+   * does not by itself make a prefix cold.
+   *
+   * Held per session, so a rotation — which stands a fresh `LiveSession` up under
+   * a new SDK id — cannot carry it: the replacement's transcript is empty and
+   * nothing about the retired one predicts its prompts. Written only by a turn
+   * that settled as a success, and only from a call that actually reported usage;
+   * absent at every other time, and absent means "no evidence" rather than "a
+   * small context".
+   */
+  lastTurnPromptTokens?: number;
   /**
    * Latched once this session is judged stale, so the decision survives the
    * turn that answers it. See `markStaleRotationDue`.
@@ -842,6 +1770,33 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private turnTimeoutMs: number;
   private firstFrameTimeoutMs: number;
   private spawnFailureGraceMs: number;
+  /**
+   * The last measured context per SDK session id, outliving the `LiveSession`
+   * that measured it. `open` used to start every session at 0, including a
+   * `resume` of a transcript it had just measured: a seat whose turn timed out
+   * was resumed onto a 224k-per-call transcript with no rotation pending
+   * (NOTES-live-run-20260925-2040.md §12). Mirrored to `stateDir` when given.
+   *
+   * `lastTurnPromptTokens` rides along so the usage guard's evidence survives a
+   * respawn or a process restart on the same transcript — the two cases where
+   * the turn boundary is a restart rather than a context reset. It is a
+   * MEASUREMENT, like `contextTokens` at its best and unlike its estimate
+   * fallback, and it is still gated by the operator's staleness window when read.
+   */
+  private knownContext = new Map<
+    string,
+    { contextTokens: number; lastTurnEndedAt?: number; lastTurnPromptTokens?: number; updatedAt: number }
+  >();
+  private knownContextLoaded = false;
+  /** Notice keys already reported, so each notice fires once. */
+  private noticed = new Set<string>();
+  /**
+   * Sessions a stop arrived for while they had no live query to abort — which,
+   * since the failure paths tear their query down before throwing, means the gap
+   * between the attempts of a bridge retry. Read and cleared by `stream`, so a
+   * respawn cannot resurrect a turn the mesh has already stopped.
+   */
+  private stoppedMidRetry = new Set<string>();
 
   constructor(private options: ClaudeAdapterOptions = {}) {
     this.turnTimeoutMs = options.turnTimeoutMs ?? 600000;
@@ -852,6 +1807,149 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   /** Per-agent `model` from mesh.yaml, else the mesh-wide adapter default. */
   private modelFor(agent: AgentDefinition): string | undefined {
     return toClaudeModelId(agent.model) ?? this.options.model;
+  }
+
+  /**
+   * The rotation threshold for this session. One place, read by both `stream`
+   * and `rotationPending`, so the supervisor's answer and the adapter's agree.
+   *
+   * A pinned threshold wins outright; then the window, from the most specific
+   * knowledge to the least: the seat's own `context_window`, the model the
+   * backend reports it seated (table or `[1m]`), the mesh-wide
+   * `context_window`, and only then the conservative floor — which is now said
+   * out loud, once, instead of silently charging a 1M model a 200k window.
+   */
+  private thresholdFor(s: LiveSession): number {
+    if (this.options.rotateAtContextTokens !== undefined) return this.options.rotateAtContextTokens;
+    const model = s.lastModel ?? s.configuredModel;
+    const window = s.agent.contextWindow ?? knownContextWindow(model) ?? this.options.contextWindow;
+    if (window !== undefined) return Math.floor(window * SESSION_CONTEXT_ROTATE_RATIO);
+    this.noticeOnce(`window:${s.agent.id}:${model ?? ""}`, {
+      agentId: s.agent.id,
+      kind: "unknown_context_window",
+      message:
+        `${s.agent.id}: no context window is known for model '${model ?? "(unreported)"}' — rotating at the ` +
+        `${SESSION_CONTEXT_ROTATE_TOKENS}-token floor. Set mesh.runtime.context_window or agents.${s.agent.id}.context_window.`,
+    });
+    return SESSION_CONTEXT_ROTATE_TOKENS;
+  }
+
+  private noticeOnce(key: string, info: Parameters<NonNullable<ClaudeAdapterOptions["onNotice"]>>[0]): void {
+    if (this.noticed.has(key)) return;
+    this.noticed.add(key);
+    try {
+      this.options.onNotice?.(info);
+    } catch {
+      // Observability only.
+    }
+  }
+
+  /**
+   * The context a turn carried when no frame reported a per-call prompt: an
+   * estimate from the turn's summed reads (see `estimateContextFromSum`), and a
+   * notice, once per session, that this backend's context cannot be measured.
+   */
+  private unmeasuredContext(s: LiveSession, tokens: AgentOutput["tokensUsed"] | undefined, calls: number): number {
+    const sum = transcriptSize(tokens);
+    if (sum > 0 && !s.unmeasurableReported) {
+      s.unmeasurableReported = true;
+      this.noticeOnce(`unmeasurable:${s.meshSessionId}`, {
+        agentId: s.agent.id,
+        kind: "context_unmeasurable",
+        message:
+          `${s.agent.id}: context unmeasurable — no frame of session ${s.sdkSessionId} reported per-call usage ` +
+          `(message_start, message_delta or assistant); estimating it from the turn's summed reads over ${calls} call(s)`,
+      });
+    }
+    return estimateContextFromSum(sum, calls);
+  }
+
+  /**
+   * Fold one frame's usage into the turn in flight (`noteCallUsage`) and, the
+   * first time a call of this seat session is re-attributed, say so once: the
+   * backend is dropping cache usage, and the figures it reports are not what
+   * the mesh bills. Same once-per-session latch as "context unmeasurable".
+   *
+   * One notice covers both kinds of evidence — the previous call of the same
+   * turn, and the previous turn of the same session — because they are one fault
+   * seen at two distances, and a session that drops cache reports will usually
+   * show both. Which one fired leads the sentence, so the operator can still
+   * tell a mid-turn gap from a turn boundary.
+   */
+  private noteUsage(s: LiveSession, u: ClaudeTurnUsage | undefined, callKey: string | undefined): void {
+    const turn = s.pending;
+    if (!turn) return;
+    const fired = noteCallUsage(turn, u, callKey);
+    if (!fired || s.reattributionReported) return;
+    s.reattributionReported = true;
+    this.noticeOnce(`reattributed:${s.meshSessionId}`, {
+      agentId: s.agent.id,
+      kind: "usage_reattributed",
+      message:
+        `${s.agent.id}: usage re-attributed — session ${s.sdkSessionId} reported a ${fired.prompt}-token call with zero cache ` +
+        (fired.firstCall
+          ? `when the previous turn of this session had sent `
+          : `right after the same turn sent `) +
+        `${fired.prefix} tokens of it; billing that prefix as cache_read, not input. The backend ` +
+        `or a proxy in front of it is dropping cache usage; raw vs billed figures are on the turn's usageGuard`,
+    });
+  }
+
+  /** Where `knownContext` is mirrored, or undefined for memory only. */
+  private knownContextFile(): string | undefined {
+    return this.options.stateDir ? path.join(this.options.stateDir, "claude-context.json") : undefined;
+  }
+
+  /** The last measurement of this SDK session, from memory or the state file. */
+  private recallContext(
+    sdkSessionId: string,
+  ): { contextTokens: number; lastTurnEndedAt?: number; lastTurnPromptTokens?: number } | undefined {
+    const file = this.knownContextFile();
+    if (!this.knownContextLoaded && file) {
+      this.knownContextLoaded = true;
+      try {
+        const rows = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          { contextTokens?: unknown; lastTurnEndedAt?: unknown; lastTurnPromptTokens?: unknown; updatedAt?: unknown }
+        >;
+        for (const [id, r] of Object.entries(rows)) {
+          if (typeof r?.contextTokens !== "number" || this.knownContext.has(id)) continue;
+          this.knownContext.set(id, {
+            contextTokens: r.contextTokens,
+            ...(typeof r.lastTurnEndedAt === "number" ? { lastTurnEndedAt: r.lastTurnEndedAt } : {}),
+            ...(typeof r.lastTurnPromptTokens === "number" ? { lastTurnPromptTokens: r.lastTurnPromptTokens } : {}),
+            updatedAt: typeof r.updatedAt === "number" ? r.updatedAt : 0,
+          });
+        }
+      } catch {
+        // No file yet, or an unreadable one: the session starts unmeasured, as before.
+      }
+    }
+    return this.knownContext.get(sdkSessionId);
+  }
+
+  /** Record a session's measurement where the next `open` of its transcript finds it. */
+  private rememberContext(s: LiveSession): void {
+    this.recallContext(s.sdkSessionId); // load the file first, so a write never drops its rows
+    this.knownContext.set(s.sdkSessionId, {
+      contextTokens: s.contextTokens,
+      ...(s.lastTurnEndedAt !== undefined ? { lastTurnEndedAt: s.lastTurnEndedAt } : {}),
+      ...(s.lastTurnPromptTokens !== undefined ? { lastTurnPromptTokens: s.lastTurnPromptTokens } : {}),
+      updatedAt: Date.now(),
+    });
+    // Bounded: one row per SDK session ever seen would grow for the life of the install.
+    if (this.knownContext.size > MAX_KNOWN_CONTEXT_ROWS) {
+      const oldest = [...this.knownContext.entries()].sort((a, b) => a[1].updatedAt - b[1].updatedAt);
+      for (const [id] of oldest.slice(0, this.knownContext.size - MAX_KNOWN_CONTEXT_ROWS)) this.knownContext.delete(id);
+    }
+    const file = this.knownContextFile();
+    if (!file) return;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(Object.fromEntries(this.knownContext)), "utf8");
+    } catch {
+      // Best-effort, like every registry write: the in-memory copy still serves this process.
+    }
   }
 
   async start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession> {
@@ -913,20 +2011,90 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
    *
    * Implemented over `stream` rather than beside it so the two can never
    * drift: every field of the returned output has exactly one producer.
+   *
+   * The one field the shared fold does not know, the usage guard's report, is
+   * read off the `turn_end` frame on its way through and put back on.
    */
-  async send(session: AgentSession, input: AgentInput): Promise<AgentOutput> {
-    return collectAgentOutput(this.stream(session, input), input);
+  async send(session: AgentSession, input: AgentInput): Promise<ClaudeAgentOutput> {
+    let usageGuard: ClaudeUsageGuard | undefined;
+    const tap = async function* (events: AsyncIterable<AgentEvent>): AsyncGenerator<AgentEvent, void> {
+      for await (const ev of events) {
+        if (ev.kind === "turn_end") usageGuard = (ev as ClaudeTurnEnd).usageGuard;
+        yield ev;
+      }
+    };
+    const out = await collectAgentOutput(tap(this.stream(session, input)), input);
+    return usageGuard ? { ...out, usageGuard } : out;
   }
 
   /**
-   * Live frames for one turn.
+   * Live frames for one turn, retried on a fresh spawn when the seat's mesh MCP
+   * bridge was not up at `init` (see `BRIDGE_RESPAWN_ATTEMPTS`).
+   *
+   * The retry is a retry of the TURN, not of the push. A bridge that is down at
+   * init is a startup race — the child had not finished bringing the bridge up
+   * when this query started — and the status the CLI reports is fixed for the
+   * life of the query, so only a fresh spawn can re-read it. Each attempt is
+   * therefore an ordinary turn on a new query: same session, same input, same
+   * armed deadlines, settling or throwing exactly as it always did. A failed
+   * attempt yields no frames (the bridge fails it at `init`, before the model
+   * has produced anything), so a retry is invisible to whoever reads the
+   * stream, and its cost is a spawn rather than a turn.
+   *
+   * Everything else — a backend that died, a turn that timed out, a push the
+   * mesh itself aborted — is thrown as it was, un-retried.
+   */
+  async *stream(session: AgentSession, input: AgentInput): AsyncGenerator<AgentEvent, void> {
+    // A new turn: whatever stop was requested while this seat had no query was
+    // for a turn that is over.
+    this.stoppedMidRetry.delete(session.sessionId);
+    const retry: BridgeRespawnState = {};
+    const delays = this.options.bridgeRespawnDelaysMs ?? BRIDGE_RESPAWN_DELAYS_MS;
+    for (let respawns = 0; ; respawns++) {
+      retry.bridge = false;
+      try {
+        yield* this.attemptTurn(session, input, respawns, retry);
+        if (respawns > 0) this.noticeBridgeRace(session, respawns, retry.status, false);
+        return;
+      } catch (err) {
+        if (!retry.bridge || !retry.live) throw err;
+        const wait = delays[respawns];
+        if (wait === undefined) {
+          // Budget spent: the seat really is without a bridge, so this — not a
+          // transient retry — is the moment the mute alarm means something.
+          this.noticeBridgeRace(session, respawns, retry.status, true);
+          this.reportMuteIfBridgeMissing(retry.live);
+          throw err;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, wait));
+        // A stop that landed in that window has to win: this turn is over, and
+        // the replacement would run with nobody reading it.
+        if (this.stoppedMidRetry.delete(session.sessionId)) {
+          throw new InterruptedTurnError(
+            "turn interrupted by the mesh between bridge respawns",
+            undefined,
+            retry.live.lastModel,
+          );
+        }
+        this.respawnForBridge(retry.live);
+      }
+    }
+  }
+
+  /**
+   * One attempt at a turn, on whatever query the session currently holds.
    *
    * An async generator, so the setup below (session lookup, context rotation)
    * runs on first pull rather than at call time and `send` stays a one-liner.
    * The pump feeds `turn.events`; `settle` closes it however the turn ends, so
    * this loop always terminates.
    */
-  async *stream(session: AgentSession, input: AgentInput): AsyncGenerator<AgentEvent, void> {
+  private async *attemptTurn(
+    session: AgentSession,
+    input: AgentInput,
+    respawns: number,
+    retry: BridgeRespawnState,
+  ): AsyncGenerator<AgentEvent, void> {
     let s = this.live.get(session.sessionId);
     if (!s || s.closed) {
       // No live query behind a session the supervisor still believes in. That
@@ -945,7 +2113,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // seat's bound. `lastModel` first for the same reason `toTurnEnd` prefers
     // it: it is what the backend reported it actually ran, and the window
     // belongs to that model, not to the one we asked for.
-    const rotateAt = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
+    const rotateAt = this.thresholdFor(s);
     // `suppressRotation` buys exactly one turn on the old transcript, for the
     // handover. It cannot wedge a seat permanently over the threshold: the
     // supervisor sets it only when it is asking for a continuity record, and
@@ -960,6 +2128,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       );
     }
     const live = s;
+    // Where a bridge respawn and the mute alarm read the session from: the one
+    // whose `init` frame reported the bridge, which after a rotation is the
+    // replacement rather than the session this call started with.
+    retry.live = live;
 
     // After the rotation check, not before: `rotate` builds a fresh session
     // whose gate seeded its set from the session-start context, so refreshing
@@ -973,34 +2145,91 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     }
 
     this.statuses.set(session.agentId, "RUNNING");
+    // The evidence this turn's FIRST call is judged against, read once — from
+    // the session the turn will run on, so a rotation above leaves nothing to
+    // inherit. Undefined (the session's first turn, a fresh session, a gap past
+    // the operator's window) means a zero-cache first call is billed as
+    // reported, which is the behaviour every turn had before this evidence
+    // existed.
+    const firstCallPrev = previousTurnPrefix(
+      { promptTokens: live.lastTurnPromptTokens, endedAt: live.lastTurnEndedAt },
+      this.options.staleAfterMs ?? SESSION_CACHE_STALE_MS,
+      Date.now(),
+    );
     const turn: TurnState = {
       events: new PushQueue<AgentEvent>(),
       toolSeq: 0,
       settled: false,
       sawFrame: false,
       maxPromptTokens: 0,
+      modelCalls: 0,
+      callUsage: new Map(),
+      usageSum: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      reattributedCalls: 0,
+      reattributedTokens: 0,
+      reattributedFirstCalls: 0,
+      advice: [],
+      ...(firstCallPrev !== undefined ? { firstCallPrevPrompt: firstCallPrev } : {}),
+      ...(respawns > 0 ? { bridgeRespawns: respawns } : {}),
       settle: (outcome) => {
         if (turn.settled) return;
         turn.settled = true;
         clearTimeout(timer);
         clearTimeout(firstFrame);
+        clearTimeout(turn.abortGrace);
+        turn.advice.length = 0;
         live.pending = undefined;
         if (outcome.ok) {
-          const end = this.toTurnEnd(outcome.msg, live);
+          const end = this.toTurnEnd(outcome.msg, live, turn);
           live.turns++;
           // The largest prompt a single call was handed, which is the context
           // this session is carrying — what the rotation threshold is named for
-          // and, before this, never measured. Falls back to the summed figure
+          // and, before this, never measured. Estimated from the summed figure
           // only when NO frame reported usage: an absence, not an empty
-          // context, and the fallback over-states, so an unmeasurable backend
+          // context, and the estimate over-states, so an unmeasurable backend
           // rotates early rather than overflowing a window.
-          live.contextTokens = turn.maxPromptTokens || transcriptSize(end.tokensUsed);
+          live.contextTokens = turn.maxPromptTokens || this.unmeasuredContext(live, end.tokensUsed, turn.modelCalls);
           // When this session last finished a turn, for the staleness branch of
           // the rotation check. Read on the NEXT turn, like `contextTokens`.
           live.lastTurnEndedAt = Date.now();
+          // The final prompt of this turn, for the usage guard's turn-boundary
+          // evidence. A measurement or nothing: a turn whose calls reported no
+          // usage records no evidence rather than a zero the guard would read as
+          // a small context. Written here and nowhere else, so a turn that died
+          // leaves the previous turn's record standing — a failed turn is not a
+          // turn boundary the guard should judge a cold cache across.
+          const finalPrompt = lastCallPrompt(turn);
+          live.lastTurnPromptTokens = finalPrompt > 0 ? finalPrompt : undefined;
+          this.rememberContext(live);
           this.statuses.set(session.agentId, "IDLE");
           turn.events.push(end);
         } else {
+          // A measurement is a measurement however the turn ended. The success
+          // branch owns the ASSIGNMENT because it alone has the summed `result`
+          // usage to fall back on; a failed turn has no fallback, so take the
+          // frames it did get and never lower the figure.
+          //
+          // Without this, the seat most in need of rotation — one whose turns
+          // keep timing out — was the one seat whose `contextTokens` never moved,
+          // so the next turn's boundary check read a stale small number, dec‍lined
+          // to rotate, and timed out again. Measured 2026-09-24: a 302,667-token
+          // turn died on the timeout and left the measurement at whatever the
+          // last SUCCESSFUL turn had recorded.
+          //
+          // `lastTurnEndedAt` is deliberately NOT set here: a turn that died did
+          // not end a turn cleanly, and the staleness latch measures a cache gap
+          // between healthy turns.
+          //
+          // With `message_delta` now read, a timed-out turn behind the proxy
+          // reports its calls too. When even that is absent, a failure that
+          // carries the backend's usage (an abort's `result` frame) is estimated
+          // like a success; one that carries nothing leaves the figure alone.
+          const carried = (outcome.err as { tokensUsed?: AgentOutput["tokensUsed"] } | undefined)?.tokensUsed;
+          const seen = turn.maxPromptTokens || (carried ? this.unmeasuredContext(live, carried, turn.modelCalls) : 0);
+          if (seen > live.contextTokens) {
+            live.contextTokens = seen;
+            this.rememberContext(live);
+          }
           // Surfaced by `stream` after the queue drains, so frames already
           // emitted this turn are not swallowed by the failure.
           turn.failure = outcome.err;
@@ -1010,10 +2239,23 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       },
     };
     const timer = setTimeout(() => {
-      // Abort the model, not the session: the query stays usable for the
-      // next turn, matching opencode's per-turn abort semantics.
+      // A backstop, not the deadline: the supervisor owns that, extensions
+      // included, and stops the turn itself, so this fires only when it failed
+      // to. Armed at base + 30s, it pre-empted every extension the supervisor
+      // grants a working turn — the one the live run needed: a seat ~94 native
+      // Write/Edit/Bash calls in, last frame 17s old, killed at the 1,200,000ms
+      // base. And it settled a bare Error the instant it fired: not a timeout to
+      // `isTimeoutError`, so the crash ladder, and the abort's `result` frame —
+      // the only usage figure the turn would ever have — arrived after `settle`
+      // had cleared `pending` and was dropped unbilled.
+      //
+      // Now: marked BEFORE asking, like `interrupt`, so the answer cannot slip
+      // past the pump's check; the answer settles the turn as a timeout
+      // carrying its usage; and only an unanswered abort settles without it.
+      turn.interrupted = true;
+      turn.timedOut = true;
       void live.q.interrupt().catch(() => undefined);
-      turn.settle({ ok: false, err: new Error(`claude runtime: turn exceeded ${this.turnTimeoutMs}ms`) });
+      this.abandonIfUnanswered(live, turn, () => new TurnTimeoutError(this.turnTimeoutMs, liveUsage(turn), live.lastModel, `${BACKSTOP_NOTE}; the backend never answered the abort`));
     }, this.turnTimeoutMs);
     const firstFrame = setTimeout(() => {
       if (turn.settled || turn.sawFrame) return;
@@ -1039,52 +2281,155 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     }, this.firstFrameTimeoutMs);
     firstFrame.unref?.();
     live.pending = turn;
-    live.inbox.push({
-      type: "user",
-      message: { role: "user", content: input.instructions },
-      parent_tool_use_id: null,
-    } as SDKUserMessage);
+    if (live.bridgeDown) {
+      // The init frame already said this query's bridge is down (it can land
+      // before the first push). Same fail-fast as the pump's, and flagged the
+      // same way, so a bridge the child has not finished bringing up is retried
+      // on a fresh spawn rather than read as a permanently mute seat.
+      turn.bridgeDown = true;
+      turn.settle({ ok: false, err: new Error(live.bridgeDown) });
+      this.teardown(live.meshSessionId);
+    } else {
+      live.inbox.push({
+        type: "user",
+        message: { role: "user", content: input.instructions },
+        parent_tool_use_id: null,
+      } as SDKUserMessage);
+    }
 
     for await (const ev of turn.events) yield ev;
-    if (turn.failure) throw turn.failure;
+    if (turn.failure) {
+      // A bridge that is down at init is normally a startup race and worth a
+      // fresh spawn — but not when the mesh itself ended this turn (a stop, an
+      // `endTurn`, the adapter's backstop): that turn is over, and the respawn
+      // would run work nobody is waiting for.
+      if (turn.bridgeDown && !turn.interrupted && !turn.endRequested) {
+        retry.bridge = true;
+        retry.status = bridgeStatusLabel(live.mcpStatus);
+      }
+      throw turn.failure;
+    }
   }
 
-  private toTurnEnd(result: ResultMessage, s: LiveSession): AgentEventTurnEnd {
+  private toTurnEnd(result: ResultMessage, s: LiveSession, turn: TurnState): ClaudeTurnEnd {
     // Drained, not copied: the set is session-lived, so the next turn has to
     // start empty or a tool held once would be re-reported on every turn after
     // -- including turns where the seat never reached for it.
     const held = [...s.heldTools];
     s.heldTools.clear();
     const text = result.result ?? "";
-    const operations: MeshOp[] = parseMeshOps(text, { aliases: this.options.transport !== "typed-only" });
-    const declared = extractDeclaredSummary(operations);
     const error = result.is_error ? turnFailureReason(result) : undefined;
-    // Same contract as the opencode adapter: `summary` stays the prose scrape
-    // it has always been, and `declaredSummary` carries the agent's own `done`
-    // summary when it gave one. Ops here are parsed out of prose, never typed:
-    // agents that call the mesh_* MCP tools execute through McpToolset directly
-    // and never reach this mapping, so typed-only transport is preserved.
+    // Billed as the live figure was (`noteCallUsage`), so the two still agree;
+    // what the backend actually reported rides along whenever they differ.
+    const raw = usageToTokens(result.usage);
+    const tokensUsed = settledUsage(turn, result.usage);
+    const usageGuard: ClaudeUsageGuard | undefined =
+      turn.reattributedCalls > 0
+        ? {
+            adjustedCalls: turn.reattributedCalls,
+            reattributedTokens: turn.reattributedTokens,
+            // Only when a turn-FIRST call was among them, so a report that has
+            // nothing to say about the turn boundary keeps the shape it always
+            // had: the protocol type reads `adjustedCalls` and the totals, and
+            // an absent field is how a reader tells "none" from "not measured".
+            ...(turn.reattributedFirstCalls > 0 ? { firstCallAdjustments: turn.reattributedFirstCalls } : {}),
+            raw,
+            adjusted: tokensUsed,
+          }
+        : undefined;
+    // No ops ride on the result: a seat issues every mesh op as a typed
+    // mesh_* MCP call, which the supervisor executes on the live turn as it
+    // arrives (and which captures `done`'s summary as the declared one). A
+    // mesh-json block in the reply is just prose now. `summary` is the
+    // plain-text fallback for a turn that declared none.
     return {
       kind: "turn_end",
       stopReason: result.is_error ? "error" : "end_turn",
       text,
-      operations,
-      tokensUsed: usageToTokens(result.usage),
+      operations: [],
+      typedOps: true,
+      tokensUsed,
       model: s.lastModel ?? s.configuredModel,
       modelVersion: s.lastModel,
       summary: extractSummary(text),
-      ...(declared ? { declaredSummary: declared } : {}),
       ...(error !== undefined ? { error } : {}),
       ...(held.length ? { heldTools: held } : {}),
+      ...(usageGuard ? { usageGuard } : {}),
+      // Only when there was one, so "the bridge was up at init" stays an
+      // absence rather than a zero a reader has to interpret.
+      ...(turn.bridgeRespawns ? { bridgeRespawns: turn.bridgeRespawns } : {}),
     };
   }
 
   async interrupt(session: AgentSession): Promise<void> {
     const s = this.live.get(session.sessionId);
-    if (!s || s.closed) return;
+    if (!s || s.closed) {
+      // Nothing to abort — except between the attempts of a bridge retry, where
+      // the seat has no query only because the last one was torn down and a
+      // fresh spawn is already scheduled. Remember it: a turn the mesh has
+      // stopped must not be resurrected by that respawn, which nobody would be
+      // reading and whose ops would still land.
+      this.stoppedMidRetry.add(session.sessionId);
+      return;
+    }
     // Mark before asking, so a result frame already in flight cannot slip past
     // the pump's interrupted check.
-    if (s.pending) s.pending.interrupted = true;
+    const turn = s.pending;
+    if (turn) {
+      turn.interrupted = true;
+      // Bounded here, not only by the backstop. The supervisor stops waiting on
+      // an unanswered interrupt after its own grace, but this turn stayed
+      // pending until the backstop fired — which used to be 30s later and is
+      // now past the whole extension ceiling, up to 2x the base timeout. Every
+      // turn the supervisor retried in that window died on "turn already in
+      // flight", an untyped Error, i.e. a crash.
+      this.abandonIfUnanswered(s, turn, () => new InterruptedTurnError("turn interrupted by the mesh; the backend never answered the abort", liveUsage(turn), s.lastModel));
+    }
+    await s.q.interrupt().catch(() => undefined);
+  }
+
+  /**
+   * Queue a note for the turn in flight; the tool-boundary hook delivers it
+   * (see `adviceHooks`). False when nothing is running, or the turn is already
+   * being stopped: it will not reach another tool boundary worth warning at.
+   */
+  advise(session: AgentSession, text: string): boolean {
+    const s = this.live.get(session.sessionId);
+    const turn = s && !s.closed ? s.pending : undefined;
+    if (!turn || turn.settled || turn.interrupted || turn.endRequested) return false;
+    turn.advice.push(text);
+    return true;
+  }
+
+  /**
+   * Give the CLI `ABORT_ANSWER_GRACE_MS` to answer an abort, then settle the
+   * turn with `err()` and tear the session down. A `result` that does arrive
+   * settles the turn first (see the pump), which clears this timer.
+   */
+  private abandonIfUnanswered(live: LiveSession, turn: TurnState, err: () => unknown): void {
+    if (turn.settled || turn.abortGrace) return;
+    turn.abortGrace = setTimeout(() => {
+      if (turn.settled) return;
+      turn.settle({ ok: false, err: err() });
+      if (this.live.get(live.meshSessionId) === live) this.teardown(live.meshSessionId);
+    }, ABORT_ANSWER_GRACE_MS);
+  }
+
+  /**
+   * End the turn in flight as COMPLETE. The supervisor calls this when a
+   * handover's `write_continuity` lands: the record is the whole of that turn,
+   * and letting the model go on to call `done` and write a reply re-sends the
+   * outgoing session's full transcript for nothing.
+   *
+   * An abort, answered by the CLI with an error `result` exactly as `interrupt`
+   * is — which is why the flag differs: the pump settles an `endRequested` turn
+   * as a success, with the usage that frame carries, rather than as an
+   * interrupted failure the supervisor would count against the seat.
+   */
+  async endTurn(session: AgentSession): Promise<void> {
+    const s = this.live.get(session.sessionId);
+    if (!s || s.closed || !s.pending) return;
+    s.pending.endRequested = true;
     await s.q.interrupt().catch(() => undefined);
   }
 
@@ -1177,6 +2522,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
         // its model cannot take.
         ...(opts.effort ? { effort: opts.effort } : {}),
         ...this.options.extraOptions,
+        // Same exclusion as a seat, for the same reason: the permission gate
+        // does not adjudicate native Task/Agent calls.
+        disallowedTools: mergedDisallowedTools(this.options.extraOptions),
       },
     });
 
@@ -1318,6 +2666,51 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   }
 
   /**
+   * Stand up the replacement query a bridge retry runs on.
+   *
+   * The identity is the session's, not the query's: the mesh-facing id stays
+   * (the supervisor's handle must keep resolving), and the SDK id is kept too
+   * whenever the query being replaced was itself a resume — its transcript is
+   * on disk and the CLI has just loaded it, so the replacement re-reads it and
+   * the seat keeps everything it remembers. A query that was NOT a resume owns
+   * no transcript worth keeping (and may not be on disk at all, which is why
+   * re-resuming it would be a gamble), so its replacement gets a new id and
+   * starts clean. Both arms spawn: that is the whole point, since the CLI reads
+   * the bridge's status once, as the query starts.
+   *
+   * `teardown` has already dropped the old query by the time this runs — the
+   * caller is the failure path — so `open` sees a free mesh id and builds a
+   * fresh session rather than handing the dead one back.
+   */
+  private respawnForBridge(s: LiveSession): LiveSession {
+    // The failure paths tear the old query down before throwing, so this only
+    // guarantees what they already did: without it, `open` would find the dead
+    // session still under the mesh id and hand it straight back.
+    if (this.live.get(s.meshSessionId) === s) this.teardown(s.meshSessionId);
+    const keep = s.wasResumed;
+    return this.open(s.agent, s.context, keep ? s.sdkSessionId : randomUUID(), keep, s.meshSessionId);
+  }
+
+  /**
+   * One audit line for a turn that had to wait for the bridge, so an operator
+   * can tell a startup race from a seat that is genuinely mute.
+   *
+   * Once per seat session, like every other notice here: a bridge that is late
+   * once is late once, and re-reporting it on each of the retries would bury
+   * the fact that it did come up.
+   */
+  private noticeBridgeRace(session: AgentSession, respawns: number, status: string | undefined, gaveUp: boolean): void {
+    this.noticeOnce(`bridge_respawn:${session.sessionId}`, {
+      agentId: session.agentId,
+      kind: "mesh_bridge_race",
+      message:
+        `${session.agentId}: the mesh MCP bridge was not up at init (${status ?? "unknown"}); the turn waited ` +
+        `${respawns} fresh spawn(s) and ${gaveUp ? "was aborted" : "then continued"} — a child still wiring ` +
+        `its bridge up, not necessarily a mute seat`,
+    });
+  }
+
+  /**
    * Has this session's prompt cache certainly expired, and is its transcript
    * large enough that re-reading it costs more than rebuilding from
    * projections?
@@ -1373,13 +2766,22 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
    * runs ON the old transcript, so it closes the very gap that made the session
    * stale. Remembering the verdict here is what makes the rotation still happen
    * on the turn after it.
+   *
+   * `cacheCold` reports that same latch: a session idle past the cache
+   * lifetime would re-read its whole transcript at full price to write a
+   * handover, so the supervisor skips that turn and rotates directly. It is
+   * evaluated even when the size alone trips the threshold, because a large
+   * cold transcript is exactly the costly case (two handovers, 611k, §1 of
+   * NOTES-live-run-20260925-2040.md). `sessionId` is the SDK session the
+   * rotation discards, which after a first rotation is not the mesh's id.
    */
   rotationPending(session: AgentSession): RotationPendingInfo | null {
     const s = this.live.get(session.sessionId);
     if (!s || s.closed) return null;
-    const thresholdTokens = this.options.rotateAtContextTokens ?? rotateAtFor(s.lastModel ?? s.configuredModel);
-    if (s.contextTokens < thresholdTokens && !this.markStaleRotationDue(s)) return null;
-    return { transcriptTokens: s.contextTokens, thresholdTokens };
+    const thresholdTokens = this.thresholdFor(s);
+    const cacheCold = this.markStaleRotationDue(s);
+    if (s.contextTokens < thresholdTokens && !cacheCold) return null;
+    return { transcriptTokens: s.contextTokens, thresholdTokens, sessionId: s.sdkSessionId, cacheCold };
   }
 
   private async rotate(s: LiveSession, reason: string): Promise<LiveSession> {
@@ -1395,6 +2797,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     this.live.delete(s.meshSessionId);
     const fresh = this.open(s.agent, s.context, randomUUID(), false, s.meshSessionId);
     fresh.rotations = rotations;
+    // The backend does not change with the SDK session, so neither does
+    // whether it reports per-call usage: warn once per seat session, not once
+    // per rotation.
+    fresh.unmeasurableReported = s.unmeasurableReported;
+    fresh.reattributionReported = s.reattributionReported;
     // Not `await fresh.ready`: `ready` resolves on `system`/`init`, which the
     // CLI does not emit until a message is pushed — and this turn's push does
     // not happen until rotation returns, so waiting outright deadlocks every
@@ -1454,8 +2861,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // Composed through `withOutputVoice` for the same reason the system prompt
     // below is: ROLE.md is meant to be the file a human reads to see what this
     // seat was told, and the raw role prose is not that — it is missing the
-    // shared OUTPUT_VOICE_RULES that go out with every turn.
-    fs.writeFileSync(path.join(dir, "ROLE.md"), withOutputVoice(context.rolePromptText), "utf8");
+    // shared OUTPUT_VOICE_RULES that go out with every turn. `withReadingDiscipline`
+    // rides along for the same reason: it is part of the prompt, so it is part
+    // of what the human should find written down.
+    fs.writeFileSync(path.join(dir, "ROLE.md"), withReadingDiscipline(withOutputVoice(context.rolePromptText)), "utf8");
     fs.writeFileSync(
       path.join(dir, "MESH_CONTEXT.md"),
       `Goal: ${context.goalId}\nMesh: ${context.meshId}\nWorkspace: ${context.workspacePath}\n`,
@@ -1475,6 +2884,15 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   ): LiveSession {
     const existing = this.live.get(meshSessionId);
     if (existing && !existing.closed) return existing;
+    if (resuming) {
+      // One transcript, one CLI. After a rotation the live session is keyed by
+      // the MESH id while the registry names its SDK id, so restoring that SDK
+      // id (after a failed turn) found nothing under its key and spawned a
+      // second `--resume` beside the first, still open, on the same transcript.
+      for (const [key, other] of [...this.live]) {
+        if (key !== meshSessionId && other.sdkSessionId === sdkSessionId) this.teardown(key);
+      }
+    }
 
     const inbox = new PushQueue<SDKUserMessage>();
     // Owned by the session rather than built inline in the gate call below:
@@ -1486,6 +2904,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // Session-owned for the same reason as `grantedTools`: the gate is built
     // once per session and must write somewhere that outlives the call.
     const heldTools = new Set<string>();
+    const hookRef: { live?: LiveSession } = {};
     const options: Options = {
       cwd: context.workspacePath,
       // `custom` rather than the claude_code preset: a mesh seat is not a
@@ -1495,8 +2914,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // The role prose is composed with the shared OUTPUT_VOICE_RULES rather
       // than passed through raw: this runtime builds the model's system prompt
       // itself, so without that the seat would answer under a different set of
-      // output rules than the same seat on opencode.
-      systemPrompt: { type: "custom", prompt: withOutputVoice(context.rolePromptText) },
+      // output rules than the same seat on opencode. `withReadingDiscipline`
+      // follows it for the opposite reason — it is NOT shared, and deliberately
+      // so: it is here rather than in the role prompt because it is a property
+      // of how this runtime's session accumulates a prompt (see its doc).
+      systemPrompt: { type: "custom", prompt: withReadingDiscipline(withOutputVoice(context.rolePromptText)) },
       mcpServers: { mesh: this.meshMcpServer(agent, context) },
       canUseTool: buildPermissionGate(
         context.capabilityGrants.length ? context.capabilityGrants : agent.capabilities,
@@ -1512,6 +2934,24 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // canUseTool is the authority; "default" is the mode that routes tool
       // calls through it instead of auto-allowing or hard-denying them.
       permissionMode: "default",
+      // A seat has no channel to answer a permission prompt, so a tool that
+      // raises one stalls the turn to its timeout instead of failing.
+      //
+      // `canUseTool` alone does NOT close this: its fail-closed default maps an
+      // unmapped tool to a `deny(...)`, yet a seat's native Task/Agent call was
+      // observed reaching the API and returning an API error rather than the
+      // gate's message — so the gate never adjudicated it. Measured 2026-09-25:
+      // most seats got a fast 400 (a subagent inherits the `opus` alias, which
+      // resolved to a model the installed CLI refuses), but one seat issued two
+      // calls in a single assistant message, both returned nothing for 15.5
+      // minutes, and the turn died at the 20-minute timeout — 119,171 tokens and
+      // the whole turn discarded, logged as `user-rejected` with no human present.
+      //
+      // Removing the tools from the model's context is what makes it fail fast.
+      // Note the same failure was fixed once before on the opencode runtime, where
+      // an unanswerable "ask" prompt stalled the slot to its timeout; this is that
+      // shape reaching the Claude CLI's own tool. Set after `extraOptions` below
+      // (see `mergedDisallowedTools`) so the escape hatch cannot undo it.
       // Feeds AgentInput.onToken, the live token tap the dashboard renders.
       includePartialMessages: true,
       ...(this.modelFor(agent) ? { model: this.modelFor(agent) } : {}),
@@ -1522,6 +2962,17 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // so the escape hatch still wins.
       effort: SEAT_EFFORT,
       ...this.options.extraOptions,
+      disallowedTools: mergedDisallowedTools(this.options.extraOptions),
+      // `advise` delivery, and the bound on a single mesh tool result. Reads
+      // the session through `hookRef` because the session object is built
+      // below, from the query these options create.
+      hooks: mergedHooks(
+        combineHooks(
+          adviceHooks(() => hookRef.live?.pending),
+          meshResultCapHooks(this.options.meshToolResultMaxChars ?? MESH_TOOL_RESULT_MAX_CHARS),
+        ),
+        this.options.extraOptions,
+      ),
     };
 
     const q = (this.options.queryFn ?? query)({ prompt: inbox, options });
@@ -1547,12 +2998,30 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       meshSessionId,
       agent,
       context,
+      wasResumed: resuming,
       contextTokens: 0,
       turns: 0,
       rotations: 0,
       grantedTools,
       heldTools,
     };
+    hookRef.live = s;
+    // A resume reopens a transcript that is exactly as big as it was, and as
+    // idle: start from its last measurement rather than from 0, which let a
+    // seat resume onto 224k per call with no rotation pending (§12 of
+    // NOTES-live-run-20260925-2040.md). A fresh session has no history to seed.
+    const known = resuming ? this.recallContext(sdkSessionId) : undefined;
+    if (known) {
+      s.contextTokens = known.contextTokens;
+      if (known.lastTurnEndedAt !== undefined) s.lastTurnEndedAt = known.lastTurnEndedAt;
+      // Recalled only for a RESUME, and only as the guard's evidence, gated on
+      // its own read by the staleness window: a respawn or a mesh restart on the
+      // same transcript did not reset the context, so the prefix a next first
+      // call re-sends may still be cached. A brand-new session (`resuming` false)
+      // recalls nothing at all, which is what keeps a rotation's replacement
+      // from inheriting the retired session's prompts.
+      if (known.lastTurnPromptTokens !== undefined) s.lastTurnPromptTokens = known.lastTurnPromptTokens;
+    }
     this.live.set(meshSessionId, s);
     void this.pump(s, agent.id);
     return s;
@@ -1612,14 +3081,33 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // failed to load can still talk, but cannot act, so it is recorded
           // here rather than discovered as silence.
           s.mcpStatus = msg.mcp_servers;
-          this.reportMuteIfBridgeMissing(s);
           if (typeof msg.model === "string") s.lastModel = msg.model;
           if (!s.settledReady) {
             s.settledReady = true;
             s.markReady();
           }
+          // A seat whose bridge is down cannot act at all, so fail the turn now
+          // rather than let it bill a full turn that lands nothing. Torn down,
+          // because the status is fixed for the life of the query. Flagged, so
+          // `stream` retries it on a fresh spawn: a child that has not finished
+          // bringing its bridge up is the common case at a restart, and it looks
+          // exactly like a mute seat from here.
+          s.bridgeDown = meshBridgeDownReason(msg.mcp_servers);
+          if (s.bridgeDown && s.pending) {
+            s.pending.bridgeDown = true;
+            s.pending.settle({ ok: false, err: new Error(s.bridgeDown) });
+            this.teardown(s.meshSessionId);
+          } else if (!s.bridgeDown) {
+            // The bridge is up, or still dialling (`pending`, which is not down
+            // — see `meshBridgeDownReason`). A bridge that IS down does not
+            // reach here at all: the alarm fires from `stream` when the retry
+            // budget is spent, never per attempt, because a child still bringing
+            // its bridge up is not a mute seat and an alarm that a transient
+            // retry sends too is worth nothing.
+            this.reportMuteIfBridgeMissing(s);
+          }
         } else if (msg.type === "assistant") {
-          const m = msg.message as { model?: string; content?: unknown; usage?: ClaudeTurnUsage };
+          const m = msg.message as { id?: string; model?: string; content?: unknown; usage?: ClaudeTurnUsage };
           if (typeof m.model === "string") s.lastModel = m.model;
           // The per-call context, which nothing else in the mesh receives: the
           // `result` frame carries the turn's usage SUMMED over its calls, and
@@ -1634,9 +3122,12 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           // prompt in it — always arrives on the final frame, whose usage is
           // final. Over a turn it is therefore the context the window had to
           // hold, not a figure that grows with the number of calls.
+          //
+          // The same frame feeds the live usage figure, keyed by the call's
+          // message id so its several frames count once (`noteCallUsage`).
           if (s.pending) {
-            const prompt = promptSize(m.usage);
-            if (prompt > s.pending.maxPromptTokens) s.pending.maxPromptTokens = prompt;
+            const sub = Boolean((msg as { parent_tool_use_id?: string | null }).parent_tool_use_id);
+            this.noteUsage(s, m.usage, sub ? undefined : (typeof m.id === "string" ? m.id : s.pending.callId));
           }
           const blocks = Array.isArray(m.content) ? m.content : [];
           for (const b of blocks as Array<Record<string, unknown>>) {
@@ -1673,25 +3164,78 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             if (b.type !== "tool_result") continue;
             const id = b.tool_use_id ?? b.toolUseId;
             if (id === undefined || !s.pending) continue;
+            // The failure text rides along because the digest cannot carry it:
+            // a gate denial and a successful read both hash to an opaque id, so
+            // before this a refused `Bash` looked, in every trace, like one that
+            // ran. Only on failure, and clipped — a successful result is the
+            // tool's payload (a whole file, for `Read`) and has no place here.
+            const error = b.is_error === true ? toolResultText(b.content).trim().slice(0, TOOL_ERROR_MAX_CHARS) : "";
             s.pending.events.push({
               kind: "tool_call_update",
               toolCallId: String(id),
               status: b.is_error === true ? "failed" : "completed",
               resultDigest: shortDigest(JSON.stringify(b.content ?? "")),
+              ...(error ? { error } : {}),
             });
           }
         } else if (msg.type === "stream_event") {
           // Live token tap, observability only — never fails the turn.
-          const ev = (msg as { event?: { type?: string; delta?: { type?: string; text?: string } } }).event;
+          const frame = msg as {
+            parent_tool_use_id?: string | null;
+            event?: {
+              type?: string;
+              delta?: { type?: string; text?: string };
+              usage?: ClaudeTurnUsage;
+              message?: { id?: string; usage?: ClaudeTurnUsage };
+            };
+          };
+          const ev = frame.event;
           if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && typeof ev.delta.text === "string") {
             // The onToken fan-out now lives in `collectAgentOutput`, which
             // guards it; pushing a frame here cannot throw into the pump.
             s.pending?.events.push({ kind: "agent_message_chunk", delta: ev.delta.text });
+          } else if (s.pending && !frame.parent_tool_use_id && (ev?.type === "message_start" || ev?.type === "message_delta")) {
+            // The per-call usage, from the two frames that carry it on the wire.
+            // Measured 2026-09-25 behind an OpenAI->Claude translating proxy:
+            // `message_start` carried ZERO usage and only `message_delta` the
+            // real figures, and the CLI builds its `assistant` frames from the
+            // message_start copy — so reading `assistant` alone found nothing,
+            // fell back to the turn's SUM, and overstated every context 4.5x-35x
+            // (NOTES-live-run-20260925-2040.md §1). Anthropic's own API puts the
+            // input terms on message_start; both are read, and the max over them
+            // is the call's prompt, exactly as for `assistant` frames below.
+            //
+            // A subagent's frames (`parent_tool_use_id`) measure ITS context,
+            // not this session's, and are skipped.
+            if (ev.type === "message_start") {
+              s.pending.modelCalls++;
+              s.pending.callId = typeof ev.message?.id === "string" ? ev.message.id : `call-${s.pending.modelCalls}`;
+            }
+            this.noteUsage(s, ev.type === "message_start" ? ev.message?.usage : ev.usage, s.pending.callId ?? `call-${s.pending.modelCalls}`);
           }
         } else if (msg.type === "result") {
           const pending = s.pending;
           const result = msg as unknown as ResultMessage;
-          if (pending?.interrupted && result.is_error) {
+          if (pending?.endRequested) {
+            // The mesh ended this turn because its work had landed (`endTurn`).
+            // The CLI answers that abort with an error result, which is not the
+            // turn's fault: settle it complete, keeping the usage it reports.
+            pending.settle({
+              ok: true,
+              // The abort's own prose ("Request was aborted") is not a reply.
+              msg: { ...result, is_error: false, subtype: "success", result: result.is_error ? "" : (result.result ?? ""), errors: undefined, terminal_reason: undefined },
+            });
+          } else if (pending?.timedOut && result.is_error) {
+            // The adapter's backstop aborted this turn, and this is the CLI's
+            // answer. A timeout, typed as one so `isTimeoutError` routes it to
+            // "slow" rather than the crash ladder, carrying what the frame
+            // reports — the frames' own figure if the abort's reads zero.
+            const reported = settledUsage(pending, result.usage);
+            const spent = reported.total + (reported.cacheRead ?? 0) > 0 ? reported : (liveUsage(pending) ?? reported);
+            pending.settle({ ok: false, err: new TurnTimeoutError(this.turnTimeoutMs, spent, s.lastModel, BACKSTOP_NOTE) });
+            // Answered, so alive and between turns: same reasoning as below.
+            this.statuses.set(agentId, "IDLE");
+          } else if (pending?.interrupted && result.is_error) {
             // We stopped this turn on purpose and the CLI reported the abort as
             // an error (`error_during_execution`). Taking that at face value is
             // what made a deliberate stop indistinguishable from a crashed
@@ -1714,7 +3258,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
               ok: false,
               err: new InterruptedTurnError(
                 "turn interrupted by the mesh before the backend answered",
-                usageToTokens(result.usage),
+                settledUsage(pending, result.usage),
+                // What the backend REPORTED running; the configured id is no
+                // stand-in (see the error's own doc: configured `sonnet`, ran
+                // `deepseek-v4.1-flash`), so an unreported model stays unknown.
+                s.lastModel,
               ),
             });
             // Every failure marks the seat UNREACHABLE, which `ensureSession`
@@ -1768,7 +3316,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private designerStagingMcpServer(mcp: NonNullable<DesignerPromptOptions["mcp"]>) {
     const meshCliBin = path.resolve(__dirname, "..", "..", "..", "..", "apps", "mesh-cli", "bin", "mesh.mjs");
     const turn = mcp.headers?.["x-mesh-designer-turn"];
-    const token = mcp.headers?.["x-mesh-token"] ?? "human-local";
+    // No fallback: the human seat accepts only the secret the server minted,
+    // so a bridge without it could never authenticate anyway.
+    const token = mcp.headers?.["x-mesh-token"];
     let bus: string;
     try {
       bus = new URL(mcp.url).origin;
@@ -1783,13 +3333,15 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
         "mcp",
         "--agent",
         "human",
-        "--token",
-        token,
         "--staging",
         "--bus",
         bus,
         ...(turn ? ["--turn", turn] : []),
       ],
+      // The token travels in the environment, never on argv: a command line is
+      // readable by every local user through `ps`, and this one grants the
+      // human seat.
+      ...(token ? { env: { MESH_AGENT_TOKEN: token } } : {}),
       timeout: 15000,
       alwaysLoad: true,
     };
@@ -1805,13 +3357,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       agent.id,
       "--bus",
       context.busUrl,
-      "--token",
-      context.agentToken,
     ];
     return {
       type: "stdio" as const,
       command: argv[0],
       args: argv.slice(1),
+      // The token rides here and not on argv, where `ps` would show it to
+      // every local user; `mesh mcp` reads MESH_AGENT_TOKEN when --token is absent.
       env: {
         MESH_BUS_URL: context.busUrl,
         MESH_AGENT_ID: agent.id,

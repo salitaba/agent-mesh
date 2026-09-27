@@ -4,17 +4,9 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { GitWorkspace } from "../../packages/artifact-store/src/index";
+import { gitSkip } from "../support/git";
 
-const hasGit = (() => {
-  try {
-    require("child_process").execFileSync("git", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
-
-test("git workspace: worktrees isolate writers and merges land on main", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: worktrees isolate writers and merges land on main", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-"));
   const ws = new GitWorkspace(dir);
   await ws.ensureRepo();
@@ -39,7 +31,7 @@ test("git workspace: worktrees isolate writers and merges land on main", { skip:
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("git workspace: second worktree edit does not leak into the first", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: second worktree edit does not leak into the first", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git2-"));
   const ws = new GitWorkspace(dir);
   await ws.ensureRepo();
@@ -51,7 +43,7 @@ test("git workspace: second worktree edit does not leak into the first", { skip:
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("git workspace: removeAllWorktrees drops worktrees and mesh branches", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: removeAllWorktrees drops worktrees and mesh branches", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-reset-"));
   const ws = new GitWorkspace(dir);
   await ws.ensureRepo();
@@ -79,7 +71,7 @@ test("git workspace: removeAllWorktrees drops worktrees and mesh branches", { sk
  * (an empty bundle, a bundle that needs the repo it was cut from) are what
  * these assert.
  */
-test("git workspace: the branch bundle restores what removeAllWorktrees deletes", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: the branch bundle restores what removeAllWorktrees deletes", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-bundle-"));
   const sh = (args: string[], cwd: string): string =>
     require("child_process").execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
@@ -129,7 +121,7 @@ test("git workspace: the branch bundle restores what removeAllWorktrees deletes"
 /* `git bundle create` refuses an empty bundle, so the guard has to be a return
  * value and not the command's error: reset() has to tell "nothing to archive"
  * apart from "the archive failed" before it deletes anything. */
-test("git workspace: no mesh branches means no bundle, not a failed one", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: no mesh branches means no bundle, not a failed one", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nobundle-"));
   try {
     const ws = new GitWorkspace(dir);
@@ -143,7 +135,7 @@ test("git workspace: no mesh branches means no bundle, not a failed one", { skip
   }
 });
 
-test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-nested-"));
   const sh = (args: string[], cwd = dir): string =>
     require("child_process").execFileSync("git", args, { cwd }).toString().trim();
@@ -171,7 +163,7 @@ test("git workspace: ensureRepo refuses an ancestor repo instead of adopting it"
  * tree that git answers for, and the root is in no repository at all — so a
  * seat pointed at the root writes files no commit can ever cite.
  */
-test("git workspace: main is a working tree and the root is not", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: main is a working tree and the root is not", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-readonly-seat-"));
   try {
     const ws = new GitWorkspace(dir);
@@ -211,7 +203,7 @@ test("git workspace: main is a working tree and the root is not", { skip: !hasGi
   }
 });
 
-test("git workspace: removeMain wipes the checkout and ensureRepo re-initializes", { skip: !hasGit && "git unavailable" }, async () => {
+test("git workspace: removeMain wipes the checkout and ensureRepo re-initializes", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-main-reset-"));
   const ws = new GitWorkspace(dir);
   await ws.ensureRepo();

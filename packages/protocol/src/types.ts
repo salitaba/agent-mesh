@@ -130,7 +130,14 @@ export type ArtifactType =
   | "RequirementsDoc"
   | "TaskSpec"
   | "BenchmarkResult"
-  | "DisagreementRecord";
+  | "DisagreementRecord"
+  /**
+   * A UX flow, a design system, a screen spec: design work that is not the
+   * system's architecture. Before this existed such documents were filed as
+   * ArchitectureDocument (skill-panel 2026-09-25, §10), so a designer approving
+   * the UI design system read in the ledger as an architecture approval.
+   */
+  | "DesignSpec";
 
 export type ArtifactStatus =
   | "DRAFT"
@@ -189,10 +196,28 @@ export interface Artifact {
    * existed replay to exactly the same answer they always did.
    */
   scope?: ArtifactScope;
+  /**
+   * The artifact versions its owner READ in the turn that published this
+   * version — what it was built on. Runtime-recorded from `read_artifact`, never
+   * agent-supplied, and absent when that turn read nothing.
+   *
+   * Exists because work built on a superseded input was never flagged: the ux
+   * flow cited ApiSpec v1 56 s after v2 landed, and pm approved it three times
+   * as ApiSpec reached v3 (skill-panel 2026-09-25, §16). With the inputs on the
+   * record, a newer version of an input can name every artifact built on the
+   * old one.
+   */
+  inputs?: ArtifactInput[];
   metadata: Record<string, unknown>;
   provenance: ContentProvenance;
   createdAt: string;
   createdBy: AgentId;
+}
+
+/** One artifact version another artifact was built on. See `Artifact.inputs`. */
+export interface ArtifactInput {
+  artifactId: ArtifactId;
+  version: number;
 }
 
 export interface Requirement {
@@ -891,6 +916,13 @@ export interface AgentDefinition {
   runtime: RuntimeTypeName;
   model?: string;
   /**
+   * `agents.<id>.context_window`: the window, in tokens, this seat's session
+   * rotates against (at the adapter's 60% ratio). Per-seat only — never folded
+   * into `mesh.runtime.context_window`, which ranks BELOW a model the adapter's
+   * table knows, so a small-window seat is never sized by the mesh default.
+   */
+  contextWindow?: number;
+  /**
    * Provider-specific reasoning variant (opencode: `low` | `high` | `max`).
    * Inert since that backend was removed — no registered runtime reads it.
    */
@@ -985,12 +1017,19 @@ export interface HardActionsPolicy {
  * is charged to the sender, and `interests` gates only broadcasts. This is the
  * recipient's own answer to the same question.
  *
- * It is deliberately one step MILDER than `communicationPolicy.mayBeContactedBy`,
- * the existing recipient-authored preference: that one refuses the SEND, so the
- * message never exists. This refuses only the WAKE — the mail is delivered, sits
- * in the mailbox, and is read on the seat's next natural activation, exactly as
- * `accrue` already does mesh-wide. "Nothing is ever suppressed; only the wake is
- * refused."
+ * It is the only recipient-authored knob that can REFUSE anything.
+ * `communicationPolicy.mayBeContactedBy` reads like its stricter sibling and is
+ * not: `communicationAllows` is a chain of `return true` grants ending in one
+ * `return false`, so that key only ever ADDS a route. An empty list denies
+ * nothing, a populated one cannot deny either — if the sender's `may_contact`
+ * names the target, the inbound list is never consulted — and no `mesh validate`
+ * check reports it. (An earlier version of this comment claimed it "refuses the
+ * SEND, so the message never exists". It does not, and nothing in the engine ever
+ * did that.)
+ *
+ * This refuses only the WAKE — the mail is delivered, sits in the mailbox, and is
+ * read on the seat's next natural activation, exactly as `accrue` already does
+ * mesh-wide. "Nothing is ever suppressed; only the wake is refused."
  */
 export interface WakePolicy {
   /**
@@ -1106,7 +1145,22 @@ export interface Task {
   claimedBy?: AgentId;
   status: TaskStatus;
   requiredCapabilities: string[];
+  /**
+   * Cited artifacts. A ref whose `version` is set PINS the task to that
+   * version: the task was cut from it, and a newer version of the artifact
+   * makes the task text suspect (see `Supervisor.newTask`).
+   */
   artifactRefs: ArtifactRef[];
+  /**
+   * Tasks that must be COMPLETED before this one may be claimed.
+   *
+   * The plan used to live only in prose: pm instantiated W6-S3 for frontend,
+   * which claimed and committed it while its dependency W6-S1 had never been
+   * claimed (skill-panel 2026-09-25, §16) — nothing in the task record could
+   * say "not yet". Optional and absent on every task from before it existed,
+   * so old logs replay to the same board.
+   */
+  dependsOn?: TaskId[];
   parentTaskId?: TaskId;
   delegationDepth: number;
   budget: BudgetPolicy;
@@ -1271,6 +1325,16 @@ export interface ContextSlotUsage {
   /** Items that were eligible and did not fit. Non-zero here is the signal
    * that the agent is being asked to work from a partial picture. */
   dropped: number;
+  /**
+   * Ids of some of the dropped items, where the slot has stable ids to name
+   * (mail does). Bounded — this rides into an event on every turn, so it is a
+   * diagnostic sample, not a complete list, and `dropped` remains the count.
+   *
+   * Exists because `dropped: 13` cannot answer the question that actually gets
+   * asked of it: was the message this seat was woken for among the ones it never
+   * saw? Without ids that is unanswerable from the log.
+   */
+  droppedIds?: string[];
   tokens: number;
 }
 
@@ -1318,8 +1382,15 @@ export type SessionEndReason = "rotation" | "restart" | "suspend" | "episode_bou
 
 export interface SessionRotationPending {
   agentId: AgentId;
-  /** The session about to be discarded. */
+  /**
+   * The session about to be discarded: the backend's own id when the runtime
+   * names it, which after a first rotation is NOT the mesh-stable one below.
+   */
   sessionId: string;
+  /** The mesh-stable `AgentSession.sessionId`, unchanged across rotations. */
+  meshSessionId?: string;
+  /** False when the rotation skips the handover turn (cold cache). */
+  handover?: boolean;
   reason: SessionEndReason;
   /**
    * The size of the memory about to be thrown away: the largest prompt a single
@@ -1814,6 +1885,8 @@ export interface MeshOpCreateTask {
   assignedTo?: AgentId;
   requiredCapabilities?: string[];
   artifactRefs?: ArtifactRef[];
+  /** Existing task ids that must complete before this one can be claimed. See `Task.dependsOn`. */
+  dependsOn?: TaskId[];
   budgetHint?: BudgetHint;
 }
 
@@ -2062,6 +2135,15 @@ export interface AgentInput {
    * runtime has no frames to observe and simply never invokes it.
    */
   onToolEvent?: (ev: AgentEventToolCall | AgentEventToolCallUpdate) => void;
+  /**
+   * Best-effort live usage callback: the turn's CUMULATIVE usage so far, after
+   * each model call. Without it a turn's cost was unknowable until it ended, so
+   * a 250k-token turn ran past a 240k seat budget unseen and the operator
+   * watched "— tok" for twenty minutes. Same contract as `onToken`: never fails
+   * the turn, never a kernel event, and the authoritative figure is still the
+   * `turn_end` one.
+   */
+  onUsage?: (tokensUsed: AgentOutput["tokensUsed"]) => void;
 }
 
 export interface AgentOutput {
@@ -2077,14 +2159,10 @@ export interface AgentOutput {
    */
   heldTools?: string[];
   /**
-   * True when `operations` came from typed tool calls (MCP `mesh_*`, or the
-   * equivalent structured adapter payload) rather than from parsing the
-   * model's prose.
-   *
-   * Under `bus.transport: typed-only` the supervisor ignores parsed ops when
-   * this is false, so a model that answers in prose gets one visible retry
-   * with the error in context instead of a silent zero-op turn that the
-   * circuit breaker must Park later.
+   * True when the turn's ops were issued as typed tool calls (MCP `mesh_*`,
+   * or the equivalent structured adapter payload). Ops are never parsed out
+   * of the model's prose any more, so this is informational: a runtime that
+   * executes ops through MCP sets it and reports `operations: []`.
    */
   typedOps?: boolean;
   tokensUsed: {
@@ -2117,16 +2195,32 @@ export interface AgentOutput {
   model?: string;
   modelVersion?: string;
   temperature?: number;
-  toolCalls?: Array<{ name: string; args: unknown; resultDigest: string }>;
+  toolCalls?: ToolCallRecord[];
   summary?: string;
   /**
    * Turn summary the agent declared explicitly via the `done` op, as opposed to
-   * `summary`, which is scraped heuristically from the model's prose. Prefer this
-   * when present; scraping drifts per model.
+   * `summary`, which is the first line of the model's prose. Prefer this when
+   * present.
    */
   declaredSummary?: string;
   turnId?: string;
   error?: string;
+  /**
+   * Present only when the runtime re-attributed usage the backend reported: calls
+   * that claimed a just-sent prefix as uncached input were billed as `cacheRead`
+   * (runtime-claude `reattributedPrefix`). `raw` is what the backend reported and
+   * `adjusted` what was billed, equal to `tokensUsed`.
+   */
+  usageGuard?: UsageGuardReport;
+}
+
+export interface UsageGuardReport {
+  /** Model calls whose zero-cache report was re-attributed. */
+  adjustedCalls: number;
+  /** Tokens moved from `input` to `cacheRead`, summed over those calls. */
+  reattributedTokens: number;
+  raw: AgentOutput["tokensUsed"];
+  adjusted: AgentOutput["tokensUsed"];
 }
 
 export type AgentRuntimeStatus =
@@ -2197,6 +2291,7 @@ export type AgentEvent =
   | AgentEventThoughtChunk
   | AgentEventToolCall
   | AgentEventToolCallUpdate
+  | AgentEventUsageUpdate
   | AgentEventTurnEnd;
 
 /**
@@ -2253,16 +2348,58 @@ export interface AgentEventToolCallUpdate {
   toolCallId: string;
   status: "completed" | "failed";
   resultDigest?: string;
+  /**
+   * What the tool answered, when it answered with an error: the first
+   * {@link TOOL_ERROR_MAX_CHARS} characters of the result's text. Absent on
+   * success and when the failed result carried no text.
+   *
+   * `resultDigest` is a hash, so on its own a refused call and a successful one
+   * were indistinguishable once recorded — a seat denied `Bash` by the
+   * permission gate read, in every trace, like a seat that ran it. The status
+   * says THAT it failed; this says why, in the words the model itself was shown.
+   */
+  error?: string;
+}
+
+/**
+ * The turn's usage so far, reported after each model call. CUMULATIVE for the
+ * turn, never a per-call delta, so a dropped frame costs precision rather than
+ * correctness. Same shape and billing rule as `AgentEventTurnEnd.tokensUsed`
+ * (`total` excludes `cacheRead`); the `turn_end` figure supersedes it.
+ */
+export interface AgentEventUsageUpdate {
+  kind: "usage_update";
+  tokensUsed: AgentOutput["tokensUsed"];
+}
+
+/** Cap on `AgentEventToolCallUpdate.error`: enough for a refusal sentence, never a payload. */
+export const TOOL_ERROR_MAX_CHARS = 300;
+
+/**
+ * One tool call as a finished turn records it (`AgentOutput.toolCalls`, and
+ * from there the turn trace's `toolCallsDetail`).
+ *
+ * `status` and `error` are optional because not every producer knows them: a
+ * call whose `tool_call_update` never arrived (the turn died mid-call), and
+ * every record written before they existed, simply lack them. Absent means
+ * UNKNOWN, never "completed" — a reader must not paint a call green on the
+ * strength of a missing field.
+ */
+export interface ToolCallRecord {
+  name: string;
+  args: unknown;
+  resultDigest: string;
+  status?: "completed" | "failed";
+  /** See `AgentEventToolCallUpdate.error`. Present only when `status` is "failed". */
+  error?: string;
 }
 
 /**
  * The turn's authoritative result. Exactly one of these ends a stream, and a
  * stream that closes without it is a transport failure, not an empty turn.
  *
- * It carries the parsed payload rather than leaving the fold to derive it,
- * because prose parsing is still a per-backend concern today (`parseMeshOps`
- * lives in agent-runtime). Once ops move to typed MCP tools that
- * parsing disappears and these fields thin out to the stream proper.
+ * It carries the turn's result payload (structured `operations`, summary,
+ * usage) rather than leaving the fold to derive it from the stream.
  */
 export interface AgentEventTurnEnd {
   kind: "turn_end";
@@ -2286,6 +2423,8 @@ export interface AgentEventTurnEnd {
    * tool name and type it in.
    */
   heldTools?: string[];
+  /** Surfaced as `AgentOutput.usageGuard`. */
+  usageGuard?: UsageGuardReport;
 }
 
 export interface AgentRuntime {
@@ -2333,6 +2472,28 @@ export interface AgentRuntime {
    * implementing it, and the supervisor skips the whole path.
    */
   rotationPending?(session: AgentSession): RotationPendingInfo | null;
+  /**
+   * End the turn in flight as COMPLETE: the mesh already has what the turn was
+   * for. Used on a handover once its continuity record lands, so the outgoing
+   * session is not billed another call on its full transcript to say `done`.
+   * Optional; a runtime without it lets the turn run to its own end.
+   */
+  endTurn?(session: AgentSession): Promise<void>;
+  /**
+   * Put a note in front of the model WHILE its turn runs, without starting a
+   * new turn — delivered at the next tool boundary (the Claude adapter returns
+   * it as a PostToolUse hook's `additionalContext`).
+   *
+   * Exists so a deadline is something a seat can act on rather than something
+   * that happens to it: every timed-out turn used to be a hard abort the model
+   * never saw coming, so it could not commit, publish, or close first.
+   *
+   * Returns true if the note was queued for the turn in flight, false if the
+   * runtime has no turn running or cannot deliver. Best-effort: a turn that
+   * makes no further tool call never sees it. Optional; a runtime without it
+   * gets no warnings and loses nothing else.
+   */
+  advise?(session: AgentSession, text: string): boolean;
 }
 
 /** Why the supervisor is about to spend a turn on a handover. */
@@ -2342,6 +2503,18 @@ export interface RotationPendingInfo {
   transcriptTokens: number;
   /** The figure `transcriptTokens` was compared against. */
   thresholdTokens: number;
+  /**
+   * The BACKEND session about to be discarded, when the runtime names one. The
+   * mesh's `AgentSession.sessionId` stays stable across rotations, so it cannot
+   * say which transcript goes (NOTES-live-run-20260925-2040.md §12).
+   */
+  sessionId?: string;
+  /**
+   * The session has sat idle past its prompt-cache lifetime. A handover turn
+   * would re-read the whole transcript at full price for a record, so the
+   * supervisor rotates without one (two such handovers cost 611k tokens, §1).
+   */
+  cacheCold?: boolean;
 }
 
 /** One turn of designer conversation: persona and model, no mesh session. */
@@ -2490,6 +2663,57 @@ export interface StagedProposal {
   problems: string[];
 }
 
+/** One row of `AgentContextBundle.openBacklog`. */
+export interface BacklogEntry {
+  id: TaskId;
+  title: string;
+  status: TaskStatus;
+  /** The seat holding it, or the one it was assigned to. Absent when nobody is. */
+  owner?: AgentId;
+  /** Dependencies not yet completed. Empty means nothing upstream holds it back. */
+  blockedBy: TaskId[];
+  /** Could THIS seat claim it now: OPEN, unblocked, every required capability held. */
+  claimable: boolean;
+  /** Pinned artifacts that moved on since the task was cut, as `"<Type>/<name> v2 → v3"`. */
+  stale?: string[];
+}
+
+/** One message a `MailDigest` names. No body: the digest names, it does not quote. */
+export interface MailDigestEntry {
+  id: MessageId;
+  from: AgentId;
+  type: MessageType;
+  threadId: ThreadId;
+  priority: MessagePriority;
+  timestamp: string;
+  /** The thread's subject, when the caller could resolve one. */
+  subject?: string;
+}
+
+/**
+ * The one block a deep mailbox is summarised as.
+ *
+ * Above `mesh.messages.digest_threshold` readable messages, the NEWS in a
+ * seat's box — everything that owes no answer and moves no work — is replaced
+ * by this block, and no body of it is printed. Asks, work movements and URGENT
+ * mail are never named here: a seat handed a summary of a question it owes has
+ * been made to answer blind.
+ *
+ * `senders` / `types` / `threads` are complete, not a sample: the question a
+ * full mailbox stops being able to answer is WHO filled it and with what.
+ * `entries` carries every message id, so each one is still one `mesh_inbox`
+ * call away while the turn runs.
+ */
+export interface MailDigest {
+  count: number;
+  oldestAt?: string;
+  newestAt?: string;
+  senders: Array<{ from: AgentId; count: number }>;
+  types: Array<{ type: MessageType; count: number }>;
+  threads: Array<{ threadId: ThreadId; count: number; subject?: string }>;
+  entries: MailDigestEntry[];
+}
+
 export interface AgentContextBundle {
   /**
    * The seat's role prose.
@@ -2511,7 +2735,27 @@ export interface AgentContextBundle {
   relevantPolicies: string[];
   agentState: AgentRuntimeState;
   currentTask?: Task;
+  /**
+   * What is wrong with `currentTask`'s footing right now: a dependency not yet
+   * completed, or a pinned artifact that has moved past the version the task
+   * was cut from. Absent when there is nothing to say.
+   */
+  currentTaskCaveats?: string[];
   relevantDecisions: DecisionRecord[];
+  /**
+   * PROPOSED decisions this seat can ratify (it holds `architecture.approve`),
+   * oldest first. Only RATIFIED decisions were ever rendered, so a proposal sat
+   * PROPOSED with nobody shown it: the decisions slot was 0/0 in all 52
+   * contexts of skill-panel 2026-09-25 (§16). Absent for every other seat.
+   */
+  proposedDecisions?: DecisionRecord[];
+  /**
+   * The open task board, bounded: OPEN tasks and held ones, with who holds
+   * them, what they still wait on, and whether THIS seat could claim them now.
+   * Before this the context showed only the seat's active task, so the plan
+   * existed only in whatever prose a seat remembered (§16).
+   */
+  openBacklog?: BacklogEntry[];
   relevantArtifacts: Array<{
     ref: string;
     type: ArtifactType;
@@ -2530,8 +2774,25 @@ export interface AgentContextBundle {
      * tree holding only its scaffold commit.
      */
     pendingRung?: ArtifactStatus;
+    /**
+     * For an artifact this seat owns: inputs it was built on that have a newer
+     * version now, as `"<Type>/<name> v1 → v3"`. See `Artifact.inputs`.
+     */
+    staleInputs?: string[];
   }>;
   unreadMail: MeshMessage[];
+  /**
+   * The block that stands for the NEWS in `unreadMail`, when the box was over
+   * `mesh.messages.digest_threshold` readable messages.
+   *
+   * Present means the renderer prints this block INSTEAD of a body per message
+   * it names — every message in `entries` is already accounted for, and asks
+   * (which are never named here) still render whole. Absent means nothing was
+   * collapsed, and the mail section renders exactly as it did before this
+   * existed. The messages it names are still in `unreadMail` and still in the
+   * mailbox: nothing here is read, deleted, or withheld from `mesh_inbox`.
+   */
+  mailDigest?: MailDigest;
   recentOwnActivity: string[];
   /**
    * Operations this seat asked for and did not get, newest first.
@@ -2561,6 +2822,12 @@ export interface AgentContextBundle {
    * honestly carry.
    */
   mailDropped?: number;
+  /**
+   * Set only on the bundle a HANDOVER turn is rendered from (`handoverBundle`):
+   * the turn may do nothing but write its continuity, so asks it owes are shown
+   * as held for its successor, without the ids a reply would need.
+   */
+  handover?: boolean;
   agentMemory: AgentMemoryNote[];
   /**
    * What the previous session in this seat handed over, if there was one.
@@ -2597,7 +2864,26 @@ export interface AgentContextBundle {
     outstanding?: number;
     memory?: number;
     refusals?: number;
+    proposedDecisions?: number;
+    backlog?: number;
   };
+  /**
+   * Ids of the unread mail this bundle did NOT show, newest-first order as the
+   * mailbox had them. Companion to `omitted.unread`, which is only its length.
+   */
+  droppedMailIds?: string[];
+  /**
+   * Ids of the plain news this bundle held back for AGE
+   * (`mesh.messages.inform_expiry_ms`), rather than for the window cap.
+   *
+   * The third way mail leaves the page, and the one with no cap to blame it on.
+   * These messages are still in `unreadMail` — the turn-end drain must see them
+   * or they stay unread forever, buying wakes for mail no turn will show — but
+   * no body of them is rendered. Without this the page could not say it had
+   * done so, and a list that silently lost messages is the failure the mail
+   * section keeps spelling out for every other way it drops one.
+   */
+  expiredMailIds?: string[];
   openThreads: Thread[];
   /**
    * Subject for every conversation this bundle's mail mentions, plus every
@@ -2697,17 +2983,6 @@ export interface AgentContextBundle {
    */
   criterionAcceptanceEnabled?: boolean;
   /**
-   * Whether this mesh refuses ops parsed out of prose (`bus.transport:
-   * "typed-only"`).
-   *
-   * Same "never advertise a rule that cannot fire" discipline as the two
-   * flags above, one channel over. Under typed-only the supervisor parses a
-   * `mesh-json` block and then refuses every op in it, so the contract that
-   * teaches a seat to emit one is teaching a turn that cannot land -- and the
-   * seat is charged a full turn to discover it.
-   */
-  typedOpsOnly?: boolean;
-  /**
    * Whether this mesh advertises the COLLAPSED contract vocabulary
    * (`bus.vocabulary: "contracts"`), or absent under the full typed manifest.
    *
@@ -2788,6 +3063,17 @@ export interface SendResult {
    * the sender can respond to and a ledger entry nobody reads.
    */
   deliveryDowngraded?: string;
+  /**
+   * This send was held for the turn-end digest instead of going out as itself.
+   *
+   * The send SUCCEEDED in the only sense that matters -- the content reaches
+   * every recipient this turn ends -- but it has no message id yet, and a seat
+   * that reads the missing id as a failed send will write it again. Only
+   * FYI-class mail is ever held: nothing that obliges a recipient, moves work,
+   * answers an ask or is URGENT can be batched, because batching one of those
+   * would change what it means. See `Supervisor.mergeableSend`.
+   */
+  merged?: boolean;
 }
 
 export interface ReplayState {

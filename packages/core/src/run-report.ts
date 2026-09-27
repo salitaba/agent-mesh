@@ -54,7 +54,6 @@ import type {
 } from "../../protocol/src/types";
 import { outstandingDebtors, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import type { AliasStats } from "../../protocol/src/op-aliases";
 
 /** An artifact as the report talks about it — flattened, no content. */
 export interface RunReportArtifact {
@@ -253,22 +252,6 @@ export interface RunReportComms {
    * the asker heard it. That is an answer.
    */
   lostAsks: Array<{ id: string; from: string; to: string[]; type: string; reason: DischargeReason }>;
-  /**
-   * Prose alias rewrites the CALLER observed, or absent when it supplied none.
-   *
-   * The one field here that is not a projection, which is why it arrives as an
-   * argument rather than a module read: `op-aliases.ts` counts process-wide and
-   * deliberately so, and a report that quietly reached for that global would
-   * stop being pure -- and would answer a different question from the one it
-   * claims to, since the counter is not scoped to this goal.
-   *
-   * Present even when `total` is 0, because that zero is the finding that
-   * matters: it is the precondition for ever retiring the tables. The TEXT
-   * prints a line only when it is non-zero (`volume` is never the reason a
-   * section appears, and neither is this) -- the JSON always carries it, which
-   * is where anything measuring across runs should read it.
-   */
-  aliases?: AliasStats;
   /**
    * What the mesh spent buying turns, and who spent it.
    *
@@ -510,7 +493,7 @@ function messageMode(m: MeshMessage): InteractionMode {
  * `collabOverruns` already gives `collabSessions`, and the honest one: a
  * refusal or a destroyed message has no mission to be attributed to.
  */
-function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasStats): RunReportComms {
+function summarizeComms(state: Projections, goal: Goal | null): RunReportComms {
   const messages = [...state.messages.values()].filter((m) => !goal || m.goalId === goal.id);
 
   let service = 0;
@@ -617,7 +600,6 @@ function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasSt
     dropped,
     refused,
     lostAsks,
-    ...(aliases ? { aliases } : {}),
     wakes: {
       byKind,
       commsWakes,
@@ -634,10 +616,9 @@ function summarizeComms(state: Projections, goal: Goal | null, aliases?: AliasSt
  *
  * Pure and synchronous: everything it needs is either in projections or handed
  * to it, so it can be called from a shutdown path, an HTTP handler, or a test
- * without a supervisor, a content store, or an await. `opts.aliases` is the
- * one non-projection input, passed explicitly so that stays true.
+ * without a supervisor, a content store, or an await.
  */
-export function buildRunReport(state: Projections, goalId?: string, opts?: { aliases?: AliasStats }): RunReport {
+export function buildRunReport(state: Projections, goalId?: string): RunReport {
   const id = goalId ?? state.activeGoalId;
   const goal = (id ? state.goals.get(id) : undefined) ?? null;
   const scoped = <T extends { goalId: string }>(v: Iterable<T>): T[] =>
@@ -725,7 +706,7 @@ export function buildRunReport(state: Projections, goalId?: string, opts?: { ali
           reason: c.closedReason ?? "overrun",
         })),
     },
-    comms: summarizeComms(state, goal, opts?.aliases),
+    comms: summarizeComms(state, goal),
     spend: {
       tokens: byModel.reduce((n, m) => n + m.tokens, 0),
       events: state.eventCount,
@@ -871,10 +852,6 @@ export function renderRunReport(report: RunReport): string {
   // here an operator can act on, and a header over one message count is how a
   // report starts training people to skip it. The numbers stay in the JSON
   // either way, for anyone measuring across runs.
-  // A non-zero alias count IS a finding: a seat is inventing names the mesh has
-  // to translate, which is something an operator can act on. A ZERO is not, and
-  // must not open the section -- else every clean run prints a COMMS header over
-  // nothing, which is how a report starts training people to skip it.
   const commsFindings =
     comms.unread.length +
     comms.dropped.length +
@@ -884,8 +861,7 @@ export function renderRunReport(report: RunReport): string {
     // same line `volume` sits on. "The regime is on and these seats spent
     // their attention" is something an operator can act on; "nine sends were
     // coalesced" is a working system reporting that it worked.
-    comms.wakes.downgraded.length +
-    (comms.aliases && comms.aliases.total > 0 ? 1 : 0);
+    comms.wakes.downgraded.length;
   if (commsFindings > 0) {
     out.push("");
     out.push("  COMMS");
@@ -919,11 +895,6 @@ export function renderRunReport(report: RunReport): string {
     if (interruptsBySender.length > 0) {
       const who = interruptsBySender.slice(0, 4).map((i) => `${i.agent} ${i.interrupts}`).join(", ");
       out.push(bullet(`· interrupts bought, by sender: ${who}`));
-    }
-    if (comms.aliases && comms.aliases.total > 0) {
-      const { total, byRewrite } = comms.aliases;
-      const worst = byRewrite.slice(0, 3).map((b) => `${b.rewrite} x${b.count}`).join(", ");
-      out.push(bullet(`· ${total} prose rewrite${total === 1 ? "" : "s"} went through the alias tables — ${worst}. A seat is inventing names; the tables are load-bearing until it stops.`));
     }
     for (const r of comms.refused) {
       const who = r.refusedBy === "policy" ? `policy rule ${r.rule} refused` : "protocol validation refused";

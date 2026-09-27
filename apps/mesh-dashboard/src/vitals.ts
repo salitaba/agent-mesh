@@ -39,6 +39,15 @@ export interface TurnPhases {
   opsStartAt?: number;
   opsDoneAt?: number;
   endedAt?: number;
+  /**
+   * NOT phase marks: when the turn will be stopped as things stand (moves
+   * later when an active turn is extended), and the hard stop no extension
+   * passes. Both are in the future while the turn runs. `phaseLegs` names the
+   * marks it reads, so these never become a leg; anything that walks this
+   * object's keys must skip them too. livework.ts's `deadlineOf` reads them.
+   */
+  deadlineAt?: number;
+  ceilingAt?: number;
 }
 
 export interface TurnError {
@@ -81,8 +90,14 @@ export interface VitalsInput {
   /** Client-side stream buffer facts (SSE), used when phases are absent. */
   clientChars?: number;
   clientUpdatedAt?: number;
-  /** Tool frames seen this turn — work an agent did without saying anything. */
+  /**
+   * Tool frames seen this turn — work an agent did without saying anything.
+   * FRAMES: a call's start and its result are both frames, so this is about
+   * twice the number of calls. Counted only when `toolCallCount` is absent.
+   */
   toolFrames?: number;
+  /** Tool calls announced this turn (calls, not frames). Absent on older records. */
+  toolCallCount?: number;
   running: boolean;
   startedAt?: string;
   now?: number;
@@ -96,6 +111,8 @@ export interface Vitals {
   silentMs?: number;
   /** Tool frames seen — non-zero means the agent worked without narrating. */
   toolFrames?: number;
+  /** Tool calls, when the record counts them. */
+  toolCallCount?: number;
   /** Characters per second over the streaming window. */
   charsPerSec?: number;
   chars: number;
@@ -103,6 +120,17 @@ export interface Vitals {
   label: string;
   /** Why the health is what it is; shown as a tooltip / subline. */
   detail: string;
+}
+
+/**
+ * "12 tool calls" — only from a count of calls. The frame count is about twice
+ * that (start + result per call), and labelled as calls it doubled every
+ * figure; an older record with frames only says so: "24 tool frames".
+ */
+export function toolWorkLabel(toolCallCount?: number, toolFrames?: number): string {
+  if (typeof toolCallCount === "number" && toolCallCount > 0) return `${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
+  if (typeof toolFrames === "number" && toolFrames > 0) return `${toolFrames} tool frame${toolFrames === 1 ? "" : "s"}`;
+  return "tool calls";
 }
 
 /**
@@ -115,6 +143,7 @@ export function vitalsOf(inp: VitalsInput): Vitals {
   const p = inp.phases;
   const chars = inp.clientChars ?? 0;
   const toolFrames = inp.toolFrames ?? 0;
+  const toolCallCount = inp.toolCallCount;
   const llmCallAt = p?.llmCallAt ?? p?.contextAt ?? p?.startedAt;
   const firstTokenAt = p?.firstTokenAt;
   const lastTokenAt = p?.lastTokenAt ?? inp.clientUpdatedAt;
@@ -139,8 +168,8 @@ export function vitalsOf(inp: VitalsInput): Vitals {
   // visibly producing files. When there is any sign of life, grade on that.
   if (firstTokenAt === undefined && p?.lastActivityAt !== undefined) {
     const quietMs = Math.max(0, now - p.lastActivityAt);
-    const work = toolFrames ? `${toolFrames} tool call${toolFrames === 1 ? "" : "s"}` : "tool calls";
-    const base = { silentMs: quietMs, chars, toolFrames };
+    const work = toolWorkLabel(toolCallCount, toolFrames);
+    const base = { silentMs: quietMs, chars, toolFrames, ...(toolCallCount !== undefined ? { toolCallCount } : {}) };
     if (quietMs > STALL_BAD_MS) {
       return {
         ...base,
@@ -190,7 +219,7 @@ export function vitalsOf(inp: VitalsInput): Vitals {
     return { health: "warming", silentMs: waitedMs, chars: 0, label: "thinking", detail: "waiting for the first token" };
   }
 
-  const base = { ttftMs, silentMs, charsPerSec, chars, toolFrames };
+  const base = { ttftMs, silentMs, charsPerSec, chars, toolFrames, ...(toolCallCount !== undefined ? { toolCallCount } : {}) };
   if (silentMs !== undefined && silentMs > STALL_BAD_MS) {
     return { ...base, health: "stalled", label: "stalled", detail: `silent for ${Math.round(silentMs / 1000)}s after streaming ${chars} characters — the turn is probably wedged` };
   }
@@ -221,22 +250,32 @@ export interface PhaseLeg {
 export function phaseLegs(p: TurnPhases | undefined, running: boolean, now = Date.now()): PhaseLeg[] {
   if (!p) return [];
   const legs: (Omit<PhaseLeg, "offset"> & { start: number })[] = [];
-  const add = (key: string, label: string, from: number | undefined, to: number | undefined, hint: string): void => {
+  // Two hints per leg. Only a leg still accruing is happening now; a closed
+  // one — every leg of a finished turn, and the earlier legs of a live one —
+  // happened, and "prompt sent, nothing back yet" on a turn that ended an
+  // hour ago described a wait that was long over.
+  const add = (key: string, label: string, from: number | undefined, to: number | undefined, hint: { now: string; done: string }): void => {
     if (from === undefined) return;
     const end = to ?? (running ? now : undefined);
     if (end === undefined) return;
     const ms = Math.max(0, end - from);
-    legs.push({ key, label, ms, start: from, open: to === undefined, hint });
+    const open = to === undefined;
+    legs.push({ key, label, ms, start: from, open, hint: open ? hint.now : hint.done });
   };
-  add("prep", "gathering context", p.startedAt, p.contextAt ?? p.llmCallAt, "reading its inbox and building the prompt");
-  add("wait", "waiting on model", p.llmCallAt ?? p.contextAt, p.firstTokenAt ?? p.firstActivityAt ?? p.llmDoneAt, "prompt sent, nothing back yet");
-  add("stream", "writing answer", p.firstTokenAt, p.llmDoneAt ?? p.lastTokenAt, "streaming its reply");
+  add("prep", "gathering context", p.startedAt, p.contextAt ?? p.llmCallAt,
+    { now: "reading its inbox and building the prompt", done: "read its inbox and built the prompt" });
+  add("wait", "waiting on model", p.llmCallAt ?? p.contextAt, p.firstTokenAt ?? p.firstActivityAt ?? p.llmDoneAt,
+    { now: "prompt sent, nothing back yet", done: "prompt sent, then waited for the first reply" });
+  add("stream", "writing answer", p.firstTokenAt, p.llmDoneAt ?? p.lastTokenAt,
+    { now: "streaming its reply", done: "streamed its reply" });
   // Only for a turn that never spoke: otherwise this would double-count the
   // stream leg, since tokens stamp the activity marks too.
   if (p.firstTokenAt === undefined) {
-    add("work", "using tools", p.firstActivityAt, p.llmDoneAt ?? p.lastActivityAt, "running tools — writing files, searching, calling the mesh");
+    add("work", "using tools", p.firstActivityAt, p.llmDoneAt ?? p.lastActivityAt,
+      { now: "running tools — writing files, searching, calling the mesh", done: "ran tools — wrote files, searched, called the mesh" });
   }
-  add("ops", "applying changes", p.opsStartAt ?? p.llmDoneAt, p.opsDoneAt ?? p.endedAt, "sending messages, publishing files, moving tasks");
+  add("ops", "applying changes", p.opsStartAt ?? p.llmDoneAt, p.opsDoneAt ?? p.endedAt,
+    { now: "sending messages, publishing files, moving tasks", done: "sent messages, published files, moved tasks" });
   const kept = legs.filter((l) => l.ms > 0 || l.open);
   // Offsets run from the first leg that survived the filter, not from turn
   // start: a turn whose prep leg was never instrumented would otherwise open
@@ -293,90 +332,3 @@ export function deviation(value: number, base: number, n: number): Deviation {
   return "normal";
 }
 
-/* ---------------------------- streaming ops --------------------------- */
-
-export interface PartialOps {
-  /** Ops fully parsed out of the partial stream so far. */
-  ops: any[];
-  /** True when the model has opened an ops block but not closed it. */
-  writing: boolean;
-  /** Prose that came before the ops block — the model's own reasoning. */
-  prose: string;
-}
-
-/**
- * Parse a *partial* stream into the ops the agent has committed to so far.
- *
- * The finished-turn parser needs a complete fenced block; while streaming
- * there is no closing fence, so this scans the buffer for balanced top-level
- * objects and returns however many are complete. That turns the live view
- * from "watch text scroll" into "watch the plan appear", which is the thing
- * an operator is actually waiting for.
- */
-export function parsePartialOps(text: string): PartialOps {
-  if (!text) return { ops: [], writing: false, prose: "" };
-  const fence = /```(?:mesh-json|json|mesh-op)?\s*\n?/.exec(text);
-  let body: string;
-  let prose: string;
-  if (fence) {
-    prose = text.slice(0, fence.index).trim();
-    body = text.slice(fence.index + fence[0].length);
-    // Deliberately NOT bounded by the next ``` . A published document whose
-    // `content` carries its own code fence would be cut mid-JSON-string, and
-    // the op spanning it would never complete — the live view would go blank
-    // exactly when an operator is watching a big publish land. `scanObjects`
-    // is brace-balanced and string-aware, so it needs no closing fence to know
-    // where an object ends, and trailing prose contributes no `op` objects.
-  } else {
-    const t = text.trimStart();
-    if (!t.startsWith("[") && !t.startsWith("{")) return { ops: [], writing: false, prose: text.trim() };
-    prose = "";
-    body = t;
-  }
-  const ops = scanObjects(body);
-  return { ops, writing: ops.length > 0 || /[[{]/.test(body), prose };
-}
-
-/**
- * Pull every complete top-level `{...}` out of a possibly-truncated buffer.
- * String-aware so a brace inside a message body cannot end an object early.
- */
-function scanObjects(body: string): any[] {
-  const out: any[] = [];
-  let depth = 0;
-  let start = -1;
-  let inStr = false;
-  let escaped = false;
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i];
-    if (inStr) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') inStr = false;
-      continue;
-    }
-    if (c === '"') {
-      inStr = true;
-      continue;
-    }
-    if (c === "{") {
-      if (depth === 0) start = i;
-      depth++;
-      continue;
-    }
-    if (c === "}") {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        try {
-          const parsed = JSON.parse(body.slice(start, i + 1));
-          if (parsed && typeof parsed === "object" && "op" in parsed) out.push(parsed);
-        } catch {
-          /* half-written object — ignore until it completes */
-        }
-        start = -1;
-      }
-      if (depth < 0) depth = 0;
-    }
-  }
-  return out;
-}

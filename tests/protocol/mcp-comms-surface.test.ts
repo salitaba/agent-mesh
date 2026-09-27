@@ -9,8 +9,8 @@ import {
   OBLIGING_MESSAGE_TYPES,
   obligesRecipients,
   REQUEST_TYPES,
-  shortHash,
 } from "../../packages/protocol/src/index";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 
 /**
  * The MCP comms surface: what a seat can say, and what it is told back.
@@ -47,7 +47,7 @@ async function pair() {
 /** One seat's view of the bus: the tools it is shown and the calls it can make. */
 function bus(m: Mesh, agentId: string) {
   const mcp = createMcpToolset(m.supervisor);
-  const tok = `${m.config.meshId}:${agentId}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = mintSeatToken(m.config.meshId, agentId, m.kernel.state.activeGoalId);
   return {
     async call(name: string, args: Record<string, unknown> = {}): Promise<Record<string, any>> {
       const res = (await mcp.handle(agentId, tok, mcpReq("tools/call", { name, arguments: args }))) as {
@@ -118,14 +118,19 @@ test("mcp: every message-carrying tool is offered the same vocabulary", async ()
     // cosmetic difference: it lets a broadcast announce a string that
     // `mesh_send` would have refused, and tells the model nothing about the
     // vocabulary it is supposed to choose from.
-    assert.deepEqual(broadcast.enum, MESSAGE_TYPES, "broadcast must offer the catalogue, not a free string");
-    assert.deepEqual(send.enum, MESSAGE_TYPES, "and send must not carry a hand-copied list that can drift from it");
+    //
+    // The catalogue minus the three verdicts: a verdict typed as a message
+    // records nothing, and offering it was how seats came to follow every
+    // `mesh_approve` with a refused `mesh_respond type:APPROVE` (2026-09-25).
+    const offered = MESSAGE_TYPES.filter((t) => t !== "APPROVE" && t !== "REJECT" && t !== "VETO");
+    assert.deepEqual(broadcast.enum, offered, "broadcast must offer the catalogue, not a free string");
+    assert.deepEqual(send.enum, offered, "and send must not carry a hand-copied list that can drift from it");
 
     // `mesh_respond` gets the FULL catalogue, not `RESPONSE_TYPES`. The
     // respond op's field is a MessageType, and which replies discharge an ask
     // is a separate question the runtime answers for itself; narrowing the
     // manifest to the response list would refuse legal messages.
-    assert.deepEqual(respond.enum, MESSAGE_TYPES, "respond must not be narrowed to the discharge list");
+    assert.deepEqual(respond.enum, offered, "respond must not be narrowed to the discharge list");
 
     // Copied, never aliased: the manifest is handed to callers, and the
     // catalogue array is shared by every consumer in the repo.

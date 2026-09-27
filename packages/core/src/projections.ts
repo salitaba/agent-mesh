@@ -16,6 +16,8 @@ export {
   hasApprovalForArtifact,
   gateForTransition,
   parseGateTokens,
+  parseGateAlternatives,
+  parseGateRequirements,
   checkApprovals,
   isTerminalGoal,
   recordApproval,
@@ -29,11 +31,15 @@ export {
   artifactForRef,
   clearPendingForArtifactReview,
   clearPendingForTask,
+  unmetTaskDependencies,
+  staleTaskPins,
+  staleArtifactInputs,
   bumpConflict,
   fingerprintOf,
   pendingTargetsArtifact,
   gateSatisfiedWithConfig,
   type ApprovalToken,
+  type ApprovalRequirement,
 } from "./projections-helpers";
 
 export interface ProjectionConfig {
@@ -115,13 +121,23 @@ export function isStrictCommitments(config?: ProjectionConfig): boolean {
   return config?.commitmentSemantic === "strict";
 }
 
-export function applyEvent(state: Projections, event: MeshEvent, config?: ProjectionConfig): void {
+/**
+ * `live` is set only by the kernel's live emit path (`applyAndAppend`, and the
+ * rollback that reproduces its refusal). A guard that tightens what a NEW event
+ * must carry checks it only when live: logs written before the guard existed
+ * must still replay, so a restart after an upgrade boots the missions it has.
+ */
+export interface ApplyOptions {
+  live?: boolean;
+}
+
+export function applyEvent(state: Projections, event: MeshEvent, config?: ProjectionConfig, opts?: ApplyOptions): void {
   const p = structuredClone((event.payload ?? {}) as Record<string, any>);
-  if (applyGoalEvent(state, event, p)) { /* handled */ }
+  if (applyGoalEvent(state, event, p, opts)) { /* handled */ }
   else if (applyAgentEvent(state, event, p)) { /* handled */ }
   else if (applyMessagingEvent(state, event, p, config)) { /* handled */ }
-  else if (applyArtifactEvent(state, event, p, config)) { /* handled */ }
-  else if (applyWorkEvent(state, event, p)) { /* handled */ }
+  else if (applyArtifactEvent(state, event, p, config, opts)) { /* handled */ }
+  else if (applyWorkEvent(state, event, p, opts)) { /* handled */ }
   else if (applySystemEvent(state, event, p)) { /* handled */ }
   else {
     // Unknown / no-op event types (patch.created, release.candidate, etc.)

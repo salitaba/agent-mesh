@@ -6,14 +6,11 @@ import { renderContextInstructions } from "../../packages/core/src/context";
 import {
   BUILTIN_CONTRACTS,
   MESSAGE_TYPES,
-  aliasTextOp,
-  aliasStats,
-  shortHash,
-  resetAliasStats,
   contractNames,
   findContract,
 } from "../../packages/protocol/src/index";
 import { computeDueBy, createInitialState } from "../../packages/core/src/state";
+import { mintSeatToken } from "../../packages/core/src/seat-token";
 import { resolveCommitmentTtl } from "../../packages/config/src/index";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
@@ -23,7 +20,7 @@ import type { MeshOp } from "../../packages/protocol/src/index";
  * The problem they exist for is vocabulary size. A seat is shown 24 message
  * type strings and 43 tool names (`buildTools`, in `mesh-server/src/mcp.ts`),
  * guesses which of them means "please review this", gets it wrong, and
- * `op-aliases.ts` quietly rewrites the guess — which papers over the miss AND
+ * `op-aliases.ts` quietly rewrote the guess — which papered over the miss AND
  * over the evidence that the miss keeps happening. A contract replaces the
  * guess with a name, a request schema checked before anyone is woken, and a
  * named set of refusals.
@@ -38,7 +35,7 @@ import type { MeshOp } from "../../packages/protocol/src/index";
  * failure in this file — which teaches the next author to edit the number
  * rather than to read what it claims. The manifest tests at the bottom defend
  * the structural facts instead: that the tools a contract supersedes leave the
- * advertised set, that `mesh_call` and the raw `mesh_send` channel stay, and
+ * advertised set, that `mesh_call` and `mesh_contracts` replace them, and
  * that the manifest genuinely shrinks. None of those go stale when the surface
  * changes size.
  */
@@ -567,41 +564,9 @@ test("contracts: the ops contract tells a seat to prefer call over send", () => 
   // cannot see is ordering: an op that is merely listed after `send` will lose
   // to `send`, because `send` is what the role prompts and every example have
   // always used. The preference has to be stated.
-  const ops = rendered.slice(rendered.indexOf("Common ops:"));
-  assert.ok(ops.indexOf("call (") < ops.indexOf("send ("), "call must be offered before the raw channel it replaces");
-  assert.match(ops, /prefer it over `send`/i, "listing `call` without saying when to reach for it just adds a 25th guess");
-});
-
-// --- the alias table it replaces -------------------------------------------
-
-test("aliases: rewrites are counted, so retiring the table is an evidence-led decision", () => {
-  resetAliasStats();
-  try {
-    aliasTextOp({ op: "mesh_send", type: "REPLY", to: ["dev"] });
-    aliasTextOp({ op: "mesh_send", type: "INFORM", to: ["dev"] });
-
-    const stats = aliasStats();
-    assert.equal(stats.total, 3, "two op rewrites and one type rewrite");
-    const rewrites = Object.fromEntries(stats.byRewrite.map((e) => [e.rewrite, e.count]));
-    assert.equal(rewrites["op:mesh_send->send"], 2);
-    assert.equal(rewrites["type:REPLY->INFORM"], 1, "REPLY is not a real type; the table was hiding that");
-    assert.ok(!("type:INFORM->INFORM" in rewrites), "a name the model got RIGHT is not a rewrite");
-  } finally {
-    resetAliasStats();
-  }
-});
-
-test("aliases: retired, an invented name passes through to be refused by name", () => {
-  resetAliasStats();
-  try {
-    const out = aliasTextOp({ op: "mesh_send", type: "REPLY", to: ["dev"] }, { aliases: false });
-    assert.equal(out!.op, "mesh_send", "the invented op name must survive so executeOp can refuse it out loud");
-    assert.equal(out!.type, "REPLY", "and so must the invented type");
-    assert.deepEqual(out!.to, ["dev"], "shape coercion is not vocabulary: it still applies");
-    assert.equal(aliasStats().total, 0, "a retired table must not report hits it did not make");
-  } finally {
-    resetAliasStats();
-  }
+  const ops = rendered.slice(rendered.indexOf("Common tools:"));
+  assert.ok(ops.indexOf("mesh_call (") < ops.indexOf("mesh_send ("), "call must be offered before the raw channel it replaces");
+  assert.match(ops, /prefer it over `mesh_send`/i, "listing `call` without saying when to reach for it just adds a 25th guess");
 });
 
 // --- the manifest ----------------------------------------------------------
@@ -612,46 +577,41 @@ function mcpReq(method: string, params: unknown, id = 1) {
 
 async function advertised(m: Mesh, agentId: string): Promise<string[]> {
   const mcp = createMcpToolset(m.supervisor);
-  const tok = `${m.config.meshId}:${agentId}:${shortHash(m.kernel.state.activeGoalId!)}`;
+  const tok = mintSeatToken(m.config.meshId, agentId, m.kernel.state.activeGoalId);
   const list = (await mcp.handle(agentId, tok, mcpReq("tools/list", {}))) as {
     result: { tools: Array<{ name: string }> };
   };
   return list.result.tools.map((t) => t.name);
 }
 
-test("manifest: typed-only drops the tools contracts replace, and keeps the ones they do not", async () => {
-  const mixed = await mesh();
-  const typed = await mesh({ bus: { transport: "typed-only" } });
+test("manifest: the contract vocabulary drops the tools contracts replace", async () => {
+  const typed = await mesh();
+  const collapsed = await mesh({ bus: { vocabulary: "contracts" } });
   try {
-    const before = await advertised(mixed, "architect");
-    const after = await advertised(typed, "architect");
+    const before = await advertised(typed, "architect");
+    const after = await advertised(collapsed, "architect");
 
     const superseded = ["mesh_request", "mesh_request_review", "mesh_research_request", "mesh_escalate"];
     for (const name of superseded) {
-      assert.ok(before.includes(name), `${name} is advertised today`);
+      assert.ok(before.includes(name), `${name} is advertised on a typed mesh`);
       assert.ok(!after.includes(name), `${name} is fully covered by a contract and must leave the manifest`);
     }
 
     // `mesh_call` and `mesh_contracts` replace them, so the seat is never left
     // without a way to make the ask.
     assert.ok(after.includes("mesh_call") && after.includes("mesh_contracts"));
-
-    // `mesh_send` stays: no contract covers answering, or the 16 message types
-    // the catalogue does not name. Dropping it would force exactly the guessing
-    // this stage exists to end.
-    assert.ok(after.includes("mesh_send"), "the raw channel must survive; contracts do not cover every message");
     assert.ok(after.length < before.length, "the manifest must actually get smaller");
   } finally {
-    await mixed.cleanup();
     await typed.cleanup();
+    await collapsed.cleanup();
   }
 });
 
 test("manifest: hiding a tool does not take it away", async () => {
-  const m = await mesh({ bus: { transport: "typed-only" } });
+  const m = await mesh({ bus: { vocabulary: "contracts" } });
   try {
     const mcp = createMcpToolset(m.supervisor);
-    const tok = `${m.config.meshId}:architect:${shortHash(m.kernel.state.activeGoalId!)}`;
+    const tok = mintSeatToken(m.config.meshId, "architect", m.kernel.state.activeGoalId);
     const res = (await mcp.handle(
       "architect",
       tok,

@@ -107,13 +107,15 @@ for (const [name, make] of stores) {
   // offset, so a reset cannot desynchronise it.
   test(`${name}: a reset does not detach subscribers or skip post-reset events`, async () => {
     const { store } = make();
-    if (!store.reset) return;
+    // Both stores implement `reset` (mission reset depends on it). The old
+    // `if (!store.reset) return;` would have turned its removal into a pass.
+    assert.equal(typeof store.reset, "function", `${name} must implement reset()`);
     const seen: number[] = [];
     store.subscribe!((e) => seen.push((e.payload as { n: number }).n));
 
     await store.append(evt(1));
     await store.append(evt(2));
-    await store.reset();
+    await store.reset!();
     await store.append(evt(3));
 
     assert.deepEqual(seen, [1, 2, 3], "delivery continues across the reset");

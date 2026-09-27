@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
 import type { Artifact, Escalation, MessageType, Task } from "../../packages/protocol/src/index";
-import { aliasStats, aliasTextOp } from "../../packages/protocol/src/op-aliases";
 
 /**
  * The supervisor's small classifiers decide, without any agent in the loop,
@@ -378,28 +377,6 @@ test("a claimed watchdog task does not count as work in flight", async () => {
     const v = sup.wakeValue();
     assert.equal(v.worth, false, "the watchdog's own bookkeeping must never justify waking the watchdog");
     assert.match(v.why, /no claimed tasks/);
-  } finally {
-    await m.cleanup();
-  }
-});
-
-test("status reports the alias counters, including the zero", async () => {
-  const { m, sup } = await makeSupervisor();
-  try {
-    // The counter is process-wide and never reset in production, so the exact
-    // value depends on what ran before. What is asserted is the WIRING: the
-    // number status reports is the number the tables moved by.
-    const before = aliasStats().total;
-    const reported = (await m.supervisor.status()).aliases;
-    assert.equal(reported.total, before, "status must report the live counter, not a copy taken at boot");
-
-    aliasTextOp({ op: "mesh_send" } as never, undefined);
-    const after = (await m.supervisor.status()).aliases;
-    assert.equal(after.total, before + 1, "a prose rewrite must show up in the status an operator can read");
-    assert.ok(
-      after.byRewrite.some((b: { rewrite: string }) => b.rewrite === "op:mesh_send->send"),
-      "and it must say WHICH invented name was translated, or the count is not actionable",
-    );
   } finally {
     await m.cleanup();
   }

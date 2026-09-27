@@ -17,7 +17,8 @@ export const ago = (iso: unknown): string => {
   if (s < 0) return "just now";
   if (s < 60) return `${Math.max(0, Math.round(s))}s ago`;
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
+  if (s < 48 * 3600) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
 };
 
 export const pillCls = (lifecycle: unknown): string => String(lifecycle || "").toLowerCase();
@@ -103,18 +104,84 @@ export const HEALTH_CLS: Record<string, string> = {
   warming: "v-warm", streaming: "v-ok", slow: "v-warn", stalled: "v-bad", done: "v-done",
 };
 
+/**
+ * One short lowercase phrase per catalog event type, in `EVENT_TYPES` order.
+ * A type missing here fell through to its raw dotted name, so a step's
+ * timeline read "thread.created" beside "woke up" — two vocabularies on one
+ * list. tests/dashboard/format.test.ts fails when the catalog grows a type
+ * this table does not name.
+ *
+ * Artifact creation is "published", the word the op ledger uses for the op
+ * that causes it; "file created" suggested a file on disk, which it is not.
+ */
 const EVENT_PLAIN: Record<string, string> = {
-  "budget.limit_raised": "budget raised",
-  "message.sent": "message", "message.delivered": "inbox", "message.rejected": "blocked message",
-  "agent.awakened": "woke up", "agent.state_changed": "status change", "agent.failed": "crashed",
-  "artifact.created": "file created", "artifact.versioned": "new version", "artifact.transition": "moved forward",
-  "task.created": "task", "task.claimed": "started task", "task.completed": "finished task",
-  "budget.consumed": "spent", "budget.exceeded": "over budget", "escalation.requested": "needs you",
-  "goal.completed": "done", "goal.escalated": "paused",
-  "plan.updated": "plan", "plan.gate_rejected": "plan gate",
+  "goal.created": "mission created", "goal.budget_changed": "budget changed", "goal.status_changed": "mission status",
+  "goal.paused": "mission paused", "goal.resumed": "mission resumed", "goal.progress": "progress",
+  "goal.completed": "mission done", "goal.reopened": "mission reopened", "goal.escalated": "mission escalated",
+  "goal.failed": "mission failed", "goal.description_revised": "mission revised",
+  "requirements.created": "requirements set", "requirement.blocked": "requirement blocked",
+  "requirement.satisfied": "requirement met", "requirement.revised": "requirement revised",
+  "requirement.removed": "requirement removed",
+  "agent.created": "agent created", "agent.started": "session started", "agent.awakened": "woke up",
+  "agent.state_changed": "status change", "agent.suspended": "suspended", "agent.resumed": "resumed",
+  "agent.completed": "finished", "agent.failed": "crashed", "agent.restarted": "restarted",
+  "agent.replaced": "replaced", "agent.retired": "retired", "agent.mute_suspected": "went quiet",
+  "session.rotation_pending": "rotation due", "session.rotated": "session rotated", "continuity.recorded": "handover noted",
+  "thread.created": "thread opened",
+  "message.sent": "message", "message.delivered": "delivered", "message.rejected": "blocked message",
+  "artifact.created": "published", "artifact.versioned": "new version", "artifact.transition": "moved",
+  "task.created": "task created", "task.claimed": "started task", "task.completed": "finished task",
+  "review.requested": "review requested", "review.approved": "review approved", "review.rejected": "review rejected",
+  "patch.created": "patch created", "patch.ready": "patch ready", "patch.merged": "patch merged",
+  "architecture.approved": "architecture approved", "design.question": "design question",
+  "dependency.changed": "dependency changed", "authentication.changed": "auth changed", "authorization.changed": "access changed",
+  "release.candidate": "release candidate", "release.transition": "release moved", "release.accepted": "release accepted",
+  "research.requested": "research requested", "research.completed": "research done",
+  "implementation.completed": "implemented",
+  "decision.proposed": "decision proposed", "decision.ratified": "decision ratified",
+  "escalation.requested": "needs you", "escalation.responded": "escalation answered",
+  "escalation.auto_resolved": "escalation settled", "deadlock.auto_resolved": "deadlock broken",
+  "commitment.discharged": "ask closed",
   "collab.opened": "started talking", "collab.closed": "stopped talking",
+  "human.input": "operator input",
+  "lease.acquired": "lease taken", "lease.released": "lease released",
+  "memory.updated": "remembered", "context.assembled": "context built", "turn.discarded": "turn discarded",
+  "plan.updated": "plan updated", "plan.gate_rejected": "plan refused",
+  "budget.reserved": "budget reserved", "budget.consumed": "spent", "budget.exceeded": "over budget",
+  "budget.released": "budget released", "budget.limit_raised": "budget raised",
 };
-export const plainEvent = (t: unknown): string => EVENT_PLAIN[String(t || "")] || String(t || "");
+/**
+ * `message.rejected` carries two different things. A refused send has `to` —
+ * there was a message and it did not leave. An activation denial (the
+ * scheduler's policy refusal, routed through the supervisor's `denied()`) has
+ * `action: "activate (<reason kind>)"` and no recipient: the seat was never
+ * allowed to run. Labelling both "blocked message" told the operator a seat's
+ * mail was stopped when in fact the seat was.
+ */
+export function activationDeniedKind(p: unknown): string | undefined {
+  const r = (p || {}) as { action?: unknown; to?: unknown };
+  if (Array.isArray(r.to) || typeof r.action !== "string") return undefined;
+  const m = /^activate \((.*)\)$/.exec(r.action);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * The payload is optional: callers that have it get the labels that depend on
+ * it — the activation-denial reading of `message.rejected`, and the state an
+ * artifact moved to. `artifact.transition` used to read "moved forward" for
+ * every transition, including UNDER_REVIEW → DRAFT, which is a walk back; the
+ * kernel stamps the destination as `payload.to` on both of its emit sites, so
+ * the label says where it went and nothing about direction.
+ */
+export const plainEvent = (t: unknown, payload?: unknown): string =>
+  (t === "message.rejected" && activationDeniedKind(payload) !== undefined ? "couldn't wake" : undefined) ||
+  (t === "artifact.transition" ? transitionLabel(payload) : undefined) ||
+  EVENT_PLAIN[String(t || "")] || String(t || "");
+
+function transitionLabel(p: unknown): string | undefined {
+  const to = ((p || {}) as { to?: unknown }).to;
+  return typeof to === "string" && to ? `moved to ${to.toLowerCase().replace(/_/g, " ")}` : undefined;
+}
 
 export const shortTurn = (id: unknown): string => {
   const s = String(id || "");
@@ -177,7 +244,7 @@ export const OUTCOME_META: Record<Outcome, { label: string; hint: string; cls: s
   live: { label: "working now", hint: "agent is mid-turn right now", cls: "o-live" },
   shipped: { label: "produced", hint: "turn ended and left messages or files behind", cls: "o-ship" },
   quiet: { label: "no output", hint: "turn ended without writing anything — tokens spent, nothing changed", cls: "o-quiet" },
-  rejected: { label: "refused", hint: "the agent tried to act and the kernel rejected every op — nothing landed", cls: "o-rej" },
+  rejected: { label: "refused", hint: "the agent tried to act and the kernel refused every action — nothing landed", cls: "o-rej" },
   blocked: { label: "blocked", hint: "turn ended waiting on something it cannot do alone", cls: "o-block" },
   crashed: { label: "crashed", hint: "the runtime failed mid-turn", cls: "o-crash" },
 };
@@ -195,7 +262,12 @@ export interface OpFact { k: string; v: string }
  * `detail` is prose only. A payload with no prose key yields "" rather than a
  * JSON dump, so parameters must be carried in `facts`.
  */
-export interface OpHead { title: string; detail: string; facts: OpFact[] }
+export interface OpHead {
+  title: string; detail: string; facts: OpFact[];
+  /** A quiet qualifier set after the title — the ledger's own remark about
+   *  the row ("one of 4 unnamed"), not something the op said. */
+  note?: string;
+}
 
 /** Ops the kernel refused, in the order they were attempted. */
 export function refusedOps(s: OutcomeInput): { op: string; reason?: string }[] {
@@ -204,9 +276,9 @@ export function refusedOps(s: OutcomeInput): { op: string; reason?: string }[] {
 
 /**
  * Effects the turn left behind, across every ledger category. A turn can leave
- * these without ever writing an ops block — messages and decisions are counted
- * from the event log either way — so this is the test for "produced nothing",
- * and `parseOpsBlock` returning null is not.
+ * these without the dashboard ever seeing the tool call that caused them —
+ * messages and decisions are counted from the event log either way — so this
+ * is the test for "produced nothing", and an empty op list is not.
  */
 export function producedCount(s: OutcomeInput): number {
   const o = s.ops;
@@ -251,12 +323,78 @@ export function refusalSummary(s: OutcomeInput): string {
   return reason ? `${reason} (${ops})` : `${ops} refused`;
 }
 
+/** One line of a before → after snippet; `gap` stands for unchanged lines left out. */
+export interface SnippetLine { op: "eq" | "add" | "del" | "gap"; text: string }
+
+/**
+ * Line diff of an in-place edit (an Edit call's old_string → new_string). Not
+ * an LCS: an edit is one contiguous replacement, so the shared head and tail
+ * are context and everything between is what was cut and what went in. The
+ * context is trimmed to `context` lines each side — an old_string that is five
+ * lines of anchor and a new_string that appends a section would otherwise
+ * repeat the anchor in full before the one change the reader wants.
+ */
+export function snippetDiff(before: string, after: string, context = 3): SnippetLine[] {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const out: SnippetLine[] = [];
+  const gap = (n: number): SnippetLine => ({ op: "gap", text: `⋯ ${n} unchanged line${n === 1 ? "" : "s"}` });
+  if (head > context) out.push(gap(head - context));
+  for (const t of a.slice(Math.max(0, head - context), head)) out.push({ op: "eq", text: t });
+  for (const t of a.slice(head, a.length - tail)) out.push({ op: "del", text: t });
+  for (const t of b.slice(head, b.length - tail)) out.push({ op: "add", text: t });
+  for (const t of a.slice(a.length - tail, a.length - tail + context)) out.push({ op: "eq", text: t });
+  if (tail > context) out.push(gap(tail - context));
+  return out;
+}
+
+/**
+ * Past an hour the seconds are noise and the minutes pile up: a twelve-hour
+ * timeline labelled its ticks "-704m 41s". Hours and minutes from there on.
+ */
 export const dur = (ms?: number): string => {
   if (ms === undefined || ms === null || !Number.isFinite(ms)) return "";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  // Round once, then split: rounding each part on its own printed "3m 60s".
+  if (ms < 3_600_000) {
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s / 60)}m ${s % 60}s`;
+  }
+  const m = Math.round(ms / 60000);
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
 };
+
+/**
+ * A round span as an axis label: "30s", "5m", "2h", "1h 30m". Zero parts are
+ * dropped, so a tick every two hours reads "-2h", not "-2h 0m".
+ */
+export const spanLabel = (ms: number): string => {
+  if (!Number.isFinite(ms) || ms <= 0) return "0s";
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  const m = Math.round(ms / 60_000);
+  const h = Math.floor(m / 60);
+  if (!h) return `${m}m`;
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+};
+
+/**
+ * The budget gate's refusal, `budget mission:goal-… exhausted (13065531/12640000)`,
+ * is a ledger key and two raw integers. Said as the budget it names and the two
+ * amounts, rounded; any other text comes back unchanged.
+ */
+export function plainBlocker(text: string): string {
+  const m = /^budget (\S+) exhausted \((\d+)\/(\d+)\)(.*)$/s.exec(text.trim());
+  if (!m) return text;
+  // One decimal for millions: `fmt` rounds past 10M to whole millions, and
+  // the overrun it hid ("13M of 13M") is the whole point of the message.
+  const amt = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : fmt(n));
+  return `${friendlyBudgetKey(m[1])} used up — ${amt(Number(m[2]))} of ${amt(Number(m[3]))}${m[4]}`;
+}
 
 export const roundNice = (n: number): number =>
   n >= 1000000 ? Math.ceil(n / 100000) * 100000 : n >= 100000 ? Math.ceil(n / 10000) * 10000 : Math.ceil(n / 1000) * 1000;

@@ -2,7 +2,7 @@ import type { MeshEvent, WorkspaceLease } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import { dischargeCommitment, ensureBudget } from "./state";
 import { MAX_CONFLICTS, MAX_MEMORY_VALUE_CHARS, evictMemory } from "./state";
-import { ProjectionError } from "./projections-helpers";
+import { ProjectionError, bumpConflict } from "./projections-helpers";
 
 export function applySystemEvent(state: Projections, event: MeshEvent, p: Record<string, any>): boolean {
   switch (event.type) {
@@ -47,6 +47,27 @@ export function applySystemEvent(state: Projections, event: MeshEvent, p: Record
         event.timestamp,
         p.viaMessageId as string | undefined,
       );
+      break;
+    }
+    // A wait cycle the runtime broke by itself. Counted, because the break
+    // destroys every other trace of its own success: voiding the newest ask
+    // removes the wait-for edge, so `DeadlockDetector.scan` prunes the key from
+    // `reported`, and occurrence N becomes byte-identical to occurrence 1. The
+    // count has to live in the projection rather than in the detector for the
+    // same reason `commitment.discharged` above exists — detector state is
+    // instance state, invisible to replay and gone on restart, and the question
+    // being asked ("has this ring already used up its self-heals?") spans both.
+    //
+    // Reusing `state.conflicts` rather than adding a field is deliberate: it is
+    // already what `escalation.repeated_conflict.threshold` gates on, already
+    // snapshotted and restored, and already trimmed by MAX_CONFLICTS below.
+    // Measured 2026-09-24: `wait_cycle:ui-designer>ux-designer` broke 5 times in
+    // one run for 383,402 tokens and raised nothing, because nothing counted.
+    case "deadlock.auto_resolved": {
+      const key = p.conflictKey as string | undefined;
+      if (key) {
+        bumpConflict(state, key, (p.voidedBy as string) ?? event.actorId ?? "deadlock-detector", event.timestamp);
+      }
       break;
     }
     // The successor session is live. Recorded so `write_continuity` can stamp

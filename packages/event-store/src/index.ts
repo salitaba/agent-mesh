@@ -195,6 +195,13 @@ export interface LogIntegrity {
   truncatedTailBytes: number;
   /** Unparseable lines skipped inside the log body (real corruption). */
   corruptLines: number;
+  /**
+   * Lines that parsed but that the canonical event schema refuses — events
+   * `append` would never have written, so they reached the file by a side
+   * door (a hand edit, a foreign writer, a restore from elsewhere). Quarantined:
+   * kept on disk, never replayed.
+   */
+  invalidLines: number;
 }
 
 export class JsonlEventStore implements EventStore {
@@ -234,6 +241,7 @@ export class JsonlEventStore implements EventStore {
   private dirty = false;
   private truncatedTail = 0;
   private corruptLines = 0;
+  private invalidLines = 0;
   private static readonly SYNC_EVERY = 50;
 
   constructor(filePath: string) {
@@ -282,9 +290,24 @@ export class JsonlEventStore implements EventStore {
         this.corruptLines++;
         continue;
       }
-      if (this.byId.has(evt.id)) continue;
+      if (evt !== null && typeof evt === "object" && this.byId.has(evt.id)) continue;
+      // Replay refuses what append refuses. Validating only at append left
+      // replay as the back door: whatever was in the file went straight to the
+      // reducers on the next boot. An invalid event is quarantined like a
+      // corrupt line — skipped, counted, surfaced by `integrity()` — rather
+      // than failing the boot, for the same reason: one bad line must not make
+      // the whole mission unbootable. Its seq still advances the counter, so a
+      // later append can never reuse the number the quarantined line holds.
+      // The validator is the compiled AJV one `append` uses; on a
+      // current-generation log it adds a small constant per line.
+      const candidate: MeshEvent = evt !== null && typeof evt === "object" && evt.seq === undefined ? { ...evt, seq: this.seq + 1 } : evt;
+      if (!validateEvent(candidate).valid) {
+        this.invalidLines++;
+        if (evt !== null && typeof evt === "object" && typeof evt.seq === "number") this.seq = Math.max(this.seq, evt.seq);
+        continue;
+      }
+      evt = candidate;
       this.seq = Math.max(this.seq, evt.seq ?? 0);
-      if (evt.seq === undefined) evt = { ...evt, seq: ++this.seq };
       this.cache.push(evt);
       this.byId.set(evt.id, evt);
       if (evt.correlationId) {
@@ -452,6 +475,7 @@ export class JsonlEventStore implements EventStore {
     this.dirty = false;
     this.truncatedTail = 0;
     this.corruptLines = 0;
+    this.invalidLines = 0;
     this.writeChain = Promise.resolve();
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     fs.writeFileSync(this.filePath, "", "utf8");
@@ -479,6 +503,7 @@ export class JsonlEventStore implements EventStore {
     this.dirty = false;
     this.truncatedTail = 0;
     this.corruptLines = 0;
+    this.invalidLines = 0;
     this.writeChain = Promise.resolve();
     this.loaded = false;
     this.load();
@@ -491,12 +516,13 @@ export class JsonlEventStore implements EventStore {
 
   /**
    * What replay had to repair. Non-zero values mean events were lost — from a
-   * hard kill (`truncatedTailBytes`) or genuine corruption (`corruptLines`).
+   * hard kill (`truncatedTailBytes`), genuine corruption (`corruptLines`), or
+   * events the schema refuses (`invalidLines`, quarantined rather than replayed).
    * Reads the log if it has not been loaded yet, so callers can ask at boot.
    */
   integrity(): LogIntegrity {
     this.load();
-    return { truncatedTailBytes: this.truncatedTail, corruptLines: this.corruptLines };
+    return { truncatedTailBytes: this.truncatedTail, corruptLines: this.corruptLines, invalidLines: this.invalidLines };
   }
 }
 
