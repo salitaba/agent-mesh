@@ -70,12 +70,16 @@ export default function Graph(): React.JSX.Element {
     );
   }
   const W = 900, H = 480, cx = W / 2, cy = H / 2;
-  const R = Math.min(W, H) / 2 - 60;
+  // Node labels stack vertically (lifecycle above, id below), so the ring is
+  // capped by the canvas *height* — a circle of radius min(W,H)/2 - 60 in this
+  // 900x480 viewBox left ~40% of the width empty. An ellipse claims that width
+  // without spending any of the vertical label budget.
+  const RX = W / 2 - 70, RY = H / 2 - 60;
   const pos: Record<string, { x: number; y: number; nd: any }> = {};
   const n = Math.max(nodes.length, 1);
   nodes.forEach((nd: any, i: number) => {
     const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    pos[nd.id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), nd };
+    pos[nd.id] = { x: cx + RX * Math.cos(a), y: cy + RY * Math.sin(a), nd };
   });
   const edges = (graph.edges || []).slice().sort((a: any, b: any) => b.count - a.count).slice(0, 12);
 
