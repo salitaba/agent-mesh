@@ -274,7 +274,11 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
               <circle className="body" r={NODE_R} />
               <text className="av" y="5">{(id[0] || "?").toUpperCase()}</text>
               <text className="nm" y={NODE_R + 18}>{id}</text>
-              <text className="rl" y={NODE_R + 32}>{ag.role || "no role"}</text>
+              {/* The role is frequently the same string as the id ("qa", "pm",
+                  "architect"), which printed every node's label twice. Show it
+                  only when it tells the operator something new; the title and
+                  aria-label still carry the role either way. */}
+              {ag.role === id ? null : <text className="rl" y={NODE_R + 32}>{ag.role || "no role"}</text>}
               <circle className={`bboot${boot ? " on" : ""}`} cx={NODE_R - 10} cy={-(NODE_R - 10)} r={8} tabIndex={0}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); onBoot(id); }}

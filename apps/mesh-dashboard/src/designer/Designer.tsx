@@ -904,7 +904,11 @@ export default function Designer(): React.JSX.Element {
         <h2 className="sr-only">Mesh Designer</h2>
         <div className="ms-head-name">
           <b>{m.mesh?.name?.trim() || "Untitled mesh"}</b>
-          {m.mesh?.id ? <span className="mono muted">{m.mesh.id}</span> : null}
+          {/* The id is a stable key, not a second name. Projects whose id equals
+              their name printed the same string twice — the name ellipsized
+              ("skill-p…") directly above the full id, which reads as broken
+              rendering. Show it only when it adds something. */}
+          {m.mesh?.id && m.mesh.id.toLowerCase() !== (m.mesh.name?.trim() || "").toLowerCase() ? <span className="mono muted">{m.mesh.id}</span> : null}
           {m.mesh?.goal?.trim() ? <span className="ms-goal">— {m.mesh.goal.trim()}</span> : <span className="muted">— no goal yet</span>}
         </div>
         <span className="ms-state" role="status">

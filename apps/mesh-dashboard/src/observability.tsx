@@ -267,7 +267,7 @@ export function ErrorPanel({ err, fallback }: { err?: TurnError; fallback?: stri
           <pre className="crash-stack">{err.frames.join("\n")}</pre>
         </details>
       ) : (
-        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>No stack was attached to this throw.</div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>No stack was attached to this throw.</div>
       )}
     </div>
   );

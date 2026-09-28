@@ -642,8 +642,12 @@ export function MeshProvider({ children, projectId = null, background = false }:
   }, [background, projectId, ingestEvent, refreshStatus]);
 
   useEffect(() => {
+    // Mirror the pre-paint bootstrap in index.html (UIR-07): a saved choice
+    // wins, otherwise follow the OS, otherwise dark. Duplicated by hand on
+    // purpose — the inline script cannot import this module.
     const saved = localStorage.getItem("mesh-theme");
-    if (saved) document.documentElement.dataset.theme = saved;
+    const sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    document.documentElement.dataset.theme = (saved === "light" || saved === "dark") ? saved : sys;
     let dead = false;
     (async () => {
       try {

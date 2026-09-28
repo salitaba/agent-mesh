@@ -299,9 +299,9 @@ export default function Overview(): React.JSX.Element {
           // seconds later. Offering "continue" as the remedy is what made this
           // look like a broken button instead of a budget that ran out. The
           // ceiling has to move first.
-          <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: while the total is over, the host re-parks every open project on the next heartbeat. The ceiling is host-wide, not this mission's — raise it in the host's settings and it takes effect on the next heartbeat, no restart. Editing <code>~/.agent-mesh/host.yaml</code> by hand still needs one, because the file is read only at startup. Projects the host already parked stay parked until you reopen them.</span></div></div>
+          <div className="status-strip bad"><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: while the total is over, the host re-parks every open project on the next heartbeat. The ceiling is host-wide, not this mission's — raise it in the host's settings and it takes effect on the next heartbeat, no restart. Editing <code>~/.agent-mesh/host.yaml</code> by hand still needs one, because the file is read only at startup. Projects the host already parked stay parked until you reopen them.</span></div></div>
         ) : (
-          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
+          <div className="status-strip warn"><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
         )
       ) : null}
       {!st.uiOnly && blocks.length > 0 ? (
@@ -332,7 +332,7 @@ export default function Overview(): React.JSX.Element {
         // The remedy carries its timing because the limit is read once at boot:
         // without that clause the strip sends the operator to raise a ceiling
         // that cannot move until the next run.
-        <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip"><MeshMark /><div>
           <b>{capacityWaits.length === 1 ? `${capacityWaits[0].agentId} is queued, waiting for a slot.` : `${capacityWaits.length} agents are queued, waiting for a slot.`}</b>{" "}
           <span className="muted">
             {typeof ceiling?.running === "number" && typeof ceiling?.limit === "number" ? (
@@ -354,7 +354,7 @@ export default function Overview(): React.JSX.Element {
         // the count keeps its place in the detail line, where it still earns one
         // once there is more than a single card. Agent-raised escalations have
         // no phrasing, so those keep the original wording exactly.
-        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip bad"><MeshMark /><div>
           <b>{verdict ? `${verdict.title}.` : `${escOpen.length} decision${escOpen.length > 1 ? "s" : ""} waiting on you — mission is paused.`}</b>{" "}
           {verdict ? (
             <span className="muted">
@@ -368,7 +368,7 @@ export default function Overview(): React.JSX.Element {
         // until a pause carries a real reason: the one `goal.paused` emitter
         // sends `"user pause"`, free prose with no phrasing behind it, which is
         // the right thing for the catalog guard to refuse.
-        <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip warn"><MeshMark /><div>
           <b>{finalVerdict ? `${finalVerdict.title}.` : "Mission is paused. Nothing is running."}</b>
           {finalVerdict ? <> <span className="muted">{finalVerdict.summary}</span></> : null}
         </div></div>
@@ -380,7 +380,7 @@ export default function Overview(): React.JSX.Element {
         // operator needs to trust a green banner. The counts stay in the KPI
         // row below and the remedy stays on the reopen button in the title, so
         // this says what happened and leaves both where they already were.
-        <div className="status-strip ok" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip ok"><MeshMark /><div>
           <b>{finalVerdict ? `${finalVerdict.title}.` : "Done — all mandatory checks passed."}</b>{" "}
           <span className="muted">{finalVerdict ? `${finalVerdict.summary} ` : ""}Here's what the mission shipped.</span>{" "}
           <Button variant="banner-act" onClick={doReplay}>replay</Button>
@@ -391,7 +391,7 @@ export default function Overview(): React.JSX.Element {
         // `termination.ts` constructs, so the `goal.failed` emit it guards is
         // unreachable. Wired anyway — the day a producer lands, the phrasing is
         // already on the wire and this needs no second visit.
-        <div className="status-strip bad" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip bad"><MeshMark /><div>
           <b>{finalVerdict ? `${finalVerdict.title}.` : "Failed."}</b>
           {finalVerdict ? <> <span className="muted">{finalVerdict.summary}</span></> : null}
         </div></div>
@@ -403,9 +403,9 @@ export default function Overview(): React.JSX.Element {
         // waiting, as no banner at all. A live mission with nobody working is
         // never routine: say which of the two it is and what unblocks it.
         waiting.length === 0 ? (
-          <div className="status-strip warn" style={{ marginBottom: 12 }}><MeshMark /><div><b>Live, but no agent is working.</b> <span className="muted">{idleCause} {startupSeats === 0 ? "Wake an agent now, or say who should start next time." : "Wake an agent to get going."}</span>{startupSeats === 0 ? <> <Button variant="banner-act" onClick={() => setView("designer")}>Set startup agents</Button></> : null}</div></div>
+          <div className="status-strip warn"><MeshMark /><div><b>Live, but no agent is working.</b> <span className="muted">{idleCause} {startupSeats === 0 ? "Wake an agent now, or say who should start next time." : "Wake an agent to get going."}</span>{startupSeats === 0 ? <> <Button variant="banner-act" onClick={() => setView("designer")}>Set startup agents</Button></> : null}</div></div>
         ) : (
-          <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div><b>All quiet.</b> <span className="muted">{waiting.length} agent{waiting.length > 1 ? "s" : ""} waiting, none working right now. Wake one or send a message to get going.</span></div></div>
+          <div className="status-strip"><MeshMark /><div><b>All quiet.</b> <span className="muted">{waiting.length} agent{waiting.length > 1 ? "s" : ""} waiting, none working right now. Wake one or send a message to get going.</span></div></div>
         )
       ) : null}
       {!st.uiOnly && triagedAway > 0 ? (
@@ -419,7 +419,7 @@ export default function Overview(): React.JSX.Element {
         // "clears within a turn" strip above nor the verdict banners fit it.
         // Polled, never emitted: one event per drop would bury the log exactly
         // as a capacity block would have.
-        <div className="status-strip" style={{ marginBottom: 12 }}><MeshMark /><div>
+        <div className="status-strip"><MeshMark /><div>
           <b>{triagedAway === 1 ? "1 event was triaged away — no agent saw it." : `${triagedAway} events were triaged away — no agent saw them.`}</b>{" "}
           <span className="muted">
             Nothing is blocked and nothing is waiting: a triage rule matched {triagedAway === 1 ? "it" : "them"} and dropped {triagedAway === 1 ? "it" : "them"} before anything was queued. {triagedAway === 1 ? "It" : "They"} will not be retried, so an agent that looks idle may simply never have been told. Loosen or remove the rule under Triage in the designer's Mesh panel — <code>scheduling.*</code> edits apply on the next mesh boot, not to this run.

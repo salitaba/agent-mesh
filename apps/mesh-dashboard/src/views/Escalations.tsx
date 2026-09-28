@@ -704,7 +704,13 @@ export default function Escalations(): React.JSX.Element {
   };
   const byLongestWait = (x: any, y: any): number => waitedSince(x) - waitedSince(y);
   const openStuck = list.filter((x) => x.status === "OPEN" && x.reason === "stalemate:unanswered_request");
-  const openOther = list.filter((x) => !(x.status === "OPEN" && (x.reason === "stalemate:unanswered_request" || x.reason === "stalemate")));
+  // Only genuinely-open, non-stalemate decisions. This used to be written as
+  // the negation of the stalemate set, which kept every CLOSED escalation in
+  // the actionable queue: a resolved item fails `status === "OPEN"`, so the `!`
+  // let it through. Cleared cards then rendered in full under "Other decisions"
+  // (body, budget meter, Next:, action chips) while the same rows also appeared
+  // under "Done" — a wall of non-actionable detail on top of the real queue.
+  const openOther = list.filter((x) => x.status === "OPEN" && x.reason !== "stalemate:unanswered_request" && x.reason !== "stalemate");
   const derived = list.filter((x) => x.status === "OPEN" && x.reason === "stalemate");
   const resolved = list.filter((x) => x.status !== "OPEN");
 
@@ -792,7 +798,7 @@ function EscCard(props: {
 
   return (
     <div className={`card esc-card ${e.status === "OPEN" ? "" : "responded"}`} data-esc={e.id} style={{ marginBottom: 10 }}>
-      <div className="row"><b style={{ fontSize: 15 }}>{(info.title)}</b><span className={`pill ${e.status === "OPEN" ? "failed" : "completed"}`}>{e.status === "OPEN" ? "waiting on you" : e.status === "AUTO_RESOLVED" ? "cleared itself" : "done"}</span></div>
+      <div className="row"><b style={{ fontSize: 16 }}>{(info.title)}</b><span className={`pill ${e.status === "OPEN" ? "failed" : "completed"}`}>{e.status === "OPEN" ? "waiting on you" : e.status === "AUTO_RESOLVED" ? "cleared itself" : "done"}</span></div>
       {!(isStuck || isDerived) ? (
         <div className="muted" style={{ margin: "4px 0", fontSize: 12 }}>{(e.raisedBy)} · {(ago(e.createdAt))} · <code>{(e.reason)}</code></div>
       ) : null}

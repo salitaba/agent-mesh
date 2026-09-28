@@ -648,7 +648,7 @@ export default function Steps(): React.JSX.Element {
           {groups.map((g) => (
             <section key={g.id} className="st-group" aria-label={g.label}>
               <header className="st-group-head">
-                <h4>{g.label}</h4>
+                <h3>{g.label}</h3>
                 <span>{g.list.length} turn{g.list.length === 1 ? "" : "s"} · {fmt(g.tokens)} tok</span>
               </header>
               <ol className="st-list">

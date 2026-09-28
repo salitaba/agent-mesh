@@ -88,7 +88,7 @@ export default function Cost(): React.JSX.Element {
       </div>
       <Card title="By agent">
         {ranked.length ? ranked.map((p: any) => (
-          <div key={p.agentId} className="bar-row"><span className="lbl">{(p.agentId)} <span className="muted">· ran {p.activations}× · {fmt(p.perTurn)}/turn</span></span>
+          <div key={p.agentId} className="bar-row"><span className="lbl">{(p.agentId)}<span className="muted lbl-meta">ran {p.activations}× · {fmt(p.perTurn)}/turn</span></span>
             <div className="track"><div style={{ transform: `scaleX(${max ? p.tokens / max : 0})` }} /></div>
             <span className="num">{fmt(p.tokens)}</span></div>
         )) : <div className="muted">No spend yet.</div>}
@@ -98,12 +98,12 @@ export default function Cost(): React.JSX.Element {
           <>
             {models.map((m: any) => (
               <div key={m.model} className="bar-row">
-                <span className="lbl mono">{(m.model)} <span className="muted">· {m.turns} turn{m.turns === 1 ? "" : "s"} · {fmt(m.avgPerTurn)}/turn · {(m.agents || []).slice(0, 3).join(", ")}{(m.agents || []).length > 3 ? ` +${m.agents.length - 3}` : ""}</span></span>
+                <span className="lbl mono">{(m.model)}<span className="muted lbl-meta">{m.turns} turn{m.turns === 1 ? "" : "s"} · {fmt(m.avgPerTurn)}/turn · {(m.agents || []).slice(0, 3).join(", ")}{(m.agents || []).length > 3 ? ` +${m.agents.length - 3}` : ""}</span></span>
                 <div className="track"><div style={{ transform: `scaleX(${m.tokens / modelMax})` }} /></div>
                 <span className="num">{fmt(m.tokens)}</span>
               </div>
             ))}
-            <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
               Bars are billed tokens (in + out).
               {cacheTotal ? ` ${fmt(cacheTotal)} cached transcript tokens were replayed and are not billed.` : ""}
             </div>

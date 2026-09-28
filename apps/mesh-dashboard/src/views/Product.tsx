@@ -214,9 +214,9 @@ export default function Product(): React.JSX.Element {
           <ErrorState what="the workspace" detail={wsErr} onRetry={() => setAttempt((n) => n + 1)} />
         ) : (
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-            <div className="kpi kpi-tile"><small>branch</small><b style={{ fontSize: 15 }}>{info?.gitBranch || "…"}</b></div>
-            <div className="kpi kpi-tile"><small>head</small><b style={{ fontSize: 15 }}>{info?.gitHead || "…"}</b></div>
-            <div className="kpi kpi-tile"><small>tree</small><b style={{ fontSize: 15 }}>{info?.gitRepo === "false" ? "no repo" : info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
+            <div className="kpi kpi-tile"><small>branch</small><b style={{ fontSize: 16 }}>{info?.gitBranch || "…"}</b></div>
+            <div className="kpi kpi-tile"><small>head</small><b style={{ fontSize: 16 }}>{info?.gitHead || "…"}</b></div>
+            <div className="kpi kpi-tile"><small>tree</small><b style={{ fontSize: 16 }}>{info?.gitRepo === "false" ? "no repo" : info?.gitClean === "false" ? "dirty" : info?.gitClean === "true" ? "clean" : "…"}</b></div>
             <div className="kpi kpi-tile" style={{ minWidth: 160 }}><small>workspace</small><b style={{ fontSize: 12 }} className="mono">{String(info?.path || "").split("/").slice(-3).join("/")}</b></div>
             <div style={{ flex: 1 }} />
             <div className="chips">
