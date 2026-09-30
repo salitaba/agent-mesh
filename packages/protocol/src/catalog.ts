@@ -1169,6 +1169,21 @@ const VERDICT_TEXT: Record<string, VerdictText> = {
     title: "Mission escalated",
     summary: "The goal is parked awaiting a human decision; see the open escalations below.",
   },
+  // The other states `goal_<status>` can land in. A run report read off a mesh that
+  // was stopped mid-mission (an operator's Ctrl-C, a killed process) finds the goal
+  // still ACTIVE, and used to call that "a reason this build has no phrasing for".
+  goal_active: {
+    title: "Stopped before the goal was met",
+    summary: "The run ended while the goal was still active: the mesh was stopped (an operator stop, a crash or a killed process) before every mandatory criterion was evidenced. Start it again to continue from where the log ends.",
+  },
+  goal_paused: {
+    title: "Mission paused",
+    summary: "The goal is paused, by an operator or by a hold such as acceptance criteria awaiting review, and nothing was running. Resume the mission to continue.",
+  },
+  goal_created: {
+    title: "Mission never started",
+    summary: "The goal was created but no work was ever started on it.",
+  },
 };
 
 /**
