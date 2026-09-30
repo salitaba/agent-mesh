@@ -10,6 +10,7 @@ export * from "./termination";
 export * from "./event-bus";
 export * from "./seat-token";
 export * from "./commit-ref";
+export * from "./text-page";
 export { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, MAX_LIVE_TOOLS, MAX_FILES_TOUCHED, describeError, boundOpTiming, type TurnRecord, type TurnPhases, type TurnPhaseName, type TurnError, type LiveToolCall, type TurnAdvisory, type TurnCheckpoint } from "./turn-tracker";
 export {
   MISSION_HALTED_ALLOW_OPS,

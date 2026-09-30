@@ -83,6 +83,7 @@ import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJE
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, settlersOf, transitionLifecycle } from "./projections";
+import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
 import { commitRefError } from "./commit-ref";
@@ -10289,7 +10290,10 @@ export class Supervisor {
           // say so, so a partial read is a fact the agent holds rather than an
           // absence it cannot detect.
           const offset = Math.max(0, Math.floor(op.offset ?? 0));
-          const slice = content.slice(offset, offset + ARTIFACT_READ_MAX_CHARS);
+          // One character past the ceiling, so `pageCut` can tell "the rest fits" from
+          // "there is more": it cuts at a line, not mid-token, only when there is more.
+          const window = content.slice(offset, offset + ARTIFACT_READ_MAX_CHARS + 1);
+          const slice = window.slice(0, pageCut(window, ARTIFACT_READ_MAX_CHARS));
           const end = offset + slice.length;
           if (end < content.length) {
             return {

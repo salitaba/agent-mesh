@@ -1,6 +1,6 @@
 ﻿import { ARTIFACT_TYPES, MESSAGE_TYPES, obligesRecipients, type AgentDefinition, type Artifact, type MeshEvent, type MeshMessage, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
-import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, approverMayAdvance, hasPeerReviewerFor, readableMailDepth, resolveUnread, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, pageCut, readableMailDepth, resolveUnread, settlersOf, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
 import {
   buildAgentActivity,
   buildCostReport,
@@ -311,7 +311,7 @@ export class McpToolset {
       // Who can settle what the seat just read, so it knows whose review to ask
       // for — and whether its own verdict could count — before it asks.
       const read = result.ok ? this.supervisor.findArtifactByUri(op.artifactRef) : undefined;
-      if (read) out.canSettle = this.settlersOf(read);
+      if (read) out.canSettle = settlersOf(this.supervisor.state, read, HUMAN_AGENT_ID);
       // The op already slices at ARTIFACT_READ_MAX_CHARS (60k), which is a
       // flood ceiling and not a page: the measured artifact read that rode a
       // whole session was 43,701 characters. Bound the page here, where the
@@ -323,7 +323,9 @@ export class McpToolset {
       const content = typeof result.reason === "string" ? result.reason : "";
       const budget = TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS;
       if (content.length > budget) {
-        const shown = content.slice(0, budget);
+        // A line boundary, not the character budget: a page that ends inside `test('…', (`
+        // reads as a file that stops there (see `pageCut`).
+        const shown = content.slice(0, pageCut(content, budget));
         const nextOffset = askedFrom + shown.length;
         out.content = shown;
         out.truncated = true;
@@ -390,30 +392,7 @@ export class McpToolset {
     if (!result.ok && result.reason) out.error = result.reason;
     if (result.op === "publish_artifact" && result.artifact) {
       out.artifact = { id: result.artifact.id, version: result.artifact.version, status: result.artifact.status };
-      out.canSettle = this.settlersOf(this.supervisor.state.artifacts.get(result.artifact.id) ?? result.artifact);
-    }
-    return out;
-  }
-
-  /**
-   * The seats whose approval would SETTLE this artifact — `approverMayAdvance`,
-   * the reducer's own test, not the narrower review-capability table.
-   *
-   * Put on read and publish results because the only place a seat learned it
-   * before was a refusal: request_review told the asker after the fact, and a
-   * mixed list left the seats that could not settle owing a verdict anyway —
-   * frontend was named on 6 design reviews in the 2026-09-25 run and could
-   * settle none, while architect, who held `review.design`, was named on 0.
-   * The owner is listed only where no peer could review (the single-seat case).
-   */
-  private settlersOf(a: Artifact): string[] {
-    const state = this.supervisor.state;
-    const out: string[] = [];
-    for (const rec of state.agents.values()) {
-      const id = rec.definition.id;
-      if (id === HUMAN_AGENT_ID || rec.state.lifecycle === "RETIRED") continue;
-      if (id === a.owner && hasPeerReviewerFor(state, id, a, HUMAN_AGENT_ID)) continue;
-      if (approverMayAdvance(state, id, a, HUMAN_AGENT_ID)) out.push(id);
+      out.canSettle = settlersOf(this.supervisor.state, this.supervisor.state.artifacts.get(result.artifact.id) ?? result.artifact, HUMAN_AGENT_ID);
     }
     return out;
   }
