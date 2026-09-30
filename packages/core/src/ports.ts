@@ -106,6 +106,35 @@ export interface WorkspacePort {
    * workspace can answer it; test doubles that never write files omit it.
    */
   checkpointWorktree?(agentId: string, ref: string, message: string): Promise<{ commit: string; files: string[] } | null>;
+  /**
+   * Bring an agent's worktree up to the product branch, if it can be done without
+   * touching anything the seat wrote: a fast-forward of a clean worktree that holds no
+   * commits of its own. Null when the seat has no worktree. Called at the start of a
+   * seat's turn, when nothing of that seat is running in it.
+   *
+   * A worktree is a separate checkout, not a view of the product branch, and a merge
+   * does not move it: QA twice tested its own worktree after `main` had moved and
+   * issued `quality.block` verdicts on defects that were already fixed. Optional
+   * because only a git workspace can answer it.
+   */
+  syncWorktree?(agentId: string): Promise<WorktreeSync | null>;
+}
+
+/** What bringing a seat's worktree up to the product branch did. See `WorkspacePort.syncWorktree`. */
+export interface WorktreeSync {
+  /** The product branch, and its tip (short sha). */
+  base: string;
+  baseCommit: string;
+  /** Commits of the product branch the worktree lacked when the turn began. */
+  behind: number;
+  /** Commits on the seat's branch that the product branch lacks. */
+  ahead: number;
+  /**
+   * `current`: nothing to bring in. `advanced`: fast-forwarded to the product branch.
+   * `blocked`: behind, and could not be advanced; `why` names what stands in the way.
+   */
+  outcome: "current" | "advanced" | "blocked";
+  why?: string;
 }
 
 /** What a seat has in its worktree that has not reached the product. */

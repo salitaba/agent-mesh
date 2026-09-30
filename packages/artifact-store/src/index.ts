@@ -4,7 +4,7 @@ import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { createHash, randomUUID } from "crypto";
-import type { ArtifactContentStore, WorkspacePort, WorktreeState } from "../../core/src/ports";
+import type { ArtifactContentStore, WorkspacePort, WorktreeState, WorktreeSync } from "../../core/src/ports";
 
 const execFileAsync = promisify(execFile);
 
@@ -626,6 +626,49 @@ export class GitWorkspace implements WorkspacePort {
       fs.rmSync(tmpIndex, { force: true });
       fs.rmSync(`${tmpIndex}.lock`, { force: true });
     }
+  }
+
+  /**
+   * See `WorkspacePort.syncWorktree`.
+   *
+   * Advances only when nothing the seat wrote can be touched: it is on its own branch,
+   * holds no commit the product branch lacks, and has no uncommitted change to a
+   * tracked file. `--ff-only` then moves it, and git itself still refuses if an
+   * untracked file of the seat's would be overwritten, which is reported like the rest
+   * as "blocked". Every other case is left exactly as it was and described, so the seat
+   * can decide (`git merge main` after committing) with the facts in hand.
+   */
+  async syncWorktree(agentId: string): Promise<WorktreeSync | null> {
+    const target = this.worktreePath(agentId);
+    if (!fs.existsSync(path.join(target, ".git"))) return null;
+    const base = this.baseBranch;
+    let baseCommit: string;
+    let behind: number;
+    let ahead: number;
+    try {
+      baseCommit = await this.git(["rev-parse", "--short=12", base], target);
+      behind = Number(await this.git(["rev-list", "--count", `HEAD..${base}`], target));
+      ahead = Number(await this.git(["rev-list", "--count", `${base}..HEAD`], target));
+    } catch {
+      return null;
+    }
+    const info = { base, baseCommit, behind, ahead };
+    if (behind === 0) return { ...info, outcome: "current" };
+    const blocked = (why: string): WorktreeSync => ({ ...info, outcome: "blocked", why });
+    const own = `mesh/${agentId.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+    const branch = await this.git(["rev-parse", "--abbrev-ref", "HEAD"], target).catch(() => "");
+    if (branch !== own) return blocked(branch === "HEAD" ? `it is on a detached HEAD, not ${own}` : `it is on branch ${branch || "(unknown)"}, not ${own}`);
+    if (ahead > 0) return blocked(`your branch holds ${ahead} commit${ahead === 1 ? "" : "s"} that ${base} lacks, so it cannot simply advance`);
+    const tracked = await this.gitRaw(["status", "--porcelain=v1", "-z", "--untracked-files=no"], target, { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).catch(() => "?");
+    if (tracked.length > 0) return blocked("it has uncommitted changes to tracked files");
+    try {
+      await this.git(["merge", "--ff-only", base], target);
+    } catch (err) {
+      const text = String((err as { stderr?: unknown }).stderr ?? (err as Error).message ?? "").trim();
+      const first = text.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("hint:")) ?? "git refused the fast-forward";
+      return blocked(`git refused the fast-forward (${first.slice(0, 160)})`);
+    }
+    return { ...info, outcome: "advanced" };
   }
 
   /** Every agent worktree's uncommitted state. Used to record what a reset is about to archive. */

@@ -7674,6 +7674,9 @@ export class Supervisor {
       const session = await this.ensureSession(agentId);
       const handover = await this.openHandover(agentId, session, turnId, activationEvt.id);
       if (handover) handoverReactivation = reason;
+      // A worktree is a separate checkout, and a merge does not move it. Brought up to the
+      // product branch here, while nothing of this seat is running in it, or told why not.
+      const worktreeNote = handover ? undefined : await this.syncSeatWorktree(agentId);
       // build context from undelivered mail; the drain is emitted after the
       // model has actually read it (see the delivery loop below the runtime call)
       const taskHint = rec.state.activeTaskId ? this.state.tasks.get(rec.state.activeTaskId) : undefined;
@@ -7704,6 +7707,7 @@ export class Supervisor {
         // A handover is not shown the mail it may not answer (§6).
         renderContextInstructions(handover ? handoverBundle(b) : b) +
         (unfinished ? `\n\n## Your previous turn did not finish\n${unfinished}` : "") +
+        (worktreeNote ? `\n\n## Your worktree\n${worktreeNote}` : "") +
         (turnBudget ? `\n\n## Turn budget\n${turnBudget}` : "") +
         `\n\n## Why you were woken\n${handover ? HANDOVER_INSTRUCTION(handover, b.unreadMail.length) : describeReason(reason)}\n\nEmit your reply as mesh operations.`;
       // Item caps bound how MANY things go in, never how big they are. When the
@@ -9697,6 +9701,50 @@ export class Supervisor {
     } finally {
       if (timer) this.timers.clearTimeout(timer);
     }
+  }
+
+  /**
+   * Bring a seat's own worktree up to the product branch before its turn, and say what
+   * could not be done.
+   *
+   * Only a seat that HAS a worktree (`agentWorkspace`): the rest read the product
+   * checkout itself, which is always current. QA's worktree stayed at the commit it was
+   * created on while `main` moved twice, QA tested it both times, and the two false
+   * `quality.block` verdicts cost about 202k tokens and twelve minutes of a twenty-three
+   * minute reopen (cronlite, second run). Neither the role prompt nor the briefing said
+   * a worktree needs bringing up to date, and a seat does not think to ask.
+   *
+   * Fast-forward only, and only where nothing the seat wrote can be touched
+   * (`WorkspacePort.syncWorktree`); otherwise the note says how far behind it is and
+   * why it was left, which is the fact the seat needs before it tests or reviews.
+   * Never throws: a failed sync is an audit line, and the turn runs.
+   */
+  private async syncSeatWorktree(agentId: string): Promise<string | undefined> {
+    const workspace = this.deps.workspace;
+    if (!workspace?.syncWorktree) return undefined;
+    if (!EDIT_CAPABILITIES.some((token) => (this.config.agents[agentId]?.capabilities ?? []).includes(token))) return undefined;
+    let res: Awaited<ReturnType<NonNullable<typeof workspace.syncWorktree>>>;
+    try {
+      res = await workspace.syncWorktree(agentId);
+    } catch (err) {
+      this.auditLine(`worktree sync for ${agentId} failed: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+    if (!res || res.outcome === "current") return undefined;
+    const commits = `${res.behind} commit${res.behind === 1 ? "" : "s"}`;
+    if (res.outcome === "advanced") {
+      this.auditLine(`worktree of ${agentId} advanced ${commits} to ${res.base} ${res.baseCommit}`);
+      return (
+        `Your worktree was ${commits} behind ${res.base} and has been brought up to date (${res.base} is at ${res.baseCommit}): ` +
+        `what you read and run here is what has been merged.`
+      );
+    }
+    this.auditLine(`worktree of ${agentId} is ${commits} behind ${res.base} ${res.baseCommit} and was left as it was: ${res.why}`);
+    return (
+      `Your worktree is ${commits} behind ${res.base} (${res.base} is at ${res.baseCommit}) and could not be brought up to date: ${res.why}. ` +
+      `What you read and run here is OLDER than what has been merged, so a test run or a review of it says nothing about ${res.base}. ` +
+      `Commit or set aside what you hold, then \`git merge ${res.base}\` in your worktree before you test, verify or review, and name the commit you checked.`
+    );
   }
 
   async agentWorkspace(agentId: string): Promise<string> {
