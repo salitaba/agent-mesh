@@ -23,9 +23,10 @@ import { makeMesh } from "../helpers";
  * "mesh_broadcast", "then `mesh_merge`", and a sentence saying `mesh_send` "is not in your tool
  * list but still works". It does not work for any client that checks a name against the list it
  * was given, and Claude Code is one: it refuses the call with "No such tool available" before it
- * leaves the machine. Seats made 8, 14 and 21 such calls in three live runs (the fourth: ten
- * `mesh_send`, five `mesh_respond`, three `mesh_merge` from a developer who cannot merge, two
- * `mesh_broadcast`, one `mesh_request_review`), each a turn's worth of intent that never arrived.
+ * leaves the machine. Seats made 8, 14 and 14 such calls in three live runs (the fourth: seven
+ * `mesh_send`, three `mesh_respond`, two `mesh_merge` from a developer who cannot merge, one
+ * `mesh_broadcast`, one `mesh_request_review`, of 370 tool calls), each a turn's worth of intent
+ * that never arrived.
  *
  * The rule now lives in one place (`tool-visibility.ts`) and both the manifest and the prose read it.
  * The last group of tests is the one that would catch a third hand: it renders every seat's whole

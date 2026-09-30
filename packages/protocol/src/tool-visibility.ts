@@ -16,7 +16,7 @@ import type { AgentDefinition } from "./types";
  * taken to mean a seat that reaches for one "still gets it". It does not, for any client that
  * checks a name against the list it was handed, and Claude Code is one: it refuses the call
  * before it leaves the machine, with "No such tool available". Across three live runs a seat
- * made 8, 14 and 21 such calls, every one a turn's worth of intent that never reached the mesh
+ * made 8, 14 and 14 such calls, every one a turn's worth of intent that never reached the mesh
  * (one was a review request, and the seat then waited for a review nobody had been asked for).
  * So what a briefing names has to be what the manifest carries, and that is why this lives
  * where both can read it.

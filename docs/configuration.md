@@ -813,16 +813,26 @@ message id and the answer itself; `mesh_announce` broadcasts when you omit `to`
 and tells named seats when you give it. Both send `INFORM`, which the seat never
 writes — what settles an ask is `replyTo`, not the type.
 
-Hiding is **advertisement only**: `mesh_send` with a
-hand-written type still works for a model that reaches for it, so collapsing the
-vocabulary can never take a capability away from a seat or strand a mission.
-This is not a convention to trust — it is what the code does: `callTool`
-resolves a tool name against the **unfiltered** map, and the hidden tools are
-filtered only out of the advertised list
-(`apps/mesh-server/src/mcp.ts`). `vocabulary: contracts` changes what a seat is
-offered, never what the mesh will accept: a hidden tool called by name still
-runs, through every gate, unchanged. `MessageType` is untouched on the wire and
-stays what it should always have been — a rendering and telemetry detail.
+Hiding is **advertisement only on the server**: `callTool` resolves a tool name
+against the **unfiltered** map, and the hidden tools are filtered only out of the
+advertised list (`apps/mesh-server/src/mcp.ts`), so a caller that names one on
+the wire (the operator's HTTP API, a client that does not check) still gets it,
+through every gate, unchanged. `MessageType` is untouched on the wire and stays
+what it should always have been — a rendering and telemetry detail.
+
+What that does **not** mean is that a seat can call a hidden tool. A client that
+checks a name against the `tools/list` it was handed refuses any other before the
+call leaves the machine, and Claude Code is one: it answers "No such tool
+available" and nothing is sent. This page used to say a hidden `mesh_send` "still
+works for a model that reaches for it", the briefing said the same to the seat, and
+across three live runs seats made 8, 14 and 14 such calls (of 434, 567 and 370), each a turn's worth of
+intent that never reached the mesh. So the briefing now names only tools the seat's
+manifest carries (`hiddenToolsFor`, in `packages/protocol/src/tool-visibility.ts`,
+is the list both read), says plainly which it does not have and that a call to one
+does nothing, and the end-of-turn note says so when a seat calls one anyway. The
+asks no narrower contract names go to `work.request`; saying something nobody has to
+answer is `mesh_announce`. See `docs/runtime.md` § What a seat is told about its
+tools.
 
 Be honest about the payoff: the token saving is small (the manifest shrink
 measured **−96 tokens/turn** for dropping the four contract-covered tools, and

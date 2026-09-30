@@ -3073,7 +3073,7 @@ export interface AgentContextBundle {
    *
    * Derived from the tables the manifest itself is filtered by (`hiddenToolsFor`), so
    * the briefing names exactly what the seat can call. It used to list them all, and
-   * three live runs recorded 8, 14 and 21 calls to tools the client refused before they
+   * three live runs recorded 8, 14 and 14 calls to tools the client refused before they
    * left the machine ("No such tool available"), each a turn's worth of intent that
    * never reached the mesh.
    */

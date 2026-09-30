@@ -74,8 +74,7 @@ import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, n
 import { BACKEND_CRASH_HINT, BackendUnreachableError, classifyProviderOutage, isConnectionError, isTimeoutError, type ProviderOutage } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
-import { episodeOf } from "../../protocol/src/index";
-import { refusedToolCalls, toolAlternative } from "../../protocol/src/index";
+import { episodeOf, refusedToolCalls, toolAlternative } from "../../protocol/src/index";
 import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingType, movesWorkMessage, obligesRecipients, unknownContractReason } from "../../protocol/src/index";
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
@@ -8454,7 +8453,7 @@ export class Supervisor {
       // of the remarks above can mention it. The seat read "No such tool available" in its tool
       // result, went on to `mesh_wait`, and its next context says it did what it meant to: the
       // fourth cronlite run's pm tried `mesh_request_review`, then waited for a review nobody
-      // had been asked for. Across three runs seats made 8, 14 and 21 such calls, every one
+      // had been asked for. Across three runs seats made 8, 14 and 14 such calls, every one
       // a turn's worth of intent that vanished, and this is the only place it can be said.
       //
       // Not `unproductive`: the breaker parks a seat that keeps failing, and a seat that keeps

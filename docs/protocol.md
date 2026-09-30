@@ -233,11 +233,30 @@ the seat had been told the run report would list them.
 `bus.vocabulary: "contracts"` — the setting that collapses a seat's manifest to
 the named asks — is **advertisement only**. It filters the tool *list* a seat is
 offered, but `callTool` resolves a name against the **unfiltered** tool map
-(`apps/mesh-server/src/mcp.ts`), so a hidden tool called by name still runs,
-through every gate, unchanged. A reader must not mistake it for enforcement:
+(`apps/mesh-server/src/mcp.ts`), so a hidden tool called by name on the wire still
+runs, through every gate, unchanged. A reader must not mistake it for enforcement:
 collapsing the vocabulary changes what a seat is shown, never what the mesh
-accepts, and it cannot take a capability away from a seat. See
-`docs/configuration.md`.
+accepts, and it cannot take a capability away from a seat. It is equally not a
+promise that a seat can reach a hidden tool: a client that checks names against the
+list it was given (Claude Code) refuses the call before it is sent, so the briefing
+names only what the manifest carries. See `docs/configuration.md`.
+
+### Evidence for a criterion
+
+A mandatory criterion closes by `approve subject:"criterion:<id>"` from a seat holding
+`requirements.accept` or `requirements.approve` (`mayAcceptCriteria`), citing an artifact that is
+this goal's, substantive, and submitted (not DRAFT or REJECTED). One more rule covers the types
+whose whole claim is "someone checked" (`VERIFICATION_ARTIFACT_TYPES`: TestReport, SecurityReport,
+BenchmarkResult): the seat that wrote it must be qualified in its domain, holding the domain's
+approve authority or the capability that reviews the type (`qualifiedForDomain`). A report written
+by a seat that is not (the fourth cronlite run's pm wrote a "Bug-Fix Verification Report" from what
+QA had told it, submitted it itself and closed two criteria against it) is refused with
+`mandatory-evidence-unqualified-author` and the route: the seat that can verify publishes its own
+report and the acceptance cites that. It is a rule about what a verification artifact is worth, not
+about who may accept: the pm accepting its own RequirementsDoc is by design. When no other seat
+could have verified (no QA seat in the mesh) the only report there can be stands, the carve-out
+`approverMayAdvance` makes for the same reason, and the operator's acceptance is its own judgment and
+is not held to the rule.
 
 ### One ask to N agents is N obligations
 

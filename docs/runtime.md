@@ -161,9 +161,16 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
    seat signs off again, so only the blocker can lift it. One hold per seat, subject and
    artifact: blocking again restates it. A seat whose previous nudge bought nothing is skipped
    here when another seat can be tried;
-3. a seat with unread mail or a claimed task (the first in config order);
-4. the WAITING or BLOCKED seat with the oldest activity;
-5. the startup seats, then any live seat.
+3. **when every unmet mandatory criterion is one the mesh does not evidence from its own
+   events, a seat that may accept it.** A criterion outside `AUTO_EVIDENCED_CRITERIA` (and any
+   the operator's reopen mints, `operator-feedback-…`) closes by `approve subject:"criterion:<id>"`
+   from a seat holding `requirements.accept` or `requirements.approve`, and by nothing else. The
+   acceptors come oldest activity first, and one whose nudge just bought nothing gives the next to
+   another seat. With any auto-evidenced criterion also unmet this step is skipped: the work that
+   would evidence it is still to do, and who may accept is not yet the question;
+4. a seat with unread mail or a claimed task (the first in config order);
+5. the WAITING or BLOCKED seat with the oldest activity;
+6. the startup seats, then any live seat.
 
 The note says what holds, since when, who can lift it and how (for a block on a subject:
 re-verify the *current* product, bring the worktree up to `main` first, then pass the subject
@@ -176,6 +183,70 @@ In the second cronlite run QA's block stood for ten minutes of nudges to the tec
 pm and the developer, none of whom could lift it; the driver was "whoever has mail", which
 returned the first seat in config order that had any, and a block that targets the operator
 puts mail in nobody's box.
+
+To an acceptor the note says the acceptance is its own to give and how (`mesh_approve` with
+`subject: "criterion:<id>"` and the artifact that proves it), and lists up to three submitted
+artifacts it could cite: verification reports first, never a draft, never one the operator already
+rejected for that criterion, never a report `recordDecision` would refuse (see *Evidence for a
+criterion*, in `docs/protocol.md`). With nothing submitted it says the proof is what is missing and
+to ask the seat that can produce it. To any other seat it names who can accept and says to put the
+proof in front of them. A mesh in which no seat holds the gate says only the operator can close
+what is left. The stall-cap card carries the same facts as `awaitingAcceptance`, and the criterion a
+reopen mints says who accepts it, where it used to say only "published and accepted".
+
+The fourth cronlite run's second round sat on one such criterion for 21 minutes, 12 turns and 188k
+tokens: the nudges went to the architect (twice), which asked the developer for a status and set
+off a chain of turns that never reached the pm, the only seat whose act it needed. The pm, once
+woken, had written "awaiting operator acceptance testing": it did not know the act was its own.
+
+### What a seat is told about its tools
+
+A seat is told to call only the tools its manifest carries, because a client that checks a name
+against the `tools/list` it was given refuses any other before the call leaves the machine
+("No such tool available"), and Claude Code is one. `toolAdvertised`
+(`packages/protocol/src/tool-visibility.ts`) is the one statement of which tools a seat is shown:
+the MCP manifest filters through it and the briefing leaves out of its prose whatever
+`hiddenToolsFor` says the manifest leaves out (`AgentContextBundle.hiddenTools`, per seat). Under
+`bus.vocabulary: contracts` that is `mesh_send`, `mesh_respond`, `mesh_broadcast`, `mesh_request`,
+`mesh_request_review`, `mesh_research_request` and `mesh_escalate`; in any vocabulary it is also
+`mesh_merge` for a seat without `git.merge`, `mesh_veto` without a veto authority and
+`mesh_decision_ratify` without `architecture.approve`. A seat without `git.merge` is told who merges
+instead of being told to call `mesh_merge`, and the briefing says in one line which tools it does not
+have and that a call to one fails at once and reaches nothing.
+
+The refusal never reaches the mesh, so no op result records it. The end-of-turn note does: "not in
+your tool list, so these calls never reached the mesh and did nothing: `mesh_send` x2 (use
+`mesh_call` to ask, `mesh_reply` to answer, `mesh_announce` to tell)", in the turn's notices and in
+the seat's memory of the turn. It is not counted against the circuit breaker; the seat was failed by
+its briefing first. 14 of the fourth run's 370 tool calls were such calls (seven `mesh_send`, three
+`mesh_respond`, two `mesh_merge` from a developer who cannot merge, one `mesh_broadcast`, one
+`mesh_request_review`, which the pm then waited on); runs 1 and 3 had 8 of 434 and 14 of 567.
+
+### Testing a patch
+
+A CodePatch is a recorded commit: `metadata.commit`, shown on its line in the briefing as
+`commit <sha>`. A seat that can review a verification report (`test.write`, `security.review`) is
+told to test that commit, with `git merge --ff-only <sha>` in its own worktree (or
+`git checkout --detach <sha>`), and not to re-type files from the patch text. A transcription is
+not the commit, and the untracked files it leaves stop the turn-start fast-forward of the worktree.
+
+The mesh records what it can. A verification report (TestReport, SecurityReport, BenchmarkResult)
+published by a seat carries `metadata.worktree`, written by the runtime and never by the seat
+(whatever the seat supplies under that key is dropped): the worktree's HEAD, how many files were
+dirty and untracked, and for each CodePatch the publishing turn read that records a commit, whether
+the worktree holds that commit (`git merge-base --is-ancestor`, `WorkspacePort.containsCommit`).
+The run report marks a delivered report whose tree did not hold the commit of the patch it read:
+"it tested a copy of the patch, not the recorded commit". Dirtiness alone is recorded and not
+flagged; an untracked report or test log is the ordinary state of a verifier's tree.
+
+### A handover's continuity call
+
+A handover turn exists to write one record. When `write_continuity` lands the supervisor ends the
+turn under the client, to save the model calls that would follow, and the client then reports the
+call it never got a result for as rejected. The turn record and the turn audit say the call
+completed when the mesh's own op result says it landed (`settleContinuityCalls`), one call per
+landed write; before, all 13 handovers in the recorded runs were audited as failed beside the
+`continuity.recorded` event that said otherwise.
 
 ## Runtime adapter interface
 
@@ -211,8 +282,11 @@ the adapter. `tools/list` is filtered per seat -- by the agent's capabilities
 and by `bus.vocabulary`, which under `contracts` replaces
 `mesh_send`/`mesh_broadcast`/`mesh_respond` with the contract verbs
 (`mesh_call`, `mesh_reply`, `mesh_announce`, …). The filtering is
-advertisement-only: every adapter can still *call* a tool that was not listed,
-so a name a model remembers from another mesh keeps working. See `docs/configuration.md` § bus.
+advertisement-only on the SERVER: `callTool` resolves a name against the unfiltered map, so a caller
+that names a hidden tool on the wire still gets it. A client that checks a name against the list it
+was handed never gets that far, and Claude Code refuses the call on the spot, so for a Claude seat a
+hidden tool is not there. See *What a seat is told about its tools* below and `docs/configuration.md`
+§ bus.
 
 ### `runtime-claude`
 - Claude Code via `@anthropic-ai/claude-agent-sdk`, a declared dependency that

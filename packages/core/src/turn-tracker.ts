@@ -338,7 +338,7 @@ const CLIENT_ENDED_CALL = /The user doesn't want to proceed with this tool use/;
  * turn (`endTurn`) to save the model calls that would follow: each would re-send the outgoing
  * session's whole transcript. The client then reports the call, whose result it never delivered,
  * as rejected, so every handover was recorded as a turn whose one tool call FAILED: 13 of 13
- * across four live runs, each beside a `continuity.recorded` event saying it worked. The audit
+ * across the recorded runs, each beside a `continuity.recorded` event saying it worked. The audit
  * said the opposite of the log, and anyone counting failed mesh calls counted those.
  *
  * The op result is the mesh's own: a `write_continuity` that came back ok landed. So a call the

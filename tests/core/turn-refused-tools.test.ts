@@ -12,7 +12,7 @@ import type { MeshOp, ToolCallRecord } from "../../packages/protocol/src/index";
  * op results. The seat read the refusal in its tool result, went on, and its next context said it
  * had done what it meant to. In the fourth cronlite run the pm called `mesh_request_review`, which
  * the collapsed vocabulary hides, then `mesh_wait`: it waited for a review nobody had been asked
- * for. Seats made 8, 14 and 21 such calls in three runs.
+ * for. Seats made 8, 14 and 14 such calls in three runs.
  *
  * The end-of-turn note now says it, in the turn record and in the seat's own memory of the turn,
  * with what to use instead.

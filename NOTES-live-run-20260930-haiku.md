@@ -3,11 +3,13 @@
 Status: **FIXED** on branch `claude/exciting-gates-n75s1z` (one commit per finding or theme over `e9a361b`, each
 with its own regression test). One live mission, two rounds, one crash; every finding below was either reproduced
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
-the fixed build then found eight more (N1–N8), fixed the same way: §8.
+the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
+five more (F1–F4, M1), also fixed: §9.
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
 check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and
-bugs"*, then *"fix them all"*.
+bugs"*, then *"fix them all"*; for §9, *"commit push on main and then rerun and check output quality and bugs"*, then
+*"fix all of them"*.
 
 Subject: a five-seat mesh (`pm`, `architect`, `tech-lead`, `developer`, `qa`) on `claude-haiku-4-5`, building
 `cronlite` — a dependency-free Node library and CLI for 5-field cron expressions — from a written SPEC, six
@@ -314,3 +316,99 @@ one for the docs and this section; each commit message carries the failing seque
   existing test said why that was wrong.
 - **The same rule, one predicate, again:** `settlersOf` (briefing, router default, op refusal and MCP `canSettle`),
   `pageCut` (the MCP read and the op) and `standingBlocks` (the stall note, the driver choice, the ladder and the card).
+
+## 9. The fourth run, on the N-fixes build: five more findings (F1–F4, M1)
+
+Requested: *"commit push on main and then rerun and check output quality and bugs"*, then *"fix all of them"*. Main was
+fast-forwarded to `50a45ed` (every fix of §0–§8) and the same mission, SPEC, mesh config, model and clean launch
+environment were run on it. Session 2026-09-30 14:18–15:08 UTC: 65 turns, 1.03M billed tokens (about $4.7 at list price),
+every turn on `claude-haiku-4-5`, 1085 events. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 14:18 | `mesh run` | five seats start |
+| 14:28 | goal met, 6/6 | 10 min 40 s, 28 turns, 501k tokens (run 3's round 1: 34 min, 53 turns, 981k) |
+| 14:32 | operator reopen naming 2 criteria, with the oracle's defect report | 3 criteria back to UNSATISFIED (the 2 named, and the `operator-feedback-…` one the reopen mints) |
+| 14:33 | `kill -9` of the host, 3 seats mid-turn | 3 seat CLIs orphaned (ppid 1) |
+| 14:33 | restart | 8 holds released, 3 turns closed `interrupted`, the reaper stopped the lingering developer seat and its bridge |
+| 15:07 | goal met, 7/7 | round 2 took 35 min 47 s, **21 minutes of it one stall (F1)** |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): the round-1 product scored 3033/3034
+stratified (99.97%) and the final product **3034/3034 (100%)**, with its own suite 54/54, the CLI probes 23/23 and the soft
+message checks 70/76. Run 3's round-1 product had four defect groups; this one had only negative steps (`*/-1` accepted,
+`0 0 */-1 * *` throwing `RangeError`) and message text. The raw score (69.0%) is one deviation shared by runs 1, 3 and 4:
+**700 of the 706 raw failures are `*` as a list item (`*,5`)**, which the SPEC allows ("an item is `*`") and every seat
+rejected. The stratified score excludes it, but by the letter of the SPEC it is a real defect that no seat ever tested. The
+README heads `0 0 29 2 *` "First day of February in leap years" (it is February 29), and the `*/-1` message still reads
+`invalid value ''`. These are product nits, not mesh code, and are not fixed here.
+
+**§8's fixes, checked live and held:** N1 (0 of 7 review requests refused; run 3 had 13 of 24), N2 (QA read a 25k-character
+patch in four pages without a seam), N3 (4 worktrees advanced, 2 left alone with their reasons, 0 false blocks; run 3 had
+2), N4 (the run report flagged all 3 QA reports "approved only by its own author"), N5 (both merges attributed to the
+tech-lead and its turn), N7 (probed with the real CLI: 99 variables against 142, six `CLAUDE*` names left, a real Haiku turn
+completed from the full environment). N6 and N8 were not exercised: no seat ran `$(pwd)` and no BLOCK was raised. The
+earlier fixes held too: B21 (8 holds released), B23 (reaper notice naming the two processes), B22 (the selective reopen
+completed), B2, B3, B4, B5 and B8.
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| F1 | The watchdog woke a seat that could not close the criterion: 21 minutes, 12 turns and 188k tokens on `operator-feedback-…`, which only the pm can close. The driver was "first seat in config order with mail", the architect, twice; the pm, when woken, had written "awaiting operator acceptance testing" and did not know the act was its own | **fixed** — when every unmet criterion is one the mesh does not evidence from its own events, the seats that may accept come first (oldest activity first, rotated as the block branch is), and the note says the acceptance is theirs to give, how, and which submitted artifacts they could cite; other seats are told who can. A mesh with no acceptor says only the operator can. The criterion a reopen mints now names who accepts it | `tests/integration/stall-acceptor.test.ts` |
+| F2 | Role prompts and the briefing named tools `bus.vocabulary: contracts` hides, and said `mesh_send` "still works": 14 of the run's 370 tool calls (seven `mesh_send`, three `mesh_respond`, two `mesh_merge` from a developer without `git.merge`, one `mesh_broadcast`, one `mesh_request_review`, which the pm then waited on); 8 of 434 and 14 of 567 in runs 1 and 3. The server does resolve a hidden name, but Claude Code refuses it before the call leaves the machine | **fixed** — one table (`tool-visibility.ts`) says which tools a seat is shown; the manifest and the briefing both read it, so the briefing names only what the seat has (under both vocabularies, and for `mesh_merge`/`mesh_veto`/`mesh_decision_ratify` by grant), says which it lacks and that a call to one does nothing; three tool descriptions stopped pointing at hidden tools; and the end-of-turn note now says when a seat called a tool it does not have, with what to use | `tests/protocol/tool-visibility.test.ts`, `tests/core/turn-refused-tools.test.ts`, `tests/core/context-comms-vocabulary.test.ts` |
+| F3 | A criterion was evidenced by an unreviewed TestReport the pm wrote itself from what QA had said: `recordDecision` refused the DRAFT, the pm submitted it (the owner may) and closed two mandatory criteria | **fixed** — a verification report cited as evidence must be written by a seat qualified in its domain (`unqualifiedAuthor`), else `mandatory-evidence-unqualified-author` with the route: the seat that can verify publishes its own. No rule about who may accept: the pm's own RequirementsDoc still evidences its criterion | `tests/core/criterion-evidence-author.test.ts` |
+| F4 | QA verified an unmerged patch by reading its text in four pages and re-typing four files into a worktree that held only the scaffold commit, and the untracked files stopped the N3 fast-forward. The files matched the merged commit byte for byte; nothing recorded that | **fixed** — a CodePatch's line shows its commit and a verifier is told to test that commit, not type in a copy; the runtime stamps a verification report with the tree it was published from (HEAD, dirty files, and whether the tree holds the commit of each patch the turn read), which a seat cannot forge; the run report flags a report whose tree did not hold it | `tests/core/verification-stamp.test.ts`, `tests/core/verification-stamp-git.test.ts`, `tests/artifact-store/worktree-contains.test.ts` |
+| M1 | Every handover's `mesh_write_continuity` was audited as a failed tool call (13 of 13 across the recorded runs) beside a `continuity.recorded` event saying it worked: the supervisor ends the turn under the client when the write lands, and the client reports the call it got no result for as rejected | **fixed** — the turn record and audit say completed when the mesh's own op result says the write landed, one call per landed write | `tests/core/handover-audit.test.ts` |
+
+What each does and why is in `docs/runtime.md` (the stall watchdog's acceptor step, *What a seat is told about its tools*,
+*Testing a patch*, *A handover's continuity call*), `docs/protocol.md` (*Evidence for a criterion*, and the corrected
+paragraph on `bus.vocabulary`) and `docs/configuration.md` (§ vocabulary, which had the premise F2 disproved); the commit
+messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **F1 wakes the seat and says what to do; it does not make the act happen.** With nothing submitted the note says the proof
+  is what is missing and to ask the seat that can produce it, and whether the pm then asks QA, rather than waiting, is the
+  pm's. With an auto-evidenced criterion also unmet the acceptor step is skipped on purpose: the work that would evidence it
+  is still to do, and waking the pm to accept `implementation-merged` against some artifact would route around the merge gate.
+- **F2 cannot stop a seat reaching for a tool it does not have.** `roles/*.md` still quote the typed moves, and the section
+  that maps them to contracts is what translates. What changed is that nothing the mesh writes now tells a seat a hidden tool
+  works, and a refused call is said on the next turn. The call itself is still lost: the client refuses it before it is sent.
+- **F3 covers three types.** A qualified seat's bad report is review's business, not the gate's, and a mesh with no seat that
+  could verify lets the only report there can be stand, or it would wedge.
+- **F4 refuses nothing.** It records and flags. A verifier that reads the patch with git instead of the artifact read leaves
+  no `tested` entry, containment does not prove the tests ran, and dirtiness alone is recorded and not flagged because an
+  untracked report or log is the ordinary state of a verifier's tree. In the fourth run the typed-in files were identical to
+  the merged commit and the flag would still have fired, correctly: nothing on the record could have said so.
+- **M1 settles the handover's continuity call only.** Other calls the mesh ends under the client (the silence watchdog's
+  interrupts) are not reconciled; the evidence was 13 of 13 handovers and nothing else.
+- **None of F1–F4 or M1 has been re-run on a live mesh.** Each is pinned by tests built from the recorded sequence and
+  **mutation-checked**: F1 ten ways, F2 twelve, F3 eight, F4 eleven (one mutant survives by construction: the hex guard in
+  `containsCommit` is belt and braces, since git itself answers null for every option-like value it was tried with), M1 six.
+  The live confirmation is the next run.
+- The product nits above (`*` as a list item, the README label, `invalid value ''`) are findings about what the seats
+  built; the mesh did not cause them and this round does not address them. The `*` one is the most useful finding of the
+  quality pass: three runs in a row built and tested a parser that rejects a form the SPEC allows.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §8 final, before this round | 2852 | 2851 | 0 | 0 | 1 |
+| this round, final | 2907 | 2906 | 0 | 0 | 1 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (157 warnings, the baseline). One commit per finding
+(`1f7d29d`, `0abcf1f`, `27ff134`, `005af2d`, `55b9f65`), then one for the docs and this section.
+
+### Worth keeping from this round
+
+- **Read what the client does, not what the server allows.** "A hidden tool still works" was true of the server and false of
+  the client, and it stood in a code comment, three documents, a test and the seat's own briefing for that reason: each copy
+  vouched for the others. What ended it was a count of refused calls in the audit.
+- **A prompt and a manifest written by two hands drift.** The rule now lives where both can read it, and one test renders
+  every seat's whole briefing under both vocabularies and checks each tool it names against that seat's real `tools/list`, so
+  a third hand would fail there.
+- **N8 was specific about the block and generic about the acceptance.** F1 is the same gap one criterion over: a nudge that
+  says "drive the next step" to a seat that cannot take it is a wake that buys a turn and nothing else.
+- **A record the runtime writes cannot be forged by the seat it describes.** The worktree stamp drops whatever the seat
+  supplied under its key, and that is what lets a reader trust it over the report's prose.
+- **The same rule, one predicate, again:** `mayAcceptCriteria` (the briefing and the watchdog), `qualifiedForDomain`
+  (verdicts, peer review and report authorship), `toolAdvertised` (the manifest and the prose).

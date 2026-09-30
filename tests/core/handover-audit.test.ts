@@ -10,7 +10,7 @@ import type { AgentSession, MeshOp, ToolCallRecord } from "../../packages/protoc
  * `write_continuity` is the whole of a handover turn, and once it lands the supervisor ends the
  * turn under the client to save the model calls that would follow. The client then reports the
  * call, whose result it never delivered, as rejected ("The user doesn't want to proceed with this
- * tool use"), so all 13 handovers of four live runs were audited as a turn whose one tool call
+ * tool use"), so all 13 handovers of the recorded runs were audited as a turn whose one tool call
  * failed, beside a `continuity.recorded` event that says it worked. The mesh's own op result is
  * the record of what happened, and it says ok.
  */

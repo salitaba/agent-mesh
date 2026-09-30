@@ -1251,7 +1251,7 @@ function renderContinuity(bundle: AgentContextBundle, lines: string[]): void {
  * Built from entries so a tool the seat's manifest does not carry is LEFT OUT instead of listed.
  * The line used to be one literal that named `mesh_send`, `mesh_request_review` and
  * `mesh_escalate` to every seat, and under the collapsed vocabulary none of those is in the
- * tool list: three live runs recorded 8, 14 and 21 calls the client refused with "No such tool
+ * tool list: three live runs recorded 8, 14 and 14 calls the client refused with "No such tool
  * available", each a turn's worth of intent that never reached the mesh. Under that vocabulary
  * the two tools that took their place are listed where `mesh_send` stood.
  *
@@ -1994,7 +1994,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     // This used to say "`mesh_send` is not in your tool list but still works", on the strength of
     // the server, whose `callTool` does resolve a hidden name. A client that checks a name against
     // the list it was given never gets that far: Claude Code refuses the call on the spot with
-    // "No such tool available", and across three live runs seats made 8, 14 and 21 such calls on
+    // "No such tool available", and across three live runs seats made 8, 14 and 14 such calls on
     // the strength of this line and the role briefs. So it says what is true of the seat: these
     // are not in its list, a call to one does nothing, and the ask no contract names has a home
     // anyway (`work.request` is the general one).
