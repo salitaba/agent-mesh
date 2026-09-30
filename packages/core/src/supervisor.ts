@@ -82,7 +82,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, settlersOf, transitionLifecycle } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, type StandingBlock } from "./projections";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -1420,6 +1420,8 @@ export class Supervisor {
   private liveMode = false;
   private lastTurnAt = 0;
   private lastStallNudgeAt = 0;
+  /** The seat the last stall nudge went to: the next one looks elsewhere if that nudge bought nothing. */
+  private lastStallDriver: string | undefined;
   /**
    * When a turn provably changed NOTHING (zero ops, all rejected, or only
    * wait/done/remember), the stall watchdog may fire again once this instant
@@ -12778,6 +12780,7 @@ export class Supervisor {
         // the right answer if the card carries the difference. This changes
         // only what the card says — the cap fires exactly when it always did.
         const parkedSeats = this.terminalSuspendedSeats();
+        const holds = this.standingBlockSentences();
         await this.escalate({
           reason: "stalemate:stall_nudge_cap",
           raisedBy: "stall-watchdog",
@@ -12789,6 +12792,7 @@ export class Supervisor {
             candidateDriver: this.stallDriver(),
             actionable: actionable.why,
             criteria: this.unmetCriteriaSummary(),
+            ...(holds ? { standingBlocks: holds } : {}),
             ...(parkedSeats.length > 0
               ? {
                   suspendedSeats: parkedSeats,
@@ -12838,6 +12842,7 @@ export class Supervisor {
       return;
     }
     this.lastStallNudgeAt = now;
+    this.lastStallDriver = driver;
     // Count only nudges an agent actually got. The refusal branch above owns
     // the other failure; cleared here because a scheduled nudge proves the
     // mesh CAN schedule, whatever the turn then does with it.
@@ -13144,7 +13149,7 @@ export class Supervisor {
     // diagnosis that calls a criterion met while the verdict does not is a nudge
     // telling the seat "the mission will close itself" on a mission that never will.
     const unmet = mandatory.filter((c) => !criterionSatisfied(goal, c));
-    if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet` };
+    if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet${this.standingBlockTag()}` };
     // Every criterion is evidenced. Only a concrete loose end justifies a turn.
     const mail = [...this.state.agents.keys()].some((id) => readableMailDepth(this.state, id) > 0);
     if (mail) return { worth: true, why: "undelivered mail" };
@@ -13191,7 +13196,59 @@ export class Supervisor {
     if (!this.hasUnmetMandatory()) {
       return `${base}. Do NOT re-approve or re-confirm finished work. Either close out a concrete loose end (unanswered mail, an open escalation, a claimed task), or reply with a single \`done\` op and stop — the mission will close itself.`;
     }
+    // A BLOCK that still stands is the most specific thing there is to say about why the
+    // criteria are unmet, and it is addressed to the seat that can lift it, which the
+    // generic line cannot be. Ahead of the generic line, which still follows.
+    const holds = this.standingBlockSentences();
+    if (holds) return `${base}. ${holds} Then drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
     return `${base}; drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+  }
+
+  /** The seat that can lift `b`: the artifact's owner for a block on an artifact (a new version), else the blocker. */
+  private blockLifter(b: StandingBlock): string {
+    return b.artifact ? b.artifact.owner : b.record.actorId;
+  }
+
+  /**
+   * One sentence per standing BLOCK (two at most), saying what holds, since when, and who can
+   * lift it and how. "" when none stands or nothing is unmet, because a mission whose criteria
+   * are all evidenced closes itself whatever a block record says.
+   *
+   * The two holds are lifted differently (see `standingBlocks`), and a nudge that says only
+   * "drive the next step" sends the seat it wakes to do the next thing it thinks of: the
+   * second cronlite run's nudges went to the tech-lead, the pm and the developer while QA's
+   * block stood, and none of them could lift it.
+   */
+  private standingBlockSentences(): string {
+    if (!this.hasUnmetMandatory()) return "";
+    const blocks = standingBlocks(this.state);
+    if (blocks.length === 0) return "";
+    const since = (b: StandingBlock): string => b.record.recordedAt.replace(/\.\d+Z$/, "Z");
+    const said = blocks.slice(0, 2).map((b) => {
+      const by = b.record.actorId;
+      if (b.artifact) {
+        const a = b.artifact;
+        return (
+          `${by}'s BLOCK on ${a.type} "${a.name}" v${a.version} (since ${since(b)}) still stands: it cannot advance until ${a.owner} publishes a new version that answers it ` +
+          `(a new version starts its review over, and ${by}'s later pass would not release it).`
+        );
+      }
+      return (
+        `${by}'s BLOCK on ${b.record.subject} (since ${since(b)}) still stands, and what it gates cannot complete while it does: only ${by} can lift it, ` +
+        `by re-verifying the CURRENT product (bring the worktree up to main first) and passing ${b.record.subject} if it holds, or blocking again and saying what is still wrong.`
+      );
+    });
+    if (blocks.length > 2) said.push(`(${blocks.length - 2} more standing BLOCK${blocks.length - 2 === 1 ? "" : "s"}.)`);
+    return said.join(" ");
+  }
+
+  /** " (held by qa's BLOCK on quality)" for the `why` of a stalled mission, or "". */
+  private standingBlockTag(): string {
+    const blocks = standingBlocks(this.state);
+    if (blocks.length === 0) return "";
+    const first = blocks[0]!;
+    const what = first.artifact ? `${first.artifact.type} "${first.artifact.name}"` : first.record.subject;
+    return ` (held by ${first.record.actorId}'s BLOCK on ${what}${blocks.length > 1 ? `, and ${blocks.length - 1} more` : ""})`;
   }
 
   /**
@@ -13210,8 +13267,13 @@ export class Supervisor {
    */
   private mergeLadderPending(): Array<{ artifact: Artifact; next: ArtifactStatus; who: string[] }> {
     const out: Array<{ artifact: Artifact; next: ArtifactStatus; who: string[] }> = [];
+    // A patch under a BLOCK is not parked on the ladder, it is held: the policy refuses the
+    // next rung until a new version exists, so nudging the seat that could "merge it" buys a
+    // refusal. `standingBlockSentences` names the real blocker instead.
+    const held = new Set(standingBlocks(this.state).flatMap((b) => (b.artifact ? [b.artifact.id] : [])));
     for (const a of this.state.artifacts.values()) {
       if (a.type !== "CodePatch") continue;
+      if (held.has(a.id)) continue;
       if (a.status !== "APPROVED" && a.status !== "VERIFIED" && a.status !== "MERGEABLE") continue;
       const next = (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0];
       if (!next) continue;
@@ -13271,6 +13333,18 @@ export class Supervisor {
       for (const p of pending) {
         const mover = p.who.filter(eligible).sort(byOldest)[0];
         if (mover) return mover;
+      }
+    }
+    // A standing BLOCK, while the mission still has something unmet: the seat that can lift
+    // it. Ahead of "whoever has mail", which returned the first seat in config order with any,
+    // and so woke the pm and the developer while QA's block stood. Not a seat whose previous
+    // nudge bought nothing: it was just told, and the next one gets its turn before the cap.
+    if (this.hasUnmetMandatory()) {
+      for (const b of standingBlocks(this.state)) {
+        const lifter = this.blockLifter(b);
+        if (!eligible(lifter)) continue;
+        if (lifter === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
+        return lifter;
       }
     }
     for (const id of all) {

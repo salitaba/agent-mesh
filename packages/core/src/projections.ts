@@ -40,8 +40,10 @@ export {
   fingerprintOf,
   pendingTargetsArtifact,
   gateSatisfiedWithConfig,
+  standingBlocks,
   type ApprovalToken,
   type ApprovalRequirement,
+  type StandingBlock,
 } from "./projections-helpers";
 
 export interface ProjectionConfig {

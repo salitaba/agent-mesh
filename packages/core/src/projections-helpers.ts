@@ -857,6 +857,58 @@ export function checkApprovals(
   return { ok: missing.length === 0, missing };
 }
 
+/**
+ * A BLOCK that nothing has lifted, and the artifact it holds when it is on one.
+ *
+ * The two kinds of hold are lifted differently, and which one a block is decides who can act on it:
+ *
+ *  - A block ON AN ARTIFACT holds that artifact: the policy refuses every transition but a
+ *    rejection, a return to DRAFT or an archive until a NEW VERSION exists (`active-block`), and a
+ *    new version drops the record. Only the artifact's owner can publish one; the blocker's own
+ *    later `pass` releases nothing.
+ *  - A block on a SUBJECT with no artifact (QA's `quality`) sinks that seat's earlier sign-off in
+ *    every gate that names it, until the same seat signs off again (`alternativeStatus` reads it
+ *    that way). Only the blocker can lift it, by re-verifying and passing.
+ *
+ * Read by the stall watchdog, which used to wake whichever seat had mail and say nothing of the
+ * block: in the second cronlite run QA's block stood for ten minutes of nudges to the tech-lead,
+ * the pm and the developer, none of whom could lift it.
+ */
+export interface StandingBlock {
+  record: ApprovalRecordOf;
+  /** Set when the block is on an artifact. */
+  artifact?: Artifact;
+}
+
+export function standingBlocks(state: Projections): StandingBlock[] {
+  // One hold per seat, subject and artifact: a seat that blocks the same thing again has
+  // restated its block, not added a second one, and the latest record is the one that stands.
+  const latest = new Map<string, ApprovalRecordOf>();
+  for (const list of state.approvals.values()) {
+    for (const r of list) {
+      if (r.kind !== "block") continue;
+      const key = `${r.actorId}|${r.subject}|${r.artifactId ?? ""}`;
+      const seen = latest.get(key);
+      if (!seen || r.recordedAt > seen.recordedAt) latest.set(key, r);
+    }
+  }
+  const out: StandingBlock[] = [];
+  for (const r of latest.values()) {
+    if (r.artifactId) {
+      const artifact = state.artifacts.get(r.artifactId);
+      // An artifact that cannot move again (or is gone) is held by nothing.
+      if (!artifact || artifact.status === "MERGED" || artifact.status === "FINAL" || artifact.status === "ARCHIVED") continue;
+      out.push({ record: r, artifact });
+      continue;
+    }
+    const signedOffSince = ["approve", "pass", "accept", "merge"].some((kind) =>
+      (state.approvals.get(approvalKey(r.subject, kind)) ?? []).some((s) => s.actorId === r.actorId && s.recordedAt > r.recordedAt),
+    );
+    if (!signedOffSince) out.push({ record: r });
+  }
+  return out.sort((a, b) => a.record.recordedAt.localeCompare(b.record.recordedAt));
+}
+
 export function gateSatisfiedWithConfig(
   state: Projections,
   artifact: Artifact,
