@@ -67,7 +67,7 @@ const cardsFor = (m: Mesh, id: string) =>
  * until `stop()` is called on its session, which settles the pending call with
  * the adapter's own error. Later turns answer normally.
  */
-function turnDiesWithItsSession(m: Mesh, id: string): { inModel: () => boolean; thrown: () => Error | undefined } {
+function turnDiesWithItsSession(m: Mesh, id: string, deliberate = true): { inModel: () => boolean; thrown: () => Error | undefined } {
   const rt = stub(m);
   let settle: ((err: Error) => void) | undefined;
   let thrown: Error | undefined;
@@ -80,7 +80,7 @@ function turnDiesWithItsSession(m: Mesh, id: string): { inModel: () => boolean; 
     const pending = session.agentId === id ? settle : undefined;
     settle = undefined;
     if (pending) {
-      thrown = new BackendUnreachableError(`claude:${session.sessionId}`, "session torn down");
+      thrown = new BackendUnreachableError(`claude:${session.sessionId}`, "session torn down", { deliberate });
       pending(thrown);
     }
     return stop(session);
@@ -89,8 +89,8 @@ function turnDiesWithItsSession(m: Mesh, id: string): { inModel: () => boolean; 
 }
 
 /** Wake `id` and wait until its turn is parked in the model. */
-async function midTurn(m: Mesh, id: string): Promise<{ turnId: string; thrown: () => Error | undefined }> {
-  const turn = turnDiesWithItsSession(m, id);
+async function midTurn(m: Mesh, id: string, deliberate = true): Promise<{ turnId: string; thrown: () => Error | undefined }> {
+  const turn = turnDiesWithItsSession(m, id, deliberate);
   const r = await m.supervisor.activateAgent(id, { kind: "manual" });
   assert.equal(r.queued, true, r.blocked);
   await waitFor(`${id}'s turn is in the model`, () => turn.inModel() && m.supervisor.isTurnInFlight(id));
@@ -178,6 +178,93 @@ test("shutdown: the turn it stops is closed as interrupted — no agent.failed, 
     assert.deepEqual(cardsFor(m, "dev"), [], "no card");
     await paused(150);
     assert.equal((await eventsOf(m, "agent.awakened", "dev")).length, 1, "no recovery wake in a process that is going away");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("shutdown: the recorded cause never says the server may have crashed, whichever runtime threw", async () => {
+  // The adapter's own teardown throws a `deliberate` BackendUnreachableError; a
+  // runtime that does not (the HTTP adapter's refused socket) carries the crash
+  // hint. A shutdown is the mesh's doing either way, so neither reaches the log.
+  for (const deliberate of [true, false]) {
+    const m = await makeMesh({ agents: AGENTS, startup: [], mayContact: MAY_CONTACT });
+    try {
+      const { turnId } = await midTurn(m, "dev", deliberate);
+      await m.supervisor.shutdown();
+      await waitFor("dev's turn has closed", () => !m.supervisor.isTurnInFlight("dev"));
+      const discard = (await eventsOf(m, "turn.discarded", "dev")).find((e) => (e.payload as { turnId?: string }).turnId === turnId);
+      const detail = String((discard?.payload as { detail?: string } | undefined)?.detail);
+      assert.match(detail, /^stopped by the mesh shutting down \(backend unreachable at claude:[^)]*\(session torn down\)\)$/, `deliberate=${deliberate}: ${detail}`);
+      assert.doesNotMatch(detail, /crashed|still running/);
+      assert.doesNotMatch(detail, /after the mission ended/, "the mission was still running");
+    } finally {
+      await m.cleanup();
+    }
+  }
+});
+
+test("shutdown: a stop after the mission has a verdict says it was the end of the mission", async () => {
+  const m = await makeMesh({ agents: AGENTS, startup: [], mayContact: MAY_CONTACT });
+  try {
+    const { turnId } = await midTurn(m, "dev");
+    const goalId = m.kernel.state.activeGoalId!;
+    await m.kernel.emit("goal.failed", { goalId, reason: "test verdict" }, { actorId: "human" });
+    await m.supervisor.shutdown();
+    await waitFor("dev's turn has closed", () => !m.supervisor.isTurnInFlight("dev"));
+    const discard = (await eventsOf(m, "turn.discarded", "dev")).find((e) => (e.payload as { turnId?: string }).turnId === turnId);
+    assert.match(String((discard?.payload as { detail?: string } | undefined)?.detail), /^stopped by the mesh shutting down after the mission ended \(/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("completion: a stop asked for while the mission is completing waits for the running turn, then stops", async () => {
+  // The CLI's completion watch polls /status and closes the server the moment it
+  // reads `goal.completed` -- before `completeMission` has drained the turns it is
+  // waiting on. `shutdown()` used to stop their sessions under them: the PM's last
+  // turn of the cronlite run was discarded mid-sentence with a crash message.
+  const m = await makeMesh({ agents: AGENTS, startup: [], mayContact: MAY_CONTACT });
+  try {
+    const rt = stub(m);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    rt.setScript("dev", async (_input, idx) => {
+      if (idx === 0) await held;
+      return DONE;
+    });
+    let sessionStoppedAt: "early" | "late" | undefined;
+    let released = false;
+    const stop = rt.stop.bind(rt);
+    rt.stop = async (session) => {
+      if (session.agentId === "dev") sessionStoppedAt = released ? "late" : "early";
+      return stop(session);
+    };
+    const woke = await m.supervisor.activateAgent("dev", { kind: "manual" });
+    assert.equal(woke.queued, true, woke.blocked);
+    await waitFor("dev's turn is in the model", () => m.supervisor.isTurnInFlight("dev"));
+
+    const completing = (m.supervisor as unknown as { completeMission(): Promise<void> }).completeMission();
+    let stopReturned = false;
+    const stopping = m.supervisor.shutdown().then(() => {
+      stopReturned = true;
+    });
+    await paused(300);
+    assert.equal(stopReturned, false, "the stop is waiting on the running turn, not racing it");
+    // Not merely slow: the stop has not BEGUN. `scheduler.stop()` alone would also
+    // wait (up to 5 s) for a running turn, which hides the race for any turn that
+    // ends inside that bound -- the PM's did not.
+    assert.equal((m.supervisor as unknown as { stopping: boolean }).stopping, false, "the supervisor is not yet stopping");
+    assert.equal(sessionStoppedAt, undefined, "and no session was stopped under it");
+    assert.equal(m.supervisor.isTurnInFlight("dev"), true);
+
+    released = true;
+    release();
+    await Promise.all([completing, stopping]);
+    assert.equal(stopReturned, true);
+    assert.equal((await eventsOf(m, "turn.discarded", "dev")).length, 0, "the turn ended on its own, nothing was discarded");
+    assert.equal((await eventsOf(m, "agent.failed", "dev")).length, 0);
+    assert.equal(sessionStoppedAt, "late", "the sessions were stopped once the turn had finished");
   } finally {
     await m.cleanup();
   }

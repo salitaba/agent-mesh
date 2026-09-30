@@ -10,6 +10,7 @@ import {
   validateMessage,
   validateArtifact,
   CAPABILITY_TOKENS,
+  IMPLEMENTATION_GATE_MARKER,
   normalizeCapability,
   effectiveHardActions,
   PLAN_GATE_PREFIX,
@@ -67,7 +68,7 @@ import {
   timersOf,
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
-import { BackendUnreachableError, classifyProviderOutage, isConnectionError, isTimeoutError, type ProviderOutage } from "../../protocol/src/index";
+import { BACKEND_CRASH_HINT, BackendUnreachableError, classifyProviderOutage, isConnectionError, isTimeoutError, type ProviderOutage } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
@@ -542,9 +543,19 @@ function operatorStopDetail(stop: Pick<OperatorStop, "reason" | "suspend">): str
   return `stopped by the operator${stop.reason ? `: ${stop.reason}` : ""}${stop.suspend ? " (seat suspended)" : ""}`;
 }
 
-/** The discard detail and close note of a turn `shutdown()` stopped; `error` is what the stopped call threw. */
-function shutdownStopDetail(error: string): string {
-  return `stopped by the mesh shutting down (${error})`;
+/**
+ * The discard detail and close note of a turn `shutdown()` stopped; `error` is
+ * what the stopped call threw.
+ *
+ * The crash hint is taken off whatever runtime threw it: a shutdown is the
+ * mesh's own doing, and "the server process may have crashed — check that it is
+ * still running" on a normal end of mission sent the operator looking for a
+ * failure that never happened (cronlite 2026-09-30). `missionOver` says the stop
+ * was the mission ending, not an interruption of one.
+ */
+function shutdownStopDetail(error: string, missionOver: boolean): string {
+  const cause = error.split(BACKEND_CRASH_HINT).join("");
+  return `stopped by the mesh shutting down${missionOver ? " after the mission ended" : ""} (${cause})`;
 }
 
 /** What `Supervisor.interruptTurn` did. */
@@ -1301,6 +1312,14 @@ export class Supervisor {
    * explicitly, whose genuine failure must still walk the ladder.
    */
   private shutdownStops = new Set<string>();
+  /**
+   * The mission's completion while `completeMission` runs: the drain of turns in
+   * flight, the sweep, then the stop. `shutdown()` joins it instead of racing it,
+   * because a host that stops the supervisor the moment it reads `goal.completed`
+   * (the CLI's completion watch polls /status every 2 s) arrives first and cut the
+   * turns the drain was waiting for off mid-sentence.
+   */
+  private completion: Promise<void> | null = null;
   private idleCallbacks: Array<() => void> = [];
   private recentTurns: TurnRecord[] = [];
   private activeTurnByAgent = new Map<string, string>();
@@ -1904,11 +1923,17 @@ export class Supervisor {
     const expired = new Promise<void>((resolve) => {
       resolveTimeout = resolve;
     });
+    // Deliberately NOT unref'd. The boot is awaiting a promise that only this
+    // timer can resolve when the probe never does, so an unref'd timer lets a
+    // process with nothing else holding the event loop exit with the boot still
+    // pending ("Promise resolution is still pending but the event loop has
+    // already resolved"). A server process masks that (its listener keeps the
+    // loop alive); an embedded mesh and the test runner do not. It costs
+    // nothing to hold the loop: the timer is cleared the moment the race ends.
     const timer = setTimeout(() => {
       expiredByTimeout = true;
       resolveTimeout();
     }, Math.max(0, timeoutMs));
-    (timer as unknown as { unref?: () => void }).unref?.();
     await Promise.race([
       Promise.resolve()
         .then(() => (typeof probe === "function" ? probe() : probe))
@@ -2259,6 +2284,15 @@ export class Supervisor {
   }
 
   async shutdown(opts: { complete?: boolean } = {}): Promise<void> {
+    // Join a completion in progress: it ends in `stopNow` itself, after the turns
+    // still running have finished or the drain's bound has passed. A failed
+    // completion is no reason to leave the process up, so the stop runs anyway.
+    if (this.completion) await this.completion.catch(() => undefined);
+    await this.stopNow();
+  }
+
+  /** Stop the scheduler and every runtime session. `shutdown()` and `completeMission` both end here; safe to run twice. */
+  private async stopNow(): Promise<void> {
     this.stopping = true;
     this.turns.flush();
     this.stopStallWatch();
@@ -5663,6 +5697,10 @@ export class Supervisor {
     if (task.status !== "OPEN" && task.assignedTo !== actorId) return { ok: false, reason: `task is ${task.status}` };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(task.goalId) };
     for (const cap of task.requiredCapabilities) {
+      // A marker `completeTask` reads, not a capability any seat can hold:
+      // `context.ts` already tells the seat "you can claim it" on this basis, and
+      // checking it here refused the claim to every seat, for every gated task.
+      if (cap === IMPLEMENTATION_GATE_MARKER) continue;
       const decision = this.deps.policy.evaluateCapability(actorId, cap, ctx);
       if (decision.decision !== "ALLOW") {
         await this.denied(actorId, taskId, `claim task (missing capability ${cap})`, decision);
@@ -5705,7 +5743,7 @@ export class Supervisor {
     if (task.status !== "CLAIMED" && task.status !== "IN_PROGRESS") return { ok: false, reason: `task is ${task.status}` };
     if (task.claimedBy !== actorId && actorId !== HUMAN_AGENT_ID) return { ok: false, reason: `task claimed by ${task.claimedBy}` };
     const gate = this.config.transitionGates["implementation.completed"];
-    if (gate && gate.length > 0 && task.requiredCapabilities.includes("implementation.gate")) {
+    if (gate && gate.length > 0 && task.requiredCapabilities.includes(IMPLEMENTATION_GATE_MARKER)) {
       const res = checkApprovals(this.state, gate, undefined);
       if (!res.ok) return { ok: false, reason: `implementation gate unsatisfied, missing: ${res.missing.join(", ")}` };
     } else if (gate && gate.length > 0 && !this.completionGateUnboundWarned) {
@@ -5721,10 +5759,10 @@ export class Supervisor {
       // rule is surfaced to the operator the first time it lets one through.
       this.completionGateUnboundWarned = true;
       const tasks = [...this.state.tasks.values()].filter((t) => t.goalId === task.goalId);
-      const marked = tasks.filter((t) => t.requiredCapabilities.includes("implementation.gate")).length;
+      const marked = tasks.filter((t) => t.requiredCapabilities.includes(IMPLEMENTATION_GATE_MARKER)).length;
       this.auditLine(
         `WARNING transition gate 'implementation.completed' (requires ${gate.join(", ")}) did not bind task ${taskId}: ` +
-          `at task completion it binds only tasks listing "implementation.gate" in requiredCapabilities, and ${marked} of ${tasks.length} task(s) in this goal do. ` +
+          `at task completion it binds only tasks listing "${IMPLEMENTATION_GATE_MARKER}" in requiredCapabilities, and ${marked} of ${tasks.length} task(s) in this goal do. ` +
           `It still gates ReleasePlan -> IMPLEMENTED.`,
       );
     }
@@ -8406,7 +8444,7 @@ export class Supervisor {
           // A budget stop keeps its classification (the abort's type decides the
           // failure ladder) but says what actually stopped it. An operator stop
           // says so, with the operator's reason.
-          detail: (operatorStop ? operatorStopDetail(operatorStop) : shutdownStop ? shutdownStopDetail(msg) : (budgetStop ?? msg)).slice(0, 200),
+          detail: (operatorStop ? operatorStopDetail(operatorStop) : shutdownStop ? shutdownStopDetail(msg, this.missionOver()) : (budgetStop ?? msg)).slice(0, 200),
           ...(usage ? { tokens: usage.total, usage } : {}),
         };
         // Failure handling first, so the note below states what is true AFTER
@@ -10131,14 +10169,25 @@ export class Supervisor {
           // opened, the seats were woken, and their verdicts could never count. Each
           // paired a capable reviewer with an incapable one, which is why the waste
           // was survivable and therefore invisible.
-          const canSettle = op.reviewers.filter((r) => approverMayAdvance(this.state, r, a, HUMAN_AGENT_ID));
+          //
+          // The artifact's OWNER counts only when no peer could review it, the
+          // same carve-out `evaluateTransition`'s `self-approval` rule makes. The
+          // owner usually holds the domain's approve authority (the architect on
+          // its own ArchitectureDocument), so `approverMayAdvance` alone said yes,
+          // the ask was accepted, and the owner could only discharge it: "I cannot
+          // review my own work" (cronlite 2026-09-30). The remedy list below
+          // already left the owner out; the acceptance now agrees with it.
+          const mayReview = (r: string): boolean =>
+            approverMayAdvance(this.state, r, a, HUMAN_AGENT_ID) && !(r === a.owner && this.hasPeerReviewer(r, a));
+          const canSettle = op.reviewers.filter(mayReview);
           const cannotSettle = op.reviewers.filter((r) => !canSettle.includes(r));
           if (canSettle.length === 0) {
             const able = [...this.state.agents.values()]
               .map((rec) => rec.definition.id)
               .filter((id) => id !== HUMAN_AGENT_ID && id !== a.owner && approverMayAdvance(this.state, id, a, HUMAN_AGENT_ID));
             const remedy = able.length > 0 ? ` — ${able.join(", ")} can` : ` — no seat in this mesh can`;
-            const reason = `none of ${op.reviewers.join(", ")} can deliver a verdict on this ${a.type}${remedy}`;
+            const ownerNote = cannotSettle.includes(a.owner) ? ` (${a.owner} owns it and cannot review their own work)` : "";
+            const reason = `none of ${op.reviewers.join(", ")} can deliver a verdict on this ${a.type}${remedy}${ownerNote}`;
             await this.denied(actorId, a.id, "request review", { decision: "DENY", reason, ruleId: "review.reviewer-cannot-settle" });
             return { ok: false, op: op.op, reason };
           }
@@ -10216,7 +10265,8 @@ export class Supervisor {
           const partial =
             cannotSettle.length > 0
               ? `${cannotSettle.join(", ")} cannot deliver a verdict on this ${a.type} — ${canSettle.join(", ")} can, so the ask stands with them; ` +
-                `${cannotSettle.join(", ")} ${cannotSettle.length === 1 ? "was" : "were"} left off it and owe${cannotSettle.length === 1 ? "s" : ""} nothing`
+                `${cannotSettle.join(", ")} ${cannotSettle.length === 1 ? "was" : "were"} left off it and owe${cannotSettle.length === 1 ? "s" : ""} nothing` +
+                (cannotSettle.includes(a.owner) ? ` (${a.owner} owns it and cannot review their own work)` : "")
               : undefined;
           return { ok: true, op: op.op, reason: partial, ...(partial ? { caveat: true } : {}), messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded };
         }
@@ -10450,7 +10500,7 @@ export class Supervisor {
    * it here would make that gate unreachable.
    */
   private unknownTaskCapabilities(raw?: string[]): string[] {
-    const known = new Set([...CAPABILITY_TOKENS, "implementation.gate"]);
+    const known = new Set([...CAPABILITY_TOKENS, IMPLEMENTATION_GATE_MARKER]);
     return (raw ?? [])
       .map((c) => normalizeCapability(String(c)))
       .filter((c) => !known.has(c));
@@ -12070,25 +12120,40 @@ export class Supervisor {
     }
   }
 
+  /** The active goal has ended the mission (completed or failed): a stop now is its end, not an interruption of it. */
+  private missionOver(): boolean {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    return goal?.status === "COMPLETED" || goal?.status === "FAILED";
+  }
+
   private async completeMission(): Promise<void> {
-    // Drain BEFORE the sweep, not just before shutdown: an agent that is
-    // mid-turn is neither IDLE nor WAITING, so sweeping first would skip it and
-    // leave the mission with a mix of COMPLETED and IDLE agents depending on
-    // who happened to be running. Draining first makes the sweep deterministic.
-    await this.drainInFlightTurns();
-    for (const rec of [...this.state.agents.values()]) {
-      const a = rec.state;
-      if (a.agentId === HUMAN_AGENT_ID) continue;
-      if (a.lifecycle === "IDLE" || a.lifecycle === "WAITING") {
-        // Tolerant: one refused transition must not abort the sweep. But NOT
-        // silent — a swallowed rejection here is how agents used to survive a
-        // finished mission stuck in WAITING with nothing in the log to say so.
-        await this.deps.kernel
-          .emit("agent.completed", { agentId: a.agentId }, { actorId: HUMAN_AGENT_ID })
-          .catch((err) => this.auditLine(`completion sweep could not retire ${a.agentId} from ${a.lifecycle}: ${(err as Error).message}`));
+    if (this.completion) return this.completion;
+    const run = (async () => {
+      // Drain BEFORE the sweep, not just before shutdown: an agent that is
+      // mid-turn is neither IDLE nor WAITING, so sweeping first would skip it and
+      // leave the mission with a mix of COMPLETED and IDLE agents depending on
+      // who happened to be running. Draining first makes the sweep deterministic.
+      await this.drainInFlightTurns();
+      for (const rec of [...this.state.agents.values()]) {
+        const a = rec.state;
+        if (a.agentId === HUMAN_AGENT_ID) continue;
+        if (a.lifecycle === "IDLE" || a.lifecycle === "WAITING") {
+          // Tolerant: one refused transition must not abort the sweep. But NOT
+          // silent — a swallowed rejection here is how agents used to survive a
+          // finished mission stuck in WAITING with nothing in the log to say so.
+          await this.deps.kernel
+            .emit("agent.completed", { agentId: a.agentId }, { actorId: HUMAN_AGENT_ID })
+            .catch((err) => this.auditLine(`completion sweep could not retire ${a.agentId} from ${a.lifecycle}: ${(err as Error).message}`));
+        }
       }
+      await this.stopNow();
+    })();
+    this.completion = run;
+    try {
+      await run;
+    } finally {
+      this.completion = null;
     }
-    await this.shutdown();
   }
 
   private onIdle(): void {

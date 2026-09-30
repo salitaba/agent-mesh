@@ -565,6 +565,19 @@ export interface ModelSpend {
   agents: Set<string>;
 }
 
+/**
+ * A goal's progress: how many mandatory criteria are satisfied. Progress is a
+ * FUNCTION of the criteria, never an independent counter -- see
+ * `recomputeGoalProgress`, which writes it on every event that moves one, and
+ * `importState`, which rebuilds it because a snapshot does not carry it.
+ */
+export function goalProgressOf(goal: Goal, at: string): { completed: number; total: number; ratio: number; updatedAt: string } {
+  const mandatory = (goal.acceptanceCriteria ?? []).filter((c) => c.mandatory);
+  const completed = mandatory.filter((c) => c.status === "EVIDENCED" || c.status === "WAIVED").length;
+  const total = mandatory.length;
+  return { completed, total, ratio: total ? completed / total : 0, updatedAt: at };
+}
+
 export function createInitialState(): Projections {
   return {
     goals: new Map(),
@@ -1338,6 +1351,14 @@ export function importState(state: Projections, data: {
   const fresh = createInitialState();
   Object.assign(state, fresh);
   for (const g of (data.goals ?? []) as Array<{ id: string }>) state.goals.set(g.id as never, g as never);
+  // `progress` is not in the snapshot: it is a function of the criteria just
+  // restored. Left empty it read null until the next criterion moved, so a
+  // restarted mesh showed 0% on a goal that was 6/6 (`mesh status` after a
+  // completed run, cronlite 2026-09-30) and any tail replay that did not touch
+  // a criterion never corrected it.
+  for (const g of state.goals.values()) {
+    if (Array.isArray(g.acceptanceCriteria)) state.progress.set(g.id, goalProgressOf(g, g.completedAt ?? g.reopenedAt ?? g.createdAt));
+  }
   for (const a of (data.agents ?? []) as Array<{ definition: { id: string } }>) state.agents.set(a.definition.id, a as never);
   for (const a of (data.artifacts ?? []) as Array<{ id: string }>) {
     const art = a as { id: string; type: string; name: string };

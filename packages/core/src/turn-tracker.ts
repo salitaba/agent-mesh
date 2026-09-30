@@ -669,7 +669,7 @@ export function abnormalTurnNote(
   // of the cause.
   const byBudget = discard.reason === "budget";
   const how = byShutdown
-    ? "was stopped when the mesh restarted — nothing you did caused it, and your saved work is intact"
+    ? "was stopped when the mesh shut down — nothing you did caused it, and your saved work is intact"
     : byOperator
     ? "was stopped by the operator"
     : byBudget || discard.detail?.startsWith("turn budget exceeded")

@@ -77,8 +77,10 @@ export interface RunReportCriterion {
   /** Evidence entries recorded against it. */
   evidenceCount: number;
   /**
-   * True when at least one evidence entry came from a turn that invoked no
-   * tools. The criterion may still be marked satisfied — this is the caveat.
+   * True when every evidence entry came from a turn that invoked no tools:
+   * nothing recorded against the criterion was read or run. The criterion may
+   * still be marked satisfied — this is the caveat. One entry backed by a tool
+   * call clears it, whatever blind acceptances came before.
    */
   assertedOnly: boolean;
   /** Artifact URIs / event ids cited as evidence, newest last. */
@@ -420,7 +422,13 @@ function summarizeCriteria(goal: Goal | null): RunReport["criteria"] {
   const items: RunReportCriterion[] = (goal?.acceptanceCriteria ?? []).map((c) => {
     // `verified === false` is the meaningful signal: absent means the operator
     // recorded it out of band, which is verified by definition.
-    const assertedOnly = c.evidence.some((e) => e.verified === false);
+    //
+    // Asserted ONLY when every entry is unverified. A blind first acceptance
+    // that the verification gate bounced and a later acceptance backed by a
+    // tool call leave both entries on the criterion; `some` flagged that
+    // criterion "claimed without tool use" although a tool call backs it
+    // (cronlite 2026-09-30: all five such criteria were mislabelled).
+    const assertedOnly = c.evidence.length > 0 && c.evidence.every((e) => e.verified === false);
     return {
       id: c.id,
       description: c.description,

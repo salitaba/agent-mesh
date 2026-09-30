@@ -100,6 +100,60 @@ test("a review request to a capable reviewer carries no caveat at all", async ()
   }
 });
 
+test("the artifact's owner is not a reviewer it can settle while a peer could: refused, and the refusal says why", async () => {
+  // cronlite, 2026-09-30: pm asked the architect to review the architect's own
+  // ArchitectureDocument. The architect holds architecture.approve, so the ask was
+  // accepted, and the architect could only discharge it ("I cannot review my own
+  // work") because self-approval is refused whenever a peer exists. The remedy list
+  // already left the owner out; the acceptance did not.
+  const { m, id } = await designUnderReview();
+  try {
+    const res = await m.supervisor.executeOp("ui", { op: "request_review", artifactId: id, reviewers: ["arch"] } as MeshOp, turnFor("ui"));
+
+    assert.equal(res.ok, false, "the owner's verdict on its own work could never count");
+    assert.match(String(res.reason), /none of arch can deliver a verdict on this ArchitectureDocument — lead can/);
+    assert.match(String(res.reason), /arch owns it and cannot review their own work/);
+    assert.equal(m.kernel.state.artifacts.get(id)?.status, "DRAFT", "and nothing moved");
+    const denial = (await m.store.read()).find(
+      (e) => e.type === "message.rejected" && (e.payload as { ruleId?: string }).ruleId === "review.reviewer-cannot-settle",
+    );
+    assert.ok(denial, "the refusal is on the record under the same rule as any reviewer who cannot settle");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("naming the owner beside a peer leaves the owner off the ask and says so", async () => {
+  const { m, id } = await designUnderReview();
+  try {
+    const res = await m.supervisor.executeOp("ui", { op: "request_review", artifactId: id, reviewers: ["arch", "lead"] } as MeshOp, turnFor("ui"));
+
+    assert.equal(res.ok, true, res.reason ?? "");
+    assert.match(String(res.reason), /arch cannot deliver a verdict on this ArchitectureDocument — lead can, so the ask stands/);
+    assert.match(String(res.reason), /arch owns it and cannot review their own work/);
+    const ask = [...m.kernel.state.messages.values()].find((x) => x.type === "REQUEST_REVIEW");
+    assert.deepEqual(ask?.to, ["lead"], "only the seat whose verdict can count owes one");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("with no peer who could review it, the owner may still be asked (the single-agent control group)", async () => {
+  // `ui` holds neither the authority nor the capability, so it is no peer reviewer:
+  // the only seat that could settle the artifact is its owner, and refusing it would
+  // leave a mesh of one reviewer unable to converge.
+  const m = await makeMesh({ agents: [AGENTS[0], AGENTS[2]], mayContact: { arch: ["ui"], ui: ["arch"] }, mode: "parked" } as never);
+  try {
+    const created = await m.supervisor.createArtifact({ actorId: "arch", name: "design-system", type: "ArchitectureDocument", content: "tokens, components, states — at length" });
+    if (!("artifact" in created)) throw new Error("create failed");
+    const res = await m.supervisor.executeOp("ui", { op: "request_review", artifactId: created.artifact.id, reviewers: ["arch"] } as MeshOp, turnFor("ui"));
+    assert.equal(res.ok, true, res.reason ?? "");
+    assert.equal(res.reason, undefined);
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("an APPROVE message is delivered, records a refusal naming the op, and wakes its sender once", async () => {
   const { m, id } = await designUnderReview();
   try {

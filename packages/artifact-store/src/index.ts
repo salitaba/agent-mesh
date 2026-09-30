@@ -197,6 +197,34 @@ export class GitWorkspace implements WorkspacePort {
     }
   }
 
+  /**
+   * Keep the runtime's own `.mesh/` directory out of the product repo.
+   *
+   * The Claude adapter writes each seat's ROLE.md and MESH_CONTEXT.md to
+   * `<workspace>/.mesh/agents/<id>/`, inside the seat's worktree or the product
+   * checkout. A seat's `git add -A` (and `commitWorktree`'s) swept them into the
+   * patch: the delivered cronlite tree shipped the developer's prompt, committed
+   * on `main`, while the PM's and tech lead's sat untracked beside it.
+   *
+   * `info/exclude` lives in the repository's common git dir, so it covers the
+   * main checkout and every linked worktree at once, and unlike a `.gitignore`
+   * it is not product content: an adopted repository's own files stay as they
+   * were. Appended, never rewritten, and only once.
+   */
+  private async excludeRuntimeDir(): Promise<void> {
+    const rel = await this.git(["rev-parse", "--git-path", "info/exclude"], this.mainDir);
+    const file = path.resolve(this.mainDir, rel);
+    let current = "";
+    try {
+      current = fs.readFileSync(file, "utf8");
+    } catch {
+      current = "";
+    }
+    if (current.split(/\r?\n/).some((line) => line.trim() === ".mesh/" || line.trim() === ".mesh")) return;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${current === "" || current.endsWith("\n") ? "" : "\n"}# agent-mesh runtime files (seat prompts): never product content\n.mesh/\n`, "utf8");
+  }
+
   async ensureRepo(): Promise<void> {
     if (this.initialized) return;
     fs.mkdirSync(this.mainDir, { recursive: true });
@@ -221,9 +249,12 @@ export class GitWorkspace implements WorkspacePort {
       await this.git(["init", "-b", this.baseBranch], this.mainDir);
       await this.git(["config", "user.email", "mesh@localhost"], this.mainDir);
       await this.git(["config", "user.name", "Mesh Supervisor"], this.mainDir);
+      await this.excludeRuntimeDir();
       fs.writeFileSync(path.join(this.mainDir, "README.md"), "# Mesh workspace\n\nManaged by agent-mesh git worktrees.\n", "utf8");
       await this.git(["add", "-A"], this.mainDir);
       await this.git(["commit", "-m", "mesh: initialize workspace"], this.mainDir);
+    } else {
+      await this.excludeRuntimeDir();
     }
     const branchCheck = await this.git(["rev-parse", "--abbrev-ref", "HEAD"], this.mainDir);
     if (branchCheck !== this.baseBranch) {
@@ -292,6 +323,13 @@ export class GitWorkspace implements WorkspacePort {
       await this.git(["add", "--", ...files], target);
     } else {
       await this.git(["add", "-A"], target);
+      // `.mesh/` is the runtime's, not the patch's. `info/exclude` already keeps
+      // it from being added while untracked; this unstages it for a repository
+      // that committed it before that existed, where a tracked seat prompt would
+      // otherwise ride into every later patch as a modification. (An exclude
+      // pathspec on `add` is the obvious spelling, and git refuses it whenever
+      // `.mesh` is ignored: "The following paths are ignored", exit 1.)
+      await this.git(["reset", "-q", "--", ".mesh"], target);
     }
     let commit = "";
     try {

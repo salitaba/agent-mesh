@@ -1,5 +1,5 @@
 import type { MeshEvent } from "../../protocol/src/index";
-import { normalizeCapability } from "../../protocol/src/index";
+import { IMPLEMENTATION_GATE_MARKER, normalizeCapability } from "../../protocol/src/index";
 import type { Projections } from "./state";
 import { dischargeCommitment } from "./state";
 import type { DecisionRecord, Escalation, Task, ArtifactRef } from "../../protocol/src/index";
@@ -94,7 +94,9 @@ export function applyWorkEvent(state: Projections, event: MeshEvent, p: Record<s
         const def = !live || p.agentId === HUMAN ? undefined : state.agents.get(p.agentId)?.definition;
         if (def) {
           const held = new Set((def.capabilities ?? []).map((c) => normalizeCapability(c)));
-          const missing = (t.requiredCapabilities ?? []).find((c) => !held.has(normalizeCapability(c)));
+          // The gate marker is read by `completeTask`, not held by a seat;
+          // `claimTask` skips it for the same reason.
+          const missing = (t.requiredCapabilities ?? []).find((c) => c !== IMPLEMENTATION_GATE_MARKER && !held.has(normalizeCapability(c)));
           if (missing) {
             throw new ProjectionError(`agent ${p.agentId} does not hold capability '${missing}' required by task ${t.id}`, event.type);
           }

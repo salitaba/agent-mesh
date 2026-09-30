@@ -453,7 +453,7 @@ async function launchMesh(opts: {
   console.log(
     parked
       ? `mesh panel (parked) online at ${handle.url}  — dashboard /designer available; agents are NOT activated`
-      : `mesh '${path.basename(file, path.extname(file))}' supervisor online at ${handle.url} (live)`,
+      : `mesh '${handle.instance.config.meshId || path.basename(file, path.extname(file))}' supervisor online at ${handle.url} (live)`,
   );
   if (opts.withTui) {
     await runTui(handle.url, async () => handle.close());

@@ -13,7 +13,7 @@ import type {
   Task,
   ThreadId,
 } from "../../protocol/src/index";
-import { CODE_ARTIFACT_TRANSITIONS, episodeOf } from "../../protocol/src/index";
+import { CODE_ARTIFACT_TRANSITIONS, IMPLEMENTATION_GATE_MARKER, episodeOf } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   HARD_OP_CAPABILITY,
@@ -641,7 +641,7 @@ export function buildAgentContext(
       const blockedBy = unmetTaskDependencies(state, t);
       // `implementation.gate` is a marker `completeTask` reads, not a
       // capability anyone holds.
-      const capable = t.requiredCapabilities.every((c) => c === "implementation.gate" || heldCaps.has(c));
+      const capable = t.requiredCapabilities.every((c) => c === IMPLEMENTATION_GATE_MARKER || heldCaps.has(c));
       const open = t.status === "OPEN" || (t.assignedTo === agentId && !t.claimedBy);
       const stale = staleTaskPins(state, t);
       const owner = t.claimedBy ?? t.assignedTo;
@@ -1085,7 +1085,7 @@ function describePoliciesFor(config: ResolvedMeshConfig, agentId: string): strin
     // of skill-panel's 10 did (2026-09-25, §7). See `Supervisor.completeTask`.
     const scope =
       gate === "implementation.completed"
-        ? ` (at task completion this binds only tasks whose requiredCapabilities include "implementation.gate")`
+        ? ` (at task completion this binds only tasks whose requiredCapabilities include "${IMPLEMENTATION_GATE_MARKER}")`
         : "";
     out.push(`Transition gate '${gate}' requires: ${requires.join(", ")}${scope}`);
   }

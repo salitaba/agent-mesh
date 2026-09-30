@@ -8,15 +8,34 @@
  * supervisor counts consecutive occurrences per agent.
  */
 
+/**
+ * The tail a non-deliberate {@link BackendUnreachableError} appends to its message.
+ * Exported so a caller that KNOWS the stop was the mesh's own (a shutdown) can
+ * take it off the text it records, whatever runtime threw.
+ */
+export const BACKEND_CRASH_HINT = "; the server process may have crashed — check that it is still running";
+
 /** The agent's model backend died or refused the connection mid-turn. */
 export class BackendUnreachableError extends Error {
   /** Backend that failed, e.g. a configured baseUrl (http). */
   readonly backend: string;
 
-  constructor(backend: string, causeMessage: string) {
-    super(`backend unreachable at ${backend} (${causeMessage}); the server process may have crashed — check that it is still running`);
+  /**
+   * True when the mesh itself ended the session (a teardown it ordered), so
+   * nothing crashed and "check that it is still running" would send a reader
+   * looking for a failure that did not happen.
+   */
+  readonly deliberate: boolean;
+
+  constructor(backend: string, causeMessage: string, opts: { deliberate?: boolean } = {}) {
+    super(
+      opts.deliberate
+        ? `backend unreachable at ${backend} (${causeMessage})`
+        : `backend unreachable at ${backend} (${causeMessage})${BACKEND_CRASH_HINT}`,
+    );
     this.name = "BackendUnreachableError";
     this.backend = backend;
+    this.deliberate = opts.deliberate === true;
   }
 }
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import { makeMesh } from "../helpers";
 import { buildAgentContext, renderContextInstructions } from "../../packages/core/src/context";
-import type { MeshOp } from "../../packages/protocol/src/index";
+import { IMPLEMENTATION_GATE_MARKER, type MeshOp } from "../../packages/protocol/src/index";
 
 /**
  * §7 (second half) of the 2026-09-25 live run: the configured completion gate
@@ -76,6 +76,84 @@ test("prompt: the verdict guidance says the verdict op itself answers the review
     assert.match(text, /Approve or reject a reviewed artifact with/);
     assert.match(text, /The verdict op itself answers the review request you were sent for that artifact — do NOT follow it with an APPROVE\/REJECT message or a `mesh_respond`/);
     assert.match(text, /mesh_respond \(messageId\/type\/payload\) — answer one specific request\. Not a review you settled with mesh_approve\/mesh_reject/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+/**
+ * The marker is advertised to every seat whenever the gate is configured, and
+ * the seats' own context said "you can claim it" about a task carrying it — but
+ * `claimTask` checked the marker against the seat's capabilities like any other
+ * requirement, and no seat can hold it (it is not a capability). Every marked
+ * task was therefore unclaimable, which also meant the gate it marks was never
+ * reachable: a live run finished with its implementation task "never picked up"
+ * and the `implementation.completed` gate never consulted.
+ */
+test("completion gate: a task carrying the implementation.gate marker can be claimed by a seat with its real capabilities", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", transitions: { "implementation.completed": ["lead.approve"] } });
+  try {
+    const t = await m.supervisor.executeOp(
+      "lead",
+      { op: "create_task", title: "gated work", description: "work", requiredCapabilities: ["repository.write", IMPLEMENTATION_GATE_MARKER] } as MeshOp,
+      turnFor("lead"),
+    );
+    assert.equal(t.ok, true, t.reason);
+
+    // What the seat is told...
+    const text = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "fe"));
+    assert.match(text, new RegExp(`\\[${t.taskId}\\][^\\n]*you can claim it`), "the context offers the marked task to a seat that holds its real capabilities");
+
+    // ...must be true.
+    const claim = await m.supervisor.executeOp("fe", { op: "claim_task", taskId: t.taskId } as MeshOp, turnFor("fe"));
+    assert.equal(claim.ok, true, `the claim it was offered must succeed: ${claim.reason ?? ""}`);
+    assert.equal(m.kernel.state.tasks.get(t.taskId!)?.claimedBy, "fe");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("completion gate: skipping the marker does not weaken the task's real capability requirements", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", transitions: { "implementation.completed": ["lead.approve"] } });
+  try {
+    const t = await m.supervisor.executeOp(
+      "lead",
+      { op: "create_task", title: "gated work", description: "work", requiredCapabilities: ["repository.write", IMPLEMENTATION_GATE_MARKER] } as MeshOp,
+      turnFor("lead"),
+    );
+    // `lead` holds review capabilities but not repository.write.
+    const refused = await m.supervisor.claimTask("lead", t.taskId!);
+    assert.equal(refused.ok, false);
+    assert.match(refused.reason ?? "", /missing capability repository\.write/, "the refusal names the capability that is genuinely missing, not the marker");
+    assert.equal(m.kernel.state.tasks.get(t.taskId!)?.status, "OPEN", "a refused claim leaves the task open");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("completion gate: a claimed marked task is bound by the configured gate at completion", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", persist: true, transitions: { "implementation.completed": ["lead.approve"] } });
+  try {
+    const t = await m.supervisor.executeOp(
+      "lead",
+      { op: "create_task", title: "gated work", description: "work", requiredCapabilities: ["repository.write", IMPLEMENTATION_GATE_MARKER] } as MeshOp,
+      turnFor("lead"),
+    );
+    assert.equal((await m.supervisor.executeOp("fe", { op: "claim_task", taskId: t.taskId } as MeshOp, turnFor("fe"))).ok, true);
+
+    const early = await m.supervisor.executeOp("fe", { op: "complete_task", taskId: t.taskId, summary: "done" } as MeshOp, turnFor("fe"));
+    assert.equal(early.ok, false, "the gate binds a marked task: no verdict yet, no completion");
+    assert.match(early.reason ?? "", /implementation gate unsatisfied, missing: lead\.approve/);
+
+    const created = await m.supervisor.createArtifact({ actorId: "fe", name: "patch", type: "CodePatch", content: "a patch, described at length" });
+    if (!("artifact" in created)) throw new Error(`create failed: ${created.error}`);
+    await m.supervisor.transitionArtifact("fe", created.artifact.id, { to: "READY_FOR_REVIEW" });
+    const verdict = await m.supervisor.executeOp("lead", { op: "approve", subject: "implementation", artifactId: created.artifact.id } as MeshOp, turnFor("lead"));
+    assert.equal(verdict.ok, true, verdict.reason);
+
+    const done = await m.supervisor.executeOp("fe", { op: "complete_task", taskId: t.taskId, summary: "done" } as MeshOp, turnFor("fe"));
+    assert.equal(done.ok, true, `with the verdict recorded the same completion goes through: ${done.reason ?? ""}`);
+    assert.equal(m.kernel.state.tasks.get(t.taskId!)?.status, "COMPLETED");
   } finally {
     await m.cleanup();
   }

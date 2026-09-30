@@ -200,9 +200,10 @@ test("a turn stopped by the mesh shutting down is not blamed on the operator", (
   // the operator stopped it after a restart sends it looking for an instruction
   // that was never given.
   const shutdown = abnormalTurnNote({ reason: "interrupted", detail: "stopped by the mesh shutting down (claude:abc — session torn down)" }, 30_000);
-  assert.match(shutdown, /stopped when the mesh restarted/);
+  assert.match(shutdown, /stopped when the mesh shut down/);
+  assert.doesNotMatch(shutdown, /restarted|crashed/, "the note is read at a later turn, but the stop itself was a shutdown, not a crash");
   assert.doesNotMatch(shutdown, /stopped by the operator/);
   const operator = abnormalTurnNote({ reason: "interrupted", detail: "stopped by the operator: wrong branch" }, 30_000);
   assert.match(operator, /stopped by the operator/);
-  assert.doesNotMatch(operator, /mesh restarted/);
+  assert.doesNotMatch(operator, /mesh shut down/);
 });

@@ -438,6 +438,45 @@ test("exportState -> importState roundtrips Maps and Sets through JSON", () => {
   assert.equal(spend.cacheRead, 50);
 });
 
+test("importState rebuilds goal progress from the restored criteria (the snapshot does not carry it)", () => {
+  const criterion = (id: string, status: "UNSATISFIED" | "EVIDENCED" | "WAIVED", mandatory = true) =>
+    ({ id, description: id, mandatory, status, evidence: [] });
+  const goal = {
+    id: "goal-1",
+    description: "ship it",
+    status: "COMPLETED",
+    createdAt: "2026-02-01T00:00:00.000Z",
+    completedAt: "2026-02-01T01:00:00.000Z",
+    acceptanceCriteria: [
+      criterion("a", "EVIDENCED"),
+      criterion("b", "WAIVED"),
+      criterion("c", "UNSATISFIED"),
+      // Optional criteria never count toward progress, satisfied or not.
+      criterion("d", "EVIDENCED", false),
+    ],
+  } as unknown as Goal;
+
+  const source = createInitialState();
+  source.goals.set(goal.id, goal);
+  source.activeGoalId = goal.id;
+  const snapshot = JSON.parse(JSON.stringify(exportState(source))) as Parameters<typeof importState>[1];
+
+  const restored = createInitialState();
+  importState(restored, snapshot);
+
+  assert.deepEqual(restored.progress.get("goal-1"), {
+    completed: 2,
+    total: 3,
+    ratio: 2 / 3,
+    updatedAt: "2026-02-01T01:00:00.000Z",
+  });
+
+  // A goal with no criteria at all restores as 0/0, never a NaN ratio.
+  const empty = createInitialState();
+  importState(empty, { goals: [{ id: "g0", description: "x", status: "ACTIVE", createdAt: "2026-02-01T00:00:00.000Z", acceptanceCriteria: [] }] });
+  assert.deepEqual(empty.progress.get("g0" as never), { completed: 0, total: 0, ratio: 0, updatedAt: "2026-02-01T00:00:00.000Z" });
+});
+
 test("importState clears prior state before loading", () => {
   const state = createInitialState();
   populate(state);

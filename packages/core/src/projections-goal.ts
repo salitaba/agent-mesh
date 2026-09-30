@@ -1,5 +1,6 @@
 import type { MeshEvent } from "../../protocol/src/index";
 import type { Projections } from "./state";
+import { goalProgressOf } from "./state";
 import type { AcceptanceCriterion, Goal } from "../../protocol/src/index";
 import { ProjectionError, artifactForRef, isTerminalGoal } from "./projections-helpers";
 import { criteriaWouldComplete } from "./termination";
@@ -18,15 +19,7 @@ import { criteriaWouldComplete } from "./termination";
  * Recomputing from the criteria makes the two views incapable of disagreeing.
  */
 export function recomputeGoalProgress(state: Projections, goal: Goal, at: string): void {
-  const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
-  const completed = mandatory.filter((c) => c.status === "EVIDENCED" || c.status === "WAIVED").length;
-  const total = mandatory.length;
-  state.progress.set(goal.id, {
-    completed,
-    total,
-    ratio: total ? completed / total : 0,
-    updatedAt: at,
-  });
+  state.progress.set(goal.id, goalProgressOf(goal, at));
 }
 
 /**

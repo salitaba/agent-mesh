@@ -2169,7 +2169,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       });
       this.teardown(live.meshSessionId);
     }, this.firstFrameTimeoutMs);
-    firstFrame.unref?.();
+    // Not unref'd, for the same reason as `confirmAlive`'s grace: the turn is
+    // awaiting `turn.events`, and for a backend that answers with total silence
+    // this timer is what ends it. It is cleared when the turn settles.
     live.pending = turn;
     if (live.bridgeDown) {
       // The init frame already said this query's bridge is down (it can land
@@ -2728,7 +2730,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     const s = this.live.get(sessionId);
     if (!s) return;
     s.closed = true;
-    s.pending?.settle({ ok: false, err: new BackendUnreachableError(`claude:${sessionId}`, "session torn down") });
+    // Deliberate: the mesh ordered this teardown (shutdown, reset, rotation), so the
+    // error must not tell the operator the server may have crashed.
+    s.pending?.settle({ ok: false, err: new BackendUnreachableError(`claude:${sessionId}`, "session torn down", { deliberate: true }) });
     s.inbox.close();
     try {
       s.q.close();
@@ -2937,8 +2941,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
   private async confirmAlive(s: LiveSession): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;
     const grace = new Promise<boolean>((resolve) => {
+      // Not unref'd: `start` awaits this race, and when the backend stays quiet
+      // this timer is the only thing that can settle it. Unref'd, a process with
+      // no other live handle exits with `start` pending. The `finally` below
+      // clears it, so holding the loop costs nothing once the race is decided.
       timer = setTimeout(() => resolve(true), this.spawnFailureGraceMs);
-      timer.unref?.();
     });
     try {
       return await Promise.race([s.ready.then(() => true, () => false), grace]);

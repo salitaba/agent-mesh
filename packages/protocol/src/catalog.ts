@@ -843,6 +843,20 @@ export const AUTHORITY_TOKENS: string[] = [
 ];
 
 /**
+ * The one entry a task's `requiredCapabilities` may carry that is NOT a
+ * capability.
+ *
+ * It is a marker `completeTask` reads: a task listing it is bound, at
+ * completion, by the mesh's `implementation.completed` transition gate. No seat
+ * can be granted it (it is not in `CAPABILITY_TOKENS`), so every place that
+ * asks "can this seat take this task?" must skip it. `context.ts` did and
+ * `claimTask` did not, so the task the seat was told it could claim was refused
+ * to every seat that held all of its real capabilities — one place to spell it
+ * keeps the next reader of `requiredCapabilities` from making the same miss.
+ */
+export const IMPLEMENTATION_GATE_MARKER = "implementation.gate";
+
+/**
  * Every capability token the policy engine and runtime can satisfy.
  *
  * Same failure mode as authority tokens: a capability the engine never checks
