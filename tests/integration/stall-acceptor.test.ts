@@ -115,6 +115,25 @@ test("with only acceptances unmet, the watchdog wakes the seat that may accept a
   }
 });
 
+test("a report the acceptance would be refused for is not offered: a TestReport the pm wrote itself", async () => {
+  const { m, nudges } = await mesh();
+  try {
+    // pm holds no test authority, so `recordDecision` would refuse its own report as evidence.
+    const pmsOwn = await submit(m, "pm", "pm summary of QA's findings");
+    const qas = await submit(m, "qa", "QA report");
+    await m.goLive();
+    await idle(m, "go-live to settle");
+
+    await tick(m, nudges, 1);
+    const note = nudges[0]!.note;
+    assert.match(note, new RegExp(`Submitted and citable: TestReport "QA report" v1 \\(${qas.id}`));
+    assert.doesNotMatch(note, /pm summary of QA/, "offering it would send the pm to a refusal");
+    assert.ok(pmsOwn.id);
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("with nothing submitted yet, the note says the proof is what is missing", async () => {
   const { m, nudges } = await mesh();
   try {

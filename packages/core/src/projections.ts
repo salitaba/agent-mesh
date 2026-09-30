@@ -23,6 +23,8 @@ export {
   recordApproval,
   holdsAuthority,
   mayAcceptCriteria,
+  qualifiedForDomain,
+  unqualifiedAuthor,
   hasPeerReviewerFor,
   mayReviewArtifact,
   settlersOf,

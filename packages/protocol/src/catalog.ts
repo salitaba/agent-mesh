@@ -801,6 +801,18 @@ export const AUTO_EVIDENCED_CRITERIA: string[] = [
 ];
 
 /**
+ * The artifact types whose whole claim is "someone checked": what a seat publishes to say a
+ * thing was tested, scanned or measured.
+ *
+ * They are evidence of a verification only if a seat that can verify wrote them. A criterion
+ * acceptance that cites one is held to that (`unqualifiedAuthor`), and the stall watchdog offers
+ * them first as things an acceptance can cite. Listed here because both the prompt-facing and the
+ * gate-facing reader need the same set, and a type added to one and not the other is how a report
+ * nobody could have written comes to count.
+ */
+export const VERIFICATION_ARTIFACT_TYPES: readonly string[] = ["TestReport", "SecurityReport", "BenchmarkResult"];
+
+/**
  * The acceptance criteria a mission gets when its config declares none.
  *
  * Lives here, beside `AUTO_EVIDENCED_CRITERIA`, because two packages need it and

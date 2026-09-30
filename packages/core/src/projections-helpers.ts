@@ -1,4 +1,4 @@
-﻿import { HARD_OP_CAPABILITY, effectiveHardActions } from "../../protocol/src/index";
+﻿import { HARD_OP_CAPABILITY, VERIFICATION_ARTIFACT_TYPES, effectiveHardActions } from "../../protocol/src/index";
 import type {
   AcceptanceCriterion,
   AgentDefinition,
@@ -563,11 +563,55 @@ export function approverMayAdvance(
   // benchmark-comparability reason, and what keeps a one-seat mesh converging
   // instead of deadlocking on a reviewer that does not exist.
   if (!hasPeerReviewerFor(state, actorId, artifact, humanAgentId)) return true;
-  const domain = domainOfSubject(state, artifact.type, artifact.id);
+  return qualifiedForDomain(def, domainOfSubject(state, artifact.type, artifact.id), capabilityForReview(artifact.type));
+}
+
+/**
+ * Is this seat qualified in an artifact's domain: does it hold the domain's approve authority, or
+ * the capability that reviews that type of artifact?
+ *
+ * The one definition of it. `approverMayAdvance` (may this verdict settle), `hasPeerReviewerFor`
+ * (could anyone else review it) and `unqualifiedAuthor` (could the seat that wrote it have
+ * verified what it says) each asked this question in their own words before.
+ */
+export function qualifiedForDomain(def: Pick<AgentDefinition, "authority" | "capabilities">, domain: string, reviewCap: string | null): boolean {
   const auth = def.authority ?? [];
   if (auth.includes(`${domain}.approve`) || auth.includes(`${domain}.*`) || auth.includes("*")) return true;
+  return reviewCap !== null && (def.capabilities ?? []).includes(reviewCap);
+}
+
+/**
+ * The seats that could have verified what `artifact` says, when its own author is not one of them
+ * and some other seat is; null otherwise.
+ *
+ * Only for the types whose whole claim is "someone checked" (`VERIFICATION_ARTIFACT_TYPES`). A
+ * TestReport is evidence that the tests ran only if a seat that can run them wrote it: in the
+ * fourth cronlite run the pm, which holds `repository.read` and the power to accept criteria and
+ * nothing else, wrote a "Bug-Fix Verification Report" from what QA had told it, submitted it
+ * itself and accepted two mandatory criteria against it, before anyone who can verify had looked
+ * at the product.
+ *
+ * Null when nobody else is qualified, the carve-out `approverMayAdvance` makes for the same
+ * reason: a mesh with no seat that can verify must still be able to converge, and refusing the
+ * only report there can be would only wedge it. Null for the operator and for an author the
+ * projection does not know (replay must never refuse an event because of who caused it).
+ */
+export function unqualifiedAuthor(state: Projections, artifact: Artifact, humanAgentId = "human"): { qualified: string[] } | null {
+  if (!VERIFICATION_ARTIFACT_TYPES.includes(artifact.type)) return null;
+  if (artifact.owner === humanAgentId) return null;
+  const author = state.agents.get(artifact.owner)?.definition;
+  if (!author) return null;
+  const domain = domainOfSubject(state, artifact.type, artifact.id);
   const cap = capabilityForReview(artifact.type);
-  return cap !== null && (def.capabilities ?? []).includes(cap);
+  if (qualifiedForDomain(author, domain, cap)) return null;
+  const qualified: string[] = [];
+  for (const rec of state.agents.values()) {
+    const id = rec.definition.id;
+    if (id === humanAgentId || id === artifact.owner) continue;
+    if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED" || rec.state.lifecycle === "RETIRED") continue;
+    if (qualifiedForDomain(rec.definition, domain, cap)) qualified.push(id);
+  }
+  return qualified.length > 0 ? { qualified } : null;
 }
 
 /**
@@ -626,9 +670,7 @@ export function hasPeerReviewerFor(
     const id = rec.definition.id;
     if (id === actorId || id === humanAgentId) continue;
     if (rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED" || rec.state.lifecycle === "RETIRED") continue;
-    const auth = rec.definition.authority;
-    if (auth.includes(`${subject}.approve`) || auth.includes(`${subject}.*`) || auth.includes("*")) return true;
-    if (reviewCap && rec.definition.capabilities.includes(reviewCap)) return true;
+    if (qualifiedForDomain(rec.definition, subject, reviewCap)) return true;
   }
   return false;
 }

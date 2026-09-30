@@ -62,6 +62,7 @@ import {
   type SessionRotationPending,
   AUTO_EVIDENCED_CRITERIA,
   DEFAULT_CRITERIA,
+  VERIFICATION_ARTIFACT_TYPES,
   InterruptedTurnError,
   LIFECYCLE_TRANSITIONS,
   type TimerHandle,
@@ -84,7 +85,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, type StandingBlock } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -5501,6 +5502,25 @@ export class Supervisor {
         if (!substantive.ok) {
           await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason: substantive.reason!, ruleId: "mandatory-evidence-too-thin" });
           return { ok: false, reason: substantive.reason };
+        }
+        // A verification report is evidence of a verification only if a seat that can verify wrote
+        // it. The fourth cronlite run's pm (repository.read, requirements.accept, nothing else) wrote
+        // a "Bug-Fix Verification Report" out of what QA had told it, got past the DRAFT refusal below
+        // by submitting it itself, and closed two mandatory criteria against it while the product
+        // had still not been tested by anyone who could. Refused with the route: the seat that can
+        // verify publishes its own report, and the acceptance cites that. The operator is not held
+        // to it (its acceptance is its own judgment), and a mesh with no seat that could verify is
+        // let through (`unqualifiedAuthor`), or the only report there can be would wedge it.
+        const unqualified = actorId === HUMAN_AGENT_ID ? null : unqualifiedAuthor(this.state, artifact);
+        if (unqualified) {
+          const domain = domainOfSubject(this.state, artifact.type, artifact.id);
+          const cap = capabilityForReview(artifact.type);
+          const reason =
+            `artifact '${artifact.name}' is a ${artifact.type} written by ${artifact.owner}, which cannot verify one (it holds neither ${domain}.approve nor ${cap ?? "the capability that reviews one"}), ` +
+            `so it cannot evidence mandatory criterion '${criterionId}': a ${artifact.type} is evidence of a verification only when a seat that can verify published it, and a summary of what someone else found is not one. ` +
+            `Ask ${unqualified.qualified.join(" or ")} to publish its own report, then accept against that.`;
+          await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-unqualified-author" });
+          return { ok: false, reason };
         }
         // Substantive but never submitted. `markCriterionEvidence` refuses this
         // too, but silently — the accepting agent must be told what to do next
@@ -13258,13 +13278,13 @@ export class Supervisor {
 
   /**
    * Submitted artifacts of the active mission that an acceptance could cite, three at most:
-   * verification reports first, then whatever was published last. A draft cannot evidence a
-   * mandatory criterion (`recordDecision` refuses it), nor can an artifact the operator already
-   * rejected for this one, so neither is offered.
+   * verification reports first, then whatever was published last. What `recordDecision` would
+   * refuse is not offered: a draft, an artifact the operator already rejected for this criterion,
+   * a verification report written by a seat that cannot verify.
    */
   private citableEvidence(goalId: GoalId, unmet: readonly AcceptanceCriterion[]): Artifact[] {
     const rejected = new Set(unmet.flatMap((c) => c.rejectedEvidence ?? []));
-    const isReport = (a: Artifact): number => (a.type === "TestReport" || a.type === "SecurityReport" || a.type === "BenchmarkResult" ? 1 : 0);
+    const isReport = (a: Artifact): number => (VERIFICATION_ARTIFACT_TYPES.includes(a.type) ? 1 : 0);
     return [...this.state.artifacts.values()]
       .filter(
         (a) =>
@@ -13272,7 +13292,9 @@ export class Supervisor {
           a.status !== "DRAFT" &&
           a.status !== "REJECTED" &&
           a.status !== "ARCHIVED" &&
-          !rejected.has(artifactUri(a.type, a.name, a.version)),
+          !rejected.has(artifactUri(a.type, a.name, a.version)) &&
+          // Nor one the acceptance would be refused for: a report written by a seat that cannot verify.
+          !unqualifiedAuthor(this.state, a),
       )
       .sort((a, b) => isReport(b) - isReport(a) || b.createdAt.localeCompare(a.createdAt))
       .slice(0, 3);
