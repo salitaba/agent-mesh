@@ -117,7 +117,7 @@ import type {
   WorkspacePort,
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
-import { loadRolePrompt } from "../../config/src/index";
+import { interestMatches, loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
@@ -5742,6 +5742,7 @@ export class Supervisor {
       }
     }
     await this.settleReviewAsks(actorId, artifact, evt.id);
+    await this.noticeOwnerOfVerdict(actorId, kind, artifact?.id, statusBefore, type, evt.id);
     // `release` used to ride this branch, and the ternary then sent it to the
     // ELSE arm — so a release sign-off evidenced `security-verified`. A release
     // manager saying "ship it" is not a security review, and there is no
@@ -5764,6 +5765,52 @@ export class Supervisor {
 
   private domainOfSubject(subject: string, artifactId?: string): string {
     return domainOfSubject(this.state, subject, artifactId);
+  }
+
+  /**
+   * Wake an artifact's owner when somebody else's verdict MOVED it.
+   *
+   * The owner is the one seat with a next step on its own artifact (only the owner
+   * can transition a CodePatch), and what woke it was configuration: the stock
+   * developer listens for `review.rejected` and not for `review.approved`, so an
+   * approval reached nobody who could act on it. In the cronlite run the patch sat
+   * approved for 2.5 minutes while the PM asked the architect, four times, to
+   * "transition it" (the architect correctly declined: not its artifact), until the
+   * stall watchdog happened to pick the right seat.
+   *
+   * Only a verdict that moved the artifact says anything new, only when the owner did
+   * not give it, and not when the owner's own interests already wake it for this
+   * event (a second wake for the same verdict is exactly the repeat the dedup exists
+   * to prevent). The wake goes through `activateAgent`, so every gate a wake faces
+   * (paused, escalated, finished mission, budget, breaker) applies unchanged.
+   */
+  private async noticeOwnerOfVerdict(
+    actorId: string,
+    kind: ApprovalKind,
+    artifactId: string | undefined,
+    before: ArtifactStatus | undefined,
+    eventType: EventType,
+    eventId: string,
+  ): Promise<void> {
+    if (!artifactId || before === undefined) return;
+    const now = this.state.artifacts.get(artifactId);
+    if (!now || now.status === before) return;
+    const owner = now.owner;
+    if (owner === actorId || owner === HUMAN_AGENT_ID) return;
+    const rec = this.state.agents.get(owner);
+    if (!rec || rec.state.lifecycle === "RETIRED" || rec.state.lifecycle === "COMPLETED" || rec.state.lifecycle === "FAILED") return;
+    if (rec.definition.interests.some((p) => interestMatches(p, eventType))) return;
+
+    const rejected = kind === "reject" || kind === "veto";
+    const rung = now.type === "CodePatch" ? (CODE_ARTIFACT_TRANSITIONS[now.status] ?? [])[0] : undefined;
+    const what = `${now.type} "${now.name}" v${now.version}`;
+    const note = rejected
+      ? `${actorId} rejected your ${what}: read the verdict in your mailbox and publish a new version of the same artifact (asVersionOf) that answers it.`
+      : `${actorId} approved your ${what}: it is now ${now.status}.` +
+        (rung
+          ? ` It needs ${rung} next${rung === "MERGED" ? ", which a seat holding git.merge does with the merge op" : ", and only you can move it there"}; nothing advances it automatically.`
+          : " Carry on from there.");
+    await this.activateAgent(owner, { kind: "interest_event", eventId, eventType, note }).catch(() => undefined);
   }
 
   private async settleReviewAsks(actorId: string, artifact: Artifact | undefined, eventId: string): Promise<void> {
