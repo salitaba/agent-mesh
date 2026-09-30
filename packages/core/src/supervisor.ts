@@ -5659,7 +5659,19 @@ export class Supervisor {
       repeat && artifact
         ? `you already recorded ${sameKind} on ${artifact.type} "${artifact.name}" v${artifact.version} (${repeat.evidenceEventId}); a second signature on the same version changes nothing`
         : undefined;
-    const caveat = [inertApproval, repeatNote].filter(Boolean).join("; ") || undefined;
+    // The author's own verdict, and it moved the artifact. That is allowed only because
+    // no peer could have reviewed it (the screen above refuses it whenever one could), so
+    // it is a real settlement, but it is not a second pair of eyes and a reader of the
+    // record should be able to tell. TestReport: qa published, submitted and approved its
+    // own report to FINAL, and the PM then cited it as independent evidence. The run
+    // report derives the same fact from the approvals (an artifact approved only by its
+    // owner); this tells the seat.
+    const selfSettled = !!artifact && artifact.owner === actorId && (kind === "approve" || kind === "pass") && movesIt;
+    const selfNote =
+      selfSettled && artifact
+        ? `no other seat could review this ${artifact.type}, so your own approval settled it — it stands, recorded as an approval by its author, and the run report lists it as self-approved`
+        : undefined;
+    const caveat = [inertApproval, repeatNote, selfNote].filter(Boolean).join("; ") || undefined;
     let type: EventType;
     if (kind === "approve" || kind === "pass") type = "review.approved";
     else if (kind === "reject" || kind === "veto") type = "review.rejected";

@@ -66,6 +66,13 @@ export interface RunReportArtifact {
   /** Where the content lives, so a reader can go get it. */
   contentRef: string;
   createdAt: string;
+  /**
+   * Present (and true) when the only approvals on this version are its owner's own.
+   * The mesh allows that when no other seat could review the artifact, so it is not
+   * an error, but it is not independent review either, and a delivered artifact a
+   * reader is about to trust should say so.
+   */
+  selfApproved?: true;
 }
 
 /** One acceptance criterion and how well it is actually backed. */
@@ -374,7 +381,7 @@ export interface RunReport {
 /** Criterion statuses that count as satisfied. WAIVED counts: a human said so. */
 const SATISFIED_CRITERION_STATUSES = ["EVIDENCED", "WAIVED"];
 
-function flattenArtifact(a: Artifact): RunReportArtifact {
+function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact {
   return {
     id: a.id,
     name: a.name,
@@ -384,7 +391,35 @@ function flattenArtifact(a: Artifact): RunReportArtifact {
     owner: a.owner,
     contentRef: a.contentRef,
     createdAt: a.createdAt,
+    ...(selfApproved ? { selfApproved: true as const } : {}),
   };
+}
+
+/**
+ * Artifacts whose approvals were all given by their own owner.
+ *
+ * Read off the approvals the log already holds rather than carried as a flag on the
+ * verdict, so a log written before this existed reports the same way. Approval
+ * records are dropped when a new version replaces the artifact, so this is a fact
+ * about the version that was delivered. Only `approve`/`pass` count: a rejection is
+ * not an endorsement, and an absent approval is not self-approval, it is none.
+ */
+function selfApprovedArtifactIds(state: Projections): Set<string> {
+  const approvers = new Map<string, Set<string>>();
+  for (const list of state.approvals.values()) {
+    for (const r of list) {
+      if (!r.artifactId || (r.kind !== "approve" && r.kind !== "pass")) continue;
+      const set = approvers.get(r.artifactId) ?? new Set<string>();
+      set.add(r.actorId);
+      approvers.set(r.artifactId, set);
+    }
+  }
+  const out = new Set<string>();
+  for (const [artifactId, set] of approvers) {
+    const owner = state.artifacts.get(artifactId)?.owner;
+    if (owner !== undefined && set.size > 0 && [...set].every((id) => id === owner)) out.add(artifactId);
+  }
+  return out;
 }
 
 /**
@@ -636,8 +671,9 @@ export function buildRunReport(state: Projections, goalId?: string): RunReport {
   const delivered: RunReportArtifact[] = [];
   const inProgress: RunReportArtifact[] = [];
   const rejected: RunReportArtifact[] = [];
+  const selfApproved = selfApprovedArtifactIds(state);
   for (const a of artifacts) {
-    const flat = flattenArtifact(a);
+    const flat = flattenArtifact(a, selfApproved.has(a.id));
     if (isSettledArtifactStatus(a.status)) delivered.push(flat);
     else if (a.status === "REJECTED") rejected.push(flat);
     else inProgress.push(flat);
@@ -776,6 +812,7 @@ export function renderRunReport(report: RunReport): string {
     for (const a of report.delivered) {
       out.push(bullet(`  ${a.name.padEnd(30)} ${a.type.padEnd(18)} v${a.version} ${a.status.toLowerCase()}`));
       out.push(bullet(`  ${" ".repeat(30)} ${a.contentRef}`));
+      if (a.selfApproved) out.push(bullet(`  ${" ".repeat(30)} ! approved only by its own author (${a.owner}) — no other seat could review it`));
     }
   } else {
     out.push("");
