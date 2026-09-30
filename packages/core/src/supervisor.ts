@@ -127,7 +127,7 @@ import { buildAgentContext, buildContextManifest, handoverBundle, renderContextI
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
-import { isEvidenceRead, isMeshToolCall, traceToolCalls } from "./turn-tracker";
+import { isEvidenceRead, isMeshToolCall, settleContinuityCalls, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
 import { DATA_RESULT_OPS, newTurnEffectTally, noteTurnEffect, summarizeTurnEffects, type TurnEffectTally, type UnfinishedTurnFacts } from "./turn-tracker";
 import { MAX_FILES_TOUCHED, type TurnCheckpoint } from "./turn-tracker";
@@ -8004,6 +8004,8 @@ export class Supervisor {
       let output = await this.callRuntimeWithTimeout(agentId, session, input, turnId);
       // A `done` issued through the tools stated the turn's summary already.
       if (turn.declaredSummary) output = { ...output, declaredSummary: turn.declaredSummary };
+      // A handover's continuity call was ended under the client when it landed; say it landed.
+      if (turn.handover) output = { ...output, toolCalls: settleContinuityCalls(output.toolCalls, turn.results) };
       measuredTokens = output.tokensUsed;
       this.markTurn(turnId, "llmDoneAt");
       // The model has read the account of the turn that did not finish. Kept

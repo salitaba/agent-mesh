@@ -324,6 +324,46 @@ export function traceToolCalls(calls: readonly ToolCallRecord[] | undefined): Tu
 }
 
 /**
+ * What the client writes against a tool call whose result it never delivered because the turn
+ * was ended under it. It is the same sentence it uses when a person refuses a call, so the text
+ * alone says nothing about who ended the turn, and is only read together with what the mesh
+ * itself recorded.
+ */
+const CLIENT_ENDED_CALL = /The user doesn't want to proceed with this tool use/;
+
+/**
+ * A handover turn's continuity call, as the turn record should say it went.
+ *
+ * `write_continuity` is the whole of a handover turn, and once it lands the supervisor ends the
+ * turn (`endTurn`) to save the model calls that would follow: each would re-send the outgoing
+ * session's whole transcript. The client then reports the call, whose result it never delivered,
+ * as rejected, so every handover was recorded as a turn whose one tool call FAILED: 13 of 13
+ * across four live runs, each beside a `continuity.recorded` event saying it worked. The audit
+ * said the opposite of the log, and anyone counting failed mesh calls counted those.
+ *
+ * The op result is the mesh's own: a `write_continuity` that came back ok landed. So a call the
+ * client reports as ended-under-it is set to completed, one per landed write and no more, and only
+ * when the client's text says that is what happened to it. A continuity call that failed for any
+ * other reason (its arguments were refused) keeps its error, and so does one with no landed write
+ * behind it.
+ */
+export function settleContinuityCalls(
+  calls: readonly ToolCallRecord[] | undefined,
+  results: ReadonlyArray<{ op: string; ok: boolean }>,
+): ToolCallRecord[] | undefined {
+  if (!calls) return undefined;
+  let landed = results.filter((r) => r.op === "write_continuity" && r.ok).length;
+  if (landed === 0) return calls as ToolCallRecord[];
+  return calls.map((call) => {
+    if (landed === 0 || call.status !== "failed" || !call.error || !CLIENT_ENDED_CALL.test(call.error)) return call;
+    if (!/(^|__)mesh_write_continuity$/.test(call.name)) return call;
+    landed--;
+    const { error: _ended, ...rest } = call;
+    return { ...rest, status: "completed" as const };
+  });
+}
+
+/**
  * Ops whose successful `reason` is DATA — an id, a sha, or the seat's own words
  * echoed back — rather than a caveat about how the op went. A superset of
  * {@link READ_RESULT_OPS}, and only the turn summary's caveat list reads it: the
