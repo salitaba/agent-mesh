@@ -5134,7 +5134,7 @@ export class Supervisor {
         },
         { actorId, goalId },
       );
-      await this.mirrorTransition(artifact, transition.to, evt.id);
+      await this.mirrorTransition(artifact, transition.to, evt, actorId);
       return { ok: true, eventId: evt.id };
     } catch (err) {
       if (err instanceof KernelRejectedError) return { ok: false, reason: err.message };
@@ -5142,10 +5142,32 @@ export class Supervisor {
     }
   }
 
-  private async mirrorTransition(a: Artifact, to: ArtifactStatus, causationId: string): Promise<void> {
+  /**
+   * The domain events a transition implies, emitted right after it.
+   *
+   * `actorId` is whoever made the transition. For a merge that is the seat that ran
+   * `merge`, which is not the patch's owner whenever a reviewer lands someone else's
+   * work (the cronlite tech-lead merged the developer's CodePatch every time). The
+   * mirrors used to be stamped with the OWNER, so in the second cronlite run every
+   * `patch.merged` read "developer merged it" while the developer was idle, and the
+   * kernel, which correlates an emit to the actor's live turn, filed them under the
+   * developer's turn: the turn-effect count credited a turn that merged nothing, and
+   * the turn trace for the merge showed the developer as its actor. They are now the
+   * merger's, in the merger's turn, joined to the transition that caused them.
+   *
+   * What stays with the owner is the record `implementation.completed` reduces to.
+   * That event is a `pass` on `implementation`, and a gate that names a seat
+   * (`tech-lead.approve`, matched by id or role) is satisfied by a record that seat
+   * is the actor of. Re-attributing the record to the merger would let the act of
+   * merging stand in for that seat's own sign-off, which is a change to what the
+   * gates mean, so the payload says whose work landed and the reducer keeps it.
+   */
+  private async mirrorTransition(a: Artifact, to: ArtifactStatus, cause: MeshEvent, actorId: string): Promise<void> {
+    const causationId = cause.id;
     if (a.type === "CodePatch" && to === "MERGED") {
-      await this.deps.kernel.emit("patch.merged", { artifactId: a.id, name: a.name }, { actorId: a.owner, goalId: a.goalId, causationId });
-      await this.deps.kernel.emit("implementation.completed", { artifactId: a.id, subject: "implementation" }, { actorId: a.owner, goalId: a.goalId, causationId });
+      const at = { actorId, goalId: a.goalId, causationId, correlationId: cause.correlationId };
+      await this.deps.kernel.emit("patch.merged", { artifactId: a.id, name: a.name }, at);
+      await this.deps.kernel.emit("implementation.completed", { artifactId: a.id, subject: "implementation", actorId: a.owner }, at);
     }
     if (a.type === "ReleasePlan") {
       await this.deps.kernel.emit("release.transition", { artifactId: a.id, to }, { goalId: a.goalId, causationId });
