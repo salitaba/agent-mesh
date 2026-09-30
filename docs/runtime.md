@@ -83,6 +83,23 @@ frames), `liveTools` (the last 60 calls with their target and status),
 frames, which also feed the mid-turn budget stop), `advisories`, and, once
 stopped, `checkpoint`. All of them survive a failed turn.
 
+### A seat's worktree at the start of its turn
+
+A worktree is a separate checkout, and a merge does not move it. In the second cronlite
+run QA's worktree stayed at the commit it was created on while `main` moved twice; QA tested
+that, found defects the merged code no longer had, and issued a `quality.block` on them,
+twice: about 202k tokens and twelve minutes of a twenty-three minute reopen. Before each turn
+(a handover turn excepted) the supervisor asks the workspace to `syncWorktree` the seat's
+worktree. A clean one that is behind `main` and holds no commit `main` lacks is
+fast-forwarded; files the seat wrote and never added do not stand in the way, and an
+untracked file the incoming commit would overwrite is protected, not forced. The prompt then
+carries a `## Your worktree` section, outside the tiered bundle like the other notes a
+degraded tier must not lose, saying what was done, or exactly why not and how far behind the
+seat is, with the way to bring it up to date (`git merge main`) and an instruction to name
+the commit it checked. A current worktree, a seat with no worktree of its own (`pm` reads the
+product checkout itself) and a sync that throws (one audit line, nothing else) add nothing to
+the prompt. A mesh with no git workspace has no worktree to sync.
+
 ### What counts as a productive turn
 
 A seat acts through **one** channel: the `mesh_*` MCP tools it calls mid-turn.
@@ -109,6 +126,56 @@ cost, under one of: `no_ops` (no tool call moved anything), `all_rejected`
 (every op refused), `timeout`, `silence`, `budget_blocked`, `failed`. It is a
 notice with no reducer — nothing projects from it — so it is safe to read as a
 pure cost signal.
+
+### The stall watchdog
+
+A mesh has no main loop: between turns it is projections and an empty queue, and the only
+thing that tells "resting" from "wedged" is the watchdog. On a timer (a third of
+`stall_idle_ms`, between 100 ms and 30 s) it looks at a mission that is ACTIVE, with nothing
+queued or running and the provider breaker not open, and wakes one seat with a note that
+begins `stall watchdog: mission active but quiet — …`. Its gates, in the order they are read:
+
+- **quiet**: `stall_idle_ms` (default 180 s) since the last turn ended **and**
+  `stall_cooldown_ms` (default 300 s) since the last nudge. Both apply after a turn that
+  produced work, whose ripple may still be landing; a turn that changed nothing (zero ops,
+  every op refused, or only wait/done/remember) arms a retry after `stall_noop_retry_ms`
+  (45 s) that bypasses both. A mesh that wants a tighter loop after productive nudges sets
+  the cooldown at or below the idle window.
+- **worth waking anyone**, decided from state and never by a model: a patch stalled on the
+  merge ladder, an unmet mandatory criterion, unread mail, an open escalation or a claimed
+  task. A mission with none of them rests, and closes itself.
+- **the cap**: after three consecutive nudges that bought no work (or three the scheduler
+  refused) it raises a `stalemate:stall_nudge_cap` escalation instead of a fourth, and rests
+  until that card is answered.
+
+Whom it wakes, the first that applies (seats the mesh parked or suspended are skipped):
+
+1. a seat that can move a patch parked on the merge ladder. A patch under a BLOCK is not
+   parked, it is held, and is not listed: the policy refuses its next rung until a new
+   version exists, so the nudge would buy a refusal;
+2. **while a mandatory criterion is unmet, the seat that can lift a standing BLOCK.** The two
+   holds lift differently. A block *on an artifact* holds it until a new version exists
+   (`active-block`), which only its owner can publish and which drops the record; the
+   blocker's own later pass releases nothing. A block on a *subject* with no artifact (QA's
+   `quality`) sinks that seat's earlier sign-off in every gate that names it until the same
+   seat signs off again, so only the blocker can lift it. One hold per seat, subject and
+   artifact: blocking again restates it. A seat whose previous nudge bought nothing is skipped
+   here when another seat can be tried;
+3. a seat with unread mail or a claimed task (the first in config order);
+4. the WAITING or BLOCKED seat with the oldest activity;
+5. the startup seats, then any live seat.
+
+The note says what holds, since when, who can lift it and how (for a block on a subject:
+re-verify the *current* product, bring the worktree up to `main` first, then pass the subject
+or block again and say what is still wrong), ahead of the generic "drive the next step". The
+same sentence is on the stall-cap card as `standingBlocks`, and the stalled mission's reason
+reads `N mandatory criteria unmet (held by qa's BLOCK on quality)`. A mission whose criteria
+are all evidenced is left alone whatever a block record says.
+
+In the second cronlite run QA's block stood for ten minutes of nudges to the tech-lead, the
+pm and the developer, none of whom could lift it; the driver was "whoever has mail", which
+returned the first seat in config order that had any, and a block that targets the operator
+puts mail in nobody's box.
 
 ## Runtime adapter interface
 
@@ -236,7 +303,15 @@ so a name a model remembers from another mesh keeps working. See `docs/configura
   (failures, run digest, run status). Measured after the change, on live-sized
   fixtures: inbox 47,462 → 6,737 characters, event query 44,611 → 7,826, artifact
   read 43,701 → 7,834, and every message, event, artifact byte and section row is
-  still reachable by paging.
+  still reachable by paging. A page of an **artifact** ends at a line, not at the
+  character budget: at the last newline in its second half, else hard at the budget
+  (never between the two halves of a surrogate pair), and `nextOffset` is always where
+  the shown text ended. The second cronlite run's CodePatch was cut at character 22,800,
+  between `test('…', (` and `) => {`; the tech-lead read all four pages and rejected the
+  patch as "final test is incomplete" although its stored body was whole (the digest
+  matched), and a rejected artifact cannot be approved again, so one misread seam cost a
+  review-merge cycle (about 290k tokens over the stretch that followed). The `read_artifact`
+  op, which pages at 60,000 characters, cuts the same way.
 - **Do not try to bound this in the adapter.** A `PostToolUse` *callback* hook in
   a headless (`--print`/stream-json) session cannot rewrite a tool result: the CLI
   harvests exactly `systemMessage`, `worktreePath` and `decision:"block"` from a
@@ -274,7 +349,15 @@ so a name a model remembers from another mesh keeps working. See `docs/configura
   (a variable or a substitution) is refused **only for `git merge`**: the seat's own
   worktree is the common, legitimate target of `cd "$(git rev-parse --show-toplevel)"`,
   and a blanket refusal would fail every such commit to catch the one move this exists
-  for, so any other git subcommand run in an unresolved directory is allowed. A git
+  for, so any other git subcommand run in an unresolved directory is allowed. The one
+  expansion it can place is the directory it is already tracking: `$(pwd)`, `` `pwd` ``,
+  `$PWD` and `${PWD}`, alone or opening a path (`$PWD/..`), resolve against it, so
+  `cd "$(pwd)" && git merge main` in the seat's own worktree is the ordinary work it is
+  (the second cronlite run's developer, told its worktree was behind, wrote exactly that
+  and was refused). The same spelling in the product checkout is the product checkout, so
+  a `git reset --hard` after `cd "$(pwd)"` there is refused as itself. `$PWD` is unknown
+  once the command has assigned it, and any other expansion (another variable,
+  `$(dirname …)`, a glob) stays unknown. A git
   command in the seat's **own** worktree is untouched (merging `main` into its own branch
   is ordinary work), and so is everything that is not git. The supervisor hands the
   product checkout's path to the adapter as `RuntimeContext.productPath`; a mesh with no
@@ -302,9 +385,16 @@ so a name a model remembers from another mesh keeps working. See `docs/configura
   session inherits that session's environment, so a seat ran under the launching
   user's hooks, allow rules, `env` and model, and its CLI reported the outer session's
   id and effort. `mesh.runtime.isolate_host: true` spawns seats with
-  `settingSources: []` and without the outer session's variables (credentials, routing
-  and proxy variables are kept); without it, the boot log says what would leak and
-  names the key. See `docs/configuration.md` § `isolate_host`
+  `settingSources: []` and without the launching session's variables: every one that
+  begins `CLAUDE` except the few that authenticate or route the CLI, and
+  `MAX_THINKING_TOKENS` (credentials, routing and proxy variables are kept). It removes
+  the namespace rather than a list of names because a container's Claude Code session
+  exports dozens of them, among them its messaging token, its session-ingress token file
+  and its debug switch, and a seat's shell inherits the CLI's environment; the named list
+  it replaced took out ten of 56. Without the key, the boot log says what would leak
+  (naming the first few and counting the rest, with the credential-looking ones apart) and
+  names the key; with it, the audit log records what was removed. See
+  `docs/configuration.md` § `isolate_host`
 
 ### `runtime-http`
 - generic custom/remote agents over `POST /sessions`, `/turn`, `/interrupt`, …

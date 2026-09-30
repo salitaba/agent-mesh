@@ -207,11 +207,28 @@ what the mesh then accepts cannot differ:
   "transition it"). The wake names the verdict and the rung the owner owns next,
   and is skipped when the owner's own interests already wake it for that event.
 
+**Who a `review.artifact` call goes to** is decided in this order, each step reading
+only what the seat actually wrote: the call-level `to`, then `request.reviewers` (the
+field the contract advertises), and only when neither names anyone, the seats that can
+settle the artifact (`settlersOf`, the same list the briefing prints) — never "the first
+seat the caller may contact". A reviewer the seat named who could not settle it is still
+refused, with the route ("tech-lead can"), and is not quietly replaced: the seat named
+someone, so the mesh teaches instead of guessing. When the only seat that can settle it is
+out of the caller's reach, the refusal says that. The router used to read neither half of
+this, so in the second cronlite run 13 of 24 review requests were refused as
+`review.reviewer-cannot-settle` (all 7 that named reviewers in the request, 6 of the 8 that
+named nobody), each refusal naming the seat that could, and the seat asked the same wrong
+reviewer again because the name it had given never reached the op.
+
 When the author's own approval is what moved the artifact, it stands — no peer
 could have reviewed it — but it is not a second pair of eyes, and is said so: the
 op result carries a caveat, and the run report flags the artifact `selfApproved`
 (approved only by its owner). A test report its own author approved to FINAL used
-to be cited by the PM as independent evidence.
+to be cited by the PM as independent evidence. An acceptance of a *criterion* that
+cites the artifact (`subject: criterion:<id>`) is not a review of it and does not
+clear the flag: each such acceptance is an `approve` record carrying the artifact's id,
+and counting them hid both of QA's self-approved test reports in the second run, while
+the seat had been told the run report would list them.
 
 `bus.vocabulary: "contracts"` — the setting that collapses a seat's manifest to
 the named asks — is **advertisement only**. It filters the tool *list* a seat is
@@ -493,6 +510,18 @@ both true and retryable once the conflict is fixed. The order used to be
 reversed, and because `MERGED` on a `CodePatch` also mirrors `patch.merged` and
 `implementation.completed`, a failed merge announced finished work that no
 commit contained.
+
+The two mirror events are attributed to the seat that **ran the merge**, filed under
+that seat's turn and caused by the MERGED transition, not to the patch's owner. They
+used to carry the owner: in the second cronlite run the tech-lead merged every patch,
+yet each `patch.merged` read "developer merged it" while the developer was idle, and
+the kernel, which correlates an emit to its actor's live turn, credited the developer's
+turn with two effects it did not produce (the turn-effect count is what tells a
+productive turn from a no-op one). What stays with the owner is the record
+`implementation.completed` reduces to, an `implementation|pass` approval: a gate that
+names a seat is met by a record that seat is the actor of, so attributing it to the
+merger would let merging stand in for the merger's own sign-off. The payload carries the
+owner's id for that reason, and every gate reads as before.
 
 A `CodePatch`'s `metadata.commit` is what the merge hands git, so it must name a
 commit: a hex sha of 7–40 characters, or a branch/ref name that passes a

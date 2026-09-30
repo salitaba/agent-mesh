@@ -132,18 +132,38 @@ There are two routes, and neither is a mesh setting, which is why neither was vi
    (`CLAUDE_EFFORT=max`, `MAX_THINKING_TOKENS=31999`).
 
 With the key on, the seat is spawned with an empty `settingSources` (the SDK's isolation
-mode) and without `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_ENTRYPOINT`,
-`CLAUDE_EFFORT`, `MAX_THINKING_TOKENS` and `CLAUDE_CODE_ARTIFACT_*`. Everything that
-authenticates or routes the CLI is kept on purpose (`ANTHROPIC_API_KEY`,
-`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`, the
-proxy and CA variables), so isolating cannot break a working login.
+mode) and without the launching session's environment: **every variable whose name begins
+`CLAUDE`** (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_*`) **except the few that say how to reach
+the model**, and `MAX_THINKING_TOKENS`. It removes the namespace rather than a list of names
+because a session in a container exports dozens (its id and effort, its artifact store, its
+messaging token and socket, the file its session-ingress token is read from, its debug switch,
+its transport flags) and a seat's shell inherits the CLI's environment; a named list took out
+ten of 56 in the second cronlite run and left the rest, tokens included.
+
+What is kept, because it authenticates or routes the CLI, so isolating cannot break a working
+login: everything outside the `CLAUDE` namespace (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`ANTHROPIC_BASE_URL`, `AWS_*`, the proxy and CA variables) and, inside it,
+`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`,
+`CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` with their `CLAUDE_CODE_SKIP_*_AUTH`
+companions, `CLAUDE_CODE_CLIENT_CERT`/`_KEY`/`_KEY_PASSPHRASE`,
+`CLAUDE_CODE_PROXY_RESOLVES_HOSTS`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and
+`CLAUDE_CONFIG_DIR`. Next to these in a container's environment, and **not** kept, are
+`CLAUDE_CODE_USE_CCR_V2` and `CLAUDE_CODE_REMOTE*` (how the outer session reports to its
+host). A provider flag added after that list was written is removed until it is named, which
+fails at login at once, and the operator then leaves `isolate_host` off and starts the mesh
+from an environment of their own (`env -i` with the names the seats need), which is how
+isolating the seats by hand looked before this key. With the key on, the audit log
+(`projection-rejections.log`) records, in full, what was removed and which `CLAUDE*` names
+were kept.
 
 The operator's own `extraOptions` (the adapter's escape hatch) still wins over it: an
 `env` or `settingSources` passed there is taken as given.
 
 Without the key, `mesh run` and `mesh serve` say what would leak when a mesh runs any
-Claude seat: one line if it was started from inside another session (naming the
-variables), one if the user settings file sets `hooks`, `permissions`, `env`, `model`,
+Claude seat: one line if it was started from inside another session (naming the first six
+variables and counting the rest), another when any of them looks like the outer session's own
+credentials (a `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL` or `KEY` word in the name), one if
+the user settings file sets `hooks`, `permissions`, `env`, `model`,
 `effortLevel`, `apiKeyHelper`, `enabledPlugins` or `alwaysThinkingEnabled`, and then the
 key that closes the door. A settings file that only changes the user's terminal (a
 theme) is not a leak and is not reported; a mesh with no Claude seat is not warned.

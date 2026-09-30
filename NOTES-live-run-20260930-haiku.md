@@ -2,10 +2,12 @@
 
 Status: **FIXED** on branch `claude/exciting-gates-n75s1z` (one commit per finding or theme over `e9a361b`, each
 with its own regression test). One live mission, two rounds, one crash; every finding below was either reproduced
-with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6.
+with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
+the fixed build then found eight more (N1–N8), fixed the same way: §8.
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
-check quality of output of mesh"*, then *"fix all problems"*.
+check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and
+bugs"*, then *"fix them all"*.
 
 Subject: a five-seat mesh (`pm`, `architect`, `tech-lead`, `developer`, `qa`) on `claude-haiku-4-5`, building
 `cronlite` — a dependency-free Node library and CLI for 5-field cron expressions — from a written SPEC, six
@@ -213,3 +215,102 @@ counted turn ends rather than `agent.awakened` events) and were rewritten before
   first draft, which is the only way to learn a test is asserting nothing.
 - **Give a rule one predicate.** Three of these bugs (B16/B17, B22, B7) were the same rule written twice and drifting;
   the fixes made each a single exported function (`mayReviewArtifact`, `criterionSatisfied`, `countsAsChecking`).
+
+---
+
+## 8. The rerun on the fixed build: eight more findings (N1–N8)
+
+Requested: *"ok now rerun again and check quality and bugs"*, then *"fix them all"*. The rerun used the same mission,
+SPEC, mesh config, model and launch environment (a clean allowlist) as run 1, on `main` at `5051da6`, which carries
+every fix of §0–§7. Session 2026-09-30 11:24–12:26 UTC (all times UTC): 90 turns, 1.51M tokens, every turn on
+`claude-haiku-4-5`. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 11:24 | `mesh run` | five seats start; the banner says `mesh 'cronlite-team'` (B15) |
+| 11:35 | **the VM was recycled** (an idle container is reclaimed and every process killed) | mission at 2 of 6 criteria, a turn in flight, 3 budget holds open |
+| 11:50 | restart on the same state | the turn closed as `interrupted`, the 3 holds released, 5 seats woken (all 5 sessions rotated: the outage was longer than `stale_after_ms`) |
+| 11:58 | goal met, 6/6 | 52 turns, 981k tokens |
+| 12:02 | operator reopen naming 2 of 6 criteria, with the oracle's defect report | the 4 untouched criteria kept their verdict |
+| 12:04 | `kill -9` of the host mid-turn | the developer CLI and its MCP bridge survived as orphans (ppid 1, stamped `AGENT_MESH_HOST_PID`) |
+| 12:04 | restart | orphans gone within 6 s (B23), 6 abandoned holds released, 2 turns closed `interrupted` |
+| 12:25 | goal met again, 7/7 | 38 turns, 531k tokens |
+
+**Quality** (the oracle of §2, unchanged): the round-1 product scored 2894/2983 (97%) and the final product
+**3049/3049 (100%)**, with its own suite 71/71, the CLI probes 23/23 and the soft message checks 61/76. The round-1
+defects were real: `0 0 * * WED` and `0 0 1 JUL *` rejected as "Quartz extensions" (the L/W check was case-sensitive on
+month and day names), `0 0 29-31 2 *` rejected as impossible though February 29 exists, `1-2-3` accepted, `*/-1` throwing a plain `RangeError`. The operator's
+report was fixed in two cycles (the first did three of four groups). **QA passed the defective round-1 product** ("full
+spec compliance, including all edge cases"): its report never exercises `JUL`, `29-31`, `1-2-3` or `*/-1`, which is the
+verification theatre of run 1 again, and none of the fixes below addresses it.
+
+**Fixes from §0 that were checked live and held:** B2 (no out-of-band merge: `main`'s reflog is the three mesh merges),
+B3, B4 (the architect's `afterMs: 8000` refused; run 1 had two early defaults), B5, B6, B8 (no no-op transitions), B9 for
+termination and recovery actors, B11, B12, B13 (`npm ci` on a clean clone), B15, B16, B19, B20, **B21** (nine holds
+released over two real crashes, none open at the end), **B22** (the selective reopen completed) and **B23** (live orphans
+reaped in 6 s). Partly: B7, B14, B17 and B10, which are N1 and N4 below. Not exercised: B1.
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| N1 | `mesh_call review.artifact` ignored its own `request.reviewers`, and the default was the first seat the caller may contact: 13 of 24 review requests refused as `review.reviewer-cannot-settle` (all 7 that named reviewers in the request, 6 of the 8 that named nobody) | **fixed** — the call-level `to`, then `request.reviewers`, else the seats that can settle (`settlersOf`, the list the briefing prints); a named reviewer who cannot settle is still refused, with the route | `tests/policy/review-routing.test.ts` |
+| N2 | Artifact reads paged mid-token: a CodePatch was cut between `test('…', (` and `) => {`, and the tech-lead **rejected the whole patch as "incomplete"** (the stored body was whole, the digest matched); a rejected artifact cannot be approved again, so it cost a review-merge cycle (~290k tokens) | **fixed** — a page ends at a line (`pageCut`), for the MCP read and the 60k `read_artifact` op alike | `tests/integration/artifact-page-seams.test.ts` |
+| N3 | A verifier's worktree stays behind `main` after merges: QA tested its own stale worktree twice and issued two false `quality.block`s (≈ 202k tokens, 12 of the round's 23 minutes) | **fixed** — fast-forwarded before each turn when it can be done without touching the seat's work; otherwise the prompt says how far behind it is and why | `tests/artifact-store/worktree-sync.test.ts`, `tests/core/worktree-sync-turn.test.ts` |
+| N4 | The B10 flag never fired: QA approved both its TestReports to FINAL alone, but the PM's `criterion:*` acceptances (each an `approve` record carrying the report's id) counted as independent approvals | **fixed** — a criterion acceptance is not a review of the artifact it cites | `tests/policy/self-approval-visibility.test.ts` |
+| N5 | `patch.merged` and `implementation.completed` were attributed to the patch's owner and filed under the owner's live turn, though the tech-lead merged all three patches | **fixed** — the merger's actor and turn, caused by the MERGED transition; the `implementation\|pass` record stays the owner's, so no gate changes | `tests/core/merge-attribution.test.ts` |
+| N6 | The landing gate refused `cd "$(pwd)" && git merge main` (QA syncing its own worktree) as an unresolvable directory | **fixed** — `$(pwd)`, `` `pwd` ``, `$PWD` and `${PWD}` are the directory the gate is tracking; in the product checkout that is still the product checkout | `tests/agent-runtime/landing-gate.test.ts` |
+| N7 | `isolate_host` removed 10 of 56 `CLAUDE*` variables of the outer session; the rest, its messaging token and session-ingress token file among them, still reached every seat | **fixed** — the whole `CLAUDE` namespace goes except fourteen names that authenticate or route the CLI; the boot warning counts a long list and names credential-looking variables apart; with the key on, the audit log says what was removed | `tests/agent-runtime/host-isolation.test.ts`, `tests/server/host-isolation-boot.test.ts` |
+| N8 | QA's BLOCK on `quality` stood for ten minutes of stall nudges to the tech-lead, the pm and the developer, none of whom can lift it; the note named the unmet criteria and never the block, and a held patch was listed as "parked on the merge ladder" | **fixed** — while a criterion is unmet the watchdog wakes the seat that can lift a standing block (the owner for a block on an artifact, else the blocker), names the block and how it is lifted in the note, and no longer lists a held patch as parked. **The idle and cooldown gates are unchanged** (below) | `tests/integration/stall-standing-block.test.ts` |
+
+What each does and why is in `docs/runtime.md` (paging, the turn-start worktree, the landing gate, `isolate_host`, the stall
+watchdog), `docs/protocol.md` (review routing, self-approval, the merge mirrors) and `docs/configuration.md`
+(`isolate_host`); the commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **N8's gap was the gates working as configured, so the gates were not changed.** The 4.5 minutes of quiet after the
+  developer's nudge (12:12:04–12:16:35) were the documented 180 s idle window plus the 300 s cooldown of a nudge that
+  had just bought work; `tests/lifecycle/stall-watch.test.ts` pins that a productive turn still honours the cooldown.
+  A first draft of this fix spent the cooldown after a productive nudge and broke that test, correctly: one run is not
+  a reason to reverse a deliberate rate limit. With the nudge aimed at the seat that can act, the first one reaches it
+  at the idle bound. A mesh that wants a tighter loop sets `stall_cooldown_ms` at or below `stall_idle_ms`.
+- **N8 does not make QA re-verify well.** It wakes the seat that can lift the block and tells it how; whether the turn
+  then tests the current product is the seat's. N3 is what stops the stale worktree that caused the false block.
+- **N5 leaves the `implementation|pass` record attributed to the owner**, a signature the owner never gave (the old
+  comment on `opMerge` already called its duplicate that). Moving it to the merger would let a mission-level
+  `tech-lead.pass` be met by the tech-lead landing a patch, which changes what the gates mean, so only the event's
+  actor and turn moved.
+- **N7's keep-list is a list.** A provider flag Claude Code adds later is removed by `isolate_host` until it is named in
+  `KEPT_CLAUDE_ENV`, and that fails at login, loudly. Non-`CLAUDE` variables that shape the CLI (`MCP_TOOL_TIMEOUT`,
+  `DISABLE_AUTOUPDATER`) are not isolation's business and still reach the seats.
+- **N6 is still a text-level gate** (see §6). It now places one more expansion, the current directory; anything else a
+  shell computes is still unknown, and `git merge` in an unknown directory is still refused.
+- **None of N1–N8 has been re-run on a live mesh.** Each is pinned by a regression test built from the recorded
+  sequence and **mutation-checked**: the tests fail with the fix reverted (N1–N4 once each; N5 two ways; N6 six ways; N7
+  six ways; N8 nine ways). The live confirmation is the next run.
+- Minor, not fixed: adapter notices (the orphan reaper's) land in `projection-rejections.log` and supervisor audit
+  lines in `turn-audit.jsonl`, so there are two places to look; and one error message of the product itself read
+  `invalid value ""` for a `-1` step (a nit in the product, not in the mesh).
+- The VM recycle at 11:35 cost 15 minutes and a rotation of all five sessions, so round 1 is not a clean cost
+  comparison with run 1 (582k tokens in 11 minutes). Before the recycle it had already spent 530k tokens on 26 turns
+  for 2 of 6 criteria, so the outage does not explain all of the difference. The first crash (VM loss) killed every
+  process, so only the second, a real `SIGKILL` of a live host, exercised the reaper.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §5 final, before this round | 2807 | 2806 | 0 | 0 | 1 |
+| this round, final | 2852 | 2851 | 0 | 0 | 1 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (157 warnings, the baseline). One commit per finding, then
+one for the docs and this section; each commit message carries the failing sequence and what its tests pin.
+
+### Worth keeping from this round
+
+- **A regression test built from the recorded sequence, not from the fix.** The N4 flag had a unit test that passed while
+  the flag never fired live, because the test stopped at the approval and the real sequence always continues with the PM
+  accepting criteria on the artifact.
+- **Read the test that pins the behaviour before changing it.** The first N8 draft changed the cooldown and one
+  existing test said why that was wrong.
+- **The same rule, one predicate, again:** `settlersOf` (briefing, router default, op refusal and MCP `canSettle`),
+  `pageCut` (the MCP read and the op) and `standingBlocks` (the stall note, the driver choice, the ladder and the card).
