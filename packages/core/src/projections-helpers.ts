@@ -298,6 +298,18 @@ export function holdsAuthority(authority: readonly string[] | undefined, subject
 }
 
 /**
+ * May a seat with this authority close an acceptance criterion?
+ *
+ * `approve subject:"criterion:<id>"` is refused unless the seat holds `requirements.accept` or
+ * `requirements.approve` (`recordDecision`). Two readers need the same answer and used to write it
+ * out each: the prompt, which shows the closing-out instruction only to a seat that can follow it
+ * (`criterionAcceptanceEnabled`), and the stall watchdog, which has to wake a seat that can.
+ */
+export function mayAcceptCriteria(authority: readonly string[] | undefined): boolean {
+  return holdsAuthority(authority, "requirements", "accept") || holdsAuthority(authority, "requirements", "approve");
+}
+
+/**
  * Which capability lets an agent review each kind of artifact?
  *
  * The single table. It used to have a twin in the policy engine, also called

@@ -60,6 +60,7 @@ import {
   type MeshOpWriteContinuity,
   type RotationPendingInfo,
   type SessionRotationPending,
+  AUTO_EVIDENCED_CRITERIA,
   DEFAULT_CRITERIA,
   InterruptedTurnError,
   LIFECYCLE_TRANSITIONS,
@@ -82,7 +83,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, type StandingBlock } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, type StandingBlock } from "./projections";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -7054,9 +7055,15 @@ export class Supervisor {
     const mintedId = `operator-feedback-${shortHash(reason)}`;
     const minted: AcceptanceCriterion[] = [...(opts.addCriteria ?? [])];
     if (hadVerdict && !goal.acceptanceCriteria.some((c) => c.id === mintedId) && !minted.some((c) => c.id === mintedId)) {
+      // Say who accepts it. "Published and accepted" left the seat that holds the gate to
+      // conclude it was the operator's to give: the fourth cronlite run's pm wrote "awaiting
+      // operator acceptance testing" about this very criterion and sat on it for 21 minutes.
+      const acceptors = this.criterionAcceptors();
+      const acceptedBy =
+        acceptors.length > 0 ? `by ${acceptors.join(" or ")} (\`approve\` on subject "criterion:${mintedId}", citing that work)` : "by the operator";
       minted.push({
         id: mintedId,
-        description: `Operator reopened the mission: "${reason}". This is a mandatory acceptance criterion — the mission cannot complete again until work that specifically addresses it is published and accepted. Re-citing an artifact from the rejected round does not satisfy it.`,
+        description: `Operator reopened the mission: "${reason}". This is a mandatory acceptance criterion — the mission cannot complete again until work that specifically addresses it is published and accepted ${acceptedBy}. Re-citing an artifact from the rejected round does not satisfy it.`,
         mandatory: true,
         status: "UNSATISFIED",
         evidence: [],
@@ -12781,6 +12788,7 @@ export class Supervisor {
         // only what the card says — the cap fires exactly when it always did.
         const parkedSeats = this.terminalSuspendedSeats();
         const holds = this.standingBlockSentences();
+        const acceptance = this.acceptanceSentence();
         await this.escalate({
           reason: "stalemate:stall_nudge_cap",
           raisedBy: "stall-watchdog",
@@ -12793,6 +12801,7 @@ export class Supervisor {
             actionable: actionable.why,
             criteria: this.unmetCriteriaSummary(),
             ...(holds ? { standingBlocks: holds } : {}),
+            ...(acceptance ? { awaitingAcceptance: acceptance } : {}),
             ...(parkedSeats.length > 0
               ? {
                   suspendedSeats: parkedSeats,
@@ -12819,7 +12828,7 @@ export class Supervisor {
     }
     const driver = this.stallDriver();
     if (!driver) return;
-    const res = await this.activateAgent(driver, { kind: "timer", note: this.stallWakeNote() });
+    const res = await this.activateAgent(driver, { kind: "timer", note: this.stallWakeNote(driver) });
     if (!res.queued) {
       // A refused fast retry must not pin the mission to the cooldown either:
       // let the next tick try another driver. The activation itself (breaker,
@@ -13174,7 +13183,7 @@ export class Supervisor {
    * times, at full context price, because the instruction described a world
    * that did not exist.
    */
-  private stallWakeNote(): string {
+  private stallWakeNote(driver?: string): string {
     const summary = this.unmetCriteriaSummary();
     const base = `stall watchdog: mission active but quiet — ${summary}`;
     // The concrete next move, ahead of any criterion prose. A seat woken with
@@ -13200,8 +13209,101 @@ export class Supervisor {
     // criteria are unmet, and it is addressed to the seat that can lift it, which the
     // generic line cannot be. Ahead of the generic line, which still follows.
     const holds = this.standingBlockSentences();
-    if (holds) return `${base}. ${holds} Then drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+    // Criteria only an acceptance closes, and who can give one: the same placement, ahead of the
+    // generic line, which still follows.
+    const specific = [holds, this.acceptanceSentence(driver)].filter(Boolean).join(" ");
+    if (specific) return `${base}. ${specific} Then drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
     return `${base}; drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+  }
+
+  /**
+   * The unmet mandatory criteria, when EVERY one of them is a criterion the mesh does not
+   * evidence from its own events: each closes by an acceptance (`approve subject:"criterion:<id>"`)
+   * or by nothing. [] when nothing is unmet, or when any unmet criterion is one of
+   * `AUTO_EVIDENCED_CRITERIA` — that one has a route of its own (a merge, a design approval, a QA
+   * pass) and the work on it is still to do, so "who may accept" is not yet the question.
+   */
+  private unmetManualCriteria(): AcceptanceCriterion[] {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    if (!goal) return [];
+    const unmet = goal.acceptanceCriteria.filter((c) => c.mandatory && !criterionSatisfied(goal, c));
+    return unmet.some((c) => AUTO_EVIDENCED_CRITERIA.includes(c.id)) ? [] : unmet;
+  }
+
+  /** The seats that may close a criterion, in roster order. */
+  private criterionAcceptors(): string[] {
+    return [...this.state.agents.values()]
+      .map((r) => r.definition)
+      .filter((d) => d.id !== HUMAN_AGENT_ID && mayAcceptCriteria(d.authority))
+      .map((d) => d.id);
+  }
+
+  /**
+   * Submitted artifacts of the active mission that an acceptance could cite, three at most:
+   * verification reports first, then whatever was published last. A draft cannot evidence a
+   * mandatory criterion (`recordDecision` refuses it), nor can an artifact the operator already
+   * rejected for this one, so neither is offered.
+   */
+  private citableEvidence(goalId: GoalId, unmet: readonly AcceptanceCriterion[]): Artifact[] {
+    const rejected = new Set(unmet.flatMap((c) => c.rejectedEvidence ?? []));
+    const isReport = (a: Artifact): number => (a.type === "TestReport" || a.type === "SecurityReport" || a.type === "BenchmarkResult" ? 1 : 0);
+    return [...this.state.artifacts.values()]
+      .filter(
+        (a) =>
+          a.goalId === goalId &&
+          a.status !== "DRAFT" &&
+          a.status !== "REJECTED" &&
+          a.status !== "ARCHIVED" &&
+          !rejected.has(artifactUri(a.type, a.name, a.version)),
+      )
+      .sort((a, b) => isReport(b) - isReport(a) || b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 3);
+  }
+
+  /**
+   * What to say about criteria only an acceptance can close, addressed to `driver` when known.
+   * "" when something the mesh evidences itself is also unmet (see `unmetManualCriteria`).
+   *
+   * The fourth cronlite run's second round stalled for 21 minutes, 12 turns and 188k tokens on
+   * one criterion, the `operator-feedback-…` one a reopen mints. Only the pm can close it, and
+   * the watchdog's note said "drive the next step toward an unmet criterion" to whichever seat
+   * had mail: the architect, twice, which asked the developer for a status and started a chain of
+   * turns that went round the mission without ever reaching the one seat whose act it needed.
+   * The pm, when it was finally woken, had already written "awaiting operator acceptance testing":
+   * it did not know the act was its own, and a QA report that would have served had been
+   * submitted for some time.
+   */
+  private acceptanceSentence(driver?: string): string {
+    const goalId = this.state.activeGoalId;
+    const unmet = this.unmetManualCriteria();
+    if (!goalId || unmet.length === 0) return "";
+    const ids = unmet.slice(0, 3).map((c) => c.id).join(", ") + (unmet.length > 3 ? ", …" : "");
+    const acceptors = this.criterionAcceptors();
+    if (acceptors.length === 0) {
+      return (
+        `${ids} ${unmet.length === 1 ? "closes" : "close"} only by an acceptance, and no seat in this mesh holds requirements.accept or requirements.approve: ` +
+        `only the operator can close ${unmet.length === 1 ? "it" : "them"}, and no nudge to a seat changes that.`
+      );
+    }
+    const citable = this.citableEvidence(goalId, unmet);
+    const cite =
+      citable.length > 0
+        ? `Submitted and citable: ${citable.map((a) => `${a.type} "${a.name}" v${a.version} (${a.id}, by ${a.owner}, ${a.status})`).join("; ")}.`
+        : "Nothing has been submitted that could be cited yet.";
+    if (driver !== undefined && acceptors.includes(driver)) {
+      return (
+        `The mesh does not evidence ${unmet.length === 1 ? "this criterion" : "these"} from its own events (${ids}): ${unmet.length === 1 ? "it closes" : "each closes"} only when a seat that may accept approves it ` +
+        `— and you may, so the acceptance is yours to give, not something to wait for another seat to do. ` +
+        `Close one with \`mesh_approve\` { subject: "criterion:<id>", artifactId: "<the submitted artifact that proves it>", comment: "why it proves it" }. ${cite} ` +
+        `If none of it proves the criterion yet, what is missing is the proof and not an acceptance: ask the seat that can produce it, and accept once it is submitted.`
+      );
+    }
+    // No driver is the stall-cap card, which is read by the operator: same facts, not addressed to a seat.
+    const advice = driver === undefined ? "" : `, which you cannot give: put the proof in front of ${acceptors.length === 1 ? acceptors[0] : "one of them"} and ask`;
+    return (
+      `${ids} ${unmet.length === 1 ? "closes" : "close"} only by an acceptance from ${acceptors.join(" or ")} ` +
+      `(\`approve\` on subject "criterion:<id>" citing a submitted artifact that proves it)${advice}. ${cite}`
+    );
   }
 
   /** The seat that can lift `b`: the artifact's owner for a block on an artifact (a new version), else the blocker. */
@@ -13345,6 +13447,16 @@ export class Supervisor {
         if (!eligible(lifter)) continue;
         if (lifter === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
         return lifter;
+      }
+    }
+    // Everything still unmet is closed by an acceptance and nothing else: the seat that may
+    // accept. Ahead of "whoever has mail", which woke the architect twice while the pm, the only
+    // seat that could close the last criterion, sat WAITING. Rotated the way the block branch
+    // is: an acceptor whose nudge just bought nothing gives the next one to another seat.
+    if (this.unmetManualCriteria().length > 0) {
+      for (const id of this.criterionAcceptors().filter(eligible).sort(byOldest)) {
+        if (id === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
+        return id;
       }
     }
     for (const id of all) {

@@ -27,7 +27,7 @@ import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { holdsAuthority, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { holdsAuthority, mayAcceptCriteria, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -883,11 +883,9 @@ export function buildAgentContext(
      * `approve` is the only way work becomes evidence, and the kernel refuses
      * it without requirements.accept / requirements.approve — so a seat
      * without either was reading a closing-out instruction it could only be
-     * denied for. holdsAuthority covers `requirements.*` and the human seat's
+     * denied for. `mayAcceptCriteria` covers `requirements.*` and the human seat's
      * `*`, so widening a grant still widens the contract with it. */
-    criterionAcceptanceEnabled:
-      holdsAuthority(config.agents[agentId]?.authority, "requirements", "accept") ||
-      holdsAuthority(config.agents[agentId]?.authority, "requirements", "approve"),
+    criterionAcceptanceEnabled: mayAcceptCriteria(config.agents[agentId]?.authority),
     /* Same "never advertise a rule that cannot fire" discipline as
      * delegationEnabled above. The declared capability list is narrowed twice
      * before it reaches the prompt:

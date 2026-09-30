@@ -22,6 +22,7 @@ export {
   isTerminalGoal,
   recordApproval,
   holdsAuthority,
+  mayAcceptCriteria,
   hasPeerReviewerFor,
   mayReviewArtifact,
   settlersOf,
