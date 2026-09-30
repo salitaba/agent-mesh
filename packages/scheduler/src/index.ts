@@ -128,8 +128,11 @@ const MAX_NUDGES = 3;
  * - `stale_request`: an interest wake for an event about an ask that had closed
  *   (answered, superseded, withdrawn, voided) by the time the wake reached the
  *   head of the queue. Counted at DEQUEUE, unlike the others; see `pump`.
+ * - `stale_mail`: a wake for mail the seat had been handed, by another turn, by
+ *   the time the wake reached the head of the queue. Also counted at dequeue,
+ *   and the only entry here that is not an interest wake; see `isStaleMailWake`.
  */
-export type SuppressedWakeReason = "triage_ignore" | "goal_escalated" | "redundant_observation" | "mail_echo" | "stale_request";
+export type SuppressedWakeReason = "triage_ignore" | "goal_escalated" | "redundant_observation" | "mail_echo" | "stale_request" | "stale_mail";
 
 /**
  * A wake the operator can read on the scheduler's queue view. `afterTurn` marks
@@ -288,6 +291,16 @@ function withNotice(reason: ActivationReason, extra: string | undefined): Activa
 }
 
 /**
+ * The two sentences the scheduler writes on a mail wake itself, as against a runtime notice
+ * merged onto one (`withNotice`). Written in one place so the sites that say them and the check
+ * that recognises them (`isStaleMailWake`) cannot drift apart: a wake whose note is anything else
+ * carries news that outlives the mail, and is never dropped for want of it.
+ */
+const mailWaitingNote = (count: number): string => `${count} messages waiting in your mailbox.`;
+const mailTogetherNote = (count: number): string => `${count} messages arrived together, not one — the others are in your mailbox below.`;
+const OWN_MAIL_NOTE = /^\d+ messages (?:waiting in your mailbox\.|arrived together, not one — the others are in your mailbox below\.)$/;
+
+/**
  * `survivor` as it stands after absorbing `absorbed` — a coalesce onto a queued
  * wake, or a newer strong wake replacing a stashed one. An operator wake folded
  * into another wake makes that wake the operator's, and operator standing
@@ -339,6 +352,7 @@ export class Scheduler implements SchedulerPort {
   private redundantObservations = 0;
   private mailEchoes = 0;
   private staleRequestWakes = 0;
+  private staleMailWakes = 0;
   /**
    * Interest-wake event id -> the open ask its event was about, recorded at
    * enqueue so `pump` can drop the wake if that ask closed while it waited.
@@ -561,6 +575,7 @@ export class Scheduler implements SchedulerPort {
     this.redundantObservations = 0;
     this.mailEchoes = 0;
     this.staleRequestWakes = 0;
+    this.staleMailWakes = 0;
     this.wakeRequestRefs = new Map();
     this.stuckEscalated = new Set();
     this.strikes = new Map();
@@ -741,10 +756,7 @@ export class Scheduler implements SchedulerPort {
       // work of the burst -- which is the whole point of the class. Copied,
       // never mutated in place: `open.reason` is the newest message's own
       // reason object.
-      const reason =
-        open.count > 1
-          ? { ...open.reason, note: `${open.count} messages arrived together, not one — the others are in your mailbox below.` }
-          : open.reason;
+      const reason = open.count > 1 ? { ...open.reason, note: mailTogetherNote(open.count) } : open.reason;
       void this.requestActivation({ agentId, reason, priority: open.priority });
     }
   }
@@ -925,6 +937,37 @@ export class Scheduler implements SchedulerPort {
     if (item.explicit || item.reason.kind !== "interest_event" || item.reason.note) return false;
     const ref = item.reason.eventId ? this.wakeRequestRefs.get(item.reason.eventId) : undefined;
     return ref !== undefined && !this.state.pendingRequests.has(ref);
+  }
+
+  /**
+   * Is this queued mail wake for mail the seat has since been handed?
+   *
+   * Mail that lands while a seat is mid-turn reaches its follow-up turn by two routes, the wake the
+   * send path stashes and the retry `notifyTurnFinished` makes for what is left unread, and the
+   * second of `notifyTurnFinished`'s two owners runs after the first has started that follow-up
+   * turn. The turn drains the box only when its model call returns, so the second owner still found
+   * the mail unread and stashed the wake a second time, to be replayed after the turn had read the
+   * mail: a third turn for an empty mailbox. Between the recorded cronlite runs that was 16 of 64
+   * mail wakes, 9 of 42 and 17 of 42.
+   *
+   * Asked at dequeue, which is where `isStaleWake` asks about an ask that has closed, and for the
+   * same reason: the turn has not started, so dropping it is free, and the stash replay and the
+   * queue both end here. The test is whether the seat has any mail left that a wake could be for,
+   * not whether the message the wake names is among it: a retry names the head of a box, and the
+   * box may have lost that message and gained another since.
+   *
+   * Only a wake that cites a message the mesh holds is for mail (a `message` wake with no
+   * `messageId` is the supervisor starting a worker on an assigned task, and an id that resolves to
+   * nothing is not one the seat was handed), and only one whose note is the scheduler's own: a
+   * runtime notice merged onto it is news the mailbox does not hold. An explicit or operator wake is
+   * someone asking for the turn, so it runs.
+   */
+  private isStaleMailWake(item: QueueItem): boolean {
+    if (item.explicit || item.operator) return false;
+    const r = item.reason;
+    if (r.kind !== "message" || !r.messageId || !this.state.messages.has(r.messageId)) return false;
+    if (r.note !== undefined && !OWN_MAIL_NOTE.test(r.note)) return false;
+    return this.wakeableMail(item.agentId).length === 0;
   }
 
   private echoesOwnMail(agentId: string, event: MeshEvent): boolean {
@@ -1356,10 +1399,10 @@ export class Scheduler implements SchedulerPort {
   }
 
   /**
-   * Every deliberate interest-wake drop this mission, by reason. The same kind
-   * of state as `triagedAwayCount` (which is `triage_ignore` here) and polled
-   * for the same reason: a drop emits no event and cannot be recovered from
-   * the log, and one event apiece would bury it.
+   * Every deliberate wake drop this mission, by reason. The same kind of state
+   * as `triagedAwayCount` (which is `triage_ignore` here) and polled for the
+   * same reason: a drop emits no event and cannot be recovered from the log,
+   * and one event apiece would bury it.
    */
   suppressedWakes(): Record<SuppressedWakeReason, number> {
     return {
@@ -1368,6 +1411,7 @@ export class Scheduler implements SchedulerPort {
       redundant_observation: this.redundantObservations,
       mail_echo: this.mailEchoes,
       stale_request: this.staleRequestWakes,
+      stale_mail: this.staleMailWakes,
     };
   }
 
@@ -1398,6 +1442,13 @@ export class Scheduler implements SchedulerPort {
           // Dropped rather than run: the seat's mail and its own debts still
           // wake it on their own paths, so nothing owed to it is lost.
           this.staleRequestWakes++;
+          continue;
+        }
+        if (this.isStaleMailWake(item)) {
+          // The mail this wake was raised for was read by a turn that ran while it waited. Dropped
+          // rather than run: a turn for an empty mailbox buys a full context window to find nothing,
+          // and anything that has arrived since has a wake of its own.
+          this.staleMailWakes++;
           continue;
         }
         // Half-open with no probe yet: this dispatch IS the probe, and every
@@ -1529,7 +1580,7 @@ export class Scheduler implements SchedulerPort {
             kind: "message",
             messageId: msg.id,
             threadId: msg.threadId,
-            note: `${unread.length} messages waiting in your mailbox.`,
+            note: mailWaitingNote(unread.length),
           },
           priority: 5,
         });
