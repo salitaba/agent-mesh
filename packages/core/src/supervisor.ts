@@ -522,6 +522,13 @@ const OPERATOR_STOP_GRACE_MS = 2000;
  */
 const OPERATOR_STOP_WAIT_MS = OPERATOR_STOP_GRACE_MS + TURN_CHECKPOINT_TIMEOUT_MS + 3000;
 
+/**
+ * What a seat is allowed to take, at minimum, to answer an ask once it is awake: one
+ * turn. Measured on the cronlite run, whose seat turns took 30 to 120 seconds; the
+ * PM's answer to the ask that defaulted early arrived 90 s after it was raised.
+ */
+const ANSWER_TURN_ALLOWANCE_MS = 120_000;
+
 /** An operator's stop of one running turn, while that turn closes. See `Supervisor.interruptTurn`. */
 interface OperatorStop {
   /** The operator's words, if any. Rides `turn.discarded.detail` and the seat's note. */
@@ -11519,6 +11526,23 @@ export class Supervisor {
    * ever stops being sugar, this is the line that broke.
    */
   /**
+   * The soonest an `ifUnanswered` default may come due, in milliseconds.
+   *
+   * An operator's `bus.commitments.min_default_ms` wins, `0` included. Otherwise it
+   * is what this mesh needs before anyone CAN object: the window a `deliver` ask is
+   * gathered for, the sweep that notices a deadline, and a turn for the addressee to
+   * answer in (`ANSWER_TURN_ALLOWANCE_MS`). The addressee's CURRENT turn is not
+   * counted, because it is unbounded, and that is the honest limit of a floor: the
+   * figure removes the defaults that could never have been answered, not every one
+   * that might not be.
+   */
+  private defaultFloorMs(): number {
+    const configured = this.config.bus.commitmentDefaultFloorMs;
+    if (configured !== undefined) return configured;
+    return (this.config.bus.deliveryClasses?.coalesceMs ?? 0) + this.config.scheduling.waitWakeupMs + ANSWER_TURN_ALLOWANCE_MS;
+  }
+
+  /**
    * The refusal for an `ifUnanswered` this mesh could never honour. See the
    * guard in `executeOp` for why it is refused rather than accepted.
    */
@@ -11528,7 +11552,18 @@ export class Supervisor {
     if (typeof assumed.assume === "undefined") {
       return "ifUnanswered needs an `assume`: the value you will proceed with. Without it there is nothing for the mesh to hand back when the deadline passes.";
     }
-    if (typeof assumed.afterMs === "number" && assumed.afterMs > 0) return undefined;
+    if (typeof assumed.afterMs === "number" && assumed.afterMs > 0) {
+      const floor = this.defaultFloorMs();
+      if (assumed.afterMs < floor) {
+        return (
+          `ifUnanswered.afterMs ${assumed.afterMs} is shorter than this mesh can get an answer back: the ask may wait for its addressee to finish a turn, for ` +
+          `the delivery window, and for a sweep to notice the deadline, and the addressee then needs a turn of its own. At ${assumed.afterMs} ms your default ` +
+          `would stand before anyone could have objected, and you would proceed on an assumption nobody had the chance to correct. ` +
+          `Pass afterMs of at least ${floor} (${Math.ceil(floor / 1000)}s), or drop ifUnanswered and raise a normal ask.`
+        );
+      }
+      return undefined;
+    }
     if (this.config.bus.commitmentTtl) return undefined;
     return "ifUnanswered needs a deadline, and this mesh has none: pass afterMs on the ask, or have an operator set bus.commitments.ttl_ms. Without one the default would be recorded and never fire, and you would wait forever for an answer the mesh had promised you.";
   }

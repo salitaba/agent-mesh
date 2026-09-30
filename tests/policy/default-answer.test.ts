@@ -47,13 +47,27 @@ function twoAgents() {
   ];
 }
 
-/** A parked pair, so the sweep can be driven directly without the stall gates. */
-async function pair(opts: { ttlMs?: number } = {}) {
+/**
+ * A parked pair, so the sweep can be driven directly without the stall gates.
+ *
+ * `minDefaultMs: 0` unless a test says otherwise: the floor on `afterMs` is minutes
+ * on a real mesh, and these tests run defaults that come due in milliseconds. The
+ * floor has its own tests below, on meshes that keep it.
+ */
+async function pair(opts: { ttlMs?: number; minDefaultMs?: number | null; delivery?: boolean; waitWakeupMs?: number } = {}) {
+  const minDefaultMs = opts.minDefaultMs === undefined ? 0 : opts.minDefaultMs ?? undefined;
   return makeMesh({
     agents: twoAgents(),
     mayContact: { architect: ["dev"], dev: ["architect"] },
     mode: "parked",
-    ...(opts.ttlMs !== undefined ? { bus: { commitments: { ttlMs: opts.ttlMs } } } : {}),
+    ...(opts.waitWakeupMs !== undefined ? { waitWakeupMs: opts.waitWakeupMs } : {}),
+    bus: {
+      commitments: {
+        ...(opts.ttlMs !== undefined ? { ttlMs: opts.ttlMs } : {}),
+        ...(minDefaultMs !== undefined ? { minDefaultMs } : {}),
+      },
+      ...(opts.delivery ? { delivery: { classes: true } } : {}),
+    },
   });
 }
 
@@ -187,6 +201,73 @@ test("`afterMs` draws a deadline on a mesh that has none", async () => {
     await sweep(m);
     assert.equal(recordFor(m, id)?.reason, "defaulted");
     assert.equal(m.kernel.state.pendingRequests.has(plain.messageId!), true, "and it took only the ask that asked for it");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("a default that could never be answered in time is REFUSED, and says how long an answer takes", async () => {
+  // cronlite, 2026-09-30: two of three asks named `afterMs: 5000`, the addressee was mid-turn, and
+  // the default stood ("proceed on that and do not re-ask") before it had even read the ask. The
+  // assumption was false, and the real answer arrived 90 seconds later.
+  const m = await pair({ minDefaultMs: null, waitWakeupMs: 60_000 });
+  try {
+    const floor = 60_000 + 120_000; // the sweep + a turn; no delivery window on this mesh
+    const tooSoon = await askWithDefault(m, { assume: "sqlite", afterMs: 5000 });
+    assert.equal(tooSoon.ok, false);
+    assert.match(String(tooSoon.reason), /shorter than this mesh can get an answer back/);
+    assert.match(String(tooSoon.reason), new RegExp(`at least ${floor} \\(${floor / 1000}s\\)`), "it names the minimum, so the next attempt can be right");
+    assert.match(String(tooSoon.reason), /or drop ifUnanswered/);
+    assert.equal(m.kernel.state.pendingRequests.size, 0, "a refused ask opens no debt");
+
+    const atFloor = await askWithDefault(m, { assume: "sqlite", afterMs: floor });
+    assert.equal(atFloor.ok, true, atFloor.reason);
+    const pending = m.kernel.state.pendingRequests.get(atFloor.messageId!)!;
+    assert.ok(pending.dueBy, "at the floor the default is dated as asked");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("the floor is derived from this mesh: the delivery window is part of how long an answer takes", async () => {
+  const withWindow = await pair({ minDefaultMs: null, waitWakeupMs: 30_000, delivery: true });
+  const without = await pair({ minDefaultMs: null, waitWakeupMs: 30_000 });
+  try {
+    const coalesce = withWindow.config.bus.deliveryClasses!.coalesceMs;
+    assert.equal(without.config.bus.deliveryClasses, undefined, "fixture: no window on the second mesh");
+
+    // The same afterMs: fine where nothing delays the wake, refused where a burst is gathered first.
+    const afterMs = 30_000 + 120_000;
+    assert.equal((await askWithDefault(without, { assume: "x", afterMs })).ok, true);
+    const refused = await askWithDefault(withWindow, { assume: "x", afterMs });
+    assert.equal(refused.ok, false);
+    assert.match(String(refused.reason), new RegExp(`at least ${coalesce + 30_000 + 120_000} `));
+  } finally {
+    await withWindow.cleanup();
+    await without.cleanup();
+  }
+});
+
+test("`bus.commitments.min_default_ms` is the operator's to set, and 0 turns the floor off", async () => {
+  const strict = await pair({ minDefaultMs: 10_000 });
+  const off = await pair({ minDefaultMs: 0 });
+  try {
+    const refused = await askWithDefault(strict, { assume: "x", afterMs: 5000 });
+    assert.equal(refused.ok, false);
+    assert.match(String(refused.reason), /at least 10000 \(10s\)/);
+    assert.equal((await askWithDefault(strict, { assume: "x", afterMs: 10_000 })).ok, true);
+    assert.equal((await askWithDefault(off, { assume: "x", afterMs: 50 })).ok, true, "an operator who wants a default in milliseconds can have one");
+  } finally {
+    await strict.cleanup();
+    await off.cleanup();
+  }
+});
+
+test("the floor applies to a named wait only: a default on the operator's own TTL is the operator's deadline", async () => {
+  const m = await pair({ minDefaultMs: null, ttlMs: 1000 });
+  try {
+    const res = await askWithDefault(m, { assume: "proceed" });
+    assert.equal(res.ok, true, "no afterMs, so the deadline is bus.commitments.ttl_ms and the floor has nothing to say about it");
   } finally {
     await m.cleanup();
   }

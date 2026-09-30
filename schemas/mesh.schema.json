@@ -518,6 +518,10 @@
                 "minimum": 0
               }
             },
+            "min_default_ms": {
+              "type": "number",
+              "minimum": 0
+            },
             "by_type": {
               "type": "boolean"
             }

@@ -455,6 +455,7 @@ export const meshConfigSchema = {
             semantic: { type: "string", enum: ["compat", "strict"] },
             ttl_ms: { type: "number", minimum: 0 },
             ttl_ms_by_role: { type: "object", additionalProperties: { type: "number", minimum: 0 } },
+            min_default_ms: { type: "number", minimum: 0 },
             by_type: { type: "boolean" },
           },
           additionalProperties: false,

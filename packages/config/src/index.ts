@@ -270,6 +270,23 @@ export interface RawMeshFile {
        */
       ttl_ms_by_role?: Record<string, number>;
       /**
+       * The soonest, in milliseconds, an `ifUnanswered` default may come due: the
+       * floor on the `afterMs` a seat names. A shorter one is refused when the seat
+       * raises the ask, with this figure in the refusal.
+       *
+       * A default is only honest if somebody could have objected before it stood.
+       * An ask that waits out a gathering window, a busy addressee's current turn and a
+       * sweep cannot be answered in five seconds, and a seat that named five (two of
+       * three, in the cronlite run) defaulted before its addressee had read the ask and
+       * then proceeded, "do not re-ask", on an assumption the real answer contradicted.
+       *
+       * Absent: derived from this mesh, as the delivery window (`coalesce_ms`, when
+       * classes are on) + `scheduling.timeouts.wait_wakeup_ms` + two minutes for the
+       * addressee's turn. `0` turns the floor off. It never applies to an ask that
+       * names no `afterMs`, whose deadline is the operator's (`ttl_ms`).
+       */
+      min_default_ms?: number;
+      /**
        * Whether an ask that named no contract is held to the one its MESSAGE
        * TYPE implies. Absent or `false` is how every mesh has behaved: the
        * eight contracts are opt-in, and a bare `REQUEST_REVIEW` opens a real
@@ -782,6 +799,12 @@ export interface ResolvedMeshConfig {
      * operator had never given any.
      */
     commitmentTtl?: { defaultMs: number; byRole: Record<string, number> };
+    /**
+     * `bus.commitments.min_default_ms`: the floor on an `ifUnanswered.afterMs`.
+     * Absent means "derive it from this mesh's own delivery window and sweep",
+     * which only the supervisor can do; a number, including 0, is the operator's.
+     */
+    commitmentDefaultFloorMs?: number;
     /**
      * The collapsed contract vocabulary, or ABSENT when this mesh advertises
      * the full typed manifest. See RawMeshFile.bus.vocabulary.
@@ -1523,6 +1546,9 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
       // otherwise stay open, so turning it on is a behaviour change an
       // operator should choose for a mission, not inherit from an upgrade.
       commitmentTtl: resolveCommitmentTtl(bus?.commitments),
+      ...(typeof bus?.commitments?.min_default_ms === "number" && Number.isFinite(bus.commitments.min_default_ms) && bus.commitments.min_default_ms >= 0
+        ? { commitmentDefaultFloorMs: bus.commitments.min_default_ms }
+        : {}),
       // Absent by default, like `commitmentTtl` and `deliveryClasses`: this
       // one changes the tool list a model is shown, so it is opted into per
       // mesh rather than inherited from an upgrade.

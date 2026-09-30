@@ -118,6 +118,12 @@ export interface TestMeshOptions {
       /** Per-role override of `ttlMs`, keyed by role name. */
       ttlMsByRole?: Record<string, number>;
       /**
+       * Floor on an `ifUnanswered.afterMs` (`min_default_ms`). Unset derives it from the
+       * mesh, which is minutes; a fixture that wants a default to fire in milliseconds
+       * says `0`.
+       */
+      minDefaultMs?: number;
+      /**
        * Let a bare typed ask inherit the contract its message type names.
        *
        * Off in every fixture that does not ask for it, because turning it on
@@ -219,6 +225,7 @@ function busCommitmentsYaml(c: NonNullable<TestMeshOptions["bus"]>["commitments"
   if (c.semantic) parts.push(`semantic: ${c.semantic}`);
   if (c.ttlMs !== undefined) parts.push(`ttl_ms: ${c.ttlMs}`);
   if (c.ttlMsByRole !== undefined) parts.push(`ttl_ms_by_role: ${JSON.stringify(c.ttlMsByRole)}`);
+  if (c.minDefaultMs !== undefined) parts.push(`min_default_ms: ${c.minDefaultMs}`);
   // Written only when asked for. `by_type: false` and an absent key resolve
   // the same way, but a fixture that says nothing about contracts should
   // produce a mesh.yaml that says nothing about them either.
