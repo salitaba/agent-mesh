@@ -2273,6 +2273,13 @@ export interface RuntimeContext {
    * the tool for the rest of the session, and the surface must say so.
    */
   approvalGranted?: string[];
+  /**
+   * The product checkout, when the mesh keeps one apart from the seats' worktrees
+   * (git mode). Work reaches it only through the `merge` op; a runtime that can
+   * gate a seat's shell uses this to keep git commands that would change it out
+   * of that shell. Absent when the seat's own directory IS the product.
+   */
+  productPath?: string;
   env: Record<string, string>;
 }
 

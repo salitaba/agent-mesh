@@ -9393,6 +9393,7 @@ export class Supervisor {
       capabilityGrants: rec.definition.capabilities,
       approvalRequired: rec.definition.requiresApproval,
       approvalGranted: [...(this.toolGrants.get(agentId) ?? [])],
+      ...(this.deps.workspace ? { productPath: this.deps.workspace.mainPath } : {}),
       env: { MESH_AGENT_ID: agentId, MESH_GOAL_ID: this.state.activeGoalId ?? "" },
     };
   }

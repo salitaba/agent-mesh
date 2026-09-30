@@ -47,6 +47,7 @@ import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 // the part of the prompt that must not vary by backend.
 import { withOutputVoice } from "../../core/src/context";
 import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
+import { landingDenial } from "./landing-gate";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
@@ -1217,7 +1218,7 @@ export interface ApprovalGate {
  * cannot be replayed — the model re-decides on its next turn — so the operator
  * unlocks the TOOL for the rest of the session, never one invocation of it.
  */
-export function buildPermissionGate(capabilities: string[], approval?: ApprovalGate): CanUseTool {
+export function buildPermissionGate(capabilities: string[], approval?: ApprovalGate, shell?: { cwd: string; productPath?: string }): CanUseTool {
   // Normalized here as well as at config load: capabilityGrants also arrive
   // from direct AgentDefinition construction (tests, bench harnesses).
   const caps = new Set(capabilities.map(normalizeCapability));
@@ -1262,6 +1263,14 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
     // only git.commit is still commit-only once through the operator gate.
     if (v.commitOnly && toolName === "Bash") {
       const why = commitScopeDenial(toolInput);
+      if (why) return deny(`Bash denied: ${why}.`);
+    }
+    // Whatever else a shell may do, it may not land work on the product branch: that
+    // is the `merge` op's job, which checks git.merge and the merge gate and records
+    // what it landed. See landing-gate.ts.
+    if (toolName === "Bash" && shell?.productPath) {
+      const command = typeof toolInput.command === "string" ? toolInput.command : "";
+      const why = landingDenial(command, { cwd: shell.cwd, productPath: shell.productPath }, { mayPush: caps.has("git.merge") });
       if (why) return deny(`Bash denied: ${why}.`);
     }
     return { behavior: "allow", updatedInput: toolInput };
@@ -2867,6 +2876,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
           granted: grantedTools,
           onRequest: (toolName) => heldTools.add(toolName),
         },
+        { cwd: context.workspacePath, productPath: context.productPath },
       ),
       // canUseTool is the authority; "default" is the mode that routes tool
       // calls through it instead of auto-allowing or hard-denying them.
