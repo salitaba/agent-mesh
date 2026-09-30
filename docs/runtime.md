@@ -211,24 +211,29 @@ so a name a model remembers from another mesh keeps working. See `docs/configura
   init …` line per seat session, which is what tells a race from a real failure.
   A `pending` bridge — the CLI's non-blocking connect still dialling — is not
   down, and costs no spawn and no delay
-- **a bound on one `mcp__mesh__*` tool result** (`meshToolResultMaxChars`,
-  default 8,000 characters — an adapter option, not a `mesh.yaml` key, like
-  `staleAfterMs`). Over the 2026-09-27 skill-panel run the five read tools
-  (`mesh_artifact_read`, `mesh_inbox`, `mesh_query_events`, `mesh_failures`,
-  `mesh_run_status`) returned 3.0M of the 3.1M characters the whole `mesh_*`
-  surface produced: p90 20k-40k per call, a 52k worst case, and no
-  `mesh_failures` or `mesh_run_status` result under 11k. A result that size is
+- **a bound on one `mcp__mesh__*` tool result**, applied where the payload is
+  produced rather than where it arrives. Over the 2026-09-27 skill-panel run the
+  five read tools (`mesh_artifact_read`, `mesh_inbox`, `mesh_query_events`,
+  `mesh_failures`, `mesh_run_status`) returned 3.0M of the 3.1M characters the
+  whole `mesh_*` surface produced: p90 20k-40k per call, a 52k worst case, and
+  no `mesh_failures` or `mesh_run_status` result under 11k. A result that size is
   not paid once — it stays in the prompt for every later call of the turn
-  (~20 measured) and every later turn of the session until a rotation. The
-  adapter clips an oversized result at the bound in a `PostToolUse` hook via
-  `updatedToolOutput`, appending a notice that names the tool's own resume
-  protocol (`offset` for `mesh_artifact_read`/`mesh_inbox`, `sinceSeq` for
-  `mesh_query_events`, a smaller `limit` otherwise) and forbids re-issuing the
-  call unchanged. Only `mcp__mesh__*` is touched — the SDK's own `Read`/`Bash`
-  are not this adapter's to rewrite — and only the two shapes the SDK delivers
-  (a bare string, or `{content:[…]}` with `text` blocks); anything else is
-  passed through rather than mangled. A failed mesh call cannot be clipped:
-  `PostToolUseFailure` carries `additionalContext` and no rewrite field
+  (~20 measured) and every later turn of the session until a rotation. The mesh's
+  own MCP handlers now page their rows under `TOOL_PAGE_CHARS` (8,000 characters)
+  and return a continuation: `nextOffset` for the row-per-item reads (inbox,
+  events, steps, artifact reads) and a `section` index for the aggregate ones
+  (failures, run digest, run status). Measured after the change, on live-sized
+  fixtures: inbox 47,462 → 6,737 characters, event query 44,611 → 7,826, artifact
+  read 43,701 → 7,834, and every message, event, artifact byte and section row is
+  still reachable by paging.
+- **Do not try to bound this in the adapter.** A `PostToolUse` *callback* hook in
+  a headless (`--print`/stream-json) session cannot rewrite a tool result: the CLI
+  harvests exactly `systemMessage`, `worktreePath` and `decision:"block"` from a
+  callback's return, dropping `hookSpecificOutput` whole. Command, HTTP and plugin
+  hooks do receive `updatedToolOutput`/`updatedMCPToolOutput`; callbacks do not.
+  The adapter-side clip written on 2026-09-27 was inert for exactly that reason —
+  325 mesh results, none clipped — and was removed. Reinstate it only with a live
+  demonstration that the CLI in use honours it.
 - **a `## Reading` brief in the system prompt** (`withReadingDiscipline`,
   appended beside the shared output-voice rules and written into `ROLE.md` for
   the same reason those are). Growth in a turn's prompt is spread over its
@@ -259,6 +264,46 @@ and artifacts survive. On restart the runtime re-activates the agent with a
 process memory). After N failed restarts the mesh escalates `runtime_failure`.
 A worker instance can be replaced (new `runtime session`) while the organizational
 role, authority, task, artifacts and threads are inherited (§50–51).
+
+### Provider outages: the mission-wide breaker
+
+A turn the model *provider* refuses is not the seat's failure, and does not walk
+the seat's ladder. `classifyProviderOutage` (`protocol/src/errors.ts`) reads the
+failure the runtime surfaced: an `API Error` segment from the model client (the
+Claude adapter carries the CLI's line verbatim) whose status is 429, 402,
+401/403 or 5xx — or, with no status, says `overloaded`, `usage limit`, or
+`Connection error` (the proxy is down) — plus the HTTP runtime's own status line
+and provider error types such as `rate_limit_error`. Our own timeouts and
+aborts, a `BackendUnreachableError` (a seat's own process or endpoint), a 4xx the
+seat's request caused, and any model or tool text that merely mentions a status
+stay seat failures.
+
+An outage turn is discarded and billed as usual, but the seat goes back to IDLE:
+no crash strike, no released task, no discharged asks, no SUSPENDED park, no
+per-seat card. Its retry is queued seconds later, and the failure is reported
+to the scheduler as `noteTurnOutcome(seat, "outage")`, which feeds the
+mission-wide half of the scheduler's circuit breaker (never the seat's strikes):
+
+- **Trip**: `PROVIDER_TRIP_FAILURES` (3) outage failures from any seats within
+  `PROVIDER_TRIP_WINDOW_MS` (2 min) open it. While open, activations still
+  queue — nothing is lost — but the pump dispatches none of them (queue wait
+  kind `provider`); explicit operator wakes still run. One advisory
+  `provider_unavailable` card (conflict key `provider:<goal>`) names the verbatim
+  error, the refused turns and seats, and the next attempt.
+- **Half-open**: after the backoff (`providerBackoffMs`: 5, 10, 20, 40, then 60
+  min) exactly one queued turn is admitted as the probe; the supervisor wakes a
+  seat if none is queued. A probe that ends without a verdict (budget refusal,
+  timeout, a seat's own crash) passes the slot to the next queued turn.
+- **Close / re-open**: the probe's model answer closes the breaker, the card is
+  retired with `escalation.auto_resolved`, and the held queue drains. Another
+  outage re-opens it with the backoff doubled, and the card is restated in place
+  (`escalation.requested` with its own id) with the new next attempt.
+- **Operator**: answering the card probes immediately (`probeProviderNow`).
+
+Every transition writes one `provider breaker:` audit line. The breaker never
+starts a stopped scheduler: a parked mission's probe waits for the operator
+like every other non-explicit wake. Seats already parked the old way are still
+revived by an escalation answer (`reviveTerminalSuspended`).
 
 ## Termination & deadlock
 
@@ -314,6 +359,18 @@ changing the protocol.
   appended as one line to `<project>/.mesh/host-supervision.log` and printed on
   the host's stderr, so a kill that used to be visible only in a rotated child
   log is durably recorded.
+  The line also carries the child's **own** verdict on its event loop:
+  `eventLoopLagMaxMs=` is the worst lag the child measured since it started,
+  taken from the last beat it managed to send. Silence alone cannot separate a
+  loop blocked by synchronous work — which comes back on its own, and whose
+  in-flight turns are exactly what killing it destroys, as happened on
+  2026-09-28 — from a process wedged for good, and those two want opposite
+  responses. The field is **absent**, never zero, when no beat carried one: "it
+  never told us" and "its loop was fine" are different facts. What it cannot
+  show is a block that began *after* the last beat, so it is read together with
+  `silenceMs`, never alone. The child samples its own lag on a 1s timer and
+  reports it on the 2s beat; the same numbers are on `GET /health` as
+  `eventLoopLagMs` / `eventLoopLagMaxMs`.
 - `mesh init` templates `runtime: default: claude`. There is no PATH probe for
   it and there should not be: its executable ships with the SDK, so a check
   would fail on a working install. `mesh run` needs no backend preflight to

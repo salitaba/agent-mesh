@@ -31,6 +31,14 @@ export const CHILD_BEAT_PREFIX = "@@mesh-child-beat@@";
 export const CHILD_BEAT_INTERVAL_MS = 2_000;
 
 /**
+ * The loop-lag radar's cadence. Deliberately the same 1s sample and the same
+ * arithmetic as the `/health` route's radar in `index.ts`: a beat that disagreed
+ * with the health payload about how late the loop has run would be worse than no
+ * beat at all.
+ */
+export const CHILD_LOOP_LAG_SAMPLE_MS = 1_000;
+
+/**
  * What one beat tells the host about the child's spend.
  *
  * Riding the existing heartbeat rather than adding a cost-polling timer is
@@ -65,6 +73,26 @@ export interface ChildBeatPayload {
    * nothing is. The host needs it to say so out loud.
    */
   goalActive: boolean;
+  /**
+   * How late the loop's own 1s sample last fired, and the worst it has ever been
+   * since this process started.
+   *
+   * The beat says WHEN this child last spoke; these say what it was doing when
+   * it did. A host that kills a silent child has to decide between a child whose
+   * loop is blocked by synchronous work — which comes back on its own, and whose
+   * in-flight turns are exactly what a kill destroys — and one that is wedged
+   * for good, and the silence alone cannot tell them apart. `eventLoopLagMaxMs`
+   * is a high-water mark rather than a spot reading, so a spike the child
+   * recovered from before its final beat is still visible at kill time.
+   *
+   * What this cannot show: a block that began AFTER the last beat. There the
+   * high-water mark still reads small, and the difference between "silent, never
+   * blocked" and "blocked, silence still growing" is only visible on the next
+   * beat that does not come. A reader should take `eventLoopLagMaxMs` and the
+   * measured silence together, never the lag alone.
+   */
+  eventLoopLagMs: number;
+  eventLoopLagMaxMs: number;
 }
 
 /** Exit codes the supervisor maps onto `ProjectStatus` without parsing prose. */
@@ -121,6 +149,32 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
   };
   emit(CHILD_READY_PREFIX, ready);
 
+  /**
+   * Loop-lag radar, riding the beat so a health kill can say whether this child
+   * was blocking itself when it went quiet.
+   *
+   * The child measures its own lateness rather than being asked for it: a host
+   * that could only measure the silence has no way to distinguish a loop blocked
+   * by synchronous work from a process that is wedged, and those two want
+   * opposite responses — one comes back, the other never will, and killing the
+   * first destroys exactly the in-flight turns the kill is trying to protect.
+   *
+   * `unref`'d and deliberately NOT sampled inside the beat callback: a sample
+   * taken on the beat's own tick would be measuring the beat, and a radar that
+   * only runs when the loop is free cannot see the blocks it exists to report.
+   */
+  let loopLagMs = 0;
+  let loopLagMaxMs = 0;
+  let lastTick = Date.now();
+  const lagRadar = setInterval(() => {
+    const now = Date.now();
+    const lag = Math.max(0, now - lastTick - CHILD_LOOP_LAG_SAMPLE_MS);
+    loopLagMs = lag;
+    if (lag > loopLagMaxMs) loopLagMaxMs = lag;
+    lastTick = now;
+  }, CHILD_LOOP_LAG_SAMPLE_MS);
+  lagRadar.unref?.();
+
   const beat = setInterval(() => {
     const payload: ChildBeatPayload = {
       rss: process.memoryUsage.rss(),
@@ -129,6 +183,8 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
       runningTurns: 0,
       mode: handle.instance.mode,
       goalActive: false,
+      eventLoopLagMs: loopLagMs,
+      eventLoopLagMaxMs: loopLagMaxMs,
     };
     // Best-effort: a beat that throws would take the interval down with it and
     // the host would read a live child as silent. Spend is a view, liveness is
@@ -154,6 +210,7 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
     if (closing) return;
     closing = true;
     clearInterval(beat);
+    clearInterval(lagRadar);
     // The clean path is what snapshots (P2) and releases the state lock (P1).
     // Escalation to SIGKILL is the parent's job, on a deadline.
     handle

@@ -63,6 +63,17 @@ export class ProjectionError extends Error {
  * raised `fingerprint_loop` against an agent that was progressing.
  */
 export function fingerprintOf(m: MeshMessage): string {
+  // A message whose content rides in `note` with an empty payload is the same
+  // hazard `payloadDiscriminator` documents below, one field over. Measured
+  // 2026-09-28: a ui-designer sent four materially different INFORMs to one
+  // seat — a correction, then design-system v26, then v28, then an operational
+  // consequence — every one with `payload: {}` and the substance in `note`. The
+  // fingerprint ignored `note`, so all four collided, `fingerprint_loop` fired,
+  // and the stalemate verdict halted a mission that was progressing. The note
+  // joins identity only when the payload discriminates nothing: a payload that
+  // does discriminate is still the identity, and prose beside it stays out.
+  const payloadPart = payloadDiscriminator(m.payload);
+  const notePart = payloadPart === "" && typeof m.note === "string" && m.note.trim() ? `note=${m.note.trim()}` : "";
   const parts = [
     m.from,
     "->",
@@ -78,7 +89,9 @@ export function fingerprintOf(m: MeshMessage): string {
     ":",
     m.replyTo ?? "",
     ":",
-    payloadDiscriminator(m.payload),
+    payloadPart,
+    ":",
+    notePart,
   ];
   return parts.join("");
 }

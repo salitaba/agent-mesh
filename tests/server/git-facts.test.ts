@@ -11,11 +11,11 @@ function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mesh-git-facts-"));
 }
 
-test("git facts: a directory with no repo reads as no repo, never as a clean tree", () => {
+test("git facts: a directory with no repo reads as no repo, never as a clean tree", async () => {
   const dir = tempDir();
   try {
     fs.writeFileSync(path.join(dir, "PRODUCT.txt"), "delivered", "utf8");
-    const facts = gitFacts(dir);
+    const facts = await gitFacts(dir);
     assert.equal(facts.gitRepo, "false", "a bare directory is not a repository");
     assert.notEqual(
       facts.gitClean,
@@ -29,7 +29,7 @@ test("git facts: a directory with no repo reads as no repo, never as a clean tre
   }
 });
 
-test("git facts: an enclosing repo is not adopted as the product's own", { skip: gitSkip }, () => {
+test("git facts: an enclosing repo is not adopted as the product's own", { skip: gitSkip }, async () => {
   const outer = tempDir();
   try {
     execFileSync("git", ["init", "-b", "main"], { cwd: outer, stdio: "ignore" });
@@ -43,7 +43,7 @@ test("git facts: an enclosing repo is not adopted as the product's own", { skip:
     const inner = path.join(outer, "workspace");
     fs.mkdirSync(inner, { recursive: true });
 
-    const facts = gitFacts(inner);
+    const facts = await gitFacts(inner);
     assert.equal(facts.gitRepo, "false", "a nested directory must not claim the ancestor's repository");
     assert.notEqual(facts.gitClean, "true", "the ancestor's cleanliness must not be reported as the product's");
     assert.equal(facts.gitHead, "", "the ancestor's HEAD must not leak into the product facts");
@@ -52,16 +52,16 @@ test("git facts: an enclosing repo is not adopted as the product's own", { skip:
   }
 });
 
-test("git facts: an initialized product root reports its own real facts", { skip: gitSkip }, () => {
+test("git facts: an initialized product root reports its own real facts", { skip: gitSkip }, async () => {
   const dir = tempDir();
   try {
     const stateDir = path.join(dir, ".mesh-state");
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(path.join(stateDir, "events.jsonl"), "{}\n", "utf8");
 
-    assert.equal(initProductRepo(dir, stateDir), true, "init must succeed on a writable root");
+    assert.equal(await initProductRepo(dir, stateDir), true, "init must succeed on a writable root");
 
-    const facts = gitFacts(dir);
+    const facts = await gitFacts(dir);
     assert.equal(facts.gitRepo, "true");
     assert.equal(facts.gitBranch, "main", "the fresh repo sits on the base branch");
     assert.ok(facts.gitHead, "the initial commit gives the repo a HEAD to diff against");
@@ -72,19 +72,19 @@ test("git facts: an initialized product root reports its own real facts", { skip
   }
 });
 
-test("git facts: the state dir inside the workspace does not make the product dirty", { skip: gitSkip }, () => {
+test("git facts: the state dir inside the workspace does not make the product dirty", { skip: gitSkip }, async () => {
   const dir = tempDir();
   try {
     const stateDir = path.join(dir, ".mesh-state");
-    initProductRepo(dir, stateDir);
+    await initProductRepo(dir, stateDir);
     // The live mission writes its log after the repo exists.
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(path.join(stateDir, "events.jsonl"), '{"seq":1}\n', "utf8");
 
-    assert.equal(gitFacts(dir).gitClean, "true", "mesh state is not product work — it must stay ignored");
+    assert.equal((await gitFacts(dir)).gitClean, "true", "mesh state is not product work — it must stay ignored");
 
     fs.writeFileSync(path.join(dir, "index.html"), "<!doctype html>", "utf8");
-    assert.equal(gitFacts(dir).gitClean, "false", "real product files must still show the tree as dirty");
+    assert.equal((await gitFacts(dir)).gitClean, "false", "real product files must still show the tree as dirty");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

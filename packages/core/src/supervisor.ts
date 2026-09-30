@@ -67,7 +67,7 @@ import {
   timersOf,
 } from "../../protocol/src/index";
 import { newArtifactId, newDecisionId, newEscalationId, newGoalId, newLeaseId, newMessageId, newTaskId, newThreadId, shortHash } from "../../protocol/src/index";
-import { BackendUnreachableError, isConnectionError, isTimeoutError } from "../../protocol/src/index";
+import { BackendUnreachableError, classifyProviderOutage, isConnectionError, isTimeoutError, type ProviderOutage } from "../../protocol/src/index";
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
@@ -106,6 +106,8 @@ import type {
   CriteriaGeneratorPort,
   PolicyContext,
   PolicyEvaluator,
+  ProviderBreakerSnapshot,
+  ProviderBreakerTransition,
   RuntimeResolver,
   SchedulerActivationRequest,
   SchedulerPort,
@@ -324,6 +326,13 @@ const MIN_TURN_RESERVE_TOKENS = 4000;
 const TURN_COST_EWMA_ALPHA = 0.3;
 
 /**
+ * How many of a seat's most recent settled turns boot folds back into its cost
+ * estimate (`reseedTurnCostEstimates`). At alpha 0.3 the oldest of 20 carries
+ * 0.7^19, about 0.1% of the weight, so replaying further buys only boot time.
+ */
+const TURN_COST_REPLAY_TURNS = 20;
+
+/**
  * Safety factor on the estimate: turns vary, so hold noticeably more than the
  * running average or the hold under-covers roughly half the time.
  */
@@ -531,6 +540,11 @@ interface OperatorStop {
 /** `turn.discarded.detail` for an operator stop. */
 function operatorStopDetail(stop: Pick<OperatorStop, "reason" | "suspend">): string {
   return `stopped by the operator${stop.reason ? `: ${stop.reason}` : ""}${stop.suspend ? " (seat suspended)" : ""}`;
+}
+
+/** The discard detail and close note of a turn `shutdown()` stopped; `error` is what the stopped call threw. */
+function shutdownStopDetail(error: string): string {
+  return `stopped by the mesh shutting down (${error})`;
 }
 
 /** What `Supervisor.interruptTurn` did. */
@@ -1193,6 +1207,49 @@ export class Supervisor {
    * consumes the crash budget, and reset on any successful runtime response.
    */
   private timeoutRetries = new Map<string, number>();
+  /**
+   * Consecutive turns the model PROVIDER refused, per seat. Not a ladder: an
+   * outage never moves a seat toward terminal (see `handleProviderOutage`).
+   * It only spaces the seat's own retries until the scheduler's provider
+   * breaker trips and holds them. Reset by any answered turn, and wholesale
+   * when the breaker closes.
+   */
+  private outageRetries = new Map<string, number>();
+  /**
+   * Breaker transitions are applied one at a time: each reads the card the
+   * previous one raised or restated, and the scheduler reports them from
+   * synchronous code that cannot await.
+   */
+  private providerBreakerChain: Promise<void> = Promise.resolve();
+  /**
+   * Seats the MESH suspended after a TERMINAL failure — the park at the end of
+   * `handleAgentFailure`, where the failure ladder ran out and every ask the
+   * seat owed was discharged with notice.
+   *
+   * Kept apart from the SUSPENDED lifecycle because the two suspensions mean
+   * opposite things to an operator's answer, and the lifecycle cannot tell them
+   * apart: `activateAgent` refuses every SUSPENDED seat alike. A seat the
+   * OPERATOR suspended (the dashboard's pause, a stop with `suspend: true`)
+   * must stay down until the operator resumes it, and no escalation response
+   * may quietly undo that. A seat parked for terminal failure is the opposite:
+   * the mesh parked it on the assumption the mission can proceed without it,
+   * and when every seat dies that way (a provider quota, a dead backend) it
+   * cannot — the stall watchdog escalates and the operator's "retry" was a
+   * no-op, because the activation it raises is refused by lifecycle.
+   *
+   * A set, not a note string: live, the classification is recorded where it
+   * is decided. It does NOT die with the process: boot rebuilds it from the
+   * log (`rebuildTerminalSuspended`, step 8e), because the operator's commonest
+   * move after an outage — fix the provider, restart the host, answer the
+   * cards — lands in a process that never saw the park, and an in-memory-only
+   * set made that answer a no-op (2026-09-28: ten seats, ten hand resumes).
+   * The park writes `cause: "terminal_failure"` on its SUSPENDED transition
+   * for that; `isTerminalFailureSuspension` is the one reader. Any resume
+   * clears the id (`resumeAgent`), so does any operator suspension (the
+   * operator's pause outranks the mesh's park), and every reader re-checks the
+   * live lifecycle, so a stale entry can only ever be ignored.
+   */
+  private terminalSuspended = new Set<string>();
   private workerInfo = new Map<string, { parent: string; taskId: string; depth: number }>();
   /**
    * `<sender>:<ref it named>` for unresolvable PATCH_READY announcements the
@@ -1236,6 +1293,14 @@ export class Supervisor {
   private watchdogLastRun = 0;
   private watchdogTrailing = false;
   private stopping = false;
+  /**
+   * Turns that were running when `shutdown()` stopped their runtime sessions,
+   * by turn id. The session stop is what fails them, so `runTurn` asks this
+   * set, not `stopping`, whether a throw was the process going away: after a
+   * completion `stopping` stays latched, and an operator can still wake a seat
+   * explicitly, whose genuine failure must still walk the ladder.
+   */
+  private shutdownStops = new Set<string>();
   private idleCallbacks: Array<() => void> = [];
   private recentTurns: TurnRecord[] = [];
   private activeTurnByAgent = new Map<string, string>();
@@ -1284,9 +1349,15 @@ export class Supervisor {
    * Rolling estimate of what ONE turn by this agent costs, in tokens, used to
    * size the pre-flight hold instead of charging every agent the same 32k.
    *
-   * Deliberately in memory only: it is a heuristic that re-learns within a few
-   * turns after a restart, and persisting it would mean a stale estimate from
-   * an old model/prompt outliving the thing it measured.
+   * Not persisted as a number, but not lost on a restart either: boot re-learns
+   * it from the settled turns of the active goal already in the log
+   * (`reseedTurnCostEstimates`, step 8f). Re-learning "within a few turns" was
+   * the old plan, and the first of those turns is the expensive one — an empty
+   * estimate means the 32k no-history ask AND a partial grant (`allowPartial`),
+   * so both budget overruns of 2026-09-28 were a seat's first turn after a
+   * restart: asked 32k, ran ~100k, against 113k and 34k of headroom. Replaying
+   * only the recent turns keeps an old model's cost from outliving it, exactly
+   * as the live EWMA would.
    */
   private turnCostEstimate = new Map<string, number>();
   private readonly turns: TurnTracker;
@@ -1735,6 +1806,38 @@ export class Supervisor {
         await this.dischargeCommitment(pid, "superseded", "system", { action: "goal_superseded", from: pr.goalId, to: goalId });
       }
     }
+    // 8d. retire a provider card no breaker stands behind. The breaker is
+    // scheduler memory, so a process restarted mid-outage boots it closed and
+    // its close — the only thing that retires the card — never runs. Advisory,
+    // the card halts nothing, but any OPEN card holds the completion verdict
+    // shut. If the provider is still refusing, the first turns trip a fresh
+    // breaker and raise a fresh card.
+    if (goalId && (this.deps.scheduler.providerBreaker?.().state ?? "closed") === "closed") {
+      for (const esc of [...this.state.escalations.values()]) {
+        if (esc.status !== "OPEN" || esc.conflictKey !== providerCardKey(esc.goalId)) continue;
+        await this.deps.kernel
+          .emit(
+            "escalation.auto_resolved",
+            { escalationId: esc.id, reason: "auto-resolved: the mesh restarted, and no provider breaker is holding it now — a provider still refusing turns will trip a fresh one" },
+            { actorId: RECOVERY_ACTOR_ID, goalId: esc.goalId },
+          )
+          .catch(() => undefined);
+      }
+    }
+    // 8e. which SUSPENDED seats the MESH parked for terminal failure. The set
+    // is process memory, so without this an escalation answer after a restart
+    // revives nobody. After 8b's closes, and before anything below can start a
+    // turn, so it reads the lifecycle the scheduler will actually see.
+    await this.rebuildTerminalSuspended();
+    // 8f. each seat's turn-cost estimate, from its settled turns in the log.
+    // Before the first reservation: an empty estimate is a 32k ask admitted
+    // short, which is how a seat's first turn after a restart overran its
+    // ledger by a whole turn.
+    if (goalId) await this.reseedTurnCostEstimates(goalId);
+    // 8g. seats the previous process left FAILED because it exited while it
+    // was still handling a turn it had killed itself. Parked boots too: the
+    // lifecycle is wrong either way, and a parked mesh shows it.
+    const restored = await this.restoreShutdownCasualties();
     // 12/13. start scheduler + activate initial agents (skipped in parked mode:
     // the scheduler stays stopped, so no agent is ever activated or spends tokens)
     // `mode` is the explicit successor of the legacy `uiOnly` boolean.
@@ -1755,7 +1858,7 @@ export class Supervisor {
       // A mission holding on generated criteria starts nobody. Waking agents
       // into a paused mission buys one refused turn each, and a brief that says
       // "start work" when every op will be rejected is worse than no brief.
-      if (!this.criteriaReviewHold) await this.activateStartup(Boolean(opts.resume));
+      if (!this.criteriaReviewHold) await this.activateStartup(Boolean(opts.resume), restored);
     }
     return this.state.goals.get(goalId) ?? null;
   }
@@ -1842,9 +1945,11 @@ export class Supervisor {
    * those are the same moment: a mission whose planning never happened still
    * needs the lead to decompose the goal before the others invent parallel
    * plans of their own.
+   *
+   * A resumed boot wakes `resumeCandidates(restored)`; see there.
    */
-  private async activateStartup(resume: boolean): Promise<void> {
-    const activate = resume ? this.recoveryCandidates() : this.config.startupActivate;
+  private async activateStartup(resume: boolean, restored: readonly string[] = []): Promise<void> {
+    const activate = resume ? this.resumeCandidates(restored) : this.config.startupActivate;
     for (const [i, id] of activate.entries()) {
       await this.activateAgent(id, {
         kind: resume ? "recovery" : "startup",
@@ -1922,6 +2027,226 @@ export class Supervisor {
     }
   }
 
+  /**
+   * Boot step 8e: refill `terminalSuspended` from the log, so it means the same
+   * thing in this process as it did in the one that parked the seats.
+   *
+   * For each seat that is SUSPENDED now, the LATEST suspension in the log
+   * decides — never any earlier one. A seat parked for failure, resumed, and
+   * then paused by the operator is the operator's, and stays down. Because the
+   * seat is SUSPENDED now, the last event that moved its lifecycle put it
+   * there; a later suspension of an already-suspended seat is the operator
+   * re-pausing a parked seat, which `suspendAgent` treats as outranking the
+   * park too, so the two processes agree on it.
+   *
+   * Replaces the set rather than adding to it: boot also runs after a reset
+   * or a restore, where the ids the old mission marked mean nothing.
+   *
+   * Reads the whole log's lifecycle events, and only when some seat is
+   * SUSPENDED at all: the park can be hours and thousands of events back (the
+   * 2026-09-28 seats were parked four hours before the restart), so the tail
+   * `closeAbandonedTurns` reads is not enough, and the store filters its
+   * in-memory copy.
+   */
+  private async rebuildTerminalSuspended(): Promise<void> {
+    this.terminalSuspended.clear();
+    const undecided = new Set<string>();
+    for (const rec of this.state.agents.values()) {
+      if (rec.state.lifecycle === "SUSPENDED") undecided.add(rec.state.agentId);
+    }
+    if (undecided.size === 0) return;
+    let events: MeshEvent[] = [];
+    try {
+      events = await this.deps.store.read({ types: ["agent.state_changed", "agent.suspended"] });
+    } catch {
+      // Unreadable: nobody is marked, which degrades to "resume by hand" —
+      // the pre-rebuild behaviour, never a revival of a seat someone paused.
+      return;
+    }
+    for (let i = events.length - 1; i >= 0 && undecided.size > 0; i--) {
+      const e = events[i]!;
+      const p = (e.payload ?? {}) as { agentId?: unknown; to?: unknown };
+      if (typeof p.agentId !== "string" || !undecided.has(p.agentId)) continue;
+      if (e.type === "agent.state_changed" && p.to !== "SUSPENDED") continue;
+      undecided.delete(p.agentId);
+      if (isTerminalFailureSuspension(e)) this.terminalSuspended.add(p.agentId);
+    }
+    if (this.terminalSuspended.size > 0) {
+      this.auditLine(
+        `boot: ${[...this.terminalSuspended].join(", ")} still SUSPENDED from a terminal-failure park before this boot — an escalation answer will resume them`,
+      );
+    }
+  }
+
+  /**
+   * Boot step 8f: rebuild `turnCostEstimate` by replaying each seat's settled
+   * turns of the active goal through `noteTurnCost`, oldest first — the same
+   * fold, over the same numbers, that the live process made.
+   *
+   * The numbers are the `budget.consumed` rows on the seat's agent ledger that
+   * the success path writes right after it calls `noteTurnCost` with the same
+   * amount. The ledger's other two charges were never folded in live and are
+   * skipped here (`isSettledTurnCharge`). Only the last
+   * `TURN_COST_REPLAY_TURNS` per seat are replayed, and a zero amount is not
+   * one of them (`noteTurnCost` ignores it, so it would only shrink the window).
+   *
+   * Active goal only: the no-history path is documented as "a seat's first
+   * turn of the mission", and a new goal is a new mission. A seat with no
+   * settled turn keeps that permissive first turn.
+   *
+   * Replaces the map rather than adding to it: re-folding turns the live map
+   * already holds (a boot in the same process) would count them twice.
+   */
+  private async reseedTurnCostEstimates(goalId: string): Promise<void> {
+    this.turnCostEstimate.clear();
+    const seatOfKey = new Map<string, string>();
+    for (const id of this.state.agents.keys()) {
+      if (id !== HUMAN_AGENT_ID) seatOfKey.set(agentKey(goalId, id), id);
+    }
+    if (seatOfKey.size === 0) return;
+    let events: MeshEvent[] = [];
+    try {
+      events = await this.deps.store.read({ types: ["budget.consumed"] });
+    } catch {
+      return; // unreadable: every seat keeps today's no-history first turn
+    }
+    const newestFirst = new Map<string, number[]>();
+    let full = 0;
+    for (let i = events.length - 1; i >= 0 && full < seatOfKey.size; i--) {
+      const p = (events[i]!.payload ?? {}) as { key?: unknown; amount?: unknown; discarded?: unknown; reason?: unknown };
+      const seat = typeof p.key === "string" ? seatOfKey.get(p.key) : undefined;
+      if (!seat || !isSettledTurnCharge(p)) continue;
+      const amount = Number(p.amount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const seen = newestFirst.get(seat) ?? [];
+      if (seen.length >= TURN_COST_REPLAY_TURNS) continue;
+      seen.push(amount);
+      newestFirst.set(seat, seen);
+      if (seen.length === TURN_COST_REPLAY_TURNS) full += 1;
+    }
+    for (const [seat, amounts] of newestFirst) {
+      for (let i = amounts.length - 1; i >= 0; i--) this.noteTurnCost(seat, amounts[i]!);
+    }
+  }
+
+  /**
+   * Boot step 8g: restore the seats a previous process left FAILED by exiting
+   * in the middle of handling a failure it caused itself.
+   *
+   * `shutdown()` stops every runtime session, which fails the turns still
+   * running on them. Until `closeShutdownStoppedTurn` those went through
+   * `handleAgentFailure`, whose first emit is `agent.failed` and whose next is
+   * the restart — and the process was exiting underneath it. On 2026-09-28
+   * 13:42Z the old child wrote `agent.failed` for frontend, backend and
+   * ux-designer inside one millisecond, frontend's `agent.restarted` 30 ms
+   * later, and nothing more: backend and ux-designer booted FAILED. The new
+   * boot did still wake them (a FAILED seat is a recovery candidate), but
+   * ux-designer's wake queued behind `max_active_agents` and it read FAILED
+   * for 3.5 minutes, and its eventual reset was written as an operator act.
+   *
+   * The test is on the log, per seat that is FAILED now:
+   * - FAILED at boot means the failure handler never finished. Every complete
+   *   run of it leaves FAILED in the same call — a restart (STARTING/IDLE) or
+   *   a park (SUSPENDED) — so a seat still there was cut off mid-handler, and
+   *   the only thing that cuts a handler off is the process ending.
+   * - its latest `agent.failed` says `restartable: true`: the handler was on
+   *   its way to restarting it, not to parking it. `false` (a seat the mesh
+   *   never retries on its own) or absent (a log too old to say) stays down.
+   * - no terminal card (`runtime:<id>` / `backend:<id>`) was raised after that
+   *   failure. The card is the handler's LAST act on the terminal path, so one
+   *   after the failure means the handler finished and FAILED is its verdict —
+   *   the shape a build from before the SUSPENDED park left behind.
+   *
+   * Timing against the previous process's last event was the other candidate
+   * and is weaker: the old process keeps writing after the failure (budget
+   * settles, other seats' closes, the snapshot), and a genuine failure can be
+   * the last event of a mesh that then idled for hours.
+   *
+   * A restored seat gets the ladder's own two events — `agent.restarted`
+   * (FAILED -> STARTING) and IDLE, by the recovery actor — marked with
+   * `MESH_SHUTDOWN_CAUSE` and no `attempt`, because no strike is counted: the
+   * seat's failure counters are untouched, it is not `terminalSuspended`, and
+   * no card is raised. Returned so a resumed boot wakes it as it would have
+   * woken the FAILED seat (`resumeCandidates`).
+   */
+  private async restoreShutdownCasualties(): Promise<string[]> {
+    const failed = new Set<string>();
+    for (const rec of this.state.agents.values()) {
+      if (rec.state.agentId !== HUMAN_AGENT_ID && rec.state.lifecycle === "FAILED") failed.add(rec.state.agentId);
+    }
+    if (failed.size === 0) return [];
+    let events: MeshEvent[] = [];
+    try {
+      events = await this.deps.store.read({ types: ["agent.failed", "escalation.requested"] });
+    } catch {
+      // Unreadable: nobody is restored, which is the pre-restore behaviour.
+      return [];
+    }
+    const restorable = new Set<string>();
+    const cardAfter = new Set<string>();
+    const undecided = new Set(failed);
+    for (let i = events.length - 1; i >= 0 && undecided.size > 0; i--) {
+      const e = events[i]!;
+      if (e.type === "escalation.requested") {
+        const key = (e.payload as { escalation?: { conflictKey?: unknown } } | undefined)?.escalation?.conflictKey;
+        const seat = typeof key === "string" ? /^(?:runtime|backend):(.+)$/.exec(key)?.[1] : undefined;
+        if (seat && undecided.has(seat)) cardAfter.add(seat);
+        continue;
+      }
+      const p = (e.payload ?? {}) as { agentId?: unknown; restartable?: unknown };
+      if (typeof p.agentId !== "string" || !undecided.has(p.agentId)) continue;
+      undecided.delete(p.agentId);
+      if (p.restartable === true && !cardAfter.has(p.agentId)) restorable.add(p.agentId);
+    }
+    const restored: string[] = [];
+    for (const agentId of failed) {
+      if (!restorable.has(agentId)) continue;
+      try {
+        await this.deps.kernel.emit("agent.restarted", { agentId, cause: MESH_SHUTDOWN_CAUSE }, { actorId: RECOVERY_ACTOR_ID });
+        if (this.state.agents.get(agentId)?.state.lifecycle === "STARTING") {
+          await this.deps.kernel.emit(
+            "agent.state_changed",
+            {
+              agentId,
+              to: "IDLE",
+              cause: MESH_SHUTDOWN_CAUSE,
+              note: "restored at boot: the previous process exited while it was still handling this seat's turn, which it had stopped itself — not a seat failure, no strike counted",
+            },
+            { actorId: RECOVERY_ACTOR_ID },
+          );
+        }
+      } catch (err) {
+        this.auditLine(`boot: could not restore ${agentId} from FAILED: ${(err as Error).message}`);
+      }
+      if (this.state.agents.get(agentId)?.state.lifecycle === "IDLE") restored.push(agentId);
+    }
+    if (restored.length > 0) {
+      this.auditLine(`boot: restored ${restored.join(", ")} — left FAILED by the previous process exiting mid-way through handling a turn it had stopped; no strike counted`);
+    }
+    return restored;
+  }
+
+  /**
+   * Who a resumed boot wakes: every recovery candidate, plus the seats step 8g
+   * restored (a FAILED seat was a candidate by lifecycle alone, and restoring it
+   * must not cost it that wake), minus any seat still FAILED after 8g.
+   *
+   * Those are the ones 8g left down on purpose — `restartable: false`, or a
+   * handler that finished with a terminal card — and waking one here is the
+   * mesh retrying on its own, which `restartable: false` exists to stop: the
+   * activation's FAILED reset (`runTurn`) is an override meant for an operator,
+   * and at boot it was written as one (`actorId: human`). An answer to the
+   * seat's card, an operator wake, or mail it is owed still reaches it.
+   *
+   * Agent-registry order, the order `recoveryCandidates` returns.
+   */
+  private resumeCandidates(restored: readonly string[]): string[] {
+    const wake = new Set([...this.recoveryCandidates(), ...restored]);
+    return [...this.state.agents.values()]
+      .filter((rec) => wake.has(rec.state.agentId) && rec.state.lifecycle !== "FAILED")
+      .map((rec) => rec.state.agentId);
+  }
+
   private recoveryCandidates(): string[] {    const out: string[] = [];
     for (const rec of this.state.agents.values()) {
       const a = rec.state;
@@ -1938,6 +2263,12 @@ export class Supervisor {
     this.turns.flush();
     this.stopStallWatch();
     await this.deps.scheduler.stop();
+    // Every turn still running is about to have its session stopped under it,
+    // and fails for that reason alone. Marked before the first stop, so the
+    // throw finds its mark however soon it lands: `runTurn` then closes the
+    // turn as interrupted instead of filing a seat failure the exiting process
+    // may not live to finish handling (see `closeShutdownStoppedTurn`).
+    for (const turnId of this.activeTurnByAgent.values()) this.shutdownStops.add(turnId);
     for (const [agentId, { session, runtime }] of [...this.sessions]) {
       try {
         await runtime.stop(session);
@@ -1977,6 +2308,7 @@ export class Supervisor {
     this.restartAttempts.clear();
     this.unreachableStreak.clear();
     this.timeoutRetries.clear();
+    this.outageRetries.clear();
     // Keyed by agent id, which a reset does not re-mint: left in place, the new
     // mission's first hold was sized by the old mission's turns instead of the
     // pessimistic bound a seat with no history is owed.
@@ -3553,6 +3885,12 @@ export class Supervisor {
    * scheduler and circuit-breaker backoff parking. Default is derived from the
    * reason kind (`manual`), so only callers that ARE the operator acting
    * through another kind — `reopenGoal`, notably — need to pass it.
+   *
+   * Every explicit activation through here is the operator's, so it is also
+   * marked `operator`: the one standing the provider breaker admits while it
+   * is open. A runtime path that needs `explicit` for the gates above without
+   * the breaker exemption goes to the scheduler directly, as the handover
+   * re-queue does (`requeueAfterHandover`).
    */
   async activateAgent(agentId: string, reason: ActivationReason, opts: { explicit?: boolean } = {}): Promise<{ queued: boolean; blocked?: string }> {
     const goal = this.state.goals.get(this.state.activeGoalId ?? "");
@@ -3571,11 +3909,13 @@ export class Supervisor {
     // this is the end of the line for every activation path — operator wake,
     // interest match and recovery restart alike.
     if (rec.state.lifecycle === "RETIRED") return { queued: false, blocked: "agent was retired" };
+    const explicit = opts.explicit ?? reason.kind === "manual";
     const req: SchedulerActivationRequest = {
       agentId,
       reason,
       priority: reason.kind === "startup" ? 5 : reason.kind === "recovery" ? 7 : reason.kind === "manual" ? 6 : 3,
-      explicit: opts.explicit ?? reason.kind === "manual",
+      explicit,
+      ...(explicit ? { operator: true } : {}),
     };
     const queued = await this.deps.scheduler.requestActivation(req);
     if (queued) return { queued: true };
@@ -3615,6 +3955,10 @@ export class Supervisor {
     }
     const sess = this.sessions.get(agentId);
     if (sess) await sess.runtime.suspend(sess.session).catch(() => undefined);
+    // The operator's pause outranks the mesh's park, including a pause of a
+    // seat the mesh had already parked: it is the latest suspension, which is
+    // what the boot rebuild reads, so live and rebuilt agree on it.
+    this.terminalSuspended.delete(agentId);
     await this.deps.kernel.emit("agent.suspended", { agentId }, { actorId: HUMAN_AGENT_ID });
     return {};
   }
@@ -3739,6 +4083,28 @@ export class Supervisor {
   }
 
   /**
+   * Close a turn `shutdown()` stopped: back to IDLE, the turn closed in the log
+   * by the `turnId` on the change — the same record `closeAbandonedTurns` writes
+   * at the next boot for a turn whose process died without one, written here
+   * while this process still can. `cause` says why, for a reader of the log.
+   *
+   * No `agent.failed`, no ladder, no strike, no recovery wake: the seat did
+   * not fail, and there is no process left to run a retry in. The session is
+   * dropped — `shutdown` stopped it. If the emit never lands (the store closed
+   * first), the next boot's `closeAbandonedTurns` closes the turn instead, so
+   * either way the seat boots IDLE, never FAILED.
+   */
+  private async closeShutdownStoppedTurn(agentId: string, turnId: string, note: string): Promise<void> {
+    this.sessions.delete(agentId);
+    const lifecycle = this.state.agents.get(agentId)?.state.lifecycle;
+    if (!lifecycle || lifecycle === "IDLE" || lifecycle === "SUSPENDED" || lifecycle === "COMPLETED") return;
+    if (!(LIFECYCLE_TRANSITIONS[lifecycle] ?? []).includes("IDLE")) return;
+    await this.deps.kernel
+      .emit("agent.state_changed", { agentId, to: "IDLE", cause: MESH_SHUTDOWN_CAUSE, note, turnId }, { actorId: "system", correlationId: turnId })
+      .catch(() => undefined);
+  }
+
+  /**
    * Leave a seat whose turn the operator stopped with `suspend` SUSPENDED.
    *
    * Called from `runTurn`'s `finally` BEFORE `turnInFlight` clears, because the
@@ -3752,6 +4118,8 @@ export class Supervisor {
     if (!lifecycle || lifecycle === "SUSPENDED" || !(LIFECYCLE_TRANSITIONS[lifecycle] ?? []).includes("SUSPENDED")) return;
     const sess = this.sessions.get(agentId);
     if (sess) await sess.runtime.suspend(sess.session).catch(() => undefined);
+    // Same rule as `suspendAgent`: this suspension is the operator's.
+    this.terminalSuspended.delete(agentId);
     await this.deps.kernel
       .emit("agent.suspended", { agentId, note: operatorStopDetail(stop), turnId }, { actorId: HUMAN_AGENT_ID, correlationId: turnId })
       .catch(() => undefined);
@@ -3760,6 +4128,11 @@ export class Supervisor {
   async resumeAgent(agentId: string): Promise<void> {
     const rec = this.state.agents.get(agentId);
     if (rec?.state.lifecycle === "RETIRED") return;
+    // Whichever suspension parked it, a resume puts the seat back under the
+    // mesh's scheduling, so the terminal-failure marking must not outlive it:
+    // left behind, a later escalation answer would count a working seat as
+    // parked-for-failure and clear counters the operator did not ask about.
+    this.terminalSuspended.delete(agentId);
     const sess = this.sessions.get(agentId);
     if (sess && rec) {
       const context = await this.buildRuntimeContext(agentId);
@@ -3772,6 +4145,157 @@ export class Supervisor {
       else this.sessions.delete(agentId);
     }
     await this.deps.kernel.emit("agent.resumed", { agentId }, { actorId: HUMAN_AGENT_ID });
+  }
+
+  /**
+   * Seats the mesh parked for terminal failure and that are still SUSPENDED,
+   * as a plain id list. The stall escalation names them (see `checkStall`) so
+   * the operator can see WHY nothing moves — "nudges produced no work" is the
+   * symptom, and a mesh whose every seat is parked needs a different answer
+   * from a mesh whose driver ignores its nudges.
+   */
+  private terminalSuspendedSeats(): string[] {
+    return [...this.terminalSuspended].filter((id) => this.state.agents.get(id)?.state.lifecycle === "SUSPENDED");
+  }
+
+  /**
+   * The operator has answered an escalation: put the seats the MESH parked for
+   * terminal failure back to work, and drive them.
+   *
+   * This is the release the "retry" answer never had. `handleAgentFailure`
+   * suspends a seat whose turns keep failing terminally, on the assumption the
+   * mission can proceed without it. When EVERY seat dies that way — a provider
+   * account over quota returned 429 for 855 of 1023 calls on 2026-09-27, and
+   * each seat was parked in turn — it cannot, so the watchdog raised
+   * `stalemate:stall_nudge_cap` and the operator's answer set the goal ACTIVE
+   * and called `activateAgent`, which refuses a SUSPENDED seat by lifecycle.
+   * The answer was a no-op, the watchdog escalated again, and the only thing
+   * that worked was resuming nine seats by hand.
+   *
+   * Only `terminalSuspended` seats are touched. A seat the OPERATOR suspended
+   * is not in that set and stays down until the operator resumes it: an
+   * escalation answer is not that instruction, and undoing a deliberate pause
+   * would be a worse bug than the one this fixes.
+   *
+   * All of them, not just the ones the card happens to name: terminal failure
+   * is an ENVIRONMENT condition (the quota, the dead backend) rather than a
+   * per-seat mistake, so seats parked by the same outage share its remedy —
+   * and the stall card names no seat at all, only a `candidateDriver`. Seats
+   * other than the escalation's own subject are therefore revived for the same
+   * reason the recovery sweep below already wakes them.
+   *
+   * Each revival is a FRESH START, not a rescrape of the ladder: the crash,
+   * slow-turn and unreachable counters that parked the seat (and the
+   * scheduler's breaker strikes, which would otherwise refuse the wake) are
+   * cleared first, or the first turn back would walk straight back into the
+   * park. The resume is emitted as the ordinary `agent.resumed` — the same
+   * event the manual resume and a reopen already use, so nothing new has to be
+   * replayed — and the activation follows it, so `activateAgent` finds an IDLE
+   * seat. Resume BEFORE activate is the whole fix.
+   */
+  private async reviveTerminalSuspended(why: string): Promise<string[]> {
+    const revived: string[] = [];
+    for (const agentId of [...this.terminalSuspended]) {
+      const rec = this.state.agents.get(agentId);
+      // Gone, retired, or no longer suspended: nothing to revive, and the id
+      // must not linger (a stale entry could otherwise clear the counters of a
+      // seat that is working normally by the time the next card is answered).
+      if (!rec || rec.state.lifecycle !== "SUSPENDED") {
+        this.terminalSuspended.delete(agentId);
+        continue;
+      }
+      await this.resumeAgent(agentId);
+      // Read the projection back rather than trust the emit: the reducer is
+      // what decides the lifecycle and it could have refused. A refused resume
+      // leaves the seat suspended, so the marking goes back — the seat is
+      // still exactly what it says it is, and dropping it here would lose the
+      // classification for the whole episode (`resumeAgent` clears it on the
+      // way in, which only an actually-returned seat has earned).
+      if (this.state.agents.get(agentId)?.state.lifecycle !== "IDLE") {
+        this.terminalSuspended.add(agentId);
+        continue;
+      }
+      // Cleared now, not before: this seat is demonstrably back, and none of
+      // these counters survives into the fresh start. Cleared BEFORE the
+      // activation — the scheduler's breaker in particular would otherwise
+      // refuse it — but not before the resume that made the seat real again.
+      this.restartAttempts.delete(agentId);
+      this.timeoutRetries.delete(agentId);
+      this.unreachableStreak.delete(agentId);
+      this.outageRetries.delete(agentId);
+      // The breaker counts unproductive turns, not failures, but it parks the
+      // seat for the same PARK_MS and would refuse the wake below. The
+      // operator's answer is a fresh start for it too. `"ok"` is the outcome
+      // that clears the strikes — the only public door onto that map.
+      this.deps.scheduler.noteTurnOutcome?.(agentId, "ok");
+      revived.push(agentId);
+      this.auditLine(`escalation response: revived ${agentId}, parked after a terminal failure (${why})`);
+    }
+    // Between the resumes and the activations: the notice names every seat
+    // that came back, and a revived seat's first turn should read it rather
+    // than find it at turn end and be woken again for it.
+    await this.announceRevived(revived);
+    for (const agentId of revived) {
+      // After the resume, never before: a SUSPENDED seat is refused here.
+      await this.activateAgent(
+        agentId,
+        { kind: "recovery", note: `${why}; you were parked after a terminal failure — the mission is running again, pick up your mail and what you owe` },
+      ).catch(() => undefined);
+    }
+    return revived;
+  }
+
+  /**
+   * Tell the mesh that seats it was told were dead are back.
+   *
+   * The death is announced: `handleAgentFailure` sends each creditor an INFORM
+   * `{ declined: true, request, reason: "<seat> failed terminally … re-plan" }`.
+   * Before this, a revival had no counterpart, and on 2026-09-28 (13:06Z)
+   * seats kept reasoning from the last thing they were told: right after ten
+   * seats came back, backend escalated that the merge gate had "no live
+   * holder" and pm escalated it again, both about review seats that were IDLE.
+   *
+   * ONE message, from the runtime (the human seat, as the death notice), in a
+   * thread of its own. To every seat that is not retired, not only the
+   * creditors: the death travels past them — pm's card repeated backend's —
+   * and the creditor list survives a restart only as prose in the death
+   * notice's `reason`, which is not something to route on.
+   *
+   * Sent as a BROADCAST, so it wakes nobody by itself: the scheduler wakes only
+   * seats with a declared interest in mail, and every other seat reads it on
+   * its next turn, whatever wakes it. A direct INFORM would buy the whole
+   * roster a turn for an announcement that asks nothing — and, sent here, the
+   * revived seats a message wake racing the recovery wake below. Nothing is
+   * owed on it, and a broadcast refuses replies.
+   */
+  private async announceRevived(revived: string[]): Promise<void> {
+    if (revived.length === 0) return;
+    const to = [...this.state.agents.values()]
+      .filter((r) => r.state.agentId !== HUMAN_AGENT_ID && r.state.lifecycle !== "RETIRED")
+      .map((r) => r.state.agentId);
+    const names = revived.join(", ");
+    const one = revived.length === 1;
+    const them = one ? "it" : "them";
+    const res = await this.sendMessage(
+      {
+        from: HUMAN_AGENT_ID,
+        to,
+        type: "INFORM",
+        newThread: { subject: `${names} ${one ? "is" : "are"} available again` },
+        payload: {
+          available: true,
+          revived,
+          reason:
+            `${names} ${one ? "is" : "are"} available again: the mesh parked ${them} after ${one ? "its" : "their"} turns failed terminally, and the operator's answer to an escalation has resumed ${them}. ` +
+            `Every earlier notice that ${names} "failed terminally" is superseded — ask, review with, hand off to and wait on ${them} as normal, and do not escalate or re-plan around ${them} as dead. ` +
+            `Asks that were declined when ${one ? "it" : "they"} failed are still closed: send them again if you still need the answer.`,
+        },
+        priority: "NORMAL",
+      },
+      { control: { mode: "broadcast" } },
+    ).catch((err: unknown) => ({ accepted: false, reason: (err as Error).message }));
+    if (res.accepted) this.auditLine(`escalation response: told ${to.length} seat(s) that ${names} ${one ? "is" : "are"} available again`);
+    else this.auditLine(`escalation response: the notice that ${names} ${one ? "is" : "are"} available again was not sent: ${res.reason ?? "refused"}`);
   }
 
   /**
@@ -5532,6 +6056,20 @@ export class Supervisor {
         priority: "URGENT",
       });
     }
+    // The answer is the operator's word that the mission should move again, so
+    // the seats the MESH parked for terminal failure come back here — before
+    // every activation below, which is what makes them admittable again: a
+    // SUSPENDED seat is refused by `activateAgent` by lifecycle, and that is
+    // why answering the stall card used to change nothing. Seats the OPERATOR
+    // suspended are not touched (see `reviveTerminalSuspended`).
+    await this.reviveTerminalSuspended(`escalation responded: ${response.slice(0, 120)}`);
+    // The provider card's answer ("topped up", "retry") is the operator saying
+    // the provider may be back: probe NOW instead of sitting out the backoff.
+    // Before the recovery wakes below, so the first of them is admitted as the
+    // probe rather than held behind an open breaker.
+    if (esc.conflictKey === providerCardKey(esc.goalId) && this.deps.scheduler.probeProviderNow?.()) {
+      this.auditLine(`escalation response: probing the model provider now instead of waiting out the backoff (${response.slice(0, 120)})`);
+    }
     // Stuck-request escalations are raised by the watchdog, not by the stuck
     // agent — so the generic raiser-wake above notifies nobody. Wake the stuck
     // agent explicitly and let the scheduler nudge it again; otherwise the
@@ -6733,7 +7271,20 @@ export class Supervisor {
         );
       }
       if (reserve.blocked) {
-        await this.deps.kernel.emit("agent.state_changed", { agentId, to: "BLOCKED", note: `budget: ${reserve.reason}` }, { actorId: agentId });
+        // BLOCKED is reachable only from a working lifecycle (THINKING, WORKING,
+        // WAITING, REVIEWING — `LIFECYCLE_TRANSITIONS`), and a seat refused at
+        // the door is usually still IDLE, woken for mail. The kernel rejects
+        // IDLE -> BLOCKED, and that throw used to skip everything below: the
+        // latch, the card and the recorded outcome. The seat spent nothing but
+        // was never parked, walked back to this door on every wake, and the
+        // operator was never told. The lifecycle move is cosmetic next to the
+        // latch, so it must not be able to cancel it.
+        const blockedFrom = this.state.agents.get(agentId)?.state.lifecycle;
+        if (blockedFrom && (LIFECYCLE_TRANSITIONS[blockedFrom] ?? []).includes("BLOCKED")) {
+          await this.deps.kernel
+            .emit("agent.state_changed", { agentId, to: "BLOCKED", note: `budget: ${reserve.reason}` }, { actorId: agentId })
+            .catch(() => undefined);
+        }
         // Nothing raised it, so this seat cannot pay for its next turn: park it
         // like an overdrawn one. A refusal on SHORT headroom sets no latch by
         // itself, so the seat stayed activatable and every wake it was sent
@@ -7168,6 +7719,8 @@ export class Supervisor {
       // an agent that is merely occasionally slow never accumulates its way to
       // a terminal failure.
       this.timeoutRetries.delete(agentId);
+      // And the provider answered, so its refusals are behind this seat.
+      if (!output.error) this.outageRetries.delete(agentId);
       this.auditTurn(turnId, agentId, input, output, turn.results.map((r) => r.op));
       // Recorded BEFORE the error throw: a turn can be held and then fail, and
       // what the seat reached for is exactly what the operator needs to see in
@@ -7739,7 +8292,9 @@ export class Supervisor {
       // turn costs full tokens and changes nothing, and the agent was
       // immediately re-activated to do it again. Three in a row now park it
       // for the cooldown instead of burning the mission budget in a loop.
-      this.deps.scheduler.noteTurnOutcome?.(agentId, unproductive ? "blocked" : "ok");
+      // `providerAnswered`: this turn reached the model and got an answer, which
+      // is the evidence a half-open provider breaker is waiting for.
+      this.deps.scheduler.noteTurnOutcome?.(agentId, unproductive ? "blocked" : "ok", { providerAnswered: true });
       this.deps.hooks?.onAgentTurnEnd?.(agentId, turnId, !unproductive);
     } catch (err) {
       this.deps.hooks?.onAgentTurnEnd?.(agentId, turnId, false);
@@ -7754,7 +8309,7 @@ export class Supervisor {
           .emit("agent.state_changed", { agentId, to: "IDLE", note: `kernel rejected: ${err.message}`, turnId }, { actorId: agentId, correlationId: turnId })
           .catch(() => undefined);
         this.finishTurn(turnId, agentId, { status: "ok", error: (err as Error).message, errorDetail: describeError(err, failedIn) });
-        this.deps.scheduler.noteTurnOutcome?.(agentId, "ok");
+        this.deps.scheduler.noteTurnOutcome?.(agentId, "ok", measuredTokens !== undefined ? { providerAnswered: true } : undefined);
         // Refused before settlement (holds still open) on a turn the backend
         // measured: the model's work did not reach the mesh, and the tokens it
         // spent are real. Discarding it with the figure is what routes that
@@ -7808,6 +8363,12 @@ export class Supervisor {
         // forced settle's AbortError, a timeout the stop raced — the cause is
         // known, and it is not a failure.
         const operatorStop = this.operatorStops.get(turnId);
+        // This process is shutting down and stopped the turn's session under it
+        // (`shutdown`). Not a seat failure either: nothing about the seat broke,
+        // and a failure recorded here is one the exiting process rarely lives to
+        // finish handling — on 2026-09-28 13:42Z it wrote `agent.failed` for
+        // three seats and the restart for one, and two booted FAILED.
+        const shutdownStop = !operatorStop && this.shutdownStops.has(turnId);
         // The budget watch's own stop, set the moment it ordered the interrupt
         // (`interruptOverBudgetTurns`). Read here and NOT inferred from the
         // detail prose: the seat's note and the discard's reason both come off
@@ -7829,7 +8390,7 @@ export class Supervisor {
           // and neither is what happened. Only the label changes here — the
           // error itself, and so the failure ladder `handleAgentFailure` walks,
           // is exactly what it was.
-          reason: operatorStop
+          reason: operatorStop || shutdownStop
             ? "interrupted"
             : budgetStop
               ? "budget"
@@ -7845,7 +8406,7 @@ export class Supervisor {
           // A budget stop keeps its classification (the abort's type decides the
           // failure ladder) but says what actually stopped it. An operator stop
           // says so, with the operator's reason.
-          detail: (operatorStop ? operatorStopDetail(operatorStop) : (budgetStop ?? msg)).slice(0, 200),
+          detail: (operatorStop ? operatorStopDetail(operatorStop) : shutdownStop ? shutdownStopDetail(msg) : (budgetStop ?? msg)).slice(0, 200),
           ...(usage ? { tokens: usage.total, usage } : {}),
         };
         // Failure handling first, so the note below states what is true AFTER
@@ -7856,9 +8417,10 @@ export class Supervisor {
         //
         // An operator stop skips all of it: no `agent.failed`, no restart and
         // its recovery wake, no crash or slow-turn counter. The seat keeps its
-        // task and its mail and goes back to IDLE.
+        // task and its mail and goes back to IDLE. A shutdown stop likewise.
         try {
           if (operatorStop) await this.closeOperatorStoppedTurn(agentId, turnId, operatorStop);
+          else if (shutdownStop) await this.closeShutdownStoppedTurn(agentId, turnId, turnDiscard.detail ?? msg);
           else await this.handleAgentFailure(agentId, err, reason);
         } finally {
           // Built from facts: what this turn landed (its correlated events) and
@@ -7891,9 +8453,10 @@ export class Supervisor {
           // status is what the failure digests and the console's "crashed" badge
           // count, and a turn stopped on purpose is neither. There is no status
           // of its own to give it without every reader learning a new value.
+          // A shutdown stop is neither too.
           this.finishTurn(turnId, agentId, {
-            status: operatorStop ? "blocked" : "failed",
-            error: operatorStop ? turnDiscard.detail : msg,
+            status: operatorStop || shutdownStop ? "blocked" : "failed",
+            error: operatorStop || shutdownStop ? turnDiscard.detail : msg,
             errorDetail: describeError(err, failedIn),
             ...(usage
               ? {
@@ -8058,6 +8621,7 @@ export class Supervisor {
       this.turnVerificationTools.delete(agentId);
       this.budgetStops.delete(turnId);
       this.operatorStops.delete(turnId);
+      this.shutdownStops.delete(turnId);
       const stopWaiters = this.turnEndWaiters.get(turnId);
       if (stopWaiters) {
         this.turnEndWaiters.delete(turnId);
@@ -8357,7 +8921,12 @@ export class Supervisor {
     // mid-thought, looked like a transport error, and burned the restart budget
     // three times over.
     const slow = isTimeoutError(error);
-    const unreachable = !slow && isConnectionError(error);
+    // The provider refused the turn (429/402/401/403/5xx, or its endpoint is
+    // unreachable): not this seat's fault, and not this seat's ladder. Decided
+    // before anything below reads `unreachable`, whose pattern would otherwise
+    // file a proxy's "Connection error" as this seat's dead backend.
+    const outage = slow ? null : classifyProviderOutage(error);
+    const unreachable = !slow && !outage && isConnectionError(error);
     const short = error instanceof Error ? error.message : String(error ?? "unknown failure");
     const labeled = backend ?? (unreachable ? `backend unreachable for ${agentId}: ${short}` : short);
     // The session that failed, read before it is dropped below. This was a
@@ -8376,12 +8945,20 @@ export class Supervisor {
           error: labeled,
           sessionId: failedSessionId,
           ...(registered?.sessionId && registered.sessionId !== failedSessionId ? { sdkSessionId: registered.sessionId } : {}),
-          restartable: this.config.agents[agentId]?.sessionPolicy.persistent ?? false,
+          // An outage failure is always retried, persistent seat or not — so it
+          // is restartable, which is what keeps the termination manager's
+          // `runtime_failure` verdict off it in the window before the retry.
+          restartable: outage ? true : (this.config.agents[agentId]?.sessionPolicy.persistent ?? false),
+          ...(outage ? { providerOutage: outage.kind, ...(outage.status !== undefined ? { status: outage.status } : {}) } : {}),
         },
         { actorId: agentId },
       )
       .catch(() => undefined);
     this.sessions.delete(agentId);
+    if (outage) {
+      await this.handleProviderOutage(agentId, outage, reason);
+      return;
+    }
     const persistent = this.config.agents[agentId]?.sessionPolicy.persistent ?? false;
     if (slow) {
       // Keep the crash counter untouched, and reset any unreachable streak: the
@@ -8470,8 +9047,16 @@ export class Supervisor {
       // away — even though every ask it owed was just discharged with notice
       // and the mission can proceed without it. lastError is retained for
       // the audit trail; the escalation card below records the full detail.
+      //
+      // Recorded as MESH-parked before the emit, so a human escalation answer
+      // can tell this suspension from one the operator asked for (a pause, a
+      // stop with `suspend`) and revive exactly these — see
+      // `reviveTerminalSuspended`. `cause` is the durable copy of that
+      // classification, which boot reads back (`rebuildTerminalSuspended`);
+      // the `note` stays prose.
+      this.terminalSuspended.add(agentId);
       await this.deps.kernel
-        .emit("agent.state_changed", { agentId, to: "SUSPENDED", note: `terminal failure: ${short}` }, { actorId: HUMAN_AGENT_ID })
+        .emit("agent.state_changed", { agentId, to: "SUSPENDED", cause: TERMINAL_FAILURE_CAUSE, note: `terminal failure: ${short}` }, { actorId: HUMAN_AGENT_ID })
         .catch(() => undefined);
       // Terminal failure (no restart scheduled): count toward the scheduler
       // circuit breaker. Restart-scheduled failures are excluded — that loop
@@ -8501,6 +9086,150 @@ export class Supervisor {
         await this.escalate({ reason: "runtime_failure", raisedBy: "recovery-manager", conflictKey: `runtime:${agentId}`, advisory: true, detail: { agentId, error: short, attempts } });
       }
     }
+  }
+
+  /**
+   * A turn the model PROVIDER refused. The seat is not the fault, so none of
+   * the seat's machinery moves: no crash, slow-turn or unreachable strike, no
+   * released task, no discharged ask, no park, no per-seat card, and no strike
+   * on the scheduler's per-seat breaker. The turn is still discarded and billed
+   * like any other failure (the caller's `finally` does both).
+   *
+   * What happens instead: the seat goes back to IDLE (through the restart
+   * edge, the only way out of FAILED), the scheduler's provider breaker counts
+   * the failure toward its mission-wide trip, and the seat's own retry is
+   * queued a little later. Once the breaker is open that retry is HELD in the
+   * queue, not refused, so the seat keeps its place for the probe and for the
+   * breaker's close without a timer per seat.
+   *
+   * Measured twice before this existed (2026-09-27 on a 429, 2026-09-28 on a
+   * 402): every seat walked its own ladder in ~90s, was parked SUSPENDED and
+   * raised its own `runtime_failure` card — ten cards for one outage, and a
+   * mission that sat dead until an operator resumed each seat by hand.
+   */
+  private async handleProviderOutage(agentId: string, outage: ProviderOutage, reason: ActivationReason): Promise<void> {
+    const attempt = (this.outageRetries.get(agentId) ?? 0) + 1;
+    this.outageRetries.set(agentId, attempt);
+    if (this.state.agents.get(agentId)?.state.lifecycle === "FAILED") {
+      await this.deps.kernel
+        .emit("agent.restarted", { agentId, attempt, cause: "provider_unavailable" }, { actorId: RECOVERY_ACTOR_ID })
+        .catch(() => undefined);
+    }
+    if (this.state.agents.get(agentId)?.state.lifecycle === "STARTING") {
+      await this.deps.kernel
+        .emit("agent.state_changed", { agentId, to: "IDLE", note: `the model provider refused the turn: ${outage.error.slice(0, 200)}` }, { actorId: RECOVERY_ACTOR_ID })
+        .catch(() => undefined);
+    }
+    this.deps.scheduler.noteTurnOutcome?.(agentId, "outage", { error: outage.error });
+    // Spaced like the slow-turn retry: a 429 that says "reset after 3s" is
+    // worth a retry in seconds, and three of these inside the trip window are
+    // what open the breaker, which then holds the retry for the backoff.
+    const delay = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
+    const t = this.timers.setTimeout(() => {
+      void this.activateAgent(agentId, {
+        kind: "recovery",
+        note: `retry: the model provider refused your last turn (${outage.error.slice(0, 160)}) — nothing you did caused it; carry on with your work`,
+        eventId: reason.eventId,
+      }).catch(() => undefined);
+    }, delay);
+    (t as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * The scheduler's provider breaker changed state (see `Scheduler.noteTurnOutcome`).
+   * The scheduler gates admission; this keeps the one card, the audit trail
+   * and the probe supply.
+   */
+  async onProviderBreaker(transition: ProviderBreakerTransition): Promise<void> {
+    const run = this.providerBreakerChain.then(() => this.applyProviderBreaker(transition));
+    this.providerBreakerChain = run.catch((err) => this.auditLine(`provider breaker: ${(err as Error).message}`));
+    return run;
+  }
+
+  private async applyProviderBreaker(t: ProviderBreakerTransition): Promise<void> {
+    const s = t.snapshot;
+    const at = (ms: number | undefined): string => (ms ? new Date(ms).toISOString() : "?");
+    this.auditLine(
+      `provider breaker: ${t.from} -> ${t.to} (${t.why}); ${s.failedTurns} turn(s) refused across ${s.seats.join(", ") || "no seat"}` +
+        (t.to === "open" ? `; admitting no turns until ${at(s.nextProbeAt)} (backoff ${Math.round(s.backoffMs / 60_000)}m, opening ${s.opens})` : "") +
+        (t.to === "closed" ? `; probe by ${s.probe ?? "?"} answered — admitting turns again` : "") +
+        `; last error: ${s.lastError.slice(0, 300)}`,
+    );
+    const goalId = this.state.activeGoalId;
+    if (!goalId) return;
+    const card = [...this.state.escalations.values()].find((e) => e.status === "OPEN" && e.conflictKey === providerCardKey(goalId));
+    if (t.to === "closed") {
+      // Already answered (RESPONDED) cards are left as the operator closed them.
+      if (card) {
+        await this.deps.kernel.emit(
+          "escalation.auto_resolved",
+          {
+            escalationId: card.id,
+            reason: `auto-resolved: the model provider answered ${s.probe ?? "a"} probe turn, so the breaker closed and every seat is admitted again (${s.failedTurns} turn(s) had been refused across ${s.seats.length} seat(s) since ${at(s.openedAt)})`,
+            probe: s.probe,
+            failedTurns: s.failedTurns,
+            seats: s.seats,
+          },
+          { actorId: RECOVERY_ACTOR_ID, goalId },
+        );
+      }
+      this.outageRetries.clear();
+      return;
+    }
+    const detail = providerCardDetail(s, t.to, this.nowMs());
+    if (card) {
+      // The same card, restated. `escalation.requested` is the one event the
+      // reducer reads a card's body from, and it stores by id, so re-emitting
+      // it with the card's own id updates "next attempt" in place instead of
+      // minting a second card for the same outage.
+      await this.deps.kernel.emit(
+        "escalation.requested",
+        { escalation: { ...card, detail: { ...detail, disagreementRef: (card.detail as { disagreementRef?: unknown } | undefined)?.disagreementRef } } },
+        { actorId: card.raisedBy, goalId },
+      );
+    } else if (t.to === "open") {
+      await this.escalate({
+        reason: PROVIDER_UNAVAILABLE_REASON,
+        raisedBy: RECOVERY_ACTOR_ID,
+        conflictKey: providerCardKey(goalId),
+        // Advisory: the card must never halt the goal. An ESCALATED goal
+        // refuses every activation, the probe's included, and the breaker
+        // heals the mission on its own; the card informs and offers the
+        // shortcut (answer it to probe now).
+        advisory: true,
+        participants: s.seats,
+        detail,
+      });
+    }
+    if (t.to === "half_open") await this.supplyProviderProbe(s);
+  }
+
+  /**
+   * Half-open admits the next queued turn as the probe. When nothing is
+   * queued — every seat's retry already ran, or the mission was idle when the
+   * provider went away — wake one, or the breaker would sit half-open with
+   * nobody to prove the provider is back (and its open card would hold the
+   * mission's completion verdict shut). Most recently refused seat first: it
+   * is the likeliest to still have the work the outage interrupted.
+   */
+  private async supplyProviderProbe(s: ProviderBreakerSnapshot): Promise<void> {
+    if (this.deps.scheduler.pending() > 0) return;
+    const driver = this.stallDriver();
+    const order = [...new Set([...[...s.seats].reverse(), ...this.recoveryCandidates(), ...(driver ? [driver] : [])])];
+    for (const id of order) {
+      const rec = this.state.agents.get(id);
+      if (!rec || id === HUMAN_AGENT_ID || this.turnInFlight.has(id)) continue;
+      if (["SUSPENDED", "COMPLETED", "RETIRED"].includes(rec.state.lifecycle)) continue;
+      const res = await this.activateAgent(id, {
+        kind: "recovery",
+        note: `the model provider was refusing turns (${s.lastError.slice(0, 160)}); this turn is the probe that tells the mesh it is back — carry on with your work`,
+      });
+      if (res.queued) {
+        this.auditLine(`provider breaker: woke ${id} to probe the provider`);
+        return;
+      }
+    }
+    this.auditLine("provider breaker: half-open, but no seat could be woken to probe — the next admitted turn will be the probe");
   }
 
   private async ensureSession(agentId: string): Promise<{ session: import("../../protocol/src/index").AgentSession; runtime: AgentRuntime }> {
@@ -10488,6 +11217,13 @@ export class Supervisor {
    * still holds unread mail, which a handover now always leaves unread — a mail
    * wake is covered by that turn and is dropped; any other wake is stashed
    * behind it, as before.
+   *
+   * `explicit` but never `operator`, even when the consumed wake was the
+   * operator's: the operator's turn was admitted and spent, and this is the
+   * mesh's own re-queue. So an open provider breaker HOLDS it — queued, a probe
+   * candidate, run once the breaker closes. It used to walk through: on
+   * 2026-09-28 a handover turn failed with the outage's 402 and this re-queue
+   * started a second refused turn eight seconds after the breaker had opened.
    */
   private async requeueAfterHandover(agentId: string, reason: ActivationReason): Promise<void> {
     const gone = await this.handoverWakeWithdrawn(agentId, reason);
@@ -11552,6 +12288,12 @@ export class Supervisor {
     }
     this.haltNeglectEscalated = false;
     if (this.deps.scheduler.pending() !== 0 || this.deps.scheduler.running() !== 0) return;
+    // The provider breaker is holding admissions: the mission is quiet for a
+    // reason that already has its card and heals itself. A nudge here would
+    // queue behind the breaker and count toward a stall cap that is not a stall.
+    // Open only: a half-open breaker with nothing queued WANTS a turn, and the
+    // nudge this tick buys is admitted as its probe.
+    if (this.deps.scheduler.providerBreaker?.().state === "open") return;
     // A no-op turn arms a fast retry: the idle and cooldown gates both apply
     // to work-producing turns (their async ripple may still be landing), but
     // a turn that changed nothing deserves the next driver in seconds. Guarded
@@ -11610,6 +12352,13 @@ export class Supervisor {
       } else {
         this.stallCapEscalated = true;
         const unreachable = this.stallRefusalStreak >= MAX_STALL_NUDGES;
+        // Seats the MESH parked for terminal failure, if any. "Nudges produced
+        // no work" is the symptom; a mesh whose seats are all parked behind
+        // lifecycle is a different diagnosis (and a different fix) from one
+        // whose driver is ignoring its nudges, and the operator can only choose
+        // the right answer if the card carries the difference. This changes
+        // only what the card says — the cap fires exactly when it always did.
+        const parkedSeats = this.terminalSuspendedSeats();
         await this.escalate({
           reason: "stalemate:stall_nudge_cap",
           raisedBy: "stall-watchdog",
@@ -11621,6 +12370,19 @@ export class Supervisor {
             candidateDriver: this.stallDriver(),
             actionable: actionable.why,
             criteria: this.unmetCriteriaSummary(),
+            ...(parkedSeats.length > 0
+              ? {
+                  suspendedSeats: parkedSeats,
+                  suspendedCause: "terminal_failure",
+                  suspendedNote:
+                    `${parkedSeats.join(", ")} ${parkedSeats.length === 1 ? "is" : "are"} SUSPENDED because their turns` +
+                    ` failed terminally and the mesh parked ${parkedSeats.length === 1 ? "the seat" : "them"} — not because you suspended ${parkedSeats.length === 1 ? "it" : "them"}.` +
+                    ` Every wake to a suspended seat is refused by lifecycle, so no nudge can reach ${parkedSeats.length === 1 ? "it" : "them"}` +
+                    ` and nothing will move while ${parkedSeats.length === 1 ? "it stays" : "they stay"} down.` +
+                    ` Answering this card resumes ${parkedSeats.length === 1 ? "it" : "them"} (and any other seat parked the same way)` +
+                    ` and drives the mission again; there is nothing to fix per seat.`,
+                }
+              : {}),
             note: unreachable
               ? `the watchdog could not schedule any driver ${this.stallRefusalStreak} times running while the mission still had work (${actionable.why}) — a policy, budget or breaker block is holding the mesh, not the mission`
               : `${this.stallNudgeStreak} stall nudges in a row produced no work while the mission still had work (${actionable.why}) — the mesh cannot un-stick itself and needs an operator decision or a rework of the plan`,
@@ -12482,6 +13244,107 @@ function stuckRequestOf(esc: Escalation): { messageId: string; agentId: string }
 function reviewRoundsArtifactOf(esc: Escalation): string | null {
   const m = /^review_rounds:(.+)$/.exec(String(esc.conflictKey ?? ""));
   return m ? m[1] : null;
+}
+
+/** The `reason` on the provider breaker's card. */
+export const PROVIDER_UNAVAILABLE_REASON = "provider_unavailable";
+
+/** One provider card per goal: the identity the breaker restates and retires. */
+export function providerCardKey(goalId: string): string {
+  return `provider:${goalId}`;
+}
+
+/**
+ * `cause` on the SUSPENDED transition `handleAgentFailure` writes when it
+ * parks a seat after a terminal failure: the durable half of
+ * `Supervisor.terminalSuspended`.
+ */
+export const TERMINAL_FAILURE_CAUSE = "terminal_failure";
+
+/**
+ * `cause` on what the mesh writes when a turn was ended by the process shutting
+ * down rather than by anything the seat did: the IDLE close of a turn
+ * `shutdown()` stopped (`closeShutdownStoppedTurn`), and the `agent.restarted` +
+ * IDLE with which boot restores a seat an earlier process left FAILED mid-way
+ * through handling such a turn (`restoreShutdownCasualties`).
+ */
+export const MESH_SHUTDOWN_CAUSE = "mesh_shutdown";
+
+/** The note every terminal-failure park has carried since the park was added (5059bfe). */
+const LEGACY_TERMINAL_FAILURE_NOTE = "terminal failure:";
+
+/**
+ * Is this lifecycle event the MESH parking a seat after a terminal failure,
+ * as opposed to the operator suspending it?
+ *
+ * The one place a suspension is classified from the log, and only boot asks
+ * it (`rebuildTerminalSuspended`). Live, the classification is recorded where
+ * it is decided; this exists because that record is process memory, and after
+ * a restart the log is all there is.
+ *
+ * The two shapes, from every emitter there has been:
+ * - the park: `agent.state_changed` `{ to: "SUSPENDED", cause:
+ *   "terminal_failure", note: "terminal failure: <error>" }`. Logs written
+ *   before `cause` existed carry only the note, so its fixed prefix is read as
+ *   the legacy marker. That is sound only because nothing else has ever
+ *   written `agent.state_changed` into SUSPENDED, and the park's note has had
+ *   this prefix from the start.
+ * - the operator: `agent.suspended` — the pause / `POST /agents/:id/suspend` /
+ *   staged suspend (`suspendAgent`, `{ agentId }`) and a stop with `suspend:
+ *   true` (`suspendAfterStop`, `{ agentId, note: <stop detail>, turnId }`).
+ *   Never the park, whatever its note says.
+ *
+ * Anything else is false: a suspension nobody recognises degrades to "resume
+ * it by hand", never to reviving a seat someone meant to keep down.
+ */
+export function isTerminalFailureSuspension(event: Pick<MeshEvent, "type" | "payload">): boolean {
+  if (event.type !== "agent.state_changed") return false;
+  const p = (event.payload ?? {}) as { to?: unknown; cause?: unknown; note?: unknown };
+  if (p.to !== "SUSPENDED") return false;
+  if (p.cause === TERMINAL_FAILURE_CAUSE) return true;
+  return typeof p.note === "string" && p.note.startsWith(LEGACY_TERMINAL_FAILURE_NOTE);
+}
+
+/**
+ * Is this agent-ledger `budget.consumed` row a settled turn's charge — the
+ * amount `noteTurnCost` was handed live? The ledger has two other charges and
+ * both are marked, which is what makes this a negative test: a discarded
+ * turn's billing carries `discarded: <reason>`, and the interrupt tariff
+ * `reason: "interrupt"`. The settled row carries neither.
+ */
+function isSettledTurnCharge(p: { discarded?: unknown; reason?: unknown }): boolean {
+  return p.discarded === undefined && p.reason === undefined;
+}
+
+/**
+ * The provider card's body. Written for the operator deciding whether to act:
+ * what the provider said (verbatim), how much it cost, who was hit, and what
+ * the mesh will do next and when — including that nothing was parked, which is
+ * the one thing the old per-seat cards could not say.
+ */
+function providerCardDetail(s: ProviderBreakerSnapshot, state: "open" | "half_open", nowMs: number): Record<string, unknown> {
+  const iso = (ms: number): string => new Date(ms).toISOString();
+  const nextAttemptAt = state === "open" && s.nextProbeAt ? iso(s.nextProbeAt) : iso(nowMs);
+  const seats = s.seats.join(", ") || "no seat";
+  const when =
+    state === "half_open"
+      ? `It is probing now: the next turn admitted is the probe${s.probe ? ` (${s.probe})` : ""}, and every other seat waits for its answer.`
+      : `It will admit ONE turn as a probe at ${nextAttemptAt} (backoff ${Math.round(s.backoffMs / 60_000)} min${s.opens > 1 ? `, doubled after ${s.opens - 1} failed probe(s)` : ""}) and resume every seat on its own if that turn succeeds.`;
+  return {
+    breaker: state,
+    error: s.lastError,
+    failedTurns: s.failedTurns,
+    seats: s.seats,
+    openedAt: s.openedAt ? iso(s.openedAt) : undefined,
+    opens: s.opens,
+    backoffMs: s.backoffMs,
+    nextAttemptAt,
+    ...(s.probe ? { lastProbe: s.probe } : {}),
+    note:
+      `The model provider refused ${s.failedTurns} turn(s) from ${seats}: "${s.lastError.slice(0, 400)}". ` +
+      `The mesh stopped admitting turns rather than failing each seat: no seat was suspended, no ask was discharged, and no work was released. ` +
+      `${when} Answer this card to probe immediately (e.g. once the account is topped up or the proxy is back).`,
+  };
 }
 
 /**

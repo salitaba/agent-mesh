@@ -4,7 +4,17 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches } from "../../config/src/index";
 import type { Projections } from "../../core/src/state";
 import { readableMailDepth, resolveUnread, stillOwes } from "../../core/src/state";
-import type { PolicyEvaluator, QueueWait, SchedulerActivationRequest, SchedulerPort, TurnOutcome } from "../../core/src/ports";
+import type {
+  PolicyEvaluator,
+  ProviderBreakerSnapshot,
+  ProviderBreakerState,
+  ProviderBreakerTransition,
+  QueueWait,
+  SchedulerActivationRequest,
+  SchedulerPort,
+  TurnOutcome,
+  TurnOutcomeDetail,
+} from "../../core/src/ports";
 
 export interface TurnRunner {
   runTurn(agentId: string, reason: ActivationReason): Promise<void>;
@@ -24,6 +34,65 @@ export interface TurnRunner {
    * just cannot narrate.
    */
   reportActivationDenied?(agentId: string, decision: PolicyDecisionResult, reason: ActivationReason): Promise<void>;
+  /**
+   * The provider breaker changed state. The scheduler only gates admission;
+   * the card, the audit line and a probe seat when none is queued are the
+   * runner's, for the same reason `escalateStuckRequest` is.
+   */
+  onProviderBreaker?(transition: ProviderBreakerTransition): Promise<void>;
+}
+
+/**
+ * The provider breaker's trip: this many provider-outage turn failures, from
+ * any seats, inside this window.
+ *
+ * Three in two minutes because both observed outages were total and fast — a
+ * 429 on 855 of 1,023 calls, then a 402 on every seat — with each seat failing
+ * four times in ~90s. Three trips within seconds of onset, before any seat
+ * would have spent its own ladder, while a healthy mesh sees none at all: a
+ * seat's own fault (a 400, a tool crash, a timeout) never counts, so the only
+ * way to reach three is the provider refusing turns. Across ANY seats, not N
+ * distinct ones: a quiet mesh often has one seat working, and requiring a
+ * second to fail too would leave that seat to walk the very ladder this
+ * replaces.
+ */
+export const PROVIDER_TRIP_FAILURES = 3;
+export const PROVIDER_TRIP_WINDOW_MS = 120_000;
+/**
+ * Backoff before the first probe, doubling on each failed probe up to the cap:
+ * 5, 10, 20, 40, 60, 60 … minutes. The shortest outages seen (a usage window
+ * resetting) cleared in minutes and the longest (an unfunded account) needed a
+ * human; five minutes costs one probe turn per window at most, and the hour
+ * cap still answers an account topped up without anyone touching the mesh. An
+ * operator answering the card skips the wait entirely.
+ */
+export const PROVIDER_BACKOFF_INITIAL_MS = 300_000;
+export const PROVIDER_BACKOFF_MAX_MS = 3_600_000;
+
+/** The backoff for the `opens`-th opening of one episode (1-based). */
+export function providerBackoffMs(opens: number): number {
+  return Math.min(PROVIDER_BACKOFF_MAX_MS, PROVIDER_BACKOFF_INITIAL_MS * 2 ** Math.max(0, opens - 1));
+}
+
+interface ProviderBreaker {
+  state: ProviderBreakerState;
+  /** Outage failures while closed, inside the trip window. */
+  recent: Array<{ at: number; agentId: string }>;
+  openedAt: number;
+  failedTurns: number;
+  seats: string[];
+  lastError: string;
+  opens: number;
+  backoffMs: number;
+  nextProbeAt: number;
+  /** The dispatch admitted as the probe while half-open; identity, as in `notifyTurnFinished`. */
+  probeItem?: QueueItem;
+  /** The seat of the last probe, kept for the snapshot after its verdict. */
+  probe?: string;
+}
+
+function closedProviderBreaker(): ProviderBreaker {
+  return { state: "closed", recent: [], openedAt: 0, failedTurns: 0, seats: [], lastError: "", opens: 0, backoffMs: 0, nextProbeAt: 0 };
 }
 
 export interface TriageModel {
@@ -36,6 +105,8 @@ interface QueueItem {
   priority: number;
   enqueuedAt: number;
   explicit?: boolean;
+  /** An operator wake; the only kind the provider breaker admits (`providerHolds`). */
+  operator?: boolean;
 }
 
 const MAX_NUDGES = 3;
@@ -217,6 +288,21 @@ function withNotice(reason: ActivationReason, extra: string | undefined): Activa
 }
 
 /**
+ * `survivor` as it stands after absorbing `absorbed` — a coalesce onto a queued
+ * wake, or a newer strong wake replacing a stashed one. An operator wake folded
+ * into another wake makes that wake the operator's, and operator standing
+ * brings `explicit` with it, as it does at every operator entry point.
+ *
+ * Without this the operator's wake could be folded into a runtime wake the
+ * provider breaker is holding — a handover's re-queue, a seat's outage retry —
+ * and `activateAgent` would answer `queued` for a turn that does not run until
+ * the outage ends: the operator exemption, lost to a coalesce.
+ */
+function absorbOperator<T extends { explicit?: boolean; operator?: boolean }>(survivor: T, absorbed: { operator?: boolean } | undefined): T {
+  return absorbed?.operator && !survivor.operator ? { ...survivor, explicit: true, operator: true } : survivor;
+}
+
+/**
  * Payload fields through which an event names the ask it is about. Read when
  * an interest wake is enqueued, so the wake can be checked again at dequeue.
  */
@@ -283,6 +369,19 @@ export class Scheduler implements SchedulerPort {
   private reportedRefusal = new Map<string, string>();
   private static readonly STRIKE_LIMIT = 3;
   private static readonly PARK_MS = 30000;
+  /**
+   * The breaker's mission-wide half: the model PROVIDER. `strikes` parks one
+   * seat for its own poison work; this holds every seat's admission when the
+   * provider itself refuses turns, because a seat parked for a provider outage
+   * was a seat the mesh gave up on for nothing. Fed by the same
+   * `noteTurnOutcome` (outcome `outage`) and gated in the same pump.
+   *
+   * Held, not refused: while it is open, activations still queue (so no mail
+   * wake or retry is lost) and the pump dispatches none of them. Half-open
+   * admits exactly one as the probe; its verdict closes or re-opens it.
+   */
+  private provider: ProviderBreaker = closedProviderBreaker();
+  private providerTimer?: TimerHandle;
   private listeners: Array<() => void> = [];
   private stopped = true;
   private idleFired = true;
@@ -473,6 +572,11 @@ export class Scheduler implements SchedulerPort {
     this.clearIdleTimer();
     this.idleArmedAt = null;
     this.idleFired = true;
+    // A wiped mission starts with a closed breaker: its card belonged to the
+    // goal that was just deleted, and the next outage trips a fresh one.
+    if (this.providerTimer) this.timers.clearTimeout(this.providerTimer);
+    this.providerTimer = undefined;
+    this.provider = closedProviderBreaker();
   }
 
   /**
@@ -883,7 +987,19 @@ export class Scheduler implements SchedulerPort {
     return goalId ? this.state.budgets.get(`agent:${goalId}/${agentId}`)?.exceeded === true : false;
   }
 
-  noteTurnOutcome(agentId: string, outcome: TurnOutcome): void {
+  noteTurnOutcome(agentId: string, outcome: TurnOutcome, detail: TurnOutcomeDetail = {}): void {
+    // A provider outage is not the seat's strike: it goes to the mission-wide
+    // half of the breaker and nowhere else.
+    if (outcome === "outage") {
+      this.noteProviderOutage(agentId, detail.error ?? "");
+      return;
+    }
+    // The probe answered: the provider is back. Only the probe's own answer
+    // counts — a turn that was already in flight when the breaker opened says
+    // nothing about the provider NOW.
+    if (detail.providerAnswered && this.provider.state === "half_open" && this.provider.probeItem?.agentId === agentId) {
+      this.closeProvider(agentId);
+    }
     if (outcome === "ok") {
       if (this.strikes.delete(agentId)) this.lastNudge.delete(agentId);
       return;
@@ -892,6 +1008,124 @@ export class Scheduler implements SchedulerPort {
     s.count++;
     if (s.count >= Scheduler.STRIKE_LIMIT) s.parkedUntil = this.now() + Scheduler.PARK_MS;
     this.strikes.set(agentId, s);
+  }
+
+  /** The provider breaker as it stands. */
+  providerBreaker(): ProviderBreakerSnapshot {
+    const p = this.provider;
+    return {
+      state: p.state,
+      openedAt: p.openedAt,
+      failedTurns: p.failedTurns,
+      seats: [...p.seats],
+      lastError: p.lastError,
+      opens: p.opens,
+      backoffMs: p.backoffMs,
+      ...(p.state === "open" ? { nextProbeAt: p.nextProbeAt } : {}),
+      ...(p.probe ? { probe: p.probe } : {}),
+    };
+  }
+
+  /**
+   * Admit the probe now instead of at the end of the backoff: the operator
+   * answered the card. A no-op unless the breaker is open — half-open already
+   * has (or is about to admit) its one probe, and a closed one has nothing to
+   * probe.
+   */
+  probeProviderNow(): boolean {
+    if (this.provider.state !== "open") return false;
+    this.halfOpenProvider("operator");
+    return true;
+  }
+
+  /**
+   * Is the breaker holding this queued wake back? Operator wakes are never
+   * held: the operator asked for that turn, with the outage card in view.
+   *
+   * `operator`, not `explicit`. The two used to be one flag, and the
+   * supervisor's handover re-queue sets `explicit` for its own reason — to get
+   * past the seat's parking and a stopped pump after a bookkeeping turn — so it
+   * walked through an open breaker: 2026-09-28 15:45Z, architect's handover
+   * turn failed with the 402, and the wake it had consumed was re-admitted 90ms
+   * later, eight seconds after the breaker opened, for a second refused turn.
+   */
+  private providerHolds(item: QueueItem): boolean {
+    if (item.operator) return false;
+    if (this.provider.state === "open") return true;
+    return this.provider.state === "half_open" && this.provider.probeItem !== undefined;
+  }
+
+  private noteProviderOutage(agentId: string, error: string): void {
+    const p = this.provider;
+    const now = this.now();
+    if (p.state === "closed") {
+      p.recent = p.recent.filter((r) => now - r.at < PROVIDER_TRIP_WINDOW_MS);
+      p.recent.push({ at: now, agentId });
+      p.lastError = error;
+      if (p.recent.length < PROVIDER_TRIP_FAILURES) return;
+      p.openedAt = now;
+      p.failedTurns = p.recent.length;
+      p.seats = [...new Set(p.recent.map((r) => r.agentId))];
+      p.opens = 1;
+      p.recent = [];
+      this.openProvider("closed", "tripped");
+      return;
+    }
+    // Open or half-open: a turn of this episode. Counted for the card; only
+    // the probe's own failure moves the breaker.
+    p.failedTurns++;
+    if (!p.seats.includes(agentId)) p.seats.push(agentId);
+    p.lastError = error;
+    if (p.state === "half_open" && p.probeItem?.agentId === agentId) {
+      p.opens++;
+      this.openProvider("half_open", "probe_failed");
+    }
+  }
+
+  private openProvider(from: ProviderBreakerState, why: ProviderBreakerTransition["why"]): void {
+    const p = this.provider;
+    if (this.providerTimer) this.timers.clearTimeout(this.providerTimer);
+    p.state = "open";
+    p.probeItem = undefined;
+    p.backoffMs = providerBackoffMs(p.opens);
+    p.nextProbeAt = this.now() + p.backoffMs;
+    // Armed even on a stopped scheduler: the provider can recover while the
+    // mission is parked, and the half-open this leads to admits nothing a
+    // stopped pump would not (see `queueWait`) — it never starts anything.
+    this.providerTimer = this.timers.setTimeout(() => {
+      this.providerTimer = undefined;
+      if (this.provider.state === "open") this.halfOpenProvider("backoff_elapsed");
+    }, p.backoffMs);
+    this.providerTimer.unref?.();
+    this.reportProvider(from, why);
+  }
+
+  private halfOpenProvider(why: ProviderBreakerTransition["why"]): void {
+    if (this.providerTimer) this.timers.clearTimeout(this.providerTimer);
+    this.providerTimer = undefined;
+    this.provider.state = "half_open";
+    this.provider.probeItem = undefined;
+    this.provider.probe = undefined;
+    this.reportProvider("open", why);
+    void this.pump();
+  }
+
+  private closeProvider(agentId: string): void {
+    if (this.providerTimer) this.timers.clearTimeout(this.providerTimer);
+    this.providerTimer = undefined;
+    const p = this.provider;
+    p.probe = agentId;
+    p.probeItem = undefined;
+    p.state = "closed";
+    // The report carries the episode it closes; the reset below is the next one's.
+    this.reportProvider("half_open", "probe_succeeded");
+    this.provider = closedProviderBreaker();
+    void this.pump();
+  }
+
+  private reportProvider(from: ProviderBreakerState, why: ProviderBreakerTransition["why"]): void {
+    const transition: ProviderBreakerTransition = { from, to: this.provider.state, why, snapshot: this.providerBreaker() };
+    void this.runner.onProviderBreaker?.(transition)?.catch(() => undefined);
   }
 
   private isBusy(agentId: string): boolean {
@@ -940,7 +1174,7 @@ export class Scheduler implements SchedulerPort {
         // The stash holds one wake, not one notice: a newer strong wake replaces
         // the stashed one, and a notice the stashed one carried rides along.
         const reason = stashed && carriesNotice(stashed.reason) ? withNotice(req.reason, stashed.reason.note) : req.reason;
-        this.wakeAfterTurn.set(req.agentId, { agentId: req.agentId, reason, priority: req.priority, explicit: req.explicit });
+        this.wakeAfterTurn.set(req.agentId, absorbOperator({ agentId: req.agentId, reason, priority: req.priority, explicit: req.explicit, operator: req.operator }, stashed));
         return true;
       }
       // Everything else — an interest wake, and the rarer timer nudge or
@@ -965,10 +1199,16 @@ export class Scheduler implements SchedulerPort {
       // ask had been voided.
       if (req.priority <= existing.priority) {
         if (carriesNotice(req.reason)) this.queue[existingIdx] = { ...existing, reason: withNotice(existing.reason, req.reason.note) };
+        // An operator wake folded in here may be what lets a held wake run.
+        const absorbed = absorbOperator(this.queue[existingIdx], req);
+        if (absorbed !== this.queue[existingIdx]) {
+          this.queue[existingIdx] = absorbed;
+          void this.pump();
+        }
         return true;
       }
       const reason = carriesNotice(existing.reason) ? withNotice(req.reason, existing.reason.note) : req.reason;
-      this.queue[existingIdx] = { ...req, reason, enqueuedAt: existing.enqueuedAt };
+      this.queue[existingIdx] = absorbOperator({ ...req, reason, enqueuedAt: existing.enqueuedAt }, existing);
       // Re-sort, or the promotion is recorded and not acted on. The queue is
       // ordered by priority and `pump` dispatches by array order, but the only
       // other `sort` is on the push path below — so an entry promoted in place
@@ -1001,7 +1241,7 @@ export class Scheduler implements SchedulerPort {
     }
     this.lastRefusal.delete(req.agentId);
     this.reportedRefusal.delete(req.agentId);
-    this.queue.push({ agentId: req.agentId, reason: req.reason, priority: req.priority, enqueuedAt: this.now(), explicit: req.explicit });
+    this.queue.push({ agentId: req.agentId, reason: req.reason, priority: req.priority, enqueuedAt: this.now(), explicit: req.explicit, operator: req.operator });
     this.queue.sort(byPriorityThenAge(this.now()));
     this.idleFired = false;
     void this.pump();
@@ -1071,6 +1311,7 @@ export class Scheduler implements SchedulerPort {
     const capacity = this.capacityWait(item.agentId);
     if (capacity) return capacity;
     if (this.stopped && !item.explicit) return { agentId: item.agentId, kind: "stopped" };
+    if (this.providerHolds(item)) return { agentId: item.agentId, kind: "provider" };
     return undefined;
   }
 
@@ -1151,6 +1392,12 @@ export class Scheduler implements SchedulerPort {
           this.staleRequestWakes++;
           continue;
         }
+        // Half-open with no probe yet: this dispatch IS the probe, and every
+        // other wake waits behind it (`providerHolds`) until its verdict.
+        if (this.provider.state === "half_open" && !this.provider.probeItem) {
+          this.provider.probeItem = item;
+          this.provider.probe = item.agentId;
+        }
         this.runningMap.set(item.agentId, item);
         void this.runner
           .runTurn(item.agentId, item.reason)
@@ -1213,6 +1460,17 @@ export class Scheduler implements SchedulerPort {
     // strands a seat holding unread mail. An earlier version returned here and
     // stalled `examples/demo-stub` short of convergence for exactly that reason.
     const superseded = dispatch !== undefined && holding !== undefined && holding !== dispatch;
+    // The provider probe ended with no verdict (a budget refusal at the door,
+    // a timeout, a seat's own crash, a turn that bailed before running): it
+    // told us nothing about the provider, so the slot goes to the next queued
+    // wake. A verdict clears `probeItem` before this runs, so this is only the
+    // inconclusive case — and it is matched by dispatch identity, because the
+    // late second call for an old turn must not free a NEWER probe's slot.
+    const finished = dispatch ?? holding;
+    if (finished !== undefined && this.provider.state === "half_open" && this.provider.probeItem === finished) {
+      this.provider.probeItem = undefined;
+      this.provider.probe = undefined;
+    }
     if (!superseded) this.runningMap.delete(agentId);
     this.lastNudge.set(agentId, this.now());
     const over = this.missionOver();
@@ -1235,6 +1493,7 @@ export class Scheduler implements SchedulerPort {
           reason: deferred.reason,
           priority: deferred.priority,
           explicit: deferred.explicit,
+          operator: deferred.operator,
         });
       }
     } else if (!this.stopped && this.wakeableMail(agentId).length > 0) {
@@ -1415,6 +1674,11 @@ export class Scheduler implements SchedulerPort {
     if (!goal || goal.status !== "ACTIVE") return;
     this.pruneStallTracking();
     this.drainGathered(now);
+    // The provider is refusing turns: every nudge below would queue behind the
+    // breaker, count as delivered, and three of them would escalate a
+    // "stalemate" that is really the outage the breaker's own card names. The
+    // sweep resumes on the first tick after it closes.
+    if (this.provider.state !== "closed") return;
     for (const rec of this.state.agents.values()) {
       const id = rec.state.agentId;
       if (id === "human") continue;

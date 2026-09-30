@@ -1262,8 +1262,15 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
     // kill was visible in neither place.
     if (event.reason) {
       const retry = typeof event.retryInMs === "number" ? ` — restart in ${event.retryInMs}ms` : "";
+      // The child's own loop-lag high-water mark, when its last beat carried one.
+      // Without it a health kill reads identically whether the child was blocked
+      // by synchronous work or wedged outright, and those two want opposite
+      // responses: one comes back on its own, the other never will. Printed even
+      // when it is zero, because "it told us the loop was fine" is a different
+      // fact from "it never told us" — the second prints nothing.
+      const lag = typeof event.eventLoopLagMaxMs === "number" ? ` loopLagMaxMs=${event.eventLoopLagMaxMs}` : "";
       const where = event.logFile ? ` (in ${event.logFile})` : "";
-      hostAudit(`project '${event.ref.id}' ${event.status} (${event.reason}): ${event.detail ?? "no detail"}${retry}${where}`);
+      hostAudit(`project '${event.ref.id}' ${event.status} (${event.reason}): ${event.detail ?? "no detail"}${lag}${retry}${where}`);
     }
     options.onSupervision?.(event);
   };

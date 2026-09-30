@@ -193,3 +193,16 @@ test("a turn classified as a budget stop is named as one without reading its det
   assert.doesNotMatch(note, /went silent/);
   assert.doesNotMatch(note, /lost to a backend failure/);
 });
+
+test("a turn stopped by the mesh shutting down is not blamed on the operator", () => {
+  // `interrupted` is shared by the operator's stop and the mesh's own shutdown
+  // (`closeShutdownStoppedTurn`); only the detail tells them apart. Telling a seat
+  // the operator stopped it after a restart sends it looking for an instruction
+  // that was never given.
+  const shutdown = abnormalTurnNote({ reason: "interrupted", detail: "stopped by the mesh shutting down (claude:abc — session torn down)" }, 30_000);
+  assert.match(shutdown, /stopped when the mesh restarted/);
+  assert.doesNotMatch(shutdown, /stopped by the operator/);
+  const operator = abnormalTurnNote({ reason: "interrupted", detail: "stopped by the operator: wrong branch" }, 30_000);
+  assert.match(operator, /stopped by the operator/);
+  assert.doesNotMatch(operator, /mesh restarted/);
+});

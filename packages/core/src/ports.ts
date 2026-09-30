@@ -123,11 +123,75 @@ export interface SchedulerActivationRequest {
   agentId: string;
   reason: import("../../protocol/src/index").ActivationReason;
   priority: number;
-  /** operator-initiated (wake button / manual API): allowed to run even when the scheduler is parked */
+  /**
+   * Jumps the seat's own quiet gates: runs on a parked (stopped) scheduler,
+   * past circuit-breaker parking, and is never dropped as a stale interest
+   * wake. Set by every operator wake, and by the supervisor's handover re-queue
+   * (a wake the mesh's own bookkeeping turn consumed).
+   */
   explicit?: boolean;
+  /**
+   * The operator asked for this turn (wake button, a message sent with `wake`,
+   * a staged wake, a reopen) — the one wake the provider breaker admits while
+   * it is open. Always set together with `explicit`; never set by a runtime
+   * path, however urgent, since every such turn is one more refusal (and on a
+   * 429, one more paid prefix) against a provider that is known to be down.
+   */
+  operator?: boolean;
 }
 
-export type TurnOutcome = "ok" | "blocked" | "failed";
+/**
+ * `outage` is a turn the model PROVIDER refused (see `classifyProviderOutage`).
+ * It feeds the scheduler's mission-wide provider breaker and never strikes the
+ * seat: the seat did nothing wrong, and parking it is how a provider outage
+ * used to take every seat down one by one.
+ */
+export type TurnOutcome = "ok" | "blocked" | "failed" | "outage";
+
+export interface TurnOutcomeDetail {
+  /**
+   * The runtime call returned a model answer, so the provider was reachable
+   * and serving for this turn. The only evidence that closes a half-open
+   * provider breaker: a budget refusal at the door (`blocked`) never reached
+   * the provider and proves nothing about it.
+   */
+  providerAnswered?: boolean;
+  /** `outage` only: the error exactly as the runtime surfaced it. */
+  error?: string;
+}
+
+export type ProviderBreakerState = "closed" | "open" | "half_open";
+
+/**
+ * The provider breaker as the supervisor (and the console) reads it. Episode
+ * figures count from the trip that opened it until the probe that closes it.
+ */
+export interface ProviderBreakerSnapshot {
+  state: ProviderBreakerState;
+  /** When this episode's first trip happened (epoch ms); 0 while closed. */
+  openedAt: number;
+  /** Turns that failed with a provider outage this episode, the trip's own included. */
+  failedTurns: number;
+  /** Seats those turns belonged to, in first-failure order. */
+  seats: string[];
+  /** The most recent outage error, verbatim. */
+  lastError: string;
+  /** How many times this episode has opened: 1 on the trip, +1 per failed probe. */
+  opens: number;
+  /** The backoff the breaker is (or was last) sitting out, in ms. */
+  backoffMs: number;
+  /** `open` only: when the next probe will be admitted (epoch ms). */
+  nextProbeAt?: number;
+  /** The seat whose turn is (or was) the probe, once one was admitted. */
+  probe?: string;
+}
+
+export interface ProviderBreakerTransition {
+  from: ProviderBreakerState;
+  to: ProviderBreakerState;
+  why: "tripped" | "backoff_elapsed" | "operator" | "probe_failed" | "probe_succeeded";
+  snapshot: ProviderBreakerSnapshot;
+}
 
 /**
  * Why an already-queued agent is not running yet.
@@ -147,7 +211,9 @@ export type QueueWaitKind =
   /** a `scheduling.concurrency.*` ceiling is full */
   | "capacity"
   /** the scheduler is parked and this activation is not an explicit wake */
-  | "stopped";
+  | "stopped"
+  /** the provider breaker is open (or half-open with its probe running) */
+  | "provider";
 
 export interface QueueWait {
   agentId: string;
@@ -168,7 +234,17 @@ export interface SchedulerPort {
    * outcomes as its circuit breaker (park poison work instead of spinning
    * instant fail-turns). Optional for mocks.
    */
-  noteTurnOutcome?(agentId: string, outcome: TurnOutcome): void;
+  noteTurnOutcome?(agentId: string, outcome: TurnOutcome, detail?: TurnOutcomeDetail): void;
+  /**
+   * The mission-wide half of the breaker: the model provider, not a seat.
+   * Optional for mocks; absent reads as closed.
+   */
+  providerBreaker?(): ProviderBreakerSnapshot;
+  /**
+   * Stop sitting out the backoff and admit the probe now (the operator answered
+   * the `provider_unavailable` card). True when an open breaker went half-open.
+   */
+  probeProviderNow?(): boolean;
   /**
    * The policy refusal still blocking this agent, so a caller can report the
    * reason rather than infer one from a false. Optional for mocks.

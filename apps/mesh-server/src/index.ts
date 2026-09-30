@@ -1,9 +1,10 @@
 ﻿import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
-import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { execFile, spawn, type ChildProcess } from "child_process";
 import { randomBytes, randomUUID } from "crypto";
 import { URL } from "url";
+import { promisify } from "util";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal, SessionRotated, MuteSuspected } from "../../../packages/protocol/src/index";
 import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
@@ -412,7 +413,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   // full of product files: git moves the checkout into main/ without moving
   // anything already there, and the stderr warning this replaced was not enough
   // to stop a mission spending its budget on uncitable commits.
-  if (!options.inMemory) assertWorkspaceCoherent(config.workspacePath, useGit, config.stateDir);
+  if (!options.inMemory) await assertWorkspaceCoherent(config.workspacePath, useGit, config.stateDir);
   const workspace = useGit ? new GitWorkspace(config.workspacePath) : undefined;
   if (workspace && !options.inMemory) await workspace.ensureRepo();
   const sessionRegistry = options.inMemory ? undefined : new FileSessionRegistry(config.stateDir);
@@ -839,7 +840,7 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
           // gets one from `ensureRepo` above, and without the same here every
           // git read of the product silently answers from an enclosing repo (or
           // from nothing) for the rest of the run.
-          initProductRepo(config.workspacePath, config.stateDir);
+          await initProductRepo(config.workspacePath, config.stateDir);
         }
         // 5. Release the sqlite index handle before the directory moves; an open
         //    handle would keep writing into the archived copy.
@@ -2650,7 +2651,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // from RUN_SCRIPTS — no free-form shell, no user input reaches argv.
       if (parts[0] === "workspace" && req.method === "GET") {
         if (parts[1] === "info" && parts.length === 2) {
-          const git = gitFacts(wsRoot);
+          const git = await gitFacts(wsRoot);
           return json(200, { path: wsRoot, ...git, scripts: Object.keys(runScripts(wsRoot)) });
         }
         if (parts[1] === "tree" && parts.length === 2) {
@@ -2710,14 +2711,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if (parts[1] === "diff" && parts.length === 2) {
           const rel = String(u.searchParams.get("path") ?? "");
           if (rel && !resolveInside(wsRoot, rel)) return json(400, { error: "path escapes workspace" });
-          const head = gitShow(wsRoot, rel);
+          const head = await gitShow(wsRoot, rel);
           const ab = rel ? resolveInside(wsRoot, rel) : null;
           const workingText = ab ? await fs.promises.readFile(ab, "utf8").catch(() => "") : "";
           const d = diffText(head, workingText);
           return json(200, { path: rel.replace(/\\/g, "/"), from: "HEAD", to: "working tree", ...d });
         }
         if (parts[1] === "changes" && parts.length === 2) {
-          return json(200, gitChanges(wsRoot));
+          return json(200, await gitChanges(wsRoot));
         }
         if (parts[1] === "run" && parts.length === 3) {
           return json(200, runStatus(parts[2]));
@@ -3209,29 +3210,48 @@ async function searchWorkspace(
   return { query, results, truncated };
 }
 
-/** Contents of a path at HEAD (empty string when the file is new). */
-function gitShow(root: string, rel: string): string {
-  if (!rel) return "";
+const execFileAsync = promisify(execFile);
+
+/**
+ * `git <args>` in `cwd`, off the event loop, with the same per-call timeout the
+ * previous synchronous call had.
+ *
+ * These git reads answer "what does the workspace look like" for reports, the
+ * console and the workspace-coherence gate. They ran as `spawnSync`, and each
+ * one has its OWN timeout, so their worst case was additive: a repository the
+ * mission is itself committing to — index lock held by a seat's own commit, or
+ * a slow disk — could park the event loop for the sum of them, ~35s across the
+ * five. A blocked loop stops the child's heartbeat, and the host's health
+ * watchdog then kills it with its turns in flight (measured 2026-09-27: 105s of
+ * silence, eventLoopLagMaxMs 18.5s). Awaiting is the whole fix; what each call
+ * means and returns is unchanged.
+ *
+ * `null` on every failure — non-zero exit, missing repo, no git, timeout — so
+ * each caller can keep the empty result it already treated that as.
+ */
+async function gitOutput(args: string[], cwd: string, timeoutMs: number): Promise<string | null> {
   try {
-    const r = spawnSync("git", ["show", `HEAD:${rel}`], { cwd: root, encoding: "utf8", timeout: 5000 });
-    return r.status === 0 ? r.stdout : "";
+    const { stdout } = await execFileAsync("git", args, { cwd, timeout: timeoutMs });
+    return stdout;
   } catch {
-    return "";
+    return null;
   }
 }
 
+/** Contents of a path at HEAD (empty string when the file is new). */
+async function gitShow(root: string, rel: string): Promise<string> {
+  if (!rel) return "";
+  return (await gitOutput(["show", `HEAD:${rel}`], root, 5000)) ?? "";
+}
+
 /** Working-tree changes as {path, status} — what agents touched since HEAD. */
-function gitChanges(root: string): Array<{ path: string; status: string }> {
-  try {
-    const r = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", timeout: 5000 });
-    if (r.status !== 0) return [];
-    return r.stdout
-      .split("\n")
-      .filter((l) => l.trim().length > 0)
-      .map((l) => ({ status: l.slice(0, 2).trim() || "?", path: l.slice(3).trim() }));
-  } catch {
-    return [];
-  }
+async function gitChanges(root: string): Promise<Array<{ path: string; status: string }>> {
+  const out = await gitOutput(["status", "--porcelain"], root, 5000);
+  if (out === null) return [];
+  return out
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .map((l) => ({ status: l.slice(0, 2).trim() || "?", path: l.slice(3).trim() }));
 }
 
 /**
@@ -3244,16 +3264,22 @@ function gitChanges(root: string): Array<{ path: string; status: string }> {
  * just resets into a plain directory, and `gitFacts` now says so instead of
  * reporting a clean tree.
  */
-export function initProductRepo(root: string, stateDir?: string): boolean {
-  const git = (...args: string[]): void => {
-    const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 10_000 });
-    if (r.error) throw r.error;
-    if (r.status !== 0) throw new Error(r.stderr?.trim() || `git ${args[0]} failed`);
+export async function initProductRepo(root: string, stateDir?: string): Promise<boolean> {
+  const git = async (...args: string[]): Promise<void> => {
+    try {
+      await execFileAsync("git", args, { cwd: root, timeout: 10_000 });
+    } catch (e) {
+      // The old form rethrew `r.error` and, for a non-zero exit, an Error
+      // carrying git's stderr; both land in the caller's catch and become
+      // `false`. Keep git's own words when it has any.
+      const err = e as { stderr?: string; message?: string };
+      throw new Error(err.stderr?.trim() || err.message || `git ${args[0]} failed`);
+    }
   };
   try {
-    git("init", "-b", "main");
-    git("config", "user.email", "mesh@localhost");
-    git("config", "user.name", "Mesh Supervisor");
+    await git("init", "-b", "main");
+    await git("config", "user.email", "mesh@localhost");
+    await git("config", "user.name", "Mesh Supervisor");
     // The state dir lives inside the workspace by default. Unignored, the
     // mission's own event log lands in the product diff and the tree reads
     // "dirty" from the first turn onwards.
@@ -3261,8 +3287,8 @@ export function initProductRepo(root: string, stateDir?: string): boolean {
     const ignoreState = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? `${rel.split(path.sep).join("/")}/\n` : "";
     fs.writeFileSync(path.join(root, ".gitignore"), `${ignoreState}node_modules/\n`, "utf8");
     fs.writeFileSync(path.join(root, "README.md"), "# Mesh workspace\n\nManaged by agent-mesh.\n", "utf8");
-    git("add", "-A");
-    git("commit", "-m", "mesh: initialize workspace");
+    await git("add", "-A");
+    await git("commit", "-m", "mesh: initialize workspace");
     return true;
   } catch {
     return false;
@@ -3279,19 +3305,14 @@ export function initProductRepo(root: string, stateDir?: string): boolean {
  * an unreadable path or no git at all, is false.
  *
  * `GitWorkspace.ensureRepo` makes the same distinction against `main/`, in
- * async form. This is the sync copy the server paths need.
+ * async form. This is the async copy the server paths need.
  */
-export function ownsGitRepo(dir: string): boolean {
-  let toplevel: string | null = null;
-  try {
-    const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8", timeout: 4000 });
-    toplevel = r.status === 0 && !r.error ? r.stdout.trim() : null;
-  } catch {
-    return false;
-  }
+export async function ownsGitRepo(dir: string): Promise<boolean> {
+  const out = await gitOutput(["rev-parse", "--show-toplevel"], dir, 4000);
+  const toplevel = out === null ? null : out.trim();
   if (!toplevel) return false;
   try {
-    return fs.realpathSync(toplevel) === fs.realpathSync(dir);
+    return (await fs.promises.realpath(toplevel)) === (await fs.promises.realpath(dir));
   } catch {
     return false;
   }
@@ -3333,11 +3354,11 @@ const GIT_MODE_ROOT_ENTRIES = new Set(["main", WORKTREES_DIRNAME, ".mesh-state",
  * cannot land its product is not degraded, it is broken, and the cheapest
  * moment to say so is before the first turn.
  */
-export function assertWorkspaceCoherent(workspacePath: string, useGit: boolean, stateDir?: string): void {
+export async function assertWorkspaceCoherent(workspacePath: string, useGit: boolean, stateDir?: string): Promise<void> {
   if (!useGit) return;
   if (!fs.existsSync(workspacePath)) return;
   const problems: string[] = [];
-  if (ownsGitRepo(workspacePath)) {
+  if (await ownsGitRepo(workspacePath)) {
     problems.push(
       `${workspacePath} is itself a git repository, but git mode keeps the product in ${path.join(workspacePath, "main")}. ` +
         `Commits would land in a repo the product is not in.`,
@@ -3371,27 +3392,25 @@ export function assertWorkspaceCoherent(workspacePath: string, useGit: boolean, 
   ]);
 }
 
-export function gitFacts(root: string): Record<string, string> {
-  const sh = (...args: string[]): string | null => {
-    try {
-      const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 4000 });
-      return r.status === 0 && !r.error ? r.stdout.trim() : null;
-    } catch {
-      return null;
-    }
+export async function gitFacts(root: string): Promise<Record<string, string>> {
+  const sh = async (...args: string[]): Promise<string | null> => {
+    const out = await gitOutput(args, root, 4000);
+    return out === null ? null : out.trim();
   };
   // An unowned repo is unknown, never clean: `git status` from a nested
   // directory answers for the enclosing checkout, and an empty status from no
   // repo at all used to read as a clean tree.
-  if (!ownsGitRepo(root)) return { gitRepo: "false", gitBranch: "", gitHead: "", gitClean: "unknown", gitLog: "" };
-  const status = sh("status", "--porcelain");
+  if (!(await ownsGitRepo(root))) return { gitRepo: "false", gitBranch: "", gitHead: "", gitClean: "unknown", gitLog: "" };
+  // Sequential, like the object literal that used to be synchronous here; the
+  // four reads are independent but their order is not worth changing.
+  const status = await sh("status", "--porcelain");
   return {
     gitRepo: "true",
-    gitBranch: sh("rev-parse", "--abbrev-ref", "HEAD") ?? "",
-    gitHead: sh("rev-parse", "--short", "HEAD") ?? "",
+    gitBranch: (await sh("rev-parse", "--abbrev-ref", "HEAD")) ?? "",
+    gitHead: (await sh("rev-parse", "--short", "HEAD")) ?? "",
     // An unreadable status is not a clean tree either.
     gitClean: status === null ? "unknown" : String(status.length === 0),
-    gitLog: sh("log", "--oneline", "-5") ?? "",
+    gitLog: (await sh("log", "--oneline", "-5")) ?? "",
   };
 }
 

@@ -513,8 +513,28 @@ export interface MeshArchiveEntry {
   /** Name as it sits on disk, suffix and collision number included. */
   name: string;
   path: string;
-  /** Recursive size in bytes. A bundle is a file, so this is its length. */
+  /**
+   * Recursive size in bytes, as far as the walk got. A bundle is a file, so this
+   * is its length.
+   *
+   * A lower bound — never an overstatement — when `bytesExact` is false: see
+   * `ARCHIVE_WALK_BUDGET_MS` for why the walk is allowed to stop, and treat the
+   * pair together rather than reading this on its own. Zero is the extreme of
+   * that: the budget was already spent before the walk reached this archive, and
+   * nothing about its size is claimed.
+   */
   bytes: number;
+  /**
+   * False when the walk hit its budget inside this archive, so `bytes` counts
+   * only the part of it that was visited.
+   *
+   * Explicit rather than implied, because "12 MB" and "at least 12 MB" are
+   * different facts and a display that cannot tell them apart will state the
+   * second as the first. Sizes are the one thing this listing shows that the
+   * stamp and the kind do not, so they are also the one thing a caller might
+   * reasonably compare between archives.
+   */
+  bytesExact: boolean;
   mtime: string;
   /**
    * Whether the archive carries a readable event log, i.e. whether it can be
@@ -525,23 +545,80 @@ export interface MeshArchiveEntry {
 
 const ARCHIVE_NAME = /^(.+?)\.bak-(\d{8}-\d{6})(?:-\d+)?$/;
 
-function dirSize(target: string): number {
+/**
+ * How long `listArchives` may spend measuring archive sizes before it stops and
+ * reports what it has.
+ *
+ * This walk is the one cost in this file that grows without bound and without
+ * anybody deciding it should: every reset ADDS an archive, nothing ever prunes
+ * them, and each one is walked in full, file by file, on the event loop of the
+ * process that also has to keep beating its 2s heartbeat. Measured on the live
+ * `skill-panel` project on 2026-09-28: 79 archives, 3.5 GB, 221,234 directory
+ * entries, **4.1 seconds** of one uninterrupted block from a single
+ * `GET /mission/backups` on the first pass — 1.1s on a repeat with the tree warm
+ * in the page cache, and the cold figure is the one that matters because a child
+ * that has just booted has a cold cache by definition. Nothing caps either
+ * number. A project reset weekly for a year is 50+ archives and several times
+ * the entries, and the same request then blocks for tens of seconds — which is
+ * precisely the shape of stall that gets a working child killed by its own
+ * health watchdog, its in-flight turns and all.
+ *
+ * So the walk gets a deadline instead of a data-size limit: the property that
+ * matters here is how long the loop is blocked, and a wall-clock budget bounds
+ * exactly that on any machine, at any archive count, without the number having
+ * to be re-guessed as disks and CPUs change. Entries are walked newest-first, so
+ * the archive an operator is most likely to restore keeps its exact size and it
+ * is the ancient ones that report a lower bound — visible as `bytesExact: false`
+ * rather than silently.
+ */
+export const ARCHIVE_WALK_BUDGET_MS = 2_000;
+
+/**
+ * Dirents between two clock reads. Reading `Date.now()` per entry would put a
+ * syscall-shaped cost back into the loop this budget exists to protect; 64
+ * keeps the overshoot past the deadline under a millisecond.
+ */
+const WALK_BUDGET_CHECK_EVERY = 64;
+
+/**
+ * Recursive size of `target`, or as much of it as `deadline` allows.
+ *
+ * An explicit stack rather than recursion: the walk has to be able to stop the
+ * moment the budget is spent, and a tree deep enough to be worth bounding is
+ * also the one worth not recursing into. `exact` is false only when the walk
+ * stopped early, so a tree that fits reports exactly what the unbounded version
+ * did.
+ */
+function dirSize(target: string, deadline: number): { bytes: number; exact: boolean } {
+  const stack = [target];
   let total = 0;
-  const walk = (p: string): void => {
+  let visited = 0;
+  while (stack.length > 0) {
+    if (visited % WALK_BUDGET_CHECK_EVERY === 0 && Date.now() >= deadline) {
+      return { bytes: total, exact: false };
+    }
+    const p = stack.pop()!;
+    // Counted before the stat, not after: an entry this process cannot stat is
+    // still work done, and a tree full of them must not be a way to walk a
+    // budget-check-free loop.
+    visited++;
     let st: fs.Stats;
     try {
       st = fs.lstatSync(p);
     } catch {
-      return;
+      continue;
     }
     if (st.isDirectory()) {
-      for (const entry of fs.readdirSync(p)) walk(path.join(p, entry));
-      return;
+      try {
+        for (const entry of fs.readdirSync(p)) stack.push(path.join(p, entry));
+      } catch {
+        continue;
+      }
+      continue;
     }
     total += st.size;
-  };
-  walk(target);
-  return total;
+  }
+  return { bytes: total, exact: true };
 }
 
 /**
@@ -552,8 +629,15 @@ function dirSize(target: string): number {
  * configurable, so `logs/events.jsonl` is the only thing that can be trusted to
  * identify one. Anything unrecognised is `"other"` rather than an error — a
  * directory full of archives is not the place to fail hard.
+ *
+ * Sizes are measured under a shared deadline and the entries are measured in the
+ * order they are returned (newest first), so the archives an operator is most
+ * likely to want are the ones whose size is exact. See
+ * `ARCHIVE_WALK_BUDGET_MS` for why there is a deadline at all; `walkBudgetMs`
+ * exists so a caller — and a test — can tighten it without pretending the
+ * machine is slower than it is.
  */
-export function listArchives(archiveRoot: string): MeshArchiveEntry[] {
+export function listArchives(archiveRoot: string, opts: { walkBudgetMs?: number } = {}): MeshArchiveEntry[] {
   const root = path.resolve(archiveRoot);
   let names: string[];
   try {
@@ -562,6 +646,9 @@ export function listArchives(archiveRoot: string): MeshArchiveEntry[] {
     return [];
   }
   const entries: MeshArchiveEntry[] = [];
+  // Which names are directories, kept from the `statSync` above so the byte walk
+  // does not have to ask the same question again.
+  const dirs = new Set<string>();
   for (const name of names) {
     const match = ARCHIVE_NAME.exec(name);
     if (!match) continue;
@@ -573,6 +660,7 @@ export function listArchives(archiveRoot: string): MeshArchiveEntry[] {
       continue;
     }
     const hasEvents = st.isDirectory() && fs.existsSync(path.join(target, "logs", "events.jsonl"));
+    if (st.isDirectory()) dirs.add(name);
     const base = match[1];
     const kind: MeshArchiveKind = name.endsWith(".bundle")
       ? "bundle"
@@ -588,14 +676,26 @@ export function listArchives(archiveRoot: string): MeshArchiveEntry[] {
       kind,
       name,
       path: target,
-      bytes: st.isDirectory() ? dirSize(target) : st.size,
+      // Filled in below, once the order is known: the byte walk is the one cost
+      // worth ordering deliberately.
+      bytes: st.isDirectory() ? 0 : st.size,
+      bytesExact: true,
       mtime: st.mtime.toISOString(),
       hasEvents,
     });
   }
   // Stamp is the operation identity, so sort on it rather than mtime: the
   // archives of one reset are written seconds apart but belong together.
-  return entries.sort((a, b) => (a.stamp === b.stamp ? a.name.localeCompare(b.name) : a.stamp < b.stamp ? 1 : -1));
+  const ordered = entries.sort((a, b) => (a.stamp === b.stamp ? a.name.localeCompare(b.name) : a.stamp < b.stamp ? 1 : -1));
+  const deadline = Date.now() + Math.max(0, opts.walkBudgetMs ?? ARCHIVE_WALK_BUDGET_MS);
+  for (const entry of ordered) {
+    // A bundle is a file; its length came from the stat above and is already exact.
+    if (!dirs.has(entry.name)) continue;
+    const size = dirSize(entry.path, deadline);
+    entry.bytes = size.bytes;
+    entry.bytesExact = size.exact;
+  }
+  return ordered;
 }
 
 /**

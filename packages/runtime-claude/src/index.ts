@@ -166,17 +166,6 @@ export interface ClaudeAdapterOptions {
    */
   staleAfterMs?: number;
   /**
-   * Pin the character bound on a single `mcp__mesh__*` tool result.
-   *
-   * Defaults to `MESH_TOOL_RESULT_MAX_CHARS`. An adapter concern rather than a
-   * mesh.yaml key: it bounds what ONE call may put in a seat's context, which
-   * is a property of this runtime's session, not of the mesh — the same reason
-   * `staleAfterMs` and `turnTimeoutMs` live here. Overridable for the same
-   * reason as those two as well: the tests cannot spend a real 47k-character
-   * artifact to reach the bound.
-   */
-  meshToolResultMaxChars?: number;
-  /**
    * Pin the transcript size below which staleness is not worth a rotation.
    *
    * Defaults to `SESSION_STALE_ROTATE_FLOOR_TOKENS`.
@@ -311,126 +300,27 @@ const SESSION_CONTEXT_ROTATE_TOKENS = 120_000;
  */
 const SESSION_CACHE_STALE_MS = 10 * 60_000;
 
-/**
- * Largest `mcp__mesh__*` tool result the model is shown, in characters.
+/*
+ * A bound on a single mesh tool result USED TO LIVE HERE, and it did nothing.
  *
- * The mesh's own tools are the one category of tool output this adapter owns
- * end to end, and their size is not incidental: measured over the 2026-09-27
- * skill-panel run, the five read tools returned 3.0M characters of the 3.1M
- * the whole `mesh_*` surface produced, with a p90 of 20k-40k per call and a
- * 52k worst case — `mesh_inbox` and `mesh_failures` had no result under 11k.
- * A result that size is not paid once: it stays in the prompt for every later
- * call of the turn (measured: ~20 calls a turn) and every later turn of the
- * session until a rotation, so one 47k-character artifact read is worth about
- * 12k tokens of context for the rest of the session.
+ * `meshResultCapHooks` returned `hookSpecificOutput.updatedToolOutput` from an
+ * SDK `PostToolUse` callback. The field is real — `sdk.d.ts` documents it and
+ * `updatedMCPToolOutput`, and the shipped CLI binary parses both in its
+ * hook-output reader (`hwe`) — but the CLI reads them only for COMMAND/HTTP/
+ * plugin hooks and in the interactive REPL. The executor that runs a JS
+ * callback hook in a `--print`/stream-json session (the CLI's `VE`) harvests
+ * exactly three things off a callback's return value — `systemMessage`,
+ * `worktreePath`, and `decision:"block"` — and drops `hookSpecificOutput`
+ * whole. So the rewrite never reached a model: measured over the live seats,
+ * 0 of 325 `mcp__mesh__*` results carried the note, including every one far
+ * over the bound it claimed to enforce.
  *
- * Every tool this clips already pages (see {@link meshResultCapNote}), so
- * nothing is lost that a narrower call cannot fetch; the cap bounds ONE call,
- * not what a seat may read.
- *
- * 8,000 characters is ~2,000 tokens: it clears every small mesh result whole
- * (publish/approve/send/wait all answer in under 700 characters) and cuts the
- * oversized reads by 55% on the measured run without clipping a single result
- * a seat asked for narrowly. Overridable per adapter, like `staleAfterMs`.
+ * The bound now belongs to the MCP server, which owns both ends of it: the
+ * read tools page themselves and say how to continue (see
+ * `apps/mesh-server/src/pagination.ts`, `TOOL_PAGE_CHARS`). Do not reinstate a
+ * rewrite hook here without first proving, against the installed CLI, that a
+ * callback hook's `updatedToolOutput` reaches a tool result.
  */
-export const MESH_TOOL_RESULT_MAX_CHARS = 8_000;
-
-/** The prefix every mesh bridge tool is namespaced under. */
-const MESH_TOOL_PREFIX = "mcp__mesh__";
-
-/**
- * What the model is told in place of the characters it was not shown.
- *
- * Names the tool's own resume protocol rather than a generic "ask again":
- * every mesh read tool takes a smaller bound and hands back a cursor, and a
- * seat that clips a read and then re-issues it identically has paid twice for
- * nothing — which is the failure this whole hook exists to prevent.
- */
-export function meshResultCapNote(toolName: string, shown: number, total: number): string {
-  const tool = toolName.slice(MESH_TOOL_PREFIX.length);
-  const resume =
-    tool === "mesh_artifact_read"
-      ? "resume with offset=<the nextOffset it gave you>"
-      : tool === "mesh_inbox"
-        ? "page with offset=<the nextOffset it gave you>"
-        : tool === "mesh_query_events"
-          ? "resume with sinceSeq=<the lastSeq it gave you>"
-          : "ask for less with a smaller limit";
-  return (
-    `\n\n[mesh adapter: showing ${shown} of ${total} characters; ${total - shown} clipped. ` +
-    `This is a bound on one call, not on what you may read — ${resume}, or narrow \`limit\`/filters. ` +
-    `Do not re-issue this call unchanged.]`
-  );
-}
-
-/**
- * The `tool_response` with its text clipped to `maxChars`, or undefined when
- * there is nothing to clip or the shape is one this does not understand.
- *
- * Undefined is the honest answer for an unrecognised shape: a rewrite that
- * mangles a result is worse than a large one, so only the two shapes the SDK
- * delivers for an MCP tool are rewritten — a bare string, and `{ content: [...] }`
- * with `text` blocks. A response with no text block at all is left alone.
- */
-export function capMeshToolResult(toolName: string, response: unknown, maxChars: number): unknown | undefined {
-  if (!toolName.startsWith(MESH_TOOL_PREFIX)) return undefined;
-  if (typeof response === "string") {
-    if (response.length <= maxChars) return undefined;
-    return response.slice(0, maxChars) + meshResultCapNote(toolName, maxChars, response.length);
-  }
-  if (!response || typeof response !== "object") return undefined;
-  const content = (response as { content?: unknown }).content;
-  if (!Array.isArray(content)) return undefined;
-  const texts = content.filter((b): b is { type: "text"; text: string } => {
-    const blk = b as { type?: unknown; text?: unknown };
-    return blk?.type === "text" && typeof blk.text === "string";
-  });
-  if (texts.length === 0) return undefined;
-  const total = texts.reduce((n, b) => n + b.text.length, 0);
-  if (total <= maxChars) return undefined;
-  // Clipped across the blocks in order, so the head of the result — where every
-  // mesh tool puts the answer — survives whole and only the tail is lost.
-  let budget = maxChars;
-  let shown = 0;
-  const out: unknown[] = [];
-  for (const b of content as Array<Record<string, unknown>>) {
-    if (b?.type !== "text" || typeof b.text !== "string") {
-      out.push(b);
-      continue;
-    }
-    if (budget <= 0) continue;
-    const take = Math.min(budget, b.text.length);
-    budget -= take;
-    shown += take;
-    out.push(take === b.text.length ? b : { ...b, text: b.text.slice(0, take) + meshResultCapNote(toolName, shown, total) });
-  }
-  return { ...(response as Record<string, unknown>), content: out };
-}
-
-/**
- * The hook that clips an oversized mesh tool result before the model sees it.
- *
- * `PostToolUse` only: `PostToolUseFailureHookSpecificOutput` carries
- * `additionalContext` and no rewrite field, so a FAILED mesh call cannot be
- * clipped here — its text is a one-line refusal anyway, not a payload.
- */
-function meshResultCapHooks(maxChars: number): SessionHooks {
-  return {
-    PostToolUse: [
-      {
-        hooks: [
-          async (input) => {
-            const i = input as { tool_name?: unknown; tool_response?: unknown };
-            if (typeof i?.tool_name !== "string") return { continue: true };
-            const capped = capMeshToolResult(i.tool_name, i.tool_response, maxChars);
-            if (capped === undefined) return { continue: true };
-            return { hookSpecificOutput: { hookEventName: "PostToolUse" as const, updatedToolOutput: capped } };
-          },
-        ],
-      },
-    ],
-  };
-}
 
 /**
  * Transcript size below which staleness is not worth a rotation.
@@ -2963,16 +2853,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       effort: SEAT_EFFORT,
       ...this.options.extraOptions,
       disallowedTools: mergedDisallowedTools(this.options.extraOptions),
-      // `advise` delivery, and the bound on a single mesh tool result. Reads
-      // the session through `hookRef` because the session object is built
-      // below, from the query these options create.
-      hooks: mergedHooks(
-        combineHooks(
-          adviceHooks(() => hookRef.live?.pending),
-          meshResultCapHooks(this.options.meshToolResultMaxChars ?? MESH_TOOL_RESULT_MAX_CHARS),
-        ),
-        this.options.extraOptions,
-      ),
+      // `advise` delivery — the one thing a PostToolUse callback can still
+      // change (its `additionalContext`). Reads the session through `hookRef`
+      // because the session object is built below, from the query these
+      // options create.
+      hooks: mergedHooks(combineHooks(adviceHooks(() => hookRef.live?.pending)), this.options.extraOptions),
     };
 
     const q = (this.options.queryFn ?? query)({ prompt: inbox, options });

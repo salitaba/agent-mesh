@@ -207,6 +207,30 @@ test("loop detection: a note cannot make two identical sends distinct", () => {
   assert.notEqual(fingerprintOf(bare), fingerprintOf(different), "a different ask is different work");
 });
 
+test("loop detection: with an EMPTY payload, the note is the content", () => {
+  // The rule above holds while the payload carries the message. Measured
+  // 2026-09-28, a ui-designer put the whole of four materially different
+  // INFORMs in `note` with `payload: {}` — a correction, design-system v26, v28,
+  // an operational consequence — and the fingerprint, ignoring the note, saw one
+  // message sent four times. `fingerprint_loop` fired and the stalemate verdict
+  // halted a progressing mission. With nothing else to tell them apart, the note
+  // is identity; a verbatim resend of it still collides.
+  const first = msg({ payload: {}, note: "Published design-system v26: the label is a LABEL, not a clause." });
+  const second = msg({ payload: {}, note: "Correction to my last message: the identity attributes are present on a corrected payload." });
+  const third = msg({ payload: {}, note: "Published v28: one operational consequence of the explorer's measurement." });
+  const ids = new Set([first, second, third].map(fingerprintOf));
+  assert.equal(ids.size, 3, "three different notes over an empty payload are three messages, not one repeated");
+
+  const verbatim = msg({ payload: {}, note: "Published design-system v26: the label is a LABEL, not a clause." });
+  assert.equal(fingerprintOf(first), fingerprintOf(verbatim), "a verbatim resend of the same note is still a repeat");
+
+  // The note only joins identity when the payload says nothing. Here the payload
+  // does, so the previous test's guarantee still holds: prose cannot buy novelty.
+  const withPayload = msg({ payload: { question: "is the retry policy settled?" }, note: "a" });
+  const withPayloadOtherNote = msg({ payload: { question: "is the retry policy settled?" }, note: "b" });
+  assert.equal(fingerprintOf(withPayload), fingerprintOf(withPayloadOtherNote));
+});
+
 test("loop detection: genuinely different work is not collapsed into a loop", () => {
   const onPay = msg({ artifactRefs: [{ uri: "artifact://CodePatch/pay/1" }] });
   const onAuth = msg({ artifactRefs: [{ uri: "artifact://CodePatch/auth/1" }] });

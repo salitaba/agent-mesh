@@ -114,6 +114,17 @@ export interface ChildHeartbeat {
    * an ACTIVE goal, where every surface else reads "running".
    */
   goalActive?: boolean;
+  /**
+   * The child's own loop-lag measurement, as of this beat: how late its 1s
+   * sample last fired, and the worst it has been since that child started.
+   *
+   * Absent for a child old enough not to send it, and for every beat from a stub
+   * that does not bother. That absence matters: a reader must not turn "the child
+   * did not say" into "the child was never blocked", because the second is an
+   * answer and the first is not.
+   */
+  eventLoopLagMs?: number;
+  eventLoopLagMaxMs?: number;
 }
 
 export interface RunningChild {
@@ -602,6 +613,13 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
           // field must leave the memory alone rather than reset it to a guess.
           if (payload.mode === "live" || payload.mode === "parked") beat.mode = payload.mode;
           if (typeof payload.goalActive === "boolean") beat.goalActive = payload.goalActive;
+          // Carried verbatim, and only when present: this is the child's own
+          // measurement of itself, and the host has no basis for substituting a
+          // default. A field the child did not send stays undefined all the way
+          // to the supervision log, which is what lets a reader tell "never
+          // blocked" from "never asked".
+          if (typeof payload.eventLoopLagMs === "number") beat.eventLoopLagMs = payload.eventLoopLagMs;
+          if (typeof payload.eventLoopLagMaxMs === "number") beat.eventLoopLagMaxMs = payload.eventLoopLagMaxMs;
           // Learned before the process guard below, and on purpose: this is a
           // fact about the *project*, not about the process that reported it, so
           // the final beats of a child being replaced are still the freshest

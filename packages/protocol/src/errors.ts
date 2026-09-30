@@ -156,6 +156,140 @@ export function isTimeoutError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * What the model PROVIDER did to a turn, when the fault is the provider — the
+ * account behind it, the proxy in front of it, or the API itself — rather than
+ * the seat that ran the turn.
+ *
+ * - `rate_limited` — 429, "usage limit exceeded", `rate_limit_error`
+ * - `billing`      — 402, credit/quota exhausted, `billing_error`
+ * - `auth`         — 401/403, a missing or rejected key, `authentication_error`
+ * - `unavailable`  — 5xx, 529 / `overloaded_error`
+ * - `unreachable`  — the client could not reach its API endpoint at all
+ */
+export type ProviderOutageKind = "rate_limited" | "billing" | "auth" | "unavailable" | "unreachable";
+
+export interface ProviderOutage {
+  kind: ProviderOutageKind;
+  /** The HTTP status the error named, when it named one. */
+  status?: number;
+  /** The error exactly as the runtime surfaced it (message, then its cause). */
+  error: string;
+}
+
+/**
+ * The marker a model client writes when the PROVIDER answered with an error:
+ * the Claude CLI's `API Error: …` result line, which the Claude adapter carries
+ * verbatim into the turn's failure. Everything below that reads a status or a
+ * keyword reads it only inside such a segment, so a model whose own prose
+ * mentions "429" or "quota" is never mistaken for a refused call.
+ */
+const API_ERROR_MARKER = /\bAPI Error\b/i;
+/** The HTTP runtime's own non-2xx shape (`http runtime POST /x -> 503: …`). */
+const HTTP_RUNTIME_STATUS = /\bhttp runtime \S+ \S+ -> (\d{3}):/i;
+/**
+ * Error TYPES only a provider API writes (Anthropic's `error.type`, OpenAI's
+ * `code`). Deliberately excludes the generic `api_error`, which the CLI also
+ * reports as the terminal reason for a 400 the seat's own request caused.
+ */
+const PROVIDER_ERROR_TYPES: Array<[RegExp, ProviderOutageKind]> = [
+  [/\brate_limit_error\b/i, "rate_limited"],
+  [/\boverloaded_error\b/i, "unavailable"],
+  [/\b(?:authentication_error|permission_error)\b/i, "auth"],
+  [/\b(?:billing_error|insufficient_quota)\b/i, "billing"],
+];
+/** Keywords read inside an `API Error` segment that states no status. */
+const API_ERROR_KEYWORDS: Array<[RegExp, ProviderOutageKind]> = [
+  [/overloaded/i, "unavailable"],
+  [/rate.?limit|too many requests|usage limit|quota/i, "rate_limited"],
+  [/credit balance|insufficient (?:credit|balance|funds)|payment required|billing/i, "billing"],
+  [/api.?key|authentication|unauthori[sz]ed|forbidden|oauth token/i, "auth"],
+  [/connection error|unable to connect|connection refused|ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN|fetch failed|socket hang up|network error/i, "unreachable"],
+];
+
+function outageKindOfStatus(status: number): ProviderOutageKind | null {
+  if (status === 429) return "rate_limited";
+  if (status === 402) return "billing";
+  if (status === 401 || status === 403) return "auth";
+  if (status >= 500 && status <= 599) return "unavailable";
+  // 400, 404, 413, 422, …: the provider answered and refused THIS request.
+  // That is the seat's own fault (a prompt too long, a bad model id), and it
+  // must keep walking the seat's ladder.
+  return null;
+}
+
+/**
+ * Is this turn failure a provider outage — or the seat's own failure?
+ *
+ * Returns the outage, or null for everything that must stay a seat failure:
+ * our own deadline or abort (a slow model is not a refused one), a
+ * `BackendUnreachableError` (a seat's own process or endpoint died — the
+ * existing per-seat `backend_unreachable` ladder owns it), a bare transport
+ * error a runtime surfaced without a provider's answer, a 4xx the seat's own
+ * request caused, and any model or tool error whose text merely mentions a
+ * status.
+ *
+ * Two things count as the provider answering: an `API Error` segment from a
+ * model client (the Claude CLI, via the Claude adapter's failure line), and the
+ * HTTP runtime's own status line. Inside the first, the status decides
+ * (429/402/401/403/5xx), else a keyword does (`overloaded`, `usage limit`,
+ * `Connection error` — the proxy being unreachable); anywhere, a provider error
+ * type (`rate_limit_error`, `overloaded_error`, …) does.
+ *
+ * Exists because the mesh used to treat a provider outage as N independent seat
+ * failures: every seat walked its own ladder to terminal, was parked
+ * SUSPENDED, and raised its own `runtime_failure` card — ten cards and a dead
+ * mission for one expired account (2026-09-27 and 2026-09-28).
+ */
+export function classifyProviderOutage(err: unknown): ProviderOutage | null {
+  if (err instanceof BackendUnreachableError) return null;
+  if (isTimeoutError(err)) return null;
+  const parts: string[] = [];
+  if (err instanceof Error) {
+    parts.push(err.message);
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause instanceof Error) parts.push(cause.message);
+    else if (typeof cause === "string") parts.push(cause);
+  } else if (typeof err === "string") {
+    parts.push(err);
+  } else {
+    return null;
+  }
+  const error = parts.filter((p) => p.trim() !== "").join(" | ");
+  if (!error) return null;
+
+  const http = HTTP_RUNTIME_STATUS.exec(error);
+  if (http) {
+    const status = Number(http[1]);
+    const kind = outageKindOfStatus(status);
+    return kind ? { kind, status, error } : null;
+  }
+
+  const at = error.search(API_ERROR_MARKER);
+  if (at >= 0) {
+    // The segment the provider wrote: from the marker to the adapter's next
+    // group separator (` — `), so a later "denied by permissions: Bash" group
+    // cannot lend its words to the provider's answer. The status is read from
+    // the first few characters of it, where every client puts it.
+    const rest = error.slice(at);
+    const statusMatch = /^API Error\b[:\s]*(?:\(|\[)?(\d{3})\b|^API Error\b[^\n]{0,60}?[([](\d{3})[)\]]/i.exec(rest);
+    const status = statusMatch ? Number(statusMatch[1] ?? statusMatch[2]) : undefined;
+    if (status !== undefined && status >= 100 && status <= 599) {
+      const kind = outageKindOfStatus(status);
+      return kind ? { kind, status, error } : null;
+    }
+    const cut = rest.indexOf(" — ", 10);
+    const segment = (cut >= 0 ? rest.slice(0, cut) : rest).slice(0, 400);
+    for (const [re, kind] of API_ERROR_KEYWORDS) {
+      if (re.test(segment)) return { kind, error };
+    }
+  }
+  for (const [re, kind] of PROVIDER_ERROR_TYPES) {
+    if (re.test(error)) return { kind, error };
+  }
+  return null;
+}
+
 /** Walk the `cause` chain collecting undici/Node error codes. */
 function errorCodes(err: unknown): string[] {
   const codes: string[] = [];

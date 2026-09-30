@@ -10,6 +10,7 @@ import {
   eventTimeline,
 } from "../../../packages/observability/src/index";
 import { recentTurnSteps } from "./steps-view";
+import { PAGE_ENVELOPE_CHARS, TOOL_PAGE_CHARS, fitRows, fitsInPage, jsonSize, pageNote } from "./pagination";
 
 export interface McpToolDefinition {
   name: string;
@@ -311,6 +312,25 @@ export class McpToolset {
       // for — and whether its own verdict could count — before it asks.
       const read = result.ok ? this.supervisor.findArtifactByUri(op.artifactRef) : undefined;
       if (read) out.canSettle = this.settlersOf(read);
+      // The op already slices at ARTIFACT_READ_MAX_CHARS (60k), which is a
+      // flood ceiling and not a page: the measured artifact read that rode a
+      // whole session was 43,701 characters. Bound the page here, where the
+      // page size lives, and recompute the cursor from the offset the caller
+      // actually asked for so the next call continues exactly where this one
+      // stopped. Nothing is lost: the artifact is read in as many parts as it
+      // takes, and every part says which part it is.
+      const askedFrom = Math.max(0, Math.floor(Number(op.offset) || 0));
+      const content = typeof result.reason === "string" ? result.reason : "";
+      const budget = TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS;
+      if (content.length > budget) {
+        const shown = content.slice(0, budget);
+        const nextOffset = askedFrom + shown.length;
+        out.content = shown;
+        out.truncated = true;
+        out.nextOffset = nextOffset;
+        out.note = `Artifact truncated: showing characters ${askedFrom}-${nextOffset} of ${result.totalChars}. Call mesh_artifact_read again with offset=${nextOffset} for the next part.`;
+        return out;
+      }
       if (result.truncated) {
         out.truncated = true;
         out.nextOffset = result.nextOffset;
@@ -588,37 +608,47 @@ export class McpToolset {
     const box = resolveUnread(state, agentId);
     const offset = Math.max(0, Math.floor(Number(a.offset)) || 0);
     const limit = this.clampInt(a.limit, 25, MAX_UNREAD_PER_AGENT);
-    const page = box.slice(offset, offset + limit);
-    const next = offset + page.length;
+    // Row-count first, then a character budget over those rows. `limit` alone
+    // was never a size bound: 25 messages of ~2k each is the 47k result that
+    // rode the rest of the session, and the seat had no way to tell a page it
+    // had finished from one that had merely stopped.
+    const mapped = box.slice(offset, offset + limit).map((m) => ({
+      id: m.id,
+      from: m.from,
+      to: m.to,
+      type: m.type,
+      priority: m.priority,
+      threadId: m.threadId,
+      subject: state.threads.get(m.threadId)?.subject,
+      replyTo: m.replyTo,
+      timestamp: m.timestamp,
+      // `answerOwed`, and `closed` when an ask no longer is — see `owedState`.
+      ...this.owedState(m, agentId),
+      // The ask's clock, from the ledger entry the reducer opened at
+      // `message.sent`. Absent for mail that owes nothing, and for a mesh
+      // with no TTL regime — which is not the same as a deadline that passed.
+      dueBy: state.pendingRequests.get(m.id)?.dueBy,
+      delivery: m.control?.delivery,
+      note: m.note,
+      artifactRefs: m.artifactRefs.map((r) => r.uri),
+      payload: m.payload,
+    }));
+    const page = fitRows(mapped, { offset: 0, budgetChars: TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS, sizeOf: jsonSize });
+    // "More" is measured against the BOX, not against the rows we happened to
+    // build: `limit` is a row cap of its own, so a page can be full to the row
+    // limit, fit its budget, and still have mail behind it.
+    const consumed = offset + page.rows.length;
+    const more = consumed < box.length;
     return {
       agentId,
       mailbox: readableMailDepth(state, agentId),
       total: box.length,
       offset,
-      returned: page.length,
-      truncated: next < box.length,
-      nextOffset: next < box.length ? next : null,
-      messages: page.map((m) => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        type: m.type,
-        priority: m.priority,
-        threadId: m.threadId,
-        subject: state.threads.get(m.threadId)?.subject,
-        replyTo: m.replyTo,
-        timestamp: m.timestamp,
-        // `answerOwed`, and `closed` when an ask no longer is — see `owedState`.
-        ...this.owedState(m, agentId),
-        // The ask's clock, from the ledger entry the reducer opened at
-        // `message.sent`. Absent for mail that owes nothing, and for a mesh
-        // with no TTL regime — which is not the same as a deadline that passed.
-        dueBy: state.pendingRequests.get(m.id)?.dueBy,
-        delivery: m.control?.delivery,
-        note: m.note,
-        artifactRefs: m.artifactRefs.map((r) => r.uri),
-        payload: m.payload,
-      })),
+      returned: page.rows.length,
+      truncated: more,
+      nextOffset: more ? consumed : null,
+      messages: page.rows,
+      ...(more ? { note: pageNote("mesh_inbox", page.rows.length, box.length, `offset=${consumed} (next page of your mailbox)`) } : {}),
     };
   }
 
@@ -661,49 +691,70 @@ export class McpToolset {
     return Number.isFinite(start) ? Math.max(Date.now() - start, 1000) : 1000;
   }
 
-  private async runStatus(): Promise<Record<string, unknown>> {
+  private async runStatus(a: Record<string, any> = {}): Promise<Record<string, unknown>> {
     const state = this.supervisor.state;
     const recent = await this.eventStore().read({ tail: 200 });
-    return {
-      goal: buildGoalView(state),
-      metrics: buildMetrics(state, this.goalWallClockMs(), recent),
-      cost: buildCostReport(state, this.supervisor.config),
-      agents: [...state.agents.values()].map((r) => ({
-        agentId: r.definition.id,
-        role: r.definition.role,
-        lifecycle: r.state.lifecycle,
-        activations: r.state.activations,
-        tokens: r.state.tokensConsumed,
-        mailbox: readableMailDepth(state, r.definition.id),
-        activeTaskId: r.state.activeTaskId,
-        lastError: r.state.lastError,
-      })),
-      openEscalations: [...state.escalations.values()]
-        .filter((e) => e.status === "OPEN")
-        .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
-    };
+    return this.pageAggregate(
+      "mesh_run_status",
+      {
+        goal: buildGoalView(state),
+        metrics: buildMetrics(state, this.goalWallClockMs(), recent),
+        cost: buildCostReport(state, this.supervisor.config),
+      },
+      {
+        agents: [...state.agents.values()].map((r) => ({
+          agentId: r.definition.id,
+          role: r.definition.role,
+          lifecycle: r.state.lifecycle,
+          activations: r.state.activations,
+          tokens: r.state.tokensConsumed,
+          mailbox: readableMailDepth(state, r.definition.id),
+          activeTaskId: r.state.activeTaskId,
+          lastError: r.state.lastError,
+        })),
+        openEscalations: [...state.escalations.values()]
+          .filter((e) => e.status === "OPEN")
+          .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
+      },
+      a,
+      Number.MAX_SAFE_INTEGER,
+    );
   }
 
   private async queryEvents(a: Record<string, any>): Promise<Record<string, unknown>> {
     const limit = this.clampInt(a.limit, 30, 200);
+    // `offset` skips that many of the NEWEST matching events, so `0` is the
+    // newest page and `nextOffset` walks backwards into history. Paired with
+    // `sinceSeq`, which walks forwards, the two cursors cover polling and
+    // history without either one having to be guessed at.
+    const offset = Math.max(0, Math.floor(Number(a.offset) || 0));
     // `type` may name a family (`EVENT_FAMILIES`) and `types` adds more; an
     // array in `type` is taken as `types`, since that is the mistake to expect.
     const asList = (v: unknown): string[] => (Array.isArray(v) ? v : v ? [v] : []).map(String).filter((s) => s.length > 0);
     const requested = [...asList(a.type), ...asList(a.types)];
     const verdict = requested.includes("verdict");
     const types = [...new Set(requested.flatMap((t) => (Object.hasOwn(EVENT_FAMILIES, t) ? EVENT_FAMILIES[t]! : [t as MeshEvent["type"]])))];
+    const wanted = limit + offset + 1;
+    const tail = Math.min(wanted, 2000);
     const read = await this.eventStore().read({
       types: types.length > 0 ? types : undefined,
       actorId: a.actorId ? String(a.actorId) : undefined,
       sinceSeq: a.sinceSeq === undefined ? undefined : Number(a.sinceSeq),
       // The verdict family drops rows after the read, so it cannot let the
       // store cut the tail first. Verdicts are few; the whole match is small.
-      tail: verdict ? undefined : limit,
+      // Otherwise the store is asked for exactly the window the offset needs,
+      // one row past it, so "is there an older page" is a fact and not a guess.
+      tail: verdict ? undefined : tail,
     });
-    const events = verdict
-      ? read.filter((e) => !(e.type === "architecture.approved" && (e.payload as { derived?: unknown } | undefined)?.derived === true)).slice(-limit)
+    const matched = verdict
+      ? read.filter((e) => !(e.type === "architecture.approved" && (e.payload as { derived?: unknown } | undefined)?.derived === true))
       : read;
-    const timeline = eventTimeline(events, events.length);
+    // A window the store filled is not evidence the log ends there.
+    const windowFull = matched.length >= tail;
+    const end = Math.max(0, matched.length - offset);
+    const start = Math.max(0, end - limit);
+    const windowed = matched.slice(start, end);
+    const timeline = eventTimeline(windowed, windowed.length);
     const trimmed = a.includePayload
       ? timeline
       : timeline.map((e) => ({
@@ -716,22 +767,116 @@ export class McpToolset {
           goalId: e.goalId,
           correlationId: e.correlationId,
         }));
+    // Newest-first for the budget so a page that has to stop stops in the
+    // OLDEST end of its window; the array is handed back ascending, as before.
+    const fitted = fitRows([...trimmed].reverse(), { offset: 0, budgetChars: TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS, sizeOf: jsonSize });
+    const events = [...fitted.rows].reverse();
     const last = events[events.length - 1];
-    return { count: trimmed.length, lastSeq: last?.seq ?? null, events: trimmed };
+    const more = events.length > 0 && (start > 0 || fitted.nextOffset !== null || (windowFull && start === 0));
+    const nextOffset = more ? offset + events.length : null;
+    // The match's size is known only when the store handed back a short window;
+    // say "more remain" rather than publishing the window's length as a total.
+    const knownTotal = verdict || !windowFull ? matched.length : null;
+    return {
+      count: events.length,
+      lastSeq: last?.seq ?? null,
+      offset,
+      total: knownTotal,
+      truncated: more,
+      nextOffset,
+      events,
+      ...(more
+        ? { note: pageNote("mesh_query_events", events.length, knownTotal, `offset=${nextOffset} (older events; sinceSeq=<lastSeq> still polls forward)`) }
+        : {}),
+    };
   }
 
   private async stepsView(a: Record<string, any>): Promise<Record<string, unknown>> {
     const limit = this.clampInt(a.limit, 20, 100);
+    const offset = Math.max(0, Math.floor(Number(a.offset) || 0));
     // Same list as `/steps`, so a seat and the dashboard cannot disagree about
     // what a turn did: tracker turns older than the tail scan are read through
     // the correlation index, and a turn with no log behind it reports no ops
     // rather than four zeros that read as "did nothing".
-    const steps = await recentTurnSteps(this.eventStore(), this.supervisor.getRecentTurns(limit), limit, (s) =>
+    //
+    // One turn past the page is scanned, so "is there an older page" is proved
+    // by the row itself rather than guessed from a full window.
+    const scan = limit + offset + 1;
+    const steps = await recentTurnSteps(this.eventStore(), this.supervisor.getRecentTurns(scan), scan, (s) =>
       (!a.agentId || s.agentId === String(a.agentId)) &&
       (!a.status || s.status === String(a.status)) &&
       (!a.turnId || s.turnId === String(a.turnId)),
     );
-    return { count: steps.length, steps };
+    const page = fitRows(steps, { offset, budgetChars: TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS, sizeOf: jsonSize });
+    const more = offset + page.rows.length < steps.length;
+    // Only a scan that came back short proves the list's size; otherwise the
+    // number is the window's, and saying "of 41" would read as the whole history.
+    const knownTotal = steps.length < scan ? steps.length : null;
+    return {
+      count: page.rows.length,
+      total: knownTotal,
+      offset,
+      truncated: more,
+      nextOffset: more ? offset + page.rows.length : null,
+      steps: page.rows,
+      ...(more ? { note: pageNote("mesh_steps", page.rows.length, knownTotal, `offset=${offset + page.rows.length} (older turns)`) } : {}),
+    };
+  }
+
+  /**
+   * Fit an aggregate read tool's report into one page, or hand back an index
+   * of its sections so the caller can read them one at a time.
+   *
+   * `mesh_failures` and `mesh_run_digest` are not lists and have no natural
+   * order to page along — they are seven-odd sections of counted rows each
+   * capped by `limit`/`top`, and that cap is not a size bound: 20 denials with
+   * 160-character reasons is 3.2k on its own, and the live `mesh_failures`
+   * result measured 24,472 characters. So the common case still gets the whole
+   * report, and only a report that genuinely does not fit is turned into an
+   * index plus `section=<name>` reads, each of which pages by character.
+   *
+   * Nothing becomes unreachable: every section is still listed with its row
+   * count, and every section can be read in full, one page at a time.
+   */
+  private pageAggregate(
+    tool: string,
+    scalars: Record<string, unknown>,
+    sections: Record<string, unknown[]>,
+    a: Record<string, any>,
+    sectionCap: number,
+  ): Record<string, unknown> {
+    const index = (): Record<string, number> => Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length]));
+    if (a.section !== undefined) {
+      const want = String(a.section);
+      const rows = sections[want];
+      if (!rows) return { ...scalars, error: `unknown section ${want}`, sections: index() };
+      const offset = Math.max(0, Math.floor(Number(a.offset) || 0));
+      const page = fitRows(rows, { offset, budgetChars: TOOL_PAGE_CHARS - PAGE_ENVELOPE_CHARS, sizeOf: jsonSize });
+      return {
+        ...scalars,
+        section: want,
+        total: page.total,
+        offset,
+        returned: page.rows.length,
+        truncated: page.truncated,
+        nextOffset: page.nextOffset,
+        rows: page.rows,
+        ...(page.truncated ? { note: pageNote(`${tool}/${want}`, page.rows.length, page.total, `section="${want}", offset=${page.nextOffset}`) } : {}),
+      };
+    }
+    const capped: Record<string, unknown> = {};
+    for (const [k, rows] of Object.entries(sections)) capped[k] = rows.slice(0, sectionCap);
+    const full = { ...scalars, ...capped };
+    if (fitsInPage(full)) return full;
+    return {
+      ...scalars,
+      truncated: true,
+      sections: index(),
+      note:
+        `${tool}: this report is ${jsonSize(full)} characters and does not fit one result. ` +
+        `Every row is still here — call it again with section="<name>" (the names and row counts are in \`sections\`) ` +
+        `to read one section at a time, paging with \`offset\` if that section needs it.`,
+    };
   }
 
   /**
@@ -827,32 +972,44 @@ export class McpToolset {
     const turns = this.supervisor.getRecentTurns(200);
     const sig = this.collectFailureSignals(events, turns);
     const state = this.supervisor.state;
-    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count).slice(0, limit);
-    return {
-      // `events` bounds the runtime-failure and gate-blocked sections only.
-      // Denials and refused sends come off bounded projection rings, so they
-      // are not limited by how far back the caller asked us to scan and they
-      // survive a snapshot restore — said here because a `scanned` count next
-      // to a number it does not govern is how a report gets misread.
+    // `events` bounds the runtime-failure and gate-blocked sections only.
+    // Denials and refused sends come off bounded projection rings, so they
+    // are not limited by how far back the caller asked us to scan and they
+    // survive a snapshot restore — said here because a `scanned` count next
+    // to a number it does not govern is how a report gets misread.
+    const scalars = {
       scanned: { events: events.length, recentTurns: turns.length, denialsFromProjection: true },
-      agentFailures: sig.agentFailures.slice(-limit),
-      failedTurns: sig.failedTurns.slice(-limit),
-      denials: byCount([...sig.denials.values()]),
-      refusedSends: byCount([...sig.refusedSends.values()]),
-      rejectedOps: byCount([...sig.opFailures.values()]),
       turnsWithEveryOpRejected: sig.allRejectedTurns,
-      turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
-        .map(([agentId, count]) => ({ agentId, count }))
-        .sort((x, y) => y.count - x.count)
-        .slice(0, limit),
-      stuckArtifacts: [...state.artifacts.values()]
-        .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
-        .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status, gateBlocked: sig.gateBlocked.get(art.id) ?? 0 }))
-        .slice(0, limit),
-      openEscalations: [...state.escalations.values()]
-        .filter((e) => e.status === "OPEN")
-        .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
     };
+    // Full lists, not pre-capped ones: `pageAggregate` applies `limit` to the
+    // flat report it returns, and the index it falls back to must name the
+    // section's REAL size — a count taken from an already-capped list would
+    // tell a caller it had seen everything when it had not.
+    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count);
+    return this.pageAggregate(
+      "mesh_failures",
+      scalars,
+      {
+        // Newest first, so the cap `pageAggregate` applies to the flat report
+        // keeps the most recent failures — the ones a reader is asking about.
+        agentFailures: [...sig.agentFailures].reverse(),
+        failedTurns: [...sig.failedTurns].reverse(),
+        denials: byCount([...sig.denials.values()]),
+        refusedSends: byCount([...sig.refusedSends.values()]),
+        rejectedOps: byCount([...sig.opFailures.values()]),
+        turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
+          .map(([agentId, count]) => ({ agentId, count }))
+          .sort((x, y) => y.count - x.count),
+        stuckArtifacts: [...state.artifacts.values()]
+          .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
+          .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status, gateBlocked: sig.gateBlocked.get(art.id) ?? 0 })),
+        openEscalations: [...state.escalations.values()]
+          .filter((e) => e.status === "OPEN")
+          .map((e) => ({ id: e.id, reason: e.reason, raisedBy: e.raisedBy, kind: e.kind ?? "primary" })),
+      },
+      a,
+      limit,
+    );
   }
 
   private async agentActivityView(a: Record<string, any>): Promise<Record<string, unknown>> {
@@ -882,38 +1039,44 @@ export class McpToolset {
     const blocks = events.filter((e) => e.type === "message.sent" && (e.payload as Record<string, any>)?.message?.type === "BLOCK").length;
     const interesting = ["review.rejected", "requirement.blocked", "escalation.requested", "escalation.responded", "deadlock.auto_resolved", "goal.reopened", "agent.failed", "agent.restarted", "budget.exceeded"];
     const mission = state.budgets.get(`mission:${state.activeGoalId ?? ""}`);
-    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count).slice(0, top);
-    return {
-      outcome,
-      reason,
-      scanned: { events: events.length, recentTurns: turns.length },
-      goal: buildGoalView(state),
-      eventCount: state.eventCount,
-      denials: byCount([...sig.denials.values()]),
-      refusedSends: byCount([...sig.refusedSends.values()]),
-      rejectedOps: byCount([...sig.opFailures.values()]),
-      turnsWithEveryOpRejected: sig.allRejectedTurns,
-      turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
-        .map(([agentId, count]) => ({ agentId, count }))
-        .sort((x, y) => y.count - x.count)
-        .slice(0, top),
-      agentFailures: sig.agentFailures.length,
-      stuckArtifacts: [...state.artifacts.values()]
-        .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
-        .slice(0, top)
-        .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status })),
-      openEscalations: [...state.escalations.values()].filter((e) => e.status === "OPEN").length,
-      interesting: interesting.map((type) => ({ type, count: byType.get(type) ?? 0 })).filter((r) => r.count > 0),
-      blocks,
-      tokens: {
-        mission: mission?.consumed ?? null,
-        perAgent: [...state.agents.values()].map((r) => ({ agentId: r.definition.id, tokens: r.state.tokensConsumed })),
+    // Full lists: `pageAggregate` applies `top` to the flat report and the
+    // index must name the section's real size. See `failuresView`.
+    const byCount = <T extends { count: number }>(rows: T[]): T[] => rows.sort((x, y) => y.count - x.count);
+    return this.pageAggregate(
+      "mesh_run_digest",
+      {
+        outcome,
+        reason,
+        scanned: { events: events.length, recentTurns: turns.length },
+        goal: buildGoalView(state),
+        eventCount: state.eventCount,
+        agentFailures: sig.agentFailures.length,
+        openEscalations: [...state.escalations.values()].filter((e) => e.status === "OPEN").length,
+        blocks,
+        interesting: interesting.map((type) => ({ type, count: byType.get(type) ?? 0 })).filter((r) => r.count > 0),
+        tokens: {
+          mission: mission?.consumed ?? null,
+          perAgent: [...state.agents.values()].map((r) => ({ agentId: r.definition.id, tokens: r.state.tokensConsumed })),
+        },
+        turnsWithEveryOpRejected: sig.allRejectedTurns,
       },
-      topEventTypes: [...byType.entries()]
-        .sort((x, y) => y[1] - x[1])
-        .slice(0, top)
-        .map(([type, count]) => ({ type, count })),
-    };
+      {
+        denials: byCount([...sig.denials.values()]),
+        refusedSends: byCount([...sig.refusedSends.values()]),
+        rejectedOps: byCount([...sig.opFailures.values()]),
+        turnsWithZeroToolCalls: [...sig.noToolTurns.entries()]
+          .map(([agentId, count]) => ({ agentId, count }))
+          .sort((x, y) => y.count - x.count),
+        stuckArtifacts: [...state.artifacts.values()]
+          .filter((art) => !TERMINAL_ARTIFACT_STATUS.has(art.status))
+          .map((art) => ({ id: art.id, name: art.name, type: art.type, status: art.status })),
+        topEventTypes: [...byType.entries()]
+          .sort((x, y) => y[1] - x[1])
+          .map(([type, count]) => ({ type, count })),
+      },
+      a,
+      top,
+    );
   }
 
   private buildTools(): McpToolDefinition[] {
@@ -1045,13 +1208,13 @@ export class McpToolset {
       { name: "mesh_plan_step", description: "Mark one step of your plan done (or reopen it).", inputSchema: { type: "object", required: ["stepId"], properties: { stepId: str("step id from your plan"), status: { type: "string", enum: ["PENDING", "DONE"], description: "defaults to DONE" } }, additionalProperties: false } },
       { name: "mesh_spawn_worker", description: "Spawn a depth-1 delegated worker (only if your delegation policy allows). Returns its workerId and taskId. Parent receives only the structured result contract.", inputSchema: { type: "object", required: ["title", "taskSpec"], properties: { title: str("worker task title"), taskSpec: str("precise task specification"), capabilities: strArr("required capabilities"), budgetTokens: { type: "number", description: "worker token budget" } }, additionalProperties: false } },
       { name: "mesh_submit_result", description: "Worker-only: submit the fractal result contract {status,summary,artifacts,findings,risks,recommendation}.", inputSchema: { type: "object", required: ["taskId", "result"], properties: { taskId: str("delegated task"), result: obj("SubAgentResult contract") }, additionalProperties: false } },
-      { name: "mesh_run_status", description: "Read-only mission snapshot: goal status and criteria progress, event/message/task/token counters and rates, per-agent lifecycle/cost/last error, open escalations. Use to answer 'how is the run doing?'.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-      { name: "mesh_query_events", description: "Read-only query over the event log, newest first. Returns compact timeline entries; lastSeq is a cursor for incremental polling. Use includePayload only when the summary is not enough. To find verdicts, use type \"verdict\": approvals are review.approved, and an architecture.approved without one is from before that rule.", inputSchema: { type: "object", properties: { type: str("exact event type, e.g. message.sent or agent.failed — or \"verdict\" for every recorded approve/pass/reject/veto"), types: strArr("several exact event types at once; combined with type"), actorId: str("only events acted by this agent"), sinceSeq: { type: "number", description: "only events after this sequence number (poll cursor)" }, limit: { type: "number", description: "max events (default 30, max 200)" }, includePayload: { type: "boolean", description: "include full event payloads (default false)" } }, additionalProperties: false } },
-      { name: "mesh_steps", description: "Read-only turn/step traces: lifecycle, status, ops, tokens, timing, errors for recent agent turns (log reconstruction merged with live turns). Filter by agent, status or exact turn id to find failures or slow/no-op turns.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max steps (default 20, max 100)" }, agentId: str("filter to one agent"), status: { ...str("filter by turn status"), enum: ["running", "ok", "waiting", "blocked", "failed"] }, turnId: str("exact turn id") }, additionalProperties: false } },
-      { name: "mesh_failures", description: "Read-only failure report: runtime agent failures, policy denials (ops and activations policy turned away), sends policy refused, rejected ops, turns where every op was rejected, turns with zero tool calls, gate-blocked/non-terminal artifacts, open escalations. Start here when asked what went wrong. Denials and refused sends are read from projections, so they survive a restart and ignore the window; window bounds only the event-derived sections.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max rows per section (default 20, max 100)" }, window: { type: "number", description: "how many recent events to scan; bounds the event-derived sections only (default 2000, max 10000)" } }, additionalProperties: false } },
+      { name: "mesh_run_status", description: "Read-only mission snapshot: goal status and criteria progress, event/message/task/token counters and rates, per-agent lifecycle/cost/last error, open escalations. Use to answer 'how is the run doing?'. If the snapshot does not fit one result it returns a `sections` index instead — read one with section=\"agents\" or section=\"openEscalations\", paging with offset.", inputSchema: { type: "object", properties: { section: str("read one section instead of the whole snapshot: agents | openEscalations"), offset: { type: "number", description: "rows to skip within that section (default 0) — use nextOffset from a previous call" } }, additionalProperties: false } },
+      { name: "mesh_query_events", description: "Read-only query over the event log, oldest-first within a page of the newest matches. Returns compact timeline entries; lastSeq is a cursor for incremental polling and nextOffset walks back into older events. Use includePayload only when the summary is not enough. A page is bounded by characters: if the result says truncated, call again with its nextOffset. To find verdicts, use type \"verdict\": approvals are review.approved, and an architecture.approved without one is from before that rule.", inputSchema: { type: "object", properties: { type: str("exact event type, e.g. message.sent or agent.failed — or \"verdict\" for every recorded approve/pass/reject/veto"), types: strArr("several exact event types at once; combined with type"), actorId: str("only events acted by this agent"), sinceSeq: { type: "number", description: "only events after this sequence number (poll cursor, walks forward)" }, offset: { type: "number", description: "skip this many of the NEWEST matches (default 0) — use nextOffset from a previous truncated result to read older events" }, limit: { type: "number", description: "max events (default 30, max 200)" }, includePayload: { type: "boolean", description: "include full event payloads (default false)" } }, additionalProperties: false } },
+      { name: "mesh_steps", description: "Read-only turn/step traces: lifecycle, status, ops, tokens, timing, errors for recent agent turns (log reconstruction merged with live turns). Filter by agent, status or exact turn id to find failures or slow/no-op turns. A page is bounded by characters: if the result says truncated, call again with its nextOffset.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max steps (default 20, max 100)" }, offset: { type: "number", description: "steps to skip (default 0) — use nextOffset from a previous call" }, agentId: str("filter to one agent"), status: { ...str("filter by turn status"), enum: ["running", "ok", "waiting", "blocked", "failed"] }, turnId: str("exact turn id") }, additionalProperties: false } },
+      { name: "mesh_failures", description: "Read-only failure report: runtime agent failures, policy denials (ops and activations policy turned away), sends policy refused, rejected ops, turns where every op was rejected, turns with zero tool calls, gate-blocked/non-terminal artifacts, open escalations. Start here when asked what went wrong. Denials and refused sends are read from projections, so they survive a restart and ignore the window; window bounds only the event-derived sections. If the report does not fit one result it returns a `sections` index instead — read one with section=\"denials\" (etc.), paging with offset.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max rows per section (default 20, max 100)" }, window: { type: "number", description: "how many recent events to scan; bounds the event-derived sections only (default 2000, max 10000)" }, section: str("read one section instead of the whole report: agentFailures | failedTurns | denials | refusedSends | rejectedOps | turnsWithZeroToolCalls | stuckArtifacts | openEscalations"), offset: { type: "number", description: "rows to skip within that section (default 0) — use nextOffset from a previous call" } }, additionalProperties: false } },
       { name: "mesh_agent_activity", description: "Read-only per-agent activity snapshot: lifecycle, running turn, mailbox depth, activations, tokens, last error. Optionally filter to one agent.", inputSchema: { type: "object", properties: { agentId: str("filter to one agent") }, additionalProperties: false } },
-      { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" } }, additionalProperties: false } },
-      { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones you still owe a reply (an ask that already closed says how, in closed) and dueBy giving the deadline they will be closed at where the mesh sets one. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
+      { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools. If the digest does not fit one result it returns a `sections` index instead — read one with section=\"denials\" (etc.), paging with offset.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" }, section: str("read one section instead of the whole digest: denials | refusedSends | rejectedOps | turnsWithZeroToolCalls | stuckArtifacts | topEventTypes"), offset: { type: "number", description: "rows to skip within that section (default 0) — use nextOffset from a previous call" } }, additionalProperties: false } },
+      { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones you still owe a reply (an ask that already closed says how, in closed) and dueBy giving the deadline they will be closed at where the mesh sets one. A page is bounded by characters, not just by `limit`: if the result says truncated, call again with its nextOffset — raising `limit` will not make one page bigger. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
     ];
   }
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ClaudeRuntimeAdapter, MESH_TOOL_RESULT_MAX_CHARS, usageToTokens, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
+import { ClaudeRuntimeAdapter, usageToTokens, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
 import {
   InterruptedTurnError,
   TurnTimeoutError,
@@ -334,80 +334,9 @@ test("an operator's own hooks run beside the advice hook, not instead of it", as
   const session = await rt.start(def, ctx());
   try {
     const hooks = seen.options?.hooks as Record<string, Array<{ hooks: unknown[] }>>;
-    assert.equal(hooks.PostToolUse.length, 3, "the operator's matcher, the advice hook, and the mesh-result bound");
+    assert.equal(hooks.PostToolUse.length, 2, "the operator's matcher and the advice hook");
     assert.equal(hooks.PostToolUse[0].hooks[0], mine);
     assert.equal(hooks.PostToolUseFailure.length, 1);
-  } finally {
-    await rt.stop(session);
-  }
-});
-
-// ------------------------------------------- the bound on a mesh tool result
-
-/** The rewrite out of one hook round, or undefined when the hook declined. */
-const rewriteOf = (results: Array<Record<string, unknown>>): unknown =>
-  (results.find((r) => r.hookSpecificOutput)?.hookSpecificOutput as { updatedToolOutput?: unknown } | undefined)?.updatedToolOutput;
-
-/** Every rewrite returned in one hook round — empty when nothing was rewritten. */
-const rewritesIn = (results: Array<Record<string, unknown>>): unknown[] =>
-  results
-    .map((r) => (r.hookSpecificOutput as { updatedToolOutput?: unknown } | undefined)?.updatedToolOutput)
-    .filter((v) => v !== undefined);
-
-test("an oversized mesh tool result is clipped before the model is billed for it, and names how to read the rest", async () => {
-  const { queryFn, seen } = scriptedQuery([async function* ({ sid }) { yield success(sid); }]);
-  const rt = new ClaudeRuntimeAdapter({ queryFn });
-  const session = await rt.start(def, ctx());
-  try {
-    // 40k characters is a mesh_inbox result from the measured run (p90 = 32,836).
-    const huge = "m".repeat(40_000);
-    const clipped = rewriteOf(await fireHook(seen.options!, "PostToolUse", "tu_1", { toolName: "mcp__mesh__mesh_inbox", toolResponse: huge }));
-    assert.equal(typeof clipped, "string", "the result reaches the model as the same shape it arrived in");
-    const text = clipped as string;
-    assert.ok(text.length < MESH_TOOL_RESULT_MAX_CHARS + 500, `clipped to the bound, not 40k (got ${text.length})`);
-    assert.ok(text.startsWith("m".repeat(100)), "the head of the result survives whole");
-    assert.match(text, /showing 8000 of 40000 characters; 32000 clipped/);
-    assert.match(text, /page with offset=/, "the hint names the tool's own resume protocol");
-    assert.match(text, /Do not re-issue this call unchanged/, "and forbids the re-read that would pay twice");
-
-    // Only the mesh's own tools. The SDK's Read/Bash are out of this adapter's
-    // hands, and rewriting them would be a behaviour change nothing measured.
-    assert.deepEqual(rewritesIn(await fireHook(seen.options!, "PostToolUse", "tu_2", { toolName: "Read", toolResponse: huge })), []);
-    assert.deepEqual(rewritesIn(await fireHook(seen.options!, "PostToolUse", "tu_3", { toolName: "Bash", toolResponse: huge })), []);
-    // A mesh result that fits is passed through untouched, as is a mesh tool
-    // answering in the 43-691 characters every write-side op does.
-    assert.deepEqual(rewritesIn(await fireHook(seen.options!, "PostToolUse", "tu_4", { toolName: "mcp__mesh__mesh_inbox", toolResponse: "ok" })), []);
-    assert.deepEqual(rewritesIn(await fireHook(seen.options!, "PostToolUse", "tu_5", { toolName: "mcp__mesh__mesh_wait", toolResponse: "w".repeat(43) })), []);
-  } finally {
-    await rt.stop(session);
-  }
-});
-
-test("the bound clips the text of an MCP result frame and leaves its other blocks alone", async () => {
-  const { queryFn, seen } = scriptedQuery([async function* ({ sid }) { yield success(sid); }]);
-  const rt = new ClaudeRuntimeAdapter({ queryFn });
-  const session = await rt.start(def, ctx());
-  try {
-    const response = { content: [{ type: "image", data: "keep-me" }, { type: "text", text: "a".repeat(30_000) }] };
-    const out = rewriteOf(await fireHook(seen.options!, "PostToolUse", "tu_1", { toolName: "mcp__mesh__mesh_artifact_read", toolResponse: response })) as {
-      content: Array<Record<string, unknown>>;
-    };
-    assert.equal(out.content[0].data, "keep-me", "a non-text block is not a text block and is not touched");
-    assert.match(String(out.content[1].text), /showing 8000 of 30000 characters; 22000 clipped/);
-    assert.match(String(out.content[1].text), /resume with offset=<the nextOffset it gave you>/);
-  } finally {
-    await rt.stop(session);
-  }
-});
-
-test("the bound is per adapter, and a lower one clips what the default would let through", async () => {
-  const { queryFn, seen } = scriptedQuery([async function* ({ sid }) { yield success(sid); }]);
-  const rt = new ClaudeRuntimeAdapter({ queryFn, meshToolResultMaxChars: 100 });
-  const session = await rt.start(def, ctx());
-  try {
-    const out = rewriteOf(await fireHook(seen.options!, "PostToolUse", "tu_1", { toolName: "mcp__mesh__mesh_query_events", toolResponse: "e".repeat(500) })) as string;
-    assert.match(out, /showing 100 of 500 characters; 400 clipped/);
-    assert.match(out, /resume with sinceSeq=<the lastSeq it gave you>/, "a query_events hint names its own cursor");
   } finally {
     await rt.stop(session);
   }

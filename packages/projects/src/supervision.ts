@@ -91,6 +91,18 @@ export interface SupervisionEvent {
    */
   silenceMs?: number;
   /**
+   * The child's own event-loop high-water mark, from the last beat it managed to
+   * send, when it sent one.
+   *
+   * This is the field that splits the two readings a silence cannot: a child
+   * whose loop was blocked by synchronous work reports a large lag and comes
+   * back on its own, while a wedged process reports nothing at all. It is paired
+   * with `silenceMs` rather than replacing it — a block that began after the
+   * last beat is invisible here, so "silent, lagMax small" is not a diagnosis on
+   * its own. Absent means the child never said, which is not the same as zero.
+   */
+  eventLoopLagMaxMs?: number;
+  /**
    * The supervision log this event was also appended to, when it was. Absolute,
    * inside the project's own `.mesh/`, so a UI can point at the file rather
    * than at a line that scrolled off a terminal.
@@ -164,6 +176,21 @@ interface Supervised {
    * exactly as before.
    */
   staleChecks: number;
+  /**
+   * The event-loop high-water mark the child last reported about itself.
+   *
+   * Kept here rather than read from the supervisor at failure time because by
+   * then it is too late to ask: `ChildProcessSupervisor` deletes the child from
+   * its map *before* it fires `onExit`, so a crash decision made there would
+   * have nothing to read. The watchdog already polls every open child every 2s,
+   * so refreshing this on that poll costs one assignment and leaves the value at
+   * most one poll interval stale — which is nothing next to the tens of seconds a
+   * block worth reporting lasts.
+   *
+   * Undefined until a beat that carried it. That absence is meaningful: it is
+   * "the child never told us", never "the loop was fine".
+   */
+  lastLoopLagMaxMs?: number;
 }
 
 /**
@@ -330,7 +357,7 @@ export class SupervisionTree {
     const entry = this.tracked.get(info.ref.id);
     if (!entry || entry.intentional) return;
     const detail = `child exited with ${info.signal ? `signal ${info.signal}` : `code ${info.code}`}`;
-    this.onFailure(entry, info.ref, "crash", detail);
+    this.onFailure(entry, info.ref, "crash", detail, undefined, entry.lastLoopLagMaxMs);
   }
 
   /** Host shutdown: all children in parallel against one deadline, then done. */
@@ -383,6 +410,10 @@ export class SupervisionTree {
     // process's boot is not its health record.
     entry.staleChecks = 0;
     entry.readyAt = undefined;
+    // Same reason as the two above: a lag reported by the process this launch is
+    // replacing says nothing about this one, and carrying it over would let a
+    // blocked old life make a clean new one look blocked.
+    entry.lastLoopLagMaxMs = undefined;
     const pending = this.supervisor.launch(ref);
     this.inFlight.add(pending);
     let result: Awaited<typeof pending>;
@@ -426,7 +457,14 @@ export class SupervisionTree {
    * A child died or went silent. Either restart it after a backoff, or trip the
    * breaker and leave a visible dead tab.
    */
-  private onFailure(entry: Supervised, ref: ProjectRef, reason: SupervisionReason, detail: string, silenceMs?: number): void {
+  private onFailure(
+    entry: Supervised,
+    ref: ProjectRef,
+    reason: SupervisionReason,
+    detail: string,
+    silenceMs?: number,
+    eventLoopLagMaxMs?: number,
+  ): void {
     if (this.shuttingDown) return;
     const at = this.now();
     entry.crashes = [...entry.crashes.filter((t) => at - t < this.opts.crashLoopWindowMs), at];
@@ -440,6 +478,7 @@ export class SupervisionTree {
         reason,
         status: "crashed",
         silenceMs,
+        eventLoopLagMaxMs,
         restarts: entry.restarts,
         crashes: entry.crashes.length,
         action: "breaker-tripped",
@@ -452,7 +491,7 @@ export class SupervisionTree {
         `${detail} — ${entry.crashes.length} crashes in ${Math.round(this.opts.crashLoopWindowMs / 1000)}s, ` +
           `auto-restart disabled. A tab that stays dead is honest; a silent restart loop is not.`,
         undefined,
-        { silenceMs, logFile },
+        { silenceMs, logFile, eventLoopLagMaxMs },
       );
       return;
     }
@@ -462,12 +501,13 @@ export class SupervisionTree {
       reason,
       status: "crashed",
       silenceMs,
+      eventLoopLagMaxMs,
       restarts: entry.restarts,
       action: "restart-with-backoff",
       retryInMs: delay,
       detail,
     });
-    this.setStatus(entry, "crashed", reason, detail, delay, { silenceMs, logFile });
+    this.setStatus(entry, "crashed", reason, detail, delay, { silenceMs, logFile, eventLoopLagMaxMs });
     entry.timer = setTimeout(() => {
       entry.timer = undefined;
       if (this.shuttingDown || entry.intentional || entry.tripped) return;
@@ -530,6 +570,13 @@ export class SupervisionTree {
       if (entry.status !== "open" || entry.intentional) continue;
       const child = this.supervisor.running(entry.ref.id);
       if (!child) continue;
+      // What the child last said about its own loop, kept for whichever failure
+      // decision this poll leads to. See `Supervised.lastLoopLagMaxMs` for why it
+      // is cached rather than read at failure time. Only overwritten by a beat
+      // that actually carried the field: it is a high-water mark, so a beat that
+      // omits it must not erase what an earlier one reported.
+      const lagMax = child.lastHeartbeat?.eventLoopLagMaxMs;
+      if (typeof lagMax === "number") entry.lastLoopLagMaxMs = lagMax;
       const last = child.lastHeartbeat?.receivedAt ?? entry.readyAt ?? entry.startedAt;
       const verdict = heartbeatVerdict(at - last, this.opts.heartbeatTimeoutMs, entry.staleChecks);
       entry.staleChecks = verdict.nextChecks;
@@ -539,9 +586,13 @@ export class SupervisionTree {
       // Stop it first: the restart path assumes the old process is gone, and
       // the state lock will not be free until it is.
       const ref = entry.ref;
+      // Captured before the stop, because the restart resets the entry: what the
+      // child last said about itself is the one piece of evidence a post-mortem
+      // of this kill has, and it is gone the moment the next life begins.
+      const loopLagMaxMs = entry.lastLoopLagMaxMs;
       void this.supervisor.stop(ref).then(() => {
         if (this.shuttingDown || entry.intentional) return;
-        this.onFailure(entry, ref, "unhealthy", `no heartbeat for ${silentFor}s`, silenceMs);
+        this.onFailure(entry, ref, "unhealthy", `no heartbeat for ${silentFor}s`, silenceMs, loopLagMaxMs);
       });
       // Prevents the next poll from firing on the same child while the stop is
       // still in flight, which would double-count the crash toward the breaker.
@@ -563,7 +614,7 @@ export class SupervisionTree {
     reason?: SupervisionReason,
     detail?: string,
     retryInMs?: number,
-    extra: { silenceMs?: number; logFile?: string } = {},
+    extra: { silenceMs?: number; logFile?: string; eventLoopLagMaxMs?: number } = {},
   ): void {
     entry.status = status;
     entry.detail = detail ?? entry.detail;
@@ -572,6 +623,7 @@ export class SupervisionTree {
     if (typeof retryInMs === "number") event.retryInMs = retryInMs;
     if (detail) event.detail = detail;
     if (typeof extra.silenceMs === "number") event.silenceMs = extra.silenceMs;
+    if (typeof extra.eventLoopLagMaxMs === "number") event.eventLoopLagMaxMs = extra.eventLoopLagMaxMs;
     if (extra.logFile) event.logFile = extra.logFile;
     this.onEvent?.(event);
   }

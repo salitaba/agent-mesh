@@ -1646,7 +1646,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     // when something was actually withheld: a seat with no claims to read would
     // otherwise be taught to reach for a tool it has no reason to call.
     if (claimed) {
-      lines.push("- Bodies marked `body withheld` are in your mailbox, not lost: read them with `mesh_inbox` (this seat receives non-urgent mail as claims).");
+      lines.push("- Bodies marked `body withheld` are in your mailbox, not lost: read them with `mesh_inbox` (this seat receives non-urgent mail as claims). Its page is bounded by characters, so a full queue comes back in pages — call it again with the nextOffset it gives you rather than raising `limit`.");
     }
     partial(bundle.omitted?.unread, "unread message(s)", "still queued; they stay unread until a later turn shows them");
     if (bundle.mailDropped && bundle.mailDropped > 0) {
@@ -1817,7 +1817,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // 2026-09-25, §4 — 7 of 10 denials).
   lines.push("- mesh_respond (messageId/type/payload) — answer one specific request. Not a review you settled with mesh_approve/mesh_reject: the verdict already answered it.");
   lines.push(
-    "- mesh_artifact_read (artifactRef, offset?) — fetch content instead of guessing at it. A large artifact returns in parts: if the result says truncated, read again with the nextOffset it gives you before drawing conclusions.",
+    "- mesh_artifact_read (artifactRef, offset?) — fetch content instead of guessing at it. A large artifact returns in parts: if the result says truncated, read again with the nextOffset it gives you before drawing conclusions. Pages are bounded by characters, so a long document takes several reads — that is the intended way to read it, not a failure.",
   );
   lines.push("- mesh_research_request (to/question) — ask the explorer a read-only question.");
   lines.push("- mesh_broadcast (type/payload) — inform everyone you may contact; prefer a targeted mesh_send.");

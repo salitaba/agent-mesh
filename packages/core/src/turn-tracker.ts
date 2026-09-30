@@ -654,9 +654,13 @@ export function abnormalTurnNote(
   durationMs: number,
   facts?: UnfinishedTurnFacts,
 ): string {
-  // An operator stop is classified by the supervisor (`interruptTurn`), so its
-  // reason is its own and read first.
-  const byOperator = discard.reason === "interrupted";
+  // `interrupted` covers two stops that must not be confused in the seat's
+  // note: the operator's (`interruptTurn`) and the mesh's own shutdown, which
+  // the supervisor closes the same way (`closeShutdownStoppedTurn`) and names in
+  // `detail`. Telling a seat "the operator stopped you" after a restart would
+  // send it looking for an instruction that was never given.
+  const byShutdown = discard.reason === "interrupted" && (discard.detail ?? "").startsWith("stopped by the mesh shutting down");
+  const byOperator = discard.reason === "interrupted" && !byShutdown;
   // A budget stop is `budget` since 2026-09-27 — the supervisor knows its own
   // watch ordered the interrupt, so the wording comes off the classification
   // rather than out of the detail prose. The detail test stays as a fallback
@@ -664,7 +668,9 @@ export function abnormalTurnNote(
   // (or `failed` when the forced settle fired) and its words are the only trace
   // of the cause.
   const byBudget = discard.reason === "budget";
-  const how = byOperator
+  const how = byShutdown
+    ? "was stopped when the mesh restarted — nothing you did caused it, and your saved work is intact"
+    : byOperator
     ? "was stopped by the operator"
     : byBudget || discard.detail?.startsWith("turn budget exceeded")
       ? "was stopped when its live spend passed what your budget had left"
