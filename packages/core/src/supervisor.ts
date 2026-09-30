@@ -11666,16 +11666,20 @@ export class Supervisor {
     // JSON. `askControl` re-checks the name against the catalogue, so a
     // stamp on the wire always means "this ask passed its request schema".
     switch (contract.desugarsTo) {
-      case "request_review":
+      case "request_review": {
+        // `artifactId` is an accepted spelling of `artifact` (see the contract): the
+        // tool list teaches the former, the schema was written with the latter.
+        const artifactRef = request.artifact ?? request.artifactId;
         return this.executeOp(actorId, {
           op: "request_review",
-          artifactId: String(request.artifact ?? ""),
-          artifactUri: typeof request.artifact === "string" && request.artifact.startsWith("artifact://") ? request.artifact : undefined,
+          artifactId: String(artifactRef ?? ""),
+          artifactUri: typeof artifactRef === "string" && artifactRef.startsWith("artifact://") ? artifactRef : undefined,
           reviewers: targets,
           contract: contract.name,
           contractVersion: contract.version,
           ifUnanswered: op.ifUnanswered,
         }, turn);
+      }
       case "request_research":
         return this.executeOp(actorId, {
           op: "request_research",

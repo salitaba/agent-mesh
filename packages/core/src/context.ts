@@ -1587,6 +1587,17 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           lines.push(
             `  contract: ${askContract.name} — to decline, mesh_discharge with reason (your words) and refusal: one of ${askContract.refusals.join(", ")}.`,
           );
+          // The other half of the contract, at the same moment. The answer shape was
+          // declared on every contract and checked at discharge, and named nowhere the
+          // answerer read: five replies in the cronlite run settled their asks and were
+          // marked "carried no answer" because each wrote its answer under a key the
+          // contract does not list. The schema's own description names the keys that
+          // count, so this is that sentence, where the reply is being composed.
+          const answerShape = (askContract.response as { description?: unknown } | undefined)?.description;
+          const answerKeys = typeof answerShape === "string" ? /one of:\s*(.+)$/.exec(answerShape)?.[1] : undefined;
+          if (answerKeys) {
+            lines.push(`  to answer: reply with replyTo=${m.id} and a payload carrying a non-empty one of: ${answerKeys}. Any other key is delivered, but does not count as the answer.`);
+          }
           // Said plainly when the contract was defaulted rather than named,
           // because the two are not the same promise. A named contract was
           // checked against its request schema at the edge; this one was not,

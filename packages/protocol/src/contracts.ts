@@ -147,10 +147,16 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
       type: "object",
       properties: {
         artifact: { type: "string", minLength: 1, description: "artifact id or artifact:// URI" },
+        // The name `mesh_request_review` itself takes, and the one the seat briefing
+        // lists it under ("mesh_request_review (artifactId/reviewers)"). Three seats in
+        // the cronlite run took the briefing at its word, called this contract with
+        // `artifactId`, and were refused for a missing `artifact`: the same word under
+        // two names, one of them taught to them by the prompt. Either is accepted.
+        artifactId: { type: "string", minLength: 1, description: "same as `artifact`" },
         reviewers: { type: "array", items: { type: "string" }, description: "omit to let the mesh pick qualified reviewers" },
         note: { type: "string", description: "what you want looked at" },
       },
-      required: ["artifact"],
+      anyOf: [{ required: ["artifact"] }, { required: ["artifactId"] }],
       additionalProperties: false,
     },
     response: answeredWith(["verdict", "decision", "result", "findings", "summary", "review", "content"]),

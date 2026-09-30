@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, evidenceContent } from "../helpers";
 import { createMcpToolset } from "../../apps/mesh-server/src/mcp";
-import { renderContextInstructions } from "../../packages/core/src/context";
+import { buildAgentContext, renderContextInstructions } from "../../packages/core/src/context";
 import {
   BUILTIN_CONTRACTS,
   MESSAGE_TYPES,
@@ -179,6 +179,82 @@ test("contracts: review.artifact desugars through request_review and stamps the 
       undefined,
       "the stamp belongs to the runtime, not to agent-visible payload",
     );
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: review.artifact takes `artifactId`, the name the tool list teaches, as well as `artifact`", async () => {
+  // Three seats in the cronlite run were refused with "must have required property
+  // 'artifact'" after calling this contract the way the briefing spells the
+  // equivalent tool: `mesh_request_review (artifactId/reviewers)`.
+  const m = await mesh();
+  try {
+    const pub = await runOp(m, "dev", {
+      op: "publish_artifact",
+      name: "cache-plan",
+      type: "ArchitectureDocument",
+      content: evidenceContent("cache plan"),
+    } as MeshOp);
+    assert.equal(pub.ok, true, pub.ok ? "" : pub.reason);
+    const id = [...m.kernel.state.artifacts.values()].find((a) => a.name === "cache-plan")!.id;
+
+    const res = await runOp(m, "dev", call("review.artifact", { artifactId: id, reviewers: ["architect"] }));
+    assert.equal(res.ok, true, res.ok ? "" : res.reason);
+    const msg = m.kernel.state.messages.get(res.ok ? res.messageId! : "");
+    assert.equal(msg?.type, "REQUEST_REVIEW");
+    assert.equal(msg?.control?.contract, "review.artifact");
+    assert.equal(m.kernel.state.artifacts.get(id)!.status, "UNDER_REVIEW", "the review it asked for is real");
+
+    // A URI spelled as `artifactId` resolves too, the same as under `artifact`.
+    const uri = await runOp(m, "dev", call("review.artifact", { artifactId: "artifact://ArchitectureDocument/cache-plan/1" }, ["architect"]));
+    assert.equal(uri.ok, true, uri.ok ? "" : uri.reason);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: review.artifact still needs one of them, and the refusal names the field", async () => {
+  const m = await mesh();
+  try {
+    const res = await runOp(m, "dev", call("review.artifact", { reviewers: ["architect"] }));
+    assert.equal(res.ok, false);
+    assert.match(res.ok ? "" : res.reason ?? "", /artifact/);
+    assert.equal(findContract("review.artifact")!.request.additionalProperties, false, "a typo is still refused, not dropped");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: the addressee of an ask is shown which keys count as the answer", async () => {
+  // Five replies in the cronlite run settled their asks and were reported "carried no
+  // answer": each put its answer under a key the contract does not list, and the
+  // listing existed only in the schema it is checked against.
+  const m = await mesh();
+  try {
+    const asked = await runOp(m, "architect", call("info.question", { question: "which cache are we on?" }, ["dev"]));
+    assert.equal(asked.ok, true, asked.ok ? "" : asked.reason);
+    const id = asked.ok ? asked.messageId! : "";
+
+    const mail = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "dev"));
+    const line = mail.split("\n").find((l) => l.includes("to answer:"));
+    assert.ok(line, "the ask's mail carries an answer line");
+    assert.ok(line.includes(`replyTo=${id}`), "naming the ask being answered, which is what closes it");
+    for (const key of ["answer", "content", "summary", "result"]) assert.ok(line.includes(key), `${key} is one of the keys info.question counts`);
+    assert.match(line, /Any other key is delivered, but does not count as the answer/);
+    assert.ok(mail.indexOf("to decline") < mail.indexOf("to answer:"), "the decline line it sits beside comes first, in the same block");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("contracts: an ask with no peer answer to shape (an operator card) shows no answer line", async () => {
+  const m = await mesh();
+  try {
+    const card = await runOp(m, "architect", call("decision.escalate", { reason: "two seats disagree on the store" }));
+    assert.equal(card.ok, true, card.ok ? "" : card.reason);
+    const mail = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "dev"));
+    assert.doesNotMatch(mail, /to answer:/);
   } finally {
     await m.cleanup();
   }
