@@ -27,7 +27,7 @@ import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { holdsAuthority, mayReviewArtifact, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { holdsAuthority, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -1045,22 +1045,6 @@ function summarizePayload(m: MeshMessage): string {
   return "";
 }
 
-/**
- * The seats whose verdict would settle `a`: what `request_review` will accept, read off
- * the same predicate. The operator and seats that have stopped (completed, failed or
- * retired) are not reviewers anyone can ask.
- */
-function settlersOf(state: Projections, a: Artifact): string[] {
-  const out: string[] = [];
-  for (const rec of state.agents.values()) {
-    const id = rec.definition.id;
-    if (id === "human") continue;
-    const lifecycle = rec.state.lifecycle;
-    if (lifecycle === "COMPLETED" || lifecycle === "FAILED" || lifecycle === "RETIRED") continue;
-    if (mayReviewArtifact(state, id, a)) out.push(id);
-  }
-  return out;
-}
 
 function describePoliciesFor(config: ResolvedMeshConfig, agentId: string): string[] {
   const out: string[] = [];

@@ -24,6 +24,7 @@ export {
   holdsAuthority,
   hasPeerReviewerFor,
   mayReviewArtifact,
+  settlersOf,
   approverMayAdvance,
   capabilityForReview,
   REVIEW_CAPABILITIES,

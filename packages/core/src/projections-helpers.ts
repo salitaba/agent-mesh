@@ -575,6 +575,33 @@ export function mayReviewArtifact(state: Projections, reviewerId: string, artifa
   return !(reviewerId === artifact.owner && hasPeerReviewerFor(state, reviewerId, artifact, humanAgentId));
 }
 
+/**
+ * The seats whose verdict would settle `artifact`, in the mesh's own seat order.
+ *
+ * One list for the three readers that need it: the briefing prints it on the
+ * artifact's line, `request_review` filters the reviewers a seat names against it,
+ * and the `review.artifact` contract draws its default recipient from it. The
+ * contract used to take "the first seat the caller may contact" as its default,
+ * which is unrelated to who can settle anything (pm asked the architect to review
+ * the architect's own document, and architect asked pm, 13 refusals in 24 requests
+ * in the second cronlite run), so the default and the refusal it then met were
+ * computed from different questions.
+ *
+ * The operator and seats that have stopped (completed, failed or retired) are not
+ * reviewers anyone can ask.
+ */
+export function settlersOf(state: Projections, artifact: Artifact, humanAgentId = "human"): string[] {
+  const out: string[] = [];
+  for (const rec of state.agents.values()) {
+    const id = rec.definition.id;
+    if (id === humanAgentId) continue;
+    const lifecycle = rec.state.lifecycle;
+    if (lifecycle === "COMPLETED" || lifecycle === "FAILED" || lifecycle === "RETIRED") continue;
+    if (mayReviewArtifact(state, id, artifact, humanAgentId)) out.push(id);
+  }
+  return out;
+}
+
 export function hasPeerReviewerFor(
   state: Projections,
   actorId: string,

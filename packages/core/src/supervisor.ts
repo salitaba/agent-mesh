@@ -82,7 +82,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, transitionLifecycle } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, settlersOf, transitionLifecycle } from "./projections";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
 import { commitRefError } from "./commit-ref";
@@ -10342,13 +10342,9 @@ export class Supervisor {
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "request_review": {
-          let targetId = this.resolveArtifactRef(op.artifactId, op.artifactUri);
-          if (!targetId && turn.publishedIds && turn.publishedIds.length > 0) {
-            // Same-turn publish → review: the model's URI guess didn't resolve,
-            // but it just published something — reviewing that is the intent.
-            targetId = turn.publishedIds[turn.publishedIds.length - 1];
-          }
-          const a = targetId ? this.state.artifacts.get(targetId) : undefined;
+          // Same-turn publish → review: the model's URI guess didn't resolve, but it just
+          // published something — reviewing that is the intent (`reviewTarget`).
+          const a = this.reviewTarget(op.artifactId, op.artifactUri, turn);
           if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"}` };
           // Can the seats being asked actually produce a verdict that MOVES this?
           //
@@ -11656,6 +11652,46 @@ export class Supervisor {
     return "ifUnanswered needs a deadline, and this mesh has none: pass afterMs on the ask, or have an operator set bus.commitments.ttl_ms. Without one the default would be recorded and never fire, and you would wait forever for an answer the mesh had promised you.";
   }
 
+  /**
+   * The artifact a review request is about: the named one, else what the seat just
+   * published this turn (its URI guess did not resolve, but reviewing the thing it
+   * just made is the intent). The `request_review` op and the contract router both
+   * ask this, so the router cannot pick a reviewer for a different artifact than the
+   * op then reviews.
+   */
+  private reviewTarget(artifactId: string | undefined, artifactUri: string | undefined, turn: TurnState): Artifact | undefined {
+    let id = this.resolveArtifactRef(artifactId, artifactUri);
+    if (!id && turn.publishedIds && turn.publishedIds.length > 0) id = turn.publishedIds[turn.publishedIds.length - 1];
+    return id ? this.state.artifacts.get(id) : undefined;
+  }
+
+  /**
+   * The recipient of a `review.artifact` call that named nobody: the first seat the
+   * caller may contact AND whose verdict would settle the artifact, in config order.
+   * `candidates` is what `resolveProviders` found contactable. When the artifact does
+   * not resolve the op will say so, so any contactable seat will do here.
+   */
+  private async pickReviewer(
+    actorId: string,
+    request: Record<string, unknown>,
+    candidates: string[],
+    turn: TurnState,
+  ): Promise<{ ok: true; reviewer: string } | { ok: false; reason: string }> {
+    const ref = request.artifact ?? request.artifactId;
+    const uri = typeof ref === "string" && ref.startsWith("artifact://") ? ref : undefined;
+    const a = this.reviewTarget(String(ref ?? ""), uri, turn);
+    if (!a) return { ok: true, reviewer: candidates[0]! };
+    const able = settlersOf(this.state, a, HUMAN_AGENT_ID);
+    const reviewer = candidates.find((id) => able.includes(id));
+    if (reviewer) return { ok: true, reviewer };
+    const why = able.length > 0
+      ? `${able.join(", ")} can, but you may not contact ${able.length === 1 ? "them" : "any of them"}`
+      : "no seat in this mesh can, so only the operator can";
+    const reason = `no seat you may contact can deliver a verdict on this ${a.type} — ${why}. Name a reviewer with \`reviewers\` if one is reachable, or escalate.`;
+    await this.denied(actorId, a.id, "request review", { decision: "DENY", reason, ruleId: "review.reviewer-cannot-settle" });
+    return { ok: false, reason };
+  }
+
   private async callContract(actorId: string, op: MeshOpCall, turn: TurnState): Promise<OpResult> {
     const contract = findContract(op.contract);
     if (!contract) return { ok: false, op: op.op, reason: unknownContractReason(op.contract) };
@@ -11688,7 +11724,14 @@ export class Supervisor {
       }, turn);
     }
 
-    const named = op.to ?? asIdList(request.to);
+    // A review names its reviewers in the request (`reviewers`, the field this
+    // contract advertises, and the one `mesh_request_review` takes) or overrides the
+    // recipient with `to`. `reviewers` was in the schema and read by nothing: the ask
+    // went to whichever seat came first in config order (pm to architect, architect to
+    // pm), and all 7 calls that named a reviewer this way were refused as unable to
+    // settle it (cronlite, second run).
+    const reviewing = contract.desugarsTo === "request_review";
+    const named = op.to ?? asIdList(request.to) ?? (reviewing ? asIdList(request.reviewers) : undefined);
     let targets = named;
     if (!targets || targets.length === 0) {
       const resolved = this.resolveProviders(actorId, contract, this.policyContext());
@@ -11698,10 +11741,18 @@ export class Supervisor {
           : "no seat you may contact is available";
         return { ok: false, op: op.op, reason: `cannot route ${contract.name}: ${why}. Name a recipient with to, or use the contracts op to see who is available.` };
       }
-      // One provider, not all of them: a contract is an ask, and broadcasting
-      // it would open a commitment on every qualified seat for work only one
-      // of them needs to do.
-      targets = [resolved[0]];
+      if (reviewing) {
+        // "Omit to let the mesh pick qualified reviewers" has to mean that: the first
+        // seat the caller may contact is not qualified by being first.
+        const picked = await this.pickReviewer(actorId, request, resolved, turn);
+        if (!picked.ok) return { ok: false, op: op.op, reason: picked.reason };
+        targets = [picked.reviewer];
+      } else {
+        // One provider, not all of them: a contract is an ask, and broadcasting
+        // it would open a commitment on every qualified seat for work only one
+        // of them needs to do.
+        targets = [resolved[0]];
+      }
     }
 
     // The contract name travels on the envelope's runtime-owned `control`, not
