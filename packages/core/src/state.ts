@@ -1357,7 +1357,20 @@ export function importState(state: Projections, data: {
   // completed run, cronlite 2026-09-30) and any tail replay that did not touch
   // a criterion never corrected it.
   for (const g of state.goals.values()) {
-    if (Array.isArray(g.acceptanceCriteria)) state.progress.set(g.id, goalProgressOf(g, g.completedAt ?? g.reopenedAt ?? g.createdAt));
+    if (!Array.isArray(g.acceptanceCriteria)) continue;
+    // A snapshot written before `withdrawnAt` existed holds reopened goals whose
+    // withdrawn criteria carry no stamp. The goal's own `reopenedAt` is the latest
+    // a withdrawal can have happened, so a criterion still waiting for its
+    // verdict (UNSATISFIED, or ASSERTED and unproven) is held to evidence newer
+    // than that -- the rule it was held to when it was the goal's. A criterion
+    // that is EVIDENCED or WAIVED needs no stamp: either it was re-evidenced
+    // after the reopen, or no reopen withdrew it.
+    if (g.reopenedAt) {
+      for (const c of g.acceptanceCriteria) {
+        if (!c.withdrawnAt && (c.status === "UNSATISFIED" || c.status === "ASSERTED")) c.withdrawnAt = g.reopenedAt;
+      }
+    }
+    state.progress.set(g.id, goalProgressOf(g, g.completedAt ?? g.reopenedAt ?? g.createdAt));
   }
   for (const a of (data.agents ?? []) as Array<{ definition: { id: string } }>) state.agents.set(a.definition.id, a as never);
   for (const a of (data.artifacts ?? []) as Array<{ id: string }>) {

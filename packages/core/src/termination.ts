@@ -15,13 +15,20 @@ import { verdictText, type VerdictText } from "../../protocol/src/catalog";
  * A second copy of this rule would drift, and the drift would be silent —
  * a guard that disagrees with the verdict it is guarding against is no guard.
  *
- * Evidence must belong to the CURRENT round. A reopen resets criteria to
- * UNSATISFIED but keeps the evidence trail, so an agent re-approving on the
- * strength of the rejected round (ref-less `approval` / `*-pass` evidence
- * carries no artifact URI, so the identity gate in `markCriterionEvidence`
- * cannot see it) would re-complete the mission unchanged. One live mission
- * ran 6 completes / 5 reopens this way, re-approving the same architecture
- * six times and delivering nothing new.
+ * Evidence must belong to the CURRENT round. A reopen resets the criteria it
+ * withdraws to UNSATISFIED but keeps the evidence trail, so an agent
+ * re-approving on the strength of the rejected round (ref-less `approval` /
+ * `*-pass` evidence carries no artifact URI, so the identity gate in
+ * `markCriterionEvidence` cannot see it) would re-complete the mission
+ * unchanged. One live mission ran 6 completes / 5 reopens this way,
+ * re-approving the same architecture six times and delivering nothing new.
+ *
+ * "Current round" is per criterion (`withdrawnAt`), not the goal's
+ * `reopenedAt`. A reopen names the criteria it rejects; the others keep their
+ * verdict and their evidence. Asking every criterion for evidence newer than
+ * the reopen left a mission reopened on three of seven criteria unable to
+ * complete, with all seven EVIDENCED and nothing for anyone to do (cronlite
+ * 2026-09-30).
  */
 export function criterionSatisfied(goal: Goal, c: AcceptanceCriterion): boolean {
   if (c.status === "WAIVED") return true;
@@ -29,8 +36,8 @@ export function criterionSatisfied(goal: Goal, c: AcceptanceCriterion): boolean 
   // from a turn that invoked no verification tool has not proven it, and an
   // unproven mission must stay open. See CriterionStatus in the protocol types.
   if (c.status !== "EVIDENCED") return false;
-  if (!goal.reopenedAt) return true;
-  return c.evidence.some((e) => e.recordedAt > goal.reopenedAt!);
+  if (!goal.reopenedAt || !c.withdrawnAt) return true;
+  return c.evidence.some((e) => e.recordedAt > c.withdrawnAt!);
 }
 
 /**

@@ -124,6 +124,12 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
           // the verdict is withdrawn, so the next round can cite or supersede
           // what was already produced.
           c.status = "UNSATISFIED";
+          // The round this criterion must be satisfied in starts now. Stamped on
+          // the criteria the reopen withdrew and on no others: `criterionSatisfied`
+          // asks for evidence newer than THIS, so a criterion the operator left
+          // satisfied (a selective reopen, or an ESCALATED one that named none)
+          // keeps counting on the evidence it has.
+          c.withdrawnAt = event.timestamp;
           // ...but it must not be handed back UNCHANGED. Status-only reset let
           // the next round re-accept the very artifact the operator rejected:
           // one live mission ran 6 completes / 5 reopens re-citing

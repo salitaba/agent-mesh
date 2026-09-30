@@ -120,7 +120,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
-import { criteriaWouldComplete, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
+import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
 import { isMeshToolCall, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
@@ -5171,7 +5171,11 @@ export class Supervisor {
     if (!goal) return "SKIPPED";
     const c = goal.acceptanceCriteria.find((x) => x.id === criterionId);
     if (!c) return "SKIPPED";
-    if (c.status === "EVIDENCED" || c.status === "WAIVED") return "SKIPPED";
+    // Already settled: a waiver, or a verdict that still stands. One that is
+    // EVIDENCED but no longer satisfies the termination rule (withdrawn by a
+    // reopen, yet carrying only the rejected round's evidence) is not settled, and
+    // skipping it here would leave a mission no acceptance could ever move.
+    if (c.status === "WAIVED" || (c.status === "EVIDENCED" && criterionSatisfied(goal, c))) return "SKIPPED";
     // A reopened criterion cannot be satisfied by the artifact the operator
     // just rejected. Without this the reopen loop is closed: reset status ->
     // agent re-cites the same URI -> EVIDENCED -> watchdog completes again.
@@ -12786,7 +12790,10 @@ export class Supervisor {
       };
     }
     const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
-    const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
+    // The termination manager's own predicate, not a status test of its own: a
+    // diagnosis that calls a criterion met while the verdict does not is a nudge
+    // telling the seat "the mission will close itself" on a mission that never will.
+    const unmet = mandatory.filter((c) => !criterionSatisfied(goal, c));
     if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet` };
     // Every criterion is evidenced. Only a concrete loose end justifies a turn.
     const mail = [...this.state.agents.keys()].some((id) => readableMailDepth(this.state, id) > 0);
@@ -12885,7 +12892,7 @@ export class Supervisor {
   private hasUnmetMandatory(): boolean {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     if (!goal) return false;
-    return goal.acceptanceCriteria.some((c) => c.mandatory && c.status !== "EVIDENCED" && c.status !== "WAIVED");
+    return goal.acceptanceCriteria.some((c) => c.mandatory && !criterionSatisfied(goal, c));
   }
 
   /** Who to wake for a stalled mission: someone with real work, else rotate across the stuck. */
@@ -12939,7 +12946,7 @@ export class Supervisor {
     if (!goal) return "no acceptance criteria recorded";
     const mandatory = goal.acceptanceCriteria.filter((c) => c.mandatory);
     if (mandatory.length === 0) return "no mandatory acceptance criteria";
-    const unmet = mandatory.filter((c) => c.status !== "EVIDENCED" && c.status !== "WAIVED");
+    const unmet = mandatory.filter((c) => !criterionSatisfied(goal, c));
     if (unmet.length === 0) return "all mandatory criteria evidenced";
     const names = unmet.slice(0, 3).map((c) => c.id).join(", ");
     return `${unmet.length} of ${mandatory.length} mandatory criteria unmet (${names}${unmet.length > 3 ? ", …" : ""})`;

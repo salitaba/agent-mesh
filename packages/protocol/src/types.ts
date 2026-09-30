@@ -839,6 +839,19 @@ export interface AcceptanceCriterion {
    * identical artifact and the mission re-completes within a tick.
    */
   rejectedEvidence?: string[];
+  /**
+   * When a reopen withdrew this criterion's verdict. The round it has to be
+   * satisfied in starts here: evidence recorded before it belongs to the attempt
+   * the operator rejected and no longer counts.
+   *
+   * Absent on a criterion no reopen has withdrawn, and then whatever evidence it
+   * holds is still its evidence. That is what a selective reopen (`criteria:
+   * [...]`) and an ESCALATED reopen promise, and it is why this is per criterion
+   * and not read off `Goal.reopenedAt`: the goal-wide date demanded fresh evidence
+   * of criteria the operator had left satisfied, and a mission reopened on three
+   * of seven could never complete (cronlite 2026-09-30, 7/7 evidenced, ACTIVE).
+   */
+  withdrawnAt?: string;
 }
 
 export interface GoalBudget {
@@ -857,9 +870,10 @@ export interface Goal {
   createdAt: string;
   completedAt?: string;
   /**
-   * When the operator last reopened this mission. Evidence recorded before it
-   * belongs to the round that was rejected and no longer counts toward
-   * completion.
+   * When the operator last reopened this mission. Whether evidence recorded
+   * before it still counts is decided per criterion, by
+   * `AcceptanceCriterion.withdrawnAt`: a reopen withdraws the criteria it names
+   * (every mandatory one after a verdict), not all of them.
    */
   reopenedAt?: string;
   /**

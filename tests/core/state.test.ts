@@ -477,6 +477,40 @@ test("importState rebuilds goal progress from the restored criteria (the snapsho
   assert.deepEqual(empty.progress.get("g0" as never), { completed: 0, total: 0, ratio: 0, updatedAt: "2026-02-01T00:00:00.000Z" });
 });
 
+test("importState stamps withdrawnAt on an older snapshot's unanswered criteria after a reopen, and on nothing else", () => {
+  // A snapshot written before `withdrawnAt` existed: the reopen withdrew some
+  // criteria and nothing recorded which. Those still waiting for a verdict are held
+  // to evidence newer than the reopen (what they were held to when the round was the
+  // goal's); an EVIDENCED or WAIVED one needs no stamp -- it was re-evidenced, or
+  // never withdrawn.
+  const reopened = "2026-02-01T02:00:00.000Z";
+  const criterion = (id: string, status: "UNSATISFIED" | "ASSERTED" | "EVIDENCED" | "WAIVED", extra: object = {}) =>
+    ({ id, description: id, mandatory: true, status, evidence: [], ...extra });
+  const goal = (id: string, over: object, criteria: object[]) => ({ id, description: id, status: "ACTIVE", createdAt: "2026-02-01T00:00:00.000Z", acceptanceCriteria: criteria, ...over });
+
+  const state = createInitialState();
+  importState(state, {
+    goals: [
+      goal("reopened", { reopenedAt: reopened }, [
+        criterion("unanswered", "UNSATISFIED"),
+        criterion("asserted", "ASSERTED"),
+        criterion("evidenced", "EVIDENCED"),
+        criterion("waived", "WAIVED"),
+        criterion("already-stamped", "UNSATISFIED", { withdrawnAt: "2026-02-01T01:00:00.000Z" }),
+      ]),
+      goal("never-reopened", {}, [criterion("unanswered", "UNSATISFIED")]),
+    ],
+  });
+
+  const stamp = (goalId: string, id: string) => state.goals.get(goalId as never)?.acceptanceCriteria.find((c) => c.id === id)?.withdrawnAt;
+  assert.equal(stamp("reopened", "unanswered"), reopened);
+  assert.equal(stamp("reopened", "asserted"), reopened);
+  assert.equal(stamp("reopened", "evidenced"), undefined);
+  assert.equal(stamp("reopened", "waived"), undefined);
+  assert.equal(stamp("reopened", "already-stamped"), "2026-02-01T01:00:00.000Z", "a stamp the snapshot already holds is not overwritten");
+  assert.equal(stamp("never-reopened", "unanswered"), undefined, "no reopen, no round");
+});
+
 test("importState clears prior state before loading", () => {
   const state = createInitialState();
   populate(state);
