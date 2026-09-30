@@ -13,7 +13,7 @@ import type {
   Task,
   ThreadId,
 } from "../../protocol/src/index";
-import { CODE_ARTIFACT_TRANSITIONS, HIDDEN_BY_CONTRACT_VOCABULARY, IMPLEMENTATION_GATE_MARKER, episodeOf, hiddenToolsFor } from "../../protocol/src/index";
+import { CODE_ARTIFACT_TRANSITIONS, HIDDEN_BY_CONTRACT_VOCABULARY, IMPLEMENTATION_GATE_MARKER, VERIFICATION_ARTIFACT_TYPES, episodeOf, hiddenToolsFor } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   HARD_OP_CAPABILITY,
@@ -27,7 +27,7 @@ import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { holdsAuthority, mayAcceptCriteria, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { capabilityForReview, holdsAuthority, mayAcceptCriteria, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -624,6 +624,10 @@ export function buildAgentContext(
       ...(a.type === "CodePatch" && (a.status === "APPROVED" || a.status === "VERIFIED" || a.status === "MERGEABLE")
         ? { pendingRung: (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0] }
         : {}),
+      // The commit that IS the patch, for whoever is sent to test it.
+      ...(a.type === "CodePatch" && typeof a.metadata?.commit === "string" && a.metadata.commit.length > 0
+        ? { commit: a.metadata.commit.slice(0, 12) }
+        : {}),
       // The seat's OWN work only: it is the one seat that can re-version it.
       // Kept on the line until it does, so a notice lost to a busy queue is
       // not a lost fact (see `Supervisor.flagDependentsOf`).
@@ -822,6 +826,11 @@ export function buildAgentContext(
   }));
 
   const hiddenTools = hiddenToolsFor(config.agents[agentId], config.bus.vocabulary === "contracts" ? "contracts" : undefined);
+  // A seat that can review a verification report is a seat that verifies: it is the one sent to test a peer's patch.
+  const verifiesPatches = VERIFICATION_ARTIFACT_TYPES.some((t) => {
+    const cap = capabilityForReview(t as never);
+    return cap !== null && (config.agents[agentId]?.capabilities ?? []).includes(cap);
+  });
 
   return {
     rolePrompt: cachedRolePrompt(deps, agentId),
@@ -920,6 +929,7 @@ export function buildAgentContext(
     ...(config.bus.vocabulary === "contracts" ? { commsVocabulary: "contracts" as const } : {}),
     /* Per seat, and absent when empty, for the same reason as the keys around it. */
     ...(hiddenTools.length > 0 ? { hiddenTools } : {}),
+    ...(verifiesPatches ? { verifiesPatches: true as const } : {}),
     ...(config.bus.style === "low-contact" ? { lowContact: true as const } : {}),
     ...(config.bus.deliveryClasses?.congestionEvery !== undefined && config.bus.deliveryClasses.interruptCostTokens > 0
       ? { interruptCongestionEvery: config.bus.deliveryClasses.congestionEvery }
@@ -1431,7 +1441,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           : a.settlers.length > 0
             ? ` — a review of it is settled by: ${a.settlers.join(", ")} (name only these)`
             : " — no seat here can settle a review of it: only the operator can";
-      lines.push(`- ${a.ref} (${a.type}, ${a.status})${rung}${stale}${settle}`);
+      lines.push(`- ${a.ref} (${a.type}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}`);
     }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
@@ -1920,6 +1930,19 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           "and then `mesh_merge`; approval alone lands nothing, and no step happens on its own.",
   );
   lines.push("- mesh_delegate (to/title), mesh_lease_acquire / mesh_lease_release (artifactId/files) — hand off work, avoid collisions.");
+  // Shown only to a seat that writes verification reports. A CodePatch is a recorded commit, and
+  // the fourth cronlite run's QA was handed only its text: it read it in four pages, re-typed four
+  // files into a worktree that held the scaffold commit, tested those, and reported "43/43". The
+  // files happened to match the merged commit byte for byte; nothing but luck and care made that
+  // so, the tree it left was dirty (which stopped the mesh bringing it up to date with the product
+  // branch), and nothing on the record could say whether what was tested was what would land.
+  if (bundle.verifiesPatches) {
+    lines.push("");
+    lines.push("## Testing a patch (what you verify is the commit, not a copy of it)");
+    lines.push(
+      "A CodePatch is a recorded commit — the `commit <sha>` on its line under Artifact references — and that commit is what was reviewed and what `mesh_merge` will land. Test THAT: bring it into your own worktree and run the tests there, with `git merge --ff-only <sha>` (or `git checkout --detach <sha>` if it will not fast-forward; the commit is already in your repository). Do NOT re-type files from the patch text: a transcription is not the commit, one wrong character tests code nobody reviewed, and the files you write leave your worktree dirty, which stops the mesh bringing it up to date with the product branch. Name the commit you tested in your report. The mesh records your worktree's HEAD when you publish a TestReport, and whether it holds the commit of the patch you read; the run report flags a report that does not.",
+    );
+  }
   // Shown only when usable: with delegation off (the v1 default, max_depth 0)
   // every spawn_worker is denied, so advertising it would only buy wasted turns.
   if (bundle.delegationEnabled) {

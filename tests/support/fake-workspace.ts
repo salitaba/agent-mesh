@@ -23,7 +23,8 @@ export type FakeCall =
   | { method: "commitWorktree"; agentId: string; message: string; files?: string[] }
   | { method: "mergeWorktree"; artifactId: string; agentId: string; message: string; commit: string | undefined }
   | { method: "removeWorktree"; agentId: string }
-  | { method: "worktreeState"; agentId: string };
+  | { method: "worktreeState"; agentId: string }
+  | { method: "containsCommit"; agentId: string; commit: string };
 
 type MergeResult = Awaited<ReturnType<WorkspacePort["mergeWorktree"]>>;
 type CommitResult = Awaited<ReturnType<WorkspacePort["commitWorktree"]>>;
@@ -62,6 +63,11 @@ export interface FakeWorkspaceBehaviour {
    * A function answers for every agent. See `untrackedState` for the common case.
    */
   worktreeState?: Record<string, WorktreeState | null> | ((agentId: string) => Promise<WorktreeState | null>);
+  /**
+   * What `containsCommit` answers, keyed by the commit asked about (as recorded, full length).
+   * Absent → `null`, which is what git says about a commit it cannot find.
+   */
+  containsCommit?: Record<string, boolean | null> | ((agentId: string, commit: string) => Promise<boolean | null>);
   /** Diff every successful commit reports. Default: a one-file patch. */
   diff?: string;
 }
@@ -164,6 +170,13 @@ export class FakeWorkspace implements WorkspacePort {
     const b = this.behaviour.worktreeState;
     if (typeof b === "function") return b(agentId);
     return b?.[agentId] ?? null;
+  }
+
+  async containsCommit(agentId: string, commit: string): Promise<boolean | null> {
+    this.calls.push({ method: "containsCommit", agentId, commit });
+    const b = this.behaviour.containsCommit;
+    if (typeof b === "function") return b(agentId, commit);
+    return b?.[commit] ?? null;
   }
 }
 

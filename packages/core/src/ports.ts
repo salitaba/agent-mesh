@@ -118,6 +118,17 @@ export interface WorkspacePort {
    * because only a git workspace can answer it.
    */
   syncWorktree?(agentId: string): Promise<WorktreeSync | null>;
+  /**
+   * Is `commit` part of what this seat's worktree has checked out: an ancestor of its HEAD, or
+   * its HEAD? Null when the seat has no worktree or git cannot say (an unknown commit).
+   *
+   * Asked when a seat publishes a verification report, to record whether the commit of the patch
+   * it read is in the tree it ran the tests in. A worktree that does not hold the commit cannot
+   * have tested it, whatever the report says: the fourth cronlite run's QA read a patch as text
+   * and re-typed its files into a worktree that held only the scaffold commit. Optional because
+   * only a git workspace can answer it.
+   */
+  containsCommit?(agentId: string, commit: string): Promise<boolean | null>;
 }
 
 /** What bringing a seat's worktree up to the product branch did. See `WorkspacePort.syncWorktree`. */
@@ -146,6 +157,8 @@ export interface WorktreeState {
   untracked: number;
   /** Commits on the agent branch that are not on the product branch. */
   unmergedCommits: string[];
+  /** The worktree's HEAD (short sha), when git could say. */
+  head?: string;
 }
 
 export interface SchedulerActivationRequest {

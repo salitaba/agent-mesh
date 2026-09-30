@@ -51,6 +51,7 @@ import type {
   Goal,
   InteractionMode,
   MeshMessage,
+  WorktreeStamp,
 } from "../../protocol/src/types";
 import { outstandingDebtors, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
@@ -73,6 +74,13 @@ export interface RunReportArtifact {
    * reader is about to trust should say so.
    */
   selfApproved?: true;
+  /**
+   * Present on a verification report written from a worktree that did not hold the commit of a
+   * CodePatch the turn read (the runtime's own record, `WorktreeStamp.tested`). Such a report
+   * tested a copy of the patch, typed in from its text, and not the commit that was reviewed and
+   * would be merged: nothing shows the two are the same.
+   */
+  testedCopyOf?: { patches: string[]; head?: string };
 }
 
 /** One acceptance criterion and how well it is actually backed. */
@@ -382,6 +390,8 @@ export interface RunReport {
 const SATISFIED_CRITERION_STATUSES = ["EVIDENCED", "WAIVED"];
 
 function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact {
+  const stamp = a.metadata?.worktree as WorktreeStamp | undefined;
+  const missing = (stamp?.tested ?? []).filter((t) => t.inHead === false).map((t) => t.artifact);
   return {
     id: a.id,
     name: a.name,
@@ -392,6 +402,7 @@ function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact 
     contentRef: a.contentRef,
     createdAt: a.createdAt,
     ...(selfApproved ? { selfApproved: true as const } : {}),
+    ...(missing.length > 0 ? { testedCopyOf: { patches: missing, ...(stamp?.head ? { head: stamp.head } : {}) } } : {}),
   };
 }
 
@@ -822,6 +833,13 @@ export function renderRunReport(report: RunReport): string {
       out.push(bullet(`  ${a.name.padEnd(30)} ${a.type.padEnd(18)} v${a.version} ${a.status.toLowerCase()}`));
       out.push(bullet(`  ${" ".repeat(30)} ${a.contentRef}`));
       if (a.selfApproved) out.push(bullet(`  ${" ".repeat(30)} ! approved only by its own author (${a.owner}) — no other seat could review it`));
+      if (a.testedCopyOf) {
+        out.push(
+          bullet(
+            `  ${" ".repeat(30)} ! written from a worktree${a.testedCopyOf.head ? ` at ${a.testedCopyOf.head}` : ""} that does not hold the commit of ${a.testedCopyOf.patches.join(", ")} — it tested a copy of the patch, not the recorded commit`,
+          ),
+        );
+      }
     }
   } else {
     out.push("");

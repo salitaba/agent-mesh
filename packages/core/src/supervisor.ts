@@ -21,6 +21,7 @@ import {
   type PlanStepInput,
   type PlanStepStatus,
   type AcceptanceCriterion,
+  type WorktreeStamp,
   type AgentDefinition,
   type AgentInput,
   type AgentOutput,
@@ -4907,6 +4908,15 @@ export class Supervisor {
       const refused = await this.recordedCommitError(input.metadata.commit);
       if (refused) return { error: `artifact ${input.type}:${input.name} was not published: ${refused}` };
     }
+    // What the tree a verification report was written in held, recorded by the runtime: the
+    // report's prose says what was tested, and a seat that re-typed a patch into a worktree that
+    // never had it writes the same prose as one that checked the commit out. Whatever the seat put
+    // under `metadata.worktree` is dropped either way, so the key is only ever the runtime's.
+    if (VERIFICATION_ARTIFACT_TYPES.includes(artifact.type) && input.actorId !== HUMAN_AGENT_ID) {
+      const { worktree: _claimed, ...rest } = (artifact.metadata ?? {}) as Record<string, unknown>;
+      const stamp = await this.worktreeStamp(input.actorId, inputs);
+      artifact = { ...artifact, metadata: stamp ? { ...rest, worktree: stamp } : rest };
+    }
     const contentRef = await this.deps.content.writeVersion(artifact.id, artifact.version, content);
     artifact = { ...artifact, contentRef, digest: digestOf(content) };
     // The artifact schema is the protocol's written contract for this record,
@@ -4957,6 +4967,33 @@ export class Supervisor {
       await this.flagDependentsOf(artifact, input.actorId);
     }
     return { artifact, uri, ...(notice ? { notice } : {}) };
+  }
+
+  /**
+   * The state of `agentId`'s worktree for a verification report it is publishing, and whether each
+   * patch the turn read is in it. Null when the seat has no worktree to describe (no git, a seat
+   * that never wrote), and then the report simply carries no stamp.
+   */
+  private async worktreeStamp(agentId: string, inputs: ReadonlyArray<{ artifactId: string; version: number }>): Promise<WorktreeStamp | null> {
+    const workspace = this.deps.workspace;
+    if (!workspace?.worktreeState) return null;
+    const state = await workspace.worktreeState(agentId).catch(() => null);
+    if (!state) return null;
+    const tested: NonNullable<WorktreeStamp["tested"]> = [];
+    for (const i of inputs) {
+      const patch = this.state.artifacts.get(i.artifactId);
+      const commit = patch?.type === "CodePatch" ? patch.metadata?.commit : undefined;
+      if (!patch || typeof commit !== "string" || commit.length === 0 || !workspace.containsCommit) continue;
+      const inHead = await workspace.containsCommit(agentId, commit).catch(() => null);
+      if (inHead !== null) tested.push({ artifact: artifactUri(patch.type, patch.name, i.version), commit: commit.slice(0, 12), inHead });
+    }
+    return {
+      ...(state.head ? { head: state.head } : {}),
+      dirty: state.dirty.length,
+      untracked: state.untracked,
+      ahead: state.unmergedCommits.length,
+      ...(tested.length > 0 ? { tested } : {}),
+    };
   }
 
   /**

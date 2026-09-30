@@ -214,6 +214,29 @@ export interface Artifact {
   createdBy: AgentId;
 }
 
+/**
+ * What a seat's worktree held when it published a verification report, under
+ * `Artifact.metadata.worktree`. Written by the runtime and never by the seat: whatever the
+ * seat supplied under that key is discarded, so a reader can trust it as a record of the tree
+ * the tests ran in, which a report's own prose cannot be.
+ */
+export interface WorktreeStamp {
+  /** The worktree's HEAD (short sha), when git could say. */
+  head?: string;
+  /** Paths `git status` reports, tracked-but-modified included. */
+  dirty: number;
+  /** How many of `dirty` are untracked. */
+  untracked: number;
+  /** Commits on the seat's branch that the product branch lacks. */
+  ahead: number;
+  /**
+   * For each CodePatch the publishing turn read that records a commit: whether that commit is in
+   * the worktree. `inHead: false` is a report written from a tree that cannot have held the
+   * patch it names: it tested a copy of it, not the recorded commit.
+   */
+  tested?: Array<{ artifact: string; commit: string; inHead: boolean }>;
+}
+
 /** One artifact version another artifact was built on. See `Artifact.inputs`. */
 export interface ArtifactInput {
   artifactId: ArtifactId;
@@ -2796,6 +2819,13 @@ export interface AgentContextBundle {
      */
     pendingRung?: ArtifactStatus;
     /**
+     * For a CodePatch that records one: the commit (short sha) that is the patch. It is what was
+     * reviewed and what `merge` lands, so it is what a verifier tests. Without it on the line a
+     * seat sent to verify a patch had only the patch's TEXT, and the fourth cronlite run's QA
+     * re-typed four files from that text into its own worktree.
+     */
+    commit?: string;
+    /**
      * For an artifact this seat owns: inputs it was built on that have a newer
      * version now, as `"<Type>/<name> v1 → v3"`. See `Artifact.inputs`.
      */
@@ -3048,6 +3078,12 @@ export interface AgentContextBundle {
    * never reached the mesh.
    */
   hiddenTools?: string[];
+  /**
+   * Set when this seat holds the capability that reviews a verification report (`test.write`,
+   * `security.review`): it is one of the seats sent to test someone else's patch. Absent for the
+   * rest, who are not shown the paragraph about how to.
+   */
+  verifiesPatches?: true;
   /**
    * Set when this mesh was configured `bus.style: "low-contact"`, absent
    * otherwise — including under the other two styles, which change nothing

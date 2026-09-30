@@ -568,7 +568,24 @@ export class GitWorkspace implements WorkspacePort {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    return { agentId, dirty, untracked, unmergedCommits };
+    const head = await this.git(["rev-parse", "--short=12", "HEAD"], target).catch(() => undefined);
+    return { agentId, dirty, untracked, unmergedCommits, ...(head ? { head } : {}) };
+  }
+
+  /** See `WorkspacePort.containsCommit`. */
+  async containsCommit(agentId: string, commit: string): Promise<boolean | null> {
+    const target = this.worktreePath(agentId);
+    if (!fs.existsSync(path.join(target, ".git"))) return null;
+    // A value git would read as an option is not a commit: the same caution `commitRefError` takes
+    // at merge, for a sha that arrives from a seat's own metadata.
+    if (!/^[0-9a-fA-F]{4,64}$/.test(commit)) return null;
+    try {
+      await this.git(["merge-base", "--is-ancestor", commit, "HEAD"], target);
+      return true;
+    } catch (err) {
+      // `--is-ancestor` exits 1 for "not an ancestor" and 128 for an object it cannot find: only the first is an answer.
+      return (err as { code?: unknown }).code === 1 ? false : null;
+    }
   }
 
   /**
