@@ -104,6 +104,67 @@ test("git in the seat's own worktree is untouched, merging main into its own bra
   allowed("git stash && git pull && git stash pop");
 });
 
+// The second cronlite run's developer, told its worktree was behind main, wrote
+// `cd "$(pwd)" && git merge main` to bring main into its own branch. The gate read the
+// `$(pwd)` as a substitution whose value it could not know, then refused the merge because it
+// could not say which directory it ran in: a refusal of ordinary work, for a seat that was
+// doing exactly what it had been told.
+test("the current directory is the current directory however it is spelled", () => {
+  for (const command of [
+    'cd "$(pwd)" && git merge main', // the command from the live run
+    "cd $(pwd) && git merge main",
+    "cd `pwd` && git merge main",
+    'cd "$(pwd -P)" && git merge main',
+    'cd "$PWD" && git merge main',
+    'cd "${PWD}" && git merge main',
+    "cd ${PWD} && git merge main", // unquoted braces are a word's, not a block's
+    'cd "$PWD/." && git merge main',
+    'git -C "$(pwd)" merge main',
+    'git -C "$PWD" merge main',
+    `bash -c 'cd "$(pwd)" && git merge main'`,
+    `cd ${scope.cwd}/sub && cd "$(pwd)" && git merge main`, // and it follows a cd
+    `cd ${scope.cwd} && cd "$PWD/.." && cd "$PWD/developer" && git merge main`,
+  ]) {
+    allowed(command);
+  }
+});
+
+test("and from the product checkout it is still the product checkout", () => {
+  for (const command of [
+    `cd ${WS}/main && cd "$(pwd)" && git merge x`,
+    `cd ${WS}/main && cd $PWD && git merge x`,
+    `cd ${WS}/main && git -C "$(pwd)" merge x`,
+    `cd ${WS}/main && git -C "\${PWD}" commit -am x`,
+    `cd ${WS}/main/src && cd "$(pwd)" && git reset --hard x`, // a change other than merge was never "unknown": it is refused as itself
+    'cd "$PWD/../../main" && git merge x', // walks from the seat's worktree to the product checkout
+    'git -C "$(pwd)/../../main" merge x',
+    `bash -c 'cd ${WS}/main && cd "$(pwd)" && git merge x'`,
+  ]) {
+    assert.match(denied(command), /product checkout/, command);
+  }
+});
+
+test("an expansion that is not the current directory is still for the shell to decide", () => {
+  for (const command of [
+    'cd "$(dirname "$PWD")/main" && git merge x', // the parent's `main`: where the product checkout is
+    'cd "$PWD$MAIN" && git merge x',
+    'cd "${PWD:-$MAIN}" && git merge x',
+    'cd "$(pwd)/$(echo main)" && git merge x',
+    'cd "$PWD"* && git merge x',
+    "cd $PWDX && git merge x", // a different variable that starts the same
+    "cd $OLDPWD && git merge x",
+    `PWD=${WS}/main; cd "$PWD" && git merge x`, // the command reassigned it: what it says is no longer where the shell is
+    `cd "$X" && cd "$(pwd)" && git merge x`, // where the shell is was already unknown
+  ]) {
+    assert.match(denied(command), /cannot tell .* which directory/, command);
+  }
+});
+
+test("a substitution inside a parameter expansion is still looked into", () => {
+  assert.match(denied(`echo \${X:-$(git -C ../../main merge y)}`), /product checkout/);
+  assert.match(denied("echo ${X:-`cd ../../main && git merge y`}"), /product checkout/);
+});
+
 test("reading the product checkout is fine, from git or anything else", () => {
   allowed(`git -C ${WS}/main log -3`);
   allowed(`git -C ${WS}/main diff mesh/developer`);
@@ -147,6 +208,7 @@ test("the permission gate applies it to Bash, for a seat that can otherwise run 
   assert.equal(await bash(gate, "npm test"), "allow");
   assert.equal(await bash(gate, 'git commit -m "feat: x"'), "allow");
   assert.equal(await bash(gate, "git merge main"), "allow");
+  assert.equal(await bash(gate, 'cd "$(pwd)" && git merge main'), "allow", "the seat's own branch, spelled the way the live run spelled it");
   assert.equal(await bash(gate, `git -C ${WS}/main log -1`), "allow");
 
   // Only Bash is a shell: the other tools are not read as commands.

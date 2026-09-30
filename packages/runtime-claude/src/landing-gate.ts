@@ -56,13 +56,26 @@ interface Word {
   dynamic: boolean;
 }
 
+/**
+ * What a lifted substitution leaves in the text of the command around it.
+ *
+ * `$PWD` for one that only asks where the shell is (`$(pwd)`), which is what it evaluates to and
+ * what `expandHere` can place; an unknown for anything else, which only a shell could evaluate.
+ */
+function standIn(body: string): string {
+  return /^\s*pwd(\s+-[LP])?\s*$/.test(body) ? "$PWD" : "$SUBST";
+}
+
 /** Split `command` into simple commands on unquoted control operators, and lift `$(...)`/backtick bodies out as commands of their own. */
 function simpleCommands(command: string, into: string[] = []): string[] {
   let current = "";
   let quote: '"' | "'" | null = null;
+  // Inside an unquoted `${...}`, whose braces are a word's and not a block's.
+  let expansion = 0;
   const flush = (): void => {
     if (current.trim()) into.push(current.trim());
     current = "";
+    expansion = 0;
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i]!;
@@ -84,17 +97,30 @@ function simpleCommands(command: string, into: string[] = []): string[] {
         if (command[j] === "(") depth++;
         else if (command[j] === ")") depth--;
       }
-      simpleCommands(command.slice(i + 2, j - 1), into);
-      current += "$SUBST";
+      const body = command.slice(i + 2, j - 1);
+      simpleCommands(body, into);
+      current += standIn(body);
       i = j - 1;
       continue;
     }
     if (c === "`") {
       const end = command.indexOf("`", i + 1);
       const stop = end === -1 ? command.length : end;
-      simpleCommands(command.slice(i + 1, stop), into);
-      current += "$SUBST";
+      const body = command.slice(i + 1, stop);
+      simpleCommands(body, into);
+      current += standIn(body);
       i = stop;
+      continue;
+    }
+    if (quote === null && c === "$" && command[i + 1] === "{") {
+      expansion++;
+      current += "${";
+      i++;
+      continue;
+    }
+    if (quote === null && expansion > 0 && (c === "{" || c === "}")) {
+      expansion += c === "{" ? 1 : -1;
+      current += c;
       continue;
     }
     if (quote === '"') {
@@ -186,6 +212,27 @@ function within(dir: string | undefined, root: string): boolean {
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 /**
+ * Where a `cd` / `-C` argument that expands points, when the text alone can say.
+ *
+ * One expansion names a place the gate already knows: the directory the command is in, as
+ * `$PWD`, `${PWD}` or `$(pwd)` (which `standIn` rewrites to `$PWD`), alone or as the start of a
+ * path (`$PWD/..`). Anything else that expands (another variable, `$(dirname ...)`, a glob) is
+ * for the shell to decide, and so is `$PWD` once the command has assigned it or does not know
+ * where it is.
+ *
+ * The second cronlite run's developer wrote `cd "$(pwd)" && git merge main` to bring main into
+ * its own branch, which is ordinary work, and was told it could not say where that merge ran.
+ */
+function expandHere(w: Word, cwd: string | undefined, env: Record<string, string | undefined>): string | undefined {
+  if (cwd === undefined || "PWD" in env) return undefined;
+  const lead = /^(?:\$\{PWD\}|\$PWD(?![A-Za-z0-9_]))/.exec(w.text);
+  if (!lead) return undefined;
+  const tail = w.text.slice(lead[0].length);
+  if (/[$`*?]/.test(tail)) return undefined;
+  return path.resolve(cwd + tail);
+}
+
+/**
  * Why `command` may not run, or null if it may.
  *
  * Tracks the directory a command runs in through literal `cd` and `git -C`, and the
@@ -193,7 +240,8 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * cannot resolve (a variable, a substitution) is unknown, and an unknown directory
  * is refused only for `git merge`: the worktree is the common, legitimate target of
  * `cd "$(git rev-parse --show-toplevel)"`, and a blanket refusal would fail every
- * such commit to catch the one move this exists for.
+ * such commit to catch the one move this exists for. The current directory is not
+ * unknown however it is spelled: see `expandHere`.
  */
 export function landingDenial(command: string, scope: LandingScope, seat: LandingSeat): string | null {
   return scan(command, scope, seat, { cwd: scope.cwd, env: {} }, 0);
@@ -254,7 +302,8 @@ function scan(command: string, scope: LandingScope, seat: LandingSeat, state: Sh
     }
     if (name === "cd" || name === "pushd") {
       const target = rest.find((w) => !w.text.startsWith("-"));
-      if (!target || target.dynamic || target.text === "-") state.cwd = undefined;
+      if (!target || target.text === "-") state.cwd = undefined;
+      else if (target.dynamic) state.cwd = expandHere(target, state.cwd, env);
       else state.cwd = path.resolve(state.cwd ?? scope.cwd, target.text);
       continue;
     }
@@ -283,7 +332,8 @@ function scan(command: string, scope: LandingScope, seat: LandingSeat, state: Sh
       const t = rest[j]!;
       if (t.text === "-C") {
         const next = rest[++j];
-        if (!next || next.dynamic) dir = undefined;
+        if (!next) dir = undefined;
+        else if (next.dynamic) dir = expandHere(next, dir, env);
         else dir = path.resolve(dir ?? scope.cwd, next.text);
       } else if (t.text === "-c" || t.text === "--namespace" || t.text === "--exec-path") {
         j++;
