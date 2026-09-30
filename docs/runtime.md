@@ -248,6 +248,40 @@ completed when the mesh's own op result says it landed (`settleContinuityCalls`)
 landed write; before, all 13 handovers in the recorded runs were audited as failed beside the
 `continuity.recorded` event that said otherwise.
 
+### When a mail wake is paid for
+
+Mail buys a turn three ways: the wake the send path makes when it arrives (stashed behind the
+running turn when the seat is busy), the retry `notifyTurnFinished` makes when a turn ends with mail
+still unread, and the stale-mail floor (`STALE_MAIL_MS`, 240 s) for mail nothing else woke the seat
+for. Two rules keep them from charging for the same thing twice.
+
+**A broadcast the seat did not subscribe to is not a reason to run, at any of them.** An
+announcement obliges nobody, so the send path wakes only the seats whose `interests` match
+`message.sent`. The wait sweep left broadcasts out of its count, but the retry asked `defersMail`,
+which knew a message's delivery class and the seat's own `wake` policy and not this gate, so a
+broadcast that landed in a busy seat's box was a wake when its turn ended. The gate now lives in
+`defersMail` (below the escapes that cannot be overridden: an ask the seat owes, operator mail, work
+moved to the seat), which the send path, the sweep, the retry and the redundant-observation check
+all read. The announcement is still delivered, is read on the next turn the seat takes, and is what
+the floor wakes it for when it takes none. A seat that wants announcements as they are made lists
+`message.sent` (or `message.*`) in its `interests`. The fifth run's seats announce with
+`mesh_announce` (a broadcast when it names nobody), and 16 of its 42 mail wakes were headed by one.
+
+**A wake is for mail the seat has not been handed.** Mail that lands mid-turn reaches the follow-up
+turn by two routes, the stash and the retry, and `notifyTurnFinished` has two owners (the
+supervisor's `finally`, then the pump's); the second ran after the first had started the follow-up
+turn, found the mail still unread (a turn drains its box when its model call returns) and stashed
+the wake again, to be replayed after the turn had read the mail: a third turn, for an empty
+mailbox. At dequeue, beside `isStaleWake` for an ask that has closed, a `message` wake is dropped
+when the seat has no mail left that a wake could be for (`wakeableMail`: unread, less what the seat's
+own `wake` policy and the gate above defer), and counted as `stale_mail` in `suppressedWakes`
+(`GET /scheduler`). Not dropped: an explicit or operator wake, a `message` wake that cites no
+message the mesh holds (the supervisor starting a worker on a task), and one whose note is more than
+the scheduler's own (a merged runtime notice is news the mailbox does not hold). Comparing each mail
+wake with the turn that had already been handed its message, the recorded runs had 16 of 64 (run 3),
+9 of 42 (run 4) and 17 of 42 (run 5): 160k of 1.51M, 98k of 1.03M and 190k of 1.23M billed tokens,
+and nine of run 5's seventeen ended in `wait`, `done` or nothing.
+
 ## Runtime adapter interface
 
 ```ts

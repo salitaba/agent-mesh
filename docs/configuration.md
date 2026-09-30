@@ -194,6 +194,19 @@ agents:
   `metadata.questionHash`.
 - `interests` are dotted patterns; `architecture.*` matches `architecture.approved`
   but not bare `architecture`. Non-wildcard interests must be canonical event types.
+- `interests` also decide **broadcasts**: a `mesh_announce` that names nobody wakes only the seats
+  that list `message.sent` (or `message.*`), at every point mail can buy a turn — when it is sent,
+  when the wait sweep counts unread mail, and when a turn ends with mail left in the box. The rest
+  get it in their mailbox, read it on the next turn they take, and are woken for it once it has
+  waited four minutes (`STALE_MAIL_MS`). Nobody in a shipped mesh lists `message.sent`, so in every
+  one an announcement is read, not reacted to.
+- `authority` tokens are `<domain>.<verb>`. The positive verdict of a seat that tests or scans is a
+  **pass** (`quality.pass`, `security.pass`; QA and security hold these and no `.approve` in every
+  shipped mesh), given with `mesh_approve` `kind: "pass"`. An approve from a seat whose verdict in
+  that domain is a pass is recorded as the pass and says so; a seat holding both keeps the word it
+  chose, so a bare approve is still not a pass where it could have given either, and a gate that
+  requires `qa.pass` is met only by one. A pass satisfies a gate asking for an approve, never the
+  reverse.
 
 ### wake
 
@@ -219,7 +232,8 @@ agents:
   a word that is not a message type is a config error rather than a rule that
   silently matches nothing.
   - This is the half `interests` never reached. `interests` gates **broadcasts**
-    (`candidatesFor` consults it and nothing else does); mail addressed to a seat
+    (`defersMail` and `candidatesFor` consult it, so the retry after a turn agrees
+    with the send path); mail addressed to a seat
     by name has always woken it, and until this key existed the seat's only say
     was `defer_non_obliging` — all of its chatter or none of it. That is a choice
     most seats decline to make, and declining it means paying for every FYI.

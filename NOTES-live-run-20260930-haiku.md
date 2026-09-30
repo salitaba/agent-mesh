@@ -412,3 +412,104 @@ messages carry the evidence.
   supplied under its key, and that is what lets a reader trust it over the report's prose.
 - **The same rule, one predicate, again:** `mayAcceptCriteria` (the briefing and the watchdog), `qualifiedForDomain`
   (verdicts, peer review and report authorship), `toolAdvertised` (the manifest and the prose).
+
+## 10. The fifth run, on the F-fixes build: five more findings (G1–G3, G5, G6)
+
+Requested as a standing loop: *"run a real mesh, monitor it find bugs and check output quality and fix and improve them
+every 12 hours"* (a session cron job at 00:43 and 12:43 UTC, seven days at most; cycle 1 was run at once). The same mission,
+SPEC, mesh config, model and clean launch environment, on the branch at `e791b15` (every fix of §0–§9). Session
+2026-09-30 16:33–17:05 UTC: 66 turns, 1.23M billed tokens (about $5.4 at list price), every turn on `claude-haiku-4-5`,
+1170 events. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 16:33 | `mesh run` | five seats start |
+| 16:51 | goal met, 6/6 | 17 min 40 s, 36 turns, 745k billed (run 4's round 1: 10 min 40 s, 28 turns, 501k) |
+| 16:57 | operator reopen quoting the oracle's defect report (names in ranges, `5-7`, `*` as a list item) | criteria back to UNSATISFIED |
+| 16:58 | `kill -9` of the host, seats mid-turn | |
+| 16:58 | restart | 8 holds released, 3 turns closed `interrupted` |
+| 17:05 | goal met again | round 2 took 6 min 34 s after the restart; run 4's took 35 min 47 s, 21 of them one stall |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2959/3004 stratified
+(98.5%; 2980/3025 raw): names in ranges and steps rejected as "Quartz syntax" whenever the name contains a `W` or an `L`
+(`WED-5`, `jan-JUL/4`), `5-7` read wrongly by `matches`, and `1-2-3` and `1.5` accepted. The reopen quoted those, and the
+final product scored **3034/3034 stratified (100%)**, 3047/3049 raw, with its own suite 94/94 and the CLI probes 23/23. The
+raw score was 69.0% in runs 1, 3 and 4 because 700 of the 706 failures were `*` as a list item; this run's seats accepted
+it after the reopen, and the two raw failures left are `nextRun` on a list that contains `*` beside a weekday. The one
+product nit left is a message that reads `impossible schedule (field: day-of-month, value: [object Object])`, a string
+interpolation in what the seats built, not mesh code.
+
+**§9's fixes, checked live and held:** F2 (0 of 413 tool calls refused by the client as not in the manifest; run 4 had 14 of
+370), M1 (4 of 4 handover continuity calls recorded completed beside 4 `continuity.recorded`), F4 (five verification
+reports stamped; the round-1 report that read `CodePatch v3` from a tree that did not hold its commit is flagged
+`inHead: false`, and the report on v4 is `inHead: true`: QA tested the commit), N1 (no review request refused), N3 (two
+worktrees left alone with their reason, because files QA had typed in would have been overwritten by the fast-forward; the
+same reason F4 exists), B21 (8 holds released at boot) and B22 (the selective reopen completed). F1 and F3 were not
+exercised: the stall watchdog never fired (the only timer wakes were two stale-mail floors and one ask nudge), and no seat that
+cannot verify wrote a report.
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| G6 | A wake for mail the seat had already been handed: 17 of the run's 42 mail wakes (190k of 1.23M billed tokens, 15%); 16 of 64 (11%) in run 3 and 9 of 42 (10%) in run 4. Mail that lands mid-turn reaches the follow-up turn by two routes, the stash and the retry `notifyTurnFinished` makes, and that function has two owners; the second ran after the first had started the follow-up turn, found the mail still unread (a turn drains its box when its model call returns) and stashed the wake again, to be replayed for an empty mailbox. Nine of run 5's seventeen ended in `wait`, `done` or nothing | **fixed** — at dequeue, beside `isStaleWake`, a `message` wake is dropped when the seat has no mail left a wake could be for (`wakeableMail`), and counted as `stale_mail`. Not dropped: explicit or operator wakes, wakes that cite no message the mesh holds, wakes whose note carries a runtime notice | `tests/scheduler/stale-mail-wake.test.ts` |
+| G5 | A broadcast the seat had not subscribed to was a wake when its turn ended: 16 of the 42 mail wakes were headed by a broadcast INFORM to a seat whose interests did not list `message.sent` (none of the five does). The send path and the wait sweep honoured the gate; the retry asked `defersMail`, which did not know it | **fixed** — the gate lives in `defersMail`, so the send path, the sweep, the retry and the redundant-observation check agree; the floor (`STALE_MAIL_MS`) is still what reads it for a seat that takes no turn | `tests/scheduler/broadcast-retry.test.ts` |
+| G1 | QA could not record a pass. It held `quality.pass` (every shipped QA seat does, and no `.approve`), `mesh_approve` had no `kind`, and its approve was refused "lacks authority 'quality.approve' — no agent seat holds it"; the `qa.pass` the gates read and the `quality-verified` evidence a pass lands were never recorded, and the pm closed the criterion by hand. The tech-lead was refused the same way on QA's report | **fixed** — `mesh_approve` takes `kind: "pass"`; an approve from a seat whose verdict in the domain is a pass is recorded as that pass and says so; a seat holding both keeps its word; only an approve is ever read this way; the refusal to a seat with no verdict names what the others hold ("in this domain qa holds quality.block, quality.pass"); the briefing tells the seat which word its verdict is | `tests/core/verdict-pass.test.ts` |
+| G2 | "(root) must NOT have additional properties", three times, with no field named: seven of the ten refused `mesh_call`s. Ajv keeps the name in `params` and the formatter never read it | **fixed** — one entry per object listing every unknown field, in every validator (contracts, messages, events, `mesh.yaml`) | `tests/protocol/validation-errors.test.ts` |
+| G3 | All seven `plan_step` calls of the developer's seven steps were `"1"` to `"7"`, each refused with a list of hashes; `mesh_plan` tells a seat no ids | **fixed** — a number within the plan's length is the step's place when no step has that id (a literal id wins); a refusal lists `1) <id> — <text>` | `tests/core/plan-step-ordinal.test.ts` |
+
+What each does and why is in `docs/runtime.md` (*When a mail wake is paid for*), `docs/protocol.md` (*A pass is the verdict
+of the seats that verify*, the contract refusal, *Private plans*) and `docs/configuration.md` (`interests` and `authority`);
+the commit messages carry the evidence.
+
+**The waste the last three runs had in common.** 35 of run 5's 66 turns (53%, 338k billed) changed no durable state: no
+artifact, review, task, patch, criterion or transition was attributed to them, and 22 of them were woken by an INFORM. G5 and
+G6 are the two ways a wake reached a turn with nothing to read; neither was a wake any single turn could have told was
+redundant, and both sat in every run since the first.
+
+### Not fixed, and the honest limits
+
+- **None of G1–G3, G5 or G6 has been re-run on a live mesh.** Each is pinned by tests built from the recorded sequence and
+  mutation-checked: G6 eight ways (a ninth, dropping a guard the type checker already requires, cannot be written), G5
+  four, G1 nine, G2 five, G3 seven. The live confirmation is the next cycle.
+- **G5 changes when a seat hears an announcement.** Run 5's developer started the implementation on the architect's
+  broadcast, a minute before `architecture.approved` would have woken it; under the gate it starts on the approval, or when
+  the mail has waited four minutes. A mesh that wants announcements as they are made lists `message.sent` in the seat's
+  `interests`. Whether that costs wall-clock on this mission is what the next run will show.
+- **G6 drops the stale wake; it does not stop `notifyTurnFinished` stashing it.** The second owner re-running the retry is
+  what `tests/scheduler/seat-leak.test.ts` and an earlier stall of `examples/demo-stub` made it do on purpose, and the drop
+  at dequeue is the part that is safe to add. A wake is dropped only when nothing a wake could be for is left, so a backlog
+  that a turn did not finish reading still buys the next turn.
+- **G1's pass lands the criterion without naming a report.** A `pass` on `quality` evidences `quality-verified` with
+  `kind: "quality-pass"` and no artifact, as it always did on the prose path; what QA tested is in its report, not in the
+  evidence. An approve by a pass-only seat is recorded as a pass rather than refused, which is a judgment: a pass satisfies
+  whatever an approve would, and the seat is told what its word became.
+- **G2 changes text only.** The `Expected:` schema that follows is unchanged and long.
+- **G3 does not make `mesh_plan` return the ids.** The number is what a seat reaches for; the ids are still in the briefing
+  of its next turn.
+- **G4 (from the run's findings, not done):** a verification report records whether its tree held the patch's commit, and
+  nothing records that the files a seat typed in matched it byte for byte. Left as §9 left it: F4 flags, it does not judge.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §9 final, before this round | 2907 | 2906 | 0 | 0 | 1 |
+| this round, final | 2939 | 2938 | 0 | 0 | 1 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (157 warnings, the baseline). One commit per finding
+(`51a6ed6`, `64e12b8`, `ec7ac2c`, `4983aba`, `1a58738`), then one for the docs and this section.
+
+### Worth keeping from this round
+
+- **Count each wake against the turn that had already read its mail.** A tenth to a seventh of every run's tokens went on
+  wakes that each looked justified on their own. What showed them was joining the wake to the `message.delivered` of the
+  same message, which no single turn's record does.
+- **Two routes to one outcome need one of them idempotent.** The test that pins "mail buys a follow-up turn" says it
+  survives losing either route, and that is exactly why a route that fired twice went unnoticed: the outcome was right
+  every time, and the count was not.
+- **A rule stated at three sites and applied at two is worse than one stated at one.** `defersMail`'s comment named itself as
+  the place the sites agree, and its neighbour in the sweep spelled out why the broadcast gate mattered there; the retry
+  still did not ask it. The fix was to put the gate in the function every site already reads.
+- **A refusal can be true of the token and useless to the seat.** "No agent seat holds `quality.approve`" was right while
+  `qa` held the verdict the domain actually has. Name what the others hold.
+- **Identical sentences hide the field.** Ajv reports once per field and keeps the name in `params`; a formatter that reads
+  only `message` prints the same line three times.

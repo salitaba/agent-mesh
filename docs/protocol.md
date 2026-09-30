@@ -67,6 +67,13 @@ model omits one), for the same reason every other id is: a reducer must be a
 pure function of the log. Hashing also makes a restated identical plan
 idempotent, so `plan_step` references from the previous turn keep resolving.
 
+A seat that plans without ids is never told them (`plan` answers ok and nothing
+else), so `plan_step` also takes the step's **number**, counted from one, when no
+step has that id: a literal id always wins, and a number past the end, zero, a
+decimal or a word is refused with the steps listed as `1) <id> — <text>`. All seven
+of the fifth run's developer's `plan_step` calls were `"1"` to `"7"`, each refused
+with a list of hashes.
+
 ### Message types (kept deliberately small)
 
 `MISSION INFORM REQUEST REQUEST_INFO REQUEST_REVIEW REQUEST_ARTIFACT
@@ -133,7 +140,11 @@ answer. Five properties matter:
 2. **It fails closed, loudly.** An unknown name is refused quoting what was
    asked for and listing every real alternative; a request that does not match
    the schema is refused *before any recipient is woken*, naming the offending
-   field and showing the shape that would have worked. The refusal teaches,
+   field and showing the shape that would have worked. Every unknown field is
+   named, once per object (`must NOT have additional properties: 'artifact_type',
+   'review_scope'`): Ajv reports one issue per field with the same sentence and
+   keeps the name in `params`, and the bare sentence was what seven of the fifth
+   run's ten refused calls said, repeated. The refusal teaches,
    which is exactly what silently rewriting a guess cannot do.
 3. **It routes to one provider.** A contract with a `provider` capability
    resolves against seats that hold it *and* that the caller may contact.
@@ -257,6 +268,23 @@ about who may accept: the pm accepting its own RequirementsDoc is by design. Whe
 could have verified (no QA seat in the mesh) the only report there can be stands, the carve-out
 `approverMayAdvance` makes for the same reason, and the operator's acceptance is its own judgment and
 is not held to the rule.
+
+### A pass is the verdict of the seats that verify
+
+`quality.pass` and `security.pass` are what the seats that test and scan hold, and what a `qa.pass` /
+`security.pass` transition gate and the `quality-verified` / `security-verified` criteria read: a
+`pass` on the `quality` or `security` domain lands that criterion's evidence. `mesh_approve` takes
+`kind: "pass"` to give one. A seat that holds `<domain>.pass` and no `<domain>.approve` (nor a
+wildcard; `givesPassForApprove`) and asks to *approve* the domain is giving the only positive
+verdict its authority allows, so `recordDecision` records it as that pass and the op result says so
+("recorded as your quality.pass: that is the verdict your authority gives in this domain…"); the
+alternative was a refusal for an authority nobody holds, which is what the fifth run's QA got after
+testing the merged product, and the pass was never recorded. Only an approve is read this way (a
+reject, veto or block from the same seat is refused, never inverted), and a seat holding both keeps
+the word it chose. A pass satisfies whatever an approve would; the reverse never holds. The briefing
+tells such a seat the word (`passOnlyDomains`), and a refusal to a seat with no verdict in the domain
+names what the others hold there ("no agent seat holds it; in this domain qa holds quality.block,
+quality.pass").
 
 ### One ask to N agents is N obligations
 
