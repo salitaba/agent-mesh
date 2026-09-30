@@ -85,7 +85,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -5491,12 +5491,15 @@ export class Supervisor {
    */
   async recordDecision(
     actorId: string,
-    kind: ApprovalKind,
+    requestedKind: ApprovalKind,
     subject: string,
     artifactId?: string,
     comment?: string,
     citedUri?: string,
   ): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
+    // `let`: the verdict recorded is the one the seat is entitled to give, which is not always the
+    // word it used (see `passNote` below).
+    let kind: ApprovalKind = requestedKind;
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, reason: "no active goal" };
     const frozen = this.haltedSettlementRefusal(actorId);
@@ -5632,6 +5635,18 @@ export class Supervisor {
       await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason, ruleId: "verdict.unknown-artifact" });
       return { ok: false, reason };
     }
+    // A seat holding `<domain>.pass` and not `<domain>.approve` (every shipped QA and security seat)
+    // that asks to approve is giving the only positive verdict its authority allows: the word is
+    // `approve` because that is the word `mesh_approve` has, and refusing it for an authority nobody
+    // holds left the pass unrecorded (the fifth cronlite run's QA, after testing the merged product).
+    // Recorded as the pass it is entitled to, and said: a pass satisfies whatever an approve would, and
+    // it is what the `qa.pass` gate and `quality-verified` read. A seat that holds both keeps the word
+    // it chose, so a bare approve is still not a pass where the seat could have given either.
+    const passNote =
+      kind === "approve" && givesPassForApprove(this.state.agents.get(actorId)?.definition.authority, domain)
+        ? `recorded as your ${domain}.pass: that is the verdict your authority gives in this domain, and a pass satisfies whatever an approve would (say kind "pass" to give it directly)`
+        : undefined;
+    if (passNote) kind = "pass";
     let authorityCheck = this.deps.policy.evaluateAuthority(actorId, domain, kind, ctx);
     if (authorityCheck.decision !== "ALLOW" && artifact && (kind === "approve" || kind === "reject")) {
       const reviewCap = capabilityForReview(artifact.type);
@@ -5754,7 +5769,7 @@ export class Supervisor {
       selfSettled && artifact
         ? `no other seat could review this ${artifact.type}, so your own approval settled it — it stands, recorded as an approval by its author, and the run report lists it as self-approved`
         : undefined;
-    const caveat = [inertApproval, repeatNote, selfNote].filter(Boolean).join("; ") || undefined;
+    const caveat = [inertApproval, repeatNote, selfNote, passNote].filter(Boolean).join("; ") || undefined;
     let type: EventType;
     if (kind === "approve" || kind === "pass") type = "review.approved";
     else if (kind === "reject" || kind === "veto") type = "review.rejected";

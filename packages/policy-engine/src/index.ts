@@ -146,11 +146,20 @@ export class PolicyEngine implements PolicyEvaluator {
       // the token at load and the mesh stops booting. A remedy must not name a
       // fix that bricks the mesh. So distinguish "nobody has it" from "it is
       // not a thing", and for the latter give the domains that are.
+      // What the other seats DO hold in this domain. "No agent seat holds it" was true of
+      // `quality.approve` while `qa` held `quality.pass`, which is the verdict the domain actually
+      // has here, and a seat told only the first concludes that nobody can rule and stops. Named
+      // tokens only: a wildcard holder is already in `holders`, and the human seat never is.
+      const inDomain = [...ctx.projections.agents.values()]
+        .filter((r) => r.definition.id !== HUMAN_AGENT_ID && r.definition.id !== actorId)
+        .map((r) => ({ id: r.definition.id, tokens: r.definition.authority.filter((t) => t.startsWith(`${subject}.`) && t !== required && !t.endsWith(".*")) }))
+        .filter((r) => r.tokens.length > 0)
+        .map((r) => `${r.id} holds ${r.tokens.join(", ")}`);
       const remedy =
         holders.length > 0
           ? ` — held by: ${holders.join(", ")}`
           : AUTHORITY_TOKENS.includes(required)
-            ? ` — no agent seat holds it`
+            ? ` — no agent seat holds it${inDomain.length > 0 ? `; in this domain ${inDomain.join("; ")}` : ""}`
             : ` — '${required}' is not a grantable authority (do not add it to mesh.yaml; the config loader rejects it and the mesh will not boot).` +
               ` Valid domains: ${AUTHORITY_DOMAINS.join(", ")}. Re-issue naming the capacity you are signing in` +
               ` (for example subject "${AUTHORITY_DOMAINS.includes(subject as (typeof AUTHORITY_DOMAINS)[number]) ? subject : "quality"}"), not the artifact or the topic`;

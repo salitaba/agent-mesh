@@ -27,7 +27,7 @@ import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { capabilityForReview, holdsAuthority, mayAcceptCriteria, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { capabilityForReview, holdsAuthority, mayAcceptCriteria, passOnlyDomains, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -1064,6 +1064,17 @@ function describePoliciesFor(config: ResolvedMeshConfig, agentId: string): strin
   if (!agent) return out;
   out.push(`Your capabilities: ${agent.capabilities.join(", ") || "(none)"}`);
   out.push(`Your authority: ${agent.authority.join(", ") || "(none)"}`);
+  // A seat whose positive verdict in a domain is a PASS (every shipped QA and security seat) is told the
+  // word: `mesh_approve` says approve, and the fifth cronlite run's QA, refused for an authority nobody
+  // holds, never recorded the pass the `qa.pass` gate and `quality-verified` read. Only for the seat that
+  // has no approve beside it: one that holds both chose its word, and one with neither has no verdict here.
+  const passDomains = passOnlyDomains(agent.authority);
+  if (passDomains.length > 0) {
+    out.push(
+      `Your positive verdict in ${passDomains.join(" and ")} is a pass, not an approve: give it with \`mesh_approve\` { subject: "${passDomains[0]}", kind: "pass", artifactId: "<what you verified>", comment: "what you ran and what it showed" }. ` +
+        `An approve from you is recorded as that pass. The pass is what a \`<role>.pass\` transition gate and the quality-verified / security-verified criteria read.`,
+    );
+  }
   const comm = config.communication[agentId];
   if (comm) {
     out.push(`You may initiate contact with: ${comm.mayContact.join(", ") || "(nobody new; replies in existing threads are always allowed)"}`);

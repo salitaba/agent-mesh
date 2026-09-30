@@ -310,6 +310,34 @@ export function mayAcceptCriteria(authority: readonly string[] | undefined): boo
 }
 
 /**
+ * Is a PASS the positive verdict this authority list gives in `domain`: `<domain>.pass` held, and no
+ * `<domain>.approve` beside it?
+ *
+ * `quality.pass` and `security.pass` are the verdicts of the seats that test and scan, and the shipped
+ * QA and security seats hold those and not `.approve`. Such a seat asking to `approve` its own domain,
+ * the only word `mesh_approve` had, was refused for want of an authority nobody holds ("no agent seat
+ * holds it") while the one it does hold went unused: the fifth cronlite run's QA was refused that way
+ * after it had tested the merged product, and the `qa.pass` the gates read and the `quality-verified`
+ * evidence a pass lands were never recorded. A pass is at least an approve wherever the two are
+ * compared (a gate asking for an approve is satisfied by a pass), so `recordDecision` records the
+ * verdict the seat is entitled to, and the briefing tells the seat which word it is.
+ */
+export function givesPassForApprove(authority: readonly string[] | undefined, domain: string): boolean {
+  return !holdsAuthority(authority, domain, "approve") && holdsAuthority(authority, domain, "pass");
+}
+
+/** The domains in which this authority list's positive verdict is a pass (see {@link givesPassForApprove}). */
+export function passOnlyDomains(authority: readonly string[] | undefined): string[] {
+  const out: string[] = [];
+  for (const token of authority ?? []) {
+    if (!token.endsWith(".pass")) continue;
+    const domain = token.slice(0, -".pass".length);
+    if (domain && !out.includes(domain) && givesPassForApprove(authority, domain)) out.push(domain);
+  }
+  return out;
+}
+
+/**
  * Which capability lets an agent review each kind of artifact?
  *
  * The single table. It used to have a twin in the policy engine, also called
