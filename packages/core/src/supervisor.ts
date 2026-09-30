@@ -12082,12 +12082,20 @@ export class Supervisor {
     const rec = this.state.agents.get(agentId);
     const prev = rec?.state.plan;
     if (!rec || !prev) return { ok: false, op: "plan_step", reason: "no plan yet — call `mesh_plan` first" };
-    const idx = prev.steps.findIndex((s) => s.id === stepId);
+    const asked = String(stepId ?? "").trim();
+    let idx = prev.steps.findIndex((s) => s.id === asked);
+    // A step's id is one the plan gave it, and a seat that wrote the plan without ids was never told
+    // them (`mesh_plan` answers ok and nothing else); the name it reaches for is the step's place in
+    // the list. All seven calls the fifth cronlite run's developer made for its seven steps were
+    // "1" to "7", and each was refused with a list of hashes. A literal id always wins, so a plan
+    // that numbers its own steps is addressed exactly as it wrote them.
+    if (idx < 0 && /^[1-9]\d*$/.test(asked) && Number(asked) <= prev.steps.length) idx = Number(asked) - 1;
     if (idx < 0) {
+      const have = prev.steps.map((s, i) => `${i + 1}) ${s.id} — ${s.text.length > 60 ? `${s.text.slice(0, 57)}...` : s.text}`).join("; ");
       return {
         ok: false,
         op: "plan_step",
-        reason: `unknown step '${stepId}' (have: ${prev.steps.map((s) => s.id).join(", ") || "none"})`,
+        reason: `unknown step '${asked}': name a step by its number or its id (have: ${have || "none"})`,
       };
     }
     if (prev.steps[idx]!.status === status) return { ok: true, op: "plan_step" };
