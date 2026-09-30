@@ -25,9 +25,9 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
-import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY } from "./state";
+import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { holdsAuthority, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { holdsAuthority, mayReviewArtifact, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -628,6 +628,11 @@ export function buildAgentContext(
       // Kept on the line until it does, so a notice lost to a busy queue is
       // not a lost fact (see `Supervisor.flagDependentsOf`).
       ...(a.owner === agentId && a.inputs?.length ? staleInputsField(staleArtifactInputs(state, a)) : {}),
+      // Who can settle a review of it, for the statuses a review can still be asked
+      // in. See `relevantArtifacts[].settlers`.
+      ...(a.status === "DRAFT" || a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW"
+        ? { settlers: settlersOf(state, a) }
+        : {}),
     }));
 
   // The task board, beyond the one task this seat holds. Open work first —
@@ -1040,6 +1045,23 @@ function summarizePayload(m: MeshMessage): string {
   return "";
 }
 
+/**
+ * The seats whose verdict would settle `a`: what `request_review` will accept, read off
+ * the same predicate. The operator and seats that have stopped (completed, failed or
+ * retired) are not reviewers anyone can ask.
+ */
+function settlersOf(state: Projections, a: Artifact): string[] {
+  const out: string[] = [];
+  for (const rec of state.agents.values()) {
+    const id = rec.definition.id;
+    if (id === "human") continue;
+    const lifecycle = rec.state.lifecycle;
+    if (lifecycle === "COMPLETED" || lifecycle === "FAILED" || lifecycle === "RETIRED") continue;
+    if (mayReviewArtifact(state, id, a)) out.push(id);
+  }
+  return out;
+}
+
 function describePoliciesFor(config: ResolvedMeshConfig, agentId: string): string[] {
   const out: string[] = [];
   const agent = config.agents[agentId];
@@ -1369,7 +1391,15 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       // as finished rather than as "waiting for you to walk it to MERGED".
       const rung = a.pendingRung ? ` — needs ${a.pendingRung} next; nothing advances it automatically` : "";
       const stale = a.staleInputs?.length ? ` — built on ${a.staleInputs.join(", ")}: re-read and re-version if that changes it` : "";
-      lines.push(`- ${a.ref} (${a.type}, ${a.status})${rung}${stale}`);
+      // Said where the seat is about to name a reviewer. `settlers` is absent for an
+      // artifact no review can be asked of; present and empty is a fact too.
+      const settle =
+        a.settlers === undefined
+          ? ""
+          : a.settlers.length > 0
+            ? ` — a review of it is settled by: ${a.settlers.join(", ")} (name only these)`
+            : " — no seat here can settle a review of it: only the operator can";
+      lines.push(`- ${a.ref} (${a.type}, ${a.status})${rung}${stale}${settle}`);
     }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");

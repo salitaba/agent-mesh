@@ -82,7 +82,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, projectionConfigFor, transitionLifecycle } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, hasPeerReviewerFor, holdsAuthority, mayReviewArtifact, projectionConfigFor, transitionLifecycle } from "./projections";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
 import { commitRefError } from "./commit-ref";
@@ -10326,9 +10326,7 @@ export class Supervisor {
           // the ask was accepted, and the owner could only discharge it: "I cannot
           // review my own work" (cronlite 2026-09-30). The remedy list below
           // already left the owner out; the acceptance now agrees with it.
-          const mayReview = (r: string): boolean =>
-            approverMayAdvance(this.state, r, a, HUMAN_AGENT_ID) && !(r === a.owner && this.hasPeerReviewer(r, a));
-          const canSettle = op.reviewers.filter(mayReview);
+          const canSettle = op.reviewers.filter((r) => mayReviewArtifact(this.state, r, a, HUMAN_AGENT_ID));
           const cannotSettle = op.reviewers.filter((r) => !canSettle.includes(r));
           if (canSettle.length === 0) {
             const able = [...this.state.agents.values()]

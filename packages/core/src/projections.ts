@@ -23,6 +23,7 @@ export {
   recordApproval,
   holdsAuthority,
   hasPeerReviewerFor,
+  mayReviewArtifact,
   approverMayAdvance,
   capabilityForReview,
   REVIEW_CAPABILITIES,

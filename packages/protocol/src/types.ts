@@ -2800,6 +2800,19 @@ export interface AgentContextBundle {
      * version now, as `"<Type>/<name> v1 → v3"`. See `Artifact.inputs`.
      */
     staleInputs?: string[];
+    /**
+     * For an artifact that could be put under review (DRAFT, READY_FOR_REVIEW or
+     * UNDER_REVIEW): the seats whose verdict on it would SETTLE it, in roster order.
+     * Empty means nobody here can, which is itself worth knowing.
+     *
+     * Naming a reviewer who cannot settle the artifact was the single most repeated
+     * refusal of the cronlite run (`review.reviewer-cannot-settle`, ten times across
+     * two runs, every seat relearning it). The refusal names who can, but only after
+     * a turn spent on the wrong name; the fact is cheaper on the line the seat is
+     * already reading. The artifact's own owner is left off whenever a peer could
+     * review it, the rule `request_review` applies.
+     */
+    settlers?: string[];
   }>;
   unreadMail: MeshMessage[];
   /**

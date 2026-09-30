@@ -558,6 +558,23 @@ export function approverMayAdvance(
   return cap !== null && (def.capabilities ?? []).includes(cap);
 }
 
+/**
+ * Can this seat deliver a verdict on this artifact that SETTLES it: the one
+ * definition behind both the refusal a `request_review` gets and the list the seat
+ * briefing prints, so what a seat is told and what the mesh then accepts cannot
+ * differ.
+ *
+ * `approverMayAdvance` says the seat holds the authority or the review capability.
+ * The artifact's own owner is held to one more rule, the same one
+ * `evaluateTransition`'s `self-approval` applies: it may settle its own work only
+ * when no peer could. Without that line the owner (who usually holds the domain's
+ * approve authority) read as a reviewer it could never be.
+ */
+export function mayReviewArtifact(state: Projections, reviewerId: string, artifact: Artifact, humanAgentId = "human"): boolean {
+  if (!approverMayAdvance(state, reviewerId, artifact, humanAgentId)) return false;
+  return !(reviewerId === artifact.owner && hasPeerReviewerFor(state, reviewerId, artifact, humanAgentId));
+}
+
 export function hasPeerReviewerFor(
   state: Projections,
   actorId: string,
