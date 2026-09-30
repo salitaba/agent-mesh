@@ -35,8 +35,50 @@ function isBlank(value: unknown): boolean {
   return typeof value === "string" && value.trim().length === 0;
 }
 
-function fmt(err: { instancePath?: string; message?: string }): ValidationError {
+interface AjvIssue {
+  instancePath?: string;
+  message?: string;
+  keyword?: string;
+  params?: Record<string, unknown>;
+}
+
+function fmt(err: AjvIssue): ValidationError {
   return { path: err.instancePath || "(root)", message: err.message || "invalid" };
+}
+
+/**
+ * Ajv's issues as the list a reader sees, with the unknown fields NAMED.
+ *
+ * With `allErrors` Ajv reports one `additionalProperties` issue per offending field, and its message
+ * is the same sentence each time: the field is in `params.additionalProperty`, which `fmt` never
+ * read. A seat that sent `{ artifactId, artifact_type, artifact_name, review_scope }` to a contract
+ * was told "(root) must NOT have additional properties" three times and nothing about which three,
+ * and 7 of the 10 refused contract calls in the fifth cronlite run were that sentence, repeated.
+ * The same sentence reads the same way to an operator whose `mesh.yaml` has a misspelt key.
+ *
+ * One entry per object, listing every unknown field in it, at the place the first one was reported,
+ * so the list is shorter as well as plainer (`callContract` shows the first four).
+ */
+function formatErrors(errors: readonly AjvIssue[] | null | undefined): ValidationError[] {
+  const out: ValidationError[] = [];
+  const unknown = new Map<string, { at: number; names: string[] }>();
+  for (const err of errors ?? []) {
+    const name = err.keyword === "additionalProperties" ? err.params?.additionalProperty : undefined;
+    if (typeof name !== "string") {
+      out.push(fmt(err));
+      continue;
+    }
+    const path = err.instancePath || "(root)";
+    const seen = unknown.get(path);
+    if (seen) {
+      seen.names.push(name);
+      continue;
+    }
+    unknown.set(path, { at: out.length, names: [name] });
+    out.push(fmt(err));
+  }
+  for (const { at, names } of unknown.values()) out[at]!.message = `${out[at]!.message}: ${names.map((n) => `'${n}'`).join(", ")}`;
+  return out;
 }
 
 export function validateSchema(name: SchemaName, value: unknown): ValidationResult {
@@ -45,7 +87,7 @@ export function validateSchema(name: SchemaName, value: unknown): ValidationResu
   const ok = v(value);
   return {
     valid: ok === true,
-    errors: ok ? [] : (v.errors || []).map(fmt),
+    errors: ok ? [] : formatErrors(v.errors),
   };
 }
 
@@ -160,7 +202,7 @@ export function validateContractRequest(contract: Contract, request: unknown): V
   // reports that as a bare type error naming no field, which tells the seat
   // nothing about what it left out.
   const ok = v(request ?? {});
-  return { valid: ok === true, errors: ok ? [] : (v.errors || []).map(fmt) };
+  return { valid: ok === true, errors: ok ? [] : formatErrors(v.errors) };
 }
 
 /**
@@ -190,5 +232,5 @@ export function validateContractResponse(contract: Contract, response: unknown):
   // A reply with no payload at all is the exact case this catches, and Ajv
   // needs an object to say anything useful about it.
   const ok = v(response ?? {});
-  return { valid: ok === true, errors: ok ? [] : (v.errors || []).map(fmt) };
+  return { valid: ok === true, errors: ok ? [] : formatErrors(v.errors) };
 }
