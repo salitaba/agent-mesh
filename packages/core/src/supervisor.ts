@@ -3396,8 +3396,9 @@ export class Supervisor {
       // reviewer's mailbox, and dropping it would strand the asker.
       if (targets.length === 0) targets.push({ uri: primary, art: undefined });
       for (const { uri, art } of targets) {
+        const before = art ? this.state.artifacts.get(art.id)?.status : undefined;
         await this.deps.kernel.emit("review.requested", { artifactId: art?.id, artifactRef: uri, reviewers: m.to, messageId: m.id, subject: m.payload }, { actorId: from, goalId, causationId, correlationId: corr });
-        await this.auditTransition(art?.id, m.id, goalId, corr);
+        await this.auditTransition(art?.id, m.id, goalId, corr, undefined, before);
         // No `design.question` here any more. Every review of an
         // ArchitectureDocument or ApiSpec used to emit one ("Review X vN"), which
         // is a restatement of the ask and not a question: nothing answered it,
@@ -3498,12 +3499,13 @@ export class Supervisor {
           await this.activateAgent(from, { kind: "recovery", note: `patch announcement refused: ${why}`, messageId: m.id }).catch(() => undefined);
         }
       } else {
+        const before = this.state.artifacts.get(art.id)?.status;
         await this.deps.kernel.emit(
           "patch.ready",
           { artifactId: art.id, artifactRef: primary ?? artifactUri(art.type, art.name, art.version), messageId: m.id },
           { actorId: from, goalId, causationId, correlationId: corr },
         );
-        await this.auditTransition(art.id, m.id, goalId, corr);
+        await this.auditTransition(art.id, m.id, goalId, corr, undefined, before);
       }
     }
     if (m.type === "BLOCK") {
@@ -3954,10 +3956,18 @@ export class Supervisor {
     goalId: string,
     correlationId?: string,
     actorId?: string,
+    before?: ArtifactStatus,
   ): Promise<void> {
     if (!artifactId) return;
     const a = this.state.artifacts.get(artifactId);
     if (!a) return;
+    // `before` is the status the artifact held when the event that might have moved
+    // it was emitted. Where the caller knows it and nothing moved, there is no
+    // transition to record: 16 of the 28 `artifact.transition` events in the cronlite
+    // run were these, "FINAL (derived)" on an artifact already FINAL, and their
+    // `gateSatisfied` (asked of a same-status "transition") read false for no reason
+    // a reader could use. Where something did move, the event says from where.
+    if (before !== undefined && a.status === before) return;
     // `gateSatisfied` used to be the literal `true` on every one of this method's
     // call sites, which made it the one field that cannot answer the only question
     // it exists for. Worse, `mesh_stuck_artifacts` reads `gateSatisfied === false`
@@ -3978,7 +3988,7 @@ export class Supervisor {
     await this.deps.kernel
       .emit(
         "artifact.transition",
-        { artifactId, to: a.status, derived: true, gateSatisfied },
+        { artifactId, to: a.status, ...(before !== undefined ? { from: before } : {}), derived: true, gateSatisfied },
         { actorId: "system", goalId, causationId, correlationId: correlationId ?? this.turnCorrelation(actorId ?? a.owner) },
       )
       .catch(() => undefined);
@@ -4913,7 +4923,7 @@ export class Supervisor {
     // live apply and replay — which is why it needs no new edge in the machine
     // tables for a step (UNDER_REVIEW -> DRAFT) that is not otherwise legal.
     if (isVersion && previousStatus !== undefined && previousStatus !== artifact.status) {
-      await this.auditTransition(artifact.id, evt.id, goalId, correlationId, input.actorId);
+      await this.auditTransition(artifact.id, evt.id, goalId, correlationId, input.actorId, previousStatus);
     }
     await this.deriveArtifactSemantic(artifact, content, evt.id, correlationId, amending !== undefined);
     let notice: string | undefined;
@@ -5099,6 +5109,7 @@ export class Supervisor {
         "artifact.transition",
         {
           artifactId,
+          from: artifact.status,
           to: transition.to,
           actorId,
           evidenceEventIds: transition.evidenceEventIds,
@@ -5475,6 +5486,7 @@ export class Supervisor {
         await this.denied(actorId, subject, "accept criterion", { ...acceptCheck, reason });
         return { ok: false, reason };
       }
+      const before = artifactId ? this.state.artifacts.get(artifactId)?.status : undefined;
       const evt = await this.deps.kernel.emit(
         "review.approved",
         {
@@ -5487,7 +5499,7 @@ export class Supervisor {
         },
         { actorId, goalId },
       );
-      await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
+      await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId, before);
       const landed = await this.markCriterionEvidence(criterionId, {
         kind: "criteria-acceptance",
         artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
@@ -5650,14 +5662,15 @@ export class Supervisor {
         priority: "HIGH",
       });
       if (!m.accepted) {
+        const before = artifactId ? this.state.artifacts.get(artifactId)?.status : undefined;
         const evt = await this.deps.kernel.emit("review.rejected", { subject, artifactId, actorId, actorRole: this.state.agents.get(actorId)?.definition.role ?? actorId, comment, blockedInstead: true }, { actorId, goalId });
-        await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
+        await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId, before);
       }
       return { ok: m.accepted, reason: m.reason, eventId: m.eventId };
     }
     const statusBefore = artifact?.status;
     const evt = await this.deps.kernel.emit(type, payload, { actorId, goalId });
-    await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId);
+    await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId, statusBefore);
     // Type-keyed criteria, read AFTER the reducer has run. `mirrorTransition`
     // covers the explicit `transition_artifact` op; this covers the reducer path,
     // which is how an approval actually moves an artifact. Without it a seat
