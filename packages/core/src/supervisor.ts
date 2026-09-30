@@ -300,6 +300,20 @@ export const HUMAN_AGENT_ID = "human";
  */
 export const RECOVERY_ACTOR_ID = "recovery-manager";
 
+/**
+ * Actor for the verdicts the watchdog reaches on its own: `goal.completed`,
+ * `goal.escalated`, `goal.failed`, and the sweep that retires the seats when the
+ * mission ends.
+ *
+ * Same overload, same fix as `RECOVERY_ACTOR_ID`. The termination manager is the
+ * runtime, and recording its verdict as `actorId: "human"` made the log say an
+ * operator had ended the mission: in the cronlite run all 12 events attributed to
+ * `human` were ones nobody had performed (11 `requirement.satisfied`, which a seat
+ * had claimed, and the `goal.completed` the watchdog reached). A genuine operator
+ * verdict, `reopenGoal` and the escalation answer, still says `human`.
+ */
+export const TERMINATION_ACTOR_ID = "termination-manager";
+
 // Moved to `protocol/src/catalog.ts`, next to `AUTO_EVIDENCED_CRITERIA`, which
 // it has to be read against: `packages/config` warns when a mandatory criterion
 // is in this list and not in that one, and config cannot import core. Re-exported
@@ -5309,7 +5323,11 @@ export class Supervisor {
     await this.deps.kernel.emit(
       "requirement.satisfied",
       { criterionId, evidence: { ...evidence, verified, ...(toolCalls !== undefined ? { toolCalls } : {}) }, verified },
-      { actorId: HUMAN_AGENT_ID, goalId },
+      // Whoever claimed it: the seat whose turn made the acceptance, or the operator
+      // when `by` says so. A runtime-derived record (the merge mirror) has no claimer
+      // and is the runtime's. It used to be `human` for all of them, which made an
+      // operator of every seat that accepted a criterion.
+      { actorId: evidence.by ?? "system", goalId },
     );
     const updated = goal.acceptanceCriteria.filter((x) => x.mandatory && (x.status === "EVIDENCED" || x.status === "WAIVED")).length;
     const total = goal.acceptanceCriteria.filter((x) => x.mandatory).length;
@@ -11899,7 +11917,7 @@ export class Supervisor {
     const goal = this.state.goals.get(goalId);
     if (!goal) return;
     if (verdict.kind === "complete" && goal.status !== "COMPLETED") {
-      await this.deps.kernel.emit("goal.completed", { goalId, reason: verdict.reason, evidence: verdict.evidenceSummary }, { actorId: HUMAN_AGENT_ID });
+      await this.deps.kernel.emit("goal.completed", { goalId, reason: verdict.reason, evidence: verdict.evidenceSummary }, { actorId: TERMINATION_ACTOR_ID });
       await this.completeMission();
     } else if (verdict.kind === "escalate" && goal.status !== "ESCALATED") {
       await this.escalate({
@@ -11908,9 +11926,9 @@ export class Supervisor {
         detail: verdict.detail,
         supports: verdict.supports,
       });
-      await this.deps.kernel.emit("goal.escalated", { goalId, reason: verdict.reason, detail: verdict.detail }, { actorId: HUMAN_AGENT_ID });
+      await this.deps.kernel.emit("goal.escalated", { goalId, reason: verdict.reason, detail: verdict.detail }, { actorId: TERMINATION_ACTOR_ID });
     } else if (verdict.kind === "fail" && goal.status !== "FAILED") {
-      await this.deps.kernel.emit("goal.failed", { goalId, reason: verdict.reason }, { actorId: HUMAN_AGENT_ID });
+      await this.deps.kernel.emit("goal.failed", { goalId, reason: verdict.reason }, { actorId: TERMINATION_ACTOR_ID });
     }
   }
 
@@ -12292,7 +12310,7 @@ export class Supervisor {
           // silent — a swallowed rejection here is how agents used to survive a
           // finished mission stuck in WAITING with nothing in the log to say so.
           await this.deps.kernel
-            .emit("agent.completed", { agentId: a.agentId }, { actorId: HUMAN_AGENT_ID })
+            .emit("agent.completed", { agentId: a.agentId }, { actorId: TERMINATION_ACTOR_ID })
             .catch((err) => this.auditLine(`completion sweep could not retire ${a.agentId} from ${a.lifecycle}: ${(err as Error).message}`));
         }
       }
