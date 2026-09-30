@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { withoutOuterSession } from "./host-isolation";
 
 /**
  * Seat CLIs left running by a mesh process that died.
@@ -33,8 +34,15 @@ export const HOST_PID_ENV = "AGENT_MESH_HOST_PID";
  * The SDK replaces its inherited environment with whatever `env` is given, so the
  * base is spread here rather than assumed.
  */
-export function seatEnv(base: Record<string, string | undefined> | undefined, pid: number = process.pid): Record<string, string | undefined> {
-  return { ...(base ?? process.env), [HOST_PID_ENV]: String(pid) };
+export function seatEnv(
+  base: Record<string, string | undefined> | undefined,
+  pid: number = process.pid,
+  opts: { isolate?: boolean } = {},
+): Record<string, string | undefined> {
+  const inherited = base ?? process.env;
+  // `isolate`: drop the variables that describe the session the mesh was started
+  // from (see host-isolation.ts). The operator's own `env` option is taken as given.
+  return { ...(opts.isolate && base === undefined ? withoutOuterSession(inherited) : inherited), [HOST_PID_ENV]: String(pid) };
 }
 
 export interface OrphanSeat {

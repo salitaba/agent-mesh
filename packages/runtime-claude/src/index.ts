@@ -48,6 +48,7 @@ import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 import { withOutputVoice } from "../../core/src/context";
 import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
 import { landingDenial } from "./landing-gate";
+export { describeHostLeaks, outerSessionEnvNames, withoutOuterSession } from "./host-isolation";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
@@ -169,6 +170,13 @@ export interface ClaudeAdapterOptions {
    * on. `false` turns it off; a function replaces the reaper (tests).
    */
   reapOrphans?: false | (() => Promise<ReapResult>);
+  /**
+   * Run seats without what the launching machine would lend them: an empty
+   * `settingSources` (none of the user's hooks, allow rules, `env`, model or effort)
+   * and none of the environment variables of an outer Claude Code session. See
+   * `host-isolation.ts`. `extraOptions` still wins, as it does for everything here.
+   */
+  isolateHost?: boolean;
   /**
    * Pin the idle gap after which a session's prompt cache counts as expired.
    *
@@ -2908,10 +2916,12 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // inheriting the operator's personal `effortLevel`. Before extraOptions,
       // so the escape hatch still wins.
       effort: SEAT_EFFORT,
+      // Before `extraOptions`, so the escape hatch can still load settings on purpose.
+      ...(this.options.isolateHost ? { settingSources: [] } : {}),
       ...this.options.extraOptions,
       // After `extraOptions`, and built FROM its `env`: the stamp a restarted mesh
       // finds this CLI by if this process dies and leaves it running.
-      env: seatEnv(this.options.extraOptions?.env),
+      env: seatEnv(this.options.extraOptions?.env, process.pid, { isolate: this.options.isolateHost }),
       disallowedTools: mergedDisallowedTools(this.options.extraOptions),
       // `advise` delivery — the one thing a PostToolUse callback can still
       // change (its `additionalContext`). Reads the session through `hookRef`

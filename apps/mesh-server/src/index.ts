@@ -54,7 +54,7 @@ import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
-import { ClaudeRuntimeAdapter, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
+import { ClaudeRuntimeAdapter, describeHostLeaks, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { getApiToken, requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
@@ -456,6 +456,8 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       staleAfterMs: config.defaultStaleAfterMs,
       // So a restart that resumes a transcript knows how big it is.
       stateDir: options.inMemory ? undefined : config.stateDir,
+      // `mesh.runtime.isolate_host`: no inherited Claude settings, no outer session's env.
+      isolateHost: config.isolateHost === true,
       onNotice: (n) => auditLog(`claude runtime: ${n.message}`),
       mcpCommand: process.env.MESH_MCP_COMMAND ? JSON.parse(process.env.MESH_MCP_COMMAND) : undefined,
       // Rotation is the one moment a seat loses everything it was holding in
@@ -648,6 +650,16 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         `${integrity.truncatedTailBytes} byte(s) of torn tail truncated — those events are lost`;
       console.warn(`warn: ${msg}`);
       auditLog(`[log-integrity] ${msg}`);
+    }
+  }
+  // What the machine this was launched from will lend every seat, said while the operator
+  // is reading the boot log and can still choose. Only for a mesh that runs Claude seats
+  // and has not already closed the door (`mesh.runtime.isolate_host`). See
+  // host-isolation.ts.
+  if (config.isolateHost !== true && Object.values(config.agents).some((a) => a.runtime === "claude")) {
+    for (const leak of describeHostLeaks()) {
+      console.warn(`warn: ${leak}`);
+      auditLog(`[host-isolation] ${leak}`);
     }
   }
   const resume = kernel.state.eventCount > 0;

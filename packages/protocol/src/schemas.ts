@@ -331,6 +331,9 @@ export const meshConfigSchema = {
             // shorter is a seconds-written-as-ms typo ("3600"), not a window
             // anyone means, and the adapter's own default is ten minutes.
             stale_after_ms: { type: "integer", minimum: 60000 },
+            // Seats run without the launching machine's Claude settings and without an
+            // outer session's environment. Off when absent.
+            isolate_host: { type: "boolean" },
             variant: { type: "string", maxLength: 200 },
             requires_approval: { type: "array", items: { type: "string", maxLength: 200 } },
           },

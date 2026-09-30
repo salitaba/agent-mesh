@@ -115,6 +115,15 @@ export interface RawMeshFile {
        * proxy, measured at 94% cached after 10+ minutes) wants an hour.
        */
       stale_after_ms?: number;
+      /**
+       * Run every seat without what the launching machine would otherwise lend it:
+       * no filesystem settings (the user's hooks, allow rules, `env`, model and
+       * effort), and none of the environment variables of a Claude Code session the
+       * mesh was started from. Off by default, because a mesh that works today may
+       * depend on either; the boot log says when something would leak. Credentials,
+       * proxies and CA variables are kept either way. See `host-isolation.ts`.
+       */
+      isolate_host?: boolean;
     };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
     /**
@@ -741,6 +750,12 @@ export interface ResolvedMeshConfig {
    * gap, and every such rotation costs the seat its working context).
    */
   defaultStaleAfterMs?: number;
+  /**
+   * `mesh.runtime.isolate_host`: seats run without the launching machine's Claude
+   * settings and without an outer session's environment. Absent means off, which is
+   * how every mesh has behaved.
+   */
+  isolateHost?: boolean;
   /**
    * Mesh-wide thinking variant, held for a runtime that reads it. Nothing does
    * today: it was the opencode knob, and it never inherited onto seats that
@@ -1520,6 +1535,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     defaultModel,
     defaultContextWindow: raw.mesh.runtime?.context_window,
     defaultStaleAfterMs: raw.mesh.runtime?.stale_after_ms,
+    ...(raw.mesh.runtime?.isolate_host === true ? { isolateHost: true } : {}),
     defaultVariant,
     startupActivate,
     warnings: configWarnings,

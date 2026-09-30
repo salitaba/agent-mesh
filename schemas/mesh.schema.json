@@ -115,6 +115,9 @@
               "type": "integer",
               "minimum": 60000
             },
+            "isolate_host": {
+              "type": "boolean"
+            },
             "variant": {
               "type": "string",
               "maxLength": 200
