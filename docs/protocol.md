@@ -165,6 +165,54 @@ answer. Five properties matter:
 A contract's SLA narrows an existing deadline regime and never creates one; see
 `docs/configuration.md`.
 
+Two things a seat needs to use a contract are said where it is reading the
+thing, not only in the schema:
+
+- **The request shape is learnable under the name the tool list uses.**
+  `mesh_request_review` takes `artifactId`, the seat briefing advertises it as
+  `mesh_request_review (artifactId/reviewers)`, and `review.artifact` named the
+  same field `artifact`: three seats in the cronlite run took the briefing at its
+  word and were refused for a missing property. The contract now accepts either
+  (`anyOf` over the two names, `additionalProperties` still closed), and `call`
+  reads whichever was given, so the two doors agree.
+- **The answer shape is on the ask's own line.** A debtor's mail line for an ask
+  under a contract carries `to answer: reply with replyTo=<id> and a payload
+  carrying a non-empty one of: <keys>. Any other key is delivered, but does not
+  count as the answer.` — the keys are read off the contract's own response
+  schema, so the prompt cannot drift from what the discharge check accepts. Five
+  replies in that run settled their asks and were reported "carried no answer"
+  because each wrote it under a key the contract does not list.
+
+### Who can settle a review
+
+A verdict **settles** an artifact when the seat giving it holds the domain's
+`.approve` authority or the type's review capability. The artifact's own owner is
+held to one more rule, the one the transition gate's `self-approval` check already
+applies: it may settle its own work only when **no peer could**. One predicate
+(`mayReviewArtifact`) decides this for three readers, so what a seat is told and
+what the mesh then accepts cannot differ:
+
+- `request_review` refuses a named reviewer who could not settle the artifact,
+  and lists the ones who could (the owner is not among them unless it is the only
+  one).
+- The seat briefing prints it on the artifact's own line — `a review of it is
+  settled by: <seats> (name only these)`, or `no seat here can settle a review
+  of it: only the operator can` — so a seat stops rediscovering it from a refusal
+  every round. The bundle carries it as `relevantArtifacts[].settlers`; absent
+  means no review can be asked of that artifact at all.
+- The owner of an artifact is **woken** when somebody else's verdict moves it: the
+  stock developer listens for `review.rejected` but not `review.approved`, so an
+  approval used to reach nobody who could act on it (a patch sat approved for
+  two and a half minutes while another seat asked a third, four times, to
+  "transition it"). The wake names the verdict and the rung the owner owns next,
+  and is skipped when the owner's own interests already wake it for that event.
+
+When the author's own approval is what moved the artifact, it stands — no peer
+could have reviewed it — but it is not a second pair of eyes, and is said so: the
+op result carries a caveat, and the run report flags the artifact `selfApproved`
+(approved only by its owner). A test report its own author approved to FINAL used
+to be cited by the PM as independent evidence.
+
 `bus.vocabulary: "contracts"` — the setting that collapses a seat's manifest to
 the named asks — is **advertisement only**. It filters the tool *list* a seat is
 offered, but `callTool` resolves a name against the **unfiltered** tool map
@@ -260,6 +308,16 @@ both ways to fix it, rather than opening an ask that would wait forever under a
 promise to end. `assume` is likewise required: an `ifUnanswered` with no value to
 proceed with describes no ending.
 
+**It needs a clock that is long enough, and says so.** An `afterMs` below the
+floor (`bus.commitments.min_default_ms`; absent, derived from the mesh's own
+`coalesce_ms`, wait-wakeup sweep and one answering turn) is refused too, naming the
+smallest value that would be accepted. A default that can come due before its
+addressee could possibly have been woken and answered is not a default, it is an
+assumption stated as fact: in the cronlite run two seats each passed `afterMs:
+5000` on a mesh whose delivery window was also 5 s, two of three asks ended
+`defaulted`, and one of them told its asker to proceed on an assumption that
+was false and not to re-ask.
+
 ## Event envelope (`schemas/event.schema.json`)
 
 ```jsonc
@@ -272,6 +330,45 @@ The canonical event catalog (add a type → update the catalog, the reducer, and
 the projections) spans goal/agent/message/artifact/task/review/patch/
 architecture/release/research/decision/escalation/human/lease/memory/budget
 lifecycle. Events are append-only and **deduplicated by id** (exactly-once).
+
+### Whose event it is: `actorId`
+
+`actorId` is who **did** the thing, and `"human"` means a person: the operator
+answering a card, reopening a mission, sending a message. The runtime's own acts
+carry the runtime's name, so a reader of the log can tell an operator's verdict
+from a watchdog's:
+
+| `actorId` | what it stamps |
+| --- | --- |
+| a seat id | the seat's own ops, and its tool calls' effects |
+| `human` | operator actions only: `reopenGoal`, `escalation.responded`, operator-sent mail |
+| `termination-manager` | verdicts the watchdog reaches on its own: `goal.completed`, `goal.escalated`, `goal.failed`, and the sweep that retires seats when the mission ends |
+| `recovery-manager` | restarts, revivals, the boot sweep that releases abandoned budget holds, provider-breaker cards |
+| `system` | derived bookkeeping with no acting seat, such as `artifact.transition` with `derived: true`, or a `requirement.satisfied` with no `evidence.by` |
+
+A `requirement.satisfied` is attributed to the seat whose evidence it records
+(`evidence.by`), falling back to `system`, never to the operator: in the cronlite
+run all twelve events stamped `human` were ones nobody had performed (eleven
+`requirement.satisfied`, which seats had claimed, and the `goal.completed` the
+watchdog reached), so the audit trail could not say whether an operator had ended
+the mission.
+
+### `artifact.transition` with `derived: true`
+
+An approval or a version moves an artifact inside its reducer, and the supervisor
+then records the move so a reader of the stream sees it. The record is written
+**only when the artifact moved**, and says from where: `{ artifactId, from, to,
+derived: true, gateSatisfied }`. Before, 16 of a run's 28 such events were
+no-ops (`FINAL (derived)` on an artifact already FINAL), carried no `from`, and
+their `gateSatisfied`, asked of a transition that did not happen, read `false` for
+no reason a reader could use. `from` is absent only where the emitting site could
+not know the prior status (older events, and the sites that never read it).
+
+A version published **over a MERGED artifact** restarts the ladder at `DRAFT`.
+That is deliberate, not a walk-back: a new version is new content that has not
+been reviewed, and `derived: true, from: MERGED, to: DRAFT` is the honest record
+of it. Git is unaffected — the merged commit stays on the product branch — and the
+new version walks the ladder up to a merge of its own.
 
 ### `turn.discarded`: why a turn's work did not reach the mesh
 
@@ -288,7 +385,7 @@ the turn — absent means unmeasured, never zero — and that figure is billed.
 | `silence` | the silence watchdog stopped a stream that went quiet |
 | `budget` | the budget watch stopped the turn: its live spend passed what the seat had left on the last budget rung |
 | `failed` | the backend failed, or the kernel refused the turn after the model answered |
-| `interrupted` | the operator stopped the turn (`POST /agents/:id/interrupt`, or `POST /agents/:id/suspend` on a seat mid-turn) |
+| `interrupted` | the operator stopped the turn (`POST /agents/:id/interrupt`, or `POST /agents/:id/suspend` on a seat mid-turn), or the server process ended before the turn did (written by the **next boot**, with no `tokens`: what the dead turn spent was recorded nowhere) |
 
 A mid-turn budget stop is `budget`, with `turn budget exceeded: N live against M
 left` in `detail`. It carries its own reason since 2026-09-27: the watch's abort
@@ -409,6 +506,29 @@ product repository (`git rev-parse --verify <value>^{commit}`); an in-memory mes
 checks syntax only. A patch recorded before this rule with an invalid value is
 refused at the transition to `MERGEABLE` with the same sentence, and a merge that
 still meets a missing commit quotes the value whole.
+
+**Commit before you ask for review.** `merge` lands the commit a patch *records*
+and refuses a patch that records none, and `commit` (`mesh_commit`) records it as a
+**new version**, which starts over at `DRAFT` (reviewers approved the content that
+was published, not whatever the worktree held later, so the bump is right). A
+developer that published a patch, walked it to `MERGEABLE`, and only then was told
+to commit lost the approval and owed a second full review of identical work; in the
+cronlite run it then reported `MERGED` to the PM when nothing had landed. So the
+warning comes where it can still be acted on: `request_review` on a `CodePatch` that
+records no commit, whose owner holds uncommitted work and could commit it, carries a
+**caveat** naming the cost (a caveat, not a refusal: a seat may commit through its own
+shell and let `merge` take the branch); the end-of-turn uncommitted-work advisory says
+to commit *before* asking for review; the merge refusal states the real consequence
+instead of "then merge again"; and the developer role prompt puts lease and commit
+ahead of `PATCH_READY`. A seat's shell may commit freely in its **own** worktree and
+may not change the product checkout (`docs/runtime.md`, `runtime-claude`).
+
+A task that carries the `implementation.gate` marker (what the `implementation.completed`
+gate keys on) is claimable like any other: the marker is a tag the completion gate reads,
+not a capability a seat could hold, and the claim check skips it exactly as the seat
+briefing's list of claimable tasks already did. It used to be refused as a missing
+capability no seat could ever be granted, so the task stayed open and the gate was never
+consulted.
 
 A verdict outside a reviewable status records a signature and moves nothing —
 approving a `DRAFT` artifact, or rejecting one already `MERGED`. That is

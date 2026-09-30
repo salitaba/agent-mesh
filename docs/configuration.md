@@ -22,6 +22,7 @@ mesh:
   runtime:   { default: claude }    # + optional model: provider/model for the whole mesh.
                                      #   `variant` is inert here — see the note under agents.
                                      #   + optional context_window: tokens — see "context_window" below.
+                                     #   + optional isolate_host: true — see "isolate_host" below.
   defaults:                         # mesh-wide session/delegation defaults every agent inherits
     session:    { persistent: true, max_context_tokens: 120000 }
     delegation: { allow: false, max_depth: 1, max_workers: 2, worker_budget_tokens: 60000 }
@@ -109,6 +110,43 @@ and costs it a re-orientation turn. Set an hour (`stale_after_ms: 3600000`) ther
 Mesh-wide only; there is no per-seat form. `mesh validate` refuses a value below
 a minute (60000), because anything shorter is a seconds-written-as-milliseconds
 typo rather than a window anyone means.
+
+### isolate_host
+
+`mesh.runtime.isolate_host: true` runs every Claude seat without what the launching
+machine would otherwise lend it. Off by default, because a mesh that works today may
+lean on either route below (an operator's proxy hook, an allow rule), and the default
+is to say so at boot instead.
+
+There are two routes, and neither is a mesh setting, which is why neither was visible:
+
+1. **Settings.** The SDK loads every filesystem settings source unless told not to, so
+   the launching user's `~/.claude/settings.json` (its `hooks`, `permissions`, `env`,
+   `model`, effort) applied to every seat as it does to that user's own sessions. A
+   hook that reads the user's transcripts, an allow rule that pre-approves what the
+   seat's permission gate would refuse, and a `model` override were all silent changes
+   to what the mesh ran; the substituted model of an earlier run came from here.
+2. **Environment.** A mesh started from inside another Claude Code session inherits
+   that session's variables, and they describe the *outer* session: in the cronlite run
+   the seat CLIs reported the outer session's id and ran at its effort
+   (`CLAUDE_EFFORT=max`, `MAX_THINKING_TOKENS=31999`).
+
+With the key on, the seat is spawned with an empty `settingSources` (the SDK's isolation
+mode) and without `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_ENTRYPOINT`,
+`CLAUDE_EFFORT`, `MAX_THINKING_TOKENS` and `CLAUDE_CODE_ARTIFACT_*`. Everything that
+authenticates or routes the CLI is kept on purpose (`ANTHROPIC_API_KEY`,
+`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`, the
+proxy and CA variables), so isolating cannot break a working login.
+
+The operator's own `extraOptions` (the adapter's escape hatch) still wins over it: an
+`env` or `settingSources` passed there is taken as given.
+
+Without the key, `mesh run` and `mesh serve` say what would leak when a mesh runs any
+Claude seat: one line if it was started from inside another session (naming the
+variables), one if the user settings file sets `hooks`, `permissions`, `env`, `model`,
+`effortLevel`, `apiKeyHelper`, `enabledPlugins` or `alwaysThinkingEnabled`, and then the
+key that closes the door. A settings file that only changes the user's terminal (a
+theme) is not a leak and is not reported; a mesh with no Claude seat is not warned.
 
 ## agents
 
@@ -515,6 +553,8 @@ bus:
     ttl_ms_by_role: { security: 7200000 }
     by_type: true           # and what `mesh init` writes; a bare typed ask inherits its
                             #   type's contract (refusals + SLA). Omit to leave it ungoverned.
+    min_default_ms: 240000  # the soonest an `ifUnanswered` default may come due; omit and the mesh
+                            #   derives it from its own clock (see below); 0 = no floor
   vocabulary: contracts     # and what `mesh init` writes; omit (or "typed") for the full manifest
   delivery:
     classes: true           # omit for "every message wakes its recipients"
@@ -677,6 +717,34 @@ and names the ones that would have worked. The debtor is shown the set in its
 mail line, because a closed set nobody is shown is a trap rather than a
 vocabulary. That change is why the key is opt-in.
 
+### commitments.min_default_ms
+
+The soonest an [`ifUnanswered`](#ifunanswered-an-ask-that-can-answer-itself) default may
+come due, in milliseconds: an op whose `afterMs` is shorter is **refused at the edge**,
+naming the floor, instead of opening an ask whose default would stand before anyone
+could have objected to it.
+
+The hole it closes: the schema only required `afterMs > 0`, and two seats in the cronlite
+run (2026-09-30) each chose 5 seconds. The addressee was mid-turn and `coalesce_ms` was
+also 5 seconds, so the answer path could not possibly fire before the default did. Two of
+the run's three commitments ended `defaulted`; one seat was told to proceed on its
+assumption and not to re-ask, the assumption was false (it assumed an empty repository,
+and a `SPEC.md` existed), and the real answer arrived a minute and a half later and cost
+a further wake. `defaulted` is a *settlement*, so nothing downstream marked any of it as a
+loss.
+
+Absent, the floor is derived from this mesh's own clock: `bus.delivery.coalesce_ms` (0
+when there is no delivery block) + `scheduling.timeouts.wait_wakeup_ms` + a 2-minute
+allowance for one answering turn (the cronlite seats' turns took 30 to 120 seconds). With
+`delivery.classes` and both windows at their 60-second defaults that is 4 minutes; with no
+delivery block, 3. An explicit value wins and `0` turns the floor off. The floor does
+**not** count the addressee's *current* turn, which is unbounded; it removes the defaults
+that could never have been answered, not every one that might not be.
+
+It governs `afterMs` only. An `ifUnanswered` with no `afterMs` uses the mesh's
+`commitments.ttl_ms`, which is the operator's own deadline and is not second-guessed
+here.
+
 ### Capacity
 
 The ledger is capacity-bounded, and a full ledger **refuses the new ask**
@@ -772,7 +840,7 @@ three classes all deliver, and differ only in what the delivery may cost:
 |---|---|---|---|
 | `interrupt` | now, as mail always has | yes, per seat woken | an `URGENT`; an answer to an ask the recipient is parked on; a re-ask in the thread of a debt that seat still owes the sender |
 | `deliver` | once per `coalesce_ms` burst, or not at all if the seat takes a turn for another reason first | no | asks (`REQUEST*`, `ESCALATE`, `CHALLENGE`), collab chatter, and the eight work-moving types (`MISSION`, `DELEGATE`, `HANDOFF`, `PATCH_READY`, `APPROVE`, `REJECT`, `VETO`, `BLOCK`) |
-| `accrue` | never | no | everything else — announcements, FYI, unsolicited `INFORM` |
+| `accrue` | never — not even when the turn it arrived during ends | no | everything else — announcements, FYI, unsolicited `INFORM` |
 
 Work-moving mail is `deliver` and not `accrue` because it is not news: a
 `HANDOFF` is the recipient's next piece of work, and a class that never woke
@@ -967,7 +1035,10 @@ not a loss — the thread resolves. See `docs/protocol.md` for the full semantic
 It is the one thing in the bus that makes an ask *cheaper for the recipient*,
 which is why it is worth reaching for on any mesh and not only a low-contact
 one. `afterMs` supplies a deadline on a mesh with no `commitments.ttl_ms`; with
-neither, the op is refused rather than left to wait forever.
+neither, the op is refused rather than left to wait forever. An `afterMs` shorter
+than the mesh can get an answer back (`commitments.min_default_ms`) is refused too,
+naming the floor: a default that comes due before anyone could object is not a
+default, it is an assumption nobody had the chance to correct.
 
 ## messages: the digest, the inform expiry and the send budget
 

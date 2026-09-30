@@ -32,9 +32,20 @@ unread budget (§29), so a deep backlog is drained over several turns instead of
 being marked read in one. Delivered means *rendered and answered*; anything else
 stays owed.
 
-Every turn's inputs/outputs/model/tokens are appended to `turn-audit.jsonl` so
-the **orchestration** layer is deterministic and replayable even though the LLM
+Every turn's inputs/outputs/model/tokens are appended to `logs/turn-audit.jsonl`
+so the **orchestration** layer is deterministic and replayable even though the LLM
 is not (§41).
+
+Despite its extension that file is **not plain JSONL**. It is the supervisor's audit
+log, and every line is `<ISO timestamp> <text>`: for a settled turn the text is a
+JSON record; for everything else (`boot: released 3 budget hold(s)…`, `turn … for pm:
+2/5 ops rejected`, `provider breaker: …`) it is a sentence, which may itself span
+physical lines when it quotes a rendered artifact. Read it with `parseTurnAudit`
+(`packages/observability`), which is what `mesh ledger` does: it counts prose as normal
+and reports only a stamped line that opens a JSON record and does not parse as
+*damaged*. A reader that `JSON.parse`s every line fails on the first notice. The name is
+kept because existing state directories, `mesh ledger` and earlier notes already
+use it.
 
 ### Turn deadlines
 
@@ -246,6 +257,54 @@ so a name a model remembers from another mesh keeps working. See `docs/configura
 - no `reasoning` token field (Claude's usage has none), and the system prompt is
   snapshotted at a session's first request, so mid-run `ROLE.md` edits land only
   after compaction
+- **a seat's shell may not land work on the product branch.** `git.merge` is a
+  capability: the `merge` op enforces it and the `patch.merge` gate, and records the
+  landing (`patch.merged`, the MERGED transition, `implementation-merged`). A seat
+  with a shell could run the same `git merge` in the product checkout from Bash and
+  none of that applied. In the cronlite run the developer, which held no `git.merge`,
+  ran `cd <workspace>/main && git merge mesh/developer` and the product branch moved
+  49 s before the tech lead's proper `mesh_merge`, with nothing on the log; in the next
+  run it also tried `git push -f origin mesh/developer:main`. For every Bash call of a
+  seat in a git mesh the permission gate now reads the command text and refuses the
+  half of that boundary it can state without a sandbox: **git commands that run in the
+  product checkout may only read it** (status, diff, log, show, …; a `branch`/`tag`
+  only as a listing), and **`git push` needs `git.merge`**. It follows `cd`, `git -C`,
+  `--git-dir`/`--work-tree`, `GIT_DIR`, `bash -c`, `eval` and `$(…)` (to a depth of 4),
+  and splits on unquoted `;` `&` `|` and newlines. A directory the text cannot resolve
+  (a variable or a substitution) is refused **only for `git merge`**: the seat's own
+  worktree is the common, legitimate target of `cd "$(git rev-parse --show-toplevel)"`,
+  and a blanket refusal would fail every such commit to catch the one move this exists
+  for, so any other git subcommand run in an unresolved directory is allowed. A git
+  command in the seat's **own** worktree is untouched (merging `main` into its own branch
+  is ordinary work), and so is everything that is not git. The supervisor hands the
+  product checkout's path to the adapter as `RuntimeContext.productPath`; a mesh with no
+  git workspace has none, and no gate. **It is a text-level gate**: it stops the move a
+  helpful model makes by reflex, not a seat determined to get around it, and
+  filesystem writes (`cp`, a redirection, the Edit tool) into the product checkout are
+  a different boundary that is **not** drawn here
+- **seats a dead mesh left running are stopped, not resumed alongside.** Each seat is a
+  long-lived `claude` child holding a streaming session. SIGKILL or an OOM kill takes the
+  mesh process and leaves the child, reparented to init and still mid-turn, still
+  calling the API, its spend recorded nowhere (measured: still going 56 s after the
+  kill), while the restarted mesh resumes the **same** session id, so two CLIs can
+  write one transcript. The adapter stamps every seat it spawns with the pid of its
+  host (`AGENT_MESH_HOST_PID`, inherited by whatever the seat started). Before the
+  first seat of a new process starts, the adapter scans `/proc/<pid>/environ` of the
+  processes it may read, and sends SIGTERM, then SIGKILL after a 2 s grace, to those
+  whose stamp names a host that no longer exists, reporting the ones it stopped (and
+  any it could not) as an `orphan_seats_reaped` adapter notice. **Linux only**: there is
+  no cheap, reliable way to read another process's environment elsewhere, so elsewhere
+  it does nothing. A pid that has since been reused by an unrelated process reads as a
+  live host and is left alone, which fails safe: a leak persists, nothing innocent
+  dies. The spend of an orphaned turn is stopped, not recovered
+- **what the launching machine lends a seat.** The SDK loads every filesystem settings
+  source unless told not to, and a mesh started from inside another Claude Code
+  session inherits that session's environment, so a seat ran under the launching
+  user's hooks, allow rules, `env` and model, and its CLI reported the outer session's
+  id and effort. `mesh.runtime.isolate_host: true` spawns seats with
+  `settingSources: []` and without the outer session's variables (credentials, routing
+  and proxy variables are kept); without it, the boot log says what would leak and
+  names the key. See `docs/configuration.md` § `isolate_host`
 
 ### `runtime-http`
 - generic custom/remote agents over `POST /sessions`, `/turn`, `/interrupt`, …
@@ -264,6 +323,42 @@ and artifacts survive. On restart the runtime re-activates the agent with a
 process memory). After N failed restarts the mesh escalates `runtime_failure`.
 A worker instance can be replaced (new `runtime session`) while the organizational
 role, authority, task, artifacts and threads are inherited (§50–51).
+
+### A process killed mid-turn
+
+SIGKILL, an OOM kill or a lost machine ends a mesh between writes the log expects to
+come in pairs. Boot cleans up what a pair left open, event-sourced so replay
+reproduces it, and idempotent so a later boot finds nothing to do:
+
+- **The turn is closed and counted.** A turn the log shows as begun and never ended is
+  closed with an `agent.state_changed` to `IDLE` (note `turn abandoned by server
+  restart`) **and** a `turn.discarded` with reason `interrupted` and no `tokens`: what
+  the dead turn spent was recorded nowhere, and absent means unmeasured, never zero. A
+  view of discards or spend used to hold a turn that began and never ended.
+- **Its budget holds are released** (boot step 8b'). A turn takes its holds (seat,
+  mission, thread) before it calls the model and gives them back, consumed or released,
+  in the `finally` that ends it. A process that dies between the two leaves a
+  `budget.reserved` the projection replays as live forever: after a SIGKILL mid-turn the
+  tech lead's ledger read `reserved: 17094`, and so did the thread's and the mission's,
+  with no turn running, and each crash left one more turn's estimate of headroom
+  unspendable until the mission was reset. Every hold still open at boot belongs to a
+  turn the old process never finished (nothing is running yet), so each is released as a
+  `budget.released` from `recovery-manager` with the reason `abandoned: the process that
+  held it ended before settling it`. **Released, not consumed**, because a figure
+  invented here would be billed as fact. The audit log gets one `boot: released N
+  budget hold(s)…` line.
+- **The seat CLIs it left behind are stopped** before any new seat starts (`runtime-claude`,
+  above).
+
+A *deliberate* stop is not reported as a crash. When the mission ends (or an operator
+shuts the mesh down) the in-flight turns are stopped by the mesh itself, and their
+`turn.discarded` detail reads `stopped by the mesh shutting down[ after the mission
+ended] (…)`, without the `the server process may have crashed — check that it is still
+running` hint the runtime appends to a genuine backend loss: on a normal end of mission
+that hint sent the operator looking for a failure that never happened. The seat's
+memory note says the same. Completion waits for the in-flight turns to settle (up to 30 s)
+before it retires the seats and stops the scheduler, so the teardown does not race its own
+agents.
 
 ### Provider outages: the mission-wide breaker
 
@@ -311,7 +406,47 @@ Termination manager (§33): success (all mandatory criteria evidenced), budget,
 wall-clock, `max_events`, stalemate and runtime failure → `COMPLETED`/`ESCALATED`
 /`FAILED`. Deadlock detector (§34): thread-depth, repeated-conflict fingerprint,
 and review-round overflow generate a `DisagreementRecord` artifact (positions,
-evidence, attempts) and raise a human `ESCALATE`.
+evidence, attempts) and raise a human `ESCALATE`. The manager's own verdicts are
+attributed to `termination-manager`, not to the operator (`docs/protocol.md` § `actorId`).
+A run report read off a mesh that was stopped mid-mission (goal still `ACTIVE`, no
+termination reason in the log) says so — `Stopped before the goal was met` — rather than
+that the build has no phrasing for `goal_active`.
+
+### What counts as satisfied, and what a reopen withdraws
+
+`criterionSatisfied` is the one definition, shared by the termination verdict, the
+criterion-removal guard and the watchdog's diagnosis of why a mission is stuck, so they
+cannot disagree: a criterion is satisfied when it is `WAIVED`, or `EVIDENCED` **and**
+its evidence belongs to the round it has to be satisfied in.
+
+`ASSERTED` is not `EVIDENCED`. A criterion a seat claims from a turn that **checked**
+nothing stays `ASSERTED`, and an unproven mission stays open. What counts as checking is
+deliberately narrow: a completed tool call that touches the world outside the mesh (a
+shell, a file read, a test runner), or the one `mesh_*` tool that reads an artifact's
+content (`mesh_artifact_read`). Every other `mesh_*` call is how a turn *acts* (send,
+publish, approve, merge), and counting those would make the gate self-satisfying: "I
+approved it, therefore it is verified". A failed call, such as a permission-gate denial,
+ran nothing and does not count. Reading the artifact used to count for nothing, so a
+tech lead that read a whole artifact twice before approving it produced a criterion
+accepted blind and then accepted *again* after a token-cheap `ls` — five extra PM rounds
+in the cronlite run.
+
+**A reopen names what it rejects.** `POST /mission/reopen { reason, criteria? }` sends
+the named criteria (every mandatory one when `criteria` is omitted after a verdict) back
+to `UNSATISFIED` and stamps each with `withdrawnAt`: the round they must now be satisfied
+in starts there, and evidence recorded before it belongs to the attempt the operator
+rejected and no longer counts (otherwise a reopen is answered by re-approving the same
+artifact and the mission re-completes within a tick: one live mission ran six completes
+and five reopens that way). A criterion the reopen did **not** name keeps its verdict and
+its evidence — there is no `withdrawnAt` on it, so nothing newer is demanded. The
+predicate used to compare every criterion's evidence against the goal-wide `reopenedAt`
+(`Goal.reopenedAt` is still stamped, as *when*), so a mission reopened on three of seven
+criteria could never complete: all seven `EVIDENCED`, goal `ACTIVE`, nothing left for
+anyone to do (cronlite 2026-09-30). An `ESCALATED` mission was halted by an open card and
+never judged, so reopening it withdraws only the criteria it names (none, when it names
+none) and answers the cards. A state snapshot written before `withdrawnAt` existed is
+migrated on import: a criterion of a reopened goal that is still `UNSATISFIED` or
+`ASSERTED` is stamped with the goal's `reopenedAt`.
 
 ## State & persistence
 
@@ -320,6 +455,17 @@ artifacts + git worktrees, with an optional `node:sqlite` event index. The
 architecture keeps no authoritative state in process memory, so the same kernel
 can later run against PostgreSQL + object storage + a distributed bus without
 changing the protocol.
+
+The seat prompts the Claude adapter writes (`.mesh/agents/<seat>/ROLE.md`,
+`MESH_CONTEXT.md`) live inside the working tree, so the product repository's
+`.git/info/exclude` names `.mesh/` (appended once; an adopted repository's own
+`.gitignore` is never rewritten), and the commit path stages with `git add -A` and then
+unstages `.mesh`. Before that, a seat's `git add -A` committed the seat prompts to `main`
+and the delivered tree shipped them.
+
+`mesh status` reads the mission's progress from the criteria themselves: progress is a
+projection of the acceptance criteria, so a restored state rebuilds it on import instead
+of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
 
 ## CLI / server / dashboard
 
