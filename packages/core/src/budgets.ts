@@ -429,10 +429,11 @@ export class BudgetManager {
     }
   }
 
-  async release(key: BudgetKey, reservationId: string, opts: { actorId?: string; goalId?: string } = {}): Promise<void> {
+  async release(key: BudgetKey, reservationId: string, opts: { actorId?: string; goalId?: string; reason?: string } = {}): Promise<void> {
     const ledger = this.kernel.state.budgets.get(key);
     if (!ledger || !ledger.reservations.has(reservationId)) return;
-    await this.kernel.emit("budget.released", { key, reservationId }, opts);
+    const { reason, ...meta } = opts;
+    await this.kernel.emit("budget.released", { key, reservationId, ...(reason ? { reason } : {}) }, meta);
   }
 
   private async exceeded(

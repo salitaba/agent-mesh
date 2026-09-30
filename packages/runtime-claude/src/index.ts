@@ -46,6 +46,7 @@ import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 // importing them from there is what keeps every runtime byte-identical on
 // the part of the prompt that must not vary by backend.
 import { withOutputVoice } from "../../core/src/context";
+import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
@@ -154,9 +155,19 @@ export interface ClaudeAdapterOptions {
    */
   onNotice?: (info: {
     agentId: string;
-    kind: "context_unmeasurable" | "unknown_context_window" | "usage_reattributed" | "mesh_bridge_race";
+    kind: "context_unmeasurable" | "unknown_context_window" | "usage_reattributed" | "mesh_bridge_race" | "orphan_seats_reaped";
     message: string;
   }) => void;
+  /**
+   * Stop seat CLIs a previous mesh process left running when it died, before this
+   * one spawns any (see `orphans.ts`). Runs once, ahead of the first `start` or
+   * `restoreSession`.
+   *
+   * Default: on for the real SDK query, off when `queryFn` is replaced -- a test
+   * with a fake transport must not go signalling processes on the machine it runs
+   * on. `false` turns it off; a function replaces the reaper (tests).
+   */
+  reapOrphans?: false | (() => Promise<ReapResult>);
   /**
    * Pin the idle gap after which a session's prompt cache counts as expired.
    *
@@ -1842,11 +1853,42 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     }
   }
 
+  private reaped: Promise<void> | undefined;
+
+  /**
+   * Stop what a dead predecessor left running, once, before this process spawns a
+   * seat of its own: the orphan may be resuming the very transcript this process
+   * is about to open. Never throws and never delays a start by more than the
+   * reaper's own grace period; a failure is a notice, not a failed start.
+   */
+  private reapOrphansOnce(): Promise<void> {
+    this.reaped ??= (async () => {
+      const reap = this.options.reapOrphans === false ? undefined : this.options.reapOrphans ?? (this.options.queryFn ? undefined : () => reapOrphanSeats());
+      if (!reap) return;
+      try {
+        const res = await reap();
+        if (res.found.length === 0) return;
+        this.noticeOnce("orphan_seats_reaped", {
+          agentId: "mesh",
+          kind: "orphan_seats_reaped",
+          message:
+            `stopped ${res.stopped.length} seat process(es) left running by a mesh process that died (pid ${[...new Set(res.found.map((o) => o.hostPid))].join(", ")}): ` +
+            `${res.found.map((o) => o.pid).join(", ")}` +
+            (res.survivors.length > 0 ? `; ${res.survivors.join(", ")} could not be stopped and may still be writing to a seat transcript` : ""),
+        });
+      } catch {
+        // A scan that fails must not stop a mission from starting.
+      }
+    })();
+    return this.reaped;
+  }
+
   async start(agent: AgentDefinition, context: RuntimeContext): Promise<AgentSession> {
     // A valid UUID, because the SDK requires that shape for `sessionId` and we
     // want the mesh's own session id to BE the Claude session id — that is what
     // makes restoreSession a plain `resume` rather than a lookup table.
     const sdkSessionId = randomUUID();
+    await this.reapOrphansOnce();
     this.writeAgentFiles(agent, context);
     const s = this.open(agent, context, sdkSessionId, false);
     if (!(await this.confirmAlive(s))) {
@@ -1874,6 +1916,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
    */
   async restoreSession(agent: AgentDefinition, sessionId: string, context: RuntimeContext): Promise<AgentSession | null> {
     try {
+      await this.reapOrphansOnce();
       this.writeAgentFiles(agent, context);
       const s = this.open(agent, context, sessionId, true);
       // Null here tells the supervisor to start a fresh session instead, which
@@ -2856,6 +2899,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // so the escape hatch still wins.
       effort: SEAT_EFFORT,
       ...this.options.extraOptions,
+      // After `extraOptions`, and built FROM its `env`: the stamp a restarted mesh
+      // finds this CLI by if this process dies and leaves it running.
+      env: seatEnv(this.options.extraOptions?.env),
       disallowedTools: mergedDisallowedTools(this.options.extraOptions),
       // `advise` delivery — the one thing a PostToolUse callback can still
       // change (its `additionalContext`). Reads the session through `hookRef`

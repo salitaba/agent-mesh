@@ -1812,6 +1812,8 @@ export class Supervisor {
     // every step/agent view. Runs before the scheduler starts so the close
     // events themselves trigger no activations.
     await this.closeAbandonedTurns();
+    // 8b'. give back the budget those turns were holding; see `releaseAbandonedReservations`.
+    await this.releaseAbandonedReservations();
     // 8c. retire asks orphaned by goal succession: this mesh has been
     // restarted onto new goals several times, and the old goals' open asks
     // stay in the ledger forever — they pollute every operator view, keep
@@ -2048,8 +2050,63 @@ export class Supervisor {
         );
       } catch {
         /* already idle (or otherwise uncloseable): nothing to record */
+        continue;
       }
+      // What a graceful stop records (`turn.discarded`, next to its released holds)
+      // and a killed process cannot. Without it the log holds a turn that began and
+      // never ended, and a view of discards or spend has nothing to count.
+      // `tokens` is left out on purpose: absent means unmeasured, never zero, and
+      // whatever the turn spent before the process died was not recorded anywhere.
+      await this.deps.kernel
+        .emit(
+          "turn.discarded",
+          {
+            agentId,
+            turnId,
+            reason: "interrupted",
+            detail: "abandoned by server restart: the process ended before the turn did, so its spend was never recorded",
+          },
+          { actorId: "system", correlationId: turnId },
+        )
+        .catch(() => undefined);
     }
+  }
+
+  /**
+   * Boot step 8b': release every budget hold the log still shows open.
+   *
+   * A turn takes its holds (agent, mission, thread) before it calls the model and
+   * gives them back in the `finally` that ends it, consumed or released. A process
+   * that dies between the two writes `budget.reserved` and nothing after, and the
+   * projection replays the hold as live forever: tech-lead's ledger read
+   * `reserved: 17094`, and so did the thread's and the mission's, with no tech-lead
+   * turn running, after a SIGKILL mid-turn (cronlite 2026-09-30). Each crash left
+   * one more turn's estimate of headroom unspendable until the mission was reset.
+   *
+   * At boot nothing is running -- the scheduler has not started and in-memory turn
+   * state is gone -- so a hold that survives into a new process belongs to a turn
+   * the old process never finished, whatever its key. Released, not consumed: what
+   * the dead turn actually spent is unknown, and a figure invented here would be
+   * billed as fact. Event-sourced, so replay reproduces the release exactly, and
+   * idempotent: a later boot finds nothing held.
+   */
+  private async releaseAbandonedReservations(): Promise<void> {
+    const goalId = this.state.activeGoalId ?? undefined;
+    const held: Array<{ key: string; reservationId: string }> = [];
+    for (const [key, ledger] of this.state.budgets) {
+      for (const reservationId of ledger.reservations.keys()) held.push({ key, reservationId });
+    }
+    if (held.length === 0) return;
+    for (const { key, reservationId } of held) {
+      await this.deps.budget
+        .release(key, reservationId, {
+          actorId: RECOVERY_ACTOR_ID,
+          goalId,
+          reason: "abandoned: the process that held it ended before settling it",
+        })
+        .catch((err) => this.auditLine(`boot: could not release abandoned hold ${reservationId} on ${key}: ${(err as Error).message}`));
+    }
+    this.auditLine(`boot: released ${held.length} budget hold(s) left open by a process that ended mid-turn`);
   }
 
   /**
