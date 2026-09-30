@@ -3036,6 +3036,19 @@ export interface AgentContextBundle {
    */
   commsVocabulary?: "contracts";
   /**
+   * The `mesh_*` tools the prose has a reason to name that THIS seat's tool list does
+   * not carry: the ones the collapsed vocabulary hides, and the ones that need a grant
+   * the seat lacks (`mesh_merge` without `git.merge`). Absent when there are none, like
+   * the keys above.
+   *
+   * Derived from the tables the manifest itself is filtered by (`hiddenToolsFor`), so
+   * the briefing names exactly what the seat can call. It used to list them all, and
+   * three live runs recorded 8, 14 and 21 calls to tools the client refused before they
+   * left the machine ("No such tool available"), each a turn's worth of intent that
+   * never reached the mesh.
+   */
+  hiddenTools?: string[];
+  /**
    * Set when this mesh was configured `bus.style: "low-contact"`, absent
    * otherwise — including under the other two styles, which change nothing
    * about what a seat should DO that the rest of the bundle does not already

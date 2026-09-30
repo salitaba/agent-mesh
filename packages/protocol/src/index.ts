@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./catalog";
 export * from "./contracts";
+export * from "./tool-visibility";
 export * from "./errors";
 export * from "./ids";
 export * from "./clock";

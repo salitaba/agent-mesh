@@ -1,4 +1,4 @@
-﻿import { ARTIFACT_TYPES, MESSAGE_TYPES, obligesRecipients, type AgentDefinition, type Artifact, type MeshEvent, type MeshMessage, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
+﻿import { ARTIFACT_TYPES, MESSAGE_TYPES, obligesRecipients, toolAdvertised, type AgentDefinition, type Artifact, type MeshEvent, type MeshMessage, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
 import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, pageCut, readableMailDepth, resolveUnread, settlersOf, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
 import {
@@ -57,97 +57,26 @@ const EVENT_FAMILIES: Record<string, MeshEvent["type"][]> = {
 const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest", "mesh_inbox"]);
 
 /**
- * Tools whose own description already names the capability/authority/mode
- * required to use them (git.merge, veto authority, architecture.approve,
- * worker-only). Every seat used to see all of these regardless of whether it
- * held the grant, which cost ~4x the role prompt in tool-slot tokens and told
- * the model nothing about what it could actually call. Keyed by tool name;
- * a tool absent here has no such requirement.
+ * Which tools a seat is shown is decided by `toolAdvertised` (protocol `tool-visibility.ts`), and
+ * the seat briefing reads the same tables, so what the prose names is what the manifest carries.
+ * What changes here is only how a tool the collapsed vocabulary leaves in is DESCRIBED: three
+ * descriptions point at a tool the same vocabulary hides, and a seat that reads "prefer
+ * mesh_request" in the description of a tool it has goes and looks for one it does not.
  */
-const TOOL_REQUIREMENT: Record<string, (def: AgentDefinition | undefined) => boolean> = {
-  mesh_merge: (def) => !!def?.capabilities.includes("git.merge"),
-  mesh_veto: (def) => !!def?.authority.some((a) => a === "*" || a.endsWith(".veto")),
-  mesh_decision_ratify: (def) => !!def?.authority.some((a) => a === "*" || a === "architecture.approve"),
-  mesh_submit_result: (def) => def?.mode === "service",
+const COLLAPSED_DESCRIPTION_EDITS: Readonly<Record<string, ReadonlyArray<readonly [string, string]>>> = {
+  mesh_call: [[" Preferred over mesh_send for the asks it covers: the mesh picks", " The mesh picks"]],
+  mesh_collab: [["Prefer mesh_request when you can name what you want;", "Prefer mesh_call when you can name what you want;"]],
+  mesh_approve: [["do not follow it with a mesh_respond or mesh_send;", "do not follow it with a mesh_reply or mesh_announce;"]],
+  mesh_reject: [["do not follow it with a mesh_respond or mesh_send;", "do not follow it with a mesh_reply or mesh_announce;"]],
 };
 
-/**
- * Tools whose entire job a named contract now does, mapped to the contract
- * that replaces them. Under `bus.vocabulary: "contracts"` these are dropped
- * from the advertised manifest (via `HIDDEN_BY_CONTRACT_VOCABULARY`): a seat that has `mesh_call` and
- * `mesh_contracts` can raise every one of these asks, and raising it that way
- * is strictly better — the request shape is validated before anyone is woken,
- * the mesh picks a recipient that policy will actually let you reach, and the
- * refusals you may get back are named up front.
- *
- * Hiding is advertisement-only. `callTool` resolves against the UNFILTERED
- * map, so a model that names a hidden tool still gets it; nothing here can
- * take a capability away from a seat. That is also why this list stops at
- * tools a contract fully covers: `mesh_send` stays, because answering someone
- * and the 16 message types no contract names are still its job, and a manifest
- * that omitted it would push the model to guess.
- */
-const SUPERSEDED_BY_CONTRACT: Record<string, string> = {
-  mesh_request: "work.request / info.question / artifact.produce / execution.run",
-  mesh_request_review: "review.artifact",
-  mesh_research_request: "research.question",
-  mesh_escalate: "decision.escalate",
-};
-
-/**
- * The rest of it: what `bus.vocabulary: "contracts"` hides, and what a seat
- * is shown instead.
- *
- * `SUPERSEDED_BY_CONTRACT` above dropped the four tools a contract fully
- * covers and kept every tool that still carried a `MessageType` enum — so a
- * seat under `typed-only` still had to learn 24 speech-act names before it
- * could say anything, and the measurement came in at −96 tokens a turn. The
- * saving was never the point and it showed.
- *
- * Under the collapsed vocabulary the comms manifest is eight tools and not
- * one of them asks for a type:
- *
- *   mesh_contracts        what can I ask for
- *   mesh_call             the ask
- *   mesh_reply            the answer
- *   mesh_discharge        the refusal
- *   mesh_withdraw         taking the ask back
- *   mesh_announce         saying something that obliges nobody
- *   mesh_collab/_close    the bounded discussion
- *
- * The honest payoff is not tokens either. It is that a seat can no longer
- * invent `RESULT`, because the manifest offers no field to invent it in —
- * which is the entire reason `op-aliases.ts` exists (60 name aliases, 31 type
- * aliases, thirteen words for "here is your answer" folded onto INFORM). An
- * alias table is what you build when the surface cannot be learned; this
- * shrinks the surface instead. See the deletion note at the top of
- * `op-aliases.ts` for what still has to be true before that file can go.
- *
- * Hiding stays advertisement-only, exactly as above: `callTool` resolves
- * against the UNFILTERED map, so `mesh_send` with a hand-written type still
- * works for a model that reaches for it, and no mesh loses a capability by
- * collapsing its vocabulary. That is what makes this a prompt decision rather
- * than a protocol change — `MessageType` is untouched on the wire, and is now
- * what it always should have been: a rendering and telemetry detail.
- */
-const HIDDEN_BY_CONTRACT_VOCABULARY: Record<string, string> = {
-  ...SUPERSEDED_BY_CONTRACT,
-  mesh_send: "mesh_call to ask, mesh_reply to answer, mesh_announce to tell",
-  mesh_broadcast: "mesh_announce",
-  mesh_respond: "mesh_reply",
-};
-
-/**
- * The two tools that exist only to carry the collapsed vocabulary.
- *
- * Registered in every mesh so they always RESOLVE — the mirror image of the
- * rule above, and the same reasoning: what a mesh advertises is a prompt
- * decision, what it accepts is not. Advertised only under
- * `bus.vocabulary: "contracts"`, because adding two tools to every existing
- * mesh's manifest is precisely the silent upgrade the absent-by-default
- * config field is there to prevent.
- */
-const CONTRACT_VOCABULARY_TOOLS = new Set(["mesh_reply", "mesh_announce"]);
+/** `tool` as the collapsed vocabulary describes it: the same tool, with no pointer to one it hides. */
+function describedForCollapsed(tool: McpToolDefinition): McpToolDefinition {
+  const edits = COLLAPSED_DESCRIPTION_EDITS[tool.name];
+  if (!edits) return tool;
+  const description = edits.reduce((d, [from, to]) => d.replace(from, to), tool.description);
+  return description === tool.description ? tool : { ...tool, description };
+}
 
 /**
  * Ops whose accepted `reason` is an id or sha the caller needs next, and the
@@ -222,13 +151,8 @@ export class McpToolset {
     // advertise exactly the list they always did — see `bus.vocabulary` in
     // the config package for why this resolves to absent rather than to
     // "typed".
-    const collapsed = this.supervisor.config.bus.vocabulary === "contracts";
-    return all.filter((t) => {
-      if (!collapsed && CONTRACT_VOCABULARY_TOOLS.has(t.name)) return false;
-      if (collapsed && HIDDEN_BY_CONTRACT_VOCABULARY[t.name]) return false;
-      const requirement = TOOL_REQUIREMENT[t.name];
-      return requirement ? requirement(def) : true;
-    });
+    const vocabulary = this.supervisor.config.bus.vocabulary === "contracts" ? ("contracts" as const) : undefined;
+    return all.filter((t) => toolAdvertised(t.name, def, vocabulary)).map((t) => (vocabulary ? describedForCollapsed(t) : t));
   }
 
   /**

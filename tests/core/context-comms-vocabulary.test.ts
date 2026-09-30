@@ -107,13 +107,36 @@ test("the three ops a brief says in prose are named alongside their type, by too
   assert.equal(text.includes("/ `mesh_send` →"), false);
 });
 
-test("the raw-send fallback is named as a hidden-but-callable tool", () => {
-  // `mesh_send` leaves the advertised manifest under `contracts`, but
-  // `callTool` still resolves it, so the fallback is real -- and a seat with
-  // an ask no contract covers has to be told where to put it.
+test("the seat is told which tools it does not have, not that one of them still works", () => {
+  // `mesh_send` leaves the advertised manifest under `contracts`. The server would still resolve
+  // it if asked, which this line once took to mean the seat could call it; the client never asks.
+  // Claude Code refuses a name that is not in its list ("No such tool available") before the call
+  // leaves the machine, so the fallback was never real, and seats spent turns on it.
   const text = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
-  assert.match(text, /`mesh_send` is not in your tool list but still works/);
-  assert.equal(renderContextInstructions(bundle()).includes("is not in your tool list"), false, "a typed seat has mesh_send listed");
+  assert.match(text, /Not in your tool list, so not callable: .*`mesh_send`/);
+  assert.match(text, /fails on the spot with "No such tool available"/);
+  assert.doesNotMatch(text, /still works/);
+  assert.equal(renderContextInstructions(bundle()).includes("Not in your tool list"), false, "a typed seat has mesh_send listed");
+});
+
+test("the hidden tools reach the bundle per seat, and only where there are some", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
+      // Every grant a tool waits on, and the service mode the worker-only one waits on.
+      { id: "svc", role: "tech-lead", mode: "service", capabilities: ["repository.write", "git.merge"], authority: ["quality.veto", "architecture.approve"], interests: [] },
+    ],
+    mayContact: { dev: ["svc"], svc: ["dev"] },
+    mode: "parked",
+  });
+  try {
+    const dev = buildAgentContext({ config: m.config, kernel: m.kernel }, "dev").hiddenTools ?? [];
+    assert.deepEqual([...dev].sort(), ["mesh_decision_ratify", "mesh_merge", "mesh_submit_result", "mesh_veto"]);
+    // A seat with every grant has nothing hidden, so the key is absent and its prompt is what it was.
+    assert.equal("hiddenTools" in buildAgentContext({ config: m.config, kernel: m.kernel }, "svc"), false);
+  } finally {
+    await m.cleanup();
+  }
 });
 
 test("buildAgentContext carries the key from the resolved bus, and omits it otherwise", async () => {

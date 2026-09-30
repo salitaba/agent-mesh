@@ -13,7 +13,7 @@ import type {
   Task,
   ThreadId,
 } from "../../protocol/src/index";
-import { CODE_ARTIFACT_TRANSITIONS, IMPLEMENTATION_GATE_MARKER, episodeOf } from "../../protocol/src/index";
+import { CODE_ARTIFACT_TRANSITIONS, HIDDEN_BY_CONTRACT_VOCABULARY, IMPLEMENTATION_GATE_MARKER, episodeOf, hiddenToolsFor } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   HARD_OP_CAPABILITY,
@@ -821,6 +821,8 @@ export function buildAgentContext(
     mandatory: c.mandatory,
   }));
 
+  const hiddenTools = hiddenToolsFor(config.agents[agentId], config.bus.vocabulary === "contracts" ? "contracts" : undefined);
+
   return {
     rolePrompt: cachedRolePrompt(deps, agentId),
     mission: missionText,
@@ -916,6 +918,8 @@ export function buildAgentContext(
      * reason: a mesh that never collapsed its vocabulary renders byte-for-byte
      * what it rendered before this key existed. */
     ...(config.bus.vocabulary === "contracts" ? { commsVocabulary: "contracts" as const } : {}),
+    /* Per seat, and absent when empty, for the same reason as the keys around it. */
+    ...(hiddenTools.length > 0 ? { hiddenTools } : {}),
     ...(config.bus.style === "low-contact" ? { lowContact: true as const } : {}),
     ...(config.bus.deliveryClasses?.congestionEvery !== undefined && config.bus.deliveryClasses.interruptCostTokens > 0
       ? { interruptCongestionEvery: config.bus.deliveryClasses.congestionEvery }
@@ -1229,6 +1233,52 @@ function renderContinuity(bundle: AgentContextBundle, lines: string[]): void {
     lines.push(`- Already rejected by ${r.rejectedBy}: ${r.what} — ${r.reason}${r.episode && r.episode !== bundle.episode ? " (previous run)" : ""}`);
   }
   lines.push("");
+}
+
+/**
+ * The "Common tools" line: what a seat is told it can call, most used first.
+ *
+ * Built from entries so a tool the seat's manifest does not carry is LEFT OUT instead of listed.
+ * The line used to be one literal that named `mesh_send`, `mesh_request_review` and
+ * `mesh_escalate` to every seat, and under the collapsed vocabulary none of those is in the
+ * tool list: three live runs recorded 8, 14 and 21 calls the client refused with "No such tool
+ * available", each a turn's worth of intent that never reached the mesh. Under that vocabulary
+ * the two tools that took their place are listed where `mesh_send` stood.
+ *
+ * With nothing hidden and the typed vocabulary this is the literal it replaced, byte for byte.
+ */
+function commonToolsLine(hidden: ReadonlySet<string>, contracts: boolean): string {
+  // The ask, and how it is said: under the typed vocabulary it is preferred OVER `mesh_send`,
+  // which a seat under the collapsed one does not have to be told about.
+  const why = contracts ? ": " : "; prefer it over `mesh_send` whenever a contract covers what you want, because ";
+  const alsoSend = contracts ? "" : "it works on `mesh_send` too, and ";
+  const call =
+    "mesh_call (contract/request — raise a NAMED ask" + why + "the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back; when you can say in ADVANCE what you will do if nobody answers, add `ifUnanswered: {assume: <the value you will proceed with>, afterMs: <how long you will wait — long enough for the addressee to take a turn; the mesh refuses a shorter wait and names the minimum>}` — " + alsoSend + "it makes silence a legal ending: nobody is chased for the ask, and at the deadline the mesh hands your own default back to you instead of raising a card for a human)";
+  const entries: Array<[tool: string, text: string]> = [
+    ["mesh_call", call],
+    ["mesh_contracts", "mesh_contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for)"],
+    // What a seat under the collapsed vocabulary has where `mesh_send` stood: the answer, and the tell.
+    ["mesh_reply", "mesh_reply (messageId/response — answer one ask addressed to you; it settles the ask. A review you settled with mesh_approve/mesh_reject is already answered by that verdict)"],
+    ["mesh_announce", "mesh_announce (payload/to/note — say something that obliges nobody to answer; omit `to` and every seat hears it)"],
+    ["mesh_send", "mesh_send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction)"],
+    ["mesh_artifact_publish", "mesh_artifact_publish (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file)"],
+    ["mesh_request_review", "mesh_request_review (artifactId/reviewers)"],
+    ["mesh_task_create", "mesh_task_create (title/description/assignedTo)"],
+    ["mesh_task_claim", "mesh_task_claim"],
+    ["mesh_task_complete", "mesh_task_complete"],
+    ["mesh_decision_propose", "mesh_decision_propose (topic/decision)"],
+    ["mesh_escalate", "mesh_escalate (reason/detail)"],
+    ["mesh_remember", "mesh_remember (key/value)"],
+    ["mesh_discharge", "mesh_discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence)"],
+    ["mesh_withdraw", "mesh_withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing)"],
+    ["mesh_collab", "mesh_collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with mesh_collab_close the moment you have what you came for)"],
+    ["mesh_collab_close", "mesh_collab_close (threadId/outcome)"],
+    ["mesh_plan", "mesh_plan (steps: array of {text, capabilities})"],
+    ["mesh_plan_step", "mesh_plan_step (stepId/status DONE|PENDING)"],
+    ["mesh_write_continuity", "mesh_write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks)"],
+  ];
+  const shown = entries.filter(([tool]) => (tool === "mesh_reply" || tool === "mesh_announce" ? contracts : !hidden.has(tool)));
+  return `Common tools: ${shown.map(([, text]) => text).join(", ")}. A turn that makes no mesh tool calls changes nothing.`;
 }
 
 /**
@@ -1783,6 +1833,14 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // this section by. It says "ops", not "tools", on purpose: the catalogue
   // below is what the seat can DO, and the manifest stays authoritative for
   // names and arguments.
+  // The tools this seat's tool list does not carry, which nothing below may name as callable.
+  // Under the collapsed vocabulary that is a pure function of the vocabulary; the rest (a merge
+  // tool for a seat without `git.merge`) is per seat and arrives on the bundle.
+  const contractsVocabulary = bundle.commsVocabulary === "contracts";
+  const hidden: ReadonlySet<string> = new Set([
+    ...(bundle.hiddenTools ?? []),
+    ...(contractsVocabulary ? Object.keys(HIDDEN_BY_CONTRACT_VOCABULARY) : []),
+  ]);
   lines.push("## Ops contract (mesh tools only — otherwise your turn does nothing)");
   // There used to be a second channel here: a fenced `mesh-json` block in the
   // reply, parsed out of prose. It is gone, and saying so is the point of the
@@ -1794,7 +1852,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // `mesh_collab_close`, `claim_task` is `mesh_task_claim`), which is why
   // every name below is the tool's own.
   lines.push("You act on the mesh ONLY by calling the `mesh_*` MCP tools: every message, artifact, task move and decision is a tool call. Nothing in your reply text is read — a fenced ops/JSON block in prose is ignored and none of it runs. End every turn with `mesh_done` (summary — the turn summary the mesh records, so make it say what actually happened), or `mesh_wait` (reason) when you are blocked on someone else. Your tool list is authoritative for names and arguments; `to` and `reviewers` are arrays.");
-  lines.push("Common tools: mesh_call (contract/request — raise a NAMED ask; prefer it over `mesh_send` whenever a contract covers what you want, because the mesh picks the recipient, checks your request shape before anyone is woken, and tells you the refusals you may get back; when you can say in ADVANCE what you will do if nobody answers, add `ifUnanswered: {assume: <the value you will proceed with>, afterMs: <how long you will wait — long enough for the addressee to take a turn; the mesh refuses a shorter wait and names the minimum>}` — it works on `mesh_send` too, and it makes silence a legal ending: nobody is chased for the ask, and at the deadline the mesh hands your own default back to you instead of raising a card for a human), mesh_contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for), mesh_send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction), mesh_artifact_publish (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file), mesh_request_review (artifactId/reviewers), mesh_task_create (title/description/assignedTo), mesh_task_claim, mesh_task_complete, mesh_decision_propose (topic/decision), mesh_escalate (reason/detail), mesh_remember (key/value), mesh_discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence), mesh_withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing), mesh_collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with mesh_collab_close the moment you have what you came for), mesh_collab_close (threadId/outcome), mesh_plan (steps: array of {text, capabilities}), mesh_plan_step (stepId/status DONE|PENDING), mesh_write_continuity (nextIntent/beliefs/rejected — only when a turn tells you your session is about to be replaced; the mesh fills in your open asks). A turn that makes no mesh tool calls changes nothing.");
+  lines.push(commonToolsLine(hidden, bundle.commsVocabulary === "contracts"));
   // The closed `send` type enum used to be listed here, because a type
   // invented in prose had no schema at its edge and died silently downstream.
   // Every type-taking TOOL carries `enum: [...MESSAGE_TYPES]` (`mcp.ts`), so a
@@ -1827,7 +1885,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     );
   }
   lines.push(
-    'Approve or reject a reviewed artifact with: `mesh_approve` { subject: "<what>", artifactId: "<id>" } — also `mesh_reject`, `mesh_veto`, `mesh_block`, same shape. This needs the matching authority or review capability, and you cannot approve your own artifact when a peer reviewer exists. The verdict op itself answers the review request you were sent for that artifact — do NOT follow it with an APPROVE/REJECT message or a `mesh_respond`: a verdict message records nothing and is refused.',
+    `Approve or reject a reviewed artifact with: \`mesh_approve\` { subject: "<what>", artifactId: "<id>" } — also \`mesh_reject\`,${hidden.has("mesh_veto") ? "" : " `mesh_veto`,"} \`mesh_block\`, same shape. This needs the matching authority or review capability, and you cannot approve your own artifact when a peer reviewer exists. The verdict op itself answers the review request you were sent for that artifact — do NOT follow it with an APPROVE/REJECT message or a \`${hidden.has("mesh_respond") ? "mesh_reply" : "mesh_respond"}\`: a verdict message records nothing and is refused.`,
   );
   lines.push(
     'Move an artifact through its lifecycle with: `mesh_artifact_transition` { artifactId: "<id>", to: "READY_FOR_REVIEW" }. ONLY the artifact owner may transition it — ask the owner otherwise. A DRAFT nobody transitions is never reviewed and never becomes evidence.',
@@ -1838,17 +1896,28 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // `mesh_respond type:APPROVE` to close the ask, and every such follow-up was
   // refused as a verdict-by-message after the verdict had landed (skill-panel
   // 2026-09-25, §4 — 7 of 10 denials).
-  lines.push("- mesh_respond (messageId/type/payload) — answer one specific request. Not a review you settled with mesh_approve/mesh_reject: the verdict already answered it.");
+  if (!hidden.has("mesh_respond")) {
+    lines.push("- mesh_respond (messageId/type/payload) — answer one specific request. Not a review you settled with mesh_approve/mesh_reject: the verdict already answered it.");
+  }
   lines.push(
     "- mesh_artifact_read (artifactRef, offset?) — fetch content instead of guessing at it. A large artifact returns in parts: if the result says truncated, read again with the nextOffset it gives you before drawing conclusions. Pages are bounded by characters, so a long document takes several reads — that is the intended way to read it, not a failure.",
   );
-  lines.push("- mesh_research_request (to/question) — ask the explorer a read-only question.");
-  lines.push("- mesh_broadcast (type/payload) — inform everyone you may contact; prefer a targeted mesh_send.");
-  lines.push("- mesh_decision_ratify (decisionId) — promote a proposed decision to a shared fact.");
+  if (!hidden.has("mesh_research_request")) lines.push("- mesh_research_request (to/question) — ask the explorer a read-only question.");
+  if (!hidden.has("mesh_broadcast")) lines.push("- mesh_broadcast (type/payload) — inform everyone you may contact; prefer a targeted mesh_send.");
+  if (!hidden.has("mesh_decision_ratify")) lines.push("- mesh_decision_ratify (decisionId) — promote a proposed decision to a shared fact.");
+  // `mesh_merge` is in the tool list of a seat that holds `git.merge` and of no other. The line
+  // used to tell every seat that a patch lands by `mesh_merge`, and a developer without the
+  // capability called it three times in the fourth cronlite run, each refused as "No such tool
+  // available"; it is told instead who does hold it and when to ask.
   lines.push(
-    "- mesh_commit / mesh_request_commit / mesh_merge — version-control moves, subject to your capabilities. " +
-      "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with mesh_artifact_transition " +
-      "and then `mesh_merge`; approval alone lands nothing, and no step happens on its own.",
+    hidden.has("mesh_merge")
+      ? "- mesh_commit / mesh_request_commit — version-control moves, subject to your capabilities. " +
+          "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with mesh_artifact_transition " +
+          "and then being merged by a seat that holds `git.merge`, which you do not: you have no merge tool, so ask that seat once the patch is MERGEABLE. " +
+          "Approval alone lands nothing, and no step happens on its own."
+      : "- mesh_commit / mesh_request_commit / mesh_merge — version-control moves, subject to your capabilities. " +
+          "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with mesh_artifact_transition " +
+          "and then `mesh_merge`; approval alone lands nothing, and no step happens on its own.",
   );
   lines.push("- mesh_delegate (to/title), mesh_lease_acquire / mesh_lease_release (artifactId/files) — hand off work, avoid collisions.");
   // Shown only when usable: with delegation off (the v1 default, max_depth 0)
@@ -1884,7 +1953,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (bundle.commsVocabulary === "contracts") {
     lines.push("## How you ask for things here (your role brief is written in the older vocabulary)");
     lines.push(
-      "This mesh routes asks by CONTRACT, not by message type. The asks it will route are the ones `mesh_contracts` lists, with who answers each and the refusals you may get back — that list is authoritative. Your role brief is not: it is written in the typed vocabulary and names moves your tool list does not have. The type names it quotes are still the right WORDS for what you mean; these are how you say them here.",
+      "This mesh routes asks by CONTRACT, not by message type. The asks it will route are the ones `mesh_contracts` lists, with who answers each and the refusals you may get back — that list is authoritative. Your role brief is not: it is written in the typed vocabulary and names moves your tool list does not have. The type names it quotes are still the right WORDS for what you mean; these are how you say them here. Left of each arrow is your brief's word, and it is not a tool you have: do not call it. Right of the arrow is what you call.",
     );
     for (const c of BUILTIN_CONTRACTS) {
       // `desugarsTo` named only when it is not `send`, because those three are
@@ -1897,12 +1966,18 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push(
       "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `mesh_announce` — it obliges no one and costs no one a turn. An answer to an ask is `mesh_reply`, naming the message you are answering.",
     );
-    // `mesh_send` is hidden from this manifest but still resolves when called
-    // (`callTool` reads the unfiltered map), so the fallback is real and worth
-    // one line -- otherwise a seat with an ask no contract covers has nowhere
-    // it knows to put it.
+    // What a seat must NOT reach for, and why the old sentence was wrong.
+    //
+    // This used to say "`mesh_send` is not in your tool list but still works", on the strength of
+    // the server, whose `callTool` does resolve a hidden name. A client that checks a name against
+    // the list it was given never gets that far: Claude Code refuses the call on the spot with
+    // "No such tool available", and across three live runs seats made 8, 14 and 21 such calls on
+    // the strength of this line and the role briefs. So it says what is true of the seat: these
+    // are not in its list, a call to one does nothing, and the ask no contract names has a home
+    // anyway (`work.request` is the general one).
+    const gone = [...hidden].filter((t) => HIDDEN_BY_CONTRACT_VOCABULARY[t]).sort();
     lines.push(
-      "`mesh_send` is not in your tool list but still works for the asks no contract covers. Reach for it last — a `mesh_call` is checked before anyone is woken and names its refusals up front, and a `mesh_send` is neither.",
+      `Not in your tool list, so not callable: ${gone.map((t) => `\`${t}\``).join(", ")}. A call to a tool that is not in your list fails on the spot with "No such tool available" — it never reaches the mesh, so nothing is sent or recorded and it cannot be retried into working. For an ask no narrower contract names, use \`mesh_call work.request\`.`,
     );
     lines.push("");
   }

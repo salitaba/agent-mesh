@@ -73,6 +73,7 @@ import { BACKEND_CRASH_HINT, BackendUnreachableError, classifyProviderOutage, is
 import { ARTIFACT_SCOPES, EDIT_CAPABILITIES } from "../../protocol/src/index";
 import { isSettledArtifactStatus } from "../../protocol/src/index";
 import { episodeOf } from "../../protocol/src/index";
+import { refusedToolCalls, toolAlternative } from "../../protocol/src/index";
 import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingType, movesWorkMessage, obligesRecipients, unknownContractReason } from "../../protocol/src/index";
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
@@ -8389,6 +8390,23 @@ export class Supervisor {
         notices.push(...shown.map((line) => `⚠ ${line}`.slice(0, 400)));
         const unlisted = caveatLines.length - shown.length;
         if (unlisted > 0) notices.push(`⚠ +${unlisted} more caveat${unlisted === 1 ? "" : "s"}`);
+      }
+      // A call the CLIENT refused never reached the mesh, so no op result records it and none
+      // of the remarks above can mention it. The seat read "No such tool available" in its tool
+      // result, went on to `mesh_wait`, and its next context says it did what it meant to: the
+      // fourth cronlite run's pm tried `mesh_request_review`, then waited for a review nobody
+      // had been asked for. Across three runs seats made 8, 14 and 21 such calls, every one
+      // a turn's worth of intent that vanished, and this is the only place it can be said.
+      //
+      // Not `unproductive`: the breaker parks a seat that keeps failing, and a seat that keeps
+      // reaching for a tool it was told about is being failed by its briefing first.
+      const refused = refusedToolCalls(output.toolCalls);
+      if (refused.length > 0) {
+        const what = refused.map(({ tool, times }) => `${tool}${times > 1 ? ` x${times}` : ""} (${toolAlternative(tool)})`).join("; ");
+        const notice = `⚠ not in your tool list, so these calls never reached the mesh and did nothing: ${what}. Your tool list is authoritative — do what they were for with a tool you have`.slice(0, 500);
+        endSummary = `${endSummary ? `${endSummary} — ` : ""}${notice}`;
+        notices.push(notice);
+        this.auditLine(`turn ${turnId} for ${agentId}: called ${refused.length} tool(s) its manifest does not carry: ${refused.map((r) => `${r.tool} x${r.times}`).join(", ")}`);
       }
       // Files written but never committed are in no repository, invisible to
       // every reviewer, and archived rather than landed by the next reset. The
