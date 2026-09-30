@@ -749,9 +749,23 @@ test("verification: mesh_* bus calls are not verification — they are how a tur
   // tell a check from a claim.
   const { mesh: m, status } = await acceptCriterionFromTurn([
     { name: "mesh_approve", args: {}, resultDigest: "d1" },
-    { name: "mesh_artifact_read", args: {}, resultDigest: "d2" },
+    { name: "mesh_inbox", args: {}, resultDigest: "d2" },
+    { name: "mesh_artifact_list", args: {}, resultDigest: "d3" },
   ]);
   assert.equal(status, "ASSERTED", "issuing bus ops is not verifying anything");
+  await m.cleanup();
+});
+
+test("verification: reading the artifact through the mesh IS checking it — the one bus call that counts", async () => {
+  // A reviewer that read the whole artifact before accepting a claim about it has
+  // inspected the evidence. Counting only tools outside the mesh made such a turn
+  // "unverified" and cost a second acceptance round on a bare `ls`
+  // (see isEvidenceRead).
+  const { mesh: m, status } = await acceptCriterionFromTurn([
+    { name: "mesh_approve", args: {}, resultDigest: "d1" },
+    { name: "mesh_artifact_read", args: {}, resultDigest: "d2" },
+  ]);
+  assert.equal(status, "EVIDENCED");
   await m.cleanup();
 });
 

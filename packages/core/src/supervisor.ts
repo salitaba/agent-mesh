@@ -122,7 +122,7 @@ import { buildAgentContext, buildContextManifest, handoverBundle, renderContextI
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
-import { isMeshToolCall, traceToolCalls } from "./turn-tracker";
+import { isEvidenceRead, isMeshToolCall, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
 import { DATA_RESULT_OPS, newTurnEffectTally, noteTurnEffect, summarizeTurnEffects, type TurnEffectTally, type UnfinishedTurnFacts } from "./turn-tracker";
 import { MAX_FILES_TOUCHED, type TurnCheckpoint } from "./turn-tracker";
@@ -948,7 +948,9 @@ const EVIDENCE_STUB_MARKERS = /^\s*(tbd|todo|n\/a|none|pending|placeholder|comin
  * how a typed turn acts at all, so counting them as verification would make
  * the gate self-satisfying: "I approved it, therefore it is verified." Only
  * tools that touch the world outside the mesh (a shell, a file read, a test
- * runner) can distinguish a claim from a check.
+ * runner) can distinguish a claim from a check -- and the one mesh tool that
+ * reads an artifact's content (`isEvidenceRead`), because inspecting the evidence
+ * is exactly what checking a claim about it means.
  *
  * "Mesh" is decided by `isMeshToolCall`, which strips the `mcp__<server>__`
  * prefix Claude puts on every MCP tool: tested bare, `mcp__mesh__mesh_approve`
@@ -957,8 +959,13 @@ const EVIDENCE_STUB_MARKERS = /^\s*(tbd|todo|n\/a|none|pending|placeholder|comin
  * nothing, so it does not count either. A call with no status is counted: the
  * structural runtimes (stub, http) report none, and absent means unknown.
  */
+/** One tool name, against the verification gate: anything outside the mesh, or a read of an artifact. */
+function countsAsChecking(name: string): boolean {
+  return !isMeshToolCall(name) || isEvidenceRead(name);
+}
+
 function verificationToolCount(toolCalls: Array<{ name: string; status?: string }> | undefined): number {
-  return (toolCalls ?? []).filter((t) => t.status !== "failed" && !isMeshToolCall(String(t.name ?? ""))).length;
+  return (toolCalls ?? []).filter((t) => t.status !== "failed" && countsAsChecking(String(t.name ?? ""))).length;
 }
 
 /**
@@ -5208,7 +5215,7 @@ export class Supervisor {
     names.delete(ev.toolCallId);
     const tally = this.turnVerificationTools.get(agentId);
     if (tally === undefined || name === undefined) return;
-    if (ev.status !== "completed" || isMeshToolCall(name)) return;
+    if (ev.status !== "completed" || !countsAsChecking(name)) return;
     this.turnVerificationTools.set(agentId, tally + 1);
   }
 

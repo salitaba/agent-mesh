@@ -118,6 +118,31 @@ test("live gate: a turn that only called mesh tools and then accepted over MCP l
   assert.match(String(r.answer.note), /ASSERTED, not EVIDENCED/, "and the seat is told so on the call itself");
 });
 
+test("live gate: a turn that read the artifact through the mesh before accepting has checked it", async () => {
+  // cronlite, 2026-09-30: the tech lead read a whole artifact twice through
+  // `mesh_artifact_read` and approved it, and the gate called that "unverified"
+  // because every mesh tool was the act of claiming. Reading the evidence is the act
+  // of checking it, so this one mesh tool counts, bare or with Claude's server prefix.
+  for (const name of ["mcp__mesh__mesh_artifact_read", "mesh_artifact_read"]) {
+    const r = await acceptMidTurn([opened("a1", name), closed("a1")]);
+    assert.equal(r.status, "EVIDENCED", name);
+    assert.equal(r.verified, true);
+    assert.equal(r.toolCalls, 1, "the read, and not the approve that made the claim");
+  }
+});
+
+test("live gate: only the READ of an artifact counts among mesh tools; listing, inbox and publishing still do not", async () => {
+  for (const name of ["mcp__mesh__mesh_artifact_list", "mcp__mesh__mesh_inbox", "mcp__mesh__mesh_artifact_publish", "mcp__mesh__mesh_send"]) {
+    const r = await acceptMidTurn([opened("m1", name), closed("m1")]);
+    assert.equal(r.status, "ASSERTED", `${name} is talking to the mesh, not checking anything`);
+  }
+});
+
+test("live gate: a read of an artifact that failed checked nothing", async () => {
+  const r = await acceptMidTurn([opened("a1", "mcp__mesh__mesh_artifact_read"), closed("a1", "failed")]);
+  assert.equal(r.status, "ASSERTED");
+});
+
 test("live gate: a turn whose only non-mesh call was denied lands ASSERTED", async () => {
   const r = await acceptMidTurn([opened("b1", "Bash"), closed("b1", "failed")]);
   assert.equal(r.status, "ASSERTED", "a refused Bash ran nothing, so it proved nothing");
@@ -183,6 +208,15 @@ test("structural gate: `mcp__mesh__mesh_*` calls are mesh calls, not verificatio
   ]);
   assert.equal(r.status, "ASSERTED");
   assert.equal(r.toolCalls, 0);
+});
+
+test("structural gate: a reported read of an artifact through the mesh verifies, beside the mesh calls that do not", async () => {
+  const r = await acceptStructurally([
+    { name: "mcp__mesh__mesh_inbox", args: {}, resultDigest: "d", status: "completed" },
+    { name: "mcp__mesh__mesh_artifact_read", args: { artifactRef: "artifact://CodePatch/x/1" }, resultDigest: "d", status: "completed" },
+  ]);
+  assert.equal(r.status, "EVIDENCED");
+  assert.equal(r.toolCalls, 1, "the read, and not the inbox call beside it");
 });
 
 test("structural gate: a failed call is not verification", async () => {

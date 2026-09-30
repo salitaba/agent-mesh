@@ -245,6 +245,23 @@ export function isMeshToolCall(name: string): boolean {
 }
 
 /**
+ * The mesh tools that READ the thing a claim rests on. Reading an artifact's
+ * content is checking it, however the read was made, so the verification gate
+ * counts these although every other mesh tool is the act of claiming, not the act
+ * of checking. Matched the way `isMeshToolCall` matches: the client's server prefix
+ * is stripped.
+ *
+ * Until this existed a tech lead that read a whole artifact twice through
+ * `mesh_artifact_read` and then approved it was "unverified" (`toolCalls: 0`), and
+ * the PM had to spend a second round on a bare `ls` before its acceptance counted:
+ * every criterion in the cronlite run was accepted twice, a blind round and a
+ * token-cheap one, five extra rounds for nothing either one proved.
+ */
+export function isEvidenceRead(name: string): boolean {
+  return String(name ?? "").replace(/^mcp__.+?__/, "") === "mesh_artifact_read";
+}
+
+/**
  * Clip every string inside a tool call's arguments to {@link TOOL_ARG_STRING_MAX}.
  *
  * Pure, and it never throws: it runs while a turn record is being written, and
