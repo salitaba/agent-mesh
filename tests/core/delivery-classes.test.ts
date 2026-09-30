@@ -36,6 +36,9 @@ function fakeTurn(agentId: string) {
 
 const acts = (m: MeshInstance, id: string) => m.kernel.state.agents.get(id)?.state.activations ?? 0;
 const classOf = (m: MeshInstance, messageId: string) => m.kernel.state.messages.get(messageId)?.control?.delivery;
+/** The turns a seat has been woken for, counted when they START (`activations` only moves as a turn ends). */
+const awakenings = async (m: MeshInstance, id: string) =>
+  (await m.store.read()).filter((e) => e.type === "agent.awakened" && (e.payload as { agentId?: string }).agentId === id);
 
 /** Every seat answers `done`, so a wake is visible as an activation and nothing else happens. */
 function quietRuntimes(m: MeshInstance, ids: string[]): void {
@@ -125,6 +128,93 @@ test("accrue: chatter is delivered, never woken for, and never nudged back", asy
     // class had already judged not worth a turn.
     assert.equal(acts(m, "dev") - before, 0, "accrued mail must never buy a turn, at send or on the sweep");
     assert.ok((m.kernel.state.unread.get("dev") ?? []).includes(sent.messageId!), "and it is still there to be read");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("accrue: mail that arrived while the seat was running buys it no turn when that turn ends", async () => {
+  // The third site of the same failure. The send path and the sweep already honoured
+  // the class; the retry `notifyTurnFinished` makes for "mail queued while running"
+  // counted the accrued FYI as mail worth a turn, and woke the seat with
+  // "1 messages waiting in your mailbox" -- cronlite, 2026-09-30: six such wakes, 9.6%
+  // of the run's spend, for mail the docs say never wakes anyone.
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { architect: ["dev"] },
+    bus: { delivery: { classes: true, coalesceMs: 60_000 } },
+  });
+  try {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const s = stub(m);
+    s.setScript("architect", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+    let inModel = false;
+    s.setScript("dev", async (_input, idx) => {
+      if (idx === 0) {
+        inModel = true;
+        await held;
+      }
+      return { operations: [{ op: "done" } as MeshOp] };
+    });
+    await m.supervisor.activateAgent("dev", { kind: "manual" });
+    await waitFor("dev is mid-turn, in the model", () => inModel && m.supervisor.isTurnInFlight("dev"));
+
+    const sent = await m.supervisor.sendMessage({ from: "architect", to: ["dev"], type: "INFORM", newThread: { subject: "fyi" }, payload: { note: "shipping friday" } });
+    assert.equal(sent.accepted, true, sent.reason);
+    assert.equal(classOf(m, sent.messageId!), "accrue");
+    const during = (await awakenings(m, "dev")).length;
+    assert.equal(during, 1, "fixture: the one turn in flight is the manual one");
+
+    release();
+    await waitFor("dev's turn has ended", () => !m.supervisor.isTurnInFlight("dev"));
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal((await awakenings(m, "dev")).length, during, "accrued mail buys no turn when the running one ends");
+    assert.ok((m.kernel.state.unread.get("dev") ?? []).includes(sent.messageId!), "and it is still in the box for the next natural turn");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("accrue: beside mail that IS worth a turn, the wake is for that mail and does not count the FYI", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "architect", role: "architect", interests: [] },
+      { id: "dev", role: "developer", interests: [] },
+    ],
+    mayContact: { architect: ["dev"] },
+    bus: { delivery: { classes: true, coalesceMs: 60_000 } },
+  });
+  try {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const s = stub(m);
+    s.setScript("architect", async () => ({ operations: [{ op: "done" } as MeshOp] }));
+    let inModel = false;
+    s.setScript("dev", async (_input, idx) => {
+      if (idx === 0) {
+        inModel = true;
+        await held;
+      }
+      return { operations: [{ op: "done" } as MeshOp] };
+    });
+    await m.supervisor.activateAgent("dev", { kind: "manual" });
+    await waitFor("dev is mid-turn, in the model", () => inModel && m.supervisor.isTurnInFlight("dev"));
+
+    const fyi = await m.supervisor.sendMessage({ from: "architect", to: ["dev"], type: "INFORM", newThread: { subject: "fyi" }, payload: { note: "shipping friday" } });
+    const ask = await m.supervisor.sendMessage({ from: "architect", to: ["dev"], type: "REQUEST_INFO", newThread: { subject: "q" }, payload: { q: "which repo ships first?" } });
+    assert.equal(classOf(m, fyi.messageId!), "accrue");
+    assert.equal(classOf(m, ask.messageId!), "deliver");
+    const during = (await awakenings(m, "dev")).length;
+
+    release();
+    await waitFor("the ask buys the turn the FYI does not", async () => (await awakenings(m, "dev")).length > during, 6000);
+    const woke = (await awakenings(m, "dev")).at(-1);
+    const note = (woke?.payload as { reason?: { note?: string } } | undefined)?.reason?.note;
+    assert.equal(note, "1 messages waiting in your mailbox.", "the depth it names is the mail worth a turn, not the box");
   } finally {
     await m.cleanup();
   }

@@ -580,15 +580,18 @@ export class Scheduler implements SchedulerPort {
   }
 
   /**
-   * Does this seat's own wake policy defer this message?
+   * Does this message, for this seat, buy no wake: its delivery class, or the
+   * seat's own wake policy, defers it?
    *
-   * One function because TWO sites ask it: the send-time gate in `handleEvent`
-   * and the wait-timer sweep, which would otherwise undo the first site's
-   * decision one tick later by counting the same unread mail as pressure. That
-   * second failure has a name in this repo — the accrue test in
-   * `tests/core/delivery-classes.test.ts` pins it as "correctly not woken, then
-   * woken anyway, at the same cost" — and a policy only the send path honoured
-   * would be exactly it.
+   * One function because THREE sites ask it: the send-time gate in `handleEvent`,
+   * the wait-timer sweep, and the retry `notifyTurnFinished` makes for mail that
+   * arrived while a turn was running. Each would otherwise undo the first site's
+   * decision by counting the same unread mail as pressure. That failure has a
+   * name in this repo -- the accrue test in `tests/core/delivery-classes.test.ts`
+   * pins it as "correctly not woken, then woken anyway, at the same cost" -- and
+   * the retry was the site that still did it: `accrue` documents "wakes: never",
+   * and six of a live run's 37 wakes (9.6% of its spend) were headed by
+   * `INFORM/accrue` with the note "N messages waiting in your mailbox".
    *
    * Obligation beats the setting by construction rather than by exception:
    * `obligesRecipients` is the predicate the debt is opened with, so a message
@@ -615,6 +618,11 @@ export class Scheduler implements SchedulerPort {
     // work just as surely as a handoff is, and the type name alone cannot tell
     // it from the PASSED that means the opposite.
     if (movesWorkMessage(m)) return false;
+    // The class the send path honours before it ever asks this function. It sits
+    // below the escapes above because the class derivation never gives `accrue` to
+    // an ask, a work-moving message or the operator's mail -- so for every message
+    // that reaches here with one, deferring is what the send path already decided.
+    if (m.control?.delivery === "accrue") return true;
     const wake = this.state.agents.get(agentId)?.definition.wake;
     // Checked AFTER the three escapes above and never before them, which is
     // what keeps this a batching preference rather than an authority
