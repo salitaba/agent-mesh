@@ -474,11 +474,16 @@ export class Scheduler implements SchedulerPort {
 
   candidatesFor(eventType: EventType, excludeActor?: string): string[] {
     const out: string[] = [];
-    for (const [agentId, patterns] of this.interests) {
+    for (const agentId of this.interests.keys()) {
       if (agentId === excludeActor) continue;
-      if (patterns.some((p) => interestMatches(p, eventType))) out.push(agentId);
+      if (this.interestedIn(agentId, eventType)) out.push(agentId);
     }
     return out;
+  }
+
+  /** Does this seat's declared `interests` match the event type? The one question the wake gates ask. */
+  private interestedIn(agentId: string, eventType: EventType): boolean {
+    return (this.interests.get(agentId) ?? []).some((p) => interestMatches(p, eventType));
   }
 
   start(): void {
@@ -595,8 +600,8 @@ export class Scheduler implements SchedulerPort {
   }
 
   /**
-   * Does this message, for this seat, buy no wake: its delivery class, or the
-   * seat's own wake policy, defers it?
+   * Does this message, for this seat, buy no wake: its delivery class, the
+   * seat's own wake policy, or the broadcast gate defers it?
    *
    * One function because THREE sites ask it: the send-time gate in `handleEvent`,
    * the wait-timer sweep, and the retry `notifyTurnFinished` makes for mail that
@@ -638,6 +643,14 @@ export class Scheduler implements SchedulerPort {
     // an ask, a work-moving message or the operator's mail -- so for every message
     // that reaches here with one, deferring is what the send path already decided.
     if (m.control?.delivery === "accrue") return true;
+    // The broadcast gate `handleEvent` applies at send time, asked again here because this is the
+    // function the other two sites read. The retry `notifyTurnFinished` makes did not know it: a
+    // broadcast that landed in a busy seat's box, correctly not woken for, was a wake at the end of
+    // that turn, at the same cost and for the same message (16 of the 42 mail wakes of the fifth
+    // cronlite run were headed by a broadcast INFORM the seat had not subscribed to). The floor
+    // under the gate is `STALE_MAIL_MS`, which counts every unread message; a seat that wants
+    // announcements as they are made lists `message.sent` in its `interests`.
+    if (m.control?.mode === "broadcast" && !this.interestedIn(agentId, "message.sent")) return true;
     const wake = this.state.agents.get(agentId)?.definition.wake;
     // Checked AFTER the three escapes above and never before them, which is
     // what keeps this a batching preference rather than an authority
