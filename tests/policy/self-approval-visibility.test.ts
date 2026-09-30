@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeMesh } from "../helpers";
+import { evidenceContent, makeMesh } from "../helpers";
 import { buildRunReport, renderRunReport } from "../../packages/core/src/run-report";
 import type { MeshOp } from "../../packages/protocol/src/index";
 
@@ -31,8 +31,8 @@ const turnFor = (agentId: string) =>
 type Mesh = Awaited<ReturnType<typeof makeMesh>>;
 const op = (m: Mesh, actor: string, o: MeshOp) => m.supervisor.executeOp(actor, o, turnFor(actor));
 
-async function submittedReport(m: Mesh): Promise<string> {
-  const created = await m.supervisor.createArtifact({ actorId: "qa", name: "test-report", type: "TestReport", content: "ran the suite, 39 passed, 0 failed — with the commands and their output" });
+async function submittedReport(m: Mesh, content = "ran the suite, 39 passed, 0 failed — with the commands and their output"): Promise<string> {
+  const created = await m.supervisor.createArtifact({ actorId: "qa", name: "test-report", type: "TestReport", content });
   if (!("artifact" in created)) throw new Error("create failed");
   const moved = await m.supervisor.transitionArtifact("qa", created.artifact.id, { to: "READY_FOR_REVIEW" });
   assert.equal(moved.ok, true, moved.reason);
@@ -88,6 +88,61 @@ test("an artifact approved by its author AND by someone else is not flagged", as
     const id = await submittedReport(m);
     await op(m, "qa", { op: "approve", subject: "quality", artifactId: id } as MeshOp);
     // The operator signs it too (or any seat with standing): it is no longer the author's word alone.
+    const human = await m.supervisor.recordDecision("human", "approve", "quality", id, "read it");
+    assert.equal(human.ok, true, human.reason);
+    const delivered = buildRunReport(m.kernel.state).delivered.find((a) => a.id === id);
+    assert.ok(delivered);
+    assert.equal(delivered.selfApproved, undefined);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("the PM accepting a criterion on the strength of the report is not a second review of it", async () => {
+  // The real shape, and the one the first test above does not have. In the cronlite run the
+  // PM cited QA's self-approved TestReport as the evidence for three criteria, and each
+  // acceptance is an `approve` record that carries the report's artifactId. Counted as
+  // approvals of the report they made the run report say "approved by someone else", so the
+  // flag the approval-time caveat promises ("the run report lists it as self-approved") never
+  // fired, on either of the run's two reports.
+  const m = await makeMesh({
+    agents: [QA, PM],
+    mayContact: { qa: ["pm"], pm: ["qa"] },
+    mode: "parked",
+    criteria: [{ id: "quality-verified", description: "QA verification passed, backed by a test report" }],
+  });
+  try {
+    const id = await submittedReport(m, evidenceContent("ran the suite: 39 passed, 0 failed"));
+    const own = await op(m, "qa", { op: "approve", subject: "quality", artifactId: id } as MeshOp);
+    assert.equal(own.ok, true, own.reason);
+
+    const accepted = await m.supervisor.recordDecision("pm", "approve", "criterion:quality-verified", id, "the report says the suite passes");
+    assert.equal(accepted.ok, true, accepted.reason);
+    const records = [...m.kernel.state.approvals.values()].flat().filter((r) => r.artifactId === id);
+    assert.ok(records.some((r) => r.actorId === "pm" && r.subject.startsWith("criterion:")), "fixture: the PM's acceptance is on the record with the report's id");
+
+    const report = buildRunReport(m.kernel.state);
+    const delivered = report.delivered.find((a) => a.id === id);
+    assert.ok(delivered, "fixture: the report delivered it");
+    assert.equal(delivered.selfApproved, true, "the PM's acceptance of a criterion is not a review of the artifact it cites");
+    assert.match(renderRunReport(report), /approved only by its own author \(qa\)/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("a real second reviewer still clears the flag when a criterion acceptance is also on the record", async () => {
+  const m = await makeMesh({
+    agents: [QA, PM],
+    mayContact: { qa: ["pm"], pm: ["qa"] },
+    mode: "parked",
+    criteria: [{ id: "quality-verified", description: "QA verification passed, backed by a test report" }],
+  });
+  try {
+    const id = await submittedReport(m, evidenceContent("ran the suite: 39 passed, 0 failed"));
+    await op(m, "qa", { op: "approve", subject: "quality", artifactId: id } as MeshOp);
+    const cited = await m.supervisor.recordDecision("pm", "approve", "criterion:quality-verified", id, "cited");
+    assert.equal(cited.ok, true, cited.reason);
     const human = await m.supervisor.recordDecision("human", "approve", "quality", id, "read it");
     assert.equal(human.ok, true, human.reason);
     const delivered = buildRunReport(m.kernel.state).delivered.find((a) => a.id === id);

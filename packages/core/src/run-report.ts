@@ -403,12 +403,21 @@ function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact 
  * records are dropped when a new version replaces the artifact, so this is a fact
  * about the version that was delivered. Only `approve`/`pass` count: a rejection is
  * not an endorsement, and an absent approval is not self-approval, it is none.
+ *
+ * A record whose subject is a CRITERION is not a review of the artifact it carries.
+ * The PM accepting `quality-verified` on the strength of QA's report is an `approve`
+ * record with the report's artifactId, because that is how the evidence is cited, and
+ * counting it made QA's self-approved TestReport read as approved by someone else:
+ * the flag never fired on either of the second cronlite run's reports, although the
+ * seat had been told at the moment of approval that "the run report lists it as
+ * self-approved".
  */
 function selfApprovedArtifactIds(state: Projections): Set<string> {
   const approvers = new Map<string, Set<string>>();
   for (const list of state.approvals.values()) {
     for (const r of list) {
       if (!r.artifactId || (r.kind !== "approve" && r.kind !== "pass")) continue;
+      if (r.subject.startsWith("criterion:")) continue;
       const set = approvers.get(r.artifactId) ?? new Set<string>();
       set.add(r.actorId);
       approvers.set(r.artifactId, set);
