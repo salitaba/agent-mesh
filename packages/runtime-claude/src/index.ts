@@ -48,7 +48,7 @@ import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 import { withOutputVoice } from "../../core/src/context";
 import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
 import { landingDenial } from "./landing-gate";
-export { describeHostLeaks, outerSessionEnvNames, withoutOuterSession } from "./host-isolation";
+export { describeHostLeaks, describeIsolation, outerSessionEnvNames, withoutOuterSession } from "./host-isolation";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);

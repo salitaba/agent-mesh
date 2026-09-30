@@ -56,10 +56,20 @@ const claudeMesh = (extraRuntimeLine = ""): string =>
 // A config dir with nothing in it, so the only thing that can leak here is the environment under test.
 const emptyConfig = (): string => fs.mkdtempSync(path.join(os.tmpdir(), "mesh-hostiso-cfg-"));
 
+// Whatever session THIS suite is running inside, unset: a developer runs these from a Claude Code
+// terminal, which is exactly the case being detected, and a session can hold fifty variables of the
+// family, more than a warning spells out.
+const launchedFromNowhere = (): Record<string, undefined> => Object.fromEntries(outerSessionEnvNames(process.env).map((name) => [name, undefined]));
+
 test("a mesh with Claude seats, started from inside another session, says so at boot and names the knob", async () => {
   const cfg = emptyConfig();
   try {
-    const warned = await bootWarnings(claudeMesh(), { CLAUDE_CONFIG_DIR: cfg, CLAUDE_EFFORT: "max", CLAUDE_CODE_SESSION_ID: "11111111-2222-4333-8444-555555555555" });
+    const warned = await bootWarnings(claudeMesh(), {
+      ...launchedFromNowhere(),
+      CLAUDE_CONFIG_DIR: cfg,
+      CLAUDE_EFFORT: "max",
+      CLAUDE_CODE_SESSION_ID: "11111111-2222-4333-8444-555555555555",
+    });
     const leak = warned.find((w) => /another Claude Code session/.test(w));
     assert.ok(leak, `expected a host-isolation warning, got: ${JSON.stringify(warned)}`);
     assert.match(leak, /CLAUDE_CODE_SESSION_ID, CLAUDE_EFFORT/);
@@ -92,10 +102,7 @@ test("a mesh that runs no Claude seat has nothing to lend them, so it is not war
 test("a clean launching environment and an empty settings directory boot quietly", async () => {
   const cfg = emptyConfig();
   try {
-    // Whatever session THIS suite is running inside is unset for the boot, not a fixed list of names:
-    // a developer runs these from a Claude Code terminal, which is exactly the case being detected.
-    const outer = Object.fromEntries(outerSessionEnvNames(process.env).map((name) => [name, undefined]));
-    const warned = await bootWarnings(claudeMesh(), { CLAUDE_CONFIG_DIR: cfg, ...outer });
+    const warned = await bootWarnings(claudeMesh(), { CLAUDE_CONFIG_DIR: cfg, ...launchedFromNowhere() });
     assert.deepEqual(warned.filter((w) => /Claude Code session|isolate_host|settings\.json/.test(w)), []);
   } finally {
     fs.rmSync(cfg, { recursive: true, force: true });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { describeHostLeaks, outerSessionEnvNames, withoutOuterSession } from "../../packages/runtime-claude/src/host-isolation";
+import { describeHostLeaks, describeIsolation, outerSessionEnvNames, withoutOuterSession } from "../../packages/runtime-claude/src/host-isolation";
 import { HOST_PID_ENV, seatEnv } from "../../packages/runtime-claude/src/orphans";
 import { ClaudeRuntimeAdapter, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
 import { resolveConfig } from "../../packages/config/src/index";
@@ -45,6 +45,76 @@ test("only the launching session's variables are taken out; credentials, routing
   assert.deepEqual(outerSessionEnvNames(env), Object.keys(OUTER).sort());
   assert.deepEqual(withoutOuterSession(env), { ...KEPT, UNSET: undefined }, "scrubbing is for session leakage, not a way to break auth");
   assert.deepEqual(outerSessionEnvNames(KEPT), []);
+});
+
+/**
+ * The environment of a Claude Code session running in a container, as measured in the second
+ * cronlite run (56 `CLAUDE*` variables; the names here are the ones that matter, values are
+ * stand-ins). `isolate_host` took out ten of them: the five names the first run had shown and the
+ * artifact plumbing. Everything below the first group still reached every seat.
+ */
+const SEEN_IN_FIRST_RUN = ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_EFFORT", "MAX_THINKING_TOKENS", "CLAUDE_CODE_ARTIFACT_DB", "CLAUDE_CODE_ARTIFACT_ASSETS"];
+const LEFT_BEHIND_BY_THE_LIST = [
+  "CLAUDE_CODE_REMOTE_SESSION_ID",
+  "CLAUDE_SESSION_INGRESS_TOKEN_FILE",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
+  "CLAUDE_CODE_DEBUG",
+  "CLAUDE_CODE_DIAGNOSTICS_FILE",
+  "CLAUDE_CODE_USE_CCR_V2",
+  "CLAUDE_CODE_REMOTE",
+  "CLAUDE_CODE_REMOTE_HERMETIC_MODE",
+  "CLAUDE_CODE_CONTAINER_ID",
+  "CLAUDE_CODE_ACCOUNT_UUID",
+  "CLAUDE_CODE_USER_EMAIL",
+  "CLAUDE_CODE_WORKER_EPOCH",
+  "CLAUDE_AUTO_BACKGROUND_TASKS",
+  "CLAUDE_ENABLE_STREAM_WATCHDOG",
+  "CLAUDE_PID",
+];
+const CONTAINER: Record<string, string> = Object.fromEntries([...SEEN_IN_FIRST_RUN, ...LEFT_BEHIND_BY_THE_LIST].map((name) => [name, `outer-${name.toLowerCase()}`]));
+/** Names that say how to reach the model: the family's exceptions. */
+const ROUTING = [
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+  "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+  "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+  "CLAUDE_CODE_CLIENT_CERT",
+  "CLAUDE_CODE_CLIENT_KEY",
+  "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+  "CLAUDE_CODE_PROXY_RESOLVES_HOSTS",
+  "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+  "CLAUDE_CONFIG_DIR",
+];
+const ROUTED: Record<string, string> = Object.fromEntries(ROUTING.map((name) => [name, `routing-${name.toLowerCase()}`]));
+
+test("isolation removes the launching session's whole namespace, not the names the first run happened to show", () => {
+  const env = { ...CONTAINER, ...ROUTED, ...KEPT, DISABLE_AUTOUPDATER: "1", MCP_TOOL_TIMEOUT: "60000" };
+  const seat = withoutOuterSession(env);
+  for (const name of [...SEEN_IN_FIRST_RUN, ...LEFT_BEHIND_BY_THE_LIST]) assert.equal(name in seat, false, `${name} does not reach the seat`);
+  assert.deepEqual(
+    Object.keys(seat).filter((k) => k.startsWith("CLAUDE")).sort(),
+    [...ROUTING, ...Object.keys(KEPT).filter((k) => k.startsWith("CLAUDE"))].filter((k, i, all) => all.indexOf(k) === i).sort(),
+    "of the family, only what authenticates or routes the CLI is left",
+  );
+  // What is outside the namespace is not isolation's business.
+  for (const [name, value] of Object.entries({ ...KEPT, DISABLE_AUTOUPDATER: "1", MCP_TOOL_TIMEOUT: "60000" })) assert.equal(seat[name], value, `${name} is untouched`);
+  assert.deepEqual(outerSessionEnvNames(env), [...Object.keys(CONTAINER)].sort(), "and the boot detector names exactly what isolation removes");
+});
+
+test("a provider flag is the family's exception, and the outer session's transport flag next to it is not", () => {
+  const seat = withoutOuterSession({ CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1", CLAUDE_CODE_USE_FOUNDRY: "1", CLAUDE_CODE_USE_CCR_V2: "1" });
+  assert.deepEqual(Object.keys(seat).sort(), ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_VERTEX"]);
+});
+
+test("a name that only begins like the family is still in it, and one that merely contains it is not", () => {
+  const seat = withoutOuterSession({ CLAUDE_SOMETHING_NEW: "1", CLAUDEFUTURE: "1", MY_CLAUDE_TOKEN: "x", NOT_CLAUDECODE: "y" });
+  assert.deepEqual(seat, { MY_CLAUDE_TOKEN: "x", NOT_CLAUDECODE: "y" }, "a variable added by the next release goes without being named");
 });
 
 test("seatEnv scrubs an inherited session only when isolating, and never the operator's own env", () => {
@@ -92,6 +162,34 @@ test("the boot detector names what would leak, and the knob that closes it", () 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a long list is counted, not spelled out, and the outer session's credentials are named apart", () => {
+  const leaks = describeHostLeaks({ env: { ...CONTAINER, PATH: "/usr/bin" }, configDir: configDir(undefined) });
+  const removed = outerSessionEnvNames(CONTAINER);
+  assert.ok(removed.length > 20, "fixture: a container-sized list");
+  assert.equal(leaks.length, 3, "the session line, the credentials line, the knob");
+  assert.match(leaks[0]!, new RegExp(`\\(${removed.slice(0, 6).join(", ")} and ${removed.length - 6} more\\)`), "the first six names, then how many more");
+  assert.ok(leaks[0]!.length < 450, `one readable line, not ${leaks[0]!.length} characters`);
+  assert.doesNotMatch(leaks[0]!, /CLAUDE_PID/, "the tail is counted, not listed");
+  assert.match(leaks[1]!, /CLAUDE_CODE_MESSAGING_TOKEN.*CLAUDE_SESSION_INGRESS_TOKEN_FILE|CLAUDE_SESSION_INGRESS_TOKEN_FILE.*CLAUDE_CODE_MESSAGING_TOKEN/);
+  assert.match(leaks[1]!, /look like the outer session's own credentials, and every seat's shell can read them/);
+  assert.match(leaks[2]!, /mesh\.runtime\.isolate_host: true/);
+  // Few names are listed whole, and a session with no token-like name has no credentials line:
+  // `MAX_THINKING_TOKENS` is a setting, and a setting is not a secret for containing a word.
+  const few = describeHostLeaks({ env: { CLAUDE_EFFORT: "max", CLAUDE_CODE_SESSION_ID: "x", MAX_THINKING_TOKENS: "31999" }, configDir: configDir(undefined) });
+  assert.match(few[0]!, /\(CLAUDE_CODE_SESSION_ID, CLAUDE_EFFORT, MAX_THINKING_TOKENS\)/);
+  assert.equal(few.length, 2);
+});
+
+test("what isolation removed is written down in full, with the names it kept", () => {
+  assert.equal(describeIsolation({ PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-test" }), null, "nothing to remove, nothing to say");
+  const said = describeIsolation({ ...CONTAINER, CLAUDE_CODE_OAUTH_TOKEN: "t", CLAUDE_CONFIG_DIR: "/cfg", PATH: "/usr/bin" })!;
+  const removed = outerSessionEnvNames(CONTAINER);
+  assert.match(said, new RegExp(`seats run without ${removed.length} variables of the launching environment`));
+  for (const name of removed) assert.ok(said.includes(name), `${name} is named: the list is for finding what a seat that cannot log in lost`);
+  assert.match(said, /kept, because they authenticate or route the CLI: CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CONFIG_DIR/);
+  assert.match(describeIsolation({ CLAUDE_EFFORT: "max" })!, /without 1 variable of the launching environment \(CLAUDE_EFFORT\)$/);
 });
 
 test("a machine with nothing to lend says nothing", () => {

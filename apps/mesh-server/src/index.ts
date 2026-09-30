@@ -54,7 +54,7 @@ import { configDrift } from "./config-drift";
 import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-staging-mcp";
 import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
-import { ClaudeRuntimeAdapter, describeHostLeaks, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
+import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { getApiToken, requireAuth, resolveActor } from "./auth";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
@@ -656,10 +656,17 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   // is reading the boot log and can still choose. Only for a mesh that runs Claude seats
   // and has not already closed the door (`mesh.runtime.isolate_host`). See
   // host-isolation.ts.
-  if (config.isolateHost !== true && Object.values(config.agents).some((a) => a.runtime === "claude")) {
-    for (const leak of describeHostLeaks()) {
-      console.warn(`warn: ${leak}`);
-      auditLog(`[host-isolation] ${leak}`);
+  if (Object.values(config.agents).some((a) => a.runtime === "claude")) {
+    if (config.isolateHost !== true) {
+      for (const leak of describeHostLeaks()) {
+        console.warn(`warn: ${leak}`);
+        auditLog(`[host-isolation] ${leak}`);
+      }
+    } else {
+      // With the door closed there is nothing to warn about, but a seat that then cannot log
+      // in should be answerable from the log: what was taken out, and which names were kept.
+      const done = describeIsolation();
+      if (done) auditLog(`[host-isolation] ${done}`);
     }
   }
   const resume = kernel.state.eventCount > 0;
