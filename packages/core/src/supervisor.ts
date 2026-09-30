@@ -9457,7 +9457,37 @@ export class Supervisor {
     return (
       `⚠ ${state.dirty.length} file(s) in your worktree are NOT committed (${state.untracked} untracked): ${shown}${more}. ` +
       `Nothing here is in the product, no reviewer can read it, and publishing a CodePatch does not commit it — ` +
-      `take a write lease and use the \`commit\` op.${unmerged}`
+      `take a write lease and use the \`commit\` op, and do it BEFORE you ask for review: a commit made after a review is a new version, ` +
+      `and that version is reviewed again.${unmerged}`
+    );
+  }
+
+  /**
+   * The caveat for a review ask on a CodePatch whose owner has not committed it.
+   *
+   * `merge` refuses a patch that records no commit, and the commit it then asks for
+   * is recorded as a NEW version of the patch -- DRAFT again, its approvals left on
+   * the version they were given to. A seat that follows the flow its role describes
+   * (publish, ask for review, walk the ladder) therefore finds out only at the last
+   * rung, and pays for a second full review of identical work (cronlite run 2: the
+   * developer did exactly that, then told pm it had merged).
+   *
+   * A caveat, not a refusal: a seat may legitimately commit through its own shell and
+   * let `merge` take the branch, and the review it is asking for is real either way.
+   * Three facts must hold for it to say anything, so the `git status` is paid for only
+   * on an ask that can need it: the artifact is a CodePatch that records no commit,
+   * its owner could commit, and its worktree holds work no commit does.
+   */
+  private async unrecordedPatchCaveat(a: Artifact): Promise<string | undefined> {
+    if (a.type !== "CodePatch") return undefined;
+    if (typeof a.metadata?.commit === "string" && a.metadata.commit.length > 0) return undefined;
+    if (!this.canCommit(a.owner)) return undefined;
+    const state = await this.uncommittedFiles(a.owner);
+    if (!state || state.dirty.length === 0) return undefined;
+    return (
+      `${a.owner} has ${state.dirty.length} uncommitted file(s) in its worktree and '${a.name}' records no commit: reviewers can read only what was published, ` +
+      `\`merge\` will refuse a patch with nothing committed, and a commit made after this review becomes a new version that is reviewed again — ` +
+      `\`mesh_commit\` first, then ask for review`
     );
   }
 
@@ -10331,12 +10361,14 @@ export class Supervisor {
           // caveat channel an inert approval uses, which seats it named were left
           // off the ask and why. This reaches the seat's tool result (the MCP
           // bridge's `note`) and its next context via `endSummary` → `rememberMemory`.
-          const partial =
+          const partialRaw =
             cannotSettle.length > 0
               ? `${cannotSettle.join(", ")} cannot deliver a verdict on this ${a.type} — ${canSettle.join(", ")} can, so the ask stands with them; ` +
                 `${cannotSettle.join(", ")} ${cannotSettle.length === 1 ? "was" : "were"} left off it and owe${cannotSettle.length === 1 ? "s" : ""} nothing` +
                 (cannotSettle.includes(a.owner) ? ` (${a.owner} owns it and cannot review their own work)` : "")
               : undefined;
+          // Both are things the asker needs to hear about an ask that DID go out.
+          const partial = [partialRaw, await this.unrecordedPatchCaveat(a)].filter((x): x is string => !!x).join("; ") || undefined;
           return { ok: true, op: op.op, reason: partial, ...(partial ? { caveat: true } : {}), messageId: res.messageId, deliveryDowngraded: res.deliveryDowngraded };
         }
         // `?? op.artifactUri`: a URI-only verdict that resolves to nothing must
@@ -11086,7 +11118,8 @@ export class Supervisor {
             (recordedCommit
               ? "and the commit it records has an empty diff, so none of this patch's work is on the product branch. "
               : `and the patch records no commit, so its work was never committed: files ${artifact.owner} wrote but did not commit are on no branch. `) +
-            `${artifact.owner} must \`mesh_commit\` the patch's files first, then merge again. The patch stays MERGEABLE and implementation-merged stays UNEVIDENCED`;
+            `${artifact.owner} must \`mesh_commit\` the patch's files. That records the commit as a NEW version of the patch, which starts over at DRAFT and needs review again before it can be merged ` +
+            `(commit BEFORE asking for review next time). This version stays MERGEABLE, and implementation-merged stays UNEVIDENCED`;
           this.auditLine(`merge of '${artifact.name}': ${reason}`);
           await this.denied(actorId, artifactId, "merge (nothing landed)", { decision: "DENY", reason, ruleId: "merge.nothing-committed" });
           return { ok: false, op: "merge", reason };
