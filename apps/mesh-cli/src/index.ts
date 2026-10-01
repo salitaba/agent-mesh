@@ -7,6 +7,7 @@ import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
+import { UnsafeListenError } from "../../mesh-server/src/web-security";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
 import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand, type Flags } from "./projects";
@@ -71,7 +72,7 @@ function takesValue(name: string, next: string): boolean {
  * `launchMesh` call). Kept beside them so the two cannot drift.
  */
 const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
-  "port", "tui", "no-tui", "git", "no-git", "fresh", "resume", "live", "parked", "ui-only", "no-demo", "help",
+  "port", "bind", "tui", "no-tui", "git", "no-git", "fresh", "resume", "live", "parked", "ui-only", "no-demo", "help",
 ]);
 
 /**
@@ -326,9 +327,13 @@ usage:
   mesh init [dir]                          scaffold mesh.yaml + roles
   mesh validate <mesh.yaml>                schema + cross-field validation
   mesh emit-schemas [dir]                  write canonical JSON schemas
-  mesh run <mesh.yaml> [--port n] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
-  mesh serve <mesh.yaml> [--port n] [--git|--no-git]             live + dashboard (alias: up; same as run --no-tui)
-  mesh console <mesh.yaml> [--port n] [--git|--no-git]           parked stepper console (alias: ui)
+  mesh run <mesh.yaml> [--port n] [--bind addr] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
+  mesh serve <mesh.yaml> [--port n] [--bind addr] [--git|--no-git]   live + dashboard (alias: up; same as run --no-tui)
+  mesh console <mesh.yaml> [--port n] [--bind addr] [--git|--no-git] parked stepper console (alias: ui)
+    --bind       address to listen on (default mesh.server.host, 127.0.0.1). Anything that is not
+                 loopback is reachable from the network and needs MESH_API_TOKEN of 32+ characters
+                 (openssl rand -hex 32); the server refuses to start without one.
+  mesh --version                           print the version
     git: writing agents commit through worktrees. Default comes from
     mesh.workspace.git, which is ON when the key is absent. With git off
     every mesh_commit is refused, so criteria needing landed code never
@@ -407,6 +412,8 @@ async function launchMesh(opts: {
   configPath: string;
   mode: LaunchMode;
   port?: number;
+  /** `--bind`; absent means `mesh.server.host`. */
+  host?: string;
   fresh?: boolean;
   allowResume?: boolean;
   /** Operator intent; "auto" (or absent) defers to `mesh.workspace.git`. */
@@ -431,6 +438,7 @@ async function launchMesh(opts: {
   const handle = await startServer({
     configPath: file,
     port: opts.port,
+    host: opts.host,
     gitMode: opts.gitMode,
     mode: opts.mode,
     // backward compat for any external startServer caller reading uiOnly
@@ -513,7 +521,24 @@ async function launchMesh(opts: {
   return 0;
 }
 
+/** The version in the package.json this build ships beside (the repo root, or `/app` in the image). */
+export function packageVersion(): string {
+  for (const rel of [["..", "..", "..", "..", "package.json"], ["..", "..", "..", "..", "..", "package.json"]]) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, ...rel), "utf8")) as { name?: string; version?: string };
+      if (pkg.name === "agent-mesh" && pkg.version) return pkg.version;
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return "unknown";
+}
+
 export async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "version") {
+    console.log(`agent-mesh ${packageVersion()}`);
+    return 0;
+  }
   const args = parseArgs(argv);
   for (const w of unknownFlagWarnings(args.command, args.flags)) console.warn(`warn: ${w}`);
   // `--project id` rewrites the bus to the host's proxy prefix, so every
@@ -523,11 +548,13 @@ export async function main(argv: string[]): Promise<number> {
   try {
     switch (args.command) {
       case "host": {
-        return runHostCommand(args.flags);
+        // Awaited so a refusal to start (a port in use, a network bind with no token) reaches the
+        // catch below as one line and an exit code, instead of escaping as an unhandled rejection.
+        return await runHostCommand(args.flags);
       }
       case "project":
       case "projects": {
-        return runProjectCommand(args.positional, args.flags);
+        return await runProjectCommand(args.positional, args.flags);
       }
       case "backups":
       case "restore": {
@@ -539,9 +566,9 @@ export async function main(argv: string[]): Promise<number> {
           console.log(args.command === "backups" ? BACKUPS_HELP : RESTORE_HELP);
           return 0;
         }
-        return args.command === "backups"
+        return await (args.command === "backups"
           ? runBackupsCommand(args.positional, args.flags)
-          : runRestoreCommand(args.positional, args.flags);
+          : runRestoreCommand(args.positional, args.flags));
       }
       case "init": {
         const dir = path.resolve(args.positional[0] ?? ".");
@@ -598,10 +625,15 @@ export async function main(argv: string[]): Promise<number> {
         if (wantTui && args.command !== "run" && !withTui) {
           console.warn("warn: --tui needs a TTY; falling back to headless dashboard mode");
         }
-        return launchMesh({
+        const bind = typeof args.flags.bind === "string" && args.flags.bind.trim() ? args.flags.bind.trim() : undefined;
+        // Awaited, like every command here that returns a promise: a bare `return` hands the promise
+        // to the caller and a rejection (a config error, a refusal to listen) skips the catch below,
+        // which is the one place that turns it into a message and an exit code.
+        return await launchMesh({
           configPath: file,
           mode,
           port: args.flags.port ? Number(args.flags.port) : undefined,
+          host: bind,
           fresh: Boolean(args.flags.fresh),
           allowResume: Boolean(args.flags.resume),
           gitMode,
@@ -829,7 +861,7 @@ export async function main(argv: string[]): Promise<number> {
         return await offlineLedger(args);
       }
       case "bench": {
-        return runBenchmark(args.flags);
+        return await runBenchmark(args.flags);
       }
       case "help":
       default: {
@@ -842,6 +874,11 @@ export async function main(argv: string[]): Promise<number> {
     if (err instanceof ConfigError) {
       console.error(String(err.message));
       return 2;
+    }
+    if (err instanceof UnsafeListenError) {
+      // EX_CONFIG: a service manager can tell "will never start as configured" from a crash.
+      console.error(`mesh ${args.command}: ${err.message}`);
+      return 78;
     }
     console.error(`mesh ${args.command}: ${(err as Error).message}`);
     return 1;

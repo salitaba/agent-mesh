@@ -53,6 +53,7 @@ import {
 } from "../../../packages/observability/src/index";
 import type { MeshEvent } from "../../../packages/protocol/src/index";
 import { requireAuth } from "./auth";
+import { PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 
 /**
  * Path prefixes owned by a project child.
@@ -92,6 +93,9 @@ export const CHILD_ROUTE_PREFIXES = new Set([
   "turns",
   "workspace",
 ]);
+
+/** What the host will pass through to a child in one request body, if `MESH_MAX_BODY_BYTES` asks for less. */
+const PROXY_MIN_BODY_BYTES = 8 * 1024 * 1024;
 
 /**
  * Headers that describe one hop and must not be copied to the next one.
@@ -274,6 +278,8 @@ export type HostServer = http.Server & {
   enforceLimits(): Promise<void>;
   /** Current aggregate resource picture. */
   spend(): HostSpend;
+  /** `/readyz` answers 503 from here on, so a load balancer stops sending work while the host drains. */
+  beginDrain(): void;
 };
 
 export function createHostServer(deps: {
@@ -654,6 +660,9 @@ export function createHostServer(deps: {
     return summary;
   };
 
+  // Set when shutdown begins, so `/readyz` stops saying "ready" while children drain.
+  let draining = false;
+
   const server = http.createServer((req, res) => {
     void route(req, res).catch((err) => {
       if (res.headersSent) {
@@ -669,13 +678,13 @@ export function createHostServer(deps: {
     const u = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const parts = u.pathname.split("/").filter((p) => p.length > 0);
     const json = (code: number, body: unknown): void => {
-      res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
+      res.writeHead(code, { "content-type": "application/json" });
       res.end(JSON.stringify(body));
     };
+    // Bounded, like the child's: over the limit it throws `PayloadTooLargeError`, which the catch
+    // at the end of this function turns into a 413.
     const body = async (): Promise<Record<string, unknown>> => {
-      const chunks: Buffer[] = [];
-      for await (const c of req) chunks.push(c as Buffer);
-      const raw = Buffer.concat(chunks).toString("utf8");
+      const raw = (await readBody(req, maxBodyBytes())).toString("utf8");
       if (!raw) return {};
       try {
         return JSON.parse(raw) as Record<string, unknown>;
@@ -685,6 +694,19 @@ export function createHostServer(deps: {
     };
 
     try {
+      applySecurityHeaders(res, "api");
+
+      // Probes answer before the guard and before auth: a kubelet addresses the pod by IP and
+      // holds no credential, and the answer carries no counts or ids. `/health` is the detailed one.
+      if (req.method === "GET" && parts.length === 1 && (parts[0] === "healthz" || parts[0] === "readyz")) {
+        if (parts[0] === "healthz") return json(200, { status: "ok" });
+        return draining ? json(503, { status: "draining" }) : json(200, { status: "ready" });
+      }
+
+      // Host stops DNS rebinding, Origin stops a forged cross-site POST. See web-security.ts.
+      const verdict = guardRequest(req);
+      if (!verdict.ok) return json(verdict.status, { error: verdict.error, code: verdict.code });
+
       // Operator auth on the host's own boundary. The child tokens below are a
       // separate, internal credential and are never accepted from outside.
       const auth = requireAuth(req, u, parts);
@@ -919,6 +941,7 @@ export function createHostServer(deps: {
 
       return json(404, { error: `no route: ${req.method} ${u.pathname}` });
     } catch (err) {
+      if (err instanceof PayloadTooLargeError) return respondTooLarge(res, err);
       if (err instanceof ProjectError) {
         const code = err.code === "duplicate_id" ? 409 : err.code === "unknown_project" ? 404 : 400;
         return json(code, { error: err.message, code: err.code, detail: err.detail });
@@ -950,7 +973,6 @@ export function createHostServer(deps: {
       "content-type": "text/event-stream",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",
-      "access-control-allow-origin": "*",
       "x-accel-buffering": "no",
     });
     res.flushHeaders?.();
@@ -999,7 +1021,7 @@ export function createHostServer(deps: {
       // 409, never 404: the route exists, the project just is not running.
       // 404 would read as "no such endpoint" and the dashboard could not tell
       // a typo from a closed tab it should offer to open.
-      res.writeHead(409, { "content-type": "application/json", "access-control-allow-origin": "*" });
+      res.writeHead(409, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
           error: known ? `project '${projectId}' is ${status}` : `no project '${projectId}' in the registry`,
@@ -1010,12 +1032,30 @@ export function createHostServer(deps: {
       return;
     }
 
+    // The child enforces its own, tighter limit per route; this one only keeps the host from
+    // streaming an unbounded upload through to a process that is already behind it.
+    const bodyLimit = Math.max(maxBodyBytes(), PROXY_MIN_BODY_BYTES);
+    const declared = Number(req.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > bodyLimit) {
+      req.pause();
+      respondTooLarge(res, new PayloadTooLargeError(bodyLimit));
+      return;
+    }
+
     const headers: http.OutgoingHttpHeaders = { ...req.headers };
     for (const h of HOP_BY_HOP) delete headers[h];
     // The operator's credential stops here. The child accepts only its own
     // token, minted per launch and never sent to a browser.
     delete headers.authorization;
     delete headers["x-mesh-token"];
+    // The browser's own context stops here too. The host has already judged the request's origin
+    // and authenticated it, and a cookie, an `Origin` or a `Referer` forwarded to a child would
+    // only be material for the child to judge a second time against an address it was never
+    // reached by.
+    delete headers.cookie;
+    delete headers.origin;
+    delete headers.referer;
+    for (const name of Object.keys(headers)) if (name.startsWith("sec-fetch-")) delete headers[name];
     headers.host = `127.0.0.1:${child.port}`;
     headers.authorization = `Bearer ${child.token}`;
 
@@ -1041,7 +1081,9 @@ export function createHostServer(deps: {
     );
     upstream.setNoDelay?.(true);
 
+    let tooLarge = false;
     upstream.on("error", (err: Error) => {
+      if (tooLarge) return;
       if (res.headersSent) {
         // Mid-stream failure: the status line is already committed, so the only
         // honest signal left is an aborted body.
@@ -1058,6 +1100,17 @@ export function createHostServer(deps: {
       if (!upstream.destroyed) upstream.destroy();
     });
 
+    // A client that declares no length (chunked) or lies about it is stopped by the running total.
+    let sent = 0;
+    req.on("data", (chunk: Buffer) => {
+      sent += chunk.length;
+      if (sent <= bodyLimit || tooLarge) return;
+      tooLarge = true;
+      req.unpipe(upstream);
+      req.pause();
+      upstream.destroy();
+      respondTooLarge(res, new PayloadTooLargeError(bodyLimit));
+    });
     req.pipe(upstream);
   }
 
@@ -1065,6 +1118,9 @@ export function createHostServer(deps: {
   hosted.multiplex = multiplex;
   hosted.enforceLimits = enforceLimits;
   hosted.spend = aggregateSpend;
+  hosted.beginDrain = () => {
+    draining = true;
+  };
   return hosted;
 }
 
@@ -1124,6 +1180,7 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
   const isIndex = parts.length === 0 || parts[0] === "dashboard";
   if (!dir || !fs.existsSync(dir)) {
     if (!isIndex) return false;
+    applySecurityHeaders(res, "dashboard");
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(
       "<!doctype html><meta charset=utf-8><title>Agent Mesh</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Agent Mesh host online (no dashboard assets). See <a style='color:#58a6ff' href='/api/projects'>/api/projects</a></body>",
@@ -1134,6 +1191,7 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
   const safe = path.normalize(rel).replace(/^([.][.][/\\])+/, "");
   const target = path.join(dir, safe);
   if (target.startsWith(dir) && fs.existsSync(target) && fs.statSync(target).isFile()) {
+    applySecurityHeaders(res, "dashboard");
     const ext = path.extname(target).toLowerCase();
     const type =
       ext === ".html" ? "text/html" :
@@ -1149,6 +1207,7 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
     // SPA entry: deep links like `#/p/:id/steps` are resolved client-side.
     const index = path.join(dir, "index.html");
     if (fs.existsSync(index)) {
+      applySecurityHeaders(res, "dashboard");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
       res.end(fs.readFileSync(index));
       return true;
@@ -1158,6 +1217,9 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
 }
 
 export async function startHostServer(options: HostOptions = {}): Promise<HostHandle> {
+  // First, before a child is reaped or a registry read: a refusal costs nothing to undo.
+  const listenHost = options.host ?? "127.0.0.1";
+  for (const w of assertSafeListen(listenHost).warnings) process.stderr.write(`[mesh-host] warn: ${w}\n`);
   // File first, flags on top: `mesh host --memory 512` is a deliberate
   // one-run override of a persisted default, so the flag has to win.
   const hostConfig = options.hostConfig ?? loadHostConfig(options.home);
@@ -1303,7 +1365,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   const server = createHostServer(hostDeps);
   hosted = server;
   const port = options.port ?? 7420;
-  const host = options.host ?? "127.0.0.1";
+  const host = listenHost;
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error & { code?: string }): void => {
       if (err?.code === "EADDRINUSE") {
@@ -1326,6 +1388,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
     // teardown that races the first over the same children.
     if (closing) return closing;
     shuttingDown = true;
+    server.beginDrain();
     closing = (async () => {
       // Before the socket teardown: the hub owns loopback subscriptions to the
       // children, and one left open would keep `server.close()` waiting on a
@@ -1357,7 +1420,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   return {
     server,
     port: actualPort,
-    url: `http://${host}:${actualPort}`,
+    url: `http://${selfConnectHost(host)}:${actualPort}`,
     registry,
     tree,
     supervisor,

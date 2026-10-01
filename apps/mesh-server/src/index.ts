@@ -56,10 +56,16 @@ import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-v
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { getApiToken, requireAuth, resolveActor } from "./auth";
+import { PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
 export type ServerMode = "parked" | "live";
+
+/** A verified seat's tool call can carry a long message or file content; 8 MiB is generous and still a bound. */
+const MCP_MAX_BODY_BYTES = 8 * 1024 * 1024;
+/** A token that failed verification is read only far enough to answer in JSON-RPC, which needs the request's `id`. */
+const MCP_UNVERIFIED_BODY_BYTES = 64 * 1024;
 
 /**
  * The one sentence an operator sees when the mission is parked while its goal
@@ -1423,6 +1429,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   }, 1000);
   (lagTimer as unknown as { unref?: () => void }).unref?.();
 
+  // Set when shutdown begins, so `/readyz` stops saying "ready" while sockets drain and the
+  // load balancer stops sending new work to a server that is closing.
+  let draining = false;
+
   const server = http.createServer((req, res) => {
     // Slow-request radar: anything (except the long-lived SSE stream) taking
     // >2s means the loop is blocked or an endpoint is doing too much work.
@@ -1445,7 +1455,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     const u = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const parts = u.pathname.split("/").filter((p) => p.length > 0);
     const send = (code: number, body: unknown): void => {
-      res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
+      res.writeHead(code, { "content-type": "application/json" });
       // Compact serialization: pretty-printing roughly doubles large payloads
       // (timelines, traces) for zero client benefit — every consumer parses.
       res.end(JSON.stringify(body));
@@ -1488,10 +1498,11 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       }
       send(code, body);
     };
-    const body = async (): Promise<Record<string, any>> => {
-      const chunks: Buffer[] = [];
-      for await (const c of req) chunks.push(c as Buffer);
-      const raw = Buffer.concat(chunks).toString("utf8");
+    // Bounded: an unbounded read let one streaming POST exhaust the process's memory.
+    // Over the limit it throws `PayloadTooLargeError`, which the catch at the end of
+    // this function turns into a 413.
+    const body = async (limit: number = maxBodyBytes()): Promise<Record<string, any>> => {
+      const raw = (await readBody(req, limit)).toString("utf8");
       if (!raw) return {};
       try {
         return JSON.parse(raw);
@@ -1500,6 +1511,24 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       }
     };
     try {
+      // The headers every answer carries. A route that serves the dashboard or an agent's
+      // preview replaces them just before it writes its own.
+      applySecurityHeaders(res, "api");
+
+      // ------------------------------------------------------------ probes
+      // Ahead of the guard and of auth: a kubelet addresses the pod by IP and holds no
+      // credential, and the answer is one word with no counts or ids in it. `/health`
+      // below is the detailed one.
+      if (req.method === "GET" && parts.length === 1 && (parts[0] === "healthz" || parts[0] === "readyz")) {
+        if (parts[0] === "healthz") return send(200, { status: "ok" });
+        return draining ? send(503, { status: "draining" }) : send(200, { status: "ready" });
+      }
+
+      // A browser page the operator happens to visit must not be able to drive this server:
+      // `Host` stops DNS rebinding, `Origin` stops a forged cross-site POST. See web-security.ts.
+      const verdict = guardRequest(req);
+      if (!verdict.ok) return send(verdict.status, { error: verdict.error, code: verdict.code });
+
       // --------------------------------------------------------- MCP bridge
       // Deliberately ahead of `requireAuth`: seats carry no operator token (in
       // strict mode requireAuth would refuse them all). That is sound only
@@ -1509,8 +1538,16 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // constant time. None of them is derivable from public ids.
       if (parts[0] === "internal" && parts[1] === "mcp") {
         const agentId = decodeURIComponent(parts[2] ?? "");
-        const token = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
-        const payload = await body();
+        const rawToken = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
+        const token = Array.isArray(rawToken) ? (rawToken[0] ?? "") : (rawToken ?? "");
+        // This route answers before operator auth, so it was the one place an unauthenticated
+        // caller could make the server buffer a request body of any size. A bridge always
+        // presents a token: no token is refused without reading anything, and a token that
+        // fails is read only as far as a JSON-RPC error needs (its `id`), and refused with a 413
+        // beyond that. Only a token that verifies earns the full body.
+        if (!token) return send(401, { error: "missing mesh token" });
+        const verified = mcp.verifyToken(agentId, String(token));
+        const payload = await body(verified ? MCP_MAX_BODY_BYTES : MCP_UNVERIFIED_BODY_BYTES);
         // A designer turn identifies itself with a header the SERVER minted and
         // handed to the runtime; the model never sees it and cannot name a
         // different turn. Without the header this is the ordinary bridge.
@@ -1990,7 +2027,6 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           "content-type": "text/event-stream",
           "cache-control": "no-cache, no-transform",
           connection: "keep-alive",
-          "access-control-allow-origin": "*",
           "x-accel-buffering": "no",
         });
         const remove = hub.add(res);
@@ -2762,6 +2798,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // The built product app (the simulator itself) is served read-only so
       // the console can embed it in an iframe. Requires `build` to have run.
       if (parts[0] === "playground" && req.method === "GET") {
+        // Agent-written HTML and script. Served under `sandbox` so it runs in an opaque origin:
+        // it cannot call this server's API with the operator's credentials or read what it says.
+        applySecurityHeaders(res, "preview");
         const pgDir = path.join(wsRoot, "apps", "playground");
         if (parts.length === 1) {
           const html = await fs.promises.readFile(path.join(pgDir, "index.html"), "utf8").catch(() => "");
@@ -2806,6 +2845,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const safe = path.normalize(rel).replace(/^([.][.][/\\])+/, "");
           const target = path.join(dir, safe);
           if (target.startsWith(dir) && fs.existsSync(target) && fs.statSync(target).isFile()) {
+            applySecurityHeaders(res, "dashboard");
             const ext = path.extname(target).toLowerCase();
             const type =
               ext === ".html" ? "text/html" :
@@ -2818,6 +2858,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             return;
           }
           if (parts.length === 0 || parts[0] === "dashboard") {
+            applySecurityHeaders(res, "dashboard");
             res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
             res.end("<!doctype html><meta charset=utf-8><title>Agent Mesh</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Agent Mesh API online (no dashboard assets). See <a style='color:#58a6ff' href='/status'>/status</a> <a style='color:#58a6ff' href='/graph'>/graph</a> <a style='color:#58a6ff' href='/events'>/events</a></body>");
             return;
@@ -2829,6 +2870,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
 
       return json(404, { error: `no route: ${req.method} ${u.pathname}` });
     } catch (err) {
+      if (err instanceof PayloadTooLargeError) return respondTooLarge(res, err);
       return json(500, { error: (err as Error).message });
     }
   }
@@ -2840,6 +2882,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // The lag timer MUST die even if close() itself never completes — otherwise
   // its ref'd interval keeps the process alive forever after teardown.
   const serverCleanup = (): void => {
+    draining = true;
     clearInterval(lagTimer);
     hub.close();
   };
@@ -3443,6 +3486,10 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
   // (5 spawns, 30s) on it, and loses the turn. Measured 2026-09-27: the child's
   // bridge stayed unreachable for more than 35s after a restart, one lost turn
   // each time.
+  // Before anything boots (the state lock, the sessions, the first wake), so a refusal costs
+  // nothing to undo. Config resolution is pure, so the host read here is the host bound below.
+  const listenHost = options.host ?? resolveConfig(options.configPath).server.host;
+  for (const w of assertSafeListen(listenHost).warnings) console.warn(`warn: ${w}`);
   let server: http.Server | undefined;
   let actualPort = 0;
   let boundHost = "";
@@ -3494,7 +3541,7 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
     // before the first seat can be woken — which is exactly what the ordering
     // above buys. Before this, a boot on an ephemeral port advertised the
     // CONFIGURED port to its own seats.
-    process.env.MESH_BUS_URL = `http://${host}:${actualPort}`;
+    process.env.MESH_BUS_URL = `http://${selfConnectHost(host)}:${actualPort}`;
   };
   /** Ready when this server's bridge route is being served. */
   const listenerReady = (): Promise<void> => {
@@ -3522,7 +3569,7 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
     server: listening,
     instance,
     port: actualPort,
-    url: `http://${boundHost}:${actualPort}`,
+    url: `http://${selfConnectHost(boundHost)}:${actualPort}`,
     async close() {
       await closeHttpServer(listening);
       try {

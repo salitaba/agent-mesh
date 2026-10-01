@@ -281,9 +281,12 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
 }
 
 export const HOST_HELP = `usage:
-  mesh host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git] [--dashboard dir]
+  mesh host [--port n] [--bind addr] [--home dir] [--memory mb] [--live] [--git|--no-git] [--dashboard dir]
     supervises every open project as a child process and serves the dashboard.
     --port       default ${DEFAULT_HOST_PORT}
+    --bind       address to listen on (default 127.0.0.1). Anything that is not loopback is
+                 reachable from the network and needs MESH_API_TOKEN of 32+ characters
+                 (openssl rand -hex 32); the host refuses to start without one.
     --home       registry home (default $MESH_HOME or ~/.agent-mesh)
     --memory     per-child --max-old-space-size in MB
     --live       children boot live; default is parked, like 'mesh console'

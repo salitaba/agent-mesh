@@ -30,6 +30,7 @@ test("every real launch flag is silent", () => {
   // from the parser and the warning is lying.
   const flags = {
     port: "7430",
+    bind: "127.0.0.1",
     tui: true,
     "no-tui": true,
     git: true,
