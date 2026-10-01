@@ -31,10 +31,15 @@ export interface PlanLimits {
   maxConcurrentTurns: number | null;
 }
 
-/** Product capabilities a plan includes. Each one is enforced or provided by code that exists. */
-export type FeatureId = "host" | "usage-export" | "prometheus-metrics";
+/**
+ * Product capabilities a plan includes. Each id is checked by code that exists (`checkFeature(…, "<id>")` in the
+ * servers or the CLI), and a test fails on an id nothing checks: a flag that gates nothing is a claim, not a feature.
+ * The multi-project host is deliberately not one: every plan can run it, and what separates the plans is how many
+ * projects it may have open (`maxProjects`).
+ */
+export type FeatureId = "usage-export" | "prometheus-metrics";
 
-export const FEATURE_IDS: readonly FeatureId[] = ["host", "usage-export", "prometheus-metrics"];
+export const FEATURE_IDS: readonly FeatureId[] = ["usage-export", "prometheus-metrics"];
 
 export interface PlanDefinition {
   id: PlanId;
@@ -69,9 +74,9 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     support: "Community (issues and documentation)",
     includes: [
       "The full runtime: event-sourced kernel, policy enforcement, scheduler, artifacts, replay",
-      "Dashboard, designer and CLI",
+      "Dashboard, designer, CLI and the project host with its spend ceiling",
       "Token-free demo and stub runtime",
-      "One project, up to 8 seats",
+      "One open project, up to 8 seats, 4 concurrent turns",
     ],
     roadmap: [],
   },
@@ -83,13 +88,12 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: 124,
     pricing: "listed",
     limits: { maxSeatsPerMesh: 12, maxProjects: 5, maxConcurrentTurns: 8 },
-    features: ["host", "usage-export", "prometheus-metrics"],
+    features: ["usage-export", "prometheus-metrics"],
     support: "Email, next business day",
     includes: [
       "Everything in Community",
-      "Multi-project host with supervision, spend ceiling and turn cap",
+      "Up to 5 projects open under one host, 12 seats per mesh, 8 concurrent turns",
       "Usage export (JSON and CSV) and Prometheus metrics",
-      "Up to 5 projects, 12 seats per mesh, 8 concurrent turns",
     ],
     roadmap: [],
   },
@@ -101,12 +105,12 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: 499,
     pricing: "listed",
     limits: { maxSeatsPerMesh: 30, maxProjects: 25, maxConcurrentTurns: 24 },
-    features: ["host", "usage-export", "prometheus-metrics"],
+    features: ["usage-export", "prometheus-metrics"],
     support: "Priority email, 4 business hours first response",
     includes: [
       "Everything in Team",
       "Up to 25 projects, 30 seats per mesh, 24 concurrent turns",
-      "Hardened container image and Helm chart, with upgrade and backup runbooks",
+      "Support for the container image and Helm chart deployment, with upgrade and backup runbooks",
       "Security questionnaire support",
     ],
     roadmap: ["Single sign-on (OIDC)", "Per-operator identity and roles", "Audit-log export with operator identity"],
@@ -119,7 +123,7 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: null,
     pricing: "contact",
     limits: { maxSeatsPerMesh: null, maxProjects: null, maxConcurrentTurns: null },
-    features: ["host", "usage-export", "prometheus-metrics"],
+    features: ["usage-export", "prometheus-metrics"],
     support: "Named contact and a support agreement",
     includes: [
       "Everything in Business",

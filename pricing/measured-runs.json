@@ -1,0 +1,17 @@
+{
+  "_about": "Measured missions: what real runs of this product cost in model usage. Hand-maintained evidence, not generated; scripts/export-pricing.mjs re-prices each run's tokens at the published list prices and writes the result into plans.json for the pricing page and calculator. A run is added here only with its source. One run is an illustration, not a rate.",
+  "runs": [
+    {
+      "id": "cronlite-run-7",
+      "date": "2026-10-01",
+      "source": "NOTES-live-run-20260930-haiku.md section 12 (the seventh run)",
+      "mission": "A dependency-free Node library and CLI for 5-field cron expressions, built from a written spec by five seats, then reopened once against an independent oracle's defect report, with a kill -9 of the host in the middle of the second round.",
+      "model": "claude-haiku-4-5",
+      "seats": 5,
+      "turns": 80,
+      "wallClockMinutes": 31,
+      "outcome": "Goal met twice (round 1 in 9 min 53 s; again 18 min 33 s after the reopen). The final product scored 99.6% of 3034 stratified checks on an oracle written from the spec before any output was read; its own suite passed 63 of 63.",
+      "tokens": { "input": 3892, "output": 218904, "cacheWrite": 949926, "cacheRead": 32299235 }
+    }
+  ]
+}

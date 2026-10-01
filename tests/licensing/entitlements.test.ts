@@ -122,9 +122,9 @@ test("seat, project and feature checks: the boundary, and what each message says
   assert.deepEqual(checkProjects(community, 1), { ok: true, blocked: false });
   assert.match(checkProjects(community, 2).message!, /Opening this project would make 2 open; the Community plan allows 1\./);
 
-  assert.equal(checkFeature(community, "host", "The multi-project host").ok, false);
-  assert.match(checkFeature(community, "host", "The multi-project host").message!, /^The multi-project host is not part of the Community plan\./);
-  assert.equal(checkFeature(resolve(token()), "host").ok, true);
+  assert.equal(checkFeature(community, "usage-export", "Usage export").ok, false);
+  assert.match(checkFeature(community, "usage-export", "Usage export").message!, /^Usage export is not part of the Community plan\./);
+  assert.equal(checkFeature(resolve(token()), "usage-export").ok, true);
 
   const enterprise = resolve(token({ plan: "enterprise" }));
   assert.equal(checkSeats(enterprise, 10_000).ok, true, "unlimited is unlimited");
@@ -139,7 +139,7 @@ test("warn reports a breach and refuses nothing; off reports nothing", () => {
   assert.ok(w.message);
   const off = resolve(undefined, "off");
   assert.deepEqual(checkSeats(off, 50), { ok: true, blocked: false });
-  assert.deepEqual(checkFeature(off, "host"), { ok: true, blocked: false });
+  assert.deepEqual(checkFeature(off, "usage-export"), { ok: true, blocked: false });
   assert.deepEqual(checkProjects(off, 50), { ok: true, blocked: false });
 });
 

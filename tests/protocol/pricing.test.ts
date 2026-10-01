@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 import { CACHE_READ_MULTIPLIER, CACHE_WRITE_MULTIPLIER, cacheReadPrice, cacheWritePrice, priceTokenUsage } from "../../packages/protocol/src/pricing";
 
 /**
@@ -10,7 +12,10 @@ import { CACHE_READ_MULTIPLIER, CACHE_WRITE_MULTIPLIER, cacheReadPrice, cacheWri
 
 const HAIKU_4_5 = { inputPerMtok: 1, outputPerMtok: 5 }; // cache write $1.25, cache read $0.10
 const OPUS_5_5 = { inputPerMtok: 4, outputPerMtok: 20, cacheWritePerMtok: 5, cacheReadPerMtok: 0.2 }; // reads at 0.05x
-const RUN7 = { input: 3_892, output: 218_904, cacheWrite: 949_926, cacheRead: 32_299_235 };
+// One copy of the measurement: pricing/measured-runs.json, which the pricing page's numbers are generated from.
+const RUN7 = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "pricing", "measured-runs.json"), "utf8")).runs.find(
+  (r: { id: string }) => r.id === "cronlite-run-7",
+).tokens as { input: number; output: number; cacheWrite: number; cacheRead: number };
 
 test("cache prices default to the published multipliers on the input price", () => {
   assert.equal(CACHE_WRITE_MULTIPLIER, 1.25);
