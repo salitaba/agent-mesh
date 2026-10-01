@@ -39,7 +39,7 @@ start an open server.
 |---|---|---|
 | `MESH_API_TOKEN` | none | The operator's credential. **Required** to listen on anything but loopback, and then it must be at least 32 characters (`openssl rand -hex 32`). An empty value is refused, not ignored. It is the password at the dashboard's sign-in and the bearer token for the API and CLI. |
 | `MESH_ALLOW_INSECURE_BIND` | unset | `1` lets the server listen on the network with no strong token, and says so on stderr. For a server whose only way in is a proxy that authenticates every request itself. |
-| `MESH_ALLOWED_HOSTS` | any, on a network interface | Comma-separated host names the server answers to (`mesh.example.com`). When set, any other `Host` is refused with 421. Loopback names always keep working, so `kubectl port-forward` does. |
+| `MESH_ALLOWED_HOSTS` | any, on a network interface | Comma-separated host names the server answers to (`mesh.example.com`). When set, any other `Host` is refused with 421. Loopback names still work on a connection that arrives on loopback inside the container (which is how `kubectl port-forward` arrives); a published Docker port arrives on the container's own address, so list `127.0.0.1` and `localhost` too if you also reach it that way. |
 | `MESH_ALLOWED_ORIGINS` | the page's own origin | Comma-separated origins (`https://mesh.example.com`) allowed to make state-changing requests besides the server's own page. |
 | `MESH_TRUST_PROXY` | unset | `1` trusts `X-Forwarded-For` (the client address, for sign-in rate limiting and the audit log) and `X-Forwarded-Proto` from the proxy in front. Set it only when a proxy you control is the only way in. |
 | `MESH_COOKIE_SECURE` | unset | `1` marks the dashboard's session cookie `Secure`. Set it whenever the browser reaches you over HTTPS. |
@@ -67,9 +67,14 @@ start an open server.
 ### The agents' model access
 
 The agents run on **your** credentials, billed to you by the provider. Pass `ANTHROPIC_API_KEY`, or the
-variables for Bedrock, Vertex or Foundry; they reach the agents and nothing else does:
-the operator token, the licence and the other `MESH_*` secrets are removed from the environment the agents'
-commands run in.
+variables for Bedrock, Vertex or Foundry; they reach the agents, and the operator token, the licence and the
+other `MESH_*` secrets do not: those are removed from the environment the agents' commands run in.
+Use an API key or your cloud provider's credentials, not a Claude subscription's sign-in: Anthropic's terms for
+products built on the SDK ask for the former.
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is `1` in the image: the Claude Code binary the agents run makes no
+telemetry, error-report, update or feature-flag calls. Set it to an empty value to let it. It is kept even under
+`isolate_host`.
 
 ### Limits that protect the bill
 
