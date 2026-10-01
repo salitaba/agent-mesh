@@ -59,7 +59,10 @@ test("strict auth: nothing is public and a missing token fails closed", () => {
     delete process.env.MESH_STRICT_AUTH;
     process.env.MESH_API_TOKEN = "operator";
     assert.equal(isStrictAuth(), false);
-    assert.equal(isPublicPath("GET", ["health"]), true, "standalone serve keeps a credential-free probe");
+    // The credential-free probes are /healthz and /readyz, answered before auth; the detailed /health is not public.
+    assert.equal(isPublicPath("GET", ["health"]), false, "the detailed /health needs the token, in standalone serve too");
+    assert.equal(isPublicPath("GET", []), true, "standalone serve still serves its dashboard page without a credential");
+    assert.equal(isPublicPath("GET", ["assets", "index.js"]), true, "and its assets");
 
     process.env.MESH_STRICT_AUTH = "1";
     assert.equal(isStrictAuth(), true);
