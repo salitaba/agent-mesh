@@ -9,7 +9,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
-import { FEATURE_IDS, PLANS, PLAN_IDS, buildPricingExport, type MeasuredRun, type PlanId } from "../../packages/licensing/src/index";
+import {
+  FEATURE_IDS,
+  PLANS,
+  PLAN_IDS,
+  buildPricingExport,
+  generatedBlock,
+  renderEconomics,
+  renderPlansTable,
+  replaceGeneratedBlock,
+  type MeasuredRun,
+  type PlanId,
+} from "../../packages/licensing/src/index";
 import { ANTHROPIC_LIST_PRICES, LIST_PRICES_AS_OF } from "../../packages/protocol/src/index";
 
 const ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -19,6 +30,29 @@ const measured = (): MeasuredRun[] => JSON.parse(read("pricing", "measured-runs.
 test("pricing/plans.json is what the plan table, the list prices and the measured runs generate", () => {
   const generated = `${JSON.stringify(buildPricingExport(measured()), null, 2)}\n`;
   assert.equal(read("pricing", "plans.json"), generated, "out of date: run `node scripts/export-pricing.mjs` and commit the result");
+  assert.equal(read("site", "plans.json"), generated, "the website's copy is the same file");
+});
+
+test("docs/commercial/pricing.md carries the generated plan table and unit economics", () => {
+  const exported = buildPricingExport(measured());
+  const doc = read("docs", "commercial", "pricing.md");
+  const expected = replaceGeneratedBlock(replaceGeneratedBlock(doc, "plans", renderPlansTable(exported)), "economics", renderEconomics(exported));
+  assert.equal(doc, expected, "out of date: run `node scripts/export-pricing.mjs` and commit the result");
+  // The block really is there, with the numbers a buyer reads.
+  const { start, end } = generatedBlock("plans");
+  const block = doc.slice(doc.indexOf(start) + start.length, doc.indexOf(end));
+  for (const plan of Object.values(PLANS)) {
+    assert.ok(block.includes(plan.name), plan.name);
+    if (plan.priceMonthlyUsd) assert.ok(block.includes(`$${plan.priceMonthlyUsd}`), `${plan.name} monthly price`);
+    if (plan.priceMonthlyAnnualUsd) assert.ok(block.includes(`$${plan.priceMonthlyAnnualUsd}`), `${plan.name} annual price`);
+  }
+});
+
+test("a generated block that is not fenced is an error, not a silent no-op", () => {
+  assert.throws(() => replaceGeneratedBlock("# no blocks here", "plans", "x"), /not fenced/);
+  const { start, end } = generatedBlock("plans");
+  assert.throws(() => replaceGeneratedBlock(`${end}\n${start}`, "plans", "x"), /not fenced/, "the end before the start");
+  assert.equal(replaceGeneratedBlock(`a\n${start}\nold\n${end}\nb`, "plans", "new"), `a\n${start}\nnew\n${end}\nb`);
 });
 
 test("the export carries every plan and every model price, dated, and says model usage is not included", () => {

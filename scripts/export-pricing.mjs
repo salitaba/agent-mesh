@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * Writes pricing/plans.json from the plan table, the model list prices and pricing/measured-runs.json.
+ * Writes everything that is generated from the plan table:
  *
- *   node scripts/export-pricing.mjs           write it
- *   node scripts/export-pricing.mjs --check   exit 1 if the committed file is out of date (what CI runs)
+ *   pricing/plans.json            the table, the model list prices and the measured runs, as JSON
+ *   site/plans.json              the same file, served beside the pricing page
+ *   docs/commercial/pricing.md   its two fenced blocks (the plan table and the unit economics)
+ *
+ *   node scripts/export-pricing.mjs           write them
+ *   node scripts/export-pricing.mjs --check   exit 1 if any of them is out of date (what CI runs)
  *
  * Needs a build first (`npx tsc -p tsconfig.json`): the tables live in TypeScript and this reads the compiled
  * output, so there is one copy of every number.
@@ -20,19 +24,37 @@ if (!fs.existsSync(built)) {
   console.error("export-pricing: dist/ is not built; run `npx tsc -p tsconfig.json` first");
   process.exit(2);
 }
-const { buildPricingExport } = require(built);
+const { buildPricingExport, renderPlansTable, renderEconomics, replaceGeneratedBlock } = require(built);
 const measured = JSON.parse(fs.readFileSync(path.join(root, "pricing", "measured-runs.json"), "utf8"));
-const text = `${JSON.stringify(buildPricingExport(measured.runs), null, 2)}\n`;
-const target = path.join(root, "pricing", "plans.json");
+const exported = buildPricingExport(measured.runs);
+const json = `${JSON.stringify(exported, null, 2)}\n`;
+
+const pricingDoc = path.join(root, "docs", "commercial", "pricing.md");
+if (!fs.existsSync(pricingDoc)) {
+  console.error("export-pricing: docs/commercial/pricing.md is missing");
+  process.exit(2);
+}
+let doc = fs.readFileSync(pricingDoc, "utf8");
+doc = replaceGeneratedBlock(doc, "plans", renderPlansTable(exported));
+doc = replaceGeneratedBlock(doc, "economics", renderEconomics(exported));
+
+const targets = [
+  [path.join(root, "pricing", "plans.json"), json],
+  [path.join(root, "site", "plans.json"), json],
+  [pricingDoc, doc],
+];
 
 if (process.argv.includes("--check")) {
-  const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "";
-  if (current !== text) {
-    console.error("pricing/plans.json is out of date: run `node scripts/export-pricing.mjs` and commit the result");
+  const stale = targets.filter(([file, text]) => !fs.existsSync(file) || fs.readFileSync(file, "utf8") !== text).map(([file]) => path.relative(root, file));
+  if (stale.length > 0) {
+    console.error(`out of date: ${stale.join(", ")}\nrun \`node scripts/export-pricing.mjs\` and commit the result`);
     process.exit(1);
   }
-  console.log("pricing/plans.json is up to date");
+  console.log("pricing files are up to date");
 } else {
-  fs.writeFileSync(target, text, "utf8");
-  console.log(`wrote ${path.relative(root, target)}`);
+  for (const [file, text] of targets) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text, "utf8");
+    console.log(`wrote ${path.relative(root, file)}`);
+  }
 }

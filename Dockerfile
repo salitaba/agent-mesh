@@ -26,7 +26,7 @@ COPY package.json package-lock.json ./
 COPY packages ./packages
 RUN --mount=type=cache,target=/root/.npm npm ci
 
-COPY tsconfig.json ./
+COPY tsconfig.json THIRD_PARTY_NOTICES.md ./
 COPY apps ./apps
 COPY schemas ./schemas
 COPY roles ./roles
@@ -73,6 +73,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 COPY --from=build /src/package.json ./package.json
+COPY --from=build /src/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
 COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/dist ./dist
 COPY --from=build /src/apps/mesh-dashboard/dist ./apps/mesh-dashboard/dist
