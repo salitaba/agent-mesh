@@ -60,11 +60,11 @@ test("the explicit insecure door is the only other way past it, and loopback nee
 });
 
 test("an empty setting is not set: nothing blank is handed to the agents as a credential", () => {
-  const probe = ["sh", "-c", 'echo "key=${ANTHROPIC_API_KEY+set} lic=${MESH_LICENSE+set} hosts=${MESH_ALLOWED_HOSTS+set} keep=${MESH_INSTANCE_ID-unset}"'];
-  const blank = run(probe, { ANTHROPIC_API_KEY: "", MESH_LICENSE: "", MESH_ALLOWED_HOSTS: "", MESH_INSTANCE_ID: "" });
-  assert.equal(blank.stdout.trim(), "key= lic= hosts= keep=", "blank credentials are gone; a blank variable the script does not own is left alone");
-  const filled = run(probe, { ANTHROPIC_API_KEY: "sk-ant-x", MESH_LICENSE: "AML1.x", MESH_ALLOWED_HOSTS: "mesh.example.com" });
-  assert.equal(filled.stdout.trim(), "key=set lic=set hosts=set keep=unset");
+  const probe = ["sh", "-c", 'echo "key=${ANTHROPIC_API_KEY+set} lic=${MESH_LICENSE+set} hosts=${MESH_ALLOWED_HOSTS+set} priv=${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC+set} keep=${MESH_INSTANCE_ID-unset}"'];
+  const blank = run(probe, { ANTHROPIC_API_KEY: "", MESH_LICENSE: "", MESH_ALLOWED_HOSTS: "", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "", MESH_INSTANCE_ID: "" });
+  assert.equal(blank.stdout.trim(), "key= lic= hosts= priv= keep=", "blank credentials are gone, and a blank privacy setting is how an operator turns the image's default off; a blank variable the script does not own is left alone");
+  const filled = run(probe, { ANTHROPIC_API_KEY: "sk-ant-x", MESH_LICENSE: "AML1.x", MESH_ALLOWED_HOSTS: "mesh.example.com", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" });
+  assert.equal(filled.stdout.trim(), "key=set lic=set hosts=set priv=set keep=unset");
 });
 
 test("anything else is executed as given", () => {

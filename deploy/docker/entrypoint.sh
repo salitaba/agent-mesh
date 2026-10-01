@@ -14,7 +14,7 @@ set -eu
 
 # Compose and `docker run -e NAME` pass an unset variable as an empty one. For the settings below an empty
 # value must mean "not set": an empty ANTHROPIC_API_KEY would be handed to every agent as a credential.
-for name in ANTHROPIC_API_KEY MESH_LICENSE MESH_LICENSE_FILE MESH_ALLOWED_HOSTS MESH_ALLOWED_ORIGINS MESH_TRUST_PROXY MESH_COOKIE_SECURE MESH_PROJECTS_ROOT; do
+for name in ANTHROPIC_API_KEY MESH_LICENSE MESH_LICENSE_FILE MESH_ALLOWED_HOSTS MESH_ALLOWED_ORIGINS MESH_TRUST_PROXY MESH_COOKIE_SECURE MESH_PROJECTS_ROOT CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC; do
   eval "value=\${$name-}"
   if [ -z "$value" ]; then unset "$name"; fi
 done

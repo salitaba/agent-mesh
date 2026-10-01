@@ -48,6 +48,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates tini curl \
  && rm -rf /var/lib/apt/lists/*
 
+# Nothing here phones home, and the Claude Code binary the agents run does not either: it is told to make no
+# nonessential network calls (telemetry, error reports, update checks, feature flags). What leaves the
+# container is the agents' calls to the model provider, with the customer's own credentials. To let the binary
+# report as it normally would, set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC to an empty value.
+
 # A fixed, unprivileged identity. Everything that must survive a restart lives under /data: the registry
 # and licence (MESH_HOME), each project's event log and workspace (/data/projects, which is also the only
 # place the API may register or browse: MESH_PROJECTS_ROOT), and the agents' own CLI sessions (HOME),
@@ -61,6 +66,7 @@ ENV NODE_ENV=production \
     MESH_HOME=/data/home \
     HOME=/data/user \
     MESH_PROJECTS_ROOT=/data/projects \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
     MESH_PORT=7420 \
     MESH_BIND=0.0.0.0 \
     MESH_LICENSE_ENFORCEMENT=warn

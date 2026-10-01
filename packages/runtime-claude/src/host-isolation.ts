@@ -55,6 +55,11 @@ function isOuterSessionVar(name: string): boolean {
  * this list was written is removed until it is named here, which fails at login, loudly and
  * at once; the same seat left running under the outer session's plumbing would not fail at all.
  *
+ * `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is the one that is not about reaching the model: it is the
+ * operator's choice about what leaves the machine (telemetry, error reports, update checks), and the
+ * container image sets it. Isolation is for stopping an outer session's identity from reaching the seats;
+ * undoing a privacy setting on the way would make it a way to send data somewhere the operator said not to.
+ *
  * Not kept, on purpose, though they sit next to these in a container's environment:
  * `CLAUDE_CODE_USE_CCR_V2` and `CLAUDE_CODE_REMOTE*` (how the OUTER session reports to its host),
  * and `CLAUDE_CODE_SESSION_ID` / `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (who it is).
@@ -73,6 +78,7 @@ const KEPT_CLAUDE_ENV: ReadonlySet<string> = new Set([
   "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
   "CLAUDE_CODE_PROXY_RESOLVES_HOSTS",
   "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
   "CLAUDE_CONFIG_DIR",
 ]);
 

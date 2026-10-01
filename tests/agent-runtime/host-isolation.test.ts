@@ -74,7 +74,7 @@ const LEFT_BEHIND_BY_THE_LIST = [
   "CLAUDE_PID",
 ];
 const CONTAINER: Record<string, string> = Object.fromEntries([...SEEN_IN_FIRST_RUN, ...LEFT_BEHIND_BY_THE_LIST].map((name) => [name, `outer-${name.toLowerCase()}`]));
-/** Names that say how to reach the model: the family's exceptions. */
+/** Names that say how to reach the model, and the operator's privacy setting: the family's exceptions. */
 const ROUTING = [
   "CLAUDE_CODE_OAUTH_TOKEN",
   "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
@@ -89,6 +89,7 @@ const ROUTING = [
   "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
   "CLAUDE_CODE_PROXY_RESOLVES_HOSTS",
   "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
   "CLAUDE_CONFIG_DIR",
 ];
 const ROUTED: Record<string, string> = Object.fromEntries(ROUTING.map((name) => [name, `routing-${name.toLowerCase()}`]));
@@ -105,6 +106,12 @@ test("isolation removes the launching session's whole namespace, not the names t
   // What is outside the namespace is not isolation's business.
   for (const [name, value] of Object.entries({ ...KEPT, DISABLE_AUTOUPDATER: "1", MCP_TOOL_TIMEOUT: "60000" })) assert.equal(seat[name], value, `${name} is untouched`);
   assert.deepEqual(outerSessionEnvNames(env), [...Object.keys(CONTAINER)].sort(), "and the boot detector names exactly what isolation removes");
+});
+
+test("an operator's privacy setting survives isolation: the image's telemetry opt-out reaches the seats", () => {
+  const seat = withoutOuterSession({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", CLAUDE_CODE_SESSION_ID: "outer", DISABLE_TELEMETRY: "1" });
+  assert.deepEqual(seat, { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_TELEMETRY: "1" });
+  assert.deepEqual(outerSessionEnvNames({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" }), [], "and it is not reported as a leak from an outer session");
 });
 
 test("a provider flag is the family's exception, and the outer session's transport flag next to it is not", () => {
