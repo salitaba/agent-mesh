@@ -47,7 +47,7 @@ import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
 // the part of the prompt that must not vary by backend.
 import { withOutputVoice } from "../../core/src/context";
 import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
-import { landingDenial } from "./landing-gate";
+import { landingDenial, productWriteDenial } from "./landing-gate";
 export { describeHostLeaks, describeIsolation, outerSessionEnvNames, withoutOuterSession } from "./host-isolation";
 
 /** Tools that write to the repository. Gated on a write-ish capability. */
@@ -1272,6 +1272,13 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
     if (v.commitOnly && toolName === "Bash") {
       const why = commitScopeDenial(toolInput);
       if (why) return deny(`Bash denied: ${why}.`);
+    }
+    // The file tools may not write into the product checkout either: a seat with a worktree edits
+    // there, and what lands in the product checkout lands through `merge`. See `productWriteDenial`.
+    if (family === "edit" && shell?.productPath) {
+      const target = typeof toolInput.file_path === "string" ? toolInput.file_path : typeof toolInput.notebook_path === "string" ? toolInput.notebook_path : "";
+      const why = productWriteDenial(target, { cwd: shell.cwd, productPath: shell.productPath });
+      if (why) return deny(`${toolName} denied: ${why}.`);
     }
     // Whatever else a shell may do, it may not land work on the product branch: that
     // is the `merge` op's job, which checks git.merge and the merge gate and records

@@ -11378,6 +11378,22 @@ export class Supervisor {
       // -- so a conflicted merge became a thrown turn rather than an op result,
       // and the commit sha of a successful one was discarded by a bare `void`.
       let merged: { commit: string; alreadyUpToDate?: boolean; leftBehind?: string[] };
+      // The product checkout holds nothing legitimately uncommitted: work reaches it through this op alone.
+      // Whatever a seat wrote there directly is on no branch and makes `git merge` refuse, for this merge
+      // and every one after it (see `setAsideProductChanges`), so it is set aside, saved, before the merge.
+      let setAsideNote = "";
+      try {
+        const aside = await this.deps.workspace.setAsideProductChanges?.();
+        if (aside) {
+          setAsideNote =
+            `the product checkout held uncommitted changes to ${aside.files.slice(0, 5).join(", ")}${aside.files.length > 5 ? ", …" : ""}: ` +
+            `written there directly, so on no branch and seen by no reviewer. They are saved as ${aside.ref} (git show ${aside.ref}:<path>) and the merge ran on a clean checkout. ` +
+            "Edit and commit in your own worktree, never in the product checkout";
+          this.auditLine(`merge of '${artifact.name}': ${setAsideNote}`);
+        }
+      } catch (err) {
+        this.auditLine(`merge of '${artifact.name}': could not set aside uncommitted changes in the product checkout: ${err instanceof Error ? err.message : String(err)}`);
+      }
       try {
         // Scope the merge to the commit this artifact recorded, not the branch
         // tip. `opCommit` stores it as `metadata.commit`, and `createArtifact`'s
@@ -11388,7 +11404,8 @@ export class Supervisor {
         const recorded = typeof artifact.metadata?.commit === "string" ? artifact.metadata.commit : undefined;
         merged = await this.deps.workspace.mergeWorktree(artifactId, artifact.owner, comment ?? `merge ${artifact.name}`, recorded);
       } catch (err) {
-        const reason = `git merge of '${artifact.name}' failed: ${err instanceof Error ? err.message : String(err)} — nothing landed on the product branch, the patch stays MERGEABLE, and implementation-merged stays UNEVIDENCED`;
+        const failure = err instanceof Error ? err.message : String(err);
+        const reason = `git merge of '${artifact.name}' failed: ${failure}${this.productCheckoutHint(failure)}${setAsideNote ? ` (${setAsideNote})` : ""} — nothing landed on the product branch, the patch stays MERGEABLE, and implementation-merged stays UNEVIDENCED`;
         this.auditLine(`merge of '${artifact.name}': ${reason}`);
         await this.denied(actorId, artifactId, "merge (git)", { decision: "DENY", reason, ruleId: "merge.git-failed" });
         return { ok: false, op: "merge", reason };
@@ -11436,6 +11453,10 @@ export class Supervisor {
         const note = `${merged.leftBehind.length} commit(s) on ${artifact.owner}'s branch were NOT part of this artifact: ${merged.leftBehind.slice(0, 5).join("; ")}`;
         this.auditLine(`merge of '${artifact.name}': ${note}`);
         landed = `${landed} — ${note}`;
+        landedCaveat = true;
+      }
+      if (setAsideNote) {
+        landed = `${landed} — ${setAsideNote}`;
         landedCaveat = true;
       }
     } else {
@@ -11506,6 +11527,21 @@ export class Supervisor {
       return `CodePatch "${a.name}" is ${a.status} (owner ${a.owner}): ${move}`;
     });
     return `${lines.join("; ")}${patches.length > 3 ? "; …" : ""}`;
+  }
+
+  /**
+   * What to add to a refused merge whose git error says local changes or files "would be overwritten":
+   * they are in the PRODUCT checkout, which no seat can clear (the merger has no write tool, and the
+   * seat that owns the files sees a clean worktree of its own). Said, because the error's own words
+   * ("your local changes") sent the seventh run's seats asking each other to commit changes that were
+   * not theirs, round and round, until the operator reset the checkout by hand. "" for any other failure.
+   */
+  private productCheckoutHint(failure: string): string {
+    if (!/would be overwritten by (merge|checkout)/i.test(failure) || !this.deps.workspace) return "";
+    return (
+      ` — those files are in the PRODUCT checkout (${this.deps.workspace.mainPath}), not in any seat's worktree: something wrote there directly. ` +
+      `No seat can clear it (the merger has no write tool, and the owner of the files sees a clean worktree of its own); the operator can: git -C ${this.deps.workspace.mainPath} status`
+    );
   }
 
   /**

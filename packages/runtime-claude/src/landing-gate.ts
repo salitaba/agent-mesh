@@ -19,8 +19,8 @@ import * as path from "path";
  * needs `git.merge`. A git command in the seat's own worktree is untouched -- merging
  * `main` into its own branch is ordinary work -- and so is everything that is not git.
  * It reads the command text, so it stops the move a helpful model makes by reflex,
- * not a seat determined to get around it; filesystem writes (`cp`, redirection, the
- * Edit tool) are a different boundary and are not drawn here.
+ * not a seat determined to get around it. Shell writes (`cp`, redirection) are a
+ * different boundary and are not drawn here; the file tools' are (`productWriteDenial`).
  */
 
 /** git subcommands that only read. Anything else run in the product checkout is refused. */
@@ -245,6 +245,47 @@ function expandHere(w: Word, cwd: string | undefined, env: Record<string, string
  */
 export function landingDenial(command: string, scope: LandingScope, seat: LandingSeat): string | null {
   return scan(command, scope, seat, { cwd: scope.cwd, env: {} }, 0);
+}
+
+/**
+ * Why a file tool may not write `target`, or null if it may.
+ *
+ * `landingDenial` keeps a seat's SHELL from changing the product branch. The file tools were the other
+ * door, and nothing guarded it: the seventh cronlite run's developer, its session resumed after a crash,
+ * edited `src/index.js` and `test/index.test.js` by the absolute path of the product checkout (thirteen
+ * Edit calls, twelve of them landed) instead of its own worktree's. The files changed on no branch, no
+ * reviewer saw them, and every `merge` after that failed on "your local changes would be overwritten", six
+ * times; the seats spent nearly eight minutes and two
+ * escalation cards asking one another to commit changes that were not theirs, until the operator reset the
+ * checkout by hand.
+ *
+ * A write is refused when its target resolves inside the product checkout and the seat's own directory is
+ * not that checkout (a mesh without worktrees works in it, and that is ordinary). A target that does not
+ * exist yet is resolved through its nearest existing parent, so a new file, or a path through a symlink, is
+ * held to the same rule. Reads never reach this: `Read`, `Glob` and `Grep` are not file-writing tools.
+ */
+export function productWriteDenial(target: string, scope: LandingScope): string | null {
+  if (!target) return null;
+  if (within(scope.cwd, scope.productPath)) return null;
+  const absolute = path.resolve(scope.cwd, target);
+  if (!within(resolveForWrite(absolute), scope.productPath)) return null;
+  return (
+    `\`${target}\` is in the product checkout (${scope.productPath}), which changes only through the \`merge\` op: a file written there is on no branch, no reviewer has seen it, and it makes every later merge fail. ` +
+    `Write the file in your own worktree (${scope.cwd}), commit it there, and let the merge land it`
+  );
+}
+
+/** The real path of `p` even when it does not exist yet: the nearest existing parent, resolved, with the rest appended. */
+function resolveForWrite(p: string): string {
+  let existing = p;
+  const rest: string[] = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return p;
+    rest.unshift(path.basename(existing));
+    existing = parent;
+  }
+  return path.join(realOrResolved(existing), ...rest);
 }
 
 interface ShellState {

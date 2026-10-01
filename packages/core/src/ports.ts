@@ -86,6 +86,14 @@ export interface WorkspacePort {
   ): Promise<{ commit: string; alreadyUpToDate?: boolean; leftBehind?: string[] }>;
   removeWorktree(agentId: string): Promise<void>;
   /**
+   * Uncommitted changes to tracked files in the PRODUCT checkout, saved under a ref and removed, so the
+   * merge that follows lands on a clean checkout; null when there are none. Work reaches the product
+   * checkout through `mergeWorktree` alone, so anything uncommitted there was written directly, is on no
+   * branch, and would make `git merge` refuse ("your local changes would be overwritten") for every
+   * landing after it. Optional because only a git workspace can answer it.
+   */
+  setAsideProductChanges?(): Promise<{ files: string[]; ref: string } | null>;
+  /**
    * Uncommitted state of an agent's worktree, or null when it has none.
    *
    * Required, not optional-for-mocks: while it was optional the untracked-work

@@ -198,6 +198,42 @@ export class GitWorkspace implements WorkspacePort {
   }
 
   /**
+   * Uncommitted changes to tracked files in the product checkout, saved under a ref and removed from the
+   * working tree, so the merge that follows lands on a clean checkout. Null when there are none.
+   *
+   * Nothing legitimate is uncommitted there: work reaches the product checkout through `mergeWorktree`
+   * alone, and a seat's own work lives in its worktree. When something is, a seat wrote it directly (the
+   * seventh cronlite run's developer edited `src/index.js` by the product checkout's absolute path),
+   * it is on no branch, and `git merge` refuses to run over it: "Your local changes to the following
+   * files would be overwritten". Every merge after that failed the same way, six times, and no seat
+   * could clear it (the merger has no write tool, and the owner of the files sees a clean worktree of
+   * its own) until the operator reset the checkout by hand. `restoreAfterFailedMerge` already takes the
+   * same position for a checkout a merge has wedged: tracked modifications are discarded, because a
+   * checkout that cannot take a merge is unusable for every landing after it.
+   *
+   * What is discarded is kept first. `git stash create` records the working tree and the index as a
+   * commit without touching either, and the commit is pinned under `refs/mesh/product-set-aside/<time>`,
+   * so the content is recoverable with `git show <ref>:<path>`. If it cannot be saved, nothing is
+   * removed. Untracked files are left alone: they are not what `git merge` trips on unless a landing
+   * brings the same path, and deleting a file with no copy anywhere is a different decision.
+   */
+  async setAsideProductChanges(): Promise<{ files: string[]; ref: string } | null> {
+    await this.ensureRepo();
+    const status = await this.gitRaw(["status", "--porcelain", "--untracked-files=no"], this.mainDir).catch(() => "");
+    const files = status
+      .split("\n")
+      .filter((line) => line.length > 3)
+      .map((line) => line.slice(3).replace(/^.* -> /, ""));
+    if (files.length === 0) return null;
+    const saved = await this.git(["stash", "create", "mesh: uncommitted changes found in the product checkout"], this.mainDir).catch(() => "");
+    if (!saved) return null;
+    const ref = `refs/mesh/product-set-aside/${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    await this.git(["update-ref", ref, saved], this.mainDir);
+    await this.git(["reset", "--hard", "HEAD"], this.mainDir);
+    return { files, ref };
+  }
+
+  /**
    * Keep the runtime's own `.mesh/` directory out of the product repo.
    *
    * The Claude adapter writes each seat's ROLE.md and MESH_CONTEXT.md to
