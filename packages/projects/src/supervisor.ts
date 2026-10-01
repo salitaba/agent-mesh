@@ -3,6 +3,8 @@ import * as path from "path";
 import { randomBytes } from "crypto";
 import { spawn, type ChildProcess } from "child_process";
 import type { GitMode } from "../../protocol/src/index";
+// The one file, not the package barrel: the barrel loads the sqlite index, and the host must not.
+import { processAlive, processIdentity } from "../../persistence/src/process-identity";
 import type { ProjectRef, ProjectStatus, ProjectSupervisor } from "./types";
 
 /**
@@ -181,13 +183,7 @@ function childStderrPath(ref: ProjectRef): string {
 }
 
 function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
+  return processAlive(pid);
 }
 
 /**
@@ -380,7 +376,7 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
       } catch {
         continue;
       }
-      let record: { pid?: number; hostPid?: number; hostId?: string } = {};
+      let record: { pid?: number; hostPid?: number; hostId?: string; startId?: string; hostStartId?: string } = {};
       try {
         record = JSON.parse(raw);
       } catch {
@@ -397,8 +393,13 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
       // one process (tests, and an embedded host) share a pid, and pid-only
       // ownership would let the second reap the first's live children.
       const ownedByUs = record.hostId === this.hostId;
-      if (!ownedByUs && pidAlive(hostPid)) continue;
-      if (pidAlive(pid) && pid !== process.pid) {
+      // "Alive" means the SAME process, not whatever now wears that number. A pidfile on a volume
+      // outlives the container that wrote it, and the next container numbers its processes from the
+      // same small integers: without the start-time check a dead pod's host pid looked like a live
+      // host (so nothing was reaped and the debris stayed), and a dead pod's child pid could be an
+      // innocent process of this one, which would then have been signalled.
+      if (!ownedByUs && processAlive(hostPid, record.hostStartId)) continue;
+      if (processAlive(pid, record.startId) && pid !== process.pid) {
         await killPidWithEscalation(pid, this.opts.stopGraceMs);
         reaped.push(ref.id);
       }
@@ -555,6 +556,10 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
         projectId: child.ref.id,
         hostPid: process.pid,
         hostId: this.hostId,
+        // When each process started, so a later host can tell these two from whatever has their pids by
+        // then. Absent where the platform cannot say, and then the pid alone is trusted, as it was.
+        startId: processIdentity(child.pid) ?? undefined,
+        hostStartId: processIdentity(process.pid) ?? undefined,
         startedAt: child.startedAt,
       }),
       "utf8",

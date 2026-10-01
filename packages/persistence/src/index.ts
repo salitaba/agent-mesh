@@ -4,6 +4,7 @@ import type { MeshEvent } from "../../protocol/src/index";
 import type { exportState } from "../../core/src/state";
 
 export * from "./state-lock";
+export * from "./process-identity";
 import { STATE_LOCK_FILENAME } from "./state-lock";
 
 export interface SessionRecord {
