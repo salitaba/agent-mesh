@@ -3079,6 +3079,18 @@ export interface AgentContextBundle {
    */
   hiddenTools?: string[];
   /**
+   * The seats, other than this one, that hold `git.merge`: the ones a patch is asked of when this
+   * seat has no `mesh_merge`. Set only when this seat cannot merge itself (it is the answer
+   * otherwise), and absent when no agent seat can: then only the operator lands a patch, and the
+   * briefing says that instead of "ask that seat".
+   *
+   * "Ask the seat that holds `git.merge`" without a name sent the sixth cronlite run's developer
+   * to the architect twice, and the pm once: three merge requests to a seat without the
+   * capability, two of them declined in so many words, while the tech-lead, which held it, was
+   * the one nobody asked. The patch landed 3 min 38 s after the first.
+   */
+  mergers?: string[];
+  /**
    * Set when this seat holds the capability that reviews a verification report (`test.write`,
    * `security.review`): it is one of the seats sent to test someone else's patch. Absent for the
    * rest, who are not shown the paragraph about how to.

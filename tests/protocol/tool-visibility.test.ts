@@ -184,7 +184,7 @@ test("a seat that cannot merge is not told a patch lands by `mesh_merge`; the on
   try {
     const dev = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "dev"));
     assert.doesNotMatch(dev, /mesh_merge/);
-    assert.match(dev, /merged by a seat that holds `git\.merge`, which you do not: you have no merge tool, so ask that seat once the patch is MERGEABLE/);
+    assert.match(dev, /being merged by lead, which holds `git\.merge` — you do not, and have no merge tool: ask lead once the patch is MERGEABLE, not a seat that cannot merge/);
     const lead = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "lead"));
     assert.match(lead, /mesh_commit \/ mesh_request_commit \/ mesh_merge — version-control moves/);
     assert.match(lead, /and then `mesh_merge`; approval alone lands nothing/);

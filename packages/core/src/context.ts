@@ -826,6 +826,13 @@ export function buildAgentContext(
   }));
 
   const hiddenTools = hiddenToolsFor(config.agents[agentId], config.bus.vocabulary === "contracts" ? "contracts" : undefined);
+  // Whom a seat without `mesh_merge` asks to land its patch: the other seats that hold the capability. Named because
+  // "the seat that holds `git.merge`" was read as "someone senior", and the asks went to the architect.
+  const mergers = hiddenTools.includes("mesh_merge")
+    ? Object.values(config.agents)
+        .filter((a) => a.id !== agentId && a.capabilities.includes("git.merge"))
+        .map((a) => a.id)
+    : [];
   // A seat that can review a verification report is a seat that verifies: it is the one sent to test a peer's patch.
   const verifiesPatches = VERIFICATION_ARTIFACT_TYPES.some((t) => {
     const cap = capabilityForReview(t as never);
@@ -929,6 +936,7 @@ export function buildAgentContext(
     ...(config.bus.vocabulary === "contracts" ? { commsVocabulary: "contracts" as const } : {}),
     /* Per seat, and absent when empty, for the same reason as the keys around it. */
     ...(hiddenTools.length > 0 ? { hiddenTools } : {}),
+    ...(mergers.length > 0 ? { mergers } : {}),
     ...(verifiesPatches ? { verifiesPatches: true as const } : {}),
     ...(config.bus.style === "low-contact" ? { lowContact: true as const } : {}),
     ...(config.bus.deliveryClasses?.congestionEvery !== undefined && config.bus.deliveryClasses.interruptCostTokens > 0
@@ -1929,12 +1937,18 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // `mesh_merge` is in the tool list of a seat that holds `git.merge` and of no other. The line
   // used to tell every seat that a patch lands by `mesh_merge`, and a developer without the
   // capability called it three times in the fourth cronlite run, each refused as "No such tool
-  // available"; it is told instead who does hold it and when to ask.
+  // available"; it is told instead who does hold it and when to ask. Told WHO by name: "the seat that holds
+  // `git.merge`" sent the sixth run's developer to the architect twice, and the pm once, none of which can merge.
+  const mergers = bundle.mergers ?? [];
+  const mergedBy =
+    mergers.length > 0
+      ? `being merged by ${mergers.join(" or ")}, which ${mergers.length === 1 ? "holds" : "hold"} \`git.merge\` — you do not, and have no merge tool: ask ${mergers.length === 1 ? mergers[0] : "one of them"} once the patch is MERGEABLE, not a seat that cannot merge. `
+      : "being merged by the operator: no seat in this mesh holds `git.merge` and you have no merge tool, so a MERGEABLE patch is landed from outside, and asking a peer to merge it can only be declined. ";
   lines.push(
     hidden.has("mesh_merge")
       ? "- mesh_commit / mesh_request_commit — version-control moves, subject to your capabilities. " +
           "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with mesh_artifact_transition " +
-          "and then being merged by a seat that holds `git.merge`, which you do not: you have no merge tool, so ask that seat once the patch is MERGEABLE. " +
+          `and then ${mergedBy}` +
           "Approval alone lands nothing, and no step happens on its own."
       : "- mesh_commit / mesh_request_commit / mesh_merge — version-control moves, subject to your capabilities. " +
           "A CodePatch reaches the workspace only by walking APPROVED -> VERIFIED -> MERGEABLE with mesh_artifact_transition " +
