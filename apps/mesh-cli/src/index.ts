@@ -8,10 +8,13 @@ import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
 import { UnsafeListenError } from "../../mesh-server/src/web-security";
+import { serverVersion } from "../../mesh-server/src/version";
+import { LicenseLimitError } from "../../mesh-server/src/license";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
 import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand, type Flags } from "./projects";
 import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
+import { runLicenseCommand } from "./license";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -365,6 +368,7 @@ usage:
     git flags force every child on/off; without them each child obeys its own mesh.workspace.git
   mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
+  mesh license [status|install|verify|remove]   this install's plan, limits and licence (see: mesh license --help)
   mesh backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
   mesh restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
     a reset writes one set of archives under one stamp: the state dir (the only
@@ -523,15 +527,7 @@ async function launchMesh(opts: {
 
 /** The version in the package.json this build ships beside (the repo root, or `/app` in the image). */
 export function packageVersion(): string {
-  for (const rel of [["..", "..", "..", "..", "package.json"], ["..", "..", "..", "..", "..", "package.json"]]) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, ...rel), "utf8")) as { name?: string; version?: string };
-      if (pkg.name === "agent-mesh" && pkg.version) return pkg.version;
-    } catch {
-      /* try the next candidate */
-    }
-  }
-  return "unknown";
+  return serverVersion();
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -551,6 +547,9 @@ export async function main(argv: string[]): Promise<number> {
         // Awaited so a refusal to start (a port in use, a network bind with no token) reaches the
         // catch below as one line and an exit code, instead of escaping as an unhandled rejection.
         return await runHostCommand(args.flags);
+      }
+      case "license": {
+        return await runLicenseCommand(args.positional, args.flags);
       }
       case "project":
       case "projects": {
@@ -874,6 +873,11 @@ export async function main(argv: string[]): Promise<number> {
     if (err instanceof ConfigError) {
       console.error(String(err.message));
       return 2;
+    }
+    if (err instanceof LicenseLimitError) {
+      // Same code as a refusal to listen: it will not start as configured, and retrying will not change that.
+      console.error(`mesh ${args.command}: ${err.message}`);
+      return 78;
     }
     if (err instanceof UnsafeListenError) {
       // EX_CONFIG: a service manager can tell "will never start as configured" from a crash.

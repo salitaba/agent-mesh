@@ -31,6 +31,7 @@ import {
   defaultHostConfig,
   hostConfigPath,
   loadHostConfig,
+  meshHome,
   priceUsage,
   saveHostConfig,
   validateHostConfigUpdate,
@@ -53,6 +54,11 @@ import {
 } from "../../../packages/observability/src/index";
 import type { MeshEvent } from "../../../packages/protocol/src/index";
 import { callerKind, handleAuthRoute, requireAuth } from "./auth";
+import { LicenseProvider, licenseView } from "./license";
+import { licenseMetrics, parseUsageQuery, projectLogs, usageAnswer } from "./commercial";
+import { serverVersion } from "./version";
+import { checkFeature, checkProjects, effectiveConcurrentTurns } from "../../../packages/licensing/src/index";
+import { PROMETHEUS_CONTENT_TYPE, renderPrometheus, type PromMetric } from "../../../packages/observability/src/index";
 import { insideRoots, outsideRootsMessage, projectRoots, realLocation } from "./confine";
 import { SessionStore } from "./sessions";
 import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, auditField, clientKey, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
@@ -148,6 +154,8 @@ function hostAuditTrail(line: string): void {
 }
 
 export interface HostOptions {
+  /** Where the licence comes from; defaults to the environment and `<home>/license.key`. Tests inject one. */
+  licenses?: LicenseProvider;
   /** Registry home; defaults to `MESH_HOME` or `~/.agent-mesh`. */
   home?: string;
   port?: number;
@@ -306,6 +314,8 @@ export function createHostServer(deps: {
   hostConfig?: HostConfig;
   /** Mesh home, for the `host.yaml` the config route writes. */
   home?: string;
+  /** Where the licence comes from. Defaults to the environment and `<home>/license.key`. Tests inject one. */
+  licenses?: LicenseProvider;
 }): HostServer {
   const { registry, tree, supervisor, projects } = deps;
   const startedAt = deps.startedAt ?? Date.now();
@@ -313,6 +323,13 @@ export function createHostServer(deps: {
   // through this binding at call time rather than capturing the numbers, so a
   // rebind is seen by the very next heartbeat with no restart involved.
   let hostConfig = deps.hostConfig ?? defaultHostConfig();
+  // The licence, re-read on a short timer so a newly installed one applies to a running host.
+  const licenses = deps.licenses ?? new LicenseProvider({ home: deps.home ?? meshHome() });
+  /**
+   * The turn cap in force: what `host.yaml` says, tightened to the plan's when enforcement is on. Everything that
+   * reads or applies the cap goes through this, so what the dashboard shows is what the host does.
+   */
+  const turnCap = (): number | null => effectiveConcurrentTurns(licenses.current().entitlements, hostConfig.maxConcurrentTurns);
 
   /**
    * The host's own subscription to one child's `/events/stream`.
@@ -484,7 +501,7 @@ export function createHostServer(deps: {
       tokens,
       runningTurns,
       ceilingUsd: hostConfig.spendCeilingUsd,
-      maxConcurrentTurns: hostConfig.maxConcurrentTurns,
+      maxConcurrentTurns: turnCap(),
       ceilingTripped,
       parked: [...parkedByPolicy.keys()],
     };
@@ -635,7 +652,7 @@ export function createHostServer(deps: {
     // only ever filled up would make the first trip the last one anyone heard
     // about. Note this is NOT where `parkedByPolicy` clears — see its comment.
     ceilingEscalated.clear();
-    const cap = hostConfig.maxConcurrentTurns;
+    const cap = turnCap();
     if (cap === null || totals.runningTurns <= cap) return;
     let over = totals.runningTurns - cap;
     const newestFirst = supervisor
@@ -669,6 +686,54 @@ export function createHostServer(deps: {
     const spend = spendOf(ref.id);
     if (spend) summary.spend = spend;
     return summary;
+  };
+
+  /** The host as a scrape: projects, spend, the cap, subscribers and the licence. */
+  const hostMetrics = (): PromMetric[] => {
+    const spend = aggregateSpend();
+    const refs = registry.list();
+    const byStatus = new Map<string, number>();
+    for (const ref of refs) {
+      const status = statusOf(ref.id);
+      byStatus.set(status, (byStatus.get(status) ?? 0) + 1);
+    }
+    const licence = licenses.current().entitlements;
+    const running = supervisor.runningIds();
+    return [
+      { name: "agent_mesh_up", help: "1 while the host is serving.", type: "gauge", samples: [{ value: 1 }] },
+      { name: "agent_mesh_info", help: "The running version; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "host" }, value: 1 }] },
+      { name: "agent_mesh_uptime_seconds", help: "Seconds since the host started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
+      {
+        name: "agent_mesh_projects",
+        help: "Registered projects by status.",
+        type: "gauge",
+        samples: [...byStatus].map(([status, value]) => ({ labels: { status }, value })),
+      },
+      { name: "agent_mesh_projects_tripped", help: "Projects whose restart breaker is open.", type: "gauge", samples: [{ value: refs.filter((r) => tree.isTripped(r.id)).length }] },
+      { name: "agent_mesh_spend_usd", help: "Estimated spend of open projects since each last started, at list prices (the provider's invoice is the bill).", type: "gauge", samples: [{ value: spend.usd }] },
+      { name: "agent_mesh_spend_ceiling_usd", help: "The aggregate spend ceiling; absent when it is disabled.", type: "gauge", samples: spend.ceilingUsd === null ? [] : [{ value: spend.ceilingUsd }] },
+      { name: "agent_mesh_spend_ceiling_tripped", help: "1 when the ceiling has parked open projects.", type: "gauge", samples: [{ value: spend.ceilingTripped ? 1 : 0 }] },
+      { name: "agent_mesh_tokens", help: "Fresh input and output tokens reported by open projects since each last started.", type: "gauge", samples: [{ value: spend.tokens }] },
+      { name: "agent_mesh_running_turns", help: "Agent turns running now, across open projects.", type: "gauge", samples: [{ value: spend.runningTurns }] },
+      { name: "agent_mesh_max_concurrent_turns", help: "The concurrent-turn cap in force (host.yaml tightened to the plan's); absent when unlimited.", type: "gauge", samples: spend.maxConcurrentTurns === null ? [] : [{ value: spend.maxConcurrentTurns }] },
+      { name: "agent_mesh_sse_clients", help: "Event-stream subscribers connected to this host.", type: "gauge", samples: [{ value: multiplex.clientCount }] },
+      {
+        name: "agent_mesh_project_up",
+        help: "1 for a project whose process is running.",
+        type: "gauge",
+        samples: refs.map((r) => ({ labels: { project: r.id }, value: running.includes(r.id) ? 1 : 0 })),
+      },
+      {
+        name: "agent_mesh_project_spend_usd",
+        help: "Estimated spend of one open project since it last started.",
+        type: "gauge",
+        samples: running.flatMap((id) => {
+          const s = spendOf(id);
+          return s ? [{ labels: { project: id }, value: s.usd }] : [];
+        }),
+      },
+      ...licenseMetrics(licence, { projects: running.length, registered: refs.length }),
+    ];
   };
 
   // Set when shutdown begins, so `/readyz` stops saying "ready" while children drain.
@@ -795,6 +860,34 @@ export function createHostServer(deps: {
         return json(200, browseDir(asked, roots));
       }
 
+      // ------------------------------------------------------------ commercial
+      // What this install is entitled to and how much of it is in use. Read by the dashboard's banner and by
+      // `mesh license status --bus`. Authenticated like everything else here.
+      if (parts[0] === "api" && parts[1] === "license" && parts.length === 2 && req.method === "GET") {
+        return json(200, licenseView(licenses.current(), { registered: registry.list().length, open: supervisor.runningIds().length }));
+      }
+      // Usage by day, project, seat and model, from the projects' event logs: tokens exact, dollars an
+      // estimate that says so. A plan feature, so under `enforce` a plan without it is told which.
+      if (parts[0] === "api" && parts[1] === "usage" && parts.length === 2 && req.method === "GET") {
+        const gate = checkFeature(licenses.current().entitlements, "usage-export", "Usage export");
+        if (gate.blocked) return json(403, { error: gate.message, code: "license_feature", feature: "usage-export" });
+        const parsed = parseUsageQuery(u.searchParams);
+        if (!parsed.ok) return json(400, { error: parsed.error });
+        const { logs, skipped } = projectLogs(registry.list());
+        const answer = await usageAnswer(logs, skipped, parsed.query, hostConfig.modelPrices, gate.ok ? undefined : gate.message);
+        res.writeHead(200, { "content-type": answer.contentType, ...(answer.disposition ? { "content-disposition": answer.disposition } : {}) });
+        res.end(answer.body);
+        return;
+      }
+      // For a scraper. Behind the same credential as everything else: Prometheus sends a bearer token.
+      if (parts[0] === "metrics" && parts[1] === "prometheus" && parts.length === 2 && req.method === "GET") {
+        const gate = checkFeature(licenses.current().entitlements, "prometheus-metrics", "The Prometheus endpoint");
+        if (gate.blocked) return json(403, { error: gate.message, code: "license_feature", feature: "prometheus-metrics" });
+        res.writeHead(200, { "content-type": PROMETHEUS_CONTENT_TYPE });
+        res.end(renderPrometheus(hostMetrics()));
+        return;
+      }
+
       // ----------------------------------------------------------- host config
       // Cross-project, unlike everything under `/api/projects/:id`: one host
       // process has exactly one of each of these numbers.
@@ -909,6 +1002,16 @@ export function createHostServer(deps: {
           if (!ref) return json(404, { error: `no project '${id}' in the registry` });
 
           if (parts[3] === "open" && parts.length === 4 && req.method === "POST") {
+            // The plan's limit on projects open at once. Only OPENING counts: a project that is already
+            // running is not made more open by being asked again, and nothing that is running is ever stopped
+            // for a limit. Under `warn` this is reported (the dashboard's licence banner and the log) and the
+            // project opens anyway.
+            const open = supervisor.runningIds();
+            if (!open.includes(id)) {
+              const check = checkProjects(licenses.current().entitlements, open.length + 1);
+              if (check.blocked) return json(403, { error: check.message, code: "license_limit", limit: "projects" });
+              if (!check.ok) hostAudit(`licence: ${check.message}`);
+            }
             // A project that is not running cannot still be parked by policy:
             // the record outlived the child that it described, so opening is
             // the point where it stops being true. Guarded on `running`
@@ -1423,7 +1526,14 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
       path.resolve(__dirname, "..", "..", "mesh-dashboard", "dist"),
     ].find((d) => fs.existsSync(d));
 
-  const hostDeps: Parameters<typeof createHostServer>[0] = { registry, tree, supervisor, projects, dashboardDir, hostConfig };
+  // Read at boot and then on a timer, so a licence installed while the host is up applies without a restart. What
+  // it says goes in the log now, where an operator will see an expiry coming before it matters.
+  const licenses = options.licenses ?? new LicenseProvider({ home: options.home ?? meshHome() });
+  const boot = licenses.current().entitlements;
+  hostAudit(`licence: ${boot.summary}`);
+  for (const w of boot.warnings) hostAudit(`licence warning: ${w}`);
+
+  const hostDeps: Parameters<typeof createHostServer>[0] = { registry, tree, supervisor, projects, dashboardDir, hostConfig, licenses };
   // Only when set: `saveHostConfig` falls back to `meshHome()`, and passing an
   // explicit `undefined` would defeat that default.
   if (options.home) hostDeps.home = options.home;

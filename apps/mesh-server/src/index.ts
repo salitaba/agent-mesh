@@ -58,6 +58,12 @@ import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToo
 import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
 import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
+import { licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
+import { serverVersion } from "./version";
+import { checkFeature, checkSeats } from "../../../packages/licensing/src/index";
+import { PROMETHEUS_CONTENT_TYPE, renderPrometheus, type PromMetric } from "../../../packages/observability/src/index";
+import { meshHome } from "../../../packages/projects/src/index";
 import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, auditField, clientKey, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
@@ -1198,7 +1204,7 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
   return root;
 }
 
-export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: string } = {}): http.Server {
+export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: string; licenses?: LicenseProvider } = {}): http.Server {
   const { supervisor, kernel, config, store } = instance;
   const hub = new SseHub({ maxClients: maxSseClients() });
   kernel.subscribe((e) => hub.broadcast(e));
@@ -1457,6 +1463,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const sessions = new SessionStore();
   const limiter = new FailureLimiter();
   const previews = new PreviewCapabilities();
+  // The licence, re-read on a short timer so one installed while this server is up applies without a restart.
+  const licenses = opts.licenses ?? new LicenseProvider({ home: meshHome() });
 
   /**
    * Append one line to a file under the state directory's `logs/`. An audit trail never breaks the
@@ -1541,6 +1549,43 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "nothing at that path: a playground link opens apps/playground/ and presets/" }));
     return Promise.resolve();
+  };
+
+  /**
+   * The seats in this mesh: every agent the kernel tracks except the operator. `human` is how the log names
+   * whoever is at the console; it is registered like an agent but is not one a plan sells or a model bills.
+   */
+  const seatRecords = () => [...kernel.state.agents.values()].filter((r) => r.state.agentId !== HUMAN_AGENT_ID);
+  const seatsInUse = (): number => seatRecords().length;
+
+  /** This mesh as a scrape: activity, the agents' states, the loop's health, subscribers and the licence. */
+  const meshMetrics = (): PromMetric[] => {
+    const m = buildMetrics(kernel.state, Date.now() - startedAt);
+    const seatsByLifecycle: Record<string, number> = {};
+    for (const r of seatRecords()) seatsByLifecycle[r.state.lifecycle] = (seatsByLifecycle[r.state.lifecycle] ?? 0) + 1;
+    const mission = [...kernel.state.budgets.values()].find((b) => b.key.startsWith("mission:") && b.limitKind === "tokens");
+    return [
+      { name: "agent_mesh_up", help: "1 while the server is serving.", type: "gauge", samples: [{ value: 1 }] },
+      { name: "agent_mesh_info", help: "The running version, mode and mesh id; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "mesh", mode: instance.mode, mesh: config.meshId }, value: 1 }] },
+      { name: "agent_mesh_uptime_seconds", help: "Seconds since the server started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
+      { name: "agent_mesh_events_total", help: "Events in the log.", type: "counter", samples: [{ value: m.events }] },
+      { name: "agent_mesh_messages_total", help: "Messages sent.", type: "counter", samples: [{ value: m.messages }] },
+      { name: "agent_mesh_activations_total", help: "Agent turns taken.", type: "counter", samples: [{ value: m.activations }] },
+      { name: "agent_mesh_tokens_total", help: "Tokens the mesh has counted against its budgets.", type: "counter", samples: [{ value: m.tokensTotal }] },
+      { name: "agent_mesh_mission_tokens_limit", help: "The mission token budget; absent when there is none.", type: "gauge", samples: mission?.limit != null ? [{ value: mission.limit }] : [] },
+      { name: "agent_mesh_artifacts", help: "Artifacts in the ledger.", type: "gauge", samples: [{ value: m.artifacts }] },
+      { name: "agent_mesh_tasks", help: "Tasks by state.", type: "gauge", samples: [{ labels: { state: "open" }, value: m.openTasks }, { labels: { state: "completed" }, value: m.completedTasks }] },
+      { name: "agent_mesh_escalations_open", help: "Escalations waiting for an operator.", type: "gauge", samples: [{ value: m.escalationsOpen }] },
+      {
+        name: "agent_mesh_agents",
+        help: "Seats by lifecycle state.",
+        type: "gauge",
+        samples: Object.entries(seatsByLifecycle).map(([lifecycle, value]) => ({ labels: { lifecycle }, value })),
+      },
+      { name: "agent_mesh_event_loop_lag_seconds", help: "How late the last one-second timer fired.", type: "gauge", samples: [{ value: loopLagMs / 1000 }] },
+      { name: "agent_mesh_sse_clients", help: "Event-stream subscribers connected to this server.", type: "gauge", samples: [{ value: hub.clientCount }] },
+      ...licenseMetrics(licenses.current().entitlements, { seats: seatsInUse() }),
+    ];
   };
 
   const server = http.createServer((req, res) => {
@@ -1713,6 +1758,32 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const via = callerKind(req, { sessions });
         const ip = clientKey(req);
         res.on("finish", () => appendLog("mutations.log", `${req.method} ${auditField(u.pathname)} status=${res.statusCode} via=${via} ip=${auditField(ip)}`));
+      }
+
+      // ------------------------------------------------------------ commercial
+      // What this install is entitled to and how much of it is in use.
+      if (parts[0] === "license" && parts.length === 1 && req.method === "GET") {
+        return json(200, licenseView(licenses.current(), { seats: seatsInUse() }));
+      }
+      // Usage by day, seat and model from this mesh's event log: tokens exact, dollars an estimate that says so.
+      if (parts[0] === "usage" && parts.length === 1 && req.method === "GET") {
+        const gate = checkFeature(licenses.current().entitlements, "usage-export", "Usage export");
+        if (gate.blocked) return json(403, { error: gate.message, code: "license_feature", feature: "usage-export" });
+        const parsed = parseUsageQuery(u.searchParams);
+        if (!parsed.ok) return json(400, { error: parsed.error });
+        const logs = [{ project: config.meshId, file: `${config.stateDir}/logs/events.jsonl` }];
+        const answer = await usageAnswer(logs, [], parsed.query, {}, gate.ok ? undefined : gate.message);
+        res.writeHead(200, { "content-type": answer.contentType, ...(answer.disposition ? { "content-disposition": answer.disposition } : {}) });
+        res.end(answer.body);
+        return;
+      }
+      // For a scraper; behind the same credential as everything else.
+      if (parts[0] === "metrics" && parts[1] === "prometheus" && parts.length === 2 && req.method === "GET") {
+        const gate = checkFeature(licenses.current().entitlements, "prometheus-metrics", "The Prometheus endpoint");
+        if (gate.blocked) return json(403, { error: gate.message, code: "license_feature", feature: "prometheus-metrics" });
+        res.writeHead(200, { "content-type": PROMETHEUS_CONTENT_TYPE });
+        res.end(renderPrometheus(meshMetrics()));
+        return;
       }
 
       // ------------------------------------------------------------ health
@@ -3640,7 +3711,7 @@ export async function gitFacts(root: string): Promise<Record<string, string>> {
   };
 }
 
-export async function startServer(options: BootstrapOptions & { port?: number; host?: string; dashboardDir?: string }): Promise<ServerHandle> {
+export async function startServer(options: BootstrapOptions & { port?: number; host?: string; dashboardDir?: string; licenses?: LicenseProvider }): Promise<ServerHandle> {
   // The listener is bound BEFORE the mesh boots, through the
   // `beforeInitialActivation` seam, because the seats' MCP bridge is spawned
   // against this server's own URL — and for a child of the host, which asks the
@@ -3652,8 +3723,16 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
   // each time.
   // Before anything boots (the state lock, the sessions, the first wake), so a refusal costs
   // nothing to undo. Config resolution is pure, so the host read here is the host bound below.
-  const listenHost = options.host ?? resolveConfig(options.configPath).server.host;
+  const preflight = resolveConfig(options.configPath);
+  const listenHost = options.host ?? preflight.server.host;
   for (const w of assertSafeListen(listenHost).warnings) console.warn(`warn: ${w}`);
+  // The plan's limit on seats in one mesh. It is a limit on what STARTS: `enforce` refuses a mesh that is
+  // already over, and nothing running is ever stopped for it. Under `warn` (the default) it is only said.
+  const licenses = options.licenses ?? new LicenseProvider({ home: meshHome() });
+  const entitled = licenses.current().entitlements;
+  const seatWarning = enforceOrWarn(checkSeats(entitled, preflight.agentOrder.length));
+  if (seatWarning) console.warn(`warn: ${seatWarning}`);
+  for (const w of entitled.warnings) console.warn(`warn: ${w}`);
   let server: http.Server | undefined;
   let actualPort = 0;
   let boundHost = "";
@@ -3676,6 +3755,7 @@ export async function startServer(options: BootstrapOptions & { port?: number; h
     // surface is untouched and only the HTML stops being served.
     const s = createHttpServer(instance, {
       dashboardDir: instance.config.server.dashboard === false ? undefined : dashboardDir,
+      licenses,
     });
     const port = options.port ?? instance.config.server.port;
     const host = options.host ?? instance.config.server.host;
