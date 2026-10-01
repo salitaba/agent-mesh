@@ -6000,7 +6000,7 @@ export class Supervisor {
       const decision = this.deps.policy.evaluateCapability(actorId, cap, ctx);
       if (decision.decision !== "ALLOW") {
         await this.denied(actorId, taskId, `claim task (missing capability ${cap})`, decision);
-        return { ok: false, reason: `missing capability ${cap}: ${decision.reason}` };
+        return { ok: false, reason: `missing capability ${cap}: ${decision.reason}${decision.ruleId === "capabilities" ? this.claimRefusalRoute(task, cap, actorId) : ""}` };
       }
     }
     // Upstream work first. Refused out loud, naming each blocker and who holds
@@ -10707,6 +10707,10 @@ export class Supervisor {
           if (dupe) {
             return { ok: false, op: op.op, reason: `"${op.title}" is already open as ${dupe.id} (${dupe.status}) — claim that one instead of filing a second; if it is genuinely different work, give it a title that says how` };
           }
+          // A task its named assignee cannot claim is not filed. `delegate` always refused one; this path, which
+          // is what a seat uses to create work and name an owner in one op, did not (see `taskClaimGap`).
+          const gap = op.assignedTo ? this.taskClaimGap(op.requiredCapabilities, op.assignedTo) : null;
+          if (gap) return { ok: false, op: op.op, reason: gap };
           const deps = this.taskDependencies(op.dependsOn);
           if ("error" in deps) return { ok: false, op: op.op, reason: deps.error };
           const task = this.newTask(actorId, op.title, op.description, op.requiredCapabilities, op.artifactRefs, undefined, op.budgetHint, deps.ids);
@@ -10736,11 +10740,16 @@ export class Supervisor {
             });
             turn.sentOps++;
           }
-          // Cut from a version that is already behind: the task is filed (the
-          // author may mean it), and the author is told while it can still fix it.
+          // Filed either way (the author may mean it), and the author is told while it can still fix it: that
+          // no seat can claim it, or that it was cut from a version that is already behind.
+          const unclaimable = op.assignedTo ? null : this.taskClaimGap(op.requiredCapabilities);
           const behind = staleTaskPins(this.state, task);
-          return behind.length > 0
-            ? { ok: true, op: op.op, taskId: task.id, reason: `task filed, but it cites ${behind.join(", ")} — the newer version may change what this task should say`, caveat: true }
+          const notes = [
+            ...(unclaimable ? [unclaimable] : []),
+            ...(behind.length > 0 ? [`it cites ${behind.join(", ")} — the newer version may change what this task should say`] : []),
+          ];
+          return notes.length > 0
+            ? { ok: true, op: op.op, taskId: task.id, reason: `task filed, but ${notes.join("; and ")}`, caveat: true }
             : { ok: true, op: op.op, taskId: task.id };
         }
         case "claim_task": {
@@ -10908,6 +10917,79 @@ export class Supervisor {
   }
 
   /**
+   * What stops a task listing `required` capabilities from being claimed, said with the way out; null when
+   * it can be: by `assignee` when one is named, else by some seat.
+   *
+   * A seat claims a task only when it holds EVERY capability the task lists, so a list no seat can satisfy is
+   * a task that stays OPEN for good, and no op withdraws a task. The seventh cronlite run's pm filed three
+   * implementation tasks for the developer listing [repository.write, git.commit, test.write, test.execute]:
+   * only qa holds `test.write`, and no seat holds it beside `repository.write`. `delegate` refused that case
+   * and `create_task` with `assignedTo` did not, so the tasks were filed, the developer's claim was refused,
+   * a 23k-token turn went on asking the tech-lead (whose "claim the tasks and proceed" could not work:
+   * nothing waives a requirement), and all three were still OPEN when the mission completed.
+   *
+   * The list is normalized first, because `target.capabilities` is normalized at config load and the op's list
+   * was not: a delegate naming `code.write` against a seat holding the `repository.write` it aliases to
+   * reported the seat as lacking a capability it had. The `implementation.gate` marker is read by the
+   * completion gate and held by no seat, so it is never counted. The operator is not a seat that claims, and an
+   * assignee that is not a seat at all is left to the send that follows. What a seat HOLDS is read, not what a
+   * policy rule would deny it at claim time: the rule is the operator's to explain, and `claimTask` still enforces it.
+   */
+  private taskClaimGap(required: string[] | undefined, assignee?: string): string | null {
+    const caps = [...new Set((required ?? []).map((c) => normalizeCapability(String(c))))].filter((c) => c !== IMPLEMENTATION_GATE_MARKER);
+    if (caps.length === 0) return null;
+    const seats = [...this.state.agents.values()].map((r) => r.definition).filter((d) => d.id !== HUMAN_AGENT_ID);
+    const lacks = (d: { capabilities: string[] }): string[] => caps.filter((c) => !d.capabilities.includes(c));
+    const claimants = seats.filter((d) => lacks(d).length === 0).map((d) => d.id);
+    if (assignee === undefined) {
+      if (claimants.length > 0) return null;
+      const closest = seats
+        .map((d) => ({ id: d.id, lacks: lacks(d) }))
+        .filter((c) => c.lacks.length < caps.length)
+        .sort((a, b) => a.lacks.length - b.lacks.length)
+        .slice(0, 3);
+      const who =
+        closest.length > 0
+          ? `no seat holds all of ${caps.join(", ")} (${closest.map((c) => `${c.id} lacks ${c.lacks.join(", ")}`).join("; ")})`
+          : `no seat holds ${caps.length > 1 ? "any of " : ""}${caps.join(", ")}`;
+      return `${who}, so nobody can claim it and no op withdraws it: take out what the claimant does not need and file it again`;
+    }
+    const def = seats.find((d) => d.id === assignee);
+    if (!def) return null; // the operator, or a seat that does not exist: not what this check is for
+    const missing = lacks(def);
+    if (missing.length === 0) return null;
+    const heldBy = (c: string): string => {
+      const holders = seats.filter((d) => d.capabilities.includes(c)).map((d) => d.id);
+      return holders.length > 0 ? `held by: ${holders.join(", ")}` : "no seat holds it";
+    };
+    const dropIt = `take ${missing.join(", ")} out of requiredCapabilities if the claimant does not need ${missing.length === 1 ? "it" : "them"}`;
+    const route =
+      claimants.length > 0
+        ? `: give it to ${claimants.join(" or ")}, who ${claimants.length === 1 ? "holds" : "hold"} all of them, or ${dropIt}`
+        : `, and no seat holds all of ${caps.join(", ")}: ${dropIt}`;
+    return `${assignee} lacks required capabilities ${missing.map((c) => `${c} (${heldBy(c)})`).join(", ")}. A task is claimed only by a seat that holds every capability it lists, so this one would sit open${route}`;
+  }
+
+  /**
+   * What to add to a claim refused for a missing capability: who holds it, and that only the seat that filed the
+   * task can change what it asks for. The developer of the seventh cronlite run, refused with "agent developer
+   * does not hold capability 'test.write'", asked a peer whether it could proceed without it; the peer said yes
+   * and told it to claim the tasks, which no seat can do.
+   */
+  private claimRefusalRoute(task: Task, capability: string, claimant: string): string {
+    const holders = [...this.state.agents.values()]
+      .map((r) => r.definition)
+      .filter((d) => d.id !== HUMAN_AGENT_ID && d.capabilities.includes(capability))
+      .map((d) => d.id);
+    const who = holders.length > 0 ? `held by: ${holders.join(", ")}` : "no seat holds it";
+    const fix =
+      task.createdBy === claimant
+        ? `file it again without ${capability}, or have it given to a seat that holds every capability it lists`
+        : `ask ${task.createdBy}, who filed it, for a task without ${capability}, or for one given to a seat that holds every capability it lists`;
+    return ` — ${who}. A task's required capabilities are fixed when it is filed and nothing waives them: ${fix}`;
+  }
+
+  /**
    * An open task in this goal already carrying this title, if there is one.
    *
    * Three seats independently opened a task for the same work within three
@@ -11025,21 +11107,14 @@ export class Supervisor {
     if (def.mode === "service") return { ok: false, op: "delegate", reason: "service agents may not delegate" };
     const target = this.state.agents.get(op.to)?.definition;
     if (!target) return { ok: false, op: "delegate", reason: `unknown target ${op.to}` };
-    // `target.capabilities` is normalized at config load and the op's list was
-    // not, so this compared two different vocabularies: a delegate naming
-    // `code.write` against a seat holding the `repository.write` it aliases to
-    // reported the target as lacking a capability it actually had.
-    const missingCaps = (op.requiredCapabilities ?? [])
-      .map((c) => normalizeCapability(String(c)))
-      .filter((c) => !target.capabilities.includes(c));
-    if (missingCaps.length > 0) {
-      return { ok: false, op: "delegate", reason: `${op.to} lacks required capabilities ${missingCaps.join(", ")}` };
-    }
     if (!String(op.title ?? "").trim()) return { ok: false, op: "delegate", reason: "delegate requires a non-empty title" };
     const unknownCaps = this.unknownTaskCapabilities(op.requiredCapabilities);
     if (unknownCaps.length > 0) {
       return { ok: false, op: "delegate", reason: `task requires capability the runtime can never match: ${unknownCaps.join(", ")} (known: ${CAPABILITY_TOKENS.join(", ")})` };
     }
+    // The same check, in the same order, that `create_task` makes of the seat it names (see `taskClaimGap`).
+    const gap = this.taskClaimGap(op.requiredCapabilities, op.to);
+    if (gap) return { ok: false, op: "delegate", reason: gap };
     const dupe = this.openTaskWithTitle(op.title);
     if (dupe) {
       return { ok: false, op: "delegate", reason: `"${op.title}" is already open as ${dupe.id} (${dupe.status}, ${dupe.claimedBy ?? dupe.assignedTo ?? "unclaimed"}) — delegate that one instead of filing a second` };
