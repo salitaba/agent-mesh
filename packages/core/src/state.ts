@@ -559,7 +559,7 @@ export interface ModelSpend {
   tokens: number;
   input: number;
   output: number;
-  /** Replayed transcript tokens: recorded but never billed. */
+  /** Replayed transcript tokens: outside the token budget, but priced by the host's USD ceiling and the usage report. */
   cacheRead: number;
   turns: number;
   agents: Set<string>;

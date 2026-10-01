@@ -6,7 +6,12 @@ export interface ModelCost {
   tokens: number;
   input: number;
   output: number;
-  /** Replayed transcript tokens — recorded for visibility, never billed. */
+  /**
+   * Replayed transcript tokens. Outside `tokens` and so outside the token
+   * budget — counting them would charge the whole history again every turn —
+   * but the provider does bill them, at a reduced rate, and the host's USD
+   * ceiling and the usage report price them.
+   */
   cacheRead: number;
   turns: number;
   agents: string[];

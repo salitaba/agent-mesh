@@ -2213,7 +2213,11 @@ export interface AgentOutput {
      * without bound.
      */
     total: number;
-    /** Replayed/cached prompt prefix. Observability only — never billed. */
+    /**
+     * Replayed/cached prompt prefix. Not part of `total`, so not counted
+     * against the token budget. The provider still bills it, at a reduced
+     * rate, which is why the host's USD ceiling and the usage report price it.
+     */
     cacheRead?: number;
     /**
      * The reasoning slice of `output`, already counted in it and in `total`.

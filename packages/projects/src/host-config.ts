@@ -14,6 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Document, parse as parseYaml, parseDocument } from "yaml";
+import { priceTokenUsage, type TokenPrice, type TokenUsage } from "../../protocol/src/index";
 import { meshHome } from "./store";
 
 export const HOST_CONFIG_FILENAME = "host.yaml";
@@ -54,11 +55,11 @@ export const DEFAULT_USD_PER_MTOK = 3;
  */
 export const DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000;
 
-/** Per-million-token prices for one model. */
-export interface ModelPrice {
-  inputPerMtok: number;
-  outputPerMtok: number;
-}
+/**
+ * Per-million-token prices for one model. The cache prices are optional and default to the provider's
+ * published multipliers on the input price; set them for a model that differs (see `TokenPrice`).
+ */
+export type ModelPrice = TokenPrice;
 
 export interface HostConfig {
   /** Per-child `--max-old-space-size` in MB. `null` leaves the default heap. */
@@ -151,7 +152,19 @@ function parsePrices(value: unknown, warnings: string[]): Record<string, ModelPr
       const output = entry.output_per_mtok;
       const ok = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
       if (ok(input) && ok(output)) {
-        out[model] = { inputPerMtok: input, outputPerMtok: output };
+        const price: ModelPrice = { inputPerMtok: input, outputPerMtok: output };
+        // Optional, and a bad one is dropped with a warning rather than failing the entry: the model is still
+        // priced, at the default multiplier, which is closer to the truth than ignoring the whole row.
+        for (const [yamlKey, field] of [
+          ["cache_write_per_mtok", "cacheWritePerMtok"],
+          ["cache_read_per_mtok", "cacheReadPerMtok"],
+        ] as const) {
+          if (!(yamlKey in entry)) continue;
+          const v = entry[yamlKey];
+          if (ok(v)) price[field] = v;
+          else warnings.push(`host.yaml: model_prices.${model}.${yamlKey} must be a number >= 0 — using the default multiplier`);
+        }
+        out[model] = price;
         continue;
       }
     }
@@ -237,22 +250,17 @@ export function loadHostConfig(home: string = meshHome()): HostConfig {
 }
 
 /**
- * Convert one model's token counts to USD.
+ * USD for one model's usage, all four token classes: input, output, cache writes and cache reads.
  *
- * Cache reads are excluded by the caller, not here: `ModelCost.cacheRead` is
- * already recorded separately precisely because replayed transcript tokens are
- * not billed at the input rate.
+ * The spend ceiling used to price fresh input and output only, which left out the larger part of a cached
+ * workload's bill (see `protocol/pricing`): there is deliberately no helper that does that any more. A model
+ * with no entry is priced at `defaultUsdPerMtok` for input and output alike and at the cache multipliers of
+ * that rate, so an unpriced model still counts its cache traffic and errs toward tripping early, like every
+ * other default here.
  */
-export function priceTokens(
-  config: Pick<HostConfig, "modelPrices" | "defaultUsdPerMtok">,
-  model: string,
-  input: number,
-  output: number,
-): number {
-  const price = config.modelPrices[model];
-  const inRate = price ? price.inputPerMtok : config.defaultUsdPerMtok;
-  const outRate = price ? price.outputPerMtok : config.defaultUsdPerMtok;
-  return (input / 1_000_000) * inRate + (output / 1_000_000) * outRate;
+export function priceUsage(config: Pick<HostConfig, "modelPrices" | "defaultUsdPerMtok">, model: string, usage: TokenUsage): number {
+  const price: ModelPrice = config.modelPrices[model] ?? { inputPerMtok: config.defaultUsdPerMtok, outputPerMtok: config.defaultUsdPerMtok };
+  return priceTokenUsage(price, usage);
 }
 
 /** The scalar `host.yaml` keys a running host can be told to change. */

@@ -74,11 +74,17 @@ export interface ChildProcessSupervisorOptions {
   onModeChange?: (id: string, mode: "parked" | "live") => void;
 }
 
-/** Billed token counts for one model, as last reported by a child. */
+/**
+ * Token counts for one model, as last reported by a child, in the classes a provider bills separately. The
+ * cache fields are absent from a child that predates them and read as zero then, which prices that child as
+ * the host always did.
+ */
 export interface ChildModelTokens {
   model: string;
   input: number;
   output: number;
+  cacheWrite?: number;
+  cacheRead?: number;
 }
 
 /** Liveness sample from a child, as last observed by the supervisor. */
@@ -593,12 +599,15 @@ export class ChildProcessSupervisor implements ProjectSupervisor {
           const models: ChildModelTokens[] = Array.isArray(payload.models)
             ? (payload.models as unknown[]).flatMap((m) => {
                 if (!m || typeof m !== "object") return [];
-                const entry = m as { model?: unknown; input?: unknown; output?: unknown };
+                const entry = m as { model?: unknown; input?: unknown; output?: unknown; cacheWrite?: unknown; cacheRead?: unknown };
                 if (typeof entry.model !== "string") return [];
+                const tokens = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
                 return [{
                   model: entry.model,
                   input: typeof entry.input === "number" ? entry.input : 0,
                   output: typeof entry.output === "number" ? entry.output : 0,
+                  cacheWrite: tokens(entry.cacheWrite),
+                  cacheRead: tokens(entry.cacheRead),
                 }];
               })
             : [];

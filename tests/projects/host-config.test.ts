@@ -11,7 +11,7 @@ import {
   hostConfigPath,
   loadHostConfig,
   parseHostConfig,
-  priceTokens,
+  priceUsage,
 } from "../../packages/projects/src/index";
 
 function tmpHome(contents?: string): string {
@@ -92,20 +92,52 @@ host:
 test("input and output are priced separately", () => {
   const config = parseHostConfig("host:\n  model_prices:\n    m:\n      input_per_mtok: 3\n      output_per_mtok: 15\n");
   // 1M input at $3 + 1M output at $15.
-  assert.equal(priceTokens(config, "m", 1_000_000, 1_000_000), 18);
-  assert.equal(priceTokens(config, "m", 500_000, 0), 1.5);
+  assert.equal(priceUsage(config, "m", { input: 1_000_000, output: 1_000_000 }), 18);
+  assert.equal(priceUsage(config, "m", { input: 500_000, output: 0 }), 1.5);
 });
 
 test("an unpriced model bills at the fallback, never at zero", () => {
   // Billing an unknown model at zero would make it an invisible way to spend
   // past the ceiling, which is the one thing a backstop cannot allow.
   const config = defaultHostConfig();
-  assert.equal(priceTokens(config, "never-heard-of-it", 1_000_000, 0), DEFAULT_USD_PER_MTOK);
-  assert.ok(priceTokens(config, "never-heard-of-it", 1_000, 1_000) > 0);
+  assert.equal(priceUsage(config, "never-heard-of-it", { input: 1_000_000, output: 0 }), DEFAULT_USD_PER_MTOK);
+  assert.ok(priceUsage(config, "never-heard-of-it", { input: 1_000, output: 1_000 }) > 0);
 });
 
 test("default_usd_per_mtok overrides the fallback rate", () => {
   const config = parseHostConfig("host:\n  default_usd_per_mtok: 10\n");
   assert.equal(config.defaultUsdPerMtok, 10);
-  assert.equal(priceTokens(config, "unknown", 1_000_000, 0), 10);
+  assert.equal(priceUsage(config, "unknown", { input: 1_000_000, output: 0 }), 10);
+});
+
+test("model_prices can carry cache prices, and a bad one is dropped with a warning while the model stays priced", () => {
+  const config = parseHostConfig(`
+model_prices:
+  full: { input_per_mtok: 4, output_per_mtok: 20, cache_write_per_mtok: 5, cache_read_per_mtok: 0.2 }
+  partial: { input_per_mtok: 1, output_per_mtok: 5, cache_read_per_mtok: 0.05 }
+  broken: { input_per_mtok: 2, output_per_mtok: 8, cache_read_per_mtok: lots, cache_write_per_mtok: -1 }
+  plain: { input_per_mtok: 1, output_per_mtok: 5 }
+`);
+  assert.deepEqual(config.modelPrices.full, { inputPerMtok: 4, outputPerMtok: 20, cacheWritePerMtok: 5, cacheReadPerMtok: 0.2 });
+  assert.deepEqual(config.modelPrices.partial, { inputPerMtok: 1, outputPerMtok: 5, cacheReadPerMtok: 0.05 });
+  assert.deepEqual(config.modelPrices.broken, { inputPerMtok: 2, outputPerMtok: 8 }, "bad cache prices fall back to the default multipliers; the row is not lost");
+  assert.deepEqual(config.modelPrices.plain, { inputPerMtok: 1, outputPerMtok: 5 });
+  assert.equal(config.warnings.filter((w) => /model_prices\.broken\.cache_(read|write)_per_mtok must be a number >= 0/.test(w)).length, 2);
+});
+
+test("priceUsage counts all four token classes, and a usage with no cache fields is just input and output", () => {
+  const config = defaultHostConfig();
+  config.modelPrices = { m: { inputPerMtok: 1, outputPerMtok: 5 }, cheap: { inputPerMtok: 4, outputPerMtok: 20, cacheWritePerMtok: 5, cacheReadPerMtok: 0.2 } };
+  // 100k in + 100k out + 1M written + 40M read, at 1 / 5 / 1.25 / 0.10
+  assert.equal(priceUsage(config, "m", { input: 100_000, output: 100_000, cacheWrite: 1_000_000, cacheRead: 40_000_000 }).toFixed(2), "5.85");
+  assert.equal(priceUsage(config, "cheap", { input: 0, output: 0, cacheRead: 1_000_000 }), 0.2, "an explicit cache price is used as given");
+  assert.equal(priceUsage(config, "m", { input: 1_000_000, output: 1_000_000 }), 6, "1M in at $1 + 1M out at $5");
+  assert.equal(priceUsage(config, "m", { input: 0, output: 0 }), 0);
+});
+
+test("an unpriced model is billed at the default rate for every class, cache traffic included", () => {
+  const config = defaultHostConfig();
+  config.defaultUsdPerMtok = 10;
+  // 1M of each class: 10 (input) + 10 (output) + 12.5 (write at 1.25x) + 1 (read at 0.1x)
+  assert.equal(priceUsage(config, "never-heard-of-it", { input: 1_000_000, output: 1_000_000, cacheWrite: 1_000_000, cacheRead: 1_000_000 }), 33.5);
 });

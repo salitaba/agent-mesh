@@ -1258,7 +1258,32 @@ host:
   default_usd_per_mtok: 3       # fallback price for a model with no entry
   model_prices:                 # USD per million tokens
     anthropic/claude-sonnet-4: { input_per_mtok: 3, output_per_mtok: 15 }
+    # Cache prices are optional. Left out, a cache write is priced at 1.25x the
+    # input rate and a cache read at 0.1x (Anthropic's standard multipliers).
+    # Set them when a model's real rates differ.
+    anthropic/claude-opus-5-5: { input_per_mtok: 4, output_per_mtok: 20, cache_read_per_mtok: 0.2 }
 ```
+
+**What the spend ceiling counts.** The provider bills four classes of token:
+fresh input, output, cache writes and cache reads. A mission with persistent
+sessions replays its whole transcript every turn, and almost all of its tokens
+are cache reads — in the measured five-seat run, 2.64M of 2.86M. The ceiling
+prices **all four** (`input_per_mtok`, `output_per_mtok`, `cache_write_per_mtok`,
+`cache_read_per_mtok`), so the figure it compares against `spend_ceiling_usd` is
+the one on the invoice. Pricing only fresh input and output understated that
+run by about five times, and a ceiling that undercounts trips late.
+
+This is deliberately different from a project's **token** budget
+(`budgets.mission_tokens`), which does not count cache reads: counting a replayed
+history again on every turn would make that budget grow without bound. The token
+budget limits work done; the USD ceiling limits money spent. A model with no
+entry is priced at `default_usd_per_mtok` for every class, with the standard
+cache multipliers. A cache price that is not a non-negative number is ignored
+with a warning, and the model stays priced.
+
+The figure is an estimate from list prices, not an invoice: committed-use
+discounts, regional pricing and batch rates are not modelled. The usage report
+(`mesh usage`) uses the same prices and says so on its face.
 
 `heartbeat_timeout_ms` is how long a child may go **silent** before the
 supervision watchdog stops it and restarts it with backoff. The child beats

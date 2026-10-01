@@ -70,9 +70,14 @@ function spend() {
   if (spendFile) {
     // A half-written file is a torn read, not a spend of zero: fall back to
     // the env numbers rather than emitting a beat that says the mesh stopped.
-    try { const j = JSON.parse(fs.readFileSync(spendFile, "utf8")); return { input: Number(j.input || 0), output: Number(j.output || 0) }; } catch (e) { /* fall through */ }
+    try { const j = JSON.parse(fs.readFileSync(spendFile, "utf8")); return { input: Number(j.input || 0), output: Number(j.output || 0), cacheWrite: Number(j.cacheWrite || 0), cacheRead: Number(j.cacheRead || 0) }; } catch (e) { /* fall through */ }
   }
-  return { input: Number(process.env.MESH_STUB_INPUT || 0), output: Number(process.env.MESH_STUB_OUTPUT || 0) };
+  return {
+    input: Number(process.env.MESH_STUB_INPUT || 0),
+    output: Number(process.env.MESH_STUB_OUTPUT || 0),
+    cacheWrite: Number(process.env.MESH_STUB_CACHE_WRITE || 0),
+    cacheRead: Number(process.env.MESH_STUB_CACHE_READ || 0),
+  };
 }
 const server = http.createServer((req, res) => {
   if ((req.headers.authorization || "") !== "Bearer " + token) {
@@ -109,7 +114,7 @@ server.listen(0, "127.0.0.1", () => {
     process.stdout.write(\`${CHILD_BEAT_PREFIX} \${JSON.stringify({
       rss: 1234,
       pid: process.pid,
-      models: [{ model: "m", input: s.input, output: s.output }],
+      models: [{ model: "m", input: s.input, output: s.output, cacheWrite: s.cacheWrite, cacheRead: s.cacheRead }],
       runningTurns: parked ? 0 : Number(process.env.MESH_STUB_TURNS || 0),
     })}\\n\`);
   }, 30);
@@ -734,6 +739,73 @@ test("GET /api/host/config separates a value in force from a value chosen", { ti
     });
     assert.equal(unknown.status, 400);
   } finally {
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The ceiling is a statement about the provider's invoice. It priced fresh input and output only, so a workload
+ * that is mostly prompt cache (every seat of a mesh replays its whole session each turn) reached its real bill
+ * several times over before the ceiling noticed: on the seventh cronlite run the counted part was $1.10 of $5.52.
+ */
+test("the spend ceiling counts cache writes and reads: fresh input and output alone are far under it", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  config.modelPrices = { m: { inputPerMtok: 1, outputPerMtok: 5 } };
+  // Fresh tokens: 100k in ($0.10) + 100k out ($0.50) = $0.60, under the $5 ceiling on their own.
+  // Cache: 1M written ($1.25 at 1.25x input) + 40M read ($4.00 at 0.1x input) = $5.25 more: $5.85, over it.
+  process.env.MESH_STUB_INPUT = "100000";
+  process.env.MESH_STUB_OUTPUT = "100000";
+  process.env.MESH_STUB_CACHE_WRITE = "1000000";
+  process.env.MESH_STUB_CACHE_READ = "40000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await settle(400);
+    const body = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { usd: number; tokens: number; ceilingTripped: boolean; parked: string[] } };
+    assert.equal(body.spend.usd.toFixed(2), "5.85", "every class the provider bills is in the figure");
+    assert.equal(body.spend.tokens, 200_000, "the token count the dashboard shows is unchanged: fresh input and output");
+    assert.equal(body.spend.ceilingTripped, true, "and so the ceiling trips where it used to read $0.60");
+    assert.deepEqual(body.spend.parked, ["alpha"]);
+  } finally {
+    delete process.env.MESH_STUB_CACHE_WRITE;
+    delete process.env.MESH_STUB_CACHE_READ;
+    await host.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a model whose cache read price is lower is priced at what the operator configured", { timeout: 30_000 }, async () => {
+  const base = tmpRoot();
+  const a = makeProject(base, "alpha", "alpha");
+  const parkFile = path.join(base, "parked.log");
+  fs.writeFileSync(parkFile, "", "utf8");
+  const config = defaultHostConfig();
+  config.spendCeilingUsd = 5;
+  // Same traffic as above, but this model reads its cache at $0.05 per million instead of $0.10.
+  config.modelPrices = { m: { inputPerMtok: 1, outputPerMtok: 5, cacheReadPerMtok: 0.05 } };
+  process.env.MESH_STUB_INPUT = "100000";
+  process.env.MESH_STUB_OUTPUT = "100000";
+  process.env.MESH_STUB_CACHE_WRITE = "1000000";
+  process.env.MESH_STUB_CACHE_READ = "40000000";
+  process.env.MESH_STUB_TURNS = "0";
+  const host = await startHost(base, config, parkFile);
+  try {
+    await addAndOpen(host, a.root);
+    await settle(400);
+    const body = (await (await fetch(`${host.url}/api/projects`)).json()) as { spend: { usd: number; ceilingTripped: boolean } };
+    // 0.10 + 0.50 + 1.25 + 40 * 0.05 = 3.85
+    assert.equal(body.spend.usd.toFixed(2), "3.85");
+    assert.equal(body.spend.ceilingTripped, false);
+  } finally {
+    delete process.env.MESH_STUB_CACHE_WRITE;
+    delete process.env.MESH_STUB_CACHE_READ;
     await host.close();
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -15,23 +15,16 @@
  */
 import * as fs from "fs";
 import * as readline from "readline";
+import { priceTokenUsage, type TokenPrice } from "../../protocol/src/pricing";
 
 export type UsageDimension = "day" | "project" | "agent" | "model";
 
 export const USAGE_DIMENSIONS: readonly UsageDimension[] = ["day", "project", "agent", "model"];
 
-/** USD per million tokens. Cache prices default to the ratios Anthropic publishes (write 1.25x, read 0.1x of input). */
-export interface UsagePrice {
-  inputPerMtok: number;
-  outputPerMtok: number;
-  cacheWritePerMtok?: number;
-  cacheReadPerMtok?: number;
-}
+/** USD per million tokens. The cache prices default to the standard multipliers on the input price; set them for a model that differs (Opus 5.5 reads at 0.05x, Fable 5.1 at 0.025x). */
+export type UsagePrice = TokenPrice;
 
 export type UsagePrices = Readonly<Record<string, UsagePrice>>;
-
-export const CACHE_WRITE_MULTIPLIER = 1.25;
-export const CACHE_READ_MULTIPLIER = 0.1;
 
 export interface UsageRow {
   day?: string;
@@ -116,9 +109,7 @@ export function priceFor(model: string, prices: UsagePrices | undefined): UsageP
 }
 
 function costOf(row: { inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }, price: UsagePrice): number {
-  const write = price.cacheWritePerMtok ?? price.inputPerMtok * CACHE_WRITE_MULTIPLIER;
-  const read = price.cacheReadPerMtok ?? price.inputPerMtok * CACHE_READ_MULTIPLIER;
-  return (row.inputTokens * price.inputPerMtok + row.outputTokens * price.outputPerMtok + row.cacheWriteTokens * write + row.cacheReadTokens * read) / 1_000_000;
+  return priceTokenUsage(price, { input: row.inputTokens, output: row.outputTokens, cacheWrite: row.cacheWriteTokens, cacheRead: row.cacheReadTokens });
 }
 
 const bound = (text: string | undefined, name: string): number | undefined => {

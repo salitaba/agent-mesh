@@ -54,8 +54,13 @@ export const CHILD_LOOP_LAG_SAMPLE_MS = 1_000;
 export interface ChildBeatPayload {
   rss: number;
   pid: number;
-  /** Billed tokens per model. `cacheRead` is excluded — it is never billed. */
-  models: Array<{ model: string; input: number; output: number }>;
+  /**
+   * Tokens per model, in the four classes a provider bills separately. `cacheWrite` and `cacheRead` are
+   * optional only so a beat from a build that predates them still reads: the host prices what is there.
+   * Cache reads are billed (at a fraction of the input price); the mesh's own token BUDGETS weight them at
+   * zero by default, but the host's USD ceiling is a statement about the provider's invoice, not a budget.
+   */
+  models: Array<{ model: string; input: number; output: number; cacheWrite?: number; cacheRead?: number }>;
   /** Turns in flight in this child's scheduler, for the aggregate turn cap. */
   runningTurns: number;
   /**
@@ -191,7 +196,8 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
     // the contract, and the contract wins.
     try {
       for (const m of handle.instance.kernel.state.modelSpend.values()) {
-        payload.models.push({ model: m.model, input: m.input, output: m.output });
+        // `tokens` is what the mesh billed its budgets: input + output + cache writes, so the writes are the rest.
+        payload.models.push({ model: m.model, input: m.input, output: m.output, cacheWrite: Math.max(0, m.tokens - m.input - m.output), cacheRead: m.cacheRead });
       }
       payload.runningTurns = handle.instance.scheduler.running();
       const goalId = handle.instance.kernel.state.activeGoalId;

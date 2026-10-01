@@ -31,7 +31,7 @@ import {
   defaultHostConfig,
   hostConfigPath,
   loadHostConfig,
-  priceTokens,
+  priceUsage,
   saveHostConfig,
   validateHostConfigUpdate,
   type HostConfig,
@@ -443,8 +443,10 @@ export function createHostServer(deps: {
     let tokens = 0;
     let usd = 0;
     for (const m of beat.models) {
+      // `tokens` stays the fresh input and output the dashboard has always shown; the DOLLARS count every class the
+      // provider bills, cache writes and reads included (see `priceUsage`).
       tokens += m.input + m.output;
-      usd += priceTokens(hostConfig, m.model, m.input, m.output);
+      usd += priceUsage(hostConfig, m.model, m);
     }
     return { tokens, usd, runningTurns: beat.runningTurns };
   };
