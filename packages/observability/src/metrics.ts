@@ -96,6 +96,10 @@ export function buildMetrics(state: Projections, wallClockMs: number, recentEven
 export interface SseClient {
   write(chunk: string): void;
   end(): void;
+  /** Bytes accepted by `write` that the socket has not taken yet. A `ServerResponse` has it; a test double need not. */
+  readonly writableLength?: number;
+  /** Cut the connection. Used on a subscriber that has stopped reading. */
+  destroy?(error?: Error): void;
 }
 
 export function formatSse(event: MeshEvent): string {

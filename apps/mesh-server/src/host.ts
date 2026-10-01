@@ -54,7 +54,7 @@ import {
 import type { MeshEvent } from "../../../packages/protocol/src/index";
 import { handleAuthRoute, requireAuth } from "./auth";
 import { SessionStore } from "./sessions";
-import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 
 /**
  * Path prefixes owned by a project child.
@@ -985,6 +985,13 @@ export function createHostServer(deps: {
    * what the reconnect-with-cursors design exists to avoid.
    */
   async function streamMultiplexed(req: http.IncomingMessage, res: http.ServerResponse, u: URL): Promise<void> {
+    // A subscriber holds a socket and a queue for as long as it stays, so past the cap the answer is no.
+    // (Each is also bounded in how far behind it may fall: see the multiplex hub's `maxQueue`.)
+    if (multiplex.clientCount >= maxSseClients()) {
+      res.writeHead(503, { "content-type": "application/json", "retry-after": "5" });
+      res.end(JSON.stringify({ error: "too many event-stream subscribers on this host; close a tab or raise MESH_MAX_SSE_CLIENTS", code: "sse_capacity" }));
+      return;
+    }
     const requested = parseProjectList(u.searchParams.get("projects"));
     const cursors = parseCursors(u.searchParams.get("since"));
     // No `?projects=` means "everything open right now" — the common case for

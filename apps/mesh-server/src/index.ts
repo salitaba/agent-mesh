@@ -57,8 +57,8 @@ import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
-import { PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
-import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
@@ -1193,7 +1193,7 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
 
 export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: string } = {}): http.Server {
   const { supervisor, kernel, config, store } = instance;
-  const hub = new SseHub();
+  const hub = new SseHub({ maxClients: maxSseClients() });
   kernel.subscribe((e) => hub.broadcast(e));
 
   /** Shared by the JSON and SSE designer-chat routes: request body → model prompt. */
@@ -1415,6 +1415,16 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
    */
   let modelCatalogue: { at: number; value: Awaited<ReturnType<typeof instance.designerRuntime.listModels>> } | undefined;
   const MODEL_CATALOGUE_TTL_MS = 5 * 60 * 1000;
+  // `?refresh=1` forces a reload, and a reload spawns the CLI. Concurrent refreshes share one run, and a
+  // second one inside this window is answered from the catalogue the first just made.
+  const MODEL_REFRESH_MIN_MS = 10 * 1000;
+  let modelRefresh: Promise<Awaited<ReturnType<typeof instance.designerRuntime.listModels>>> | undefined;
+
+  // Every designer turn is a model call (a CLI or API round trip that can run for minutes). The route
+  // is the operator's, but an operator's tab in a loop, or a script, should not be able to start them
+  // without bound.
+  const MAX_DESIGNER_TURNS = 2;
+  let designerInFlight = 0;
 
   // Event-loop lag radar: a 1s interval measures how late it actually fires.
   // Exposed on /health so "server doesn't respond" can be split into
@@ -1442,15 +1452,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const previews = new PreviewCapabilities();
 
   /**
-   * The playground's files (`apps/playground` in the product checkout) under the preview policy.
+   * A file from the product checkout under the preview policy: agent-written HTML and script, so it is
+   * always sandboxed (see `PREVIEW_CSP`).
    *
-   * Shared by the authenticated `/playground/*` route and by `/_pg/<capability>/*`, which is how
-   * the sandboxed page itself reads them: it runs in an opaque origin, carries no cookie, and
-   * would be refused everywhere else. `readable` adds the CORS headers that let that page's own
-   * `fetch` read what it asked for. They go on the capability route only, where the proof is
-   * already in the URL, and never on an API answer.
+   * `readable` adds the CORS headers that let the sandboxed page's own `fetch` read what it asked for.
+   * They go on the capability route only, where the proof is already in the URL, and never on an API
+   * answer. `dir` is a path under the product root; `rest` is what the URL named beneath it.
    */
-  const servePlayground = async (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> => {
+  const servePreviewFile = async (res: http.ServerResponse, dir: readonly string[], rest: string[], readable: boolean, notFound?: string): Promise<void> => {
     applySecurityHeaders(res, "preview");
     const reply = (code: number, type: string, payload: string | Buffer): void => {
       res.writeHead(code, {
@@ -1461,9 +1470,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       res.end(payload);
     };
     const fail = (code: number, message: string): void => reply(code, "application/json", JSON.stringify({ error: message }));
-    const pgDir = path.join(instance.productPath, "apps", "playground");
+    const root = path.join(instance.productPath, ...dir);
     if (rest.length === 0) {
-      const html = await fs.promises.readFile(path.join(pgDir, "index.html"), "utf8").catch(() => "");
+      const html = await fs.promises.readFile(path.join(root, "index.html"), "utf8").catch(() => "");
       if (!html) {
         // 404 (not 200) so the dashboard's playground probe treats this as "not built" instead of
         // embedding the fallback text in an iframe.
@@ -1479,10 +1488,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     } catch {
       return fail(400, "malformed path");
     }
-    const ab = resolveInside(pgDir, relative);
-    if (!ab) return fail(400, "path escapes playground");
+    const ab = resolveInside(root, relative);
+    if (!ab) return fail(400, `path escapes ${dir.join("/")}`);
     const st = await fs.promises.stat(ab).catch(() => null);
-    if (!st || !st.isFile()) return fail(404, `missing build output (${relative}) — run "build playground" first`);
+    if (!st || !st.isFile()) return fail(404, notFound ?? `missing file (${relative})`);
     const ext = path.extname(ab).toLowerCase();
     const type =
       ext === ".js" ? "text/javascript" :
@@ -1491,6 +1500,25 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       ext === ".html" ? "text/html" :
       ext === ".svg" ? "image/svg+xml" : "application/octet-stream";
     reply(200, `${type}; charset=utf-8`, await fs.promises.readFile(ab));
+  };
+  const servePlayground = (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> =>
+    servePreviewFile(res, PREVIEW_PAGE_DIR, rest, readable, `missing build output (${rest.join("/")}) — run "build playground" first`);
+
+  /**
+   * What a capability opens, in the product's own layout: `apps/playground/...` is the page and
+   * `presets/...` its data. Anything else under the capability is not found; there is deliberately no
+   * way to name the rest of the checkout.
+   */
+  const servePreviewCapability = (res: http.ServerResponse, rest: string[]): Promise<void> => {
+    const under = (prefix: readonly string[]): boolean => prefix.every((segment, i) => rest[i] === segment);
+    if (under(PREVIEW_PAGE_DIR)) return servePlayground(res, rest.slice(PREVIEW_PAGE_DIR.length), true);
+    if (under(PREVIEW_PRESETS_DIR) && rest.length > PREVIEW_PRESETS_DIR.length) {
+      return servePreviewFile(res, PREVIEW_PRESETS_DIR, rest.slice(PREVIEW_PRESETS_DIR.length), true, "no such preset");
+    }
+    applySecurityHeaders(res, "preview");
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "nothing at that path: a playground link opens apps/playground/ and presets/" }));
+    return Promise.resolve();
   };
 
   const server = http.createServer((req, res) => {
@@ -1570,6 +1598,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         return {};
       }
     };
+    const designerBusy = (): Promise<void> => {
+      res.setHeader("retry-after", "5");
+      return json(429, { error: `the designer is already working on ${MAX_DESIGNER_TURNS} conversations; wait for one to finish`, code: "designer_busy" });
+    };
     try {
       // The headers every answer carries. A route that serves the dashboard or an agent's
       // preview replaces them just before it writes its own.
@@ -1602,7 +1634,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // than trusting a host's bearer, which a child accepts for every proxied request.
       if (parts[0] === PREVIEW_PREFIX && parts.length >= 2 && req.method === "GET") {
         if (!previews.verify(parts[1])) return send(403, { error: "this playground link is not valid, or has expired: reopen the playground from the dashboard" });
-        return servePlayground(res, parts.slice(2), true);
+        return servePreviewCapability(res, parts.slice(2));
       }
 
       // --------------------------------------------------------- MCP bridge
@@ -2102,6 +2134,12 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // Last-Event-ID / ?sinceSeq. Catch-up goes ONLY to the new client
       // (unicast) so existing subscribers never get a replay storm.
       if (parts[0] === "events" && parts[1] === "stream" && req.method === "GET") {
+        // Each subscriber holds a socket and a buffer for as long as it stays. One that keeps
+        // reconnecting must be refused, not served until the process runs out of descriptors.
+        if (hub.full) {
+          res.setHeader("retry-after", "5");
+          return json(503, { error: "too many event-stream subscribers on this server; close a tab or raise MESH_MAX_SSE_CLIENTS", code: "sse_capacity" });
+        }
         res.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache, no-transform",
@@ -2689,12 +2727,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "designer" && parts[1] === "chat" && req.method === "POST" && parts.length === 2) {
         const built = buildDesignerPrompt(await body());
         if ("error" in built) return json(400, { error: built.error });
+        if (designerInFlight >= MAX_DESIGNER_TURNS) return designerBusy();
+        designerInFlight += 1;
         const { turnId, mcp: mcpOpts } = openDesignerTurn();
         try {
           const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT });
           const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
           return json(200, { reply, proposedConfig, problems, proposal });
         } finally {
+          designerInFlight -= 1;
           // `closeDesignerTurn` drains on the happy path; this is the abort
           // path, where the runtime threw and nothing drained the buffer.
           designerTurns.close(turnId);
@@ -2708,6 +2749,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "designer" && parts[1] === "chat" && parts[2] === "stream" && req.method === "POST" && parts.length === 3) {
         const built = buildDesignerPrompt(await body());
         if ("error" in built) return json(400, { error: built.error });
+        if (designerInFlight >= MAX_DESIGNER_TURNS) return designerBusy();
+        designerInFlight += 1;
         // A client that navigates away must not keep the model turn writing
         // into a dead socket; the runtime tap stops when this route returns.
         let closed = false;
@@ -2733,6 +2776,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         } catch (err) {
           send({ type: "error", error: err instanceof Error ? err.message : String(err) });
         } finally {
+          designerInFlight -= 1;
           // A client that navigated away mid-turn never reaches the drain, and
           // an abandoned buffer that outlived its turn is exactly the
           // cross-turn write this design must not have.
@@ -2754,9 +2798,13 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "models" && req.method === "GET" && parts.length === 1) {
         const fresh = u.searchParams.get("refresh") === "1";
         const now = Date.now();
-        if (fresh || !modelCatalogue || now - modelCatalogue.at > MODEL_CATALOGUE_TTL_MS) {
-          const listed = await instance.designerRuntime.listModels();
-          modelCatalogue = { at: now, value: listed };
+        const age = modelCatalogue ? now - modelCatalogue.at : Infinity;
+        if (!modelCatalogue || age > MODEL_CATALOGUE_TTL_MS || (fresh && age > MODEL_REFRESH_MIN_MS)) {
+          modelRefresh ??= instance.designerRuntime.listModels().finally(() => {
+            modelRefresh = undefined;
+          });
+          const listed = await modelRefresh;
+          modelCatalogue = { at: Date.now(), value: listed };
         }
         const { models, default: fallback, error, variants } = modelCatalogue.value;
         // 503, not 200-with-empty-list: an empty catalogue and a failed lookup
@@ -3184,9 +3232,32 @@ function killRun(id: string): boolean {
   return true;
 }
 
+/**
+ * `rel` under `root`, or null when it would leave it.
+ *
+ * Lexical containment alone is not containment: a seat can write a symlink into the checkout (so can
+ * a commit it merges), and `stat` and `readFile` follow it. `ln -s /proc/self/environ x` then made
+ * `GET /workspace/file?path=x` return the server's own environment, operator token included, and a
+ * linked directory could be listed. So a path that exists is also resolved through its links and must
+ * still be inside the root's real location. One that does not exist yet has nothing to follow; the
+ * caller's own `stat` answers 404.
+ *
+ * A link swapped in between this check and the read can still win that race. The caller is a seat
+ * with write access to the checkout, the window is two syscalls, and the read is a preview of files it
+ * can already read, so this closes the standing hole (a link left lying in the tree) and not the race.
+ */
 function resolveInside(root: string, rel: string): string | null {
   const ab = path.resolve(root, rel || ".");
-  return ab === root || ab.startsWith(root + path.sep) ? ab : null;
+  if (!(ab === root || ab.startsWith(root + path.sep))) return null;
+  let realRoot: string;
+  let real: string;
+  try {
+    realRoot = fs.realpathSync(root);
+    real = fs.realpathSync(ab);
+  } catch {
+    return ab;
+  }
+  return real === realRoot || real.startsWith(realRoot + path.sep) ? ab : null;
 }
 
 const TREE_SKIP = new Set([".git", ".mesh-state", "node_modules", "dist"]);

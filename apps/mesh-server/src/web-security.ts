@@ -349,6 +349,14 @@ export function applySecurityHeaders(res: http.ServerResponse, kind: ResponseKin
   else res.setHeader("cache-control", "no-store");
 }
 
+// ------------------------------------------------------------ subscribers
+
+/** `MESH_MAX_SSE_CLIENTS`, or 256; a value that is not a positive integer is ignored. */
+export function maxSseClients(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number((env.MESH_MAX_SSE_CLIENTS ?? "").trim());
+  return Number.isInteger(n) && n > 0 ? n : 256;
+}
+
 // ------------------------------------------------------------ request body
 
 /** Default cap on a JSON request body. The largest legitimate one is a `mesh.yaml` or a designer transcript. */

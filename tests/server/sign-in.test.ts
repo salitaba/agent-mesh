@@ -329,7 +329,7 @@ test("playground: the signed-in dashboard gets a link; the sandboxed page reads 
     const cookie = cookieOf(await login(base, OPERATOR));
     const minted = await raw(base, { method: "POST", path: "/playground/session", headers: { ...JSON_HEADERS, cookie }, body: "{}" });
     assert.equal(minted.status, 200);
-    assert.match(minted.json.path, /^\/_pg\/\d+\.[A-Za-z0-9_-]+\/$/);
+    assert.match(minted.json.path, /^\/_pg\/\d+\.[A-Za-z0-9_-]+\/apps\/playground\/$/, "the page, in the product's own layout");
     assert.ok(Date.parse(minted.json.expiresAt) > Date.now());
 
     // No cookie, no bearer: exactly what the opaque-origin iframe sends.
@@ -354,25 +354,57 @@ test("playground: the link opens the playground directory and nothing else, and 
     const cookie = cookieOf(await login(base, OPERATOR));
     const { path: link } = (await raw(base, { method: "POST", path: "/playground/session", headers: { ...JSON_HEADERS, cookie }, body: "{}" })).json;
 
-    // Three ways to climb out. A percent-encoded dot segment is resolved by the URL parser before any
-    // routing, so it lands outside the capability prefix and meets operator auth; an encoded slash
-    // survives parsing and is caught by the containment check when the segment is decoded.
-    const escapes: Record<string, number> = { "%2e%2e/%2e%2e/secret.txt": 401, "..%2f..%2fsecret.txt": 400, "%2e%2e%2f%2e%2e%2fsecret.txt": 400 };
+    // Ways to climb out. A percent-encoded dot segment is resolved by the URL parser before any routing,
+    // so it names a different path under the capability, which opens nothing but the page and presets; an
+    // encoded slash survives parsing and is caught by the containment check when the segment is decoded.
+    const escapes: Record<string, number> = { "%2e%2e/%2e%2e/secret.txt": 404, "..%2f..%2fsecret.txt": 400, "%2e%2e%2f%2e%2e%2fsecret.txt": 400 };
     for (const [escape, expected] of Object.entries(escapes)) {
       const r = await raw(base, { path: `${link}${escape}` });
       assert.equal(r.status, expected, escape);
       assert.doesNotMatch(r.body, /not for the page/);
     }
-    // Literal dot segments are resolved by the URL parser before routing: it lands outside the prefix, where auth applies.
-    assert.equal((await raw(base, { path: `${link}../../status` })).status, 401);
+    // Climbing all the way out of the capability prefix lands on an ordinary route, where auth applies.
+    assert.equal((await raw(base, { path: `${link}../../../../status` })).status, 401);
+    // Nothing else in the checkout is named by a capability: not the root, not a source file, not a dotfile.
+    const cap = link.replace(/apps\/playground\/$/, "");
+    for (const other of ["", "secret.txt", "src/index.ts", ".env", "apps/", "apps/other/index.html", "presets"]) {
+      const r = await raw(base, { path: `${cap}${other}` });
+      assert.equal(r.status, 404, `/${other} under a capability`);
+    }
 
     const [expiry, sig] = link.split("/")[2]!.split(".") as [string, string];
     for (const bad of [`${Number(expiry) + 1000}.${sig}`, `${expiry}.${"A".repeat(sig.length)}`, "0.x", "garbage"]) {
-      const r = await raw(base, { path: `/_pg/${bad}/index.html` });
+      const r = await raw(base, { path: `/_pg/${bad}/apps/playground/index.html` });
       assert.equal(r.status, 403, bad);
       assert.match(r.json.error, /not valid, or has expired/);
     }
     assert.equal((await raw(base, { path: "/_pg" })).status, 401, "the bare prefix is just a route");
+  });
+});
+
+test("playground: a page reads its presets by its own relative URL, exactly as it always did, and only the presets", async () => {
+  await withMesh(async ({ base, m }) => {
+    seedPlayground(m);
+    const root = m.config.workspacePath;
+    fs.mkdirSync(path.join(root, "presets"), { recursive: true });
+    fs.writeFileSync(path.join(root, "presets", "track.json"), '{"laps":3}', "utf8");
+    fs.writeFileSync(path.join(root, "presets", "notes.txt"), "plain", "utf8");
+    const cookie = cookieOf(await login(base, OPERATOR));
+    const { path: link } = (await raw(base, { method: "POST", path: "/playground/session", headers: { ...JSON_HEADERS, cookie }, body: "{}" })).json;
+
+    // `../../presets/track.json` from <link>index.html: the URL the playground has always fetched.
+    const resolved = new URL("../../presets/track.json", `http://x${link}index.html`).pathname;
+    assert.equal(resolved, `${link.replace(/apps\/playground\/$/, "")}presets/track.json`);
+    const r = await raw(base, { path: resolved });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json, { laps: 3 });
+    assert.equal(r.headers["access-control-allow-origin"], "*");
+    assert.match(String(r.headers["content-security-policy"]), /^sandbox /);
+    assert.equal((await raw(base, { path: `${link.replace(/apps\/playground\/$/, "")}presets/missing.json` })).status, 404);
+    assert.equal((await raw(base, { path: `${link.replace(/apps\/playground\/$/, "")}presets/%2e%2e%2fsecret` })).status, 400);
+    // And the authenticated route for presets still wants the operator.
+    assert.equal((await raw(base, { path: "/presets/track.json" })).status, 401);
+    assert.equal((await raw(base, { path: "/presets/track.json", headers: { cookie } })).status, 200);
   });
 });
 

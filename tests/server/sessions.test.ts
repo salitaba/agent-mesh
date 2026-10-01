@@ -99,7 +99,7 @@ test("a playground capability verifies until it expires, and only for the server
   const mine = new PreviewCapabilities(() => t);
   const theirs = new PreviewCapabilities(() => t);
   const minted = mine.mint();
-  assert.equal(minted.path, `/${PREVIEW_PREFIX}/${minted.capability}/`);
+  assert.equal(minted.path, `/${PREVIEW_PREFIX}/${minted.capability}/apps/playground/`, "the page, in the product's own layout, so its relative URLs reach its presets");
   assert.equal(minted.expiresAt, t + PREVIEW_TTL_MS);
   assert.equal(mine.verify(minted.capability), true);
   assert.equal(theirs.verify(minted.capability), false, "another server's secret");

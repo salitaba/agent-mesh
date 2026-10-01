@@ -22,6 +22,15 @@ export const PREVIEW_TTL_MS = 8 * 60 * 60 * 1000;
 /** Where a capability's files are served from, under the project's own path. */
 export const PREVIEW_PREFIX = "_pg";
 
+/**
+ * What a capability opens, laid out as the product's own tree: the page at `apps/playground/` and the
+ * `presets/` beside `apps/`. Keeping the layout is what lets a page's own relative URL
+ * (`../../presets/x.json`, as the playground has always fetched them) land on the right file under the
+ * capability prefix with nothing rewritten. Nothing else in the checkout is reachable through it.
+ */
+export const PREVIEW_PAGE_DIR = ["apps", "playground"] as const;
+export const PREVIEW_PRESETS_DIR = ["presets"] as const;
+
 export class PreviewCapabilities {
   private readonly secret = randomBytes(32);
 
@@ -34,11 +43,11 @@ export class PreviewCapabilities {
     return createHmac("sha256", this.secret).update(`preview:${expiresAt}`).digest("base64url");
   }
 
-  /** A capability and the path that carries it, with its trailing slash so relative URLs resolve beneath it. */
+  /** A capability and the path of the page it opens, with its trailing slash so relative URLs resolve beneath it. */
   mint(): { capability: string; path: string; expiresAt: number } {
     const expiresAt = this.now() + this.ttlMs;
     const capability = `${expiresAt}.${this.sign(expiresAt)}`;
-    return { capability, path: `/${PREVIEW_PREFIX}/${capability}/`, expiresAt };
+    return { capability, path: `/${PREVIEW_PREFIX}/${capability}/${PREVIEW_PAGE_DIR.join("/")}/`, expiresAt };
   }
 
   /** Whether `capability` was minted by this server and has not lapsed. */
