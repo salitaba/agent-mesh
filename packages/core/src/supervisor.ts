@@ -32,6 +32,7 @@ import {
   type ArtifactRef,
   type ArtifactScope,
   type ArtifactStatus,
+  type ArtifactType,
   type CreateGoalInput,
   type DecisionRecord,
   type Escalation,
@@ -4518,6 +4519,33 @@ export class Supervisor {
     return cur;
   }
 
+  /**
+   * The artifact a publish names as the one it is a new version of (`asVersionOf`): its id, its
+   * `artifact://Type/name[/version]` URI, or its exact name as an artifact of the type being published.
+   *
+   * It took the id and nothing else. The sixth cronlite run's developer, reworking the CLI patch a reviewer
+   * had rejected, wrote the artifact's name and then its URI, was refused "unknown artifact" twice with no
+   * word of what to write, and published a new patch under a new name instead: two patches for one
+   * deliverable, and the rejected one left behind. A URI of another type, or a name of one, resolves to
+   * nothing here: the version inherits its predecessor's identity, so the type has to agree.
+   */
+  private versionTarget(ref: string, type: ArtifactType): Artifact | undefined {
+    const byId = this.state.artifacts.get(ref);
+    if (byId) return byId;
+    const byUri = artifactForRef(this.state, undefined, ref);
+    if (byUri && byUri.type === type) return byUri;
+    return this.state.artifactByName.get(artifactKey(type, ref));
+  }
+
+  /** The refusal for an `asVersionOf` that names nothing: what to write instead, and the seat's own artifacts of that type. */
+  private unknownVersionTarget(ref: string, type: ArtifactType, actorId: string): string {
+    const mine = [...this.state.artifacts.values()].filter((a) => a.type === type && a.owner === actorId);
+    const list = mine.length > 0
+      ? `yours of type ${type}: ${mine.slice(0, 5).map((a) => `${a.id} (${a.name} v${a.version}, ${a.status})`).join("; ")}${mine.length > 5 ? "; …" : ""}`
+      : `you own no ${type} yet`;
+    return `unknown artifact ${ref} — name the artifact you are versioning by its id (art-…), its artifact:// URI or its exact name; ${list}`;
+  }
+
   /** Record that this seat's current turn produced `a` through `publish_artifact`. */
   private notePublishedThisTurn(actorId: string, a: Artifact, turn: TurnState): void {
     let mine = this.turnPublishedVersions.get(actorId);
@@ -4814,8 +4842,8 @@ export class Supervisor {
     /** The predecessor's status, so the version bump can record the step it takes. */
     let previousStatus: ArtifactStatus | undefined;
     if (input.asVersionOf) {
-      const current = this.state.artifacts.get(input.asVersionOf);
-      if (!current) return { error: `unknown artifact ${input.asVersionOf}` };
+      const current = this.versionTarget(input.asVersionOf, input.type);
+      if (!current) return { error: this.unknownVersionTarget(input.asVersionOf, input.type, input.actorId) };
       previousStatus = current.status;
       const ownerCheck = this.deps.policy.checkOwnership(input.actorId, current.id, ctx);
       if (ownerCheck.decision === "DENY") {
@@ -10426,11 +10454,13 @@ export class Supervisor {
           return { ok: true, op: op.op, messageId: notice.messageId, reason: op.reason };
         }
         case "publish_artifact": {
-          const body = await this.resolveArtifactBody(actorId, op);
+          // The predecessor, by whatever name the seat gave it (`versionTarget`), as its id from here on.
+          const asVersionOf = op.asVersionOf ? (this.versionTarget(op.asVersionOf, op.type)?.id ?? op.asVersionOf) : undefined;
+          const body = await this.resolveArtifactBody(actorId, { ...op, asVersionOf });
           if ("error" in body) return { ok: false, op: op.op, reason: body.error };
           // Asked before the publish, while the version this turn created is
           // still the current one. See `amendableDraft` for the rule.
-          const amend = this.amendableDraft(actorId, op.asVersionOf, op.status, turn);
+          const amend = this.amendableDraft(actorId, asVersionOf, op.status, turn);
           const res = await this.createArtifact({
             actorId,
             name: op.name,
@@ -10440,9 +10470,9 @@ export class Supervisor {
             scope: op.scope,
             metadata: op.metadata,
             parentArtifactId: op.parentArtifactId,
-            asVersionOf: op.asVersionOf,
+            asVersionOf,
             amend: amend !== undefined,
-            inputs: this.inputsReadThisTurn(actorId, turn, op.asVersionOf),
+            inputs: this.inputsReadThisTurn(actorId, turn, asVersionOf),
           });
           if ("error" in res) return { ok: false, op: op.op, reason: res.error };
           turn.publishedOps++;
