@@ -55,8 +55,11 @@ test("a changed payload, a changed signature and another key's signature are all
   assert.equal(swapped.ok, false);
   assert.equal(!swapped.ok && swapped.reason, "bad-signature");
 
-  // One character of the signature changed.
-  const flipped = sig.slice(0, -2) + (sig.endsWith("A") ? "B" : "A") + sig.slice(-1);
+  // One character of the signature changed. A character in the middle, and always to a different one: the
+  // last characters of an unpadded base64 string carry bits that decode to nothing, so changing one of those
+  // can leave the bytes (and the verdict) as they were.
+  const at = 10;
+  const flipped = sig.slice(0, at) + (sig[at] === "A" ? "B" : "A") + sig.slice(at + 1);
   assert.equal(verifyLicense(`${prefix}.${kid}.${payload}.${flipped}`, PUBLIC).ok, false);
 
   // Signed by a key the build does not trust, claiming to be k1.

@@ -47,11 +47,22 @@ test("keygen, sign, inspect and verify, end to end", () => {
     fs.writeFileSync(tokenFile, `${token}\n`);
     assert.equal(run(["verify", tokenFile, "--public", publicKey!]).status, 0, "a file holding the token works as well as the token");
 
-    const tampered = run(["verify", `${token.slice(0, -2)}${token.endsWith("AA") ? "BB" : "AA"}`, "--public", publicKey!]);
+    // A character in the middle of the signature, changed to a different one. (The last characters of an
+    // unpadded base64 string carry bits that decode to nothing, so changing one of those can leave the
+    // bytes, and the verdict, as they were.)
+    const [prefix, kid, body, sig] = token.split(".") as [string, string, string, string];
+    const at = 10;
+    const tampered = run(["verify", [prefix, kid, body, sig.slice(0, at) + (sig[at] === "A" ? "B" : "A") + sig.slice(at + 1)].join("."), "--public", publicKey!]);
     assert.equal(tampered.status, 1);
     assert.match(tampered.stderr, /bad-signature/);
-    const wrongKey = run(["verify", token, "--public", JSON.parse(JSON.stringify(publicKey!)).replace(/.$/, publicKey!.endsWith("A") ? "B" : "A")]);
-    assert.notEqual(wrongKey.status, 0);
+
+    // A different key, generated rather than derived from the first by editing a character of it.
+    const other = run(["keygen", "--kid", "k1", "--out", path.join(dir, "other.pem")]);
+    const otherPublic = /k1: "([A-Za-z0-9_-]+)"/.exec(other.stdout)?.[1];
+    assert.ok(otherPublic && otherPublic !== publicKey);
+    const wrongKey = run(["verify", token, "--public", otherPublic!]);
+    assert.equal(wrongKey.status, 1);
+    assert.match(wrongKey.stderr, /bad-signature/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
