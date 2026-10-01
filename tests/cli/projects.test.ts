@@ -15,6 +15,7 @@ import {
 } from "../../apps/mesh-cli/src/projects";
 import { parseArgs } from "../../apps/mesh-cli/src/index";
 import { testConfigYaml } from "../helpers";
+import { writeStubScript } from "../support/stub-script";
 
 const AGENTS = { agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } };
 
@@ -31,9 +32,9 @@ function makeProjectDir(base: string, folder: string, id: string): string {
 
 /** Minimal loopback child: enough for the host to call it open. */
 function stubChildScript(base: string): string {
-  const file = path.join(base, "cli-child.js");
-  fs.writeFileSync(
-    file,
+  return writeStubScript(
+    base,
+    "cli-child",
     `
 const http = require("http");
 const token = process.env.MESH_API_TOKEN || "";
@@ -52,9 +53,7 @@ server.listen(0, "127.0.0.1", () => {
 });
 process.on("SIGTERM", () => process.exit(0));
 `,
-    "utf8",
   );
-  return file;
 }
 
 /** Captures stdout/stderr so command output can be asserted, not just eyeballed. */

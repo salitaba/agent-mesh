@@ -20,6 +20,7 @@ import * as path from "path";
 import { CHILD_BEAT_PREFIX, CHILD_READY_PREFIX, FileProjectRegistry, defaultHostConfig, readProjectsFile, type HostConfig, type ProjectRef } from "../../packages/projects/src/index";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
 import { testConfigYaml, waitFor } from "../helpers";
+import { writeStubScript } from "../support/stub-script";
 
 const AGENTS = { agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } };
 
@@ -47,9 +48,9 @@ function makeProject(base: string, folder: string, id: string): ProjectRef {
  * change the goal's ACTIVE-ness inside a live child instead of restarting one.
  */
 function modeChildScript(base: string): string {
-  const file = path.join(base, "mode-child.js");
-  fs.writeFileSync(
-    file,
+  return writeStubScript(
+    base,
+    "mode-child",
     `
 const http = require("http");
 const fs = require("fs");
@@ -105,9 +106,7 @@ server.listen(0, "127.0.0.1", () => {
 });
 process.on("SIGTERM", () => process.exit(0));
 `,
-    "utf8",
   );
-  return file;
 }
 
 /** Point the stub children at this test's spawn log and goal-state file. */

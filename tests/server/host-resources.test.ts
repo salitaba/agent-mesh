@@ -14,6 +14,7 @@ import * as path from "path";
 import { CHILD_BEAT_PREFIX, CHILD_READY_PREFIX, defaultHostConfig, type HostConfig, type ProjectRef } from "../../packages/projects/src/index";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
 import { testConfigYaml } from "../helpers";
+import { writeStubScript } from "../support/stub-script";
 
 const AGENTS = { agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } };
 
@@ -47,9 +48,9 @@ function makeProject(base: string, folder: string, id: string): ProjectRef {
  * a live host instead of restarting one with bigger constants.
  */
 function spendingChildScript(base: string): string {
-  const file = path.join(base, "spending-child.js");
-  fs.writeFileSync(
-    file,
+  return writeStubScript(
+    base,
+    "spending-child",
     `
 const http = require("http");
 const fs = require("fs");
@@ -116,9 +117,7 @@ server.listen(0, "127.0.0.1", () => {
 });
 process.on("SIGTERM", () => process.exit(0));
 `,
-    "utf8",
   );
-  return file;
 }
 
 async function startHost(base: string, hostConfig: HostConfig, parkFile: string): Promise<HostHandle> {

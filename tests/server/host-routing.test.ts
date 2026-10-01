@@ -6,6 +6,7 @@ import * as path from "path";
 import { CHILD_READY_PREFIX, type ProjectRef } from "../../packages/projects/src/index";
 import { startHostServer, CHILD_ROUTE_PREFIXES, UNKNOWN_PROJECT_STATUS, type HostHandle } from "../../apps/mesh-server/src/host";
 import { testConfigYaml } from "../helpers";
+import { writeStubScript } from "../support/stub-script";
 
 const AGENTS = { agents: [{ id: "a", role: "r", interests: [] }], mayContact: { a: [] } };
 
@@ -31,9 +32,9 @@ function makeProject(base: string, folder: string, id: string): ProjectRef {
  * tested against it for real, including streaming.
  */
 function stubChildScript(base: string, name = "http-child"): string {
-  const file = path.join(base, `${name}.js`);
-  fs.writeFileSync(
-    file,
+  return writeStubScript(
+    base,
+    name,
     `
 const http = require("http");
 const token = process.env.MESH_API_TOKEN || "";
@@ -89,9 +90,7 @@ server.listen(0, "127.0.0.1", () => {
 });
 process.on("SIGTERM", () => process.exit(0));
 `,
-    "utf8",
   );
-  return file;
 }
 
 async function startHost(base: string, extra: Parameters<typeof startHostServer>[0] = {}): Promise<HostHandle> {
@@ -452,20 +451,26 @@ test("host shutdown leaves no child processes behind", { timeout: 30_000 }, asyn
   const base = tmpRoot();
   const ref = makeProject(base, "orphanless", "orphanless");
   const host = await startHost(base);
-  await req(`${host.url}/api/projects`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ root: ref.root }),
-  });
-  await req(`${host.url}/api/projects/orphanless/open`, { method: "POST" });
-  const pid = host.supervisor.running("orphanless")!.pid;
+  // Closed in `finally` as well: the host is a live HTTP server, and a test that fails before reaching its own
+  // `close()` leaves it listening, which keeps this file's process, and so the whole run, from ever ending.
+  try {
+    await req(`${host.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ root: ref.root }),
+    });
+    await req(`${host.url}/api/projects/orphanless/open`, { method: "POST" });
+    const pid = host.supervisor.running("orphanless")!.pid;
 
-  await host.close();
-  // Idempotent: a SIGTERM arriving during teardown must not start a second one.
-  await host.close();
+    await host.close();
+    // Idempotent: a SIGTERM arriving during teardown must not start a second one.
+    await host.close();
 
-  assert.deepEqual(host.supervisor.runningIds(), []);
-  assert.throws(() => process.kill(pid, 0), "the child must not outlive the host that spawned it");
+    assert.deepEqual(host.supervisor.runningIds(), []);
+    assert.throws(() => process.kill(pid, 0), "the child must not outlive the host that spawned it");
+  } finally {
+    await host.close();
+  }
 });
 
 test("adding a mesh-less folder scaffolds only when init is asked for", { timeout: 30_000 }, async () => {
