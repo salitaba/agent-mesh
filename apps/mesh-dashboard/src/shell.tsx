@@ -12,6 +12,7 @@ import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
 import ChatDock from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
+import { LicenseBanner } from "./license";
 
 // Single source of truth for nav order, sidebar kbd hints, and the 1-9 key
 // map — the badge and the keydown handler can never drift apart again.
@@ -733,6 +734,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               <Button variant="banner-act" onClick={() => void refreshStatus()}>Retry now</Button>
             </div>
           ) : null}
+          <LicenseBanner onOpen={() => setView("hostsettings")} />
           {parkedNotice ? (
             <div className="banner warn server-banner" role="status" id="parked-banner">
               <b>Mission parked.</b> <span className="muted">{parkedNotice}</span>

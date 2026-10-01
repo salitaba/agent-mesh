@@ -24,6 +24,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useMesh } from "../store";
 import { Button, Card, Chip, ErrorState, Input } from "../components";
+import { LicenseCard } from "../license";
 
 type Effect = "live" | "host-restart";
 
@@ -77,7 +78,7 @@ const ROWS: Row[] = [
     label: "Default price",
     prefix: "$",
     suffix: "per Mtok",
-    what: "What a model with no entry in model_prices is billed at, which is what the ceiling counts.",
+    what: "What a model with neither an entry in model_prices nor a published Anthropic list price is billed at, which is what the ceiling counts.",
     // Deliberately not nullable server-side: a model billed at zero is an
     // invisible way to spend past the ceiling, and a backstop cannot allow that.
     blank: null,
@@ -257,11 +258,14 @@ export default function HostSettings(): React.JSX.Element {
         );
       })}
 
+      <LicenseCard />
+
       <Card title="Model prices">
         <p className="muted">
-          Per-model token prices, {priced === 0 ? "none set" : `${priced} set`}. These feed the spend ceiling, so a
-          mispriced model trips it early and parks everything — which makes them blocking config even though nothing
-          here refuses a turn.
+          Per-model token prices, {priced === 0 ? "none set" : `${priced} set`}. They override Anthropic's published list
+          prices, which the host already uses for the current models; set one for a negotiated rate or a model the list
+          does not name. These feed the spend ceiling, so a mispriced model trips it early and parks everything — which
+          makes them blocking config even though nothing here refuses a turn.
         </p>
         {/* Honest about the gap rather than rendering a field that 400s: the
             server reports model_prices as live, but its update path takes only
