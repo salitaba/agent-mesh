@@ -172,3 +172,11 @@ export function renderEconomics(out: PricingExport): string {
   }
   return lines.join("\n").trimEnd();
 }
+
+/**
+ * The export as the page's data block: a JSON script element. `<` is escaped so no value in the data can close the
+ * element or open a comment, whatever a future plan description contains.
+ */
+export function renderSiteData(out: PricingExport): string {
+  return `<script type="application/json" id="plans-data">${JSON.stringify(out).replace(/</g, "\\u003c")}</script>`;
+}

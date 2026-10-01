@@ -3,7 +3,8 @@
  * Writes everything that is generated from the plan table:
  *
  *   pricing/plans.json            the table, the model list prices and the measured runs, as JSON
- *   site/plans.json              the same file, served beside the pricing page
+ *   site/index.html              the same data, inlined in the page's one fenced block (so the page needs no fetch
+ *                                and opens from a file as well as from a server)
  *   docs/commercial/pricing.md   its two fenced blocks (the plan table and the unit economics)
  *
  *   node scripts/export-pricing.mjs           write them
@@ -24,7 +25,7 @@ if (!fs.existsSync(built)) {
   console.error("export-pricing: dist/ is not built; run `npx tsc -p tsconfig.json` first");
   process.exit(2);
 }
-const { buildPricingExport, renderPlansTable, renderEconomics, replaceGeneratedBlock } = require(built);
+const { buildPricingExport, renderPlansTable, renderEconomics, renderSiteData, replaceGeneratedBlock } = require(built);
 const measured = JSON.parse(fs.readFileSync(path.join(root, "pricing", "measured-runs.json"), "utf8"));
 const exported = buildPricingExport(measured.runs);
 const json = `${JSON.stringify(exported, null, 2)}\n`;
@@ -38,9 +39,16 @@ let doc = fs.readFileSync(pricingDoc, "utf8");
 doc = replaceGeneratedBlock(doc, "plans", renderPlansTable(exported));
 doc = replaceGeneratedBlock(doc, "economics", renderEconomics(exported));
 
+const siteFile = path.join(root, "site", "index.html");
+if (!fs.existsSync(siteFile)) {
+  console.error("export-pricing: site/index.html is missing");
+  process.exit(2);
+}
+const page = replaceGeneratedBlock(fs.readFileSync(siteFile, "utf8"), "plans-json", renderSiteData(exported));
+
 const targets = [
   [path.join(root, "pricing", "plans.json"), json],
-  [path.join(root, "site", "plans.json"), json],
+  [siteFile, page],
   [pricingDoc, doc],
 ];
 

@@ -17,6 +17,7 @@ import {
   generatedBlock,
   renderEconomics,
   renderPlansTable,
+  renderSiteData,
   replaceGeneratedBlock,
   type MeasuredRun,
   type PlanId,
@@ -30,7 +31,16 @@ const measured = (): MeasuredRun[] => JSON.parse(read("pricing", "measured-runs.
 test("pricing/plans.json is what the plan table, the list prices and the measured runs generate", () => {
   const generated = `${JSON.stringify(buildPricingExport(measured()), null, 2)}\n`;
   assert.equal(read("pricing", "plans.json"), generated, "out of date: run `node scripts/export-pricing.mjs` and commit the result");
-  assert.equal(read("site", "plans.json"), generated, "the website's copy is the same file");
+});
+
+test("the website carries the same data, inlined, and the page is what the generator makes of it", () => {
+  const exported = buildPricingExport(measured());
+  const page = read("site", "index.html");
+  assert.equal(page, replaceGeneratedBlock(page, "plans-json", renderSiteData(exported)), "out of date: run `node scripts/export-pricing.mjs` and commit the result");
+  const m = /<script type="application\/json" id="plans-data">([\s\S]*?)<\/script>/.exec(page);
+  assert.ok(m, "the data element is in the page");
+  assert.deepEqual(JSON.parse(m![1]!), exported, "and parses back to the export");
+  assert.ok(!m![1]!.includes("<"), "no raw < inside the data element");
 });
 
 test("docs/commercial/pricing.md carries the generated plan table and unit economics", () => {
