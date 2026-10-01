@@ -1,0 +1,102 @@
+# One release = one isolated Agent Mesh instance. For many customers, install this chart once per
+# customer into its own namespace (see docs/commercial/deployment.md, "Fleets"): the agents run shell
+# commands, so the pod and the namespace around it are the isolation boundary. Do not share one
+# release between tenants.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/salitaba/agent-mesh
+  # Defaults to the chart's appVersion. Pin a digest in production: tag: "0.1.0@sha256:…"
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Credentials. Create the Secret yourself (or with your secret manager) and name it here; the chart never
+# holds a credential. Keys read from it:
+#   MESH_API_TOKEN      required. openssl rand -hex 32
+#   ANTHROPIC_API_KEY   the customer's own key (or provide Bedrock/Vertex variables through extraEnv)
+#   MESH_LICENSE        optional. The licence key; without one the instance runs on the Community plan.
+auth:
+  existingSecret: ""
+
+# warn: report plan limits, refuse nothing. enforce: refuse to start what the plan does not allow.
+licenseEnforcement: warn
+
+# Passed to `mesh host` after the chart's own flags, for example ["--live"] to boot projects live.
+extraArgs: []
+extraEnv: []
+
+persistence:
+  size: 20Gi
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+  existingClaim: ""
+
+resources:
+  requests: { cpu: 250m, memory: 1Gi }
+  limits: { cpu: "2", memory: 4Gi }
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  # Server-sent events carry the live console: proxies must not buffer or time them out.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  host: ""
+  # Terminate TLS at the ingress with this certificate Secret (cert-manager can create it). Empty: the
+  # ingress serves no TLS block, which is right only if a load balancer in front of it terminates TLS.
+  tlsSecretName: ""
+  # The browser reaches the instance over HTTPS (at the ingress or a load balancer before it). Marks the
+  # session cookie Secure and the allowed origin https. Set false only for plain http inside a private network.
+  https: true
+
+# Ingress and egress for the pod. On by default: a pod whose agents run arbitrary commands should not be
+# able to reach the cluster's other workloads or the cloud metadata service.
+networkPolicy:
+  enabled: true
+  # Who may reach the pod: namespaces, by label. Empty allows the ingress controller's namespace only,
+  # named below.
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  # Outbound HTTPS (the model provider, git hosts, package registries) to the public internet, excluding
+  # private ranges and link-local addresses (metadata services).
+  egressHttps: true
+  egressExceptCidrs: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10"]
+  # Extra egress rules appended verbatim, for example an internal package mirror.
+  extraEgress: []
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The host drains its projects on SIGTERM; give it time.
+terminationGracePeriodSeconds: 60

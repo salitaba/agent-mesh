@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-mesh.fullname" . }}
+  labels:
+    {{- include "agent-mesh.labels" . | nindent 4 }}
+spec:
+  # One writer per instance: the event log and its state lock belong to one process. Scale by running
+  # more releases (one per tenant), never more replicas of this one.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "agent-mesh.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "agent-mesh.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "agent-mesh.serviceAccountName" . }}
+      # The agents run shell commands. Nothing in this pod needs the Kubernetes API, so it gets no token for it.
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mesh
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - host
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 7420
+              protocol: TCP
+          env:
+            - name: MESH_PORT
+              value: "7420"
+            - name: MESH_BIND
+              value: "0.0.0.0"
+            - name: MESH_LICENSE_ENFORCEMENT
+              value: {{ .Values.licenseEnforcement | quote }}
+            # Who the writer is, as the state lock records it. It names the RELEASE, not the pod: a pod that is
+            # OOM-killed leaves its lock on the volume, and its replacement (a different pod name, the same
+            # release) must recognise that lock as its own predecessor's and take it over at once, rather than
+            # wait out the heartbeat window as it would for a lock from some other machine.
+            - name: MESH_INSTANCE_ID
+              value: {{ include "agent-mesh.fullname" . | quote }}
+            # Projects may only be registered, browsed and opened under here: the agents' workspaces live on
+            # the data volume and the API cannot be pointed at anything else in the container.
+            - name: MESH_PROJECTS_ROOT
+              value: /data/projects
+            {{- if .Values.ingress.enabled }}
+            # Behind the ingress: answer only to its name, accept its own page's requests, trust the ingress
+            # (which the network policy makes the only thing that can reach the pod) for the client address and
+            # the scheme, and mark the session cookie Secure when the browser is on HTTPS.
+            - name: MESH_ALLOWED_HOSTS
+              value: {{ required "ingress.host is required when ingress.enabled" .Values.ingress.host | quote }}
+            - name: MESH_ALLOWED_ORIGINS
+              value: {{ printf "%s://%s" (ternary "https" "http" .Values.ingress.https) .Values.ingress.host | quote }}
+            - name: MESH_TRUST_PROXY
+              value: "1"
+            {{- if .Values.ingress.https }}
+            - name: MESH_COOKIE_SECURE
+              value: "1"
+            {{- end }}
+            {{- end }}
+            - name: MESH_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-mesh.secretName" . }}
+                  key: MESH_API_TOKEN
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-mesh.secretName" . }}
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: MESH_LICENSE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-mesh.secretName" . }}
+                  key: MESH_LICENSE
+                  optional: true
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default (include "agent-mesh.fullname" .) .Values.persistence.existingClaim }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

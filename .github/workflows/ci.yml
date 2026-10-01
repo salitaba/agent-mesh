@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Audit production dependencies
+        # A signal, not a gate: a new advisory in a transitive dependency should not block an unrelated change.
+        # The weekly security workflow reports it as a failure.
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
+  image:
+    name: Build and smoke-test the container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: agent-mesh:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: scripts/smoke.sh image agent-mesh:ci
+
+  chart:
+    name: Lint and render the Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint
+        run: helm lint deploy/helm/agent-mesh --strict --set auth.existingSecret=mesh-credentials
+      - name: Render with every optional object on
+        run: >
+          helm template mesh deploy/helm/agent-mesh --kube-version 1.29.0
+          --set auth.existingSecret=mesh-credentials
+          --set ingress.enabled=true --set ingress.host=mesh.example.com --set ingress.tlsSecretName=mesh-tls
+          > rendered.yaml
+      - name: Refuse an install with no credentials Secret
+        run: |
+          if helm template mesh deploy/helm/agent-mesh --kube-version 1.29.0 >/dev/null 2>rendered.err; then
+            echo "the chart rendered without auth.existingSecret: an instance with no token must not be installable" >&2
+            exit 1
+          fi
+          grep -q "auth.existingSecret is required" rendered.err
+      - name: Validate against the Kubernetes schemas
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.29.0 rendered.yaml

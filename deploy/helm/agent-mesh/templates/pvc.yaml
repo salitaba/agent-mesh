@@ -1,0 +1,21 @@
+{{- if not .Values.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "agent-mesh.fullname" . }}
+  labels:
+    {{- include "agent-mesh.labels" . | nindent 4 }}
+  annotations:
+    # Everything the instance has done lives here: the event log, the workspaces, the agents' sessions.
+    # Removing the release must not remove it.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

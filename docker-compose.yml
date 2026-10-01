@@ -1,0 +1,50 @@
+# Single-node deployment of the Agent Mesh host.
+#
+#   export MESH_API_TOKEN="$(openssl rand -hex 32)"      # required: the server refuses to start without one
+#   export ANTHROPIC_API_KEY=sk-ant-...                  # the customer's own key; billed to them by Anthropic
+#   docker compose up -d
+#   open http://127.0.0.1:7420/                           # paste the token when the dashboard asks
+#
+# The port is published to loopback only. To serve a network, put a TLS-terminating proxy in front and
+# change the mapping deliberately; do not publish the port on 0.0.0.0 without TLS.
+name: agent-mesh
+
+services:
+  mesh:
+    image: ${MESH_IMAGE:-ghcr.io/salitaba/agent-mesh:latest}
+    build: .
+    restart: unless-stopped
+    # A name that survives `docker compose up` recreating the container: the state lock records who holds it,
+    # and a restarted instance recognises its own stale lock by this.
+    hostname: agent-mesh
+    ports:
+      - "127.0.0.1:${MESH_PORT:-7420}:7420"
+    environment:
+      MESH_API_TOKEN: "${MESH_API_TOKEN:?set MESH_API_TOKEN, for example with: openssl rand -hex 32}"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MESH_LICENSE: ${MESH_LICENSE:-}
+      MESH_LICENSE_ENFORCEMENT: ${MESH_LICENSE_ENFORCEMENT:-warn}
+      MESH_INSTANCE_ID: ${MESH_INSTANCE_ID:-agent-mesh}
+      # Behind a TLS-terminating reverse proxy, say who the instance is reached as and that the proxy is trusted
+      # (see docs/commercial/deployment.md). Blank is ignored.
+      MESH_ALLOWED_HOSTS: ${MESH_ALLOWED_HOSTS:-}
+      MESH_ALLOWED_ORIGINS: ${MESH_ALLOWED_ORIGINS:-}
+      MESH_TRUST_PROXY: ${MESH_TRUST_PROXY:-}
+      MESH_COOKIE_SECURE: ${MESH_COOKIE_SECURE:-}
+    volumes:
+      - mesh-data:/data
+    # The agents run commands. Give them a small, closed box: no extra privileges, a read-only image,
+    # one writable volume, and a scratch space that disappears with the container.
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777,size=1g
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+    mem_limit: ${MESH_MEMORY_LIMIT:-4g}
+    cpus: ${MESH_CPU_LIMIT:-2}
+    stop_grace_period: 60s   # the host drains its projects on SIGTERM before it exits
+
+volumes:
+  mesh-data: {}
