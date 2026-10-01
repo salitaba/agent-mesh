@@ -514,6 +514,14 @@ version being retyped to change a paragraph.
   contract as the Edit tool: each `old` must appear exactly once, and if any
   one fails, nothing is written. An artifact version is immutable and gets
   cited as evidence, so a half-applied revision is worse than a refused one.
+- `asVersionOf` — the artifact this publish is a new version of (required with `edits`): its id, its
+  `artifact://Type/name[/version]` URI, or its exact name as an artifact of the type being published. It
+  took the id alone. The sixth cronlite run's developer, reworking the CLI patch a reviewer had rejected,
+  wrote the name and then the URI, was refused "unknown artifact" twice with no word of what to write,
+  and published a new patch under a new name: two patches for one deliverable, and the rejected one left
+  behind (the mission now waits on it, below). A URI or name of another type resolves to nothing (a
+  version keeps its predecessor's identity, so the type has to agree), ownership is checked after, as for
+  an id, and a refusal says what to write and lists the seat's own artifacts of that type.
 - `content` — inline, for a document that was never a file. Capped at 48,000
   characters, below the 60,000 a single `read_artifact` returns, so anything
   publishable in one call is readable in one call. Over the cap the publish is
@@ -605,6 +613,16 @@ not a capability a seat could hold, and the claim check skips it exactly as the 
 briefing's list of claimable tasks already did. It used to be refused as a missing
 capability no seat could ever be granted, so the task stayed open and the gate was never
 consulted.
+
+`REJECTED` has one edge out, to `DRAFT`, and it is the owner's: a reviewer's later approval of a
+rejected patch records a signature and moves nothing, and says so with the route ("only its owner (dev)
+can move it, so ask dev to rework it"; it used to say "move it to review first", which the reviewer
+cannot). `ARCHIVED` is reached from `DRAFT` and
+`READY_FOR_REVIEW` only, so withdrawing a rejected patch is two moves (REJECTED → DRAFT → ARCHIVED). A
+mission whose goal asks for `implementation-merged` does not complete while a CodePatch that was rejected
+is neither `MERGED` nor `ARCHIVED` (`openRejections`; *A mission does not complete over a rejected patch*
+in `docs/runtime.md`). The merge still evidences the criterion; the goal waits for the patch, and the
+merger, the owner (through the stall watchdog) and the stall-cap card are told which one.
 
 A verdict outside a reviewable status records a signature and moves nothing —
 approving a `DRAFT` artifact, or rejecting one already `MERGED`. That is

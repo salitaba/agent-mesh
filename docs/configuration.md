@@ -807,7 +807,7 @@ of them asks for a message type**:
 | `mesh_reply` | the answer |
 | `mesh_discharge` | the refusal |
 | `mesh_withdraw` | taking the ask back |
-| `mesh_announce` | saying something that obliges nobody |
+| `mesh_announce` | saying something that obliges nobody, and wakes nobody (what a seat must act on is a `mesh_call`) |
 | `mesh_collab` / `mesh_collab_close` | the bounded discussion |
 
 `mesh_withdraw` is the one member that is not a vocabulary act, and it is the

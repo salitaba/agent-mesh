@@ -513,3 +513,111 @@ redundant, and both sat in every run since the first.
   `qa` held the verdict the domain actually has. Name what the others hold.
 - **Identical sentences hide the field.** Ajv reports once per field and keeps the name in `params`; a formatter that reads
   only `message` prints the same line three times.
+
+## 11. The sixth run, on the G-fixes build: four more findings (H1–H4)
+
+The second cycle of the standing loop, now every four hours (*"run it every 4 hours"*; *"in every loop you should push
+to main"*): a durable routine, 00:43, 04:43, … UTC. The same mission, SPEC, mesh config, model and clean launch
+environment, on the branch at `a3ed822` (every fix of §0–§10). Session 2026-10-01 12:45–13:19 UTC: 53 turns, 1.06M billed
+tokens (about $5.0 at list price), every turn on `claude-haiku-4-5`, 1061 events. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 12:45 | `mesh run` | five seats start |
+| 13:00 | goal met, 6/6 | 14 min 28 s, 35 turns, 688k billed (run 5's round 1: 17 min 40 s, 36 turns, 745k) |
+| 13:06 | operator reopen quoting the oracle's defect report (no CLI on `main`; `sun` rejected; `1-2-3` accepted; the day rule wrong when a day field covers its range or holds a `*` item) | criteria back to UNSATISFIED |
+| 13:07 | `kill -9` of the host, three seats mid-turn | |
+| 13:07 | restart | 3 turns closed `interrupted`, 6 reservation holds released, the six orphan processes (three seats, three bridges) gone |
+| 13:19 | goal met again | 13 min 06 s after the reopen, 11 min 50 s after the restart; round 2: 18 turns, 374k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2796/2934 stratified
+(95.3%; 2795/2952 raw, 94.7%), and the failures were the ones the reopen quoted: **`main` had no CLI** (`bin/cronlite.js` was
+never merged, so the CLI category scored 0/1), `sun` rejected as a day name, `1-2-3` accepted as a range, and the
+day-of-month/day-of-week rule applied wrongly when a day field covers its whole range. The final product scored
+**3034/3034 stratified (100%)**, 3049/3049 raw, with its own suite 39/39 and the CLI probes 23/23 (9/9 soft). The raw score
+no longer carries the `*`-as-a-list-item loss that held runs 1, 3 and 4 to 69.0%: these seats accepted it from round 1.
+
+**§10's fixes, checked live and held** (each was pinned by tests only until now):
+
+| Fix | Live |
+|---|---|
+| G5, G6 | 22 mail wakes in the whole run, 2 for mail the seat had already been handed (9%, 28k of 1.06M billed tokens, 3%), none headed by a broadcast. Run 5: 17 of 42, 190k of 1.23M (15%), 16 broadcast-headed |
+| G1 | QA recorded its pass with `mesh_approve` in both rounds and `quality-verified` was evidenced `quality-pass/by=qa` both times; in run 5 the pm closed it by hand |
+| G2 | 5 contract-shape refusals in 416 tool calls (run 5: 10 in 413), each naming the field: `(root) must NOT have additional properties: 'task', 'description', 'capability_required'` |
+| G3 | 22 `plan_step` calls by number (`"1"` … `"8"`), all accepted; run 5's seven were all refused |
+| F1 | the watchdog fired twice and both nudges bought work within 30 s: the tech-lead was told which patch was parked MERGEABLE (merged 22 s later), and the pm that the acceptance of the two contract criteria was its own (given within 10 s) |
+| F2, M1, F4, N3 | 0 of 416 tool calls refused by the client as not in the manifest; 3 handover continuity calls recorded completed beside 3 `continuity.recorded`; three verification reports stamped, the final one with the head of the CLI commit; two worktrees left alone with their reason (QA's would have had untracked files overwritten, the developer's holds two commits `main` lacks) |
+| B21, B22, B23 | the kill -9 recovery above, and the selective reopen completed |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| H1 | **A mission completed with a rejected patch unmerged, and `main` had no CLI.** The developer submitted the library and the CLI as two patches. The tech-lead rejected the CLI twice (it repeated the approved library's `src/index.js` and `package.json`), merged the library at 12:57:27 (`implementation-merged` closed on it), and approved the CLI patch 13 s later: an approval of a REJECTED patch records a signature and moves nothing (REJECTED goes to DRAFT only, and that edge is its owner's), and the caveat it was given said "move it to review first", which the tech-lead cannot do. The developer was never woken, the broadcast that said so woke nobody, the pm accepted `cli-contract-met` on a QA report that began "CLI Commit: cd6615a (pending merge)", and the goal completed at 12:59:59 | **fixed** — the termination verdict does not complete a mission over a CodePatch that was rejected and has neither merged nor been archived (when `implementation-merged` is mandatory); the merger is told in its op result; the stall watchdog wakes the patch's owner (or says what the patch waits on) instead of "the mission will close itself", and the stall-cap card names it; the caveat on an approve of a REJECTED patch names the owner and the route, where it said "move it to review first" | `tests/core/open-rejections.test.ts`, `tests/integration/stall-open-rejection.test.ts` |
+| H2 | The briefing told a seat that cannot merge to ask "the seat that holds `git.merge`", without a name. The developer asked the architect twice and the pm asked it once; the architect declined both in so many words, and the tech-lead, which held the capability, was the one nobody asked. The patch sat MERGEABLE for 4 min 39 s and landed when the watchdog woke the tech-lead | **fixed** — `AgentContextBundle.mergers` lists the other seats that hold the capability, and the briefing names them ("ask lead once the patch is MERGEABLE, not a seat that cannot merge"); with no holder it says the operator lands it | `tests/core/briefing-merger.test.ts` |
+| H3 | `mesh_announce` read as delivery ("every seat hears it", "costs no one a turn"). It reaches mailboxes and wakes no one (a broadcast wakes only seats that list `message.sent`, a directed INFORM wakes nobody), and seats announced what one seat had to act on | **fixed** — the tool descriptions (and `mesh_broadcast`'s), the `Common tools` line and the contracts paragraph say it wakes no one and that what a seat must act on is a `mesh_call` | `tests/core/announce-wording.test.ts` |
+| H4 | **A refused rework left a dangling REJECTED patch and a duplicate.** `asVersionOf` took the artifact's id and nothing else. Reworking the CLI patch, the developer wrote its name and then its `artifact://` URI, was refused "unknown artifact" both times with no word of what to write, and published a new patch under a new name ("cronlite CLI implementation v4"): two patches for one deliverable, the rejected one left behind, and (with H1) a tidy-up owed | **fixed** — a predecessor is named by id, `artifact://Type/name[/version]` URI or exact name of the type being published; another type resolves to nothing; ownership is checked after; a refusal says what to write and lists the seat's own artifacts of the type; the tool description says to version a rejected patch rather than publish a new name | `tests/core/publish-version-ref.test.ts` |
+
+What each does and why is in `docs/runtime.md` (*A mission does not complete over a rejected patch*, *The stall watchdog*,
+*What a seat is told about its tools*, *When a mail wake is paid for*), `docs/protocol.md` (*Publishing a body*, *Typed state machines*) and
+`docs/configuration.md` (`mesh_announce`); the commit messages carry the evidence.
+
+**What the first version of H1 got wrong, and what caught it.** The fix was first written as a rule on the evidence: a merge
+that left another patch of the goal outstanding would not evidence `implementation-merged`, and the criterion would close at
+the merge or archiving that left none. Replaying the second round against it showed two things the tests built from the
+first round could not. The round ended with a patch parked MERGEABLE whose merge the mesh had refused as "nothing landed"
+(its work had gone in with another patch), so a rule on every patch in flight would have held a finished mission open and
+ended in a card for the operator. And giving the evidence back when a patch was archived meant choosing a merge to cite,
+where the only merges in reach included the round the operator had rejected: an archive before any new merge would have
+re-evidenced the criterion from the old round's patch. The rule moved to the completion verdict, where the claimed-task and
+open-escalation conditions already live, and narrowed to what the incident was: a patch a reviewer rejected. The evidence is
+untouched, nothing has to be given back, and a patch that was never rejected holds nothing. Its first tests then passed for
+the wrong reason: the supervisor completes the goal itself as soon as the verdict says so, and `evaluate` answers `continue`
+for a goal that is already COMPLETED, so they asserted the goal's status.
+
+### Not fixed, and the honest limits
+
+- **H1 costs a tidy-up in one case.** A patch its owner abandoned without archiving (this run's round 2 left the old CLI
+  patch REJECTED when the CLI was resubmitted under a new name, which H4 was the cause of) holds the mission until the owner
+  moves it to DRAFT and then to ARCHIVED, which the watchdog's note says. In this run that would have added a stall-idle
+  window (3 minutes by default) and one developer turn to round 2. Whether the work of such a patch is already on `main` is a
+  git question the rule does not ask.
+- **H1 reads "was rejected" from the artifact's history.** After a snapshot restore the history is the current record alone,
+  so a reworked patch reads as never rejected and the guard does not apply to it. It fails open.
+- **A MERGEABLE patch that cannot land has no short exit.** The code machine reaches ARCHIVED from DRAFT and READY_FOR_REVIEW
+  only; a patch approved and parked MERGEABLE whose merge is refused as "nothing landed" has to go back through review to be
+  withdrawn. Round 2 ended with one. It no longer holds a mission (H1 does not list it), but nothing closes it.
+- **A `mesh_call` still guesses field names.** G2 names the field it refused; the five refusals this run were a seat writing
+  `description` where the contract says `ask`, `task`/`description` where it says `what`, `artifactUri` where it says
+  `artifact`. A "did you mean" for the one-missing-one-unknown case would save the retry.
+- **The final TestReport was approved by its own author** (QA's pass, recorded as the verdict its authority gives, settled the
+  report because no other seat in this mesh reviews test reports). The run report flags it, as designed; it is a property of the
+  five-seat mesh, not of the fix.
+- **One run.** The live confirmation of H1–H3 is the next cycle's.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §10 final, before this round | 2939 | 2938 | 0 | 0 | 1 |
+| this round, final | 2976 | 2975 | 0 | 0 | 1 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (157 warnings, the baseline). Mutation checks: 44 mutants (H1 22, H2 7, H3 5, H4 10), all killed;
+three survived their first tests (the unmet-criteria branch of the watchdog note, the direct-caller path of `createArtifact`
+and the tool description) and each got a test that kills it. One commit per finding (`eba8cc1`, `74c6ab1`, `68e9226`, `ede86e0`), then one for the docs and
+this section.
+
+### Worth keeping from this round
+
+- **Replay the evidence against the fix before building it.** The first H1 passed its own tests and would have regressed the
+  run it came from. Walking the second round's artifacts through the rule, by hand, found two failures that no unit test of
+  the first round's shape could have.
+- **Put a completion rule where completion is decided.** Withholding an evidence record needed a way to give it back, and a
+  way to choose what to cite when it did. A condition on the verdict is evaluated every time and has nothing to undo.
+- **A test that asserts the verdict can pass on a goal that has already completed.** `evaluate` answers `continue` for a
+  COMPLETED goal. The first tests of the gate passed for the wrong reason until they asserted the goal's status.
+- **A refusal that names a route the actor cannot take is worse than none.** "Move it to review first" was told to a reviewer
+  who could not; the owner was the only seat that could, and the sentence did not name it.
+- **Name the seat.** "The seat that holds `git.merge`" is a description a model reads as a rank. Three requests went to three
+  seats that could only decline.
+- **A refusal that names no route sends a seat round it.** "Unknown artifact cronlite CLI implementation" made the developer
+  publish a second patch, and the second patch left the first dangling; two refusals and a new name are how one deliverable
+  became two. The id was never the problem, the refusal was.

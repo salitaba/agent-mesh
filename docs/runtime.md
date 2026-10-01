@@ -142,8 +142,8 @@ begins `stall watchdog: mission active but quiet — …`. Its gates, in the ord
   (45 s) that bypasses both. A mesh that wants a tighter loop after productive nudges sets
   the cooldown at or below the idle window.
 - **worth waking anyone**, decided from state and never by a model: a patch stalled on the
-  merge ladder, an unmet mandatory criterion, unread mail, an open escalation or a claimed
-  task. A mission with none of them rests, and closes itself.
+  merge ladder, an unmet mandatory criterion, a rejected patch left open (below), unread mail, an
+  open escalation or a claimed task. A mission with none of them rests, and closes itself.
 - **the cap**: after three consecutive nudges that bought no work (or three the scheduler
   refused) it raises a `stalemate:stall_nudge_cap` escalation instead of a fourth, and rests
   until that card is answered.
@@ -153,7 +153,18 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
 1. a seat that can move a patch parked on the merge ladder. A patch under a BLOCK is not
    parked, it is held, and is not listed: the policy refuses its next rung until a new
    version exists, so the nudge would buy a refusal;
-2. **while a mandatory criterion is unmet, the seat that can lift a standing BLOCK.** The two
+2. **the owner of a rejected patch the mission is waiting on** (`openRejections`; see *A mission does
+   not complete over a rejected patch*, below): a CodePatch a reviewer rejected that is REJECTED, or
+   reworked to DRAFT and not resubmitted. Only its owner can move it, and nothing else tells them: an
+   approval of a rejected patch moves nothing, and a broadcast wakes nobody who did not subscribe to
+   one. A patch back in review or on the merge ladder is not the owner's move (reviewers and the
+   merger have it), so it is not a reason to wake the owner. A seat whose previous nudge bought nothing
+   is skipped here when another seat can be tried. The note says what holds and the owner's two moves:
+   `The mission cannot complete while a rejected patch is left open: CodePatch "cli" is REJECTED
+   (owner dev): dev reworks it (a new version with asVersionOf, then a review request) or, if it is
+   abandoned, moves it to DRAFT and then to ARCHIVED.` With every criterion evidenced it takes the place
+   of "reply with a single `done` op and stop — the mission will close itself", which would be false;
+3. **while a mandatory criterion is unmet, the seat that can lift a standing BLOCK.** The two
    holds lift differently. A block *on an artifact* holds it until a new version exists
    (`active-block`), which only its owner can publish and which drops the record; the
    blocker's own later pass releases nothing. A block on a *subject* with no artifact (QA's
@@ -161,16 +172,16 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
    seat signs off again, so only the blocker can lift it. One hold per seat, subject and
    artifact: blocking again restates it. A seat whose previous nudge bought nothing is skipped
    here when another seat can be tried;
-3. **when every unmet mandatory criterion is one the mesh does not evidence from its own
+4. **when every unmet mandatory criterion is one the mesh does not evidence from its own
    events, a seat that may accept it.** A criterion outside `AUTO_EVIDENCED_CRITERIA` (and any
    the operator's reopen mints, `operator-feedback-…`) closes by `approve subject:"criterion:<id>"`
    from a seat holding `requirements.accept` or `requirements.approve`, and by nothing else. The
    acceptors come oldest activity first, and one whose nudge just bought nothing gives the next to
    another seat. With any auto-evidenced criterion also unmet this step is skipped: the work that
    would evidence it is still to do, and who may accept is not yet the question;
-4. a seat with unread mail or a claimed task (the first in config order);
-5. the WAITING or BLOCKED seat with the oldest activity;
-6. the startup seats, then any live seat.
+5. a seat with unread mail or a claimed task (the first in config order);
+6. the WAITING or BLOCKED seat with the oldest activity;
+7. the startup seats, then any live seat.
 
 The note says what holds, since when, who can lift it and how (for a block on a subject:
 re-verify the *current* product, bring the worktree up to `main` first, then pass the subject
@@ -199,6 +210,43 @@ tokens: the nudges went to the architect (twice), which asked the developer for 
 off a chain of turns that never reached the pm, the only seat whose act it needed. The pm, once
 woken, had written "awaiting operator acceptance testing": it did not know the act was its own.
 
+### A mission does not complete over a rejected patch
+
+The termination verdict completes a mission when every mandatory criterion is evidenced, no
+escalation is open and no claimed task has its owner on it. It also waits for a patch a reviewer
+rejected: when `implementation-merged` is among the goal's mandatory criteria, no CodePatch of the
+goal may be REJECTED, nor have been rejected and not yet reached MERGED or ARCHIVED (`openRejections`,
+in `projections-helpers.ts`; the verdict, the watchdog and the merge note all read that one function).
+A rejected patch that its owner reworks and resubmits is still listed until it lands, because
+"resubmitted and unmerged" is the same hole one step later.
+
+The sixth cronlite run's developer put the library and the CLI forward as two patches. The tech-lead
+rejected the CLI twice (the patch repeated the approved library's `src/index.js` and `package.json`),
+merged the library, and `implementation-merged` closed on that merge. A minute later it approved the
+CLI patch, which moved nothing: REJECTED has one edge out, to DRAFT, and it is the owner's. Nothing woke
+the developer (the broadcast that said so woke nobody). The pm then accepted `cli-contract-met` on a QA
+report whose first lines read "CLI Commit: cd6615a (pending merge)", and the mission completed with no
+`bin/cronlite.js` on the product branch.
+
+What it does: the merge still evidences `implementation-merged` (an earlier design withheld the evidence
+until nothing was outstanding; it needed a way to give it back, and after a reopen a later archiving
+could have re-evidenced from a merge of the round the operator had rejected); the goal simply does not
+complete, `opMerge` tells the merger in a note on its result ("the mission cannot complete yet, because
+CodePatch "cli" is REJECTED (owner dev): …"), the watchdog wakes the patch's owner (above), and the
+stall-cap card carries the same sentence as `openRejections`. The mission completes when the patch has
+merged, or its owner has withdrawn it: REJECTED goes to DRAFT and then to ARCHIVED, and the sentence a
+seat is told names both moves because the machine allows no direct edge.
+
+What it does not hold: a patch that was never rejected, in whatever state. The same run's second round
+ended with a patch parked MERGEABLE whose work had gone in with another one, and whose merge was
+refused as "nothing landed"; a gate on every patch in flight would have turned a clean finish into a
+card for the operator. The cost of the rule that remains is one tidy-up: a patch its owner abandoned
+without archiving (that round's old CLI patch, left REJECTED when the CLI was resubmitted under a new
+name) holds the mission until the owner closes it, which the note says how to do. Whether a patch was
+rejected is read from its history; after a snapshot restore the history is the current record alone, so
+a reworked patch reads as one that was never rejected and the guard does not apply to it. A guard like
+this one fails open.
+
 ### What a seat is told about its tools
 
 A seat is told to call only the tools its manifest carries, because a client that checks a name
@@ -213,6 +261,16 @@ the MCP manifest filters through it and the briefing leaves out of its prose wha
 `mesh_decision_ratify` without `architecture.approve`. A seat without `git.merge` is told who merges
 instead of being told to call `mesh_merge`, and the briefing says in one line which tools it does not
 have and that a call to one fails at once and reaches nothing.
+
+"Who" is a name. The line used to say "a seat that holds `git.merge`", and the sixth run's developer
+read it as "someone senior": it asked the architect to merge its MERGEABLE patch twice, the pm asked the
+architect a third time, and the architect declined in so many words ("I lack git.merge capability")
+while the tech-lead, which held it, was the one nobody asked; the patch landed 3 min 38 s after the
+first ask. `buildAgentContext` now lists the other seats that hold the capability
+(`AgentContextBundle.mergers`, only for a seat that cannot merge itself): "being merged by lead, which
+holds `git.merge` — you do not, and have no merge tool: ask lead once the patch is MERGEABLE, not a seat
+that cannot merge", "lead or release, which hold …: ask one of them", and in a mesh where no seat holds
+it, that the operator lands a MERGEABLE patch and a peer asked to can only decline.
 
 The refusal never reaches the mesh, so no op result records it. The end-of-turn note does: "not in
 your tool list, so these calls never reached the mesh and did nothing: `mesh_send` x2 (use
@@ -266,6 +324,14 @@ all read. The announcement is still delivered, is read on the next turn the seat
 the floor wakes it for when it takes none. A seat that wants announcements as they are made lists
 `message.sent` (or `message.*`) in its `interests`. The fifth run's seats announce with
 `mesh_announce` (a broadcast when it names nobody), and 16 of its 42 mail wakes were headed by one.
+
+The words a seat reads say it. `mesh_announce` was "say something that obliges nobody to answer; omit
+`to` and every seat hears it", and the briefing added that it "costs no one a turn"; both read as
+delivery. The sixth run's seats announced what one seat had to act on (a rejected patch, a blocker) to
+the whole mesh, and the one seat that could act was not woken. The tool description, the `Common tools`
+line and the contracts paragraph (and `mesh_broadcast`'s, on a typed mesh) now say that an announcement
+wakes no one, that a seat reads it the next time it takes a turn, and that what a seat must ACT on is a
+`mesh_call` (or a targeted ask), which does wake it.
 
 **A wake is for mail the seat has not been handed.** Mail that lands mid-turn reaches the follow-up
 turn by two routes, the stash and the retry, and `notifyTurnFinished` has two owners (the
