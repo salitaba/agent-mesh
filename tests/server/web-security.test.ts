@@ -11,6 +11,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import type * as http from "http";
+import * as fs from "fs";
+import * as path from "path";
+import { createHash } from "node:crypto";
 import {
   DASHBOARD_CSP,
   FailureLimiter,
@@ -22,8 +25,10 @@ import {
   checkHost,
   checkOrigin,
   clientKey,
+  dashboardCsp,
   guardRequest,
   hostnameOf,
+  inlineScriptHashes,
   isLoopbackHost,
   maxBodyBytes,
   readBody,
@@ -328,4 +333,33 @@ test("the address a failure is counted against: the peer, or the hop our own pro
   assert.equal(clientKey(r("1.2.3.4"), { MESH_TRUST_PROXY: "1" }), "1.2.3.4");
   assert.equal(clientKey(r("6.6.6.6, 1.2.3.4"), { MESH_TRUST_PROXY: "1" }), "1.2.3.4", "earlier hops are whatever the client claimed; the last is the proxy's");
   assert.equal(clientKey(r("", "10.0.0.9"), { MESH_TRUST_PROXY: "1" }), "10.0.0.9", "an empty header falls back to the peer");
+});
+
+// ----------------------------------------------------- inline script hashes
+
+const sha = (text: string): string => `'sha256-${createHash("sha256").update(text, "utf8").digest("base64")}'`;
+
+test("an inline script is admitted by the hash of its exact bytes; external, empty and non-script tags are not", () => {
+  const body = "\n  (function(){ document.documentElement.dataset.theme = 'dark'; })();\n";
+  const html = `<!doctype html><head><script>${body}</script><script src="/a.js"></script><script type="module" src='/b.js'></script><script>   </script><style>x{}</style></head>`;
+  assert.deepEqual(inlineScriptHashes(html), [sha(body)]);
+  assert.deepEqual(inlineScriptHashes("<p>no scripts</p>"), []);
+  assert.deepEqual(inlineScriptHashes(`<SCRIPT type="text/javascript">alert(1)</SCRIPT>`), [sha("alert(1)")], "tag case does not hide one");
+});
+
+test("the dashboard policy gains the hashes in script-src and nowhere else, and never unsafe-inline for scripts", () => {
+  const hash = sha("x=1");
+  const csp = dashboardCsp([hash]);
+  assert.match(csp, new RegExp(`script-src 'self' ${hash.replace(/[+/=]/g, "\\$&")}(;|$)`));
+  assert.equal(csp.split("; ").filter((d) => d.startsWith("script-src")).length, 1);
+  assert.equal(csp.replace(` ${hash}`, ""), DASHBOARD_CSP, "everything else is the base policy");
+  assert.equal(dashboardCsp([]), DASHBOARD_CSP);
+  assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
+});
+
+test("the real dashboard page: its one inline script (the theme bootstrap) is covered, so first paint is not a flash", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "index.html"), "utf8");
+  const hashes = inlineScriptHashes(html);
+  assert.equal(hashes.length, 1, "the page ships exactly one inline script: the theme bootstrap");
+  assert.match(html, /mesh-theme/, "and it is the theme bootstrap");
 });

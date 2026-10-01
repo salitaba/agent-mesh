@@ -23,6 +23,7 @@
  * tested without a socket; `index.ts` and `host.ts` call them from their
  * request handlers and start-up paths.
  */
+import { createHash } from "crypto";
 import type * as http from "http";
 import * as net from "net";
 
@@ -273,7 +274,8 @@ export type ResponseKind = "api" | "dashboard" | "preview";
 /**
  * The dashboard's own policy. It is a same-origin SPA that talks to this server
  * only, so nothing is allowed from anywhere else. `'unsafe-inline'` is for
- * styles alone (React's `style` attributes); scripts are same-origin files.
+ * styles alone (React's `style` attributes); scripts are same-origin files, plus
+ * the hash of each inline script the page itself ships (`dashboardCsp`).
  * `frame-src 'self'` is the Product tab's playground iframe.
  */
 export const DASHBOARD_CSP = [
@@ -291,6 +293,34 @@ export const DASHBOARD_CSP = [
 ].join("; ");
 
 /**
+ * `'sha256-…'` source expressions for the inline scripts of an HTML document.
+ *
+ * The dashboard's `index.html` carries one: the theme bootstrap that must run
+ * before first paint so a light-theme user never sees a dark flash. Moving it to
+ * a file would make it a deferred or render-blocking request; allowing every
+ * inline script would be `'unsafe-inline'`, which is the thing the policy exists
+ * to refuse. A hash admits exactly these bytes and nothing an injected tag could
+ * say, and computing it from the file being served means an edit to the script
+ * cannot silently stop it running.
+ */
+export function inlineScriptHashes(html: string): string[] {
+  const hashes: string[] = [];
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (/\bsrc\s*=/i.test(match[1] ?? "")) continue;
+    const body = match[2] ?? "";
+    if (body.trim() === "") continue;
+    hashes.push(`'sha256-${createHash("sha256").update(body, "utf8").digest("base64")}'`);
+  }
+  return hashes;
+}
+
+/** The dashboard policy with `scriptHashes` admitted as inline scripts. */
+export function dashboardCsp(scriptHashes: readonly string[] = []): string {
+  if (scriptHashes.length === 0) return DASHBOARD_CSP;
+  return DASHBOARD_CSP.replace("script-src 'self'", `script-src 'self' ${scriptHashes.join(" ")}`);
+}
+
+/**
  * What an agent-written page is served under. `sandbox` without
  * `allow-same-origin` gives it an opaque origin, so a script in it cannot call
  * this server's API with the operator's credentials or read what it answers;
@@ -304,7 +334,7 @@ export const PREVIEW_CSP = "sandbox allow-scripts allow-forms allow-popups allow
  * route's own `writeHead` still wins on any name it sets (an SSE stream
  * replaces `cache-control`).
  */
-export function applySecurityHeaders(res: http.ServerResponse, kind: ResponseKind): void {
+export function applySecurityHeaders(res: http.ServerResponse, kind: ResponseKind, served?: { html?: string }): void {
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("referrer-policy", "no-referrer");
   if (kind === "preview") {
@@ -313,7 +343,9 @@ export function applySecurityHeaders(res: http.ServerResponse, kind: ResponseKin
     return;
   }
   res.setHeader("x-frame-options", "DENY");
-  if (kind === "dashboard") res.setHeader("content-security-policy", DASHBOARD_CSP);
+  // `served.html` is the document about to be sent, when the response is one: its own inline
+  // scripts are admitted by hash, so the policy never has to say `'unsafe-inline'`.
+  if (kind === "dashboard") res.setHeader("content-security-policy", dashboardCsp(served?.html ? inlineScriptHashes(served.html) : []));
   else res.setHeader("cache-control", "no-store");
 }
 

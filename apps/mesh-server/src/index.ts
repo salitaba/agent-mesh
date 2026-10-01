@@ -55,8 +55,10 @@ import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-sta
 import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
-import { getApiToken, requireAuth, resolveActor } from "./auth";
-import { PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
+import { SessionStore } from "./sessions";
+import { PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
@@ -1433,6 +1435,64 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // load balancer stops sending new work to a server that is closing.
   let draining = false;
 
+  // Per server, never shared: the dashboard's sign-in, the count of wrong tokens, and the signed
+  // links that let the sandboxed playground read its own files.
+  const sessions = new SessionStore();
+  const limiter = new FailureLimiter();
+  const previews = new PreviewCapabilities();
+
+  /**
+   * The playground's files (`apps/playground` in the product checkout) under the preview policy.
+   *
+   * Shared by the authenticated `/playground/*` route and by `/_pg/<capability>/*`, which is how
+   * the sandboxed page itself reads them: it runs in an opaque origin, carries no cookie, and
+   * would be refused everywhere else. `readable` adds the CORS headers that let that page's own
+   * `fetch` read what it asked for. They go on the capability route only, where the proof is
+   * already in the URL, and never on an API answer.
+   */
+  const servePlayground = async (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> => {
+    applySecurityHeaders(res, "preview");
+    const reply = (code: number, type: string, payload: string | Buffer): void => {
+      res.writeHead(code, {
+        "content-type": type,
+        "cache-control": "no-cache",
+        ...(readable ? { "access-control-allow-origin": "*", "cross-origin-resource-policy": "cross-origin" } : {}),
+      });
+      res.end(payload);
+    };
+    const fail = (code: number, message: string): void => reply(code, "application/json", JSON.stringify({ error: message }));
+    const pgDir = path.join(instance.productPath, "apps", "playground");
+    if (rest.length === 0) {
+      const html = await fs.promises.readFile(path.join(pgDir, "index.html"), "utf8").catch(() => "");
+      if (!html) {
+        // 404 (not 200) so the dashboard's playground probe treats this as "not built" instead of
+        // embedding the fallback text in an iframe.
+        reply(404, "text/html; charset=utf-8", "<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No product build in this workspace — expected apps/playground/index.html, and the mission has not written one.</body>");
+        return;
+      }
+      reply(200, "text/html; charset=utf-8", html);
+      return;
+    }
+    let relative: string;
+    try {
+      relative = rest.map((segment) => decodeURIComponent(segment)).join("/");
+    } catch {
+      return fail(400, "malformed path");
+    }
+    const ab = resolveInside(pgDir, relative);
+    if (!ab) return fail(400, "path escapes playground");
+    const st = await fs.promises.stat(ab).catch(() => null);
+    if (!st || !st.isFile()) return fail(404, `missing build output (${relative}) — run "build playground" first`);
+    const ext = path.extname(ab).toLowerCase();
+    const type =
+      ext === ".js" ? "text/javascript" :
+      ext === ".css" ? "text/css" :
+      ext === ".json" ? "application/json" :
+      ext === ".html" ? "text/html" :
+      ext === ".svg" ? "image/svg+xml" : "application/octet-stream";
+    reply(200, `${type}; charset=utf-8`, await fs.promises.readFile(ab));
+  };
+
   const server = http.createServer((req, res) => {
     // Slow-request radar: anything (except the long-lived SSE stream) taking
     // >2s means the loop is blocked or an endpoint is doing too much work.
@@ -1529,6 +1589,22 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       const verdict = guardRequest(req);
       if (!verdict.ok) return send(verdict.status, { error: verdict.error, code: verdict.code });
 
+      // ------------------------------------------------------------ sign-in
+      // The dashboard trades the operator token for a session cookie here (see sessions.ts). It
+      // cannot require being signed in, so it sits ahead of `requireAuth`; the guard above has
+      // already turned away a foreign origin. Not served in strict mode: a child has no browser.
+      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send })) return;
+
+      // ------------------------------------------------- playground capability
+      // The sandboxed playground page reads its own files here. It carries neither cookie nor
+      // bearer (see preview.ts), so the proof is in the path: a signed, expiring capability the
+      // signed-in dashboard minted. Ahead of operator auth on purpose, and checked here rather
+      // than trusting a host's bearer, which a child accepts for every proxied request.
+      if (parts[0] === PREVIEW_PREFIX && parts.length >= 2 && req.method === "GET") {
+        if (!previews.verify(parts[1])) return send(403, { error: "this playground link is not valid, or has expired: reopen the playground from the dashboard" });
+        return servePlayground(res, parts.slice(2), true);
+      }
+
       // --------------------------------------------------------- MCP bridge
       // Deliberately ahead of `requireAuth`: seats carry no operator token (in
       // strict mode requireAuth would refuse them all). That is sound only
@@ -1567,8 +1643,11 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
 
       // Operator auth: enforced when MESH_API_TOKEN is set. Public paths
       // (/health, dashboard assets) bypass; everything else needs Bearer.
-      const auth = requireAuth(req, u, parts);
-      if (!auth.ok) return json(401, { error: auth.error });
+      const auth = requireAuth(req, u, parts, { sessions, limiter });
+      if (!auth.ok) {
+        if (auth.retryAfterSec) res.setHeader("retry-after", String(auth.retryAfterSec));
+        return json(auth.status ?? 401, { error: auth.error });
+      }
       const knownAgents = new Set(kernel.state.agents.keys());
       knownAgents.add(HUMAN_AGENT_ID);
 
@@ -2795,41 +2874,17 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         return json(killed ? 200 : 404, killed ? { ok: true } : { error: "run not running" });
       }
       // --------------------------------------------------------- playground
-      // The built product app (the simulator itself) is served read-only so
-      // the console can embed it in an iframe. Requires `build` to have run.
-      if (parts[0] === "playground" && req.method === "GET") {
-        // Agent-written HTML and script. Served under `sandbox` so it runs in an opaque origin:
-        // it cannot call this server's API with the operator's credentials or read what it says.
-        applySecurityHeaders(res, "preview");
-        const pgDir = path.join(wsRoot, "apps", "playground");
-        if (parts.length === 1) {
-          const html = await fs.promises.readFile(path.join(pgDir, "index.html"), "utf8").catch(() => "");
-          if (!html) {
-            // 404 (not 200) so the dashboard's playground probe treats this as
-            // "not built" instead of embedding the fallback text in an iframe.
-            res.writeHead(404, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
-            res.end("<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No product build in this workspace — expected apps/playground/index.html, and the mission has not written one.</body>");
-            return;
-          }
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
-          res.end(html);
-          return;
-        }
-        const ab = resolveInside(pgDir, parts.slice(1).join("/"));
-        if (!ab) return json(400, { error: "path escapes playground" });
-        const st = await fs.promises.stat(ab).catch(() => null);
-        if (!st || !st.isFile()) return json(404, { error: `missing build output (${parts.slice(1).join("/")}) — run "build playground" first` });
-        const ext = path.extname(ab).toLowerCase();
-        const type =
-          ext === ".js" ? "text/javascript" :
-          ext === ".css" ? "text/css" :
-          ext === ".json" ? "application/json" :
-          ext === ".html" ? "text/html" :
-          ext === ".svg" ? "image/svg+xml" : "application/octet-stream";
-        res.writeHead(200, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-cache" });
-        res.end(await fs.promises.readFile(ab));
-        return;
+      // The built product app (the simulator itself) is served read-only so the console can embed
+      // it in an iframe. Requires `build` to have run. It is agent-written HTML and script, so it
+      // is always served under the sandbox policy (see servePlayground).
+      //
+      // The dashboard does not frame this path: it asks for a link first. The page then runs in an
+      // opaque origin and could not authenticate its own sub-requests here.
+      if (parts[0] === "playground" && parts[1] === "session" && parts.length === 2 && req.method === "POST") {
+        const minted = previews.mint();
+        return json(200, { path: minted.path, expiresAt: new Date(minted.expiresAt).toISOString() });
       }
+      if (parts[0] === "playground" && req.method === "GET") return servePlayground(res, parts.slice(1), false);
 
       // ---------------------------------------------------------- dashboard
       if (req.method === "GET") {
@@ -2845,7 +2900,6 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           const safe = path.normalize(rel).replace(/^([.][.][/\\])+/, "");
           const target = path.join(dir, safe);
           if (target.startsWith(dir) && fs.existsSync(target) && fs.statSync(target).isFile()) {
-            applySecurityHeaders(res, "dashboard");
             const ext = path.extname(target).toLowerCase();
             const type =
               ext === ".html" ? "text/html" :
@@ -2853,8 +2907,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               ext === ".css" ? "text/css" :
               ext === ".json" ? "application/json" :
               ext === ".svg" ? "image/svg+xml" : "text/plain";
+            const content = fs.readFileSync(target);
+            applySecurityHeaders(res, "dashboard", ext === ".html" ? { html: content.toString("utf8") } : undefined);
             res.writeHead(200, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-cache" });
-            res.end(fs.readFileSync(target));
+            res.end(content);
             return;
           }
           if (parts.length === 0 || parts[0] === "dashboard") {

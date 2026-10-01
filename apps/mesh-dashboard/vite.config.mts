@@ -16,6 +16,8 @@ const API_ROOTS = [
   "status", "metrics", "steps", "turns", "scheduler", "activity", "events",
   "graph", "timeline", "agents", "threads", "messages", "artifacts", "budgets",
   "approvals", "tool-approvals", "escalations", "mission", "goals", "config", "internal", "health",
+  // Sign-in and the playground's signed links (see apps/mesh-server/src/{auth,preview}.ts).
+  "auth", "_pg",
 ];
 
 // Dev proxy target: override with MESH_BUS_URL (e.g. when your mesh runs on a
@@ -42,7 +44,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: Object.fromEntries(
-      API_ROOTS.map((r) => [`/${r}`, { target: proxyTarget, changeOrigin: true }]),
+      // `changeOrigin` stays off on purpose. The server refuses a state-changing request whose
+      // `Origin` is not its own `Host`, and rewriting `Host` to the target would make every POST
+      // from this dev page (Origin http://localhost:5173) look cross-origin.
+      API_ROOTS.map((r) => [`/${r}`, { target: proxyTarget, changeOrigin: false }]),
     ),
   },
 });

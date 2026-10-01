@@ -21,6 +21,22 @@ export interface ApiOptions {
 let down = false;
 const downListeners = new Set<(isDown: boolean) => void>();
 
+const authListeners = new Set<() => void>();
+
+/**
+ * Called whenever the server answers an API call with 401: the session ended, or never began. The
+ * sign-in gate (auth.tsx) listens and asks the server whether it really is signed out before it
+ * covers the console, so a stray 401 from somewhere else does not.
+ */
+export function onAuthRequired(fn: () => void): () => void {
+  authListeners.add(fn);
+  return () => authListeners.delete(fn);
+}
+
+function notifyAuthRequired(status: number): void {
+  if (status === 401) authListeners.forEach((fn) => fn());
+}
+
 export function onServerDownChange(fn: (isDown: boolean) => void): () => void {
   downListeners.add(fn);
   return () => downListeners.delete(fn);
@@ -86,6 +102,7 @@ export async function api(method: string, path: string, body?: unknown, opts: Ap
     clearTimeout(timer);
   }
   if (isLiveness(path)) setDown(false, path, notifier);
+  notifyAuthRequired(res.status);
   let json: any = null;
   try {
     json = await res.json();
@@ -104,6 +121,7 @@ export const post = (path: string, body?: unknown, opts: ApiOptions = {}): Promi
 export const getText = async (path: string, opts: ApiOptions = {}): Promise<string | null> => {
   try {
     const res = await fetch(projectPath(opts.projectId, path));
+    notifyAuthRequired(res.status);
     if (!res.ok) return null;
     return await res.text();
   } catch {
@@ -139,6 +157,7 @@ export async function postStream(
   } catch {
     return { status: 0, error: "designer chat failed — the server is unreachable" };
   }
+  notifyAuthRequired(res.status);
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
     return { status: res.status, error: text ? text.slice(0, 200) : `designer chat failed (${res.status})` };

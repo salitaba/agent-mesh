@@ -52,8 +52,9 @@ import {
   type UpstreamSink,
 } from "../../../packages/observability/src/index";
 import type { MeshEvent } from "../../../packages/protocol/src/index";
-import { requireAuth } from "./auth";
-import { PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { handleAuthRoute, requireAuth } from "./auth";
+import { SessionStore } from "./sessions";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 
 /**
  * Path prefixes owned by a project child.
@@ -663,6 +664,11 @@ export function createHostServer(deps: {
   // Set when shutdown begins, so `/readyz` stops saying "ready" while children drain.
   let draining = false;
 
+  // The dashboard's sign-in and the count of wrong tokens. The host holds them, never a child: a
+  // child is reached only through the host, with a token the browser never sees.
+  const sessions = new SessionStore();
+  const limiter = new FailureLimiter();
+
   const server = http.createServer((req, res) => {
     void route(req, res).catch((err) => {
       if (res.headersSent) {
@@ -683,8 +689,8 @@ export function createHostServer(deps: {
     };
     // Bounded, like the child's: over the limit it throws `PayloadTooLargeError`, which the catch
     // at the end of this function turns into a 413.
-    const body = async (): Promise<Record<string, unknown>> => {
-      const raw = (await readBody(req, maxBodyBytes())).toString("utf8");
+    const body = async (limit: number = maxBodyBytes()): Promise<Record<string, unknown>> => {
+      const raw = (await readBody(req, limit)).toString("utf8");
       if (!raw) return {};
       try {
         return JSON.parse(raw) as Record<string, unknown>;
@@ -707,10 +713,26 @@ export function createHostServer(deps: {
       const verdict = guardRequest(req);
       if (!verdict.ok) return json(verdict.status, { error: verdict.error, code: verdict.code });
 
+      // The dashboard trades the operator token for a session cookie here (see sessions.ts). It
+      // cannot require being signed in, so it sits ahead of `requireAuth`.
+      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send: json })) return;
+
+      // A project's sandboxed playground page reads its own files through here, carrying a signed,
+      // expiring link instead of a credential (see preview.ts): the page runs in an opaque origin
+      // and has no cookie to send. The CHILD checks that link before it serves anything, and a
+      // host cannot do it for the child, whose secret it is. Only this one GET prefix is let
+      // through, and only to a child that answers for it.
+      if (parts[0] === "api" && parts[1] === "p" && parts[2] && parts[3] === "_pg" && parts.length >= 5 && req.method === "GET") {
+        return proxyToProject(req, res, decodeURIComponent(parts[2]), `/${parts.slice(3).join("/")}`, u);
+      }
+
       // Operator auth on the host's own boundary. The child tokens below are a
       // separate, internal credential and are never accepted from outside.
-      const auth = requireAuth(req, u, parts);
-      if (!auth.ok) return json(401, { error: auth.error });
+      const auth = requireAuth(req, u, parts, { sessions, limiter });
+      if (!auth.ok) {
+        if (auth.retryAfterSec) res.setHeader("retry-after", String(auth.retryAfterSec));
+        return json(auth.status ?? 401, { error: auth.error });
+      }
 
       // ------------------------------------------------------------- health
       if (parts[0] === "health" && parts.length === 1 && req.method === "GET") {
@@ -1191,7 +1213,6 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
   const safe = path.normalize(rel).replace(/^([.][.][/\\])+/, "");
   const target = path.join(dir, safe);
   if (target.startsWith(dir) && fs.existsSync(target) && fs.statSync(target).isFile()) {
-    applySecurityHeaders(res, "dashboard");
     const ext = path.extname(target).toLowerCase();
     const type =
       ext === ".html" ? "text/html" :
@@ -1199,17 +1220,20 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
       ext === ".css" ? "text/css" :
       ext === ".json" ? "application/json" :
       ext === ".svg" ? "image/svg+xml" : "text/plain";
+    const content = fs.readFileSync(target);
+    applySecurityHeaders(res, "dashboard", ext === ".html" ? { html: content.toString("utf8") } : undefined);
     res.writeHead(200, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-cache" });
-    res.end(fs.readFileSync(target));
+    res.end(content);
     return true;
   }
   if (isIndex) {
     // SPA entry: deep links like `#/p/:id/steps` are resolved client-side.
     const index = path.join(dir, "index.html");
     if (fs.existsSync(index)) {
-      applySecurityHeaders(res, "dashboard");
+      const content = fs.readFileSync(index);
+      applySecurityHeaders(res, "dashboard", { html: content.toString("utf8") });
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
-      res.end(fs.readFileSync(index));
+      res.end(content);
       return true;
     }
   }

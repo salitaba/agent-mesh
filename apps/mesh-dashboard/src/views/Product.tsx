@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMesh } from "../store";
+import { projectPath } from "../route";
 import { Button, Card, Chip, ErrorState, Input, Pill } from "../components";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 
@@ -36,7 +37,7 @@ const fmtSize = (n: number): string =>
   n >= 1024 ? `${(n / 1024).toFixed(n >= 102400 ? 0 : 1)}kB` : `${n}B`;
 
 export default function Product(): React.JSX.Element {
-  const { toast, goalId, client } = useMesh();
+  const { toast, goalId, client, projectId } = useMesh();
   const [info, setInfo] = useState<any>(null);
   const [dir, setDir] = useState("");
   const [tree, setTree] = useState<TreeEntry[]>([]);
@@ -50,6 +51,10 @@ export default function Product(): React.JSX.Element {
   const [runTicker, setRunTicker] = useState(0);
   const [pg, setPg] = useState(false);
   const [pgErr, setPgErr] = useState(false);
+  // The playground is agent-written, so it is framed by a signed link and in a sandbox (see
+  // apps/mesh-server/src/preview.ts), never by a path this page could be tricked into sharing
+  // its credentials with.
+  const [pgSrc, setPgSrc] = useState<string | null>(null);
   // Every workspace fetch below used to swallow its error, so a missing or
   // unreachable checkout rendered as branch "…", head "…", tree "…" forever —
   // identical to a slow load. The workspace either answered or it did not.
@@ -191,8 +196,23 @@ export default function Product(): React.JSX.Element {
       setPg(false);
       return;
     }
-    client.api("GET", "/playground/").then(({ status, timeout }) => {
-      setPgErr(timeout || status >= 400);
+    setPgSrc(null);
+    client.api("GET", "/playground/").then(async ({ status, timeout }) => {
+      if (timeout || status >= 400) {
+        setPgErr(true);
+        setPg(true);
+        return;
+      }
+      const minted = await client.api("POST", "/playground/session", {});
+      const link = typeof minted.json?.path === "string" ? (minted.json.path as string) : null;
+      if (minted.status >= 400 || !link) {
+        setPgErr(true);
+        setPg(true);
+        return;
+      }
+      // The link is relative to the project, like every other path this view calls.
+      setPgSrc(projectPath(projectId, link));
+      setPgErr(false);
       setPg(true);
     }).catch(() => {
       setPgErr(true);
@@ -322,7 +342,9 @@ export default function Product(): React.JSX.Element {
               <div className="muted">Run <b>build</b> above to compile the playground, then reopen it.</div>
             )
           ) : (
-            <iframe title="playground" src="/playground/" className="playframe" onError={() => setPgErr(true)} />
+            // `sandbox` without allow-same-origin gives the page an opaque origin: its scripts run,
+            // but they cannot call this server's API with the operator's session or read what it answers.
+            pgSrc ? <iframe title="playground" src={pgSrc} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" onError={() => setPgErr(true)} /> : <div className="muted">opening…</div>
           )}
         </Card>
       ) : null}

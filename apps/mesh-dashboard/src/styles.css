@@ -2164,3 +2164,12 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
   .evd-tr .type { grid-column: 1 / -1; }
   .evc-facets.evc-right { margin-left: 0; }
 }
+
+/* Sign-in: shown instead of the console when the server holds a token and this browser has no session. */
+.signin { min-height: 100vh; display: grid; place-items: center; padding: var(--s4); background: var(--bg); }
+.signin form { width: min(420px, 100%); }
+.signin p { margin: 0 0 var(--s2); line-height: 1.5; }
+.signin label { display: block; font-size: 12px; color: var(--muted); margin: var(--s3) 0 var(--s1); }
+.signin input { width: 100%; box-sizing: border-box; }
+.signin .signin-error { margin-top: var(--s2-5); color: var(--bad); font-size: 13px; }
+.signin .signin-actions { margin-top: var(--s3-5); display: flex; justify-content: flex-end; }

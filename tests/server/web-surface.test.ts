@@ -18,6 +18,7 @@ import * as fs from "fs";
 import * as http from "http";
 import * as os from "os";
 import * as path from "path";
+import { createHash } from "node:crypto";
 import { createHttpServer, closeHttpServer, startServer } from "../../apps/mesh-server/src/index";
 import { UnsafeListenError, MIN_NETWORK_TOKEN_LENGTH } from "../../apps/mesh-server/src/web-security";
 import { mintSeatToken } from "../../packages/core/src/seat-token";
@@ -194,7 +195,8 @@ test("API answers are not framed, sniffed or cached", async () => {
 
 test("the dashboard is served under a policy that allows nothing from elsewhere", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-dash-"));
-  fs.writeFileSync(path.join(dir, "index.html"), "<!doctype html><title>x</title><script type=module src=/assets/a.js></script>", "utf8");
+  const inline = "document.documentElement.dataset.theme='dark'";
+  fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html><title>x</title><script>${inline}</script><script type=module src=/assets/a.js></script>`, "utf8");
   fs.mkdirSync(path.join(dir, "assets"));
   fs.writeFileSync(path.join(dir, "assets", "a.js"), "export {}", "utf8");
   try {
@@ -210,6 +212,10 @@ test("the dashboard is served under a policy that allows nothing from elsewhere"
           assert.equal(r.headers["x-content-type-options"], "nosniff", p);
           assert.equal(r.headers["x-frame-options"], "DENY", p);
         }
+        // The page's own inline script is admitted by hash; its static assets are not HTML and get the base policy.
+        const hash = `'sha256-${createHash("sha256").update(inline, "utf8").digest("base64")}'`;
+        for (const p of ["/", "/dashboard"]) assert.ok(String((await raw(base, { path: p })).headers["content-security-policy"]).includes(hash), `${p} admits the theme script`);
+        assert.ok(!String((await raw(base, { path: "/assets/a.js" })).headers["content-security-policy"]).includes(hash));
       },
       { dashboardDir: dir },
     );

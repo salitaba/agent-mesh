@@ -4,6 +4,7 @@ import "./styles.css";
 import { MeshProvider, useMesh } from "./store";
 import { ProjectsProvider, useProjects } from "./projects";
 import { Shell } from "./shell";
+import { AuthGate } from "./auth";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
 import Agents from "./views/Agents";
@@ -88,9 +89,12 @@ function Projects({ activeId }: { activeId: string | null }): React.JSX.Element 
 
 function App(): React.JSX.Element {
   return (
-    <ProjectsProvider>
-      {(activeId) => <Projects activeId={activeId} />}
-    </ProjectsProvider>
+    // Outermost: nothing below may fetch until the server has said this browser may.
+    <AuthGate>
+      <ProjectsProvider>
+        {(activeId) => <Projects activeId={activeId} />}
+      </ProjectsProvider>
+    </AuthGate>
   );
 }
 

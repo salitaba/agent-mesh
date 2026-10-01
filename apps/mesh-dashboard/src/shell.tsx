@@ -11,6 +11,7 @@ import { list, register, setPendingAgent, unregister, getVersion, subscribe, typ
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
 import ChatDock from "./designer/ChatDock";
+import { useAuthOptional } from "./auth";
 
 // Single source of truth for nav order, sidebar kbd hints, and the 1-9 key
 // map — the badge and the keydown handler can never drift apart again.
@@ -193,6 +194,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // show the strip only once it confirms a registry exists.
   const projectsCtx = useProjectsOptional();
   const hasProjects = projectsCtx?.hasRegistry === true;
+  const auth = useAuthOptional();
   // A registry that has answered and holds nothing is first-run, not "a mission
   // reading zero". Every mesh-scoped request 409s in that state, so rendering
   // the views paints a dashboard out of failures.
@@ -677,6 +679,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <Button id="btn-palette" variant="ghost" title="Search views, agents and actions (⌘K / Ctrl K)" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>⌕ commands<em className="kbd">⌘K</em></Button>
           <Button id="btn-theme" variant="ghost" title="toggle theme" aria-pressed={isLight} onClick={toggleTheme}>◐ theme</Button>
           <Button id="btn-help" variant="ghost" title="keyboard shortcuts" onClick={openHelp}>? help</Button>
+          {auth?.required ? <Button id="btn-signout" variant="ghost" title="End this browser's session on the server" onClick={auth.signOut}>⎋ sign out</Button> : null}
         </div>
       </aside>
 
