@@ -13,7 +13,9 @@
  *   One line on stdout, prefixed with a marker, carries the outcome. Anything
  *   else the mesh logs is passed through untouched.
  */
+import { resolveConfig } from "../../../packages/config/src/index";
 import { startServer } from "./index";
+import { startCleanIfScriptedDemo } from "./demo";
 
 export const CHILD_READY_PREFIX = "@@mesh-child-ready@@";
 export const CHILD_ERROR_PREFIX = "@@mesh-child-error@@";
@@ -131,6 +133,10 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
   if (!configPath) throw new Error("MESH_CHILD_CONFIG is required");
   const projectId = env.MESH_CHILD_PROJECT_ID ?? "";
 
+  // The shipped scripted demo behaves the same under a host as under `mesh run`: it starts clean and its
+  // scripted team is attached, so it converges with no model and no key. Anything else is a real project.
+  const demo = startCleanIfScriptedDemo(resolveConfig(configPath));
+
   const handle = await startServer({
     configPath,
     // Loopback only. A child must never be reachable off-host: it executes
@@ -145,6 +151,15 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
     // overrides it.
     gitMode: env.MESH_CHILD_GIT === "1" ? "on" : env.MESH_CHILD_GIT === "0" ? "off" : "auto",
   });
+
+  if (demo) {
+    try {
+      const { attachDemoTeam } = await import("../../mesh-cli/src/bench");
+      attachDemoTeam(handle.instance);
+    } catch (err) {
+      process.stderr.write(`demo attach failed: ${(err as Error).message}\n`);
+    }
+  }
 
   const ready: ChildReady = {
     port: handle.port,

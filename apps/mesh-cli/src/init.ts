@@ -1,0 +1,138 @@
+/**
+ * `mesh init`: a first project, ready to register.
+ *
+ *   mesh init [dir]                          the default team, on the Claude runtime
+ *   mesh init [dir] --runtime stub           the same team on the stub runtime: boots and runs with no model calls
+ *   mesh init [dir] --example <name>         a shipped example, copied out self-contained
+ *   mesh init --list                         the shipped examples
+ *
+ * An example in `examples/` points at the repository's `roles/` with `../../roles/...`, which is right where it
+ * sits and wrong anywhere else: copied into a container's data volume it would find no prompts. Scaffolding one
+ * copies the role files it names into the project and points the config at them, so the result runs wherever it is put.
+ */
+import * as fs from "fs";
+import * as path from "path";
+import { ConfigError, resolveConfig, writeDefaultMeshYaml } from "../../../packages/config/src/index";
+
+export const INIT_HELP = `usage:
+  mesh init [dir]                       scaffold mesh.yaml and roles/ (default team, Claude runtime)
+  mesh init [dir] --runtime stub        the same on the stub runtime, which needs no API key
+  mesh init [dir] --example <name>      copy a shipped example into dir, self-contained (see --list)
+  mesh init --list                      the shipped examples
+    The scaffold is a project the host can register: mesh project add <dir>, or add it from the dashboard.`;
+
+export interface InitDeps {
+  /** The directory holding `examples/` and `roles/`. Found by walking up from this file when omitted. */
+  repoRoot?: string;
+  out?: (line: string) => void;
+  err?: (line: string) => void;
+}
+
+const RUNTIMES = ["claude", "stub"] as const;
+
+/** The directory that holds `examples/` and `roles/`: the repository root, or `/app` in the image. */
+export function findShippedRoot(from: string = __dirname): string | undefined {
+  let dir = from;
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "examples")) && fs.existsSync(path.join(dir, "roles"))) return dir;
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return undefined;
+}
+
+export function listExamples(root: string): string[] {
+  const dir = path.join(root, "examples");
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "mesh.yaml")))
+    .map((e) => e.name)
+    .sort();
+}
+
+const ROLE_REF = /(\bprompt:\s*)\.\.\/\.\.\/roles\/([A-Za-z0-9_.-]+\.md)\b/g;
+
+/**
+ * Copy one example into `targetDir` so that it needs nothing outside it: its `mesh.yaml` with the role prompts it
+ * names pointed at a `roles/` beside it, and those files copied there. Refuses a directory that already has a
+ * `mesh.yaml`, and an example whose config reaches outside itself in any way this cannot make self-contained.
+ */
+export function scaffoldExample(root: string, example: string, targetDir: string): { configPath: string; roles: string[] } {
+  const source = path.join(root, "examples", example, "mesh.yaml");
+  const target = path.join(targetDir, "mesh.yaml");
+  if (fs.existsSync(target)) throw new ConfigError([`${target} already exists`]);
+  let text = fs.readFileSync(source, "utf8");
+  const roles = new Set<string>();
+  text = text.replace(ROLE_REF, (_all, lead: string, file: string) => {
+    roles.add(file);
+    return `${lead}./roles/${file}`;
+  });
+  const stray = text.split("\n").filter((line) => /(^|[\s"':])\.\.\//.test(line) && !line.trim().startsWith("#"));
+  if (stray.length > 0) {
+    throw new ConfigError([`example '${example}' refers outside itself, which a copy cannot carry: ${stray[0]!.trim()}`]);
+  }
+  for (const file of roles) {
+    if (!fs.existsSync(path.join(root, "roles", file))) throw new ConfigError([`example '${example}' names roles/${file}, which this install does not ship`]);
+  }
+  fs.mkdirSync(path.join(targetDir, "roles"), { recursive: true });
+  for (const file of roles) fs.copyFileSync(path.join(root, "roles", file), path.join(targetDir, "roles", file));
+  fs.writeFileSync(target, text, "utf8");
+  return { configPath: target, roles: [...roles].sort() };
+}
+
+export function runInitCommand(positional: string[], flags: Record<string, string | boolean>, deps: InitDeps = {}): number {
+  const out = deps.out ?? ((l: string) => console.log(l));
+  const err = deps.err ?? ((l: string) => console.error(l));
+  if (flags.help) {
+    out(INIT_HELP);
+    return 0;
+  }
+  const root = deps.repoRoot ?? findShippedRoot();
+
+  if (flags.list) {
+    const names = root ? listExamples(root) : [];
+    if (names.length === 0) {
+      err("mesh init --list: no examples are shipped with this install");
+      return 1;
+    }
+    for (const name of names) out(name);
+    return 0;
+  }
+
+  const dir = path.resolve(positional[0] ?? ".");
+  if (flags.example === true || flags.runtime === true) {
+    err(`mesh init: --${flags.example === true ? "example" : "runtime"} needs a value\n\n${INIT_HELP}`);
+    return 2;
+  }
+  const example = typeof flags.example === "string" ? flags.example : undefined;
+  const runtime = typeof flags.runtime === "string" ? flags.runtime : undefined;
+  if (example !== undefined && runtime !== undefined) {
+    err("mesh init: an example brings its own runtime; give --example or --runtime, not both");
+    return 2;
+  }
+
+  if (example !== undefined) {
+    const names = root ? listExamples(root) : [];
+    if (!root || !names.includes(example)) {
+      err(`mesh init: no example '${example}'. ${names.length ? `Available: ${names.join(", ")}` : "This install ships none"}.`);
+      return 2;
+    }
+    const made = scaffoldExample(root, example, dir);
+    out(`wrote ${made.configPath} and ${made.roles.length} role prompt(s) under ${path.join(dir, "roles")}`);
+    // The result must load: say so now rather than at the first `mesh project add`.
+    resolveConfig(made.configPath);
+    out(`next: mesh project add ${dir}`);
+    return 0;
+  }
+
+  if (runtime !== undefined && !(RUNTIMES as readonly string[]).includes(runtime)) {
+    err(`mesh init: --runtime must be one of ${RUNTIMES.join(", ")}, not '${runtime}'`);
+    return 2;
+  }
+  const file = writeDefaultMeshYaml(dir, path.basename(dir), runtime ?? "claude");
+  out(`wrote ${file}`);
+  out(`next: mesh project add ${dir}`);
+  return 0;
+}

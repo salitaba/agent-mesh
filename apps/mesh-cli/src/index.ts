@@ -1,7 +1,6 @@
 ﻿import * as fs from "fs";
 import * as path from "path";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
-import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
@@ -9,6 +8,7 @@ import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
 import { UnsafeListenError } from "../../mesh-server/src/web-security";
 import { serverVersion } from "../../mesh-server/src/version";
+import { isScriptedDemo } from "../../mesh-server/src/demo";
 import { LicenseLimitError } from "../../mesh-server/src/license";
 import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
@@ -16,6 +16,7 @@ import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCo
 import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
 import { runLicenseCommand } from "./license";
 import { runUsageCommand } from "./usage";
+import { runInitCommand } from "./init";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -51,6 +52,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "json",
   "csv",
   "all",
+  "list",
   "settled",
   "keep-sessions",
 ]);
@@ -330,7 +332,7 @@ function printAgentDetail(body: any, limit: number): void {
 const HELP = `agent-mesh — runtime for persistent AI organizations
 
 usage:
-  mesh init [dir]                          scaffold mesh.yaml + roles
+  mesh init [dir] [--runtime stub] [--example name] | --list   scaffold a project: mesh.yaml + roles (see: mesh init --help)
   mesh validate <mesh.yaml>                schema + cross-field validation
   mesh emit-schemas [dir]                  write canonical JSON schemas
   mesh run <mesh.yaml> [--port n] [--bind addr] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
@@ -436,7 +438,7 @@ async function launchMesh(opts: {
   // and run/serve/up/console/ui used to compute these and drop them, so the
   // only way to see one was to remember to validate first.
   for (const w of preflight.warnings) console.warn(`warn: ${w}`);
-  const useDemo = !opts.noDemo && preflight.meshId === "demo-stub";
+  const useDemo = !opts.noDemo && isScriptedDemo(preflight);
   // A scripted demo always starts clean (its team is re-attached each
   // boot); a real mesh resumes from its event log unless --fresh.
   const fresh = Boolean(opts.fresh) || useDemo;
@@ -578,13 +580,10 @@ export async function main(argv: string[]): Promise<number> {
           : runRestoreCommand(args.positional, args.flags));
       }
       case "init": {
-        const dir = path.resolve(args.positional[0] ?? ".");
-        // Always claude: it needs no separate install, riding on the declared
-        // @anthropic-ai/claude-agent-sdk dependency. Set runtime: stub by hand
-        // for a mesh that boots and runs with zero model calls.
-        const file = writeDefaultMeshYaml(dir, path.basename(dir), "claude");
-        console.log(`wrote ${file}`);
-        return 0;
+        // The Claude runtime by default: it needs no separate install, riding on the declared
+        // @anthropic-ai/claude-agent-sdk dependency. --runtime stub boots and runs with zero model
+        // calls; --example copies one of the shipped examples out self-contained.
+        return runInitCommand(args.positional, args.flags);
       }
       case "emit-schemas": {
         const dir = path.resolve(args.positional[0] ?? "schemas");
