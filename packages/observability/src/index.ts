@@ -7,3 +7,4 @@ export * from "./activity";
 export * from "./metrics";
 export * from "./sse";
 export * from "./multiplex";
+export * from "./usage";
