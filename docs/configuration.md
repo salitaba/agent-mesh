@@ -1277,9 +1277,13 @@ This is deliberately different from a project's **token** budget
 (`budgets.mission_tokens`), which does not count cache reads: counting a replayed
 history again on every turn would make that budget grow without bound. The token
 budget limits work done; the USD ceiling limits money spent. A model with no
-entry is priced at `default_usd_per_mtok` for every class, with the standard
-cache multipliers. A cache price that is not a non-negative number is ignored
-with a warning, and the model stays priced.
+entry is priced at Anthropic's published list price when it is one of the
+current Anthropic models (Haiku 4.5, Sonnet 5.5, Opus 5.5, Fable 5.1, as of
+2026-10-01; behind a provider prefix or with a date suffix is fine), and
+otherwise at `default_usd_per_mtok` for every class, with the standard cache
+multipliers. What you write in `model_prices` always wins over both. A cache
+price that is not a non-negative number is ignored with a warning, and the
+model stays priced.
 
 The figure is an estimate from list prices, not an invoice: committed-use
 discounts, regional pricing and batch rates are not modelled. The usage report

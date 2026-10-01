@@ -159,3 +159,16 @@ test("host.yaml cannot name a reserved model id, and it does not disturb the oth
   assert.equal(Object.getPrototypeOf(config.modelPrices), Object.prototype, "the table's own prototype was not replaced");
   assert.equal(config.warnings.filter((w) => /reserved name/.test(w)).length, 2);
 });
+
+test("a current Anthropic model is priced at its published list price unless host.yaml says otherwise, and anything else at the default", () => {
+  const config = defaultHostConfig();
+  config.defaultUsdPerMtok = 3;
+  config.modelPrices = { "claude-sonnet-5-5": { inputPerMtok: 1, outputPerMtok: 1 } };
+  const one = (model: string) => priceUsage(config, model, { input: 1_000_000, output: 1_000_000 });
+  assert.equal(one("claude-haiku-4-5-20251001"), 1 + 5, "Haiku at its list price, not at $3 an input token");
+  assert.equal(one("anthropic/claude-opus-5-5"), 4 + 20, "Opus's output at $20, not $3");
+  assert.equal(one("claude-sonnet-5-5"), 2, "what the operator wrote beats the list price");
+  assert.equal(one("some-other-model"), 3 + 3, "an unknown model is priced at the default for both");
+  // The default rate's own cache multipliers still apply to the unknown one.
+  assert.ok(Math.abs(priceUsage(config, "some-other-model", { input: 0, output: 0, cacheRead: 1_000_000 }) - 0.3) < 1e-12);
+});

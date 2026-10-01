@@ -42,3 +42,28 @@ test("counts that are absent, negative, fractional-NaN or infinite are zero, nev
   assert.equal(priceTokenUsage(HAIKU_4_5, { input: -5, output: Number.NaN, cacheWrite: Number.POSITIVE_INFINITY, cacheRead: -1 }), 0);
   assert.equal(priceTokenUsage(HAIKU_4_5, { input: 0, output: 0 }), 0);
 });
+
+// ------------------------------------------------------------- list prices
+
+import { ANTHROPIC_LIST_PRICES, LIST_PRICES_AS_OF, listPriceFor } from "../../packages/protocol/src/pricing";
+
+test("the list prices are the published ones, dated, and cache reads follow the model's own multiplier", () => {
+  assert.match(LIST_PRICES_AS_OF, /^\d{4}-\d\d-\d\d$/);
+  assert.deepEqual(Object.keys(ANTHROPIC_LIST_PRICES).sort(), ["claude-fable-5-1", "claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5-5"]);
+  const per = (model: string, usage: Parameters<typeof priceTokenUsage>[1]) => priceTokenUsage(listPriceFor(model)!, usage);
+  // 1M of each class on each model: input + output + 1.25x input (write) + the model's own read price.
+  assert.equal(per("claude-haiku-4-5", { input: 1e6, output: 1e6, cacheWrite: 1e6, cacheRead: 1e6 }), 1 + 5 + 1.25 + 0.1);
+  assert.equal(per("claude-sonnet-5-5", { input: 1e6, output: 1e6, cacheWrite: 1e6, cacheRead: 1e6 }), 2 + 10 + 2.5 + 0.2);
+  assert.equal(per("claude-opus-5-5", { input: 1e6, output: 1e6, cacheWrite: 1e6, cacheRead: 1e6 }), 4 + 20 + 5 + 0.2);
+  assert.equal(per("claude-fable-5-1", { input: 1e6, output: 1e6, cacheWrite: 1e6, cacheRead: 1e6 }), 10 + 50 + 12.5 + 0.25);
+});
+
+test("a model id is matched as a runtime reports it: dated, provider-prefixed, any case; and only at a hyphen", () => {
+  const haiku = ANTHROPIC_LIST_PRICES["claude-haiku-4-5"];
+  for (const id of ["claude-haiku-4-5", "claude-haiku-4-5-20251001", "anthropic/claude-haiku-4-5", "anthropic/claude-haiku-4-5-20251001", "CLAUDE-HAIKU-4-5"]) {
+    assert.equal(listPriceFor(id), haiku, id);
+  }
+  for (const id of ["claude-haiku-4-50", "claude-haiku-4", "claude-haiku", "haiku", "gpt-4o", "stub", "", "__proto__", "constructor"]) {
+    assert.equal(listPriceFor(id), undefined, `'${id}' is not guessed at`);
+  }
+});

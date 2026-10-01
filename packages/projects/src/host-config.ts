@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Document, parse as parseYaml, parseDocument } from "yaml";
-import { priceTokenUsage, type TokenPrice, type TokenUsage } from "../../protocol/src/index";
+import { listPriceFor, priceTokenUsage, type TokenPrice, type TokenUsage } from "../../protocol/src/index";
 import { meshHome } from "./store";
 
 export const HOST_CONFIG_FILENAME = "host.yaml";
@@ -267,9 +267,14 @@ export function priceUsage(config: Pick<HostConfig, "modelPrices" | "defaultUsdP
   // Own entries only. The model id arrives from a child's heartbeat; "constructor" or "__proto__" must
   // be an unpriced model (priced at the default, so it still counts), not an inherited object whose
   // fields are undefined and whose product with a token count is NaN, which compares false to every ceiling.
+  //
+  // The order is what the operator wrote, then Anthropic's published price for the model, then the
+  // default rate. The middle step is what makes the ceiling right out of the box for the models most
+  // meshes run: a $3-per-million default prices Haiku at three times its real cost and Opus's output at
+  // a sixth of it, and a financial backstop should not be wrong in a direction that depends on the model.
   const price: ModelPrice = Object.hasOwn(config.modelPrices, model)
     ? config.modelPrices[model]!
-    : { inputPerMtok: config.defaultUsdPerMtok, outputPerMtok: config.defaultUsdPerMtok };
+    : (listPriceFor(model) ?? { inputPerMtok: config.defaultUsdPerMtok, outputPerMtok: config.defaultUsdPerMtok });
   return priceTokenUsage(price, usage);
 }
 
