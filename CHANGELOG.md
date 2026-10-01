@@ -46,6 +46,10 @@ sections 1 to 12) are described there, run by run.
   a credentials Secret and a release per tenant; a release workflow that builds for amd64 and arm64, attaches an SBOM and
   provenance and signs the digest; CI and security workflows; Dependabot. See
   [docs/commercial/deployment.md](docs/commercial/deployment.md).
+- **`mesh doctor`** prints what a support engineer needs and nothing that is yours: version, plan and licence state, the
+  settings that are present (by name, never value), each project's configuration, lock and event-log size, disk space,
+  and the host's probes with `--host`. No event content, prompt, credential, licensee name or path is in it, so it is
+  safe to paste into a ticket ([docs/operations.md](docs/operations.md#what-to-send-support)).
 - **`mesh init`** can scaffold a mesh on the stub runtime (`--runtime stub`) or from a shipped example (`--example name`,
   `--list`).
 - **Documents.** The operations runbook ([docs/operations.md](docs/operations.md)), deployment, pricing (its tables generated

@@ -14,6 +14,7 @@ import { runTui } from "./tui";
 import { runBenchmark } from "./bench";
 import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand, type Flags } from "./projects";
 import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
+import { runDoctorCommand } from "./doctor";
 import { runLicenseCommand } from "./license";
 import { runUsageCommand } from "./usage";
 import { runInitCommand } from "./init";
@@ -375,6 +376,7 @@ usage:
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
   mesh license [status|install|verify|remove]   this install's plan, limits and licence (see: mesh license --help)
   mesh usage <mesh.yaml>... | --all             what meshes consumed, by day/seat/model, from their logs (see: mesh usage --help)
+  mesh doctor [mesh.yaml ...] [--json] [--host url]   diagnose this install; safe to paste into a support ticket (see: mesh doctor --help)
   mesh backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
   mesh restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
     a reset writes one set of archives under one stamp: the state dir (the only
@@ -560,6 +562,10 @@ export async function main(argv: string[]): Promise<number> {
       case "usage": {
         // Offline, like backups: it reads event logs, so it works on a mesh that is stopped.
         return await runUsageCommand(args.positional, args.flags);
+      }
+      case "doctor": {
+        // Offline too, and the one command that is safe to paste into a ticket: no event-log content, no values.
+        return await runDoctorCommand(args.positional, args.flags);
       }
       case "project":
       case "projects": {

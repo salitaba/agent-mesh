@@ -140,6 +140,7 @@ npm run mesh -- host --port 7420
 npm run mesh -- project add ./my-mesh
 npm run mesh -- license status                     # plan, limits and licence state of this install
 npm run mesh -- usage --all                        # what the meshes consumed, from their logs
+npm run mesh -- doctor                             # diagnose this install; safe to paste into a ticket
 
 # operate a running mesh from the CLI:
 npm run mesh -- status

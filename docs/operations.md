@@ -229,6 +229,30 @@ scrape_configs:
 what each project, seat and model consumed, with an estimate in dollars. Tokens are exact; dollars are an
 estimate at list prices or your `model_prices`. Reading is safe beside a running mesh.
 
+### What to send support
+
+`mesh doctor` is the one thing to paste into a ticket. Run it where the instance runs (`docker compose exec mesh
+mesh doctor`, or `kubectl exec` into the pod); it reads files and the environment and changes nothing.
+
+```bash
+mesh doctor                       # the report, in text
+mesh doctor --json                # the same, for a script
+mesh doctor --host http://127.0.0.1:7420     # also ask a running host's /healthz and /readyz
+mesh doctor ./team/mesh.yaml      # also check a mesh that is not registered
+```
+
+It reports the version, the plan and the licence's state, each setting **by name** (never its value), the
+credentials the agents would use (which kind, never the credential), and for every project whether its
+`mesh.yaml` loads, who holds its state lock, how big its event log is and when it last grew, and how much disk is
+free. Each finding says what is wrong and which section of these documents covers it. It exits 1 when
+something failed, 0 otherwise (a warning does not fail it).
+
+What it leaves out is the point: no event payload, prompt, goal text or file an agent wrote (the log is read
+for its size and the number and time of its last line), no credential or licence key, no licensee name, and no
+path (they are replaced by `<path>`). A configuration that does not load is described by its structural
+problems, and a YAML syntax error by its line and column only, because the line itself may be your goal.
+A project appears by its id: edit those in the text before pasting if they are sensitive. Do not send the event log.
+
 ## When something is refused
 
 | You see | It means | Do |
