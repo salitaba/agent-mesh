@@ -12,13 +12,13 @@ function pathOf(parts: string[]): string {
 }
 
 /**
- * Strict mode: nothing is public, not even `/health` or the dashboard.
+ * Strict mode: nothing is public, not even the dashboard.
  *
  * A multi-project child binds to loopback and executes agent-authored code and
  * shell commands. Any other local process could otherwise drive it directly and
  * bypass the host entirely, so a child accepts only requests carrying its own
  * per-child bearer token. Single-process `mesh serve` keeps the friendlier
- * default where a liveness probe and the dashboard need no credentials.
+ * default where the dashboard's page and assets need no credentials.
  */
 export function isStrictAuth(): boolean {
   return (process.env.MESH_STRICT_AUTH ?? "").trim() === "1";
@@ -29,10 +29,14 @@ export function isStrictAuth(): boolean {
  *
  * `/auth/*` is how the dashboard signs in, so it cannot require being signed in:
  * the status read, the login and the logout. Nothing else under it exists.
+ *
+ * `/health` is not here. It answers with counts and, on a host, the ids of the open projects, which is
+ * the sort of thing a network client with no credential has no business reading. Liveness and readiness
+ * probes have `/healthz` and `/readyz` (answered before auth, and revealing nothing); `/health` is the
+ * detailed view, for someone signed in.
  */
 export function isPublicPath(method: string, parts: string[]): boolean {
   if (isStrictAuth()) return false;
-  if (method === "GET" && parts.length === 1 && parts[0] === "health") return true;
   if (method === "GET" && (parts.length === 0 || parts[0] === "dashboard")) return true;
   // Dashboard static assets served via the catch-all GET route.
   if (method === "GET" && parts.length >= 1 && parts[0] === "assets") return true;

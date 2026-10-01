@@ -143,6 +143,18 @@ for (const strict of [false, true]) {
   });
 }
 
+test("the detailed /health needs the token: counts and activity are not for a network client with no credential", async () => {
+  await withServer(async ({ base }) => {
+    const anonymous = await raw(base, { path: "/health" });
+    assert.equal(anonymous.status, 401);
+    assert.doesNotMatch(anonymous.body, /eventCount|lastSeq|uptimeMs/);
+    const signedIn = await raw(base, { path: "/health", headers: auth });
+    assert.equal(signedIn.status, 200);
+    assert.match(signedIn.body, /eventCount/);
+    assert.equal((await raw(base, { path: "/healthz" })).status, 200, "the unauthenticated probe is /healthz, and it says one word");
+  });
+});
+
 test("probes: only GET answers them, and nothing else under those names is public", async () => {
   await withServer(async ({ base }) => {
     const post = await raw(base, { method: "POST", path: "/healthz", headers: { "content-type": "application/json" }, body: "{}" });
@@ -157,7 +169,8 @@ test("probes: only GET answers them, and nothing else under those names is publi
 test("no answer carries Access-Control-Allow-Origin: not JSON, not a refusal, not the event stream", async () => {
   await withServer(async ({ base }) => {
     const seen: Array<[string, Reply]> = [
-      ["/health (public)", await raw(base, { path: "/health" })],
+      ["/health", await raw(base, { path: "/health", headers: auth })],
+      ["/health without a token (401)", await raw(base, { path: "/health" })],
       ["/status", await raw(base, { path: "/status", headers: auth })],
       ["/status without a token (401)", await raw(base, { path: "/status" })],
       ["a 404", await raw(base, { path: "/no-such-route", headers: auth })],

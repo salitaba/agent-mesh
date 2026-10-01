@@ -168,6 +168,21 @@ test("host probes: /healthz and /readyz need no credential and no particular Hos
   });
 });
 
+test("host: the detailed /health, which names the open projects, needs the token; the probes do not", { timeout: 30_000 }, async () => {
+  await withHost(async ({ host, base, root }) => {
+    const ref = makeProject(root, "secret-customer", "secret-customer");
+    await host.registry.add(ref.root);
+    await host.registry.open("secret-customer");
+    const anonymous = await raw(base, { path: "/health" });
+    assert.equal(anonymous.status, 401, "no credential, no project ids");
+    assert.doesNotMatch(JSON.stringify(anonymous.json), /secret-customer/);
+    const signedIn = await raw(base, { path: "/health", headers: auth });
+    assert.equal(signedIn.status, 200);
+    assert.deepEqual(signedIn.json.open, ["secret-customer"]);
+    assert.equal((await raw(base, { path: "/healthz" })).status, 200, "the liveness probe is the unauthenticated one");
+  });
+});
+
 test("host: no answer carries Access-Control-Allow-Origin, and API answers are not framed or cached", { timeout: 30_000 }, async () => {
   await withHost(async ({ base }) => {
     for (const [what, reply] of [
