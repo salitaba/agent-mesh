@@ -20,7 +20,8 @@
       "@mesh/runtime-http": ["packages/runtime-http/src/index.ts"],
       "@mesh/observability": ["packages/observability/src/index.ts"],
       "@mesh/persistence": ["packages/persistence/src/index.ts"],
-      "@mesh/projects": ["packages/projects/src/index.ts"]
+      "@mesh/projects": ["packages/projects/src/index.ts"],
+      "@mesh/licensing": ["packages/licensing/src/index.ts"]
     },
     "strict": true,
     "noImplicitOverride": true,
