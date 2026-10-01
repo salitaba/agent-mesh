@@ -15,6 +15,10 @@ wake on events they care about, act via typed messages and artifact references,
 and the mesh converges — or escalates on conflict, budget exhaustion, or
 stalemate.
 
+It runs on your own infrastructure with your own model credentials, and nothing
+phones home. The Community plan (one open project, up to eight agents) needs no
+licence key; the paid plans lift the limits (see [pricing](docs/commercial/pricing.md)).
+
 ## Demo
 
 ![Agent Mesh dashboard: a scripted 7-role team ships a payment endpoint](docs/assets/demo-stub.gif)
@@ -30,15 +34,40 @@ Regenerate the GIF with `npm run demo:capture` (needs a built repo, Chrome/Chrom
 ```bash
 npm install
 npm run build
-npm test                         # ~1,700 tests in 171 files: protocol, policy,
+npm test                         # several thousand tests: protocol, policy,
                                  # scheduler, lifecycle, replay, integration,
                                  # properties, simulation, git worktrees, adapters,
-                                 # HTTP/MCP, the demo journey, parked/step/live modes
+                                 # HTTP/MCP, security, licensing, deployment assets,
+                                 # the demo journey, parked/step/live modes
 npm run mesh -- run examples/demo-stub/mesh.yaml
 # then open http://127.0.0.1:7421/ and watch a whole AI organization
 # discover its own workflow — no fixed pipeline, budget events, review
 # gates, a QA block with rework, and evidence-based completion.
 ```
+
+## Run it as a service
+
+The same runtime ships as a container image, a Compose file and a Helm chart, for running it for a team:
+
+```bash
+docker build -t agent-mesh .
+docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
+  -e MESH_API_TOKEN="$(openssl rand -hex 32)" agent-mesh demo     # the scripted demo: no API key
+```
+
+Open <http://127.0.0.1:7420>, sign in with the token, open **demo-stub** and press **Start mission**. The server
+refuses to listen on a network address without a token of 32 or more characters, so anything beyond your own machine
+needs a real token and TLS in front of it. Tagged releases publish the image as `ghcr.io/salitaba/agent-mesh`.
+
+| Read | For |
+|---|---|
+| [docs/commercial/deployment.md](docs/commercial/deployment.md) | trying it, Docker Compose, Kubernetes with Helm, one instance per tenant, air-gapped installs |
+| [docs/operations.md](docs/operations.md) | every setting, upgrading, backups, monitoring, what each refusal means |
+| [docs/commercial/security.md](docs/commercial/security.md) | what it protects and what it does not; [SECURITY.md](SECURITY.md) to report a vulnerability |
+| [docs/commercial/pricing.md](docs/commercial/pricing.md), [docs/commercial/licensing.md](docs/commercial/licensing.md) | the plans, their limits, licence keys and how limits are enforced |
+
+The agents use model credentials that belong to you (an Anthropic API key, or Amazon Bedrock, Google Vertex or
+Microsoft Foundry credentials). Agent Mesh never resells or touches model usage; the plans are for the runtime.
 
 ## Product tour (the three journeys)
 
@@ -97,12 +126,20 @@ npm run mesh -- console examples/payment-api/mesh.yaml --port 7430
 # design first, run later:
 npm run mesh -- init my-mesh                       # writes a starter mesh.yaml
                                                    # with runtime: claude
+npm run mesh -- init my-mesh --runtime stub        # the same on the stub runtime: no model calls
+npm run mesh -- init my-mesh --example payment-api # a shipped example (mesh init --list shows them)
 $EDITOR my-mesh/mesh.yaml                          # or use the designer page
 npm run mesh -- validate my-mesh/mesh.yaml
 npm run mesh -- run my-mesh/mesh.yaml
 
 # deterministic mesh-vs-single-agent benchmark (token-free):
 npm run mesh -- bench
+
+# many projects under one host (what the container runs), plan, and consumption:
+npm run mesh -- host --port 7420
+npm run mesh -- project add ./my-mesh
+npm run mesh -- license status                     # plan, limits and licence state of this install
+npm run mesh -- usage --all                        # what the meshes consumed, from their logs
 
 # operate a running mesh from the CLI:
 npm run mesh -- status
@@ -150,6 +187,7 @@ packages/
   agent-runtime   adapter interface + deterministic StubRuntime (tests/sim)
   artifact-store  immutable content store + git worktree manager
   projects        multi-project registry (~/.agent-mesh/projects.json)
+  licensing       offline licence keys (Ed25519), the plan table, entitlements, pricing export
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub
@@ -158,6 +196,11 @@ apps/
   mesh-server     bootstrap + HTTP/SSE API + MCP bus + config-designer API + static UI
   mesh-dashboard  live UI + mesh designer (Vite + React + TS SPA in `src/`,
                   built to `dist/` and served by mesh-server on the same port)
+deploy/           Helm chart, fleet provisioning script, container entrypoint
+site/             static landing and pricing page (its numbers are generated from the plan table)
+pricing/          the measured mission and the generated plan data
+tools/license/    mesh-license.mjs: key generation and signing (a vendor tool; the private key stays offline)
+Dockerfile, docker-compose.yml
 schemas/ roles/ examples/ tests/ docs/
 ```
 
@@ -181,12 +224,15 @@ MESH_BUS_URL=http://127.0.0.1:7430 npm run dev:ui
 ```
 
 See `docs/architecture.md`, `docs/protocol.md`, `docs/configuration.md`,
-`docs/runtime.md`.
+`docs/runtime.md`, `docs/operations.md` and `docs/commercial/README.md`.
 
 ## Positioning
 
-An open runtime for persistent AI organizations, where autonomous role-based
+A runtime for persistent AI organizations, where autonomous role-based
 agents collaborate through explicit authority, communication contracts,
 artifacts, and dynamic activation. The benchmark (`mesh bench`) is intentionally
 honest: the mesh may win on some software workloads and lose on others; the
-project measures rather than assumes.
+project measures rather than assumes. The one real mission measured so far
+(five agents on Haiku 4.5 built a small library for $5.52 of model usage, and an
+independent oracle scored it 99.6%) is in `pricing/measured-runs.json`: one run,
+not a rate.

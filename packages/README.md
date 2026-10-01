@@ -15,6 +15,8 @@ other via relative paths:
 | `scheduler` | event-driven activation: interest registry, mailboxes, priorities, concurrency, timeouts, triage |
 | `agent-runtime` | runtime adapter interface + deterministic `StubRuntime` (simulation/tests) |
 | `artifact-store` | immutable content store + git worktree management |
-| `runtime-opencode` | OpenCode server adapter (processes, sessions, turns, tokens, restore) |
+| `runtime-claude` | Claude Code adapter through the Agent SDK (long-lived streaming query, sessions, tokens, restore) |
 | `runtime-http` | generic HTTP agent adapter for custom/remote agents |
-| `observability` | projections → views: mesh graph, goal view, artifact timeline, cost, metrics, SSE hub |
+| `observability` | projections → views: mesh graph, goal view, artifact timeline, cost, metrics, usage report, SSE hub |
+| `projects` | multi-project registry (`~/.agent-mesh/projects.json`) |
+| `licensing` | offline Ed25519 licence keys, the plan table and its entitlements, the pricing export |
