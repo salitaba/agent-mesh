@@ -24,6 +24,7 @@ export {
   holdsAuthority,
   mayAcceptCriteria,
   givesPassForApprove,
+  openRejections,
   passOnlyDomains,
   qualifiedForDomain,
   unqualifiedAuthor,

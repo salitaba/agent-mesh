@@ -2,6 +2,7 @@ import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type Goal
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
+import { openRejections } from "./projections-helpers";
 import { agentKey, autoRaiseExhausted, budgetParkedSeats, liveSeats, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
@@ -572,7 +573,11 @@ export class TerminationManager {
         const owner = t.claimedBy ? state.agents.get(t.claimedBy) : undefined;
         return owner?.state.activeTaskId === t.id;
       });
-      if (openEscalations.length === 0 && ownedTasks.length === 0) {
+      // A patch a reviewer rejected that has neither landed nor been withdrawn is work the mission left
+      // in limbo, however many criteria a merge of its sibling evidenced (`openRejections`). Like a
+      // claimed task, it has an owner who has to act, and the watchdog wakes them for it.
+      const rejectedPatches = openRejections(state, goalId);
+      if (openEscalations.length === 0 && ownedTasks.length === 0 && rejectedPatches.length === 0) {
         return {
           kind: "complete",
           reason: "all_mandatory_criteria_evidenced",

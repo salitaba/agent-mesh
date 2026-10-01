@@ -338,6 +338,43 @@ export function passOnlyDomains(authority: readonly string[] | undefined): strin
 }
 
 /**
+ * The CodePatches a reviewer rejected that have not ended up MERGED or ARCHIVED: REJECTED and waiting
+ * on its owner, or reworked since (DRAFT, back in review, on the merge ladder) and not yet landed. Only
+ * for a goal that asks for the implementation to be merged (`implementation-merged` among its
+ * mandatory criteria); [] for the rest.
+ *
+ * A rejection is a decision someone has to finish: the owner reworks the patch (a new version, then a
+ * review request) and it lands, or the owner withdraws it (ARCHIVED, which a REJECTED patch reaches
+ * through DRAFT). Until then the mission holds work the reviewers refused and no one has either redone
+ * or dropped. The sixth cronlite run's developer put the library and the CLI forward as two patches;
+ * the tech-lead rejected the CLI twice (it repeated the approved library's `src/index.js` and
+ * `package.json`) and merged the library, and `implementation-merged` closed on that merge. The tech-lead
+ * then approved the CLI patch, which moved nothing; the rejection woke no one (the broadcast that said so
+ * wakes nobody), the pm accepted `cli-contract-met` on a QA report that read "CLI Commit: cd6615a
+ * (pending merge)", and the mission completed with no `bin/cronlite.js` on the product branch. The patch
+ * stays listed after its rework is resubmitted: a rework that is resubmitted and never merged would let
+ * the mission complete the same way, one step later.
+ *
+ * A patch that was never rejected is NOT listed, whatever state it is in. Those are in flight with
+ * seats moving them, and one that cannot land (the sixth run's second round ended with a MERGEABLE
+ * patch whose work had gone in with another, refused as "nothing landed") must not hold a mission that
+ * is otherwise done. Whether a patch was rejected is read from its history: after a snapshot restore the
+ * history is the current record alone, so a reworked patch reads as one that was never rejected and the
+ * guard does not apply to it (it fails open, as a safety net should). A REJECTED patch is listed on its
+ * status alone.
+ */
+export function openRejections(state: Projections, goalId: string): Artifact[] {
+  const goal = state.goals.get(goalId);
+  if (!goal?.acceptanceCriteria.some((c) => c.mandatory && c.id === "implementation-merged")) return [];
+  const out: Artifact[] = [];
+  for (const a of state.artifacts.values()) {
+    if (a.type !== "CodePatch" || a.goalId !== goalId || a.status === "MERGED" || a.status === "ARCHIVED") continue;
+    if (a.status === "REJECTED" || (state.artifactHistory.get(a.id) ?? []).some((h) => h.status === "REJECTED")) out.push(a);
+  }
+  return out;
+}
+
+/**
  * Which capability lets an agent review each kind of artifact?
  *
  * The single table. It used to have a twin in the policy engine, also called

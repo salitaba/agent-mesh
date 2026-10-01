@@ -85,7 +85,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, openRejections, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -5742,7 +5742,12 @@ export class Supervisor {
           ? artifact.status === "MERGED"
             ? `the verdict is recorded, but ${artifact.type} "${artifact.name}" is already MERGED and a rejection cannot unland it — open a revert or publish a new version if the work has to come out`
             : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and a rejection only moves something that is UNDER_REVIEW`
-          : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and an approval cannot advance it from there — move it to review first if you meant to approve the work`
+          : artifact.status === "REJECTED"
+            ? // The reviewer cannot move it: REJECTED has one edge out, to DRAFT, and it is the owner's. "Move it to
+              // review first" was what the sixth run's tech-lead was told, after it approved the CLI patch it had
+              // rejected; the developer was never asked, and the mission completed without the CLI.
+              `the verdict is recorded, but ${artifact.type} "${artifact.name}" is REJECTED and an approval cannot advance it: a rejected artifact goes back to DRAFT and only its owner (${artifact.owner}) can move it, so ask ${artifact.owner} to rework it (a new version with asVersionOf, then a review request) if you now want the work`
+            : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and an approval cannot advance it from there — move it to review first if you meant to approve the work`
         : undefined;
     // The same seat, the same verdict, the same version, and nothing moves. pm
     // signed one v1 three times in the 2026-09-25 run. Still recorded — a repeat
@@ -11430,6 +11435,12 @@ export class Supervisor {
     const res = await this.applyTransition(actorId, artifactId, { to: "MERGED", comment }, proof);
     if (!res.ok) return { ok: false, op: "merge", reason: res.reason };
     await this.markMergeEvidence(artifact);
+    const open = openRejections(this.state, artifact.goalId);
+    if (open.length > 0) {
+      // Said to the merger in the op result: it is the seat that believes the work is done.
+      landed = `${landed}; the mission cannot complete yet, because ${this.openRejectionSentence(open)}`;
+      landedCaveat = true;
+    }
     return { ok: true, op: "merge", eventId: res.eventId, reason: landed, ...(landedCaveat ? { caveat: true } : {}) };
   }
 
@@ -11444,6 +11455,27 @@ export class Supervisor {
       artifactRef: { uri: artifactUri(artifact.type, artifact.name, artifact.version) },
       recordedAt: this.deps.kernel.clock.iso(),
     });
+  }
+
+  /**
+   * What a seat is told about a rejected patch that has not ended up merged or archived: its name, its
+   * state and whose move it is. The machine lets a REJECTED patch go to DRAFT and nowhere else, and only
+   * DRAFT and READY_FOR_REVIEW to ARCHIVED, so "archive it" said to the owner of a REJECTED one is a
+   * refused call: the two moves are named.
+   */
+  private openRejectionSentence(patches: readonly Artifact[]): string {
+    const lines = patches.slice(0, 3).map((a) => {
+      const move =
+        a.status === "REJECTED"
+          ? `${a.owner} reworks it (a new version with asVersionOf, then a review request) or, if it is abandoned, moves it to DRAFT and then to ARCHIVED`
+          : a.status === "DRAFT"
+            ? `${a.owner} finishes the rework and asks for a review, or archives it if it is abandoned`
+            : a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW"
+              ? "it was rejected before, and waits on its review again"
+              : "it was rejected before, and waits to be merged";
+      return `CodePatch "${a.name}" is ${a.status} (owner ${a.owner}): ${move}`;
+    });
+    return `${lines.join("; ")}${patches.length > 3 ? "; …" : ""}`;
   }
 
   /**
@@ -12888,6 +12920,7 @@ export class Supervisor {
         const parkedSeats = this.terminalSuspendedSeats();
         const holds = this.standingBlockSentences();
         const acceptance = this.acceptanceSentence();
+        const rejected = this.openRejectionNote();
         await this.escalate({
           reason: "stalemate:stall_nudge_cap",
           raisedBy: "stall-watchdog",
@@ -12901,6 +12934,7 @@ export class Supervisor {
             criteria: this.unmetCriteriaSummary(),
             ...(holds ? { standingBlocks: holds } : {}),
             ...(acceptance ? { awaitingAcceptance: acceptance } : {}),
+            ...(rejected ? { openRejections: rejected } : {}),
             ...(parkedSeats.length > 0
               ? {
                   suspendedSeats: parkedSeats,
@@ -13259,6 +13293,12 @@ export class Supervisor {
     const unmet = mandatory.filter((c) => !criterionSatisfied(goal, c));
     if (unmet.length > 0) return { worth: true, why: `${unmet.length} mandatory criteria unmet${this.standingBlockTag()}` };
     // Every criterion is evidenced. Only a concrete loose end justifies a turn.
+    //
+    // A rejected patch nobody has closed out is one: the termination verdict will not complete the
+    // mission over it, so "the mission will close itself" would be false, and the one seat that can act
+    // (the patch's owner) has to be woken for it.
+    const rejected = openRejections(this.state, goal.id);
+    if (rejected.length > 0) return { worth: true, why: `${rejected.length} rejected patch(es) left open (${rejected[0]!.name} is ${rejected[0]!.status})` };
     const mail = [...this.state.agents.keys()].some((id) => readableMailDepth(this.state, id) > 0);
     if (mail) return { worth: true, why: "undelivered mail" };
     const openEscalations = [...this.state.escalations.values()].filter((e) => e.status === "OPEN");
@@ -13271,7 +13311,7 @@ export class Supervisor {
       (t) => t.status === "CLAIMED" && !t.id.startsWith("watch:"),
     );
     if (liveTasks.length > 0) return { worth: true, why: `${liveTasks.length} claimed tasks in flight` };
-    return { worth: false, why: "all mandatory criteria evidenced, no mail, no open escalations, no claimed tasks" };
+    return { worth: false, why: "all mandatory criteria evidenced, no mail, no open escalations, no claimed tasks, no rejected patches left open" };
   }
 
   /**
@@ -13302,6 +13342,9 @@ export class Supervisor {
       );
     }
     if (!this.hasUnmetMandatory()) {
+      // The criteria are all evidenced and the mission still will not close: a rejected patch is open.
+      const rejected = this.openRejectionNote();
+      if (rejected) return `${base}. ${rejected} Do NOT re-approve or re-confirm finished work.`;
       return `${base}. Do NOT re-approve or re-confirm finished work. Either close out a concrete loose end (unanswered mail, an open escalation, a claimed task), or reply with a single \`done\` op and stop — the mission will close itself.`;
     }
     // A BLOCK that still stands is the most specific thing there is to say about why the
@@ -13310,9 +13353,27 @@ export class Supervisor {
     const holds = this.standingBlockSentences();
     // Criteria only an acceptance closes, and who can give one: the same placement, ahead of the
     // generic line, which still follows.
-    const specific = [holds, this.acceptanceSentence(driver)].filter(Boolean).join(" ");
+    const specific = [holds, this.openRejectionNote(), this.acceptanceSentence(driver)].filter(Boolean).join(" ");
     if (specific) return `${base}. ${specific} Then drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
     return `${base}; drive the next step toward an unmet criterion (see Mission acceptance criteria in your context)`;
+  }
+
+  /**
+   * The rejected patches that keep the mission open, said to a seat the watchdog wakes: "" when none
+   * does. `opMerge` says it once, to the merger; the seat that has to act on a REJECTED patch is the one
+   * that was never told, because an approval of a rejected patch moves nothing and a broadcast wakes
+   * nobody. Independent of the criteria: they can all be evidenced and the mission still not complete.
+   */
+  private openRejectionNote(): string {
+    const goalId = this.state.activeGoalId;
+    const open = goalId ? openRejections(this.state, goalId) : [];
+    return open.length > 0 ? `The mission cannot complete while a rejected patch is left open: ${this.openRejectionSentence(open)}.` : "";
+  }
+
+  /** The owners of the rejected patches only their owner can move: REJECTED, or reworked and not yet resubmitted. Later steps have seats of their own (reviewers, the merger). */
+  private rejectionOwners(): string[] {
+    const goalId = this.state.activeGoalId;
+    return goalId ? [...new Set(openRejections(this.state, goalId).filter((a) => a.status === "REJECTED" || a.status === "DRAFT").map((a) => a.owner))] : [];
   }
 
   /**
@@ -13537,6 +13598,13 @@ export class Supervisor {
         const mover = p.who.filter(eligible).sort(byOldest)[0];
         if (mover) return mover;
       }
+    }
+    // A rejected patch nobody has closed out, which only its owner can move: REJECTED, or reworked and
+    // not yet resubmitted. Its owner, ahead of the seat with mail: the sixth cronlite run's CLI patch
+    // sat REJECTED after the library merged, and the one seat that could resubmit it was never woken.
+    for (const owner of this.rejectionOwners().filter(eligible).sort(byOldest)) {
+      if (owner === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
+      return owner;
     }
     // A standing BLOCK, while the mission still has something unmet: the seat that can lift
     // it. Ahead of "whoever has mail", which returned the first seat in config order with any,
