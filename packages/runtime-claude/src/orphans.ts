@@ -29,19 +29,47 @@ import { withoutOuterSession } from "./host-isolation";
 export const HOST_PID_ENV = "AGENT_MESH_HOST_PID";
 
 /**
+ * The mesh's own credentials, which no seat has a use for.
+ *
+ * A seat's shell inherits the CLI's environment, and the CLI inherits the mesh's. `MESH_API_TOKEN` is the
+ * operator's token (or, under a host, this child's own): a seat that reads it can call the API as the
+ * operator, which is `POST /approvals {by: "human"}`, `/mission/reset`, `/config/save`, past every gate
+ * the mesh enforces on the seat. `MESH_LICENSE_KEY` is the vendor-signed entitlement. A seat reaches the
+ * mesh through its MCP bridge with a per-seat token the adapter hands that bridge directly, so none of
+ * these is ever needed in the seat's own environment, and a seat prompt-injected through a web fetch is
+ * the case this is for.
+ *
+ * Anything named like a mesh token, secret or password goes: a credential added later is covered without
+ * anyone remembering to list it. Not touched: `ANTHROPIC_*`, which the seat's own CLI needs to reach the
+ * model, and the rest of the process environment (that is a separate decision, documented in
+ * docs/commercial/security.md: run the mesh in an environment that holds only what a seat may use).
+ */
+export function isMeshSecret(name: string): boolean {
+  return name === "MESH_API_TOKEN" || name === "MESH_LICENSE_KEY" || /^MESH_.*(TOKEN|SECRET|PASSWORD)$/.test(name);
+}
+
+/** `env` without the mesh's own credentials. */
+export function withoutMeshSecrets(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !isMeshSecret(name)));
+}
+
+/**
  * The environment a seat CLI is spawned with: `base` (the operator's own `env`
  * option when they passed one, the process environment otherwise) plus the stamp.
  * The SDK replaces its inherited environment with whatever `env` is given, so the
  * base is spread here rather than assumed.
+ *
+ * The process environment never carries the mesh's own credentials into a seat (see
+ * `isMeshSecret`). An `env` the operator passed is taken as given: it is theirs.
  */
 export function seatEnv(
   base: Record<string, string | undefined> | undefined,
   pid: number = process.pid,
   opts: { isolate?: boolean } = {},
 ): Record<string, string | undefined> {
-  const inherited = base ?? process.env;
-  // `isolate`: drop the variables that describe the session the mesh was started
-  // from (see host-isolation.ts). The operator's own `env` option is taken as given.
+  // `isolate`: also drop the variables that describe the session the mesh was started
+  // from (see host-isolation.ts).
+  const inherited = base ?? withoutMeshSecrets(process.env);
   return { ...(opts.isolate && base === undefined ? withoutOuterSession(inherited) : inherited), [HOST_PID_ENV]: String(pid) };
 }
 

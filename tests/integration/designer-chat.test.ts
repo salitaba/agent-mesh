@@ -216,3 +216,41 @@ test("designer chat: an unapplicable patch is reported as a problem, not a 500",
     await h.close();
   }
 });
+
+
+// ------------------------------------------------------- reserved keys in a patch
+
+for (const patchPath of ["/__proto__/polluted", "/mesh/__proto__/polluted", "/constructor/prototype/polluted", "/agents/0/constructor/prototype/polluted"]) {
+  test(`designer chat: a patch through '${patchPath}' is refused as a problem and writes onto no prototype`, async () => {
+    const h = await chatHarness();
+    try {
+      h.setReply("```json\n" + JSON.stringify({ patch: [{ op: "add", path: patchPath, value: "pwned" }] }) + "\n```");
+      const r = await h.chat({ messages: [{ role: "user", content: "add a thing" }], currentConfig: h.valid });
+      assert.equal(r.status, 200);
+      assert.equal(r.json.proposedConfig, undefined, "no draft comes out of a patch like that");
+      assert.ok(r.json.problems.some((p) => /reserved key/.test(p)), `problems: ${r.json.problems.join(" | ")}`);
+      // The server runs in this process, so a write onto Object.prototype would be visible right here.
+      assert.equal(({} as Record<string, unknown>).polluted, undefined, "Object.prototype was not written to");
+      assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
+      assert.equal(([] as unknown as Record<string, unknown>).polluted, undefined);
+    } finally {
+      await h.close();
+    }
+  });
+}
+
+test("designer chat: a patch cannot 'replace' or 'remove' something an object merely inherits", async () => {
+  const h = await chatHarness();
+  try {
+    for (const op of ["replace", "remove"]) {
+      h.setReply("```json\n" + JSON.stringify({ patch: [{ op, path: "/toString", value: 1 }] }) + "\n```");
+      const r = await h.chat({ messages: [{ role: "user", content: "edit" }], currentConfig: h.valid });
+      assert.equal(r.status, 200);
+      assert.equal(r.json.proposedConfig, undefined, op);
+      assert.ok(r.json.problems.some((p) => /does not exist/.test(p)), `${op}: ${r.json.problems.join(" | ")}`);
+    }
+    assert.equal(typeof ({} as { toString: unknown }).toString, "function", "and Object.prototype is intact");
+  } finally {
+    await h.close();
+  }
+});

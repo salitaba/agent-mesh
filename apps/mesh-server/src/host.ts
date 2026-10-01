@@ -52,9 +52,10 @@ import {
   type UpstreamSink,
 } from "../../../packages/observability/src/index";
 import type { MeshEvent } from "../../../packages/protocol/src/index";
-import { handleAuthRoute, requireAuth } from "./auth";
+import { callerKind, handleAuthRoute, requireAuth } from "./auth";
+import { insideRoots, outsideRootsMessage, projectRoots, realLocation } from "./confine";
 import { SessionStore } from "./sessions";
-import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, auditField, clientKey, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 
 /**
  * Path prefixes owned by a project child.
@@ -715,7 +716,7 @@ export function createHostServer(deps: {
 
       // The dashboard trades the operator token for a session cookie here (see sessions.ts). It
       // cannot require being signed in, so it sits ahead of `requireAuth`.
-      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send: json })) return;
+      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send: json, audit: hostAudit })) return;
 
       // A project's sandboxed playground page reads its own files through here, carrying a signed,
       // expiring link instead of a credential (see preview.ts): the page runs in an opaque origin
@@ -732,6 +733,15 @@ export function createHostServer(deps: {
       if (!auth.ok) {
         if (auth.retryAfterSec) res.setHeader("retry-after", String(auth.retryAfterSec));
         return json(auth.status ?? 401, { error: auth.error });
+      }
+
+      // Every state-changing request that got this far, once, with how it was authorised and what became
+      // of it: registry changes, host settings, and everything forwarded to a project. A child logs its own
+      // side, but it sees only the host, so who actually asked is on this line and not on that one.
+      if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+        const via = callerKind(req, { sessions });
+        const ip = clientKey(req);
+        res.on("finish", () => hostAudit(`mutation ${req.method} ${auditField(u.pathname)} status=${res.statusCode} via=${via} ip=${auditField(ip)}`));
       }
 
       // ------------------------------------------------------------- health
@@ -768,7 +778,12 @@ export function createHostServer(deps: {
       // the *host* can stat, so the host lists directories and the dashboard
       // walks them.
       if (parts[0] === "api" && parts[1] === "browse" && parts.length === 2 && req.method === "GET") {
-        return json(200, browseDir(u.searchParams.get("path")));
+        const roots = projectRoots();
+        const asked = u.searchParams.get("path");
+        if (roots.length > 0 && asked && asked.trim() && !insideRoots(realLocation(asked.trim()), roots)) {
+          return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root" });
+        }
+        return json(200, browseDir(asked, roots));
       }
 
       // ----------------------------------------------------------- host config
@@ -857,6 +872,13 @@ export function createHostServer(deps: {
           const b = await body();
           const root = typeof b.root === "string" ? b.root.trim() : "";
           if (!root) return json(400, { error: "body must carry { root }" });
+          // On a server, projects live under one directory and nothing else is the host's to open,
+          // scaffold into, or read a parse error from. Judged by where the folder REALLY is, so a
+          // link inside the directory that points out of it does not count as inside.
+          const roots = projectRoots();
+          if (roots.length > 0 && !insideRoots(realLocation(root), roots)) {
+            return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root" });
+          }
           // Scaffolding is opt-in. A plain add to a mesh-less folder still 400s
           // ("missing"), because writing files into a directory the operator
           // only meant to attach is a surprise no undo covers.
@@ -1178,12 +1200,15 @@ export interface BrowseResult {
  * process can already read anything the operator can, so exposing *where*
  * projects might live adds no capability it did not have.
  */
-export function browseDir(input: string | null): BrowseResult {
+export function browseDir(input: string | null, roots: readonly string[] = []): BrowseResult {
   const home = process.env.HOME || process.env.USERPROFILE || "/";
-  const target = path.resolve(input && input.trim() ? input.trim() : home);
+  // Confined, the picker starts at the projects directory and cannot go above it.
+  const start = roots.length > 0 ? roots[0]! : home;
+  const target = path.resolve(input && input.trim() ? input.trim() : start);
   const parentOf = (p: string): string | null => {
     const up = path.dirname(p);
-    return up === p ? null : up;
+    if (up === p) return null;
+    return roots.length > 0 && !insideRoots(realLocation(up), roots) ? null : up;
   };
   const selfHasMesh = fs.existsSync(path.join(target, MESH_CONFIG_FILENAME));
   let entries: fs.Dirent[];

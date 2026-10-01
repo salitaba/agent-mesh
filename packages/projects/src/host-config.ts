@@ -141,6 +141,11 @@ function parsePrices(value: unknown, warnings: string[]): Record<string, ModelPr
     return out;
   }
   for (const [model, entry] of Object.entries(value)) {
+    // A key that names what every object inherits would be assigned to the prototype of `out`.
+    if (model === "__proto__" || model === "constructor" || model === "prototype") {
+      warnings.push(`host.yaml: model_prices.${model} is a reserved name — ignoring it`);
+      continue;
+    }
     // A bare number is the common case (one rate for the model) and reads far
     // better in YAML than a two-key mapping repeated per model.
     if (typeof entry === "number" && Number.isFinite(entry) && entry >= 0) {
@@ -259,7 +264,12 @@ export function loadHostConfig(home: string = meshHome()): HostConfig {
  * other default here.
  */
 export function priceUsage(config: Pick<HostConfig, "modelPrices" | "defaultUsdPerMtok">, model: string, usage: TokenUsage): number {
-  const price: ModelPrice = config.modelPrices[model] ?? { inputPerMtok: config.defaultUsdPerMtok, outputPerMtok: config.defaultUsdPerMtok };
+  // Own entries only. The model id arrives from a child's heartbeat; "constructor" or "__proto__" must
+  // be an unpriced model (priced at the default, so it still counts), not an inherited object whose
+  // fields are undefined and whose product with a token count is NaN, which compares false to every ceiling.
+  const price: ModelPrice = Object.hasOwn(config.modelPrices, model)
+    ? config.modelPrices[model]!
+    : { inputPerMtok: config.defaultUsdPerMtok, outputPerMtok: config.defaultUsdPerMtok };
   return priceTokenUsage(price, usage);
 }
 

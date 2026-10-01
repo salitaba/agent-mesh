@@ -520,3 +520,18 @@ export class FailureLimiter {
     return kept;
   }
 }
+
+// ------------------------------------------------------------- audit lines
+
+/**
+ * A value made safe to put on one line of an audit log.
+ *
+ * Several audit lines were built by interpolating what a caller sent (`kind`, `subject`, an id decoded from
+ * the URL). A newline in any of them, `%0A` in a path being enough, ended the real line and started one the
+ * caller had written, which is how a log that answers "who unlocked this" is made to lie. Anything that is not
+ * a printable ASCII character becomes `_`, and the length is capped so one request cannot write a megabyte.
+ */
+export function auditField(value: unknown, max = 200): string {
+  const text = value === undefined || value === null ? "" : String(value);
+  return text.replace(/[^\x20-\x7e]/g, "_").slice(0, max);
+}

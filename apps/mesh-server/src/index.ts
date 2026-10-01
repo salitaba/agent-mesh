@@ -55,10 +55,10 @@ import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-sta
 import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, describeToolPermissions, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
-import { getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
+import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
 import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
-import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
+import { FailureLimiter, PayloadTooLargeError, applySecurityHeaders, assertSafeListen, auditField, clientKey, guardRequest, maxBodyBytes, maxSseClients, readBody, respondTooLarge, selfConnectHost } from "./web-security";
 import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
@@ -1137,10 +1137,16 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
   const root = JSON.parse(JSON.stringify(doc ?? {})) as Record<string, any>;
   const tokens = (path: unknown): string[] => {
     if (typeof path !== "string" || !path.startsWith("/")) throw new Error(`invalid path '${String(path)}'`);
-    return path
+    const parts = path
       .slice(1)
       .split("/")
       .map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"));
+    // The patch is the model's reply, and the model reads text an agent wrote. `/__proto__/x` walks to
+    // Object.prototype and the assignment below writes onto it, for every object in the process.
+    for (const part of parts) {
+      if (part === "__proto__" || part === "constructor" || part === "prototype") throw new Error(`path '${path}' names a reserved key ('${part}')`);
+    }
+    return parts;
   };
   const at = (path: unknown): { parent: any; key: string } => {
     const parts = tokens(path);
@@ -1148,7 +1154,8 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
     let parent: any = root;
     for (const part of parts.slice(0, -1)) {
       if (parent === null || typeof parent !== "object") throw new Error(`path '${String(path)}' does not exist`);
-      parent = parent[part];
+      // Own properties only: a step must not land on what every object inherits.
+      parent = Object.hasOwn(parent, part) ? parent[part] : undefined;
     }
     if (parent === null || typeof parent !== "object") throw new Error(`path '${String(path)}' does not exist`);
     return { parent, key: parts[parts.length - 1] };
@@ -1172,7 +1179,7 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
         if (i >= parent.length) throw new Error(`path '${String(op.path)}' does not exist`);
         parent[i] = op.value;
       } else {
-        if (!(key in parent)) throw new Error(`path '${String(op.path)}' does not exist`);
+        if (!Object.hasOwn(parent, key)) throw new Error(`path '${String(op.path)}' does not exist`);
         parent[key] = op.value;
       }
     } else if (op.op === "remove") {
@@ -1181,7 +1188,7 @@ function applyJsonPatch(doc: unknown, ops: unknown[]): unknown {
         if (i >= parent.length) throw new Error(`path '${String(op.path)}' does not exist`);
         parent.splice(i, 1);
       } else {
-        if (!(key in parent)) throw new Error(`path '${String(op.path)}' does not exist`);
+        if (!Object.hasOwn(parent, key)) throw new Error(`path '${String(op.path)}' does not exist`);
         delete parent[key];
       }
     } else {
@@ -1452,6 +1459,21 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const previews = new PreviewCapabilities();
 
   /**
+   * Append one line to a file under the state directory's `logs/`. An audit trail never breaks the
+   * request it describes, and an in-memory mesh has no directory to keep one in.
+   */
+  const appendLog = (file: string, line: string): void => {
+    if (instance.inMemory) return;
+    try {
+      const dir = `${instance.config.stateDir}/logs`;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(`${dir}/${file}`, `${new Date().toISOString()} ${line}\n`, "utf8");
+    } catch {
+      /* audit never breaks the runtime */
+    }
+  };
+
+  /**
    * A file from the product checkout under the preview policy: agent-written HTML and script, so it is
    * always sandboxed (see `PREVIEW_CSP`).
    *
@@ -1625,7 +1647,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // The dashboard trades the operator token for a session cookie here (see sessions.ts). It
       // cannot require being signed in, so it sits ahead of `requireAuth`; the guard above has
       // already turned away a foreign origin. Not served in strict mode: a child has no browser.
-      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send })) return;
+      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send, audit: (line) => appendLog("auth-audit.log", line) })) return;
 
       // ------------------------------------------------- playground capability
       // The sandboxed playground page reads its own files here. It carries neither cookie nor
@@ -1682,6 +1704,16 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       }
       const knownAgents = new Set(kernel.state.agents.keys());
       knownAgents.add(HUMAN_AGENT_ID);
+
+      // Every state-changing request that got this far, once, with how it was authorised and what
+      // became of it. The per-decision lines in auth-audit.log say what an operator ruled; this says
+      // that a reset, a restore, a config save or a script run was asked for at all, and by whom to
+      // the extent a shared token can say (a session, a token, or an open server), from where.
+      if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+        const via = callerKind(req, { sessions });
+        const ip = clientKey(req);
+        res.on("finish", () => appendLog("mutations.log", `${req.method} ${auditField(u.pathname)} status=${res.statusCode} via=${via} ip=${auditField(ip)}`));
+      }
 
       // ------------------------------------------------------------ health
       // Zero-work liveness probe: no store reads, no snapshots. If THIS hangs,
@@ -1930,15 +1962,19 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // ----------------------------------------------------------- budgets
       if (parts[0] === "budgets" && req.method === "GET") {
         const consumed = await store.read({ types: ["budget.consumed"] });
-        const models: Record<string, { calls: number; tokens: number }> = {};
+        // A Map, not an object: the key is a model id from an event, and `models["__proto__"]` on a plain
+        // object is Object.prototype itself, which `.calls++` would then write to.
+        const perModel = new Map<string, { calls: number; tokens: number }>();
         for (const e of consumed) {
           const p = e.payload as { model?: string; amount?: number; limitKind?: string };
           if (p.model && p.limitKind !== "events" && p.limitKind !== "wallclock_minutes") {
-            models[p.model] = models[p.model] || { calls: 0, tokens: 0 };
-            models[p.model].calls++;
-            models[p.model].tokens += p.amount ?? 0;
+            const seen = perModel.get(p.model) ?? { calls: 0, tokens: 0 };
+            seen.calls++;
+            seen.tokens += p.amount ?? 0;
+            perModel.set(p.model, seen);
           }
         }
+        const models = Object.fromEntries(perModel);
         return json(200, {
           entries: [...kernel.state.budgets.values()].map((b) => ({
             key: b.key,
@@ -1978,7 +2014,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         try {
           const auditFile = `${instance.config.stateDir}/logs/auth-audit.log`;
           fs.mkdirSync(`${instance.config.stateDir}/logs`, { recursive: true });
-          fs.appendFileSync(auditFile, `${new Date().toISOString()} approvals by=${by} kind=${kind} subject=${b.subject ?? "release"}\n`, "utf8");
+          fs.appendFileSync(auditFile, `${new Date().toISOString()} approvals by=${auditField(by)} kind=${auditField(kind)} subject=${auditField(b.subject ?? "release")}\n`, "utf8");
         } catch {
           /* audit never breaks the runtime */
         }
@@ -2030,7 +2066,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           fs.mkdirSync(`${instance.config.stateDir}/logs`, { recursive: true });
           fs.appendFileSync(
             auditFile,
-            `${new Date().toISOString()} tool-approval ${revoke ? "revoke" : "grant"} agent=${agentId} tool=${tool}\n`,
+            `${new Date().toISOString()} tool-approval ${revoke ? "revoke" : "grant"} agent=${auditField(agentId)} tool=${auditField(tool)}\n`,
             "utf8",
           );
         } catch {
@@ -2090,7 +2126,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           try {
             const auditFile = `${instance.config.stateDir}/logs/auth-audit.log`;
             fs.mkdirSync(`${instance.config.stateDir}/logs`, { recursive: true });
-            fs.appendFileSync(auditFile, `${new Date().toISOString()} escalation.respond id=${decodeURIComponent(parts[1])} by=${actor.actor}\n`, "utf8");
+            fs.appendFileSync(auditFile, `${new Date().toISOString()} escalation.respond id=${auditField(decodeURIComponent(parts[1]))} by=${auditField(actor.actor)}\n`, "utf8");
           } catch {
             /* audit never breaks the runtime */
           }
@@ -2910,7 +2946,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const b = await body();
         const script = String(b.script ?? "");
         const defs = runScripts(wsRoot);
-        const def = defs[script];
+        // Own keys only: `script` comes from the request, and "__proto__" is truthy on every object.
+        const def = Object.hasOwn(defs, script) ? defs[script] : undefined;
         if (!def) return json(400, { error: `unknown script (allowed: ${Object.keys(defs).join(", ") || "none — no package.json scripts in the product workspace"})` });
         const run = startRun(wsRoot, script, def);
         if (!run) return json(409, { error: "a run is already in progress" });

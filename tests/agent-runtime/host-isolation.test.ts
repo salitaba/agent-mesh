@@ -311,3 +311,49 @@ test("mesh.runtime.isolate_host resolves; absent and false leave it off; a non-b
   assert.equal(resolveYaml(", isolate_host: false").isolateHost, undefined);
   assert.throws(() => resolveYaml(", isolate_host: yes please"));
 });
+
+// ------------------------------------------------------ the mesh's own credentials
+
+import { isMeshSecret, withoutMeshSecrets } from "../../packages/runtime-claude/src/orphans";
+
+test("the mesh's own credentials are named by pattern, so a new one is covered without anyone listing it", () => {
+  for (const name of ["MESH_API_TOKEN", "MESH_LICENSE_KEY", "MESH_AGENT_TOKEN", "MESH_SESSION_SECRET", "MESH_ADMIN_PASSWORD", "MESH_FUTURE_API_TOKEN"]) {
+    assert.equal(isMeshSecret(name), true, name);
+  }
+  for (const name of ["MESH_BUS_URL", "MESH_HOME", "MESH_PORT", "MESH_BIND", "MESH_ALLOWED_HOSTS", "MESH_CHILD_CONFIG", "ANTHROPIC_API_KEY", "GH_TOKEN", "PATH", "MY_MESH_API_TOKEN", "MESHTOKEN"]) {
+    assert.equal(isMeshSecret(name), false, `${name} is not the mesh's credential`);
+  }
+});
+
+test("a seat does not inherit the operator's token or the licence, with or without isolation", () => {
+  const saved = { token: process.env.MESH_API_TOKEN, lic: process.env.MESH_LICENSE_KEY, key: process.env.ANTHROPIC_API_KEY, url: process.env.MESH_BUS_URL };
+  process.env.MESH_API_TOKEN = "operator-or-child-token";
+  process.env.MESH_LICENSE_KEY = "AML1.k1.payload.sig";
+  process.env.ANTHROPIC_API_KEY = "sk-test";
+  process.env.MESH_BUS_URL = "http://127.0.0.1:7421";
+  try {
+    for (const isolate of [false, true]) {
+      const env = seatEnv(undefined, 7, { isolate });
+      assert.equal("MESH_API_TOKEN" in env, false, `isolate=${isolate}: the operator token stays out of a seat's shell`);
+      assert.equal("MESH_LICENSE_KEY" in env, false, `isolate=${isolate}: and so does the licence`);
+      assert.equal(env.ANTHROPIC_API_KEY, "sk-test", "the seat's CLI still reaches the model");
+      assert.equal(env.MESH_BUS_URL, "http://127.0.0.1:7421", "a URL is not a credential");
+      assert.equal(env[HOST_PID_ENV], "7");
+    }
+    // The operator's own `env` option is theirs, untouched: it is a deliberate choice.
+    const chosen = { MESH_API_TOKEN: "i-meant-it", PATH: "/x" };
+    assert.deepEqual(seatEnv(chosen, 7), { ...chosen, [HOST_PID_ENV]: "7" });
+  } finally {
+    for (const [k, v] of [["MESH_API_TOKEN", saved.token], ["MESH_LICENSE_KEY", saved.lic], ["ANTHROPIC_API_KEY", saved.key], ["MESH_BUS_URL", saved.url]] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test("withoutMeshSecrets keeps everything else, in order, and does not mutate its input", () => {
+  const input = { A: "1", MESH_API_TOKEN: "x", B: "2", MESH_X_SECRET: "y", C: undefined };
+  const out = withoutMeshSecrets(input);
+  assert.deepEqual(out, { A: "1", B: "2", C: undefined });
+  assert.equal("MESH_API_TOKEN" in input, true);
+});

@@ -141,3 +141,21 @@ test("an unpriced model is billed at the default rate for every class, cache tra
   // 1M of each class: 10 (input) + 10 (output) + 12.5 (write at 1.25x) + 1 (read at 0.1x)
   assert.equal(priceUsage(config, "never-heard-of-it", { input: 1_000_000, output: 1_000_000, cacheWrite: 1_000_000, cacheRead: 1_000_000 }), 33.5);
 });
+
+test("a model named like something every object inherits is an unpriced model, not an inherited object", () => {
+  const config = defaultHostConfig();
+  config.defaultUsdPerMtok = 10;
+  config.modelPrices = { real: { inputPerMtok: 1, outputPerMtok: 1 } };
+  for (const model of ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf", "prototype"]) {
+    const cost = priceUsage(config, model, { input: 1_000_000, output: 0 });
+    assert.equal(cost, 10, `${model}: the default rate, a number the ceiling can compare (not NaN from an inherited object)`);
+  }
+  assert.equal(priceUsage(config, "real", { input: 1_000_000, output: 0 }), 1, "a real entry still wins");
+});
+
+test("host.yaml cannot name a reserved model id, and it does not disturb the other rows", () => {
+  const config = parseHostConfig("host:\n  model_prices:\n    constructor: 5\n    ok: { input_per_mtok: 1, output_per_mtok: 2 }\n    \"__proto__\": 7\n");
+  assert.deepEqual(Object.keys(config.modelPrices), ["ok"]);
+  assert.equal(Object.getPrototypeOf(config.modelPrices), Object.prototype, "the table's own prototype was not replaced");
+  assert.equal(config.warnings.filter((w) => /reserved name/.test(w)).length, 2);
+});

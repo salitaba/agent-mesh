@@ -21,6 +21,16 @@ export interface FileProjectRegistryOptions {
   supervisor?: ProjectSupervisor;
 }
 
+/**
+ * An error's summary without any excerpt of the file it came from. A YAML parse error ends with a blank
+ * line, the offending source line and a caret; this goes out over the API, where "add this folder" would
+ * otherwise also mean "show me the first lines of whatever file I name". The summary keeps the line and
+ * column, which is what someone fixing their own file needs.
+ */
+function withoutExcerpt(message: string): string {
+  return message.split("\n\n")[0]!.trim();
+}
+
 /** Accepts a folder or a direct path to a mesh.yaml, and normalizes to both. */
 function locateConfig(input: string): { root: string; configPath: string } {
   const abs = path.resolve(input);
@@ -246,7 +256,7 @@ export class FileProjectRegistry implements ProjectRegistry {
       const resolved = resolveConfig(configPath);
       return { projectId: resolved.projectId, projectName: resolved.projectName };
     } catch (err) {
-      const detail = err instanceof ConfigError ? err.errors.join("; ") : (err as Error).message;
+      const detail = err instanceof ConfigError ? err.errors.map(withoutExcerpt).join("; ") : withoutExcerpt((err as Error).message);
       throw new ProjectError("invalid_config", `cannot read ${configPath}`, detail);
     }
   }

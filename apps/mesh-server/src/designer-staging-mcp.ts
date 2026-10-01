@@ -7,7 +7,7 @@ import type {
   StagedMutation,
 } from "../../../packages/protocol/src/index";
 import { DESTRUCTIVE_KINDS } from "../../../packages/protocol/src/index";
-import type { Supervisor } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, type Supervisor } from "../../../packages/core/src/index";
 import { McpToolset, type McpToolDefinition, type McpToolsetOptions } from "./mcp";
 
 /**
@@ -348,6 +348,8 @@ export class DesignerStagingToolset {
       const innerResult = (await this.inner.handle(agentId, token, request)) as { result?: { tools?: McpToolDefinition[] }; error?: unknown };
       if (innerResult?.error) return innerResult;
       const observability = innerResult?.result?.tools ?? [];
+      // The staging tools are the operator's assistant's. A seat is not shown them.
+      if (agentId !== HUMAN_AGENT_ID) return innerResult;
       return { jsonrpc: "2.0", id, result: { tools: [...STAGING_TOOLS, ...observability] } };
     }
 
@@ -356,6 +358,13 @@ export class DesignerStagingToolset {
       // here too so staging is not the one unauthenticated door.
       if (!this.inner.verifyToken(agentId, token)) {
         return { jsonrpc: "2.0", id, error: { code: -32001, message: `invalid mesh token for agent '${agentId}'` } };
+      }
+      // A staged change lands in the card the operator reviews, written in the assistant's voice. Any
+      // seat's token verifies, and with one designer turn open the server picks that turn, so without
+      // this a seat could put a forged proposal in front of the operator. Only the human seat's bridge
+      // (the designer's own) stages.
+      if (agentId !== HUMAN_AGENT_ID) {
+        return { jsonrpc: "2.0", id, error: { code: -32002, message: `'${request.params.name}' is the operator's designer assistant's tool, not a seat's` } };
       }
       const name = request.params.name as string;
       const args = (request.params.arguments ?? {}) as Record<string, any>;

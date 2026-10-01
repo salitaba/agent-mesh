@@ -1,6 +1,6 @@
 import type * as http from "http";
 import { createHash, timingSafeEqual } from "crypto";
-import { clientKey, type FailureLimiter } from "./web-security";
+import { auditField, clientKey, type FailureLimiter } from "./web-security";
 import { SESSION_COOKIE, clearedSessionCookie, cookieSecure, parseCookies, sessionCookie, type SessionStore } from "./sessions";
 
 export function getApiToken(): string {
@@ -120,7 +120,19 @@ export function requireAuth(req: http.IncomingMessage, url: URL, parts: string[]
   return { ok: false, error: "invalid token" };
 }
 
+/**
+ * How an already-authorised request got in, for the audit trail: `open` (no token is configured, so anyone
+ * who could reach the server), `session` (the dashboard's cookie) or `token` (a bearer or `x-mesh-token`).
+ * It describes; it does not authorise.
+ */
+export function callerKind(req: http.IncomingMessage, ctx: AuthContext = {}): "open" | "session" | "token" {
+  if (!getApiToken()) return "open";
+  return !isStrictAuth() && sessionPresented(req, ctx) ? "session" : "token";
+}
+
 export interface AuthRouteDeps extends Required<AuthContext> {
+  /** One line to the auth audit log, without its timestamp. Optional so a server without a log can omit it. */
+  audit?: (line: string) => void;
   /** The request's JSON body, already bounded by the caller. */
   readBody: () => Promise<Record<string, unknown>>;
   send: (code: number, body: unknown) => void;
@@ -156,6 +168,7 @@ export async function handleAuthRoute(req: http.IncomingMessage, res: http.Serve
     const wait = deps.limiter.blockedFor(key);
     if (wait > 0) {
       res.setHeader("retry-after", String(wait));
+      deps.audit?.(`auth.login throttled ip=${auditField(key)} retryAfterSec=${wait}`);
       deps.send(429, { error: "too many wrong tokens from this address; try again shortly", retryAfterSec: wait });
       return true;
     }
@@ -165,16 +178,21 @@ export async function handleAuthRoute(req: http.IncomingMessage, res: http.Serve
       deps.limiter.reset(key);
       const session = deps.sessions.create();
       res.setHeader("set-cookie", sessionCookie(session.id, session.maxAgeSec, cookieSecure(req)));
+      deps.audit?.(`auth.login ok ip=${auditField(key)}`);
       deps.send(200, { ok: true, required: true });
       return true;
     }
     // An empty submit is not a guess; a wrong token is.
-    if (supplied) deps.limiter.fail(key);
+    if (supplied) {
+      deps.limiter.fail(key);
+      deps.audit?.(`auth.login failed ip=${auditField(key)}`);
+    }
     deps.send(401, { error: "that token was not accepted" });
     return true;
   }
 
   if (name === "logout" && req.method === "POST") {
+    deps.audit?.(`auth.logout ip=${auditField(clientKey(req))}`);
     deps.sessions.revoke(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
     res.setHeader("set-cookie", clearedSessionCookie(cookieSecure(req)));
     deps.send(200, { ok: true });
