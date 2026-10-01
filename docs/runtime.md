@@ -536,9 +536,41 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
   is ordinary work), and so is everything that is not git. The supervisor hands the
   product checkout's path to the adapter as `RuntimeContext.productPath`; a mesh with no
   git workspace has none, and no gate. **It is a text-level gate**: it stops the move a
-  helpful model makes by reflex, not a seat determined to get around it, and
-  filesystem writes (`cp`, a redirection, the Edit tool) into the product checkout are
-  a different boundary that is **not** drawn here
+  helpful model makes by reflex, not a seat determined to get around it, and shell
+  writes (`cp`, a redirection) into the product checkout are a different boundary that
+  is **not** drawn here (the file tools' is, next). Nor is a seat's shell confined to its
+  worktree at all: the seventh run's developer staged its product's `package.json` in
+  `/tmp/package.json`, and QA a report in `/tmp/test-report.md`, from Bash. A stray
+  `package.json` there changes how Node reads every `.js` file under `/tmp` (this one said
+  `"type": "module"`, and it is how thirty of this repository's own tests failed: they now
+  write their stub children as `.cjs`)
+- **the file tools may not write into the product checkout either, and what lands there
+  anyway is set aside before a merge.** The seventh cronlite run's developer, its
+  session resumed after a `kill -9`, edited `src/index.js` and `test/index.test.js` by
+  the absolute path of the product checkout (thirteen `Edit` calls, twelve of them
+  landed) instead of its own worktree's, then committed the same fixes in its worktree
+  and got the patch approved. The product checkout held changes on no branch, `git merge`
+  refused to run over them ("Your local changes to the following files would be
+  overwritten by merge") and failed six times, and the seats spent nearly eight minutes and two
+  escalation cards asking one another to commit changes that were not theirs: the merger
+  has no write tool, the owner saw a clean worktree of its own, and the operator reset
+  the checkout by hand. Now `Edit`, `Write` and `NotebookEdit` are refused when the
+  target resolves inside the product checkout (a relative spelling, `..`, a file or
+  directory that does not exist yet, and a symlink into it are all resolved first), and
+  the refusal carries the route: write it in your own worktree, commit it there, let the
+  merge land it. A seat whose own directory *is* the product checkout (a mesh without
+  worktrees) is not held to it. The `merge` op does not rely on that gate being
+  watertight: before it asks git to merge it **sets aside** whatever tracked files are
+  uncommitted in the product checkout (`git stash create`, pinned as
+  `refs/mesh/product-set-aside/<time>`, then `reset --hard`; untracked files are left
+  alone), lands the reviewed commit on a clean checkout, and tells the merger what it
+  found as a caveat on the landing (which files, the ref, `git show <ref>:<path>` to read
+  them back) and in the audit log. Nothing is removed that was not saved first, and a
+  set-aside that cannot be made does not stop the merge. A merge that still fails over
+  files "that would be overwritten" says the files are in the *product* checkout and not
+  in any seat's worktree, that no seat can clear them, and that the operator can
+  (`git -C <main> status`): git's own "your local changes" had sent the seats to the
+  wrong place
 - **seats a dead mesh left running are stopped, not resumed alongside.** Each seat is a
   long-lived `claude` child holding a streaming session. SIGKILL or an OOM kill takes the
   mesh process and leaves the child, reparented to init and still mid-turn, still

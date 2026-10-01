@@ -605,7 +605,9 @@ shell and let `merge` take the branch); the end-of-turn uncommitted-work advisor
 to commit *before* asking for review; the merge refusal states the real consequence
 instead of "then merge again"; and the developer role prompt puts lease and commit
 ahead of `PATCH_READY`. A seat's shell may commit freely in its **own** worktree and
-may not change the product checkout (`docs/runtime.md`, `runtime-claude`).
+may not change the product checkout, nor may its file tools write there; what is found
+uncommitted in the product checkout is set aside, saved, before a merge (`docs/runtime.md`,
+`runtime-claude`).
 
 A task that carries the `implementation.gate` marker (what the `implementation.completed`
 gate keys on) is claimable like any other: the marker is a tag the completion gate reads,
@@ -613,6 +615,26 @@ not a capability a seat could hold, and the claim check skips it exactly as the 
 briefing's list of claimable tasks already did. It used to be refused as a missing
 capability no seat could ever be granted, so the task stayed open and the gate was never
 consulted.
+
+A task is claimed only by a seat that holds **every** capability it lists, so a list no seat
+can satisfy is a task that stays `OPEN` for good: no op withdraws a task. `create_task` with
+`assignedTo` therefore makes the check `delegate` always made, and both say the same thing
+(`dev lacks required capabilities test.write (held by: qa). A task is claimed only by a seat that
+holds every capability it lists, so this one would sit open, and no seat holds all of …: take
+test.write out of requiredCapabilities if the claimant does not need it`, or, when a seat does
+hold them all, `give it to lead, who holds all of them`). It reads the list after normalizing it,
+counts the `implementation.gate` marker as the tag it is (`delegate` used to refuse it as a
+capability the target lacked), and leaves an assignee that is the operator or not a seat to the
+send that follows. A task with no assignee that no seat could claim is filed, with a caveat naming
+the seats closest to it (three at most, fewest missing first); one nobody holds a single
+capability of says so. A refused **claim** names who holds the capability and that nothing waives
+it (`ask pm, who filed it, for a task without test.write`), and says so only when the seat truly
+lacks the capability, not when a policy rule denied it. The seventh cronlite run's pm filed three
+implementation tasks for the developer listing `test.write`, which only qa holds; `delegate`
+would have refused, `create_task` did not, the developer's claim was refused, a 23k-token turn
+went on asking the tech-lead (whose "claim the tasks and proceed" could not work), and all three
+tasks were still `OPEN` when the mission completed. `mesh_task_create` now says what
+`requiredCapabilities` means: what the seat that claims the task must hold, all of it.
 
 `REJECTED` has one edge out, to `DRAFT`, and it is the owner's: a reviewer's later approval of a
 rejected patch records a signature and moves nothing, and says so with the route ("only its owner (dev)

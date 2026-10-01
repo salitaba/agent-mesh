@@ -4,7 +4,8 @@ Status: **FIXED** on branch `claude/exciting-gates-n75s1z` (one commit per findi
 with its own regression test). One live mission, two rounds, one crash; every finding below was either reproduced
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
-five more (F1–F4, M1), also fixed: §9.
+five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
+§11 (H1–H4) and §12 (J1, J3, J4).
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
 check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and
@@ -621,3 +622,123 @@ this section.
 - **A refusal that names no route sends a seat round it.** "Unknown artifact cronlite CLI implementation" made the developer
   publish a second patch, and the second patch left the first dangling; two refusals and a new name are how one deliverable
   became two. The id was never the problem, the refusal was.
+
+
+## 12. The seventh run, on the H-fixes build: three more findings (J1, J3, J4)
+
+The third cycle of the standing loop (every four hours, *"in every loop you should push to main"*): the routine fired at
+16:43 UTC. The same mission, SPEC, mesh config, model and clean launch environment, on the branch at `e3bb0c0` (every fix of
+§0–§11). Session 2026-10-01 16:45–17:16 UTC: 80 turns, 1.17M billed tokens (about $5.5 at list price), every turn on
+`claude-haiku-4-5`, 1391 events. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 16:45 | `mesh run` | five seats start |
+| 16:55 | goal met, 6/6 | 9 min 53 s, 20 turns, 416k billed (run 6's round 1: 14 min 28 s, 35 turns, 688k) |
+| 16:57 | operator reopen quoting the oracle's defect report (five defects: names inside ranges and lists, `5-7`, a whole-week day-of-week, possible schedules rejected as impossible, invalid numbers accepted) | criteria back to UNSATISFIED |
+| 16:58 | `kill -9` of the host, three seats mid-turn (tech-lead, developer, qa) | six processes left (three seats, three bridges), none at the next check |
+| 16:58 | restart | 3 turns discarded, the seats resumed |
+| 17:02–17:10 | six `merge` refusals, "your local changes would be overwritten" | the product checkout held a seat's edits (J1); **the operator reset it at 17:10:42, the one intervention of the run** |
+| 17:11 | the patch lands, 27 s after the reset | |
+| 17:15 | goal met again | 18 min 33 s after the reopen, 17 min 14 s after the restart, 7 min 51 s of it the deadlock; round 2: 60 turns, 756k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2853/2959 stratified (96.4%;
+1452/2221 raw, 65.4%), and the failures were the five defects the reopen quoted. The final product scored **3022/3034 stratified
+(99.6%)**, 1550/2257 raw (68.7%), with its own suite 63/63 and the CLI probes 23/23 (9/9 soft). Two things the number hides:
+
+- **The final product still fails 12 stratified checks, one defect, and one of the inputs the reopen quoted verbatim.** A day-of-week
+  written as a range or list that covers the whole week (`0-7`, `SUN-4,4,FRI-6/1`) beside a restricted day-of-month is treated as
+  `*`, so the OR rule is skipped: `* * 16-25,6 12-dec,5-11 0-7` after 2027-05-01 returns 2027-05-06 where the reopen said
+  2027-05-01T00:01 (round 1 returned 05-02). The fix the seats made covers the other two inputs the reopen gave for that
+  defect (`0 0 * * 0-7`, and the Monday `matches`); QA's report ran those two, called the defect FIXED and its verdict PASSED,
+  and did not run the third.
+- **`*` as a list item is rejected again** (`*,5` → `Field: minute, Value: "*", Reason: Invalid value`; the SPEC says an item is
+  `*`, a value, a range or a step). That is the raw score: run 6 accepted it from round 1 and runs 1, 3 and 4 did not. The reopen
+  did not name it and nothing in the mesh found it.
+
+**§11's fixes, checked live** (each was pinned by tests only until now):
+
+| Fix | Live |
+|---|---|
+| G5, G6 | 42 mail wakes in the whole run, 1 for mail the seat had already been handed (2%, 13k of 1.17M billed tokens, 1%), none headed by a broadcast. Run 6: 22 wakes, 2 handed (9%, 3%) |
+| G1 | QA recorded its pass with `mesh_approve` in both rounds; `quality-verified` was evidenced `quality-pass/by=qa` both times |
+| F2, M1, F4 | 1 of 435 tool calls refused by the client (an architect's `bash`); 6 handover continuity calls recorded completed beside 6 `continuity.recorded`; both verification reports stamped with the head they were run against |
+| B21, B22, B23 | the kill -9 recovery above, and the selective reopen completed |
+| H1, H2, H4 | **not exercised**: no patch was rejected, the first patch was approved and merged by the tech-lead in one turn (16:52:25 to 16:52:28), nobody published a new version with `asVersionOf` |
+| H3 | 22 `mesh_announce` calls (12 to everyone); one run cannot say whether the wording changed what seats announce |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| J1 | **A seat's edit in the product checkout stopped every merge for 7 min 51 s.** After the kill -9 the developer's resumed session edited `src/index.js` and `test/index.test.js` by the absolute path of the product checkout (13 `Edit` calls, 12 landed) instead of its own worktree's, committed the same fixes there, and got the patch approved. `git merge` then refused to run over the uncommitted changes, six times (17:02:51 to 17:10:15). The tech-lead read git's "your local changes" as the developer's and asked the pm to commit; the pm asked the developer; the developer checked its own worktree and found it clean; four asks were declined as not the asked seat's capability; two escalation cards later the operator reset the checkout by hand. The merger has no write tool and the owner of the files sees a clean worktree of its own, so no seat could have cleared it | **fixed** in three layers: `Edit`, `Write` and `NotebookEdit` are refused when the target resolves inside the product checkout (relative spellings, `..`, a file or directory that does not exist yet, a symlink into it), with the route in the refusal; `merge` sets aside what is uncommitted there before asking git (`git stash create` pinned as `refs/mesh/product-set-aside/<time>`, then `reset --hard`; untracked files left alone), lands the reviewed commit on a clean checkout and tells the merger which files and where they are saved; a merge that still fails over files "that would be overwritten" says they are in the product checkout, that no seat can clear them, and what the operator can do | `tests/agent-runtime/product-write-gate.test.ts`, `tests/artifact-store/product-set-aside.test.ts`, `tests/core/merge-set-aside.test.ts`, `tests/integration/dirty-product-checkout.test.ts` |
+| J3 | **Three implementation tasks nobody could claim.** After five `create_task` calls refused for capability names it had invented (the refusal lists the real ones), the pm filed three tasks for the developer listing `repository.write`, `git.commit`, `test.write`, `test.execute`. The developer holds all but `test.write`; only qa does; no seat holds it beside `repository.write`. `delegate` would have refused it ("dev lacks required capabilities …"), `create_task` with `assignedTo` made no such check. The developer's claim was refused (16:47:49), a 23k-token turn went on asking the tech-lead, whose "you can proceed … claim the tasks" could not work (nothing waives a requirement; the tech-lead's three `create_task` calls for the same work were refused as duplicates), the developer worked off the ledger, and all three tasks were still OPEN when the mission completed. No op withdraws a task | **fixed** — `create_task` with `assignedTo` makes the check `delegate` makes, one check with one wording that names who holds the missing capability and the way out; it also stops counting the `implementation.gate` marker as a capability (`delegate` refused it); an unassigned task no seat can claim is filed with a caveat naming the closest seats; a refused claim names the holders and says nothing waives it; `mesh_task_create` says what `requiredCapabilities` means | `tests/core/task-claim-gap.test.ts` |
+| J4 | **A seat's stray `/tmp/package.json` broke 30 of this repository's own tests and hung the run for 24 minutes.** The developer's shell staged its product's `package.json` (`"type": "module"`) in `/tmp` at 16:52:34. Node reads every `.js` under `/tmp` through it, so the CommonJS stub children that four host and CLI test files write under `os.tmpdir()` died on their first `require`. One of them, the shutdown test, had no `try/finally`: its assertion threw before `host.close()`, the host's server stayed up, and that file's process never ended | **fixed** — the stubs are written as `.cjs` through one helper, the shutdown test closes the host in `finally`; with the stray file restored all four files pass, and with the stubs broken the old way the file now fails in 17 s where it hung | `tests/support/stub-script.test.ts` |
+
+What each does and why is in `docs/runtime.md` (*a seat's shell may not land work on the product branch*, with the file-tool rule
+and the set-aside beside it) and `docs/protocol.md` (*Typed state machines*, the task-capability paragraph); the commit messages
+carry the evidence.
+
+**A finding looked at and left alone (J2).** Two phantom artifact ids in 153 ops: the tech-lead's `art-M3W5SBH30077694ffdee` (the
+id of the message that asked it, `msg-M3W5SBH30077694ffdee`, with `art-` for `msg-`) and the pm's `art-M3W78DT700d4a2f3dc77`
+(invented; the report was `art-M3W779YJ00ebfecc0a20`). Both were refused and recorded nothing, as designed since the phantom
+approval of 2026-09-25. Both seats recovered in the same turn with no extra read: the tech-lead approved with the
+`artifact://` URI it had already read, five seconds later; the pm read the report by URI. A refusal that listed the artifacts in
+review would have saved nothing measurable, so it was not built. What the second one led to was elsewhere: QA's report was still
+a DRAFT, so the pm's acceptance was refused as such and waited a QA turn (about a minute and a half).
+
+### Not fixed, and the honest limits
+
+- **J1's gate draws one line.** A shell write (`cp`, a redirection) into the product checkout is still not refused. The set-aside
+  is what makes that survivable: the next merge saves it and lands on a clean checkout. It does not make it right, and an
+  untracked file that collides with a landing is hinted at, not cleaned.
+- **A seat's shell is not confined to its worktree.** The developer staged `package.json` and a patch body in `/tmp`, QA a report
+  (`mesh_artifact_publish` refused its `fromPath` as outside the workspace, and it wrote the report again inside it): three files in
+  this run and two more in earlier ones, one of which poisoned a directory every process on the machine shares. J4 makes this repository's tests immune; it does
+  nothing for the next program that runs a `.js` file under `/tmp`. A per-seat temp directory would not catch a literal `/tmp/…`
+  in a heredoc, and a sandbox is a design of its own.
+- **Tasks already filed stay filed.** J3 stops the unclaimable one being created; nothing withdraws one that is, and a `task.completed`
+  is still prose (QA completed its task at 16:48:09 with "implementation not yet available … waiting", before any verification).
+- **A MERGED patch cannot be versioned**, so a rework of merged work is a new patch ("Defect Fixes (5 critical issues)"), as in
+  the last run.
+- **Round 1 closed the two contract criteria on the merged CodePatch, not on a test run QA reported** (QA's report, created
+  16:54:09, was still a DRAFT). The criteria say "shown by a test run QA reports"; the evidence rules check that an artifact is
+  substantive and submitted, not what it is evidence of. Round 2's refusal of a DRAFT report did push the pm to the report.
+- **Two RequirementsDocs for one deliverable**, the pm's and the architect's; the tech-lead reviewed the architect's and the
+  criterion was accepted on the pm's.
+- **66% of turns changed no durable state** (53 of 80), 48% of billed tokens, much of it the J1 deadlock's chatter; round 1 alone was
+  45% of turns and 24% of tokens.
+- **One operator intervention**, at 17:10:42, and the mission would have run on into the stall caps without it.
+- **One run.** H1, H2 and H4 are still to be confirmed live.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §11 final, before this round | 2976 | 2975 | 0 | 0 | 1 |
+| after J1 (the 24-minute run: 30 failures, all from the stray `/tmp/package.json`, found by it) | 3003 | 2972 | 30 | 0 | 1 |
+| this round, final (a full build and run: 3 min 38 s) | 3024 | 3023 | 0 | 0 | 1 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (157 warnings, the baseline). Mutation checks: J1 33 mutants
+(the gate 11, the set-aside 8, the merge note and hint 14), all killed; the one that did not compile was redone as a form that does;
+five more (an empty-target guard, the order of a new path's segments, the root of the directory walk and two guards whose
+absence leaves the same behaviour) were judged equivalent and not run. J3 28 mutants (the check 15, the wiring 4, the caveats 4, the claim route 4, the tool text 1), 27 killed; the survivor is the operator filter in the claim route's holders, which the synthesized human seat (it holds only `override`) never reaches. J4: the helper's test is killed by reverting
+`.cjs`, and the hang by the before/after run above. Gaps found by reading before the mutants ran (J1's audit lines and a staged
+rename; J3's aliases, a capability written twice, the order and cap of the closest seats, the stale-pin combination and a rule-denied claim) got tests first. One commit per finding (`dd4e08d` J1, `030b91c` J4, `adeb9a3` J3), then one for the
+docs and this section.
+
+### Worth keeping from this round
+
+- **Read the first error before forming a theory.** Thirty failures in a run that had just touched the merge path read as a
+  regression of J1. The first line of the first failure said `/tmp/package.json contains "type": "module"`; the file was dated
+  16:52, the run's own minute.
+- **A test that starts a server closes it in `finally`.** A failing test that cannot end is worth more than a hundred failing ones:
+  the run did not report for 24 minutes.
+- **Two ops that make the same promise make the same check.** `delegate` refused a task its target could not claim and
+  `create_task` filed it; neither said so, and the board kept three tasks nobody could take.
+- **Say what a requirement is, in the place a model fills it in.** The pm wrote `test.write` the way it would write a tag for the
+  work. The tool description said "capabilities"; it now says what the claimant must hold, all of it.
+- **Save before you discard.** The set-aside is a `git stash create` pinned under a ref before the `reset --hard`; if it cannot be
+  saved, nothing is removed.
+- **Look at what the seat did next before building a fix for a refusal.** Both phantom ids were recovered inside the turn, with
+  what the seat already held, so the candidate list stayed unbuilt.
+- **An unconfined shell is a shared machine.** A `package.json` is the one file a developer seat writes for a living, and
+  `/tmp` is the one directory where it changes what other programs are.
