@@ -284,3 +284,41 @@ export function usageToCsv(report: UsageReport): string {
   for (const row of report.rows) lines.push(columns.map((c) => csvCell(row[c as keyof UsageRow])).join(","));
   return `${lines.join("\n")}\n`;
 }
+
+const grouped = (report: UsageReport): UsageDimension[] => USAGE_DIMENSIONS.filter((d) => report.groupBy.includes(d));
+const whole = (n: number): string => Math.round(n).toLocaleString("en-US");
+const dollars = (v: number | null): string => (v === null ? "-" : `$${v.toFixed(2)}`);
+
+/**
+ * The report as a table a person can read in a terminal: the grouped dimensions, then the measures, then a
+ * total row. `-` in the cost column is a row with a model that has no price, not zero; the note under the
+ * table names those models. CSV is the form to load elsewhere.
+ */
+export function usageToTable(report: UsageReport): string {
+  const dims = grouped(report);
+  const labels = dims.length ? dims.map(String) : [""];
+  const measures = (row: UsageRow): string[] => [
+    whole(row.turns),
+    whole(row.inputTokens),
+    whole(row.outputTokens),
+    whole(row.cacheWriteTokens),
+    whole(row.cacheReadTokens),
+    whole(row.billedTokens),
+    dollars(row.costUsd),
+  ];
+  const head = [...labels, "turns", "input", "output", "cache-write", "cache-read", "billed", "est. USD"];
+  // With nothing to group by the report is one number, and the total row is all there is to show.
+  const body = dims.length ? report.rows.map((row) => [...dims.map((d) => row[d] ?? ""), ...measures(row)]) : [];
+  const total = [...labels.map((_, i) => (i === 0 ? "total" : "")), ...measures(report.totals)];
+  const all = [head, ...body, total];
+  const widths = head.map((_, i) => Math.max(...all.map((r) => r[i]!.length)));
+  const line = (r: string[]): string => r.map((c, i) => (i < labels.length ? c.padEnd(widths[i]!) : c.padStart(widths[i]!))).join("  ").trimEnd();
+  const rule = widths.map((w) => "-".repeat(w)).join("  ");
+  const out = [line(head), rule, ...body.map(line), ...(body.length ? [rule] : []), line(total), ""];
+  out.push(`${whole(report.summary.turns)} turn(s); ${whole(report.summary.activeSeatDays)} active seat-day(s); ${report.summary.missionsCreated} mission(s) created, ${report.summary.missionsCompleted} completed.`);
+  if (report.unpricedModels.length) {
+    out.push(`No price for: ${report.unpricedModels.join(", ")}. A row that includes one shows - rather than a partial dollar figure; set model_prices in host.yaml to price it.`);
+  }
+  out.push(report.note);
+  return `${out.join("\n")}\n`;
+}

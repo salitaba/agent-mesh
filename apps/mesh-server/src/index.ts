@@ -59,7 +59,7 @@ import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } f
 import { SessionStore } from "./sessions";
 import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
 import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
-import { licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
+import { configuredPrices, licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
 import { serverVersion } from "./version";
 import { checkFeature, checkSeats } from "../../../packages/licensing/src/index";
 import { PROMETHEUS_CONTENT_TYPE, renderPrometheus, type PromMetric } from "../../../packages/observability/src/index";
@@ -1772,7 +1772,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const parsed = parseUsageQuery(u.searchParams);
         if (!parsed.ok) return json(400, { error: parsed.error });
         const logs = [{ project: config.meshId, file: `${config.stateDir}/logs/events.jsonl` }];
-        const answer = await usageAnswer(logs, [], parsed.query, {}, gate.ok ? undefined : gate.message);
+        const answer = await usageAnswer(logs, [], parsed.query, configuredPrices(), gate.ok ? undefined : gate.message);
         res.writeHead(200, { "content-type": answer.contentType, ...(answer.disposition ? { "content-disposition": answer.disposition } : {}) });
         res.end(answer.body);
         return;

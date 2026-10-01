@@ -15,6 +15,7 @@ import { runBenchmark } from "./bench";
 import { DEFAULT_HOST_PORT, authHeaders, gitModeFromFlags, resolveBus, runHostCommand, runProjectCommand, type Flags } from "./projects";
 import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from "./backups";
 import { runLicenseCommand } from "./license";
+import { runUsageCommand } from "./usage";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
 
@@ -48,6 +49,8 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "read-only",
   "staging",
   "json",
+  "csv",
+  "all",
   "settled",
   "keep-sessions",
 ]);
@@ -369,6 +372,7 @@ usage:
   mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
   mesh license [status|install|verify|remove]   this install's plan, limits and licence (see: mesh license --help)
+  mesh usage <mesh.yaml>... | --all             what meshes consumed, by day/seat/model, from their logs (see: mesh usage --help)
   mesh backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
   mesh restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
     a reset writes one set of archives under one stamp: the state dir (the only
@@ -550,6 +554,10 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "license": {
         return await runLicenseCommand(args.positional, args.flags);
+      }
+      case "usage": {
+        // Offline, like backups: it reads event logs, so it works on a mesh that is stopped.
+        return await runUsageCommand(args.positional, args.flags);
       }
       case "project":
       case "projects": {

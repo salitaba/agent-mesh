@@ -66,9 +66,14 @@ const restoreToken = (): void => {
 
 // ------------------------------------------------------------ single mesh
 
-async function withMesh(licenses: LicenseProvider, fn: (ctx: { base: string; m: Awaited<ReturnType<typeof makeMesh>> }) => Promise<void>): Promise<void> {
+async function withMesh(
+  licenses: LicenseProvider,
+  fn: (ctx: { base: string; m: Awaited<ReturnType<typeof makeMesh>> }) => Promise<void>,
+  opts: { persist?: boolean } = {},
+): Promise<void> {
   delete process.env.MESH_API_TOKEN;
-  const m = await makeMesh({ agents: [{ id: "a", role: "developer", interests: [] }, { id: "b", role: "reviewer", interests: [] }], mayContact: { a: ["b"], b: ["a"] }, mode: "parked" });
+  // `persist` gives the mesh an event log on disk, which is what /usage reads; an in-memory mesh has none.
+  const m = await makeMesh({ agents: [{ id: "a", role: "developer", interests: [] }, { id: "b", role: "reviewer", interests: [] }], mayContact: { a: ["b"], b: ["a"] }, mode: "parked", persist: opts.persist === true });
   const server = createHttpServer(m, { dashboardDir: undefined, licenses });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -131,11 +136,17 @@ test("usage export: CSV and JSON, a bad query is the caller's 400, and the answe
       type: "budget.consumed",
       timestamp: "2026-10-01T10:00:00.000Z",
       actorId: "system",
-      payload: { agentId: "a", model: "claude-haiku-4-5-20251001", amount: 1200, key: "agent:g/a", detail: { input: 100, output: 200, cacheRead: 5000 } },
+      payload: { agentId: "a", model: "claude-haiku-4-5-20251001", amount: 1200, key: "agent:g/a", input: 100, output: 200, cacheRead: 5000 },
     } as never);
     const json = await call(base, "GET", "/usage?by=model");
     assert.equal(json.status, 200);
     assert.match(json.json.note, /Tokens are exact/);
+    // 100 fresh in, 200 out, 900 written to the cache (1200 billed less the two), 5000 read back, at Haiku's list price.
+    assert.deepEqual(
+      { turns: json.json.totals.turns, input: json.json.totals.inputTokens, output: json.json.totals.outputTokens, cacheWrite: json.json.totals.cacheWriteTokens, cacheRead: json.json.totals.cacheReadTokens },
+      { turns: 1, input: 100, output: 200, cacheWrite: 900, cacheRead: 5000 },
+    );
+    assert.equal(json.json.totals.costUsd, (100 * 1 + 200 * 5 + 900 * 1.25 + 5000 * 0.1) / 1e6, "four token classes, each at its own list price");
     assert.equal(json.json.prices.listPricesAsOf, "2026-10-01");
     assert.ok(json.json.prices.listed.includes("claude-haiku-4-5"));
     const csv = await call(base, "GET", "/usage?format=csv&by=model");
@@ -148,7 +159,38 @@ test("usage export: CSV and JSON, a bad query is the caller's 400, and the answe
       assert.equal(r.status, 400, bad);
       assert.ok(typeof r.json.error === "string" && r.json.error.length > 10, bad);
     }
-  });
+  }, { persist: true });
+});
+
+test("a single mesh prices /usage from the same host.yaml `mesh usage` reads, so the two never disagree", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-usage-prices-"));
+  fs.writeFileSync(path.join(home, "host.yaml"), "host:\n  model_prices:\n    claude-haiku-4-5: { input_per_mtok: 2, output_per_mtok: 10, cache_write_per_mtok: 2, cache_read_per_mtok: 0.2 }\n    acme-house-model: 10\n", "utf8");
+  const saved = process.env.MESH_HOME;
+  process.env.MESH_HOME = home;
+  try {
+    await withMesh(provider({ token: licence("team") }), async ({ base, m }) => {
+      for (const [id, model] of [["evt-1", "claude-haiku-4-5-20251001"], ["evt-2", "acme-house-model"]] as const) {
+        await m.store.append({
+          id,
+          type: "budget.consumed",
+          timestamp: "2026-10-01T10:00:00.000Z",
+          actorId: "system",
+          payload: { agentId: "a", model, amount: 1200, key: "agent:g/a", input: 100, output: 200, cacheRead: 5000 },
+        } as never);
+      }
+      const r = await call(base, "GET", "/usage?by=model");
+      assert.equal(r.status, 200);
+      const cost = Object.fromEntries(r.json.rows.map((x: { model: string; costUsd: number | null }) => [x.model, x.costUsd]));
+      // 100 in, 200 out, 900 cache writes, 5000 cache reads. Haiku at host.yaml's rates: 200 + 2000 + 1800 + 1000 = $0.005.
+      assert.equal(cost["claude-haiku-4-5-20251001"], 0.005, "host.yaml's Haiku rates, not the list's $0.002725");
+      // A bare number is one rate: 10 in and out, so 12.5 to write the cache and 1 to read it: 1000 + 2000 + 11250 + 5000 = $0.01925.
+      assert.equal(cost["acme-house-model"], 0.01925);
+      assert.deepEqual(r.json.unpricedModels, []);
+    }, { persist: true });
+  } finally {
+    if (saved === undefined) delete process.env.MESH_HOME;
+    else process.env.MESH_HOME = saved;
+  }
 });
 
 test("the Prometheus endpoint is a scrape in the text format, gated by plan, and carries the licence", async () => {

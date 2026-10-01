@@ -14,7 +14,21 @@ import {
   type UsagePrices,
 } from "../../../packages/observability/src/index";
 import { resolveConfig } from "../../../packages/config/src/index";
+import { loadHostConfig, meshHome } from "../../../packages/projects/src/index";
 import type { Entitlements } from "../../../packages/licensing/src/index";
+
+/**
+ * The model prices an operator put in `host.yaml`. A single mesh has no host, but it has a home, and the
+ * CLI's `mesh usage` reads this same file: the three answers (CLI, mesh, host) must not differ by which one
+ * was asked. A file that will not parse is not a reason to refuse a report; list prices still apply.
+ */
+export function configuredPrices(home: string = meshHome()): Readonly<Record<string, TokenPrice>> {
+  try {
+    return loadHostConfig(home).modelPrices;
+  } catch {
+    return {};
+  }
+}
 
 /** What the operator configured, over Anthropic's published prices: the same resolution the spend ceiling uses. */
 export function usagePrices(configured: Readonly<Record<string, TokenPrice>>): UsagePrices {
