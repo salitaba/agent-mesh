@@ -138,6 +138,15 @@ function hostAudit(line: string): void {
   process.stderr.write(`[mesh-host] ${line}\n`);
 }
 
+/**
+ * One line of the host's audit trail: sign-ins, and every state-changing request that was let through. A
+ * prefix of its own (`[mesh-host-audit]`, timestamped) so it can be shipped to a log store separately from
+ * the operator-facing lines above, which are prose for a person watching a console.
+ */
+function hostAuditTrail(line: string): void {
+  process.stderr.write(`[mesh-host-audit] ${new Date().toISOString()} ${line}\n`);
+}
+
 export interface HostOptions {
   /** Registry home; defaults to `MESH_HOME` or `~/.agent-mesh`. */
   home?: string;
@@ -716,7 +725,7 @@ export function createHostServer(deps: {
 
       // The dashboard trades the operator token for a session cookie here (see sessions.ts). It
       // cannot require being signed in, so it sits ahead of `requireAuth`.
-      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send: json, audit: hostAudit })) return;
+      if (await handleAuthRoute(req, res, parts, { sessions, limiter, readBody: () => body(4096), send: json, audit: hostAuditTrail })) return;
 
       // A project's sandboxed playground page reads its own files through here, carrying a signed,
       // expiring link instead of a credential (see preview.ts): the page runs in an opaque origin
@@ -741,7 +750,7 @@ export function createHostServer(deps: {
       if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
         const via = callerKind(req, { sessions });
         const ip = clientKey(req);
-        res.on("finish", () => hostAudit(`mutation ${req.method} ${auditField(u.pathname)} status=${res.statusCode} via=${via} ip=${auditField(ip)}`));
+        res.on("finish", () => hostAuditTrail(`mutation ${req.method} ${auditField(u.pathname)} status=${res.statusCode} via=${via} ip=${auditField(ip)}`));
       }
 
       // ------------------------------------------------------------- health

@@ -210,3 +210,42 @@ test("a seat's token cannot stage a proposal in the operator's designer card, an
     restore();
   }
 });
+
+// ------------------------------------------------------------------- the host
+
+test("the host's audit trail goes to stderr under its own prefix: sign-ins and every mutation it let through, never the operator's prose", { timeout: 30_000 }, async () => {
+  const { startHostServer } = await import("../../apps/mesh-server/src/host");
+  restore();
+  process.env.MESH_API_TOKEN = OPERATOR;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-host-audit-"));
+  const written: string[] = [];
+  const realWrite = process.stderr.write.bind(process.stderr);
+  (process.stderr as unknown as { write: unknown }).write = (chunk: string | Uint8Array): boolean => {
+    written.push(String(chunk));
+    return true;
+  };
+  const host = await startHostServer({ home: path.join(base, "home"), port: 0, dashboardDir: path.join(base, "none") });
+  try {
+    await call(host.url, "POST", "/auth/login", { token: "wrong" });
+    const ok = await call(host.url, "POST", "/auth/login", { token: OPERATOR });
+    const cookie = String(ok.headers["set-cookie"]![0]).split(";")[0]!;
+    await call(host.url, "POST", `/api/projects/${encodeURIComponent("x\ny")}/close`, {}, { cookie });
+    await call(host.url, "GET", "/api/projects", undefined, { cookie });
+    await call(host.url, "POST", "/api/projects", { root: "/nope" }); // no credential: refused, so not an authenticated mutation
+    await new Promise((r) => setTimeout(r, 100));
+  } finally {
+    (process.stderr as unknown as { write: unknown }).write = realWrite;
+    await host.close();
+    restore();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+  const trail = written.join("").split("\n").filter((l) => l.startsWith("[mesh-host-audit]"));
+  const bodies = trail.map((l) => l.replace(/^\[mesh-host-audit\] \S+ /, "").replace(/ip=\S+/, "ip=X"));
+  assert.deepEqual(bodies, [
+    "auth.login failed ip=X",
+    "auth.login ok ip=X",
+    "mutation POST /api/projects/x%0Ay/close status=404 via=session ip=X",
+  ]);
+  assert.ok(trail.every((l) => /^\[mesh-host-audit\] \d{4}-\d\d-\d\dT[\d:.]+Z /.test(l)), "timestamped");
+  assert.equal(written.join("").includes(OPERATOR), false, "the token is nowhere in what the host wrote");
+});
