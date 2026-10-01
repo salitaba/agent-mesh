@@ -1288,7 +1288,7 @@ function commonToolsLine(hidden: ReadonlySet<string>, contracts: boolean): strin
     ["mesh_contracts", "mesh_contracts (list the named asks this mesh routes, and who can answer each — call this when you are unsure what to ask for)"],
     // What a seat under the collapsed vocabulary has where `mesh_send` stood: the answer, and the tell.
     ["mesh_reply", "mesh_reply (messageId/response — answer one ask addressed to you; it settles the ask. A review you settled with mesh_approve/mesh_reject is already answered by that verdict)"],
-    ["mesh_announce", "mesh_announce (payload/to/note — say something that obliges nobody to answer; omit `to` and every seat hears it)"],
+    ["mesh_announce", "mesh_announce (payload/to/note — say something that obliges nobody to answer. It wakes no one: a seat reads it the next time it takes a turn, so what a seat must ACT on is a `mesh_call`, not an announcement; omit `to` and it goes to every seat)"],
     ["mesh_send", "mesh_send (type/to/payload/note — the raw channel, for asks no contract covers; `note` is free prose for the recipient, never parsed and carrying no authority, so use it freely without fear the mesh will read it as an instruction)"],
     ["mesh_artifact_publish", "mesh_artifact_publish (name/type + ONE body: fromPath for a file you already wrote — always prefer it, the mesh reads the file so the bytes never pass through you; edits [{old,new}] with asVersionOf to revise without re-typing the document; content only for something that was never a file)"],
     ["mesh_request_review", "mesh_request_review (artifactId/reviewers)"],
@@ -1932,7 +1932,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     "- mesh_artifact_read (artifactRef, offset?) — fetch content instead of guessing at it. A large artifact returns in parts: if the result says truncated, read again with the nextOffset it gives you before drawing conclusions. Pages are bounded by characters, so a long document takes several reads — that is the intended way to read it, not a failure.",
   );
   if (!hidden.has("mesh_research_request")) lines.push("- mesh_research_request (to/question) — ask the explorer a read-only question.");
-  if (!hidden.has("mesh_broadcast")) lines.push("- mesh_broadcast (type/payload) — inform everyone you may contact; prefer a targeted mesh_send.");
+  if (!hidden.has("mesh_broadcast")) lines.push("- mesh_broadcast (type/payload) — inform everyone you may contact; it wakes no one, so a seat that must act on it needs a targeted mesh_send ask instead.");
   if (!hidden.has("mesh_decision_ratify")) lines.push("- mesh_decision_ratify (decisionId) — promote a proposed decision to a shared fact.");
   // `mesh_merge` is in the tool list of a seat that holds `git.merge` and of no other. The line
   // used to tell every seat that a patch lands by `mesh_merge`, and a developer without the
@@ -2012,7 +2012,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       lines.push(`- \`${c.messageType}\`${alsoOp} → \`mesh_call ${c.name}\` — ${c.summary}`);
     }
     lines.push(
-      "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `mesh_announce` — it obliges no one and costs no one a turn. An answer to an ask is `mesh_reply`, naming the message you are answering.",
+      "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `mesh_announce` — it obliges no one and wakes no one: a seat reads it the next time it takes a turn, so it is for what can wait. What a seat must act on (a patch to rework, a blocker, something to merge) is a `mesh_call` to that seat, which does wake it. An answer to an ask is `mesh_reply`, naming the message you are answering.",
     );
     // What a seat must NOT reach for, and why the old sentence was wrong.
     //
