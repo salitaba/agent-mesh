@@ -1940,8 +1940,15 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   lines.push(
     `Approve or reject a reviewed artifact with: \`mesh_approve\` { subject: "<what>", artifactId: "<id>" } — also \`mesh_reject\`,${hidden.has("mesh_veto") ? "" : " `mesh_veto`,"} \`mesh_block\`, same shape. This needs the matching authority or review capability, and you cannot approve your own artifact when a peer reviewer exists. The verdict op itself answers the review request you were sent for that artifact — do NOT follow it with an APPROVE/REJECT message or a \`${hidden.has("mesh_respond") ? "mesh_reply" : "mesh_respond"}\`: a verdict message records nothing and is refused.`,
   );
+  // The tool that asks for the verdict, as this seat has it. A submission asks nobody: the twelfth cronlite run's developer
+  // moved two patches to READY_FOR_REVIEW and announced them, and the reviewer's first turn on each came 3 min 2 s and 2 min 39 s
+  // later, from the unread-mail sweep, because "a DRAFT nobody transitions is never reviewed" reads as "a transition gets it reviewed".
+  const askForVerdict = hidden.has("mesh_request_review")
+    ? "`mesh_call` with contract `review.artifact` (request: { artifactId, reviewers })"
+    : "`mesh_request_review` (artifactId/reviewers)";
   lines.push(
-    'Move an artifact through its lifecycle with: `mesh_artifact_transition` { artifactId: "<id>", to: "READY_FOR_REVIEW" }. ONLY the artifact owner may transition it — ask the owner otherwise. A DRAFT nobody transitions is never reviewed and never becomes evidence.',
+    'Move an artifact through its lifecycle with: `mesh_artifact_transition` { artifactId: "<id>", to: "READY_FOR_REVIEW" }. ONLY the artifact owner may transition it — ask the owner otherwise. A DRAFT nobody transitions is never reviewed and never becomes evidence. ' +
+      `Submitting asks nobody and wakes no one, though: to get a verdict, ask for it as well with ${askForVerdict}, naming a seat from the list on the artifact's line of those that settle a review of it. An announcement wakes no one either, so a reviewer who was only told finds the artifact minutes later.`,
   );
   lines.push("");
   lines.push("## Other mesh tools");

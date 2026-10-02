@@ -10807,6 +10807,8 @@ export class Supervisor {
             return { ok: false, op: op.op, reason };
           }
           const res = await this.transitionArtifact(actorId, targetId, { to: op.to, comment: op.evidence });
+          const unasked = res.ok && op.to === "READY_FOR_REVIEW" ? this.submissionAskedNobody(actorId, targetId) : undefined;
+          if (unasked) return { ok: true, op: op.op, reason: [res.reason, unasked].filter(Boolean).join("; "), caveat: true, eventId: res.eventId };
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "request_review": {
@@ -11671,6 +11673,37 @@ export class Supervisor {
       default:
         return base;
     }
+  }
+
+  /**
+   * What a seat is told when it submits an artifact for review and nobody has been asked for the verdict.
+   *
+   * A submission (`READY_FOR_REVIEW`) records that the owner is done; it asks no one and wakes no one, and neither does an
+   * announcement of it. The twelfth cronlite run's developer submitted two patches that way (`mesh_artifact_transition`, then
+   * `mesh_announce`), and the tech lead's first review of each version came 3 min 2 s and 2 min 39 s later, when the unread-mail
+   * sweep woke it; the architect's document, which was asked for (`review.artifact`), was approved 1 min 28 s after the ask. The
+   * briefing's "a DRAFT nobody transitions is never reviewed" read as "a transition gets it reviewed", and the translation of the
+   * older vocabulary read "hand over" as an announcement. Said where the seat can still act, in the reply to the submission.
+   *
+   * Only while the artifact is still READY_FOR_REVIEW afterwards (an ask, or the re-ask of one carried over from an earlier
+   * version, has moved it on to UNDER_REVIEW), and not when this version's review was asked for at some point (a seat can pull
+   * an artifact back from UNDER_REVIEW by submitting it again, and the ask it already made stands). And only when some other
+   * seat could settle it, since an owner that is the only one who can has nobody to ask.
+   */
+  private submissionAskedNobody(actorId: string, artifactId: string): string | undefined {
+    const a = this.state.artifacts.get(artifactId);
+    if (!a || a.status !== "READY_FOR_REVIEW" || this.reviewAskedFor(a, a.version)) return undefined;
+    const settlers = settlersOf(this.state, a, HUMAN_AGENT_ID).filter((id) => id !== actorId);
+    if (settlers.length === 0) return undefined;
+    const who = settlers.length === 1 ? settlers[0] : `one of ${settlers.join(", ")}`;
+    const how =
+      this.config.bus.vocabulary === "contracts"
+        ? "`mesh_call` with contract `review.artifact` (request: { artifactId, reviewers })"
+        : "`mesh_request_review` (artifactId/reviewers)";
+    return (
+      `submitted for review, but nobody has been asked for a verdict, and a submission wakes no one (an announcement does not either): ask ${who} with ${how}; ` +
+      `until you do they meet it minutes from now, on their next turn`
+    );
   }
 
   private async opMerge(actorId: string, artifactId: string | undefined, comment?: string, artifactUriRef?: string): Promise<OpResult> {

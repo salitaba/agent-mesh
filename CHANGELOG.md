@@ -69,6 +69,13 @@ sections 1 to 17) are described there, run by run.
 
 ### Fixed
 
+- A seat that submits an artifact for review is told that nobody has been asked. Moving an artifact to `READY_FOR_REVIEW` sends no
+  request and wakes no one, and neither does announcing it; the briefing's "a DRAFT nobody transitions is never reviewed" read as "a
+  transition gets it reviewed". The twelfth Haiku run's developer submitted two patches that way and the tech lead's first turn on
+  each came 3 min 2 s and 2 min 39 s later, from the unread-mail sweep (an asked-for review of the architect's document took
+  1 min 28 s). The briefing now says a submission asks nobody and names the ask as the seat has it (`mesh_request_review`, or
+  `mesh_call review.artifact` under the contracts vocabulary), and the reply to the submission says so, naming the seats that can
+  settle it, unless a review of that version was asked for or the owner is the only seat that could settle it.
 - A verification report that names a commit its worktree does not hold is told so in the reply to its publish. The runtime already
   stamps a report with the tree it was written from, but only compared it with the patches the turn *read*, and a verifier is
   handed the commit by its briefing and reads nothing. The twelfth Haiku run's QA named the patch's commit (243 of 243 pass),

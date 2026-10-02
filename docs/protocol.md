@@ -218,6 +218,19 @@ what the mesh then accepts cannot differ:
   "transition it"). The wake names the verdict and the rung the owner owns next,
   and is skipped when the owner's own interests already wake it for that event.
 
+**A submission asks nobody.** Moving an artifact to `READY_FOR_REVIEW` records that its owner is done; it sends no
+request and wakes no one, and neither does announcing it (`mesh_announce` obliges nobody and "wakes no one"). A seat
+that submits and announces gets its review when the reviewer next takes a turn for some other reason, or when the
+unread-mail sweep wakes it. The twelfth cronlite run's developer did exactly that with two patches, and the tech lead's
+first turn on each came 3 min 2 s and 2 min 39 s later; the architect's document, asked for with `review.artifact`, was
+approved 1 min 28 s after the ask. The briefing's "a DRAFT nobody transitions is never reviewed" had read as "a
+transition gets it reviewed". The briefing now says that submitting asks nobody and names the ask as the seat has it
+(`mesh_request_review`, or `mesh_call` with contract `review.artifact` under the contracts vocabulary), and the reply to
+the submission says it again, naming the seats that can settle the artifact: while the artifact is still
+`READY_FOR_REVIEW` afterwards, no review of that version was ever asked for, and some seat other than the owner could settle
+it. It is a caveat; the submission stands. A resubmission whose earlier version was asked for is re-asked by the mesh
+(`carriedReviewAsks`) and says nothing.
+
 **Who a `review.artifact` call goes to** is decided in this order, each step reading
 only what the seat actually wrote: the call-level `to`, then `request.reviewers` (the
 field the contract advertises), and only when neither names anyone, the seats that can
