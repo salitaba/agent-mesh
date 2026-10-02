@@ -5803,6 +5803,22 @@ export class Supervisor {
       const submitted = await this.transitionArtifact(actorId, artifact.id, { to: "READY_FOR_REVIEW", comment: `submitted with ${actorId}'s own ${domain} pass` });
       if (submitted.ok) artifact = this.state.artifacts.get(artifact.id) ?? artifact;
     }
+    // The same, when the pass names something else. The eleventh run's QA wrote its test report (a DRAFT), passed the merged
+    // PATCH five seconds later, told the developer and finished its turn: the pass is the verdict on the product and the report is
+    // the evidence an acceptance has to cite, and nothing put the report forward. It stayed a DRAFT for another 2 min 50 s, in
+    // which the pm was nudged with nothing to cite, asked QA for the report's id, was refused twice for citing a draft, asked QA
+    // to submit it and waited for QA's next turn: 3 min 13 s of a 10 min 29 s round. So a pass that names a patch (or nothing)
+    // submits the newest verification report of the matching kind that the seat has written for this mission and not submitted,
+    // and the reply says it did. Only the giver's own, only the newest (an older draft is an abandoned attempt), only a report
+    // that settles this domain (a security pass does not submit a test report), and after every refusal above.
+    let alsoSubmitted: Artifact | undefined;
+    if (kind === "pass" && !(artifact && VERIFICATION_ARTIFACT_TYPES.includes(artifact.type))) {
+      const report = this.ownDraftReport(actorId, domain, goalId);
+      if (report) {
+        const submitted = await this.transitionArtifact(actorId, report.id, { to: "READY_FOR_REVIEW", comment: `submitted with ${actorId}'s own ${domain} pass` });
+        if (submitted.ok) alsoSubmitted = this.state.artifacts.get(report.id) ?? report;
+      }
+    }
     const payload = {
       subject: artifactId ? `artifact:${artifactId}` : subject,
       fallbackSubject: subject,
@@ -6013,8 +6029,26 @@ export class Supervisor {
     }
     // A second signature "changes nothing" unless it is the one that closed the criterion.
     const crossNote = artifact && kind === "approve" ? this.crossDomainNote(actorId, domain, artifact) : undefined;
-    const told = [inertApproval, closedByThis ? undefined : repeatNote, selfNote, crossNote, passNote, criterionTold].filter(Boolean).join("; ") || undefined;
+    const submittedNote = alsoSubmitted
+      ? `your ${alsoSubmitted.type} "${alsoSubmitted.name}" was still a DRAFT, which no other seat can see or cite, so it was submitted for review with this pass: it is ${alsoSubmitted.status} now, and the acceptors can cite it`
+      : undefined;
+    const told = [inertApproval, closedByThis ? undefined : repeatNote, selfNote, crossNote, passNote, submittedNote, criterionTold].filter(Boolean).join("; ") || undefined;
     return { ok: true, eventId: evt.id, reason: told };
+  }
+
+  /**
+   * The verification report `actorId` wrote last for the mission and has not submitted: a DRAFT it owns, of a type that settles
+   * `domain` (a test report or a benchmark for `quality`, a security report for `security`). The newest only: an older draft is
+   * an attempt the seat abandoned, and putting it forward with the pass would hand the acceptors stale evidence.
+   */
+  private ownDraftReport(actorId: string, domain: string, goalId: string): Artifact | undefined {
+    let newest: Artifact | undefined;
+    for (const a of this.state.artifacts.values()) {
+      if (a.goalId !== goalId || a.owner !== actorId || a.status !== "DRAFT") continue;
+      if (!VERIFICATION_ARTIFACT_TYPES.includes(a.type) || subjectForArtifactType(a.type) !== domain) continue;
+      if (!newest || a.createdAt > newest.createdAt) newest = a;
+    }
+    return newest;
   }
 
   /**
