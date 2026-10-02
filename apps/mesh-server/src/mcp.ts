@@ -235,7 +235,16 @@ export class McpToolset {
       // Who can settle what the seat just read, so it knows whose review to ask
       // for — and whether its own verdict could count — before it asks.
       const read = result.ok ? this.supervisor.findArtifactByUri(op.artifactRef) : undefined;
-      if (read) out.canSettle = settlersOf(this.supervisor.state, read, HUMAN_AGENT_ID);
+      if (read) {
+        out.canSettle = settlersOf(this.supervisor.state, read, HUMAN_AGENT_ID);
+        // Where it stands, which the content never says. The eleventh run's pm read QA's report three times and then asked
+        // QA to submit it, forty seconds after QA had submitted and passed it: nothing a read returned told it the report
+        // was no longer a DRAFT, and its briefing had been assembled before the pass. A DRAFT is the one status that
+        // changes what a reader may do with an artifact (it cannot be cited), so a read says it.
+        out.status = read.status;
+        out.version = read.version;
+        out.owner = read.owner;
+      }
       // The op already slices at ARTIFACT_READ_MAX_CHARS (60k), which is a
       // flood ceiling and not a page: the measured artifact read that rode a
       // whole session was 43,701 characters. Bound the page here, where the
