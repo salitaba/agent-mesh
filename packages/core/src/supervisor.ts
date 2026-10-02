@@ -80,7 +80,7 @@ import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingT
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
-import { approvalPath, canEnterReview, citableEvidence, planCoversHardOp, verdictAdvances } from "./projections-helpers";
+import { approvalPath, canEnterReview, citableEvidence, planCoversHardOp, subjectForArtifactType, verdictAdvances } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
@@ -5935,8 +5935,17 @@ export class Supervisor {
     // took the artifact to APPROVED/FINAL (or a subject-level architecture
     // sign-off with no artifact, which the single-agent benchmark uses), and
     // carries `derived: true` so its reducer records no second approval.
+    //
+    // And it follows the ARTIFACT's domain, not only the capacity the signer named. A verdict signed as
+    // `architecture` on a RequirementsDoc is a verdict on that document (it moves it, as it should) and not an
+    // approval of the architecture: the tenth run's tech lead had two reviews asked of it at once, named the
+    // requirements document's id on an architecture approval, and `architecture-approved` closed with the
+    // RequirementsDoc as its evidence while the ArchitectureDocument sat UNDER_REVIEW for 2 min 49 s. The
+    // architect told the others it was approved, the developer was woken for it, and the closing report cited
+    // the wrong document. No artifact (the single-agent benchmark's subject-level sign-off) still counts.
     if (domain === "architecture" && kind === "approve") {
-      const landed = !artifact || (!!moved && moved.status !== statusBefore && (moved.status === "APPROVED" || moved.status === "FINAL"));
+      const ownDomain = !moved || subjectForArtifactType(moved.type) === "architecture";
+      const landed = ownDomain && (!artifact || (!!moved && moved.status !== statusBefore && (moved.status === "APPROVED" || moved.status === "FINAL")));
       if (landed) {
         await this.deps.kernel.emit(
           "architecture.approved",
@@ -5992,8 +6001,40 @@ export class Supervisor {
       criterionTold = this.criterionNote(passFor.criterion, landed, { giving: "gives the pass", naming: "give the pass on" });
     }
     // A second signature "changes nothing" unless it is the one that closed the criterion.
-    const told = [inertApproval, closedByThis ? undefined : repeatNote, selfNote, passNote, criterionTold].filter(Boolean).join("; ") || undefined;
+    const crossNote = artifact && kind === "approve" ? this.crossDomainNote(actorId, domain, artifact) : undefined;
+    const told = [inertApproval, closedByThis ? undefined : repeatNote, selfNote, crossNote, passNote, criterionTold].filter(Boolean).join("; ") || undefined;
     return { ok: true, eventId: evt.id, reason: told };
+  }
+
+  /**
+   * A verdict signed in one capacity on an artifact of another domain, while a review in the capacity it signed in is still
+   * owed: the shape of a slip, so the seat is told which review is still open.
+   *
+   * The signature itself stands. Signing `quality` on a CodePatch is the cross-domain sign-off the `<role>.approve` gates are
+   * built on, and a verdict on the artifact named is what was recorded. But the tenth run's tech lead was asked to review the
+   * ArchitectureDocument and the RequirementsDoc within seconds of each other, wrote "Architecture is sound and complete" and
+   * named the RequirementsDoc's id; it believed the architecture approved, never answered the ask that was still open, and
+   * the document sat UNDER_REVIEW while three seats built on its approval. Named only when the ask is still on the seat's
+   * desk (a request addressed to it, for an artifact of the domain it signed in, awaiting a verdict), so a signature that is
+   * deliberately cross-domain and has nothing waiting behind it says nothing.
+   */
+  private crossDomainNote(actorId: string, domain: string, artifact: Artifact): string | undefined {
+    const own = subjectForArtifactType(artifact.type);
+    if (own === domain) return undefined;
+    const owed = new Map<string, Artifact>();
+    for (const pr of this.state.pendingRequests.values()) {
+      if (!pr.type.startsWith("REQUEST") || !stillOwes(pr, actorId)) continue;
+      for (const uri of pr.artifactUris ?? []) {
+        const a = artifactForRef(this.state, undefined, uri);
+        if (!a || a.id === artifact.id || owed.has(a.id)) continue;
+        if (subjectForArtifactType(a.type) !== domain) continue;
+        if (a.status !== "READY_FOR_REVIEW" && a.status !== "UNDER_REVIEW") continue;
+        owed.set(a.id, a);
+      }
+    }
+    if (owed.size === 0) return undefined;
+    const list = [...owed.values()].slice(0, 3).map((a) => `${a.type} "${a.name}" (${a.id})`).join(", ");
+    return `you signed as ${domain}, but ${artifact.type} "${artifact.name}" is a ${own} artifact: this was recorded as a verdict on it and did not approve the ${domain}. Still waiting for your verdict: ${list}. Name its id if that is what you meant`;
   }
 
   private domainOfSubject(subject: string, artifactId?: string): string {
