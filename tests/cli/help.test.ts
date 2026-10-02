@@ -3,7 +3,7 @@
  *
  * It used to be "unknown command: --help": the usage printed, the message said it was an error and the exit code was 1.
  * CI's container job (`scripts/smoke.sh image`) reads that exit code, so it reported "the mesh command is not on the path"
- * on every push to main from the day CI was added, with the image building and thirteen of its fourteen checks passing.
+ * on every push to main from the day CI was added, with the image building and fifteen of its sixteen checks passing.
  * The command was on the path. Asking for help is not an error; a command that does not exist still is.
  */
 import { test } from "node:test";
