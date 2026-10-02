@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Agent Mesh. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 14) are described there, run by run.
+sections 1 to 15) are described there, run by run.
 
 ## Unreleased
 
@@ -67,6 +67,14 @@ sections 1 to 14) are described there, run by run.
   that needs an acceptance is open. Until now only the stall watchdog's note named them, after three idle minutes.
 - The closing report of `mesh run` is printed after the turns still running have settled, so its `SPEND` line matches the ledger
   and `mesh usage`. It was short by the final turn (2.2% to 2.6%) in every real run.
+- An approval signed as `architecture` on another kind of artifact (a RequirementsDoc, in the tenth Haiku run) no longer closes
+  `architecture-approved` or announces that the architecture is approved: the criterion and the derived event follow the artifact,
+  and the reply names the architecture review the seat still owes.
+- A mission that waits only on an acceptance, with a submitted verification report to cite and a seat that may accept it, is nudged
+  after a twelfth of the stall idle window (15 s by default, not 180 s). It cost 3 min 22 s of a 13-minute round in the ninth and
+  tenth runs.
+- The acceptor's briefing and the pm's role prompt now say that an acceptance has to be backed by a read in the same turn; the pm
+  had accepted without reading, been recorded `ASSERTED`, and needed a second wake.
 - A review request refused because the requesting seat is itself the only one that can settle the artifact says "you" and what to
   do (settle it with `mesh_approve`, and ask a seat to test it first with a `work.request`), instead of naming the seat back to
   itself and telling it to escalate; for an artifact no verdict can move (a draft, or one already past review) it says what state

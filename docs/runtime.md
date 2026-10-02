@@ -140,7 +140,14 @@ begins `stall watchdog: mission active but quiet — …`. Its gates, in the ord
   produced work, whose ripple may still be landing; a turn that changed nothing (zero ops,
   every op refused, or only wait/done/remember) arms a retry after `stall_noop_retry_ms`
   (45 s) that bypasses both. A mesh that wants a tighter loop after productive nudges sets
-  the cooldown at or below the idle window.
+  the cooldown at or below the idle window. A mission whose only open criteria close by an
+  acceptance, with a seat that may accept and a submitted verification report to cite, is quiet
+  after **a twelfth** of `stall_idle_ms` instead (15 s of the default 180 s), because nothing but
+  that seat's turn is missing: the acceptor is nudged 15 to 45 s after the last turn rather than
+  180 to 210 s (the ninth and tenth cronlite runs each sat 3 min 22 s to 3 min 23 s with the proof
+  in hand, a quarter of a 13-minute round). Anything else keeps the full window: nothing submitted
+  to cite, a criterion the mesh evidences itself still open, only some other document, no seat
+  that may accept.
 - **worth waking anyone**, decided from state and never by a model: a patch stalled on the
   merge ladder, an unmet mandatory criterion, a rejected patch left open (below), unread mail, an
   open escalation or a claimed task. A mission with none of them rests, and closes itself.
@@ -213,7 +220,11 @@ pass had settled the report nobody else's briefing carried it. In the ninth cron
 turns and four minutes asking for a report that sat submitted in the store (each ask declined: "test reports are QA's"), and
 round two idled for three minutes with three criteria open that only the pm could close. A criterion the mesh evidences itself
 (`AUTO_EVIDENCED_CRITERIA`) needs no acceptance and offers nothing; what the operator rejected at a reopen is not offered
-again.
+again. Under the list the briefing says, once, that what a seat cites has to be read in the same turn
+(`mesh_artifact_read`): an acceptance from a turn that read or ran nothing is recorded `ASSERTED` and does not count. The pm
+in the ninth and tenth runs accepted without reading, was told only afterwards (the reply of the call), ended its turn, and
+needed a second wake to read the report and accept again (84 s and two turns in the tenth run's second round); the pm's role
+prompt says the same.
 
 The fourth cronlite run's second round sat on one such criterion for 21 minutes, 12 turns and 188k
 tokens: the nudges went to the architect (twice), which asked the developer for a status and set

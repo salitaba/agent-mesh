@@ -278,6 +278,18 @@ could have verified (no QA seat in the mesh) the only report there can be stands
 `approverMayAdvance` makes for the same reason, and the operator's acceptance is its own judgment and
 is not held to the rule.
 
+An approval follows the **artifact**, not only the capacity it was signed in. `architecture-approved` closes, and
+`architecture.approved` is derived (it wakes the seats that wait for the design), when an approval takes an artifact of the
+architecture domain to APPROVED or FINAL, or when a subject-level sign-off names no artifact (the single-agent benchmark).
+A verdict signed as `architecture` on a RequirementsDoc is a verdict on that document: it moves it, as any verdict does,
+and approves nothing else. The tenth cronlite run's tech lead, asked to review the ArchitectureDocument and the
+RequirementsDoc within seconds of each other, signed "Architecture is sound and complete" on the RequirementsDoc's id; the
+criterion closed with that document as its evidence, the architect and pm told the others it was approved and the developer
+was woken for it, while the ArchitectureDocument sat UNDER_REVIEW for 2 min 49 s. The reply to a verdict signed in one
+capacity on an artifact of another domain now names the review in the signed capacity that the seat still owes (a request
+addressed to it, awaiting a verdict), with its id, and says to name that id if it is what was meant; a deliberately
+cross-domain signature with nothing owed behind it says nothing.
+
 The seat that accepts is shown what it may cite. While a mandatory criterion that needs an acceptance is open,
 the briefing of a seat holding the gate lists the submitted artifacts an acceptance would take (the list the stall
 watchdog offers, `citableEvidence`) with `relevantArtifacts[].citable: true`, even though a work-scoped report is
