@@ -5636,7 +5636,7 @@ export class Supervisor {
           return { ok: false, reason };
         }
         if (!artifact) {
-          const reason = `unknown artifact ${artifactId} cited as evidence for mandatory criterion '${criterionId}'`;
+          const reason = `unknown artifact ${artifactId} cited as evidence for mandatory criterion '${criterionId}'${this.citableRoute(goalId, criterion)}`;
           await this.denied(actorId, subject, "accept criterion", { decision: "DENY", reason, ruleId: "mandatory-evidence-artifact-required" });
           return { ok: false, reason };
         }
@@ -5733,7 +5733,11 @@ export class Supervisor {
     // ok:true, and the phantom approval is still in the log. A subject-level
     // verdict (no artifactId at all) is unaffected.
     if (artifactId && !artifact) {
-      const reason = `unknown artifact '${artifactId}' — nothing was recorded. Name the artifact by the id or artifact:// URI its publish returned (mesh_inbox and mesh_query_events show both).`;
+      // The tenth and eleventh runs' reviewers each ruled on an id typed from memory and were told nothing about where the
+      // artifact they owed a verdict on was; the ask is on the seat's desk, so the refusal names it.
+      const owed = this.reviewsOwedBy(actorId);
+      const route = owed.length > 0 ? ` Still waiting for your verdict: ${this.nameArtifacts(owed)}.` : "";
+      const reason = `unknown artifact '${artifactId}' — nothing was recorded. Name the artifact by the id or artifact:// URI its publish returned (mesh_inbox and mesh_query_events show both).${route}`;
       await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason, ruleId: "verdict.unknown-artifact" });
       return { ok: false, reason };
     }
@@ -6066,20 +6070,49 @@ export class Supervisor {
   private crossDomainNote(actorId: string, domain: string, artifact: Artifact): string | undefined {
     const own = subjectForArtifactType(artifact.type);
     if (own === domain) return undefined;
+    const owed = this.reviewsOwedBy(actorId, { domain, except: artifact.id });
+    if (owed.length === 0) return undefined;
+    return `you signed as ${domain}, but ${artifact.type} "${artifact.name}" is a ${own} artifact: this was recorded as a verdict on it and did not approve the ${domain}. Still waiting for your verdict: ${this.nameArtifacts(owed)}. Name its id if that is what you meant`;
+  }
+
+  /**
+   * The artifacts `actorId` still owes a verdict on: a request addressed to it, for an artifact that is awaiting review, not yet
+   * answered. `domain` keeps only those a verdict in that capacity would settle; `except` leaves out the one just ruled on.
+   * What the cross-domain note and the refusal of an unknown artifact both name, so the seat is pointed at the same list.
+   */
+  private reviewsOwedBy(actorId: string, opts: { domain?: string; except?: string } = {}): Artifact[] {
     const owed = new Map<string, Artifact>();
     for (const pr of this.state.pendingRequests.values()) {
       if (!pr.type.startsWith("REQUEST") || !stillOwes(pr, actorId)) continue;
       for (const uri of pr.artifactUris ?? []) {
         const a = artifactForRef(this.state, undefined, uri);
-        if (!a || a.id === artifact.id || owed.has(a.id)) continue;
-        if (subjectForArtifactType(a.type) !== domain) continue;
+        if (!a || a.id === opts.except || owed.has(a.id)) continue;
+        if (opts.domain !== undefined && subjectForArtifactType(a.type) !== opts.domain) continue;
         if (a.status !== "READY_FOR_REVIEW" && a.status !== "UNDER_REVIEW") continue;
         owed.set(a.id, a);
       }
     }
-    if (owed.size === 0) return undefined;
-    const list = [...owed.values()].slice(0, 3).map((a) => `${a.type} "${a.name}" (${a.id})`).join(", ");
-    return `you signed as ${domain}, but ${artifact.type} "${artifact.name}" is a ${own} artifact: this was recorded as a verdict on it and did not approve the ${domain}. Still waiting for your verdict: ${list}. Name its id if that is what you meant`;
+    return [...owed.values()];
+  }
+
+  /** `TestReport "QA Report" (art-…), CodePatch "Implementation" (art-…)`: three at most, so a refusal stays a sentence. */
+  private nameArtifacts(list: readonly Artifact[]): string {
+    return list.slice(0, 3).map((a) => `${a.type} "${a.name}" (${a.id})`).join(", ");
+  }
+
+  /**
+   * What an acceptance of `criterion` could cite, for the refusal of one that named an artifact the mesh does not hold.
+   *
+   * The eleventh run's pm asked QA for a report by an id it had typed from memory (`art-M3YBS5TT…`, the report was
+   * `art-M3YBNR4X…`), then cited the same id in three acceptances and was told each time only that the artifact was unknown:
+   * 17 s and three refusals to find the one it had been reading. The briefing already lists what can be cited (submitted, not
+   * what the operator rejected, written by a seat that can verify), so the refusal names the same list, or says why it is empty.
+   */
+  private citableRoute(goalId: string, criterion: AcceptanceCriterion): string {
+    const citable = citableEvidence(this.state, goalId, [criterion]);
+    return citable.length > 0
+      ? `. Cite one of these (submitted, and not what the operator rejected): ${this.nameArtifacts(citable)}`
+      : `. Nothing submitted can evidence it yet (a draft cannot): ask the seat that wrote the report to submit it, then cite it`;
   }
 
   private domainOfSubject(subject: string, artifactId?: string): string {
