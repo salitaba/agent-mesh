@@ -42,7 +42,7 @@
     "ajv-formats": "^3.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "undici": "^7.29.1",
+    "undici": "^8.11.2",
     "yaml": "^2.6.1"
   },
   "devDependencies": {
