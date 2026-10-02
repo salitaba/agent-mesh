@@ -420,6 +420,25 @@ export function resolveLaunchMode(command: string, flags: Record<string, string 
   return { mode: defaultMode, warnings };
 }
 
+/**
+ * The end of a run that reached a verdict: let the turns still running settle, then say what the run produced.
+ *
+ * The report used to be composed the moment the goal's status changed, and the turn that changed it (the pm's last
+ * acceptance, as a rule) was still running: its spend was booked a few seconds later, so the closing figure was short by
+ * that turn in every run (run 8: 22k tokens of 861k and one turn of 49; run 9: 14k of 548k and 19k of 836k), a figure a
+ * customer reads against `mesh usage` and the invoice. `settle` is the shutdown, which joins the completion and so drains
+ * those turns (bounded), and what is read after it is the whole run. The report is printed whether or not the shutdown
+ * went cleanly. An interrupted run (Ctrl-C) still reports first: whoever pressed it is waiting.
+ */
+export async function reportWhenSettled(settle: () => Promise<void>, report: () => void, say: (line: string) => void, verdict: string): Promise<void> {
+  say(`\ngoal ${verdict} — letting the turns still running finish, then the report`);
+  try {
+    await settle();
+  } finally {
+    report();
+  }
+}
+
 async function launchMesh(opts: {
   configPath: string;
   mode: LaunchMode;
@@ -470,6 +489,9 @@ async function launchMesh(opts: {
     }
   }
   const parked = opts.mode === "parked";
+  // The shutdown is reached from two places (the verdict, then the end of the run) and must happen once.
+  let closing: Promise<void> | undefined;
+  const closeOnce = (): Promise<void> => (closing ??= handle.close());
   console.log(
     parked
       ? `mesh panel (parked) online at ${handle.url}  — dashboard /designer available; agents are NOT activated`
@@ -514,13 +536,15 @@ async function launchMesh(opts: {
             const { body } = await httpJson("GET", `${handle.url}/status`);
             if (body?.goal && ["COMPLETED", "FAILED", "ESCALATED"].includes(body.goal.status)) {
               clearInterval(goalWatch);
-              // The run is over: say what it produced. Projections are read
-              // in-process from the kernel rather than over HTTP, so the
-              // report is composed from the same state the supervisor just
-              // finished writing — no extra round trip, no chance of racing
-              // the server into shutdown.
-              report(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`);
-              stop();
+              // The run is over: say what it produced, once the turns still running have settled.
+              // Projections are read in-process from the kernel rather than over HTTP, so the report
+              // is composed from the same state the supervisor wrote — no extra round trip. `stop`
+              // runs whatever happens to the shutdown, or a failed drain would leave the run hanging.
+              try {
+                await reportWhenSettled(closeOnce, () => report(`\ngoal ${body.goal.status.toLowerCase()} — shutting down`), console.log, String(body.goal.status).toLowerCase());
+              } finally {
+                stop();
+              }
             }
           } catch {
             /* server may be closing */
@@ -528,7 +552,7 @@ async function launchMesh(opts: {
         }, 2000);
       }
     });
-    await handle.close();
+    await closeOnce();
   }
   return 0;
 }
