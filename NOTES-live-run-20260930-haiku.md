@@ -833,3 +833,111 @@ was rewritten.
   told it changes nothing, and told to move a FINAL report to a state it cannot reach.
 - **Read the last criterion's history, not just the verdict.** The mission's record says `quality-verified` was evidenced by QA's
   pass; only the commit in the pass's own comment says what it was evidence of.
+
+
+## 14. The ninth run, on the L1 build: four more findings (L2–L5) and a racy test
+
+The fifth cycle of the standing loop (every four hours): the routine fired at 04:44 UTC on 2026-10-02. The same mission, SPEC, mesh
+config, model and clean launch environment, on the branch at `c29127b` (every fix of §0–§13, L1 included). Session 04:46–05:15 UTC:
+50 turns, 836k billed tokens (about $3.67 at list price), every turn on `claude-haiku-4-5`, 912 events. One run, so the rates are
+illustrative. The host ran on loopback with no token, so the listen policy and the sign-in were not exercised (as in §13).
+
+| When | What | Result |
+|---|---|---|
+| 04:46 | `mesh run` | five seats start |
+| 05:00 | goal met, 6/6 | 13 min 26 s, 34 turns, 548k billed (run 8's round 1: 15 min 26 s, 26 turns, 474k) |
+| 05:05 | operator reopen quoting the oracle's four defects and naming four criteria | `implementation-merged`, `quality-verified`, `library-contract-met`, `cli-contract-met` back to UNSATISFIED |
+| 05:06 | `kill -9` of the host with the developer, QA and tech lead mid-turn | five seat processes orphaned (parent 1); none was left when the host came back 20 s later |
+| 05:06 | restart | the three open turns closed as interrupted, none of their spend counted, 0 `agent.failed` |
+| 05:15 | goal met again | 10 min 14 s after the reopen, 8 min 54 s after the restart; round 2: 16 turns, 288k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2859/3010 raw (95.0%) and
+2896/2992 stratified (96.8%), the same totals as run 8's first round, from the same three defects of semantics (names inside ranges,
+steps and lists rejected as extensions; a day-of-week that covers the whole week treated as `*`; possible schedules rejected as
+impossible) and a fourth of the same weight (a range with a second dash, `1-2-3`, accepted; run 8's was a negative step escaping as
+`RangeError`). The final product scored **3049/3049 raw (100%) and 3034/3034 stratified (100%)**, its own suite 48/48 (31/31 in round
+1), the CLI probes 23/23 (9/9 soft). That is 100% of a mission that was told its defects, on one run: a measurement, not a rate.
+28 of 50 turns (56%, 36% of billed tokens) changed no durable state (run 8: 51% and 31%).
+
+**Earlier fixes, checked live** (each was pinned by tests only until now):
+
+| Fix | Live |
+|---|---|
+| L1 | 13 criterion records; 2 landed `ASSERTED` (the pm's acceptances at 04:59:10 and 04:59:12, from a turn that ran no verification tool) and both carried the note; none was silent. Both of QA's passes were on a draft report, so neither named an artifact (L2) |
+| G1 | QA gave its pass through `mesh_approve` twice (04:55:11, 18 tool calls; 05:11:06, 4), both `EVIDENCED` |
+| B21 | the three open turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded" |
+| B22 | the selective reopen of four criteria completed |
+| M1 | four session rotations (`session.rotated`), none failed |
+| S6 | `mesh usage mesh.yaml --by agent` equals the analysis tool's per-seat figures to the token (50 turns, 835.8k billed) |
+| S1–S5 | 241 `mesh_*` calls from five seats through their signed bridges; 36 were refused or failed, none for authentication: the mesh's own refusals, and one `mesh_done` made after the host had stopped ("mesh bus unreachable") |
+| B23, J1, J3, H1, H2 | **not exercised**: the five orphans of the kill had exited by themselves within 20 s, so the reaper had nothing to do; no seat wrote into the product checkout, no unclaimable task, no patch rejected |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| L2 | **A seat that passed the report it had just written left it a draft, and nobody else could see or cite it.** QA tested the merged product, published its test report and gave `mesh_approve kind:"pass"` on it in one turn (04:55:11). The report was a DRAFT, so the pass could not settle it, and the reply said "move it to review first if you meant to approve the work", which QA, whose business was the product, did not do. A DRAFT is shown to nobody but its owner (a test report is work-scoped) and an acceptance refuses it as evidence. Round 2 did it again (05:11:06: the mission sat idle for 3 min 23 s with three criteria open). From QA's pass to the goal took 5 min 4 s in round 1 and 4 min 22 s in round 2, 9 of the run's 29 minutes, most of it waiting on a report nobody could see or cite. Five of the nine passes in runs 6 to 9 were given on a draft, every one on the report QA itself had just written | **fixed** — a `pass` on a DRAFT `TestReport`, `SecurityReport` or `BenchmarkResult` that the giver owns moves it to review first, as the owner's own transition under the same gates and only after every refusal a pass can meet; the pass then settles it and names it. A pass on somebody else's draft submits nothing, and neither does one on a draft of any other type | `tests/core/own-report-pass.test.ts` (7), `tests/core/pass-evidence.test.ts` |
+| L3 | **The seat that can accept a criterion was never shown the report it would cite.** A work-scoped artifact is in a briefing for its owner, for whoever is mailed it and while it awaits a verdict. So from the moment QA's pass settled the report it was in nobody's briefing but QA's: none of the pm's three turns nor the architect's three before 04:59:03 mentions it. Those six turns (76k tokens, 14% of the round) went on asking each other for a test report: the architect asked the pm twice ("test reports are QA's", twice), the pm then asked QA for one QA had published three minutes before. Runs 7 and 8 did the same (92 s and 284 s after the report was published) | **fixed** — the briefing of a seat that may accept criteria lists the artifacts an acceptance could cite while a mandatory criterion that needs an acceptance is open (three at most) and says on the line that it may. It is the list the stall watchdog already offered, now one helper (`citableEvidence`) so the two cannot differ: no draft, nothing the operator rejected at the reopen, no report written by a seat that cannot verify | `tests/core/acceptor-evidence.test.ts` (7) |
+| L4 | **The closing report understated the run's spend by its last turn.** `mesh run` composed its report the moment the goal changed, while the turn that changed it (the pm's last acceptance) was still running and its spend not yet booked: run 8's report said 839k tokens and 48 turns where the ledger had 861.3k and 49; run 9's said 534k and 33 after round 1 against 548.0k and 34, and 817k and 49 at the end against 835.8k and 50 (2.2% to 2.6% short, every time). The ledger and `mesh usage` agree with each other to the token; the report is the figure a customer reads first | **fixed** — the report is composed after the shutdown, which joins the completion and so drains the turns still running (bounded), with one line printed at once saying what the wait is for; it is printed whether or not the shutdown went cleanly, and an interrupted run still reports first | `tests/cli/run-end.test.ts` (3) |
+| L5 | **A review request refused because the requester is the only seat that can settle the artifact named the requester.** The tech lead asked QA to "review" the developer's patch in runs 7, 8 and 9. Only the tech lead can settle a patch, so the ask was refused with "tech-lead can" or, in run 9 (04:53:15), "no seat you may contact can deliver a verdict on this CodePatch — tech-lead can, but you may not contact them. Name a reviewer with `reviewers` if one is reachable, or escalate." What it wanted was the patch tested, a work request; it found that by itself 14 s later, so this is a wording fix and its cost here was small. The patch was also already MERGEABLE, which any advice to "settle" it would have had to survive | **fixed** — the seat is named as "you" and told what to do: "settle it yourself with `mesh_approve` (or `mesh_reject`), and ask a seat to test it first with a `work.request` if you need that", and no longer told to name a reviewer or escalate. The advice is given only where a verdict can still move the artifact (`verdictAdvances`); for a draft or an artifact already past review (the run's MERGEABLE patch) the seat is told what state it is in and that testing is a work request. A seat that cannot settle gets the old text, unchanged | `tests/policy/review-routing.test.ts` (5 new) |
+| T1 | **A test of the project's own log failed now and then in the full suite.** `git mission e2e` compared the file with the store by reading the file and then, a moment later, the store, while dev's last turn (woken by the lead's final INFORM) was appending six events in a burst: `178 !== 184`. It failed in this cycle's full run, and an alternating run of this build and the one before it failed the older one too (with another test loop beside it), so it is a race the suite met, not one of this cycle's commits | **fixed** — the store is read first, then flushed, then the file read; the file must hold everything the store held at that moment, nothing the store lacks, and the same ids in the same order (a flush drains the queue as of the call, and the store's cache is updated before the file is written). 40 runs in a row pass | `tests/integration/git-mission-e2e.test.ts` |
+
+What each does and why is in `docs/runtime.md` (the briefing paragraph of *The stall watchdog*, *A pass submits the verification report
+its giver wrote*, the `mesh run` bullet) and `docs/protocol.md` (*Evidence for a criterion*, *Who a `review.artifact` call goes to*); the
+commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **The pm's `mesh_approve kind:"pass"` on a criterion subject was refused** (once, 40 s until the acceptance it meant): "agent pm …
+  lacks authority 'requirements.pass' — no agent seat holds it". A criterion is accepted with `approve`, and the refusal does not say
+  so. The same family as L5 (a refusal true and no help); one occurrence in nine runs, so it is recorded here and not changed.
+- **Phantom artifact ids** (the J2 pattern: an id the seat typed from memory that is not in the store): five across runs 7 to 9,
+  recovered in 4 to 10 s. The refusal says "unknown artifact" and how to name one.
+- **Tool markup leaked into an `artifactId`** (the pm's acceptance at 05:15:20 and 05:15:22: the id read `art-…</artifactId>
+  <parameter name="comment">…`): first in seven runs, two refusals, recovered in 3 s. A model slip; not changed.
+- **`execution.run` is refused when no seat holds `shell.execute`** (as in §13): the contract is advertised with no provider.
+- **QA's task was completed before its work was done in both rounds**, and the developer moves its own patch through VERIFIED and
+  MERGEABLE. Both are prose in a role prompt, not something the mesh enforces.
+- **QA's round-1 pass covered a product the oracle then scored 95%.** The report was 31 of 31 on the seats' own tests; four defects of
+  the SPEC's corners were in the product, as they were in run 8's. The mesh's verification is weaker than the oracle's, which is the
+  reason the loop has one.
+- **56% of turns changed no durable state (36% of billed tokens)**; 7 of the 28 were woken by an INFORM. Reducing it is a tuning of who
+  is woken, which one run cannot support.
+- **One run.** B23, J1, J3, H1 and H2 are still to be confirmed live, and a clean launch on a network address (S1, S3) has not been
+  run with real seats.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `c29127b`, before this round | 3365 | 3363 | 0 | 0 | 2 |
+| this round, first full run (before L5's status check and T1) | 3386 | 3383 | 1 (T1) | 0 | 2 |
+| this round, final (the test run: 3 min 26 s) | 3387 | 3385 | 0 | 0 | 2 |
+
+The run between those two failed one test of its own making: `every compiled file in dist still has a source`, because an instrumented
+copy of the e2e test used to find T1's six events had been left in `dist/`. It was removed and the suite rerun green; the check did
+what it is for.
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (185 warnings, one rule, the baseline). Mutation checks on the new
+tests, each reverted: L2 (the pass submits nothing: 3 tests fail; another seat's draft submitted: 1, which survived until the test
+asserted that no refusal is left on the record, since the transition gate refuses a non-owner anyway; any kind of draft submitted: 1;
+submitted even when the pass is refused: 1), L3 (shown to any seat: 1; offered with nothing left to accept: 2; only what the ranking
+chose: 2; the line does not say it: 1; a criterion the mesh evidences itself counted as needing an acceptance: 1, which survived
+until the test kept `quality-verified` open while the report was visible), L4 (report before the shutdown: 2; a failed shutdown loses
+the report: 1; the wait is silent: 3), L5 (the "you" substitution dropped: 3; the clause dropped on the named path: 3; the router's
+early return dropped: 2; taken for every requester: 2; the clause appended for every requester: 1, which survived until the test
+pinned the whole old sentence and not its start; the advice given whatever the artifact's state: 1; never given: 3), T1 (the file
+never receives the budget lines: fails; the file receives an event twice: fails).
+
+### Worth keeping from this round
+
+- **Ask what a seat can see, not what exists.** The report was published, passed and in the store; it was in nobody's briefing but its
+  author's. Six turns of messages asking for it were the symptom, and "tell QA to submit sooner" would have been a sentence in a prompt.
+  The fix was visibility (L3) and removing the step the mesh could take itself (L2).
+- **A figure read against an invoice must be composed after the last charge.** The ledger was right all along; the report was early.
+- **A refusal that names the asker teaches nothing.** "tech-lead can", said to the tech lead, is true and no help.
+- **Advice has a precondition too.** The first version of L5 told a seat to settle a patch that was already MERGEABLE, and its own tests
+  passed because they used a draft: a fixture in the wrong state for the advice it pinned. The refusal in the log said what state the
+  artifact was in; the fixtures did not. The change was caught by reading the real refusal's neighbouring events, not by a run.
+- **A test that reads the same log twice is a test of the clock.** The file and the store were compared a moment apart while the mesh
+  kept writing. Read one, flush, read the other, and the order is the proof.
+- **Count from the logs before writing the number in a commit.** The drafts were counted three times, 4 of 8 and 3 of 7 from memory of
+  what had been looked at and 5 of 9 from the turn records; only the last is in the commit.
