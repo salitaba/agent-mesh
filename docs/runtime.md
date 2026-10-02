@@ -177,7 +177,14 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
    blocker's own later pass releases nothing. A block on a *subject* with no artifact (QA's
    `quality`) sinks that seat's earlier sign-off in every gate that names it until the same
    seat signs off again, so only the blocker can lift it. One hold per seat, subject and
-   artifact: blocking again restates it. A seat whose previous nudge bought nothing is skipped
+   artifact: blocking again restates it. A pass that names a report is that sign-off: a verdict
+   naming an artifact is filed under `artifact:<id>`, and the record keeps the subject it was
+   given as `domainSubject`, so QA's pass on `quality` with its test report attached lifts QA's
+   own block on `quality`, as the gates already read it. (In the twelfth run it did not: QA
+   passed with its report at 17:00:25, the block still read as standing, and this step, which
+   comes before the acceptors, woke QA, who had passed and cannot accept, instead of the pm. The
+   pm accepted 3 min 11 s later, when the unread-mail timer reached it; in the second round
+   5 min 13 s later.) A seat whose previous nudge bought nothing is skipped
    here when another seat can be tried;
 4. **when every unmet mandatory criterion is one the mesh does not evidence from its own
    events, a seat that may accept it.** A criterion outside `AUTO_EVIDENCED_CRITERIA` (and any

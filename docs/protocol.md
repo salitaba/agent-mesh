@@ -609,6 +609,17 @@ reversed, and because `MERGED` on a `CodePatch` also mirrors `patch.merged` and
 `implementation.completed`, a failed merge announced finished work that no
 commit contained.
 
+A `merge` asked of a patch that is not `MERGEABLE` is refused with where the patch stands and whose move is
+next, after the sentence it always began with (`artifact is APPROVED, must be MERGEABLE`). An `APPROVED` patch has two
+rungs left, `VERIFIED` and `MERGEABLE`, and nothing climbs them by itself; the refusal names them, says "You can" when
+the asking seat's own `mesh_artifact_transition` would be allowed (it holds `implementation.approve`, or a test or
+security capability for the first rung), and otherwise names the owner or a seat that may verify. A `VERIFIED` patch has
+one rung left; a `DRAFT` says its owner submits it, a patch in review says a reviewer rules first, a `REJECTED` one says
+its owner reworks it with `asVersionOf`, and a `MERGED` one says so. The twelfth cronlite run's tech-lead met the bare
+sentence three times (16:54:03, 16:55:43 and 16:59:05), each in the turn in which it had approved the patch, and the sixth
+and seventh runs met it too. In that run's second round the same seat approved a patch, moved it to `VERIFIED` and
+`MERGEABLE` and merged it in under six seconds, so the move was open to it all along.
+
 The two mirror events are attributed to the seat that **ran the merge**, filed under
 that seat's turn and caused by the MERGED transition, not to the patch's owner. They
 used to carry the owner: in the second cronlite run the tech-lead merged every patch,

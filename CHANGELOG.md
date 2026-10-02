@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Agent Mesh. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 16) are described there, run by run.
+sections 1 to 17) are described there, run by run.
 
 ## Unreleased
 
@@ -69,6 +69,16 @@ sections 1 to 16) are described there, run by run.
 
 ### Fixed
 
+- A pass that names a report now lifts the blocker's own block on that subject. A verdict naming an artifact is filed under
+  `artifact:<id>`, so a QA seat that had blocked `quality` and then passed it with its test report attached still had its block
+  read as standing: the stall watchdog woke QA, who had passed and cannot accept, instead of the pm who could, in both rounds
+  of the twelfth Haiku run (the pm accepted 3 min 11 s and 5 min 13 s after the wasted nudge, when its unread-mail timer
+  fired). The approval record keeps the subject it was given, and the watchdog reads the pass as the sign-off the gates
+  already counted it as.
+- A merge refused because the patch is not `MERGEABLE` says where the patch stands and whose move is next. An approved patch
+  has two rungs left (`VERIFIED`, `MERGEABLE`) and nothing climbs them by itself; the refusal named neither, and the twelfth
+  run's tech-lead met it three times. It now says "You can" when the asking seat may climb them, and names the owner (or a
+  seat that may verify) when it may not; a draft, a patch in review, a rejected one and a merged one each say what they wait for.
 - `mesh --help` and `mesh -h` print the usage and exit 0. They answered "unknown command: --help" and exited 1, so a script that
   checked the command ran (the image's smoke test does) saw a failure; a command that does not exist still exits 1.
 - A seat that passes the verification report it wrote now submits it with the pass. The report used to stay a draft, which is
