@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Agent Mesh. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 12) are described there, run by run.
+sections 1 to 13) are described there, run by run.
 
 ## Unreleased
 
@@ -59,6 +59,10 @@ sections 1 to 12) are described there, run by run.
 
 ### Fixed
 
+- A verdict that did not close its criterion now says so. A `pass` from a turn that checked nothing was recorded `ASSERTED` and
+  answered `ok`, and an acceptance of the artifact the operator had rejected at a reopen was refused the same way; both now carry a
+  note saying what happened and what to do. A pass names the artifact it was about (when that is submitted work), so a reopen can
+  refuse the same artifact twice, and a seat is no longer told to "move it to review first" when the artifact has no such move.
 - A replacement pod now takes over its predecessor's state lock at once (`MESH_INSTANCE_ID` is stable across restarts of one
   deployment); a different instance waits `MESH_LOCK_STALE_MS`. A host that loses the lock exits with status 70 instead of
   carrying on with two writers.

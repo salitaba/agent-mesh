@@ -742,3 +742,94 @@ docs and this section.
   what the seat already held, so the candidate list stayed unbuilt.
 - **An unconfined shell is a shared machine.** A `package.json` is the one file a developer seat writes for a living, and
   `/tmp` is the one directory where it changes what other programs are.
+
+## 13. The eighth run, on the sell-readiness build: one more finding (L1)
+
+The fourth cycle of the standing loop (every four hours, *"in every loop you should push to main"*): the routine fired at 00:43
+UTC on 2026-10-02. The same mission, SPEC, mesh config, model and clean launch environment, on the branch at `c8beb64` (every fix
+of §0–§12, and the sell-readiness work on top of them: the fail-closed network defaults, seat environments without the operator's
+secrets, the licence and usage layer, `mesh doctor`). Session 00:48–01:21 UTC: 49 turns, 861k billed tokens (about $3.76 at list
+price), every turn on `claude-haiku-4-5`, 863 events. One run, so the rates are illustrative. The host ran on loopback with no
+token, which is the default, so the listen policy and the sign-in were not exercised: only that the default still works and that
+every seat reached the mesh through its bridge.
+
+| When | What | Result |
+|---|---|---|
+| 00:48 | `mesh run` | five seats start |
+| 01:03 | goal met, 6/6 | 15 min 26 s, 26 turns, 474k billed (run 7's round 1: 9 min 53 s, 20 turns, 416k) |
+| 01:07 | operator reopen quoting the oracle's four defects and naming four criteria | `implementation-merged`, `quality-verified`, `library-contract-met`, `cli-contract-met` back to UNSATISFIED |
+| 01:08 | `kill -9` of the host as the developer and QA were being woken | no seat or bridge process existed yet, so none was left behind |
+| 01:09 | restart, 26 s later | both open turns closed as interrupted, the seats resumed on their sessions, no wait for the dead host's lock |
+| 01:20 | goal met again | 13 min 13 s after the reopen, 11 min 47 s after the restart; round 2: 23 turns, 388k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2859/3010 raw (95.0%) and
+2896/2992 stratified (96.8%), and its failures fell into the four defects the reopen quoted (names inside ranges, steps and lists rejected as
+extensions; a day-of-week that covers the whole week treated as `*`; possible schedules rejected as impossible; a negative step
+escaping as `RangeError` after seconds). The final product scored **3049/3049 raw (100%) and 3034/3034 stratified (100%)**, its own suite
+61/61, the CLI probes 23/23 (9/9 soft). That is 100% of a mission that was told its defects, on one run: a measurement, not a rate.
+25 of 49 turns (51%, 31% of billed tokens) changed no durable state (run 7: 66% and 48%).
+
+**Earlier fixes, checked live** (each was pinned by tests only until now):
+
+| Fix | Live |
+|---|---|
+| G1 | QA gave its pass through `mesh_approve` three times: 00:56:01 (EVIDENCED, 12 tool calls), 01:15:19 (**ASSERTED**, 0 tool calls), 01:20:57 (EVIDENCED, 2). The second is L1 |
+| M1 | four session rotations: pm and QA (128k tokens each) through a handover turn, each `mesh_write_continuity` recorded `completed` beside its `continuity.recorded`; the developer (92k) and tech lead (83k) on a cold prompt cache, rotated directly, as designed (`handover: false`) |
+| B21 | both interrupted turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded"; 0 `agent.failed` |
+| B22 | the selective reopen of four criteria completed |
+| S1–S5 | 238 `mesh_*` calls from five seats through their signed bridges; 33 were refused or failed, none for authentication: the mesh's own refusals (contract shape, DRAFT evidence, an already completed task) and three `mesh_done` calls made after the host had stopped ("mesh bus unreachable") |
+| B23, J1, J3, H1, H2 | **not exercised**: no process to reap at the kill (the seats were being woken, nothing had been spawned), no seat wrote into the product checkout, no unclaimable task, no patch rejected |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| L1 | **A pass that closed nothing answered `ok`, and the repair for it was refused advice.** QA tested the fix, published its defect report and gave `mesh_approve kind:"pass"` on it (01:15:19) from a turn that had run its tests in the one before. The turn invoked no verification tool, so the verdict landed `ASSERTED`, which counts for nothing, and the reply said nothing of it (an acceptance was told of `ASSERTED`; a pass was not, and neither was told when its artifact was the one the operator had rejected). QA reported the verdict recorded. The tech lead, seeing `quality-verified` still open (it was the last criterion; the other six closed by 01:17:29), asked QA to move the report back to review (it was FINAL: `illegal artifact transition document:FINAL -> READY_FOR_REVIEW`) and then to pass the **round-one** report, and QA did, at the round-one commit: 45 tests at `a775df9`, not the 61 at `3e9617a`. The mission completed at 01:20:57 on that verdict, 5 min 38 s after the first pass, 3 min 28 s of it with nothing else open. Three more things sit in the same call: a pass named no artifact, so the reopen gate (which compares artifact URIs) could not see it and a seat could pass the very patch the operator rejected; a pass of a settled report again, which is the repair, was answered "a second signature … changes nothing"; and "move it to review first" was said of artifacts that have no such move (a FINAL report, an approved patch, a ReleasePlan) | **fixed** — a pass or an acceptance that lands `ASSERTED`, or is refused as the rejected artifact, says so on the call, in the words of the act ("in the turn that gives the pass", "give the pass on that"; "accepts it", "cite that"); a pass names the artifact it was about when that is submitted work (not a draft or a rejected one: the workflow gate refuses those as evidence, and a draft report passed by the seat that wrote it was 3 of the 7 real passes in runs 6 to 8); a repeat pass that closes the criterion is not told it changes nothing; the route to review is named only where the transition table has one (`canEnterReview`) | `tests/core/pass-evidence.test.ts` (12), `tests/policy/inert-approval.test.ts`, `tests/core/verdict-pass.test.ts` |
+
+What it does and why is in `docs/runtime.md` (*The seat is told when its verdict did not close the criterion*) and `docs/protocol.md`
+(the inert-verdict paragraph); the commit message carries the evidence.
+
+### Not fixed, and the honest limits
+
+- **A pass records which artifact, not which commit it was run against.** The stale round-one report could still be passed on purpose:
+  F4 stamps a verification report with the head it was tested at, and nothing compares that with the head the mission is judged
+  on. L1 removes what led QA there (it is told on the spot that its first pass did not count); it does not stop a deliberate one.
+- **The identity gate is blind to a draft.** A pass on a draft names no artifact (above), so a draft passed again after a reopen is
+  caught only by the recency rule: the pass has to be recorded after the reopen, not by what it was about.
+- **QA's report was a DRAFT again when the pm tried to accept against it** (01:02:10, two refusals; 67 s until QA submitted it).
+  The refusals named the route and were followed. The same pattern as §12's last item. The briefing already says that "a DRAFT
+  nobody transitions is never reviewed and never becomes evidence", and QA left its report there until asked; more words to the
+  same seat are not a fix, and this round did not change it.
+- **15 of 29 `mesh_call`s were refused (52%; runs 5 to 7: 42%, 35%, 33%)**, 6 of them recovered by a later call on the same contract in
+  the turn. Nine were the shape of a contract's request (`what` for `ask`, `description` for `what`; each refusal names the field),
+  two an `ifUnanswered` shorter than the floor (the refusal states the floor), two were `execution.run` with no seat that holds
+  `shell.execute` to serve it (`no seat you may contact holds shell.execute`; the contract is listed with no provider), one a
+  review request whose named reviewer could not settle it, and one a call the model sent as unparseable JSON. Not changed: one run
+  and the refusals say why; `execution.run` was refused three times in run 7 too.
+- **Six `mesh_task_complete` calls on tasks already completed**, by three seats (the same limit as §12: a task's completion is prose).
+- **One run.** B23, J1, J3, H1 and H2 are still to be confirmed live.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| §12 final, before the sell-readiness work | 3024 | 3023 | 0 | 0 | 1 |
+| head `c8beb64`, before this round | 3353 | 3351 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 13 s) | 3365 | 3363 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (185 warnings, one rule, the baseline). Mutation checks on the new
+tests, each reverted: the pass names no artifact (2 tests fail), the pass says nothing of its criterion (6), the repeat note kept
+when the repeat closed the criterion (1), the route to review always offered (2 in the new file; the ReleasePlan case had nothing
+pinning it and now has an assertion in `inert-approval.test.ts` that kills it), a draft is named (1, and 2 in `supervisor-turn`),
+the acceptance silent on a rejected artifact (1), a pass told to "cite" (2). The first version of the change named drafts too; two
+existing tests failed for exactly that reason, and the frozen logs of runs 6 to 8 said why it was wrong before any code
+was rewritten.
+
+### Worth keeping from this round
+
+- **A tool that downgrades a claim must say so in the same reply.** `ok: true` over a silent `ASSERTED` is how a seat reports a
+  criterion done and the next seat asks for the work again; the repair the seat needed was one more call it was never told to make.
+- **Survey the logs before choosing a rule.** The gate for drafts looked like a free addition until seven real passes showed three
+  of them were on drafts. A rule that would have refused the commonest case was found in a minute, by reading, and not by a run.
+- **A note that says a call did nothing must not go to a call that did something.** The repeat pass that closes a criterion was
+  told it changes nothing, and told to move a FINAL report to a state it cannot reach.
+- **Read the last criterion's history, not just the verdict.** The mission's record says `quality-verified` was evidenced by QA's
+  pass; only the commit in the pass's own comment says what it was evidence of.
