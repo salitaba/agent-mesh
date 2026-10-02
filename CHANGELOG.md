@@ -69,6 +69,13 @@ sections 1 to 17) are described there, run by run.
 
 ### Fixed
 
+- A verification report that names a commit its worktree does not hold is told so in the reply to its publish. The runtime already
+  stamps a report with the tree it was written from, but only compared it with the patches the turn *read*, and a verifier is
+  handed the commit by its briefing and reads nothing. The twelfth Haiku run's QA named the patch's commit (243 of 243 pass),
+  ran the tests in a tree at the scaffold's (233 fail), blocked `quality` on it and had a good patch rejected: it had stood
+  MERGEABLE at 16:56:34 and was merged at 16:59:40, after two more versions of the same tree. The commit under `metadata.commit`
+  is now checked too, the reply says what the report describes and how to test the commit, and the run report flags a delivered
+  one. Nothing is refused.
 - A pass that names a report now lifts the blocker's own block on that subject. A verdict naming an artifact is filed under
   `artifact:<id>`, so a QA seat that had blocked `quality` and then passed it with its test report attached still had its block
   read as standing: the stall watchdog woke QA, who had passed and cannot accept, instead of the pm who could, in both rounds

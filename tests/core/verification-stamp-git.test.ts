@@ -86,3 +86,48 @@ test("a report written after checking the commit out is stamped as holding it, i
     await m.cleanup();
   }
 });
+
+test("a report that names the patch's commit from a tree that never held it is told so, and is not once the commit is checked out", { skip: gitSkip }, async () => {
+  // The twelfth run's QA: handed the commit by its briefing, so the turn read no patch; the report named `7fa5fa27`, which passes
+  // 243 of 243, and the tests ran in a tree at the scaffold's commit, where 233 fail. The stamp's HEAD was the answer.
+  const { m, qa, commit } = await fixture();
+  try {
+    const publish = async (name: string, named: string) => {
+      const created = await m.supervisor.createArtifact({
+        actorId: "qa",
+        name,
+        type: "TestReport",
+        content: evidenceContent(name),
+        metadata: { commit: named, result: "FAILED" },
+      });
+      if (!("artifact" in created)) throw new Error(`create failed: ${JSON.stringify(created)}`);
+      return { notice: created.notice, stamp: created.artifact.metadata.worktree as WorktreeStamp };
+    };
+    const head = git(qa, "rev-parse", "--short=12", "HEAD");
+
+    const never = await publish("qa report (named, never checked out)", commit);
+    assert.equal(never.stamp.head, head);
+    assert.deepEqual(never.stamp.claimed, { commit: commit.slice(0, 12), inHead: false });
+    assert.equal(never.stamp.tested, undefined, "it read no patch");
+    assert.match(never.notice ?? "", new RegExp(`^the report names commit ${commit.slice(0, 12)}, but its worktree is at ${head} and does not hold that commit`));
+
+    const short = await publish("qa report (short sha)", commit.slice(0, 7));
+    assert.deepEqual(short.stamp.claimed, { commit: commit.slice(0, 7), inHead: false }, "the short sha a seat pastes is found too");
+
+    const unknown = await publish("qa report (a sha git has never seen)", "0123456789abcdef0123456789abcdef01234567");
+    assert.equal(unknown.stamp.claimed, undefined, "no answer is recorded, not a false one");
+    assert.equal(unknown.notice, undefined);
+
+    const option = await publish("qa report (not a sha)", "--output=/tmp/x");
+    assert.equal(option.stamp.claimed, undefined, "a value git would read as an option is never handed to it");
+    assert.equal(option.notice, undefined);
+
+    git(qa, "merge", "--ff-only", commit);
+    const held = await publish("qa report (checked out)", commit);
+    assert.deepEqual(held.stamp.claimed, { commit: commit.slice(0, 12), inHead: true });
+    assert.equal(held.notice, undefined, "what the notice asked for, done: nothing more is said");
+  } finally {
+    await m.cleanup();
+  }
+});
+

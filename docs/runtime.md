@@ -327,6 +327,23 @@ The run report marks a delivered report whose tree did not hold the commit of th
 "it tested a copy of the patch, not the recorded commit". Dirtiness alone is recorded and not
 flagged; an untracked report or test log is the ordinary state of a verifier's tree.
 
+The commit the report itself names (`metadata.commit`) is checked the same way and stamped as
+`claimed`, because a verifier is handed the commit by its briefing and never has to read the patch, so
+`tested` is empty for exactly the seat the rule is about. When the tree does not hold it, the reply to
+the publish says so while the seat can still act on it: *the report names commit `7fa5fa27a36c`, but its
+worktree is at `f2d8bc9c45f7` and does not hold that commit, so what it describes is `f2d8bc9c45f7`, not
+`7fa5fa27a36c`. Check the commit out … run the tests again and publish a new version; or, if
+`f2d8bc9c45f7` is what you tested, name that commit.* The report is published either way and nothing is
+refused (the seat may have tested what it says by other means, and git cannot place every value a seat
+writes: no answer is recorded for one it cannot). The run report adds "names commit …, but was written
+from a worktree at … that does not hold it" unless it has already said the same of that commit's patch.
+
+The twelfth cronlite run's QA is the case: it named `7fa5fa27` (243 of 243 pass), ran the tests in a
+worktree at the scaffold's commit `f2d8bc9` (233 of 243 fail), published the report, blocked `quality` on
+it three seconds later, and the tech lead rejected a good patch; the developer re-versioned the same tree
+twice (the commit merged at 16:59:40 holds exactly the files of `7fa5fa27`), after the patch had stood
+MERGEABLE at 16:56:34.
+
 ### A handover's continuity call
 
 A handover turn exists to write one record. When `write_continuity` lands the supervisor ends the

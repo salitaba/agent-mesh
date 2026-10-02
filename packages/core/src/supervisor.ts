@@ -279,6 +279,27 @@ function firstWords(request: Record<string, unknown>): string {
   return "request";
 }
 
+/**
+ * What a seat is told, in the reply to its publish, when a verification report names a commit its worktree does not hold.
+ *
+ * The twelfth cronlite run's QA named the patch's commit (it passes 243 of 243) and ran the tests in a tree at the scaffold's (233 of
+ * 243 fail), then blocked `quality` on the result and had a good patch rejected. A verifier is handed the commit by its briefing and
+ * never reads the patch, so the stamp's `tested` list is empty for it; the commit it writes down is the one claim there is to check,
+ * and the runtime is the one that can say the tree never held it. Said while the seat can still check the commit out.
+ */
+function unheldCommitNotice(stamp: WorktreeStamp): string | undefined {
+  const claimed = stamp.claimed;
+  if (!claimed || claimed.inHead) return undefined;
+  const sha = claimed.commit;
+  const tree = stamp.head ? `its worktree is at ${stamp.head}` : "its worktree";
+  const described = stamp.head ?? "that tree";
+  return (
+    `the report names commit ${sha}, but ${tree} and does not hold that commit, so what it describes is ${described}, not ${sha}. ` +
+    `Check the commit out (\`git merge --ff-only ${sha}\`, or \`git checkout --detach ${sha}\`), run the tests again and publish a new version; ` +
+    `or, if ${described} is what you tested, name that commit`
+  );
+}
+
 export const HUMAN_AGENT_ID = "human";
 
 /**
@@ -4974,14 +4995,17 @@ export class Supervisor {
       const refused = await this.recordedCommitError(input.metadata.commit);
       if (refused) return { error: `artifact ${input.type}:${input.name} was not published: ${refused}` };
     }
+    // What the stamp found wrong with a report, said in the reply to its publish (below).
+    let stampNotice: string | undefined;
     // What the tree a verification report was written in held, recorded by the runtime: the
     // report's prose says what was tested, and a seat that re-typed a patch into a worktree that
     // never had it writes the same prose as one that checked the commit out. Whatever the seat put
     // under `metadata.worktree` is dropped either way, so the key is only ever the runtime's.
     if (VERIFICATION_ARTIFACT_TYPES.includes(artifact.type) && input.actorId !== HUMAN_AGENT_ID) {
       const { worktree: _claimed, ...rest } = (artifact.metadata ?? {}) as Record<string, unknown>;
-      const stamp = await this.worktreeStamp(input.actorId, inputs);
+      const stamp = await this.worktreeStamp(input.actorId, inputs, rest.commit);
       artifact = { ...artifact, metadata: stamp ? { ...rest, worktree: stamp } : rest };
+      stampNotice = stamp ? unheldCommitNotice(stamp) : undefined;
     }
     const contentRef = await this.deps.content.writeVersion(artifact.id, artifact.version, content);
     artifact = { ...artifact, contentRef, digest: digestOf(content) };
@@ -5032,6 +5056,7 @@ export class Supervisor {
       notice = await this.carryReviewAsksOver(artifact, input.actorId);
       await this.flagDependentsOf(artifact, input.actorId);
     }
+    if (stampNotice) notice = [notice, stampNotice].filter(Boolean).join("; ");
     return { artifact, uri, ...(notice ? { notice } : {}) };
   }
 
@@ -5040,7 +5065,11 @@ export class Supervisor {
    * patch the turn read is in it. Null when the seat has no worktree to describe (no git, a seat
    * that never wrote), and then the report simply carries no stamp.
    */
-  private async worktreeStamp(agentId: string, inputs: ReadonlyArray<{ artifactId: string; version: number }>): Promise<WorktreeStamp | null> {
+  private async worktreeStamp(
+    agentId: string,
+    inputs: ReadonlyArray<{ artifactId: string; version: number }>,
+    named?: unknown,
+  ): Promise<WorktreeStamp | null> {
     const workspace = this.deps.workspace;
     if (!workspace?.worktreeState) return null;
     const state = await workspace.worktreeState(agentId).catch(() => null);
@@ -5053,12 +5082,21 @@ export class Supervisor {
       const inHead = await workspace.containsCommit(agentId, commit).catch(() => null);
       if (inHead !== null) tested.push({ artifact: artifactUri(patch.type, patch.name, i.version), commit: commit.slice(0, 12), inHead });
     }
+    // The commit the report itself names. A verifier is handed the patch's commit by its briefing and never has to
+    // read the patch, so `tested` stays empty for it, and the commit it writes down is the one claim there is to check.
+    let claimed: WorktreeStamp["claimed"];
+    const commit = typeof named === "string" ? named.trim() : "";
+    if (commit.length > 0 && workspace.containsCommit) {
+      const inHead = await workspace.containsCommit(agentId, commit).catch(() => null);
+      if (inHead !== null) claimed = { commit: commit.slice(0, 12), inHead };
+    }
     return {
       ...(state.head ? { head: state.head } : {}),
       dirty: state.dirty.length,
       untracked: state.untracked,
       ahead: state.unmergedCommits.length,
       ...(tested.length > 0 ? { tested } : {}),
+      ...(claimed ? { claimed } : {}),
     };
   }
 

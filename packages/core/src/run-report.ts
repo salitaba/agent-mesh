@@ -81,6 +81,12 @@ export interface RunReportArtifact {
    * would be merged: nothing shows the two are the same.
    */
   testedCopyOf?: { patches: string[]; head?: string };
+  /**
+   * Present on a verification report that names a commit (`metadata.commit`) the worktree it was written from did not hold
+   * (`WorktreeStamp.claimed`): it describes the tree at `head`, whatever its prose says it tested. Left out when `testedCopyOf`
+   * already says the same of that commit's patch.
+   */
+  namesUnheldCommit?: { commit: string; head?: string };
 }
 
 /** One acceptance criterion and how well it is actually backed. */
@@ -392,6 +398,10 @@ const SATISFIED_CRITERION_STATUSES = ["EVIDENCED", "WAIVED"];
 function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact {
   const stamp = a.metadata?.worktree as WorktreeStamp | undefined;
   const missing = (stamp?.tested ?? []).filter((t) => t.inHead === false).map((t) => t.artifact);
+  const unheld = stamp?.claimed && stamp.claimed.inHead === false ? stamp.claimed.commit : undefined;
+  // A short sha and a long one name the same commit when one starts with the other.
+  const alreadySaid =
+    unheld !== undefined && (stamp?.tested ?? []).some((t) => t.inHead === false && (t.commit.startsWith(unheld) || unheld.startsWith(t.commit)));
   return {
     id: a.id,
     name: a.name,
@@ -403,6 +413,7 @@ function flattenArtifact(a: Artifact, selfApproved: boolean): RunReportArtifact 
     createdAt: a.createdAt,
     ...(selfApproved ? { selfApproved: true as const } : {}),
     ...(missing.length > 0 ? { testedCopyOf: { patches: missing, ...(stamp?.head ? { head: stamp.head } : {}) } } : {}),
+    ...(unheld !== undefined && !alreadySaid ? { namesUnheldCommit: { commit: unheld, ...(stamp?.head ? { head: stamp.head } : {}) } } : {}),
   };
 }
 
@@ -837,6 +848,13 @@ export function renderRunReport(report: RunReport): string {
         out.push(
           bullet(
             `  ${" ".repeat(30)} ! written from a worktree${a.testedCopyOf.head ? ` at ${a.testedCopyOf.head}` : ""} that does not hold the commit of ${a.testedCopyOf.patches.join(", ")} — it tested a copy of the patch, not the recorded commit`,
+          ),
+        );
+      }
+      if (a.namesUnheldCommit) {
+        out.push(
+          bullet(
+            `  ${" ".repeat(30)} ! names commit ${a.namesUnheldCommit.commit}, but was written from a worktree${a.namesUnheldCommit.head ? ` at ${a.namesUnheldCommit.head}` : ""} that does not hold it — it describes that tree, not that commit`,
           ),
         );
       }

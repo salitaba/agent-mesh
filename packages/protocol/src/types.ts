@@ -235,6 +235,15 @@ export interface WorktreeStamp {
    * patch it names: it tested a copy of it, not the recorded commit.
    */
   tested?: Array<{ artifact: string; commit: string; inHead: boolean }>;
+  /**
+   * The commit the report itself names under `metadata.commit` (short sha), and whether the worktree
+   * holds it, when git can say. `tested` covers the patches the turn read; this covers what the seat
+   * wrote down, which a verifier that never read the patch (the briefing hands it the commit) still
+   * does. `inHead: false` is a report that names one commit and measured another: the twelfth cronlite
+   * run's QA named the patch's commit, which passes 243 of 243, from a tree at the scaffold's, which
+   * fails 233, and blocked the patch on it. What it measured is `head`.
+   */
+  claimed?: { commit: string; inHead: boolean };
 }
 
 /** One artifact version another artifact was built on. See `Artifact.inputs`. */
