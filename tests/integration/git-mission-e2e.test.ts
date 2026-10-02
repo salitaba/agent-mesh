@@ -157,13 +157,19 @@ test("git mission e2e: every MERGED patch is a real merge commit carrying the se
     assert.equal(git(m.productPath, "status", "--porcelain"), "", "and the product checkout is clean");
 
     // ---- the log on disk ---------------------------------------------------------------
+    // The seats are still taking their last turns when the second patch lands: the lead's INFORM wakes dev, which idles, and its
+    // turn is a burst of six events. A file read now compared with a store read a moment later failed whenever that burst fell
+    // between the two (178 events on disk, 184 in the store; now and then, and on the build before the ninth live run too). So the
+    // store is read first, then flushed, then the file read: everything the store held at that moment is on disk when the flush
+    // returns, whatever is appended after.
+    const inStore = await m.store.read();
     await m.store.flush?.();
     const logFile = path.join(m.config.stateDir, "logs", "events.jsonl");
     const onDisk = fs
       .readFileSync(logFile, "utf8")
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l) as { type: string; actorId?: string; payload: Record<string, unknown> });
+      .map((l) => JSON.parse(l) as { id: string; type: string; actorId?: string; payload: Record<string, unknown> });
     for (const a of merged) {
       const about = (type: string, pred: (p: Record<string, unknown>) => boolean = () => true) =>
         onDisk.filter((e) => e.type === type && pred(e.payload));
@@ -181,7 +187,16 @@ test("git mission e2e: every MERGED patch is a real merge commit carrying the se
     // Nothing on disk claims a MERGED the state does not hold.
     const mergedOnDisk = new Set(onDisk.filter((e) => e.type === "artifact.transition" && e.payload.to === "MERGED").map((e) => String(e.payload.artifactId)));
     assert.deepEqual([...mergedOnDisk].sort(), merged.map((a) => a.id).sort(), "the MERGED set on disk is the MERGED set in state");
-    assert.equal(onDisk.length, (await m.store.read()).length, "the file is the whole store");
+    // The file is the store, event for event: it holds everything the store held when it was flushed, in order, and nothing the
+    // store lacks (the store's cache is updated before the file is written, so a read taken after the file is never behind it).
+    const after = await m.store.read();
+    assert.ok(onDisk.length >= inStore.length, `the file is the whole store: it holds all ${inStore.length} events the store held when it was flushed`);
+    assert.ok(onDisk.length <= after.length, "and nothing the store does not hold");
+    assert.deepEqual(
+      onDisk.map((e) => e.id),
+      after.slice(0, onDisk.length).map((e) => e.id),
+      "the same events in the same order",
+    );
   } finally {
     await m.cleanup();
   }
