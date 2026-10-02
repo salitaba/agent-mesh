@@ -53,6 +53,9 @@ const line = (m: Mesh, seat: string, name: string) =>
   renderContextInstructions(briefing(m, seat)).split("\n").find((l) => l.startsWith("- ") && l.includes(name));
 const entry = (m: Mesh, seat: string, name: string) => briefing(m, seat).relevantArtifacts.find((a) => a.name === name);
 const CITE = /submitted: you may accept a criterion that is still open against it/;
+// Said once under the list: an acceptance from a turn that read nothing is recorded ASSERTED (the tenth run's pm did it with three).
+const HINT = "Read what you cite in the same turn (`mesh_artifact_read`): an acceptance from a turn that read or ran nothing is recorded ASSERTED and does not count.";
+const hints = (m: Mesh, seat: string) => renderContextInstructions(briefing(m, seat)).split(HINT).length - 1;
 
 test("the pm is shown the report QA submitted and passed, on a line that says it may cite it", async () => {
   const m = await mesh();
@@ -67,6 +70,22 @@ test("the pm is shown the report QA submitted and passed, on a line that says it
     assert.ok(shown, "the pm's briefing lists it");
     assert.match(shown!, CITE, "and says what it is for");
     assert.match(shown!, /TestReport, FINAL/);
+    assert.equal(hints(m, "pm"), 1, "and, once under the list, how to make the acceptance count");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("the hint is given only to a seat that is shown something to cite, and only once", async () => {
+  const m = await mesh();
+  try {
+    const id = await report(m, "qa", "Quality Verification Report", true);
+    await m.supervisor.recordDecision("qa", "pass", "quality", id, "31/31");
+    await report(m, "qa", "Second Report", true);
+    assert.equal(entry(m, "pm", "Quality Verification Report")?.citable, true, "fixture: two things to cite");
+    assert.equal(hints(m, "pm"), 1, "once for the list, not once per line");
+    assert.equal(hints(m, "dev"), 0, "the developer cannot accept anything and is not told how");
+    assert.equal(hints(m, "qa"), 0, "nor can QA, whose own reports are in its briefing as always");
   } finally {
     await m.cleanup();
   }

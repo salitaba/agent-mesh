@@ -1479,6 +1479,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       const cite = a.citable ? " — submitted: you may accept a criterion that is still open against it" : "";
       lines.push(`- ${a.ref} (${a.type}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}${cite}`);
     }
+    // Said once, under the list, where the seat decides what to cite. An acceptance from a turn that read or ran nothing is
+    // recorded ASSERTED (the verification gate) and the mission goes on waiting for it: the pm in the tenth run's second round
+    // accepted three criteria in a turn that made no tool call but the three `mesh_approve`s, was told afterwards, ended the
+    // turn, and was woken again 45 s later to read the report and accept once more; in the ninth run it did the same with two.
+    if (bundle.relevantArtifacts.some((a) => a.citable)) {
+      lines.push("Read what you cite in the same turn (`mesh_artifact_read`): an acceptance from a turn that read or ran nothing is recorded ASSERTED and does not count.");
+    }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
   }
