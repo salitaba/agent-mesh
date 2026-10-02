@@ -205,6 +205,16 @@ proof in front of them. A mesh in which no seat holds the gate says only the ope
 what is left. The stall-cap card carries the same facts as `awaitingAcceptance`, and the criterion a
 reopen mints says who accepts it, where it used to say only "published and accepted".
 
+The list is not only the watchdog's to offer. A seat that may accept criteria finds the same artifacts in its
+**briefing**, for as long as a mandatory criterion that needs an acceptance is open, each marked "submitted: you may
+accept a criterion that is still open against it" (`relevantArtifacts[].citable`). A test report is work-scoped, and a
+briefing shows a work-scoped artifact to its owner, to whoever is mailed it and while it awaits a verdict, so once QA's
+pass had settled the report nobody else's briefing carried it. In the ninth cronlite run the pm and the architect spent six
+turns and four minutes asking for a report that sat submitted in the store (each ask declined: "test reports are QA's"), and
+round two idled for three minutes with three criteria open that only the pm could close. A criterion the mesh evidences itself
+(`AUTO_EVIDENCED_CRITERIA`) needs no acceptance and offers nothing; what the operator rejected at a reopen is not offered
+again.
+
 The fourth cronlite run's second round sat on one such criterion for 21 minutes, 12 turns and 188k
 tokens: the nudges went to the architect (twice), which asked the developer for a status and set
 off a chain of turns that never reached the pm, the only seat whose act it needed. The pm, once
@@ -743,9 +753,17 @@ it stood before the fix.
 
 A pass also names the artifact it was about, when that artifact is submitted work, so the reopen gate
 below (which compares artifact URIs) can refuse the same artifact twice: it was blind to a verdict that
-carried none. A pass on a draft names none, because the workflow gate would refuse a draft as evidence and
-passing the report one has just published is the commonest pass there is; a draft passed again after a
-reopen is not caught by identity, and still has to be recorded after the reopen.
+carried none.
+
+**A pass submits the verification report its giver wrote.** Passing the report one has just published is the commonest
+pass there is, and a draft is shown to nobody but its owner, is refused as evidence and cannot be settled by a verdict, so
+the pass used to leave the report where nobody could see or cite it: five of the nine passes in runs 6 to 9 were given on
+a draft, each on the test report QA had just written, and the ninth run's pm and architect spent six turns asking for one
+that existed. A `pass` on a DRAFT `TestReport`, `SecurityReport` or `BenchmarkResult` that the giver owns now moves it to
+review first, as the owner's own transition under the same gates and only after every refusal a pass can meet, so a refused
+pass leaves the report as it was; the pass then settles it and names it as above. A pass on a draft somebody else wrote
+submits nothing (when its work is put forward is the owner's to say) and names none; a draft of any other type is left
+alone. A draft passed again after a reopen is not caught by identity, and still has to be recorded after the reopen.
 
 **A reopen names what it rejects.** `POST /mission/reopen { reason, criteria? }` sends
 the named criteria (every mandatory one when `criteria` is omitted after a verdict) back
@@ -798,6 +816,12 @@ of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
   place. `POST /mission/park` parks it again.
   `mesh status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
   talk to `/api`.
+- A `mesh run` that reaches a verdict (completed, failed or escalated) prints its report **after** the turns still running
+  have settled, and says so on a line of its own first ("letting the turns still running finish, then the report"). The
+  verdict used to be reported the moment the goal changed, while the turn that changed it (the pm's last acceptance, as a
+  rule) was still running, so the `SPEND` line was short by that turn in every run: 2.2% to 2.6% against the ledger and
+  `mesh usage`, which agree with each other to the token. The report is printed whether or not the shutdown went cleanly,
+  and an interrupted run (Ctrl-C) still reports first, because whoever pressed it is waiting.
 - `mesh host` supervises one child per registered project. Each child's mode is
   remembered **per project**, taken from the mode that child reports on its
   heartbeat — the host only ever proxies `/mission/start` and `/mission/park`,

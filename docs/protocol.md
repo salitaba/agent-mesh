@@ -225,7 +225,16 @@ settle the artifact (`settlersOf`, the same list the briefing prints) — never 
 seat the caller may contact". A reviewer the seat named who could not settle it is still
 refused, with the route ("tech-lead can"), and is not quietly replaced: the seat named
 someone, so the mesh teaches instead of guessing. When the only seat that can settle it is
-out of the caller's reach, the refusal says that. The router used to read neither half of
+out of the caller's reach, the refusal says that. When the seat that can settle it is the
+caller itself (a tech lead asking QA to "review" a patch that only the tech lead can settle:
+the seventh, eighth and ninth cronlite runs), the refusal says "you" instead of naming the
+seat back to itself, and says what to do: settle it with `mesh_approve` (or `mesh_reject`),
+and ask a seat to test it first with a `work.request` if that is wanted. It does not tell that
+seat to name a reviewer or escalate, because there is none to name. The advice is given only where
+a verdict can still move the artifact (`verdictAdvances`: it is awaiting one); for a draft, or an
+artifact already past review (the ninth run's patch was MERGEABLE when its tech lead asked), the
+seat is told what state it is in and that testing is a work request, and is not sent to a verdict
+that would move nothing. The router used to read neither half of
 this, so in the second cronlite run 13 of 24 review requests were refused as
 `review.reviewer-cannot-settle` (all 7 that named reviewers in the request, 6 of the 8 that
 named nobody), each refusal naming the seat that could, and the seat asked the same wrong
@@ -268,6 +277,15 @@ about who may accept: the pm accepting its own RequirementsDoc is by design. Whe
 could have verified (no QA seat in the mesh) the only report there can be stands, the carve-out
 `approverMayAdvance` makes for the same reason, and the operator's acceptance is its own judgment and
 is not held to the rule.
+
+The seat that accepts is shown what it may cite. While a mandatory criterion that needs an acceptance is open,
+the briefing of a seat holding the gate lists the submitted artifacts an acceptance would take (the list the stall
+watchdog offers, `citableEvidence`) with `relevantArtifacts[].citable: true`, even though a work-scoped report is
+otherwise shown to its owner, to whoever is mailed it and while it awaits a verdict only. A draft, a rejected
+artifact, what the operator rejected at a reopen and a report written by a seat that cannot verify are not offered,
+because an acceptance would refuse each. And a `pass` on a draft verification report that the passing seat owns
+submits it first (see *What counts as satisfied* in `docs/runtime.md`), so the report a verdict is about is in
+the store as submitted work, citable at once.
 
 ### A pass is the verdict of the seats that verify
 

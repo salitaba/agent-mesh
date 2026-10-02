@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Agent Mesh. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 13) are described there, run by run.
+sections 1 to 14) are described there, run by run.
 
 ## Unreleased
 
@@ -59,6 +59,18 @@ sections 1 to 13) are described there, run by run.
 
 ### Fixed
 
+- A seat that passes the verification report it wrote now submits it with the pass. The report used to stay a draft, which is
+  shown to nobody but its owner and is refused as evidence, so the seats that needed it spent minutes asking for a report that
+  existed (the ninth Haiku run: six turns and four minutes). The pass is the owner's own transition under the same gates, taken
+  only after every refusal a pass can meet; a pass on somebody else's draft submits nothing.
+- A seat that may accept criteria is shown the submitted artifacts it could cite in its briefing, while a mandatory criterion
+  that needs an acceptance is open. Until now only the stall watchdog's note named them, after three idle minutes.
+- The closing report of `mesh run` is printed after the turns still running have settled, so its `SPEND` line matches the ledger
+  and `mesh usage`. It was short by the final turn (2.2% to 2.6%) in every real run.
+- A review request refused because the requesting seat is itself the only one that can settle the artifact says "you" and what to
+  do (settle it with `mesh_approve`, and ask a seat to test it first with a `work.request`), instead of naming the seat back to
+  itself and telling it to escalate; for an artifact no verdict can move (a draft, or one already past review) it says what state
+  the artifact is in instead.
 - A verdict that did not close its criterion now says so. A `pass` from a turn that checked nothing was recorded `ASSERTED` and
   answered `ok`, and an acceptance of the artifact the operator had rejected at a reopen was refused the same way; both now carry a
   note saying what happened and what to do. A pass names the artifact it was about (when that is submitted work), so a reopen can
