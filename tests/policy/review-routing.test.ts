@@ -290,3 +290,50 @@ test("the briefing's list of who can settle an artifact and the router's default
     await m.cleanup();
   }
 });
+
+test("a report only its owner can settle: the refusal names the owner, not nobody (the eleventh run's pm asking for a review of QA's report)", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked" } as never);
+  try {
+    // QA holds test.write, the capability that reviews a TestReport, and nobody else does: with no peer, its own verdict settles it.
+    const report = await submitted(m, "qa", "QA Verification Report", "TestReport");
+    const res = await m.supervisor.executeOp("pm", review({ artifactId: report, reviewers: ["tech-lead"] }), turnFor("pm"));
+    assert.equal(res.ok, false);
+    assert.match(String(res.reason), /^none of tech-lead can deliver a verdict on this TestReport — qa can$/, "the seat that can, as for any other artifact");
+    assert.doesNotMatch(String(res.reason), /no seat in this mesh can/, "it was said, to a pm that then went looking for a reviewer there is none of");
+    assert.equal([...m.kernel.state.messages.values()].filter((x) => x.type === "REQUEST_REVIEW").length, 0, "nothing was sent");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("the owner that is the only seat able to settle its own report is told to settle it itself", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked" } as never);
+  try {
+    const report = await submitted(m, "qa", "QA Verification Report", "TestReport");
+    const res = await m.supervisor.executeOp("qa", review({ artifactId: report, reviewers: ["tech-lead"] }), turnFor("qa"));
+    assert.equal(res.ok, false);
+    assert.match(String(res.reason), /^none of tech-lead can deliver a verdict on this TestReport — you can/);
+    assert.match(String(res.reason), SETTLE);
+    assert.doesNotMatch(String(res.reason), /qa can|no seat in this mesh can/, "not named back to itself, and not nobody");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("when a peer could review the report, the owner is not named as a settler of its own work", async () => {
+  const qa2 = { id: "qa2", role: "qa", capabilities: ["repository.read", "test.execute", "test.write"], authority: ["quality.approve", "quality.pass"], interests: [] };
+  const m = await makeMesh({
+    agents: [...AGENTS, qa2],
+    mayContact: { ...COMM, pm: [...COMM.pm, "qa2"], qa2: ["pm", "qa"], qa: [...COMM.qa, "qa2"] },
+    mode: "parked",
+  } as never);
+  try {
+    const report = await submitted(m, "qa", "QA Verification Report", "TestReport");
+    const res = await m.supervisor.executeOp("pm", review({ artifactId: report, reviewers: ["tech-lead"] }), turnFor("pm"));
+    assert.equal(res.ok, false);
+    assert.match(String(res.reason), /— qa2 can/, "the peer");
+    assert.doesNotMatch(String(res.reason), /— qa, qa2 can|— qa can/, "the author may not settle its own work while a peer could");
+  } finally {
+    await m.cleanup();
+  }
+});

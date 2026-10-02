@@ -10802,9 +10802,11 @@ export class Supervisor {
           const canSettle = op.reviewers.filter((r) => mayReviewArtifact(this.state, r, a, HUMAN_AGENT_ID));
           const cannotSettle = op.reviewers.filter((r) => !canSettle.includes(r));
           if (canSettle.length === 0) {
-            const able = [...this.state.agents.values()]
-              .map((rec) => rec.definition.id)
-              .filter((id) => id !== HUMAN_AGENT_ID && id !== a.owner && approverMayAdvance(this.state, id, a, HUMAN_AGENT_ID));
+            // The same list the briefing prints and the router's default draws on (`settlersOf`), which keeps the artifact's owner
+            // when no other seat could review it. This filter used to drop the owner outright, so a report only its author could
+            // settle was met with "no seat in this mesh can" (the eleventh run's pm, asking the tech lead to review QA's test report;
+            // QA's own pass settled it eleven minutes later).
+            const able = settlersOf(this.state, a, HUMAN_AGENT_ID);
             // Said to the seat that is one of them as "you", with what to do: the tech lead was told "tech-lead can"
             // in three runs running, after asking QA to review a patch only the tech lead can settle.
             const remedy =
