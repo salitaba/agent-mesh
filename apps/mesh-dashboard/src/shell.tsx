@@ -5,7 +5,7 @@ import { useMesh, type View } from "./store";
 import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Button, Menu, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Button, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { confirmResume } from "./actions";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
@@ -656,8 +656,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} /> : null}
       <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
         <div className="brand">
-          <svg viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="5" fill="var(--accent)" /><circle cx="27" cy="9" r="3" fill="var(--ok)" /><circle cx="5" cy="9" r="3" fill="var(--warn)" /><circle cx="8" cy="26" r="3" fill="var(--bad)" /><path d="M16 16 27 9M16 16 5 9M16 16 8 26" stroke="var(--line-strong)" strokeWidth="1.4" /></svg>
-          <div><b>Agent&nbsp;Mesh</b><span id="mesh-id" className="sub">{goal.id ? `goal ${goal.id.slice(0, 14)}` : ""}</span></div>
+          <div><Wordmark height={22} /><span id="mesh-id" className="sub">{goal.id ? `goal ${goal.id.slice(0, 14)}` : ""}</span></div>
         </div>
         <nav id="nav" aria-label="views">
           {NAV.map((n, i) =>

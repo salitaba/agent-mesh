@@ -1,4 +1,11 @@
-# Ordane
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/ordane-logo-dark.svg">
+    <img src="brand/ordane-logo-light.svg" alt="Ordane" height="56">
+  </picture>
+</h1>
+
+<p align="center"><b>A team of AI agents, run like an organization.</b></p>
 
 A standalone runtime for **persistent AI organizations**. Not "many LLMs in a
 group chat" — autonomous role-based agents that collaborate through explicit

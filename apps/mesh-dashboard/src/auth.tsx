@@ -13,7 +13,7 @@
  * how an operator gets in, not what keeps anyone out.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Button, Card, Input } from "./components";
+import { Button, Card, Input, Wordmark } from "./components";
 import { onAuthRequired } from "./api";
 
 type Phase = "checking" | "open" | "login";
@@ -151,6 +151,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }): React.JSX.Element {
   return (
     <main className="signin">
       <form onSubmit={(ev) => void submit(ev)} aria-labelledby="signin-title">
+        <div className="signin-logo"><Wordmark height={30} /></div>
         <Card title={<span id="signin-title">Sign in to Ordane</span>}>
           <p className="muted">This server is protected by an access token. It is the value of <span className="mono">MESH_API_TOKEN</span> the server was started with.</p>
           <label htmlFor="signin-token">Access token</label>

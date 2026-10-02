@@ -24,6 +24,8 @@
     "schemas:sync": "node scripts/sync-schemas.mjs",
     "pricing:export": "node scripts/export-pricing.mjs",
     "pricing:check": "node scripts/export-pricing.mjs --check",
+    "brand:build": "node scripts/build-brand.mjs",
+    "brand:check": "node scripts/build-brand.mjs --check",
     "test": "npm run build && node --test \"dist/tests/**/*.test.js\"",
     "test:only": "node --test \"dist/tests/**/*.test.js\"",
     "test:coverage": "npm run build && node --test --experimental-test-coverage \"dist/tests/**/*.test.js\"",
