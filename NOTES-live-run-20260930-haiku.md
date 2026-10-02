@@ -5,7 +5,7 @@ with its own regression test). One live mission, two rounds, one crash; every fi
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4) and §12 (J1, J3, J4).
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3) and §16 (Q1–Q4).
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
 check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and
@@ -1037,3 +1037,125 @@ that exercise the watchdog and the 32 that render a briefing were run on their o
   same sentence belongs where the decision is made.
 - **Build elsewhere while a mesh runs.** `dist/` stays untouched until the run ends (a rebuilt bridge under live seats is its own
   experiment); the fixes were compiled into a scratch output directory (`tsc --outDir dist-dev`) and tested there meanwhile.
+
+## 16. The eleventh run, on the P-fixes build: four more findings (Q1–Q4)
+
+The seventh cycle of the standing loop: the routine fired at 12:43 UTC on 2026-10-02. The same mission, SPEC, mesh config, model and
+clean launch environment, on `main` at `8ebceab`: every fix of §0–§15 plus the change of the source licence to the Business Source
+License 1.1 (the licence layer added nothing to the run: five seats, one project, no limit reported). Session 12:45–13:13 UTC: 43 turns,
+855k billed tokens (about $3.74 at list price), every turn on `claude-haiku-4-5`, 840 events. One run, so the rates are illustrative.
+The host ran on loopback with no token, as in §13 to §15.
+
+| When | What | Result |
+|---|---|---|
+| 12:45 | `mesh run` | five seats start |
+| 12:56 | goal met, 6/6 | 10 min 29 s, 25 turns, 509k billed (run 10's round 1: 13 min 23 s, 22 turns, 445k) |
+| 13:02 | operator reopen quoting two defects and naming four criteria | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED |
+| 13:03 | `kill -9` of the host 61 s later, with the developer and QA mid-turn | two seat processes orphaned (parent 1); none was left when the host came back 15 s later |
+| 13:03 | restart | the two open turns closed as interrupted, 0 `agent.failed`, six budget reservations released, three seats woken for recovery and their sessions rotated |
+| 13:13 | goal met again | 10 min 33 s after the reopen, 9 min 17 s after the restart; round 2: 18 turns, 346k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2971/3049 raw (97.4%) and 3030/3034
+stratified (99.9%): 95% in runs 8 and 9, 98.5% in run 5 (the oracle grew between runs, so the denominators differ). The `*`-as-a-list-item parse defect that held runs 1, 3, 4, 7 and 10 to about 68%
+raw (§10 to §15) did not occur: `*,5` and `*/9,*` parse. Two other defects did. A day field that is a list containing `*` (`*,3`, `5-6,*`)
+was treated as if it were exactly `*`, so the either-field day rule was not applied (73 failing cases); and `nextRun` threw "could not
+find next run" for a schedule that can fire, but not for two years or more (`* * 29-31 2 *` after February 2030: 5 cases, and `0 0 29 2 *`
+after March 2096 needs eight years, across 2100). The product's own suite was 44/44 and the CLI probes 23/23. The final product scored
+**3049/3049 raw (100%) and 3034/3034 stratified (100%)**, its own suite 53/53, the CLI probes 23/23 (9/9 soft). That is 100% of a
+mission that was told its defects, on one run: a measurement, not a rate. 23 of 43 turns (53.5%, 34% of billed tokens) changed no durable
+state (run 10: 39% and 25%), 13 of 25 in round 1; eight of the 23 were woken by an INFORM (165k billed).
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| P1 | held, and the slip it covers happened again: at 12:47:42 the tech lead signed as `architecture` on the RequirementsDoc, was told ("you signed as architecture, but RequirementsDoc … is a requirements artifact … Still waiting for your verdict: …"), and approved the ArchitectureDocument at 12:48:32, in the same turn (run 10: it sat UNDER_REVIEW 2 min 49 s). 0 derived approvals on a non-architecture artifact (run 10: 2) |
+| P2 | **not exercised**: the grace needs a quiet mission with a submitted report to cite, and the report was a draft (round 1) or a turn was running (round 2). The pm's wake at 12:54:05, 28 s after the last turn, was the watchdog's no-op fast retry (below) |
+| P3 | the hint was in 9 of the pm's 12 briefings (the three without had nothing citable). Two acceptances at 12:55:58–12:56:00 came from a turn that had read nothing and landed `ASSERTED`; the pm was told in the reply, read the report and accepted again within the same turn, 9 s later, `EVIDENCED` (run 10: 84 s and two more turns). The other six were `EVIDENCED`. The briefing's sentence did not stop the first unread acceptance; the reply did the teaching |
+| L1, L2, L3 | 2 `ASSERTED` records, both told, none silent. 2 passes, none on a draft: the second (13:10:19) was on QA's own report and submitted it ("submitted with qa's own quality pass"); the first named the patch (Q1). 9 of the pm's 12 briefings listed what it could cite; one ask for a report after one was submitted (13:11:00, below) |
+| L4 | the closing report said 509k and 25 turns after round 1 and 855k and 43 turns at the end; the analysis tool (855.2k) and `mesh usage` (855,194) agree to the token. `mesh usage` carried the note that the usage export is not part of the Community plan, as designed (warn mode, nothing refused) |
+| B21, B22, M1 | the two open turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded", six reservations released, the selective reopen completed, and `rejectedEvidence` refused the round-one report twice at 13:10:16 ("`library-contract-met` stays open: … is what the operator rejected when it reopened the mission"), each told to the pm. Five session rotations: three at the restart (80–95k tokens of transcript, under the 120k threshold), then QA's and the pm's by size |
+| S1–S5 | 248 `mesh_*` calls from five seats through their signed bridges; 34 were refused or failed (14%), none for authentication: the mesh's own refusals (12 by policy, below) and contract-shape errors |
+| L5, B23, J1, J3, H1, H2 | **not exercised**: neither of the two `review.reviewer-cannot-settle` refusals was the case L5's wording is for (the requester is itself the only settler); the two orphans of the kill had exited by themselves within 15 s; no seat wrote into the product checkout, no unclaimable task, no patch rejected |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| Q1 | **A pass that named the patch left QA's own test report a draft.** QA wrote the report at 12:52:56 and passed the merged patch at 12:53:01; L2 submits the report a pass *names*, so the report stayed a DRAFT, shown to nobody and refused as evidence. The pm was nudged with nothing to cite (12:54:05), asked QA for the report's id, was refused twice for citing the draft (12:55:03, :04), asked QA to submit it and waited 35 s for QA's next turn; the goal closed at 12:56:09: **3 min 13 s of a 10 min 29 s round**, four turns and four messages that only moved one artifact from DRAFT to READY_FOR_REVIEW | a pass that names a patch (or nothing) also submits the giver's newest unsubmitted verification report of the pass's domain, for this mission, and says so | `tests/core/own-report-pass.test.ts` (16 tests, 9 new) |
+| Q2 | **A verdict or an acceptance that named an artifact the mesh does not hold was told only that it was unknown.** The tech lead's `art-M3YBHXSZ` (13:07:11) and the pm's `art-M3YBS5TT003baedc135d` (the report was `art-M3YBNR4X00335635a833`), typed from memory into a request to QA and then into three acceptances in five seconds (13:12:48, :50, :53). Twelve across runs 7 to 11, each recovered by a later read, none told where the artifact was | the refusal names the route: for an acceptance the submitted artifacts it could cite (or that nothing submitted can yet, and to ask the owner of the report to submit it), for a verdict the reviews the seat owes. One helper shared with P1's note | `tests/core/unknown-artifact-route.test.ts` (7 tests) |
+| Q3 | **A read of an artifact did not say where it stood.** `mesh_artifact_read` returned the text and nothing about the artifact's state, and a draft is the one status that changes what a reader may do with it. Round one's pm cited a draft it could have known was a draft; round two's asked QA, 41 s after QA's report was FINAL, to move it to review | the read carries `status`, `version` and `owner` on every page | `tests/integration/artifact-read-status.test.ts` (2 tests) |
+| Q4 | **A refused review request said "no seat in this mesh can" for a report only its author could settle.** The pm asked the tech lead to review QA's report (12:55:54); QA holds the review capability and nobody else does, and QA's own pass settled it at 13:10:19. The refusal's own filter dropped the owner, beside `settlersOf`, which keeps it when no peer could review | the refusal reads `settlersOf`: it names "qa can", says "you can" to the owner that asks, and keeps the owner off the list when a peer could review | `tests/policy/review-routing.test.ts` (14 tests, 3 new) |
+
+What each does and why is in `docs/runtime.md` (*What counts as satisfied*, the briefing paragraph) and `docs/protocol.md` (*Evidence for a
+criterion*, the review-routing passage); the commit messages carry the evidence. Q3's first account was wrong and was corrected before it
+was committed: the pm's one read of the new report came three seconds *before* QA submitted it, and its two later reads were pages of the
+old round-one report, so a status field would not have changed round two's chase. It removes the learn-it-from-a-refusal loop of round
+one for a seat that reads before it cites, which the acceptor's briefing now asks it to do, and that is what the commit says.
+
+### Not fixed, and the honest limits
+
+- **QA informed the pm before it passed.** Round two: QA's "verification complete" INFORM (13:10:13, with the report's URI as evidence)
+  woke the pm six seconds before QA submitted and passed the report (13:10:19). The pm worked from a draft, asked QA to move it to review
+  (13:11:00; the report was FINAL) and waited for QA's turn: 2 min 49 s from the pass to the pm's last acceptance. The order of a seat's
+  ops is its own; Q1 and Q3 make the draft less costly, and nothing makes a wake wait for the sender's turn to finish.
+- **The no-op fast retry fires after any no-op turn.** `stall_noop_retry_ms` (45 s) is armed by every turn that changed nothing, an
+  observer's included, and bypasses the idle window: the tech lead's no-op turn (ended 12:53:20) put the nudge at 12:54:05, on a mission
+  whose every seat was idle, 28 s after the last turn rather than 180 s. Here it was useful (the report was a draft that nothing else would
+  have surfaced for another two minutes) and it woke the acceptor with nothing to cite. By design; recorded.
+- **QA's task was completed before its work was done** (12:48:41 and 13:04:40, each right after planning, before any code existed to test):
+  the fifth run running. Prose in a role prompt, not enforced.
+- **The pm's session rotated three seconds before QA's pass** (129k tokens, over the 120k threshold), after a continuity write in its
+  previous turn. The pm that then misread the report's state had lost its transcript; the rotation did what it is for.
+- **Contract-shape and floor refusals**: `artifact.produce` with an extra property (`artifact_type`), and `ifUnanswered.afterMs` of 5000,
+  15000 and 30000 under the mesh's floor (B4), each recovered by the next call, which the refusal's text made possible.
+- **One occurrence of the Q4 refusal in the runs kept, no cost** (the pm went on to accept). Fixed because the comment on
+  `mayReviewArtifact` promises one definition of who can settle and this was a second.
+- **One run.** P2's grace, L5's wording, B23, J1, J3, H1 and H2 are still to be confirmed live, and a clean launch on a network address
+  (S1, S3) has not been run with real seats.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `8ebceab`, before this round | 3404 | 3402 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 34 s) | 3425 | 3423 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (185 warnings, one rule, the baseline). Mutation checks on the new tests,
+each reverted: Q1 (extension disabled: 6 tests fail; domain filter dropped: 1; owner check dropped: 1; newest-only dropped: 1; reply
+note dropped: 3; runs even when the pass names a report: 1; submitted reports as candidates: 1; goal not checked: 1, after a first
+version of the tests let that one survive), Q2 (acceptance route removed: 3; "nothing citable" always: 2; owed list removed: 3; asks of
+every seat: 2; no cap: 1; settled reviews named: 1; domain filter dropped: 1, in P1's tests), Q3 (status removed: 2; version removed: 2;
+owner removed: 1; status only on a read that fits one page: 1, after an equivalent first mutant that survived and was replaced), Q4
+(the owner filtered out again: 2; the owner always counted: 6; nobody named: 8). The review-routing, cross-domain, paging, result-bound
+and verdict-ledger suites that read the changed refusals and results were run on their own first.
+
+The first full run of the finished tree failed one test, and it was Q1's doing: P2's "with nothing submitted to cite there is no early
+nudge: a draft report is not proof" (`tests/lifecycle/acceptance-grace.test.ts`) published QA's draft and then passed the criterion
+naming nothing, which now submits that draft, so the grace nudge fired. The code was right and the fixture had stopped describing
+what its title says; the case now writes the draft *after* the pass, asserts it is still a draft, and still fails when `citableEvidence`
+counts a draft as proof (checked by removing the exclusion). None of the suites run on their own beforehand was that one.
+
+The next full run failed a different test, `tests/server/commercial.test.ts` "a single mesh prices /usage from the same host.yaml",
+with the model's row missing, and ten reruns of its file passed. It was a race in the test and not in this round's code: the event
+store makes an append visible in memory at once and writes the file after it, `/usage` reads the file, and the two cases that appended
+and then asked for usage did not wait for the write. Delaying the queued write by 40 ms made both cases fail every time (2 of 13);
+with `flush()` awaited they pass under the same delay. The server was left as it is (the lag is the write queue's, milliseconds, and
+a day's aggregate does not need the last event). It is the second test caught racing the store's write queue by the full suite (§14's
+T1 was the first).
+
+### Worth keeping from this round
+
+- **A rule keyed on the artifact a seat names misses the act next to it.** L2 submitted the report a pass names; the seat passed the
+  patch and wrote the report beside it. The intent (my verification is done, here is the evidence) is what the rule has to follow.
+- **A rule that does more on an existing act changes what old fixtures mean.** Q1 made a pass submit the draft beside it; a test built
+  to show that a draft is not proof built exactly that pair. Grep the tests for the *act* (here a `pass` through `recordDecision`: five
+  files), not only for the feature's name, before the full run, and treat a failing fixture as a question about the fixture first.
+- **A flake you cannot reproduce by rerunning is a race you have not widened yet.** Ten isolated reruns of the `/usage` case passed; a
+  40 ms delay in the event file's write failed it every time and named the cause. Delay the thing you suspect instead of rerunning.
+- **A read returns content, and the one fact about an artifact that content cannot say is its state.** Everything else a seat needs to
+  know about what it is about to cite is in the document; whether it can be cited is not.
+- **Check the story before it goes in a commit.** The first draft of Q3's message said the pm "read the report three times". Its tool
+  calls say once, three seconds early, and twice on the old report. The message and the test's header were rewritten before the commit.
+- **Two definitions of one list, found because a message contradicted a later event.** "No seat in this mesh can" was followed, eleven
+  minutes on, by a seat settling the artifact. Read refusals against the events that follow them.
+- **The cheapest repair in a refusal is the list the briefing already prints.** Q2 added no lookup: `citableEvidence` and the owed asks
+  were already computed for the seat's briefing, and the refusal had never been told to use them.
