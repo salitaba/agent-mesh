@@ -1,5 +1,5 @@
 /**
- * The product was called Agent Mesh before it was called Ordane. The rename is only as good as its last stray
+ * The product was called Agent Mesh before it was called Curule. The rename is only as good as its last stray
  * occurrence: a page, a help text or a log line that still says the old name is what a customer reads first.
  *
  * Every text file in the repository is scanned for the old name in any spelling (`Agent Mesh`, `agent-mesh`,
@@ -22,15 +22,17 @@ const HISTORICAL = [
   /^agent-mesh-runtime\.md$/, // the original design document, renamed by nobody
   /^package-lock\.json$/, // npm's record
   /^CHANGELOG\.md$/, // says what changed from what
-  /^LICENSE$/, // "Ordane (previously named Agent Mesh)": the licensed work must stay identifiable
+  /^LICENSE$/, // "Curule (previously named Agent Mesh)": the licensed work must stay identifiable
   /^docs\/brand\.md$/, // says the old name is retired
   /^docs\/operations\.md$/, // the upgrade from a version named Agent Mesh
 ];
 
 /** Code that reads or keeps something the old product wrote, and tests of exactly that. */
 const COMPATIBILITY = [
-  /^packages\/projects\/src\/store\.ts$/, // ~/.agent-mesh is still used while ~/.ordane does not exist
+  /^packages\/projects\/src\/store\.ts$/, // ~/.agent-mesh is still used while ~/.curule does not exist
   /^tests\/projects\/registry\.test\.ts$/,
+  /^apps\/mesh-cli\/src\/doctor\.ts$/, // says when an install is still on that directory, and links the runbook's section on it
+  /^tests\/cli\/doctor\.test\.ts$/,
   /^packages\/runtime-claude\/src\/orphans\.ts$/, // AGENT_MESH_HOST_PID: seats a previous version left running
   /^tests\/agent-runtime\/orphan-seats\.test\.ts$/,
   /^docs\/runtime\.md$/, // documents that stamp
@@ -98,8 +100,27 @@ test("the files that are allowed to say it do say it, so the list cannot go stal
   }
 });
 
+/**
+ * A name the product was briefly going to have and never shipped under. It is not the old name and it is not the new
+ * one, so it has no business anywhere but in the notes that tell the story. Built from pieces so that this file does
+ * not contain it.
+ */
+const ABANDONED = new RegExp("ord" + "ane", "i");
+
+test("the name the product almost had appears only in the notes that record the rename", () => {
+  const found: string[] = [];
+  for (const rel of files("")) {
+    if (/^NOTES-.*\.md$/.test(rel) || /^docs\/NOTES-/.test(rel) || /^spec\//.test(rel) || rel === "package-lock.json") continue;
+    fs.readFileSync(path.join(ROOT, rel), "utf8").split("\n").forEach((line, i) => {
+      if (ABANDONED.test(line)) found.push(`${rel}:${i + 1}: ${line.trim().slice(0, 110)}`);
+    });
+  }
+  assert.deepEqual(found, [], `a name the product never shipped under is in the tree:\n  ${found.join("\n  ")}`);
+  assert.ok(!ABANDONED.test(fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8")), "nor in the lockfile");
+});
+
 test("what the scan skips is not where the product's own text lives", () => {
-  for (const rel of ["README.md", "PRODUCT.md", "docs/architecture.md", "docs/commercial/pricing.md", "site/index.html", "apps/mesh-cli/src/index.ts", "apps/mesh-dashboard/src/shell.tsx", "deploy/helm/ordane/Chart.yaml", "Dockerfile"]) {
+  for (const rel of ["README.md", "PRODUCT.md", "docs/architecture.md", "docs/commercial/pricing.md", "site/index.html", "apps/mesh-cli/src/index.ts", "apps/mesh-dashboard/src/shell.tsx", "deploy/helm/curule/Chart.yaml", "Dockerfile"]) {
     assert.ok([...files("")].includes(rel), `${rel} is scanned`);
   }
   assert.ok(![...files("")].some((rel) => rel.startsWith("node_modules/") || rel.startsWith("dist/")));

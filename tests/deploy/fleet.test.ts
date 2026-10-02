@@ -92,7 +92,7 @@ test("it creates the namespace, the Secret and the release, and no credential is
 
   assert.ok(r.calls.some((c) => c === "kubectl label namespace mesh-acme pod-security.kubernetes.io/enforce=restricted --overwrite"));
   const helm = r.calls.find((c) => c.startsWith("helm upgrade --install"))!;
-  assert.match(helm, /^helm upgrade --install mesh .*deploy\/helm\/ordane --namespace mesh-acme /);
+  assert.match(helm, /^helm upgrade --install mesh .*deploy\/helm\/curule --namespace mesh-acme /);
   for (const part of ["--set auth.existingSecret=mesh-credentials", "--set ingress.enabled=true", "--set ingress.host=mesh.acme.example.com", "--set ingress.tlsSecretName=mesh-tls", "--set ingress.className=nginx", "--wait"]) {
     assert.ok(helm.includes(part), `${part} in: ${helm}`);
   }
@@ -124,7 +124,7 @@ test("a name or host that would not make a valid namespace or ingress is refused
     [["--name", "acme", "--host", "https://h.example.com"], /--host must be a plain host name/],
     [["--name", "acme", "--host", "h.example.com:8443"], /--host must be a plain host name/],
     [["--name", "acme", "--host", "h.example.com", "--licence-file", "/nonexistent/lic"], /no such file/],
-    [["--name", "acme", "--host", "h.example.com", "--chart", "oci://ghcr.io/x/charts/ordane"], /--version is required for an oci:\/\/ chart/],
+    [["--name", "acme", "--host", "h.example.com", "--chart", "oci://ghcr.io/x/charts/curule"], /--version is required for an oci:\/\/ chart/],
     [["--name", "acme", "--host", "h.example.com", "--frobnicate"], /unknown option '--frobnicate'/],
   ];
   for (const [args, message] of cases) {
@@ -149,10 +149,10 @@ test("a chart from a registry needs its version, and a version and extra values 
   const f = fixture();
   const values = path.join(f.dir, "values-acme.yaml");
   fs.writeFileSync(values, "persistence: { size: 50Gi }\n");
-  const r = run(f, ["--name", "acme", "--host", "h.example.com", "--chart", "oci://ghcr.io/example/charts/ordane", "--version", "1.2.3", "--values", values, "--release", "prod"]);
+  const r = run(f, ["--name", "acme", "--host", "h.example.com", "--chart", "oci://ghcr.io/example/charts/curule", "--version", "1.2.3", "--values", values, "--release", "prod"]);
   assert.equal(r.status, 0, r.stderr);
   const helm = r.calls.find((c) => c.startsWith("helm upgrade"))!;
-  assert.match(helm, /^helm upgrade --install prod oci:\/\/ghcr\.io\/example\/charts\/ordane /);
+  assert.match(helm, /^helm upgrade --install prod oci:\/\/ghcr\.io\/example\/charts\/curule /);
   assert.ok(helm.includes("--version 1.2.3"));
   assert.ok(helm.includes(`--values ${values}`));
   assert.ok(helm.includes("--set ingress.tlsSecretName=prod-tls"), "the TLS Secret follows the release name");

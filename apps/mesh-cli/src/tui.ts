@@ -35,7 +35,7 @@ export async function runTui(busUrl: string, quit: () => Promise<void>): Promise
   const render = (): void => {
     const lines: string[] = [];
     const goal = lastStatus?.goal;
-    lines.push(`\x1b[1m Ordane — ${goal?.id ?? "(connecting)"} \x1b[0m`);
+    lines.push(`\x1b[1m Curule — ${goal?.id ?? "(connecting)"} \x1b[0m`);
     lines.push("─".repeat(60));
     if (lastStatus) {
       const ratio = lastStatus.progress?.ratio ?? 0;
@@ -57,7 +57,7 @@ export async function runTui(busUrl: string, quit: () => Promise<void>): Promise
     const escalations = lastStatus?.openEscalations ?? [];
     if (escalations.length) {
       lines.push("─".repeat(60));
-      lines.push("\x1b[31m ESCALATIONS (ordane respond <id> <text>)\x1b[0m");
+      lines.push("\x1b[31m ESCALATIONS (curule respond <id> <text>)\x1b[0m");
       for (const e of escalations) lines.push(`  ! ${e.id}  ${e.reason} (by ${e.raisedBy})`);
     }
     lines.push("─".repeat(60));

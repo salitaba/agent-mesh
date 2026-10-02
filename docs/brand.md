@@ -1,30 +1,31 @@
-# Ordane: name, voice and look
+# Curule: name, voice and look
 
 How the product presents itself, so that a page, a talk or a README written by someone new reads like the rest of it.
 The files are in [`brand/`](../brand/README.md).
 
 ## The name
 
-**Ordane** (pronounced *or-DAYN*, like "ordain") is a respelling of *ordain*: to appoint someone to a role and give
-them authority. That is the whole product. Each agent is appointed to a seat, what the seat may do is written down, and
-the runtime refuses the rest.
+**Curule** (pronounced *KYOOR-ool*) is the chair a Roman magistrate sat in to exercise authority: the *sella curulis*,
+a folding seat that only an office-holder had the right to. That is the whole product. Each agent is appointed to a seat,
+what the seat may do is written down, and the runtime refuses the rest. (The word is also close to the Spanish *curul*,
+a seat in a legislature, and to the Turkish *kurul*, a board; both are the same idea.)
 
-- In prose it is **Ordane**, with a capital O. The command, the package and the container image are lower case:
-  `ordane`, `ghcr.io/<owner>/ordane`. It is never ORDANE or OrDane.
-- The logo is lower case (`ordane`), because it is drawn, not typeset.
+- In prose it is **Curule**, with a capital C. The command, the package and the container image are lower case:
+  `curule`, `ghcr.io/<owner>/curule`. It is never CURULE or CuRule.
+- The logo is lower case (`curule`), because it is drawn, not typeset.
 - Before the rename the product was called **Agent Mesh**. That name is retired; do not use it for the product. The
   word *mesh* stays, because it is the product's own word for one running organization: `mesh.yaml`, a *mesh run*, the
-  `mesh` command that still works as an alias of `ordane`.
+  `mesh` command that still works as an alias of `curule`.
 
 ### Words the product uses
 
 | Say | Meaning | Not |
 |---|---|---|
-| **mesh** | one running organization: its roles, rules, artifacts and event log (`mesh.yaml`) | "the Ordane" |
+| **mesh** | one running organization: its roles, rules, artifacts and event log (`mesh.yaml`) | "the Curule" |
 | **seat** | one role held by one agent in a mesh; plans count seats | "bot", "worker" |
 | **agent** | what a seat is, to someone who is new to it | "assistant" |
 | **project** | a mesh registered with a host | "workspace" (that is the folder an agent writes in) |
-| **host** | the process that supervises projects (`ordane host`) | "server" for the whole product |
+| **host** | the process that supervises projects (`curule host`) | "server" for the whole product |
 | **gate** | a rule the runtime checks before a change counts as done | "check" when it is enforced |
 
 ## What to say it is
@@ -32,10 +33,10 @@ the runtime refuses the rest.
 Use these as they are, or shorter. Every claim in them is one the documents already make and a test or a measured run
 supports.
 
-**One line.** Ordane is a runtime for persistent AI organizations: role-based agents that work on your own
+**One line.** Curule is a runtime for persistent AI organizations: role-based agents that work on your own
 infrastructure, under rules the runtime enforces.
 
-**A paragraph.** Ordane runs a team of AI agents like an organization. Each agent has a role and explicit authority; the
+**A paragraph.** Curule runs a team of AI agents like an organization. Each agent has a role and explicit authority; the
 runtime refuses what a role may not do; every action is recorded in an append-only log that can be replayed and audited.
 It runs on your own infrastructure with your own model credentials, and nothing phones home.
 
@@ -56,8 +57,8 @@ Plain, exact, evidence first. The documents already read this way; this is what 
 - **Say what failed.** The project keeps the defects its own real runs found
   ([the run notes](../NOTES-live-run-20260930-haiku.md)). Showing the audit trail, including the refusals, is the pitch.
 - **Source-available, never "open source".** The licence is BSL 1.1 and the OSI does not call it open source.
-- **Name Claude and Anthropic only as what Ordane runs on,** and keep the line the site uses: *Claude and Anthropic are
-  trademarks of Anthropic PBC; Ordane is not affiliated with or endorsed by Anthropic.*
+- **Name Claude and Anthropic only as what Curule runs on,** and keep the line the site uses: *Claude and Anthropic are
+  trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.*
 - **No** "revolutionary", "seamless", "supercharge", "unleash", "10x", "autonomous workforce". No exclamation marks.
 
 | Instead of | Write |
@@ -69,17 +70,18 @@ Plain, exact, evidence first. The documents already read this way; this is what 
 
 ## The mark
 
-A **ring with one seat filled**. The ring is the organization, a seat is a role, and the bead on its rim is an agent
-appointed to it. In the wordmark the first *o* is the mark, so the name and the sign are one thing.
+A **ring held open, with one seat filled**. The ring is the organization, a seat is a role, and the bead at the end of the
+arc is an agent appointed to it. It is also the letter *c*: the first letter of the wordmark is the mark, so the name and
+the sign are one thing.
 
-![The Ordane logo](../brand/ordane-logo-light.svg)
+![The Curule logo](../brand/curule-logo-light.svg)
 
 | File in `brand/` | Use it for |
 |---|---|
-| `ordane-logo.svg` | the logo on any page; it follows the visitor's light or dark setting |
-| `ordane-logo-light.svg`, `ordane-logo-dark.svg` | where the setting cannot be followed (a README on GitHub, slides, print on a fixed background) |
-| `ordane-logo-mono.svg` | one colour: it takes the colour of the text around it (`currentColor`) |
-| `ordane-mark*.svg` | the ring and seat alone: an avatar, a badge, a corner |
+| `curule-logo.svg` | the logo on any page; it follows the visitor's light or dark setting |
+| `curule-logo-light.svg`, `curule-logo-dark.svg` | where the setting cannot be followed (a README on GitHub, slides, print on a fixed background) |
+| `curule-logo-mono.svg` | one colour: it takes the colour of the text around it (`currentColor`) |
+| `curule-mark*.svg` | the ring and seat alone: an avatar, a badge, a corner |
 | `favicon.svg`, `apple-touch-icon.png`, `icon-512.png`, `app-icon.svg` | the icon in a tab, on a home screen, in an app list |
 | `social-card.png` | the 1200 × 630 image shown when a link is shared |
 | `tokens.css` | the colours and type below as CSS custom properties |
@@ -119,5 +121,5 @@ drawn as paths, so it does not depend on a font either.
 
 The name and the logo identify this project and its author. The source licence covers the code
 ([`LICENSE`](../LICENSE)); it does not grant the right to use the name or the logo for a product of your own, or in a way
-that suggests the project endorses yours. Saying that you use Ordane, or that your product works with it, is welcome.
+that suggests the project endorses yours. Saying that you use Curule, or that your product works with it, is welcome.
 No trademark registration is claimed, so do not write the name with a registered mark.

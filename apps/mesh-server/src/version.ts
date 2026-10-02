@@ -15,7 +15,7 @@ export function serverVersion(): string {
   for (let i = 0; i < 8; i++) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { name?: string; version?: string };
-      if (pkg.name === "ordane" && pkg.version) return (cached = pkg.version);
+      if (pkg.name === "curule" && pkg.version) return (cached = pkg.version);
     } catch {
       /* not here: look one directory up */
     }

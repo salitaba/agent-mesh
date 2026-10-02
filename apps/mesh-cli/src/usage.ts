@@ -1,5 +1,5 @@
 /**
- * `ordane usage`: what meshes consumed, by day, seat and model, from their event logs.
+ * `curule usage`: what meshes consumed, by day, seat and model, from their event logs.
  *
  * Read-only and offline: it scans `events.jsonl` the way the server's `/usage` does, so it is safe beside a
  * running mesh and works on a stopped one. Tokens are exact. Dollars are an estimate at Anthropic's list
@@ -16,8 +16,8 @@ import { enforceOrWarn } from "../../mesh-server/src/license";
 import { configuredPrices, parseUsageQuery, projectLogs, usageAnswer, usagePrices } from "../../mesh-server/src/commercial";
 
 export const USAGE_HELP = `usage:
-  ordane usage <mesh.yaml> [<mesh.yaml> ...]   what those meshes consumed, from their event logs
-  ordane usage --all                           every project registered under <home> ($MESH_HOME or ~/.ordane)
+  curule usage <mesh.yaml> [<mesh.yaml> ...]   what those meshes consumed, from their event logs
+  curule usage --all                           every project registered under <home> ($MESH_HOME or ~/.curule)
     --since <date>     inclusive start: 2026-10-01 or 2026-10-01T00:00:00Z
     --until <date>     exclusive end
     --by <dimensions>  comma separated, any of day, project, agent, model (default day,agent;
@@ -54,14 +54,14 @@ export async function runUsageCommand(positional: string[], flags: Record<string
     return 0;
   }
   if (flags.json && flags.csv) {
-    err("ordane usage: --json and --csv are two formats; pick one");
+    err("curule usage: --json and --csv are two formats; pick one");
     return 2;
   }
   const params = new URLSearchParams();
   for (const key of VALUE_FLAGS) {
     const value = flags[key];
     if (value === true) {
-      err(`ordane usage: --${key} needs a value\n\n${USAGE_HELP}`);
+      err(`curule usage: --${key} needs a value\n\n${USAGE_HELP}`);
       return 2;
     }
     if (typeof value === "string") params.set(key, value);
@@ -73,7 +73,7 @@ export async function runUsageCommand(positional: string[], flags: Record<string
   const skipped: Array<{ project: string; reason: string }> = [];
   if (flags.all) {
     if (positional.length) {
-      err("ordane usage: --all reads every registered project; it does not take mesh.yaml paths too");
+      err("curule usage: --all reads every registered project; it does not take mesh.yaml paths too");
       return 2;
     }
     const found = projectLogs(readProjectsFile(projectsFilePath(home)).map((p) => ({ id: p.id, configPath: p.configPath })));
@@ -83,7 +83,7 @@ export async function runUsageCommand(positional: string[], flags: Record<string
     const files = positional.length ? positional : [env.MESH_CONFIG ?? "mesh.yaml"];
     for (const file of files) {
       if (!fs.existsSync(file)) {
-        err(`ordane usage: no such file: ${file}\n\n${USAGE_HELP}`);
+        err(`curule usage: no such file: ${file}\n\n${USAGE_HELP}`);
         return 2;
       }
       const resolved = resolveConfig(file);
@@ -94,7 +94,7 @@ export async function runUsageCommand(positional: string[], flags: Record<string
 
   const parsed = parseUsageQuery(params);
   if (!parsed.ok) {
-    err(`ordane usage: ${parsed.error}`);
+    err(`curule usage: ${parsed.error}`);
     return 2;
   }
 

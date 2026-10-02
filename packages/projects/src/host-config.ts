@@ -1,5 +1,5 @@
 /**
- * The host's own configuration: `~/.ordane/host.yaml`.
+ * The host's own configuration: `~/.curule/host.yaml`.
  *
  * Deliberately NOT a `host:` block inside a project's `mesh.yaml`. Every knob
  * here is cross-project — an aggregate spend ceiling declared by one project

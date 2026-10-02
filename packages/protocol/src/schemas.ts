@@ -9,7 +9,7 @@ import {
 
 export const messageSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "https://ordane.dev/schemas/message.schema.json",
+  $id: "https://curule.dev/schemas/message.schema.json",
   title: "MeshMessage",
   type: "object",
   required: ["id", "type", "timestamp", "goalId", "from", "to", "threadId", "artifactRefs", "payload", "priority"],
@@ -117,7 +117,7 @@ export const messageSchema = {
 
 export const eventSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "https://ordane.dev/schemas/event.schema.json",
+  $id: "https://curule.dev/schemas/event.schema.json",
   title: "MeshEvent",
   type: "object",
   required: ["id", "type", "timestamp", "payload"],
@@ -138,7 +138,7 @@ export const eventSchema = {
 
 export const artifactSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "https://ordane.dev/schemas/artifact.schema.json",
+  $id: "https://curule.dev/schemas/artifact.schema.json",
   title: "Artifact",
   type: "object",
   required: [
@@ -267,7 +267,7 @@ const agentConfigSchema = {
 
 export const meshConfigSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "https://ordane.dev/schemas/mesh.schema.json",
+  $id: "https://curule.dev/schemas/mesh.schema.json",
   title: "MeshConfig",
   type: "object",
   required: ["version", "mesh", "agents"],

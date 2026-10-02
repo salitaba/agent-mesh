@@ -1,4 +1,4 @@
-# The Ordane brand files
+# The Curule brand files
 
 The logo, the mark, the icons and the social card. How to use them, and what the name and voice are, is in
 [docs/brand.md](../docs/brand.md).
@@ -19,4 +19,4 @@ have the sizes the pages promise.
 To change the tagline on the card, the colours or the geometry, edit `scripts/build-brand.mjs`, rebuild with `--png`, and
 copy what the site uses into `site/assets/` (`favicon.svg`, `apple-touch-icon.png`, `social-card.png`): a test keeps
 those copies equal to these files. The dashboard and the site draw the logo inline; the same test checks that their
-paths match `ordane-logo.svg`.
+paths match `curule-logo.svg`.

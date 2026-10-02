@@ -42,7 +42,7 @@ function quiet(m: MeshInstance, ids: string[]): void {
   for (const id of ids) s.setScript(id, async () => ({ operations: [{ op: "done" } as MeshOp] }));
 }
 
-/** The shipped `ordane init` regime, with a window short enough to observe. */
+/** The shipped `curule init` regime, with a window short enough to observe. */
 const REGIME = { delivery: { classes: true, coalesceMs: 120 } };
 
 const PAIR = [

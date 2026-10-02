@@ -1,5 +1,5 @@
 /**
- * `ordane backups` and `ordane restore` — the offline path.
+ * `curule backups` and `curule restore` — the offline path.
  *
  * The server routes are covered in `tests/server/restore.test.ts`. What is
  * specific to the CLI is that it works on a mesh that is NOT running, which
@@ -62,7 +62,7 @@ async function meshWithOneBackup(dir: string): Promise<string> {
   }
 }
 
-test("ordane backups lists one reset's archives and marks only the state one restorable", { skip: gitSkip }, async () => {
+test("curule backups lists one reset's archives and marks only the state one restorable", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-backups-"));
   try {
     const configPath = writeMesh(dir);
@@ -88,7 +88,7 @@ test("ordane backups lists one reset's archives and marks only the state one res
   }
 });
 
-test("ordane backups on a mesh that never reset says so instead of printing nothing", { skip: gitSkip }, async () => {
+test("curule backups on a mesh that never reset says so instead of printing nothing", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-backups-empty-"));
   try {
     const configPath = writeMesh(dir);
@@ -103,7 +103,7 @@ test("ordane backups on a mesh that never reset says so instead of printing noth
   }
 });
 
-test("ordane restore brings the mission back offline", { skip: gitSkip }, async () => {
+test("curule restore brings the mission back offline", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-"));
   try {
     const configPath = writeMesh(dir);
@@ -131,18 +131,18 @@ test("ordane restore brings the mission back offline", { skip: gitSkip }, async 
   }
 });
 
-test("ordane restore refuses an unknown stamp and names the command that lists them", { skip: gitSkip }, async () => {
+test("curule restore refuses an unknown stamp and names the command that lists them", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-unknown-"));
   try {
     const configPath = writeMesh(dir);
     await meshWithOneBackup(dir);
-    assert.throws(() => runRestoreCommand([configPath, "19990101-000000"], {}), /no backup with stamp 19990101-000000[\s\S]*ordane backups/);
+    assert.throws(() => runRestoreCommand([configPath, "19990101-000000"], {}), /no backup with stamp 19990101-000000[\s\S]*curule backups/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("ordane restore refuses while another process holds the state lock, naming its pid", { skip: gitSkip }, async () => {
+test("curule restore refuses while another process holds the state lock, naming its pid", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-locked-"));
   let child: ReturnType<typeof spawn> | undefined;
   try {
@@ -192,12 +192,12 @@ setInterval(() => {}, 1 << 30);
   }
 });
 
-test("ordane restore with no stamp prints usage rather than guessing", { skip: gitSkip }, async () => {
+test("curule restore with no stamp prints usage rather than guessing", { skip: gitSkip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-restore-usage-"));
   try {
     const configPath = writeMesh(dir);
-    assert.throws(() => runRestoreCommand([configPath], {}), /usage: ordane restore <mesh\.yaml> <stamp>/);
-    assert.throws(() => runBackupsCommand([], {}), /usage: ordane backups <mesh\.yaml>/);
+    assert.throws(() => runRestoreCommand([configPath], {}), /usage: curule restore <mesh\.yaml> <stamp>/);
+    assert.throws(() => runBackupsCommand([], {}), /usage: curule backups <mesh\.yaml>/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

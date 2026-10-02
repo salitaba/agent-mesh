@@ -1,5 +1,5 @@
 #!/bin/sh
-# Smoke test for a running Ordane host: the checks a deployment must pass before anyone is told it works.
+# Smoke test for a running Curule host: the checks a deployment must pass before anyone is told it works.
 #
 #   scripts/smoke.sh native                 build output on this machine (after `npm run build`)
 #   scripts/smoke.sh image <image-ref>      a container image (needs docker); also checks it runs unprivileged,
@@ -115,8 +115,8 @@ case "$mode" in
     if docker exec "$cid" sh -c 'touch /app/.write-test' >/dev/null 2>&1; then fail "the image's own filesystem is writable"; else pass "the image's own filesystem is read-only"; fi
     if docker exec "$cid" sh -c 'touch /data/.write-test && rm /data/.write-test' >/dev/null 2>&1; then pass "the data volume is writable"; else fail "the data volume is not writable"; fi
     # Two different failures, said apart: a command that is not on the path, and one that is and does not run.
-    # `mesh` is the name the product had before it was Ordane; it stays installed so an old script keeps working.
-    for cmd in ordane mesh; do
+    # `mesh` is the name the product had before it was Curule; it stays installed so an old script keeps working.
+    for cmd in curule mesh; do
       if ! docker exec "$cid" sh -c "command -v $cmd" >/dev/null 2>&1; then
         fail "the $cmd command is not on the path"
       elif docker exec "$cid" "$cmd" --help >/dev/null 2>&1; then

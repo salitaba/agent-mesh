@@ -1,5 +1,5 @@
 /**
- * `ordane usage`: a table for a person, JSON and CSV for a machine, the same numbers as the server's /usage,
+ * `curule usage`: a table for a person, JSON and CSV for a machine, the same numbers as the server's /usage,
  * and the same plan gate. Event logs are written by hand, so the figures asserted are arithmetic a reader can check.
  */
 import { test } from "node:test";

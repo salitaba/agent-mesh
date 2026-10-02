@@ -1,6 +1,6 @@
 # Security
 
-What Ordane protects, how, what it does not, and what a deployer should do about the rest. Written for a
+What Curule protects, how, what it does not, and what a deployer should do about the rest. Written for a
 security reviewer and for the person answering a security questionnaire; the pre-filled answers are in
 [security-questionnaire.md](security-questionnaire.md). To report a vulnerability see
 [SECURITY.md](../../SECURITY.md).
@@ -9,7 +9,7 @@ Every control below is pinned by a test named in the right-hand column. `npm tes
 
 ## The model in one page
 
-Ordane runs AI agents that **execute shell commands and write code**. That is the product, and it sets the
+Curule runs AI agents that **execute shell commands and write code**. That is the product, and it sets the
 security posture: the agents are not trusted to stay inside a box that the software merely asks them to stay in.
 The box is the **container** (or pod), and the unit of isolation is **one instance per tenant**.
 

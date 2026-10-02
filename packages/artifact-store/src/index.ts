@@ -258,7 +258,7 @@ export class GitWorkspace implements WorkspacePort {
     }
     if (current.split(/\r?\n/).some((line) => line.trim() === ".mesh/" || line.trim() === ".mesh")) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${current === "" || current.endsWith("\n") ? "" : "\n"}# Ordane runtime files (seat prompts): never product content\n.mesh/\n`, "utf8");
+    fs.appendFileSync(file, `${current === "" || current.endsWith("\n") ? "" : "\n"}# Curule runtime files (seat prompts): never product content\n.mesh/\n`, "utf8");
   }
 
   async ensureRepo(): Promise<void> {
@@ -286,7 +286,7 @@ export class GitWorkspace implements WorkspacePort {
       await this.git(["config", "user.email", "mesh@localhost"], this.mainDir);
       await this.git(["config", "user.name", "Mesh Supervisor"], this.mainDir);
       await this.excludeRuntimeDir();
-      fs.writeFileSync(path.join(this.mainDir, "README.md"), "# Mesh workspace\n\nManaged by Ordane git worktrees.\n", "utf8");
+      fs.writeFileSync(path.join(this.mainDir, "README.md"), "# Mesh workspace\n\nManaged by Curule git worktrees.\n", "utf8");
       await this.git(["add", "-A"], this.mainDir);
       await this.git(["commit", "-m", "mesh: initialize workspace"], this.mainDir);
     } else {

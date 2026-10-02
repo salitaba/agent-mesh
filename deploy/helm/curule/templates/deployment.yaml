@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ordane.fullname" . }}
+  name: {{ include "curule.fullname" . }}
   labels:
-    {{- include "ordane.labels" . | nindent 4 }}
+    {{- include "curule.labels" . | nindent 4 }}
 spec:
   # One writer per instance: the event log and its state lock belong to one process. Scale by running
   # more releases (one per tenant), never more replicas of this one.
@@ -12,7 +12,7 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "ordane.selectorLabels" . | nindent 6 }}
+      {{- include "curule.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "ordane.selectorLabels" . | nindent 8 }}
+        {{- include "curule.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -29,7 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "ordane.serviceAccountName" . }}
+      serviceAccountName: {{ include "curule.serviceAccountName" . }}
       # The agents run shell commands. Nothing in this pod needs the Kubernetes API, so it gets no token for it.
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
@@ -60,7 +60,7 @@ spec:
             # release) must recognise that lock as its own predecessor's and take it over at once, rather than
             # wait out the heartbeat window as it would for a lock from some other machine.
             - name: MESH_INSTANCE_ID
-              value: {{ include "ordane.fullname" . | quote }}
+              value: {{ include "curule.fullname" . | quote }}
             # Projects may only be registered, browsed and opened under here: the agents' workspaces live on
             # the data volume and the API cannot be pointed at anything else in the container.
             - name: MESH_PROJECTS_ROOT
@@ -83,18 +83,18 @@ spec:
             - name: MESH_API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ordane.secretName" . }}
+                  name: {{ include "curule.secretName" . }}
                   key: MESH_API_TOKEN
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ordane.secretName" . }}
+                  name: {{ include "curule.secretName" . }}
                   key: ANTHROPIC_API_KEY
                   optional: true
             - name: MESH_LICENSE
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ordane.secretName" . }}
+                  name: {{ include "curule.secretName" . }}
                   key: MESH_LICENSE
                   optional: true
             {{- with .Values.extraEnv }}
@@ -126,7 +126,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ default (include "ordane.fullname" .) .Values.persistence.existingClaim }}
+            claimName: {{ default (include "curule.fullname" .) .Values.persistence.existingClaim }}
         - name: tmp
           emptyDir:
             sizeLimit: 2Gi

@@ -1,6 +1,6 @@
 # Changelog
 
-What changed between versions, for whoever runs Ordane. The format follows [Keep a Changelog](https://keepachangelog.com).
+What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
 sections 1 to 18) are described there, run by run.
@@ -9,15 +9,15 @@ sections 1 to 18) are described there, run by run.
 
 ### Changed: read this before upgrading a deployment
 
-- **The product is called Ordane** (it was Agent Mesh). The command is `ordane`; `mesh` stays installed as the same
+- **The product is called Curule** (it was Agent Mesh). The command is `curule`; `mesh` stays installed as the same
   command, so a script that says `mesh run` keeps working. `mesh.yaml`, the `MESH_*` variables, the `mesh_*` tools the
-  agents use and the event log are unchanged. What a running deployment has to account for: the metrics are `ordane_*`
-  (they were `agent_mesh_*`); the default state directory is `~/.ordane`, and an existing `~/.agent-mesh` is still used
-  while there is no `~/.ordane` (nothing is moved for you); the image is `ghcr.io/<owner>/ordane`; the Helm chart is
-  `ordane`, and a release installed from the old chart needs `--set nameOverride=agent-mesh` on its first upgrade (a
-  Deployment's selector cannot change); the Compose project is `ordane`, and an existing deployment keeps its volume
-  with `COMPOSE_PROJECT_NAME=agent-mesh`; the stamp the orphan reaper reads is `ORDANE_HOST_PID`, and seats stamped
-  with the old name are still found. The licence's *Licensed Work* line now reads "Ordane (previously named Agent
+  agents use and the event log are unchanged. What a running deployment has to account for: the metrics are `curule_*`
+  (they were `agent_mesh_*`); the default state directory is `~/.curule`, and an existing `~/.agent-mesh` is still used
+  while there is no `~/.curule` (nothing is moved for you); the image is `ghcr.io/<owner>/curule`; the Helm chart is
+  `curule`, and a release installed from the old chart needs `--set nameOverride=agent-mesh` on its first upgrade (a
+  Deployment's selector cannot change); the Compose project is `curule`, and an existing deployment keeps its volume
+  with `COMPOSE_PROJECT_NAME=agent-mesh`; the stamp the orphan reaper reads is `CURULE_HOST_PID`, and seats stamped
+  with the old name are still found. The licence's *Licensed Work* line now reads "Curule (previously named Agent
   Mesh)"; the terms are unchanged. Details:
   [docs/operations.md](docs/operations.md#upgrading-from-a-version-named-agent-mesh).
 - **The source is now under the Business Source License 1.1** (`LICENSE`); `package.json` used to say MIT, and there
@@ -31,7 +31,7 @@ sections 1 to 18) are described there, run by run.
 - **The server fails closed on the network.** It refuses to listen on any address but loopback unless
   `MESH_API_TOKEN` is set to 32 or more characters (`openssl rand -hex 32`). A blank token on a network address is a
   refusal, not "no authentication". `MESH_ALLOW_INSECURE_BIND=1` overrides it, loudly, for a server whose only way in is a
-  proxy that authenticates every request. `ordane run|serve|console` take `--bind` (default loopback).
+  proxy that authenticates every request. `curule run|serve|console` take `--bind` (default loopback).
 - **Browser requests are checked.** State-changing requests must be JSON and same-origin (`Origin`, `Sec-Fetch-Site`;
   more origins through `MESH_ALLOWED_ORIGINS`). The wildcard CORS header is gone. With `MESH_ALLOWED_HOSTS` set, any other
   `Host` is refused with 421. Responses carry a CSP, `nosniff` and frame protection; agent-written pages run in a sandbox.
@@ -54,10 +54,10 @@ sections 1 to 18) are described there, run by run.
 ### Added
 
 - **Licensing.** Offline Ed25519 licence keys (`AML1.…`) verified on the customer's machine with no call out; the plan table
-  (Community, Team, Business, Enterprise) with its limits and entitlements; `ordane license status|install|verify|remove`;
+  (Community, Team, Business, Enterprise) with its limits and entitlements; `curule license status|install|verify|remove`;
   a licence card and an expiry banner in the dashboard; `tools/license/mesh-license.mjs` to generate and sign keys.
   See [docs/commercial/licensing.md](docs/commercial/licensing.md).
-- **Usage and metrics.** `ordane usage` reports what the meshes consumed by day, project, seat and model from their own event
+- **Usage and metrics.** `curule usage` reports what the meshes consumed by day, project, seat and model from their own event
   logs, as a table, JSON or CSV, with a dollar estimate at list prices; `/metrics/prometheus` exposes projects, spend, turns
   and the licence. Both are Team-plan features.
 - **Deployment.** A container image (unprivileged, read-only root, tini) with a keyless `demo` mode; a Compose file; a Helm
@@ -65,11 +65,11 @@ sections 1 to 18) are described there, run by run.
   a credentials Secret and a release per tenant; a release workflow that builds for amd64 and arm64, attaches an SBOM and
   provenance and signs the digest; CI and security workflows; Dependabot. See
   [docs/commercial/deployment.md](docs/commercial/deployment.md).
-- **`ordane doctor`** prints what a support engineer needs and nothing that is yours: version, plan and licence state, the
+- **`curule doctor`** prints what a support engineer needs and nothing that is yours: version, plan and licence state, the
   settings that are present (by name, never value), each project's configuration, lock and event-log size, disk space,
   and the host's probes with `--host`. No event content, prompt, credential, licensee name or path is in it, so it is
   safe to paste into a ticket ([docs/operations.md](docs/operations.md#what-to-send-support)).
-- **`ordane init`** can scaffold a mesh on the stub runtime (`--runtime stub`) or from a shipped example (`--example name`,
+- **`curule init`** can scaffold a mesh on the stub runtime (`--runtime stub`) or from a shipped example (`--example name`,
   `--list`).
 - **Documents.** The operations runbook ([docs/operations.md](docs/operations.md)), deployment, pricing (its tables generated
   from the plan table), licensing, security and a security questionnaire under [docs/commercial/](docs/commercial/README.md),
@@ -104,7 +104,7 @@ sections 1 to 18) are described there, run by run.
   has two rungs left (`VERIFIED`, `MERGEABLE`) and nothing climbs them by itself; the refusal named neither, and the twelfth
   run's tech-lead met it three times. It now says "You can" when the asking seat may climb them, and names the owner (or a
   seat that may verify) when it may not; a draft, a patch in review, a rejected one and a merged one each say what they wait for.
-- `ordane --help` and `ordane -h` print the usage and exit 0. They answered "unknown command: --help" and exited 1, so a script that
+- `curule --help` and `curule -h` print the usage and exit 0. They answered "unknown command: --help" and exited 1, so a script that
   checked the command ran (the image's smoke test does) saw a failure; a command that does not exist still exits 1.
 - A seat that passes the verification report it wrote now submits it with the pass. The report used to stay a draft, which is
   shown to nobody but its owner and is refused as evidence, so the seats that needed it spent minutes asking for a report that
@@ -112,8 +112,8 @@ sections 1 to 18) are described there, run by run.
   only after every refusal a pass can meet; a pass on somebody else's draft submits nothing.
 - A seat that may accept criteria is shown the submitted artifacts it could cite in its briefing, while a mandatory criterion
   that needs an acceptance is open. Until now only the stall watchdog's note named them, after three idle minutes.
-- The closing report of `ordane run` is printed after the turns still running have settled, so its `SPEND` line matches the ledger
-  and `ordane usage`. It was short by the final turn (2.2% to 2.6%) in every real run.
+- The closing report of `curule run` is printed after the turns still running have settled, so its `SPEND` line matches the ledger
+  and `curule usage`. It was short by the final turn (2.2% to 2.6%) in every real run.
 - An approval signed as `architecture` on another kind of artifact (a RequirementsDoc, in the tenth Haiku run) no longer closes
   `architecture-approved` or announces that the architecture is approved: the criterion and the derived event follow the artifact,
   and the reply names the architecture review the seat still owes.

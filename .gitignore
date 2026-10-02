@@ -6,7 +6,7 @@ workspace/
 .mesh-backups/
 *.log
 
-# runtime artifacts created by `ordane run` in example folders
+# runtime artifacts created by `curule run` in example folders
 examples/*/workspace/
 examples/*/.mesh-state/
 

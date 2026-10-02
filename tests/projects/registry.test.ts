@@ -45,9 +45,9 @@ test("MESH_HOME overrides the registry location and is read per call", () => {
   try {
     delete process.env.MESH_HOME;
     // The default is under the home directory it is given (the real one only when none is), so this
-    // machine's own ~/.ordane or ~/.agent-mesh cannot change what is asserted.
+    // machine's own ~/.curule or ~/.agent-mesh cannot change what is asserted.
     const nobody = tmpRoot();
-    assert.equal(meshHome(process.env, nobody), path.join(nobody, ".ordane"));
+    assert.equal(meshHome(process.env, nobody), path.join(nobody, ".curule"));
 
     const base = tmpRoot();
     process.env.MESH_HOME = base;
@@ -57,22 +57,22 @@ test("MESH_HOME overrides the registry location and is read per call", () => {
     // An explicit env object wins over the ambient one, so a host can hold two.
     assert.equal(meshHome({ MESH_HOME: "/tmp/elsewhere" } as NodeJS.ProcessEnv), "/tmp/elsewhere");
     // Whitespace-only is not an override; that would silently relocate state.
-    assert.equal(meshHome({ MESH_HOME: "  " } as NodeJS.ProcessEnv, nobody), path.join(nobody, ".ordane"));
+    assert.equal(meshHome({ MESH_HOME: "  " } as NodeJS.ProcessEnv, nobody), path.join(nobody, ".curule"));
   } finally {
     if (before === undefined) delete process.env.MESH_HOME;
     else process.env.MESH_HOME = before;
   }
 });
 
-test("a machine that has only the directory the product used before it was Ordane keeps using it", () => {
+test("a machine that has only the directory the product used before it was Curule keeps using it", () => {
   const home = tmpRoot();
   const env = {} as NodeJS.ProcessEnv;
   fs.mkdirSync(path.join(home, ".agent-mesh"));
   assert.equal(meshHome(env, home), path.join(home, ".agent-mesh"), "the registry, the settings and a licence are there");
-  // Adopting the new name is the owner's move (`mv ~/.agent-mesh ~/.ordane`), and once it exists it wins, even when
+  // Adopting the new name is the owner's move (`mv ~/.agent-mesh ~/.curule`), and once it exists it wins, even when
   // the old directory is still beside it: two directories is the owner's state to sort out, not a reason to switch back.
-  fs.mkdirSync(path.join(home, ".ordane"));
-  assert.equal(meshHome(env, home), path.join(home, ".ordane"));
+  fs.mkdirSync(path.join(home, ".curule"));
+  assert.equal(meshHome(env, home), path.join(home, ".curule"));
   // The override is not affected by either.
   assert.equal(meshHome({ MESH_HOME: "/tmp/elsewhere" } as NodeJS.ProcessEnv, home), "/tmp/elsewhere");
   // Resolving it creates and moves nothing.
@@ -86,7 +86,7 @@ test("a missing registry file is an empty registry, not an error", () => {
   const base = tmpRoot();
   const registry = registryIn(path.join(base, "home"));
   assert.deepEqual(registry.list(), []);
-  // Reading must not create the file: `ordane --help` should not write to $HOME.
+  // Reading must not create the file: `curule --help` should not write to $HOME.
   assert.equal(fs.existsSync(registry.file), false);
 });
 
@@ -497,7 +497,7 @@ test("registry file: junk entries are dropped but a broken file is loud", () => 
     (err: unknown) => err instanceof ProjectError && err.code === "registry_corrupt",
   );
 
-  // A file from a newer Ordane must not be downgraded by writing over it.
+  // A file from a newer Curule must not be downgraded by writing over it.
   fs.writeFileSync(file, JSON.stringify({ version: 99, projects: [] }), "utf8");
   assert.throws(
     () => readProjectsFile(file),

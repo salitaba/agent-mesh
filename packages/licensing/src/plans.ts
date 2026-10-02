@@ -25,7 +25,7 @@ export const PLAN_IDS: readonly PlanId[] = ["community", "team", "business", "en
 export interface PlanLimits {
   /** Agents (seats) in one mesh, the `human` seat not counted. */
   maxSeatsPerMesh: number | null;
-  /** Projects open at once under one host. A single `ordane run` is one project. */
+  /** Projects open at once under one host. A single `curule run` is one project. */
   maxProjects: number | null;
   /** Agent turns running at once, across every open project of a host. */
   maxConcurrentTurns: number | null;

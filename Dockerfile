@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 #
-# Ordane — container image for the multi-project host (default) or a single mesh.
+# Curule — container image for the multi-project host (default) or a single mesh.
 #
-#   docker build -t ordane .
+#   docker build -t curule .
 #   docker run --rm -p 127.0.0.1:7420:7420 -v mesh-data:/data \
-#     -e MESH_API_TOKEN="$(openssl rand -hex 32)" -e ANTHROPIC_API_KEY=sk-ant-... ordane
+#     -e MESH_API_TOKEN="$(openssl rand -hex 32)" -e ANTHROPIC_API_KEY=sk-ant-... curule
 #
 # What is inside: the compiled runtime, the dashboard, the role prompts and the shipped examples; git
 # (agents commit in worktrees); and the Claude Agent SDK's own `claude` executable, installed from npm
@@ -83,10 +83,10 @@ COPY --from=build /src/roles ./roles
 COPY --from=build /src/schemas ./schemas
 COPY --from=build /src/examples ./examples
 COPY deploy/docker/entrypoint.sh /usr/local/bin/mesh-entrypoint
-# `ordane` is the command; `mesh` is the same launcher under the name the product had before, kept so a script or
+# `curule` is the command; `mesh` is the same launcher under the name the product had before, kept so a script or
 # a `docker exec ... mesh ...` that predates the rename keeps working.
-RUN chmod 0755 /usr/local/bin/mesh-entrypoint /app/apps/mesh-cli/bin/ordane.mjs /app/apps/mesh-cli/bin/mesh.mjs \
- && ln -s /app/apps/mesh-cli/bin/ordane.mjs /usr/local/bin/ordane \
+RUN chmod 0755 /usr/local/bin/mesh-entrypoint /app/apps/mesh-cli/bin/curule.mjs /app/apps/mesh-cli/bin/mesh.mjs \
+ && ln -s /app/apps/mesh-cli/bin/curule.mjs /usr/local/bin/curule \
  && ln -s /app/apps/mesh-cli/bin/mesh.mjs /usr/local/bin/mesh
 
 USER mesh

@@ -4,7 +4,7 @@
 #   deploy/fleet/provision-tenant.sh --name acme --host mesh.acme.example.com \
 #       --licence-file acme.key --provider-key-file acme-anthropic.key
 #
-# Ordane is one isolated instance per tenant: the agents run shell commands, so a pod and the namespace
+# Curule is one isolated instance per tenant: the agents run shell commands, so a pod and the namespace
 # around it are the boundary. This makes that repeatable. Run it again for the same tenant to upgrade it: the
 # operator token already in the Secret is kept, not rotated, unless --rotate-token says so.
 #
@@ -16,7 +16,7 @@
 #   --host <fqdn>              required. Where the tenant reaches it; the chart wires it into the server's own checks
 #   --namespace <ns>           default mesh-<name>
 #   --release <name>           Helm release name, default mesh
-#   --chart <path|oci-url>     default deploy/helm/ordane beside this script
+#   --chart <path|oci-url>     default deploy/helm/curule beside this script
 #   --version <v>              chart version (required for an oci:// chart)
 #   --licence-file <file>      the tenant's licence key; omit for the Community plan
 #   --provider-key-file <file> the tenant's own model-provider key (their account, their bill); omit if they bring Bedrock/Vertex
@@ -29,7 +29,7 @@
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
-name=""; host=""; namespace=""; release="mesh"; chart="$(cd "$here/../helm/ordane" 2>/dev/null && pwd || echo "$here/../helm/ordane")"; version=""
+name=""; host=""; namespace=""; release="mesh"; chart="$(cd "$here/../helm/curule" 2>/dev/null && pwd || echo "$here/../helm/curule")"; version=""
 licence_file=""; provider_file=""; tls_secret=""; ingress_class=""
 rotate=0; dry=0; print_token=0
 values=""

@@ -259,7 +259,7 @@ export interface ToolCall {
 
 /** The Claude gate's refusal wording (buildPermissionGate): a call the runtime
  *  denied, as opposed to one that ran and failed. */
-const DENIAL = /denied|not available to ordane agents|needs operator approval/i;
+const DENIAL = /denied|not available to curule agents|needs operator approval/i;
 
 /** "denied" / "failed" when the record says the call failed, else null. */
 export function toolFailure(c: ToolCall): "denied" | "failed" | null {

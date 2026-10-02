@@ -4,25 +4,25 @@ import * as path from "path";
 import { randomUUID } from "crypto";
 import { PROJECTS_FILENAME, PROJECTS_FILE_VERSION, ProjectError, type ProjectRef, type ProjectsFile } from "./types";
 
-/** The directory this product's state lived in before it was called Ordane. */
+/** The directory this product's state lived in before it was called Curule. */
 export const LEGACY_HOME_DIRNAME = ".agent-mesh";
 
 /**
- * Root of the host's own state: `~/.ordane`, overridable with `MESH_HOME`.
+ * Root of the host's own state: `~/.curule`, overridable with `MESH_HOME`.
  * The override exists so tests and parallel hosts never touch a real user's
  * registry — it is read on every call rather than cached, because a process
  * that changes it mid-run means to change it.
  *
- * A machine that already has `~/.agent-mesh` and no `~/.ordane` keeps using the old directory: the registry, the
+ * A machine that already has `~/.agent-mesh` and no `~/.curule` keeps using the old directory: the registry, the
  * host settings and an installed licence are in it, and an upgrade must not make them disappear. Nothing is moved
  * for the user (two hosts of different versions on one machine would then disagree about where their state is);
- * `mv ~/.agent-mesh ~/.ordane` adopts the new name, and `ordane doctor` says which directory is in use.
+ * `mv ~/.agent-mesh ~/.curule` adopts the new name, and `curule doctor` says which directory is in use.
  * `home` is the directory the default is taken from, for tests.
  */
 export function meshHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
   const override = env.MESH_HOME?.trim();
   if (override) return path.resolve(override);
-  const current = path.join(home, ".ordane");
+  const current = path.join(home, ".curule");
   const legacy = path.join(home, LEGACY_HOME_DIRNAME);
   return !fs.existsSync(current) && fs.existsSync(legacy) ? legacy : current;
 }
@@ -89,7 +89,7 @@ export function readProjectsFile(file: string): ProjectRef[] {
   if (typeof parsed.version === "number" && parsed.version > PROJECTS_FILE_VERSION) {
     throw new ProjectError(
       "registry_corrupt",
-      `project registry version ${parsed.version} was written by a newer Ordane: ${file}`,
+      `project registry version ${parsed.version} was written by a newer Curule: ${file}`,
     );
   }
   const refs: ProjectRef[] = [];

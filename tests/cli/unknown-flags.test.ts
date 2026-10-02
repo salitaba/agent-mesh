@@ -6,8 +6,8 @@ import { unknownFlagWarnings, parseArgs } from "../../apps/mesh-cli/src/index";
  * A flag the CLI does not read should say so.
  *
  * `parseArgs` collects every `--x` into a bag and each command reads the keys it
- * knows, so anything else is dropped in silence: `ordane status --json` printed the
- * human format and said nothing, and `ordane init --dir /tmp/x` scaffolded into the
+ * knows, so anything else is dropped in silence: `curule status --json` printed the
+ * human format and said nothing, and `curule init --dir /tmp/x` scaffolded into the
  * cwd because the directory is positional. Both looked accepted.
  *
  * The check is deliberately narrow — launch commands only, whose flag list is
@@ -19,7 +19,7 @@ import { unknownFlagWarnings, parseArgs } from "../../apps/mesh-cli/src/index";
 test("an unknown flag on a launch command is named, with the accepted set", () => {
   const out = unknownFlagWarnings("run", { nonsense: true, port: "7421" });
   assert.equal(out.length, 1);
-  assert.match(out[0]!, /--nonsense is not a flag `ordane run` reads/);
+  assert.match(out[0]!, /--nonsense is not a flag `curule run` reads/);
   assert.match(out[0]!, /ignored rather than refused/);
   assert.match(out[0]!, /--port/, "names what IS accepted, so the remedy is in the message");
 });

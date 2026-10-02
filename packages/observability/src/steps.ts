@@ -37,7 +37,7 @@ export interface TurnStep {
   /**
    * The split behind `tokens`, when the log carries it: `budget.consumed` puts
    * the runtime's own `input`/`output`/`cacheRead` in its payload, so a replayed
-   * turn can be read the way `ordane ledger` reads the audit file. Absent means the
+   * turn can be read the way `curule ledger` reads the audit file. Absent means the
    * backend reported no split — never a zero that was never claimed.
    */
   tokensInput?: number;

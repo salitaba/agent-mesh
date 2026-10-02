@@ -1053,7 +1053,7 @@ const DESIGNER_EFFORT = "medium" as const;
  * replaying a sequence of partial patches.
  */
 const DESIGNER_SYSTEM_PROMPT = [
-  "You are the crew designer for Ordane: you help an operator author mesh.yaml through chat.",
+  "You are the crew designer for Curule: you help an operator author mesh.yaml through chat.",
   "You are given the current draft config as JSON, then the conversation so far.",
   "",
   "Rules:",
@@ -1320,7 +1320,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   // local process could walk through. It is now a random secret minted per
   // server and handed only to this server's own designer bridge
   // (`designerBus` below). The operator token is accepted too, so an operator
-  // can still attach `ordane mcp --agent human --token $MESH_API_TOKEN`; with no
+  // can still attach `curule mcp --agent human --token $MESH_API_TOKEN`; with no
   // operator token configured, only the minted secret opens the human seat.
   const humanBridgeToken = randomBytes(32).toString("hex");
   const humanAuth = (token: string): boolean => {
@@ -1565,25 +1565,25 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
     for (const r of seatRecords()) seatsByLifecycle[r.state.lifecycle] = (seatsByLifecycle[r.state.lifecycle] ?? 0) + 1;
     const mission = [...kernel.state.budgets.values()].find((b) => b.key.startsWith("mission:") && b.limitKind === "tokens");
     return [
-      { name: "ordane_up", help: "1 while the server is serving.", type: "gauge", samples: [{ value: 1 }] },
-      { name: "ordane_info", help: "The running version, mode and mesh id; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "mesh", mode: instance.mode, mesh: config.meshId }, value: 1 }] },
-      { name: "ordane_uptime_seconds", help: "Seconds since the server started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
-      { name: "ordane_events_total", help: "Events in the log.", type: "counter", samples: [{ value: m.events }] },
-      { name: "ordane_messages_total", help: "Messages sent.", type: "counter", samples: [{ value: m.messages }] },
-      { name: "ordane_activations_total", help: "Agent turns taken.", type: "counter", samples: [{ value: m.activations }] },
-      { name: "ordane_tokens_total", help: "Tokens the mesh has counted against its budgets.", type: "counter", samples: [{ value: m.tokensTotal }] },
-      { name: "ordane_mission_tokens_limit", help: "The mission token budget; absent when there is none.", type: "gauge", samples: mission?.limit != null ? [{ value: mission.limit }] : [] },
-      { name: "ordane_artifacts", help: "Artifacts in the ledger.", type: "gauge", samples: [{ value: m.artifacts }] },
-      { name: "ordane_tasks", help: "Tasks by state.", type: "gauge", samples: [{ labels: { state: "open" }, value: m.openTasks }, { labels: { state: "completed" }, value: m.completedTasks }] },
-      { name: "ordane_escalations_open", help: "Escalations waiting for an operator.", type: "gauge", samples: [{ value: m.escalationsOpen }] },
+      { name: "curule_up", help: "1 while the server is serving.", type: "gauge", samples: [{ value: 1 }] },
+      { name: "curule_info", help: "The running version, mode and mesh id; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "mesh", mode: instance.mode, mesh: config.meshId }, value: 1 }] },
+      { name: "curule_uptime_seconds", help: "Seconds since the server started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
+      { name: "curule_events_total", help: "Events in the log.", type: "counter", samples: [{ value: m.events }] },
+      { name: "curule_messages_total", help: "Messages sent.", type: "counter", samples: [{ value: m.messages }] },
+      { name: "curule_activations_total", help: "Agent turns taken.", type: "counter", samples: [{ value: m.activations }] },
+      { name: "curule_tokens_total", help: "Tokens the mesh has counted against its budgets.", type: "counter", samples: [{ value: m.tokensTotal }] },
+      { name: "curule_mission_tokens_limit", help: "The mission token budget; absent when there is none.", type: "gauge", samples: mission?.limit != null ? [{ value: mission.limit }] : [] },
+      { name: "curule_artifacts", help: "Artifacts in the ledger.", type: "gauge", samples: [{ value: m.artifacts }] },
+      { name: "curule_tasks", help: "Tasks by state.", type: "gauge", samples: [{ labels: { state: "open" }, value: m.openTasks }, { labels: { state: "completed" }, value: m.completedTasks }] },
+      { name: "curule_escalations_open", help: "Escalations waiting for an operator.", type: "gauge", samples: [{ value: m.escalationsOpen }] },
       {
-        name: "ordane_agents",
+        name: "curule_agents",
         help: "Seats by lifecycle state.",
         type: "gauge",
         samples: Object.entries(seatsByLifecycle).map(([lifecycle, value]) => ({ labels: { lifecycle }, value })),
       },
-      { name: "ordane_event_loop_lag_seconds", help: "How late the last one-second timer fired.", type: "gauge", samples: [{ value: loopLagMs / 1000 }] },
-      { name: "ordane_sse_clients", help: "Event-stream subscribers connected to this server.", type: "gauge", samples: [{ value: hub.clientCount }] },
+      { name: "curule_event_loop_lag_seconds", help: "How late the last one-second timer fired.", type: "gauge", samples: [{ value: loopLagMs / 1000 }] },
+      { name: "curule_sse_clients", help: "Event-stream subscribers connected to this server.", type: "gauge", samples: [{ value: hub.clientCount }] },
       ...licenseMetrics(licenses.current().entitlements, { seats: seatsInUse() }),
     ];
   };
@@ -2439,7 +2439,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "mission" && (parts[1] === "boot" || parts[1] === "start") && req.method === "POST") {
         if (instance.mode === "parked") {
           // parked -> live: start the scheduler and run the config's startup
-          // activation. After this the console behaves exactly like `ordane run`.
+          // activation. After this the console behaves exactly like `curule run`.
           const { alreadyLive, activated, refused } = await instance.goLive();
           void alreadyLive;
           // The old note fell back to printing config.startupActivate whenever
@@ -3072,7 +3072,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           if (parts.length === 0 || parts[0] === "dashboard") {
             applySecurityHeaders(res, "dashboard");
             res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-            res.end("<!doctype html><meta charset=utf-8><title>Ordane</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Ordane API online (no dashboard assets). See <a style='color:#58a6ff' href='/status'>/status</a> <a style='color:#58a6ff' href='/graph'>/graph</a> <a style='color:#58a6ff' href='/events'>/events</a></body>");
+            res.end("<!doctype html><meta charset=utf-8><title>Curule</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Curule API online (no dashboard assets). See <a style='color:#58a6ff' href='/status'>/status</a> <a style='color:#58a6ff' href='/graph'>/graph</a> <a style='color:#58a6ff' href='/events'>/events</a></body>");
             return;
           }
         } else if (parts.length === 0) {
@@ -3583,7 +3583,7 @@ export async function initProductRepo(root: string, stateDir?: string): Promise<
     const rel = stateDir ? path.relative(root, stateDir) : "";
     const ignoreState = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? `${rel.split(path.sep).join("/")}/\n` : "";
     fs.writeFileSync(path.join(root, ".gitignore"), `${ignoreState}node_modules/\n`, "utf8");
-    fs.writeFileSync(path.join(root, "README.md"), "# Mesh workspace\n\nManaged by Ordane.\n", "utf8");
+    fs.writeFileSync(path.join(root, "README.md"), "# Mesh workspace\n\nManaged by Curule.\n", "utf8");
     await git("add", "-A");
     await git("commit", "-m", "mesh: initialize workspace");
     return true;

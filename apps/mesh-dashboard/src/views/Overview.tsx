@@ -149,7 +149,7 @@ export default function Overview(): React.JSX.Element {
   const { busy: bootBusy, goLive: doBoot } = useGoLive();
   const { busy: resetBusy, resetMission } = useResetMission();
   const { busy: reopenBusy, reopenMission } = useReopenMission();
-  // Optional by design: `ordane console` serves a single mesh and has no project
+  // Optional by design: `curule console` serves a single mesh and has no project
   // registry, so a null context means "no host that could have a ceiling".
   //
   // Read here with the other hooks rather than at its point of use further
@@ -227,7 +227,7 @@ export default function Overview(): React.JSX.Element {
   // The last boot's actual outcome. Reaching the console on /status rather than
   // only on the go-live response is the whole point: the response is gone by the
   // time the operator refreshes, which is when they come looking. Absent when
-  // this process never booted from parked (a `ordane run` start, or a server that
+  // this process never booted from parked (a `curule run` start, or a server that
   // predates the field) — then the hedged wording below is still the honest one.
   const lastBoot = st.lastBoot as
     | { at: string; activated: string[]; refused: Array<{ agentId: string; reason: string }> }
@@ -299,7 +299,7 @@ export default function Overview(): React.JSX.Element {
           // seconds later. Offering "continue" as the remedy is what made this
           // look like a broken button instead of a budget that ran out. The
           // ceiling has to move first.
-          <div className="status-strip bad"><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: while the total is over, the host re-parks every open project on the next heartbeat. The ceiling is host-wide, not this mission's — raise it in the host's settings and it takes effect on the next heartbeat, no restart. Editing <code>~/.ordane/host.yaml</code> by hand still needs one, because the file is read only at startup. Projects the host already parked stay parked until you reopen them.</span></div></div>
+          <div className="status-strip bad"><MeshMark /><div><b>Parked — the host hit its spend ceiling.</b> <span className="muted">Total spend across open projects is ${hostSpend!.usd.toFixed(2)}{hostSpend!.ceilingUsd !== null ? ` against a ceiling of $${hostSpend!.ceilingUsd.toFixed(2)}` : ""}{hostSpend!.parked.length ? ` — parked ${hostSpend!.parked.join(", ")}` : ""}. Continuing will not hold: while the total is over, the host re-parks every open project on the next heartbeat. The ceiling is host-wide, not this mission's — raise it in the host's settings and it takes effect on the next heartbeat, no restart. Editing <code>~/.curule/host.yaml</code> by hand still needs one, because the file is read only at startup. Projects the host already parked stay parked until you reopen them.</span></div></div>
         ) : (
           <div className="status-strip warn"><MeshMark /><div><b>Parked.</b> <span className="muted">{hasHistory ? "Previous progress is loaded. Review, answer, add budget — then continue where it left off." : "Nothing runs on its own. Wake to run one step at a time, or start the mission to go live."} <Button variant="banner-act" data-boot disabled={bootBusy} title="Start the scheduler — agents resume work" onClick={doBoot}>continue</Button></span></div></div>
         )

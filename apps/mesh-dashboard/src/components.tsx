@@ -5,16 +5,16 @@ import { evClass, evSeverity, EventSummary } from "./events";
 import type { TimelineEvent, TurnStep } from "./store";
 
 /**
- * The Ordane logo: the name drawn as strokes, its first "o" the mark (a ring with one seat filled). The letters take the
- * text colour of where it is placed and the seat takes the theme's accent. The geometry is brand/ordane-logo.svg, which
+ * The Curule logo: the name drawn as strokes, its first letter the mark (a ring held open, with one seat filled at the end of the arc). The letters take the
+ * text colour of where it is placed and the seat takes the theme's accent. The geometry is brand/curule-logo.svg, which
  * tests/build/brand-assets.test.ts keeps equal to this one.
  */
 export function Wordmark({ height = 22 }: { height?: number }): React.JSX.Element {
   return (
-    <svg className="wordmark" viewBox="0 0 260.5 60" width={(height * 260.5) / 60} height={height} role="img" aria-label="Ordane">
-      <circle cx="20" cy="40" r="16.5" fill="none" stroke="currentColor" strokeWidth="7" />
-      <circle cx="31.67" cy="28.33" r="6" fill="var(--accent)" />
-      <path d="M51.5 56.5V23.5M51.5 40A16.5 16.5 0 0 1 68 23.5M80 40A16.5 16.5 0 1 1 113 40A16.5 16.5 0 1 1 80 40ZM113 3.5V56.5M127 40A16.5 16.5 0 1 1 160 40A16.5 16.5 0 1 1 127 40ZM160 23.5V56.5M177 56.5V23.5M177 40A16.5 16.5 0 0 1 210 40V56.5M224 40H257A16.5 16.5 0 1 0 252.76 51.04" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className="wordmark" viewBox="0 0 221.54 60" width={(height * 221.54) / 60} height={height} role="img" aria-label="Curule">
+      <path d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round" />
+      <circle cx="31.04" cy="27.74" r="6" fill="var(--accent)" />
+      <path d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

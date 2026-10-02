@@ -432,7 +432,7 @@ export interface RawMeshFile {
      * recipients exactly as it always has, and no send is charged. Like
      * `commitments`, and for the same reason -- attention is spent by turns
      * that are already running, so a mesh must not acquire a new pricing
-     * model by being upgraded. `ordane init` writes the block into new meshes;
+     * model by being upgraded. `curule init` writes the block into new meshes;
      * an existing one opts in by hand.
      */
     delivery?: {
@@ -765,7 +765,7 @@ export interface ResolvedMeshConfig {
   startupActivate: string[];
   /**
    * Non-fatal configuration problems (currently: transition gates naming an
-   * actor no agent can play). Surfaced by `ordane validate` so a mesh that will
+   * actor no agent can play). Surfaced by `curule validate` so a mesh that will
    * silently deadlock at a gate says so before it is run.
    */
   warnings: string[];
@@ -2257,7 +2257,7 @@ export function warnRemovedTransport(bus: RawBus | undefined): string[] {
  *
  * Warned rather than rejected, and rather than dropped from the schema: the
  * activation block is `additionalProperties: false`, so removing a property
- * would turn every config that sets it — including everything `ordane init` has
+ * would turn every config that sets it — including everything `curule init` has
  * ever written — into a hard validation failure. Wiring `strategy` instead
  * would be worse still: two keys for one behaviour, and every config pinning
  * the default would silently lose its triage rules.
@@ -2268,7 +2268,7 @@ export function warnRemovedTransport(bus: RawBus | undefined): string[] {
  * this other key", the other says "there is nothing to use".
  *
  * Fires only on keys explicitly present. A default carries no claim, neither
- * key is editable in the designer any more, and `ordane init` writes neither.
+ * key is editable in the designer any more, and `curule init` writes neither.
  */
 export function warnInertActivationKeys(
   activation: { strategy?: string; max_activation_delay_ms?: number } | undefined,

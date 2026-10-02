@@ -46,12 +46,12 @@ test("no vocabulary key is no collapse: an upgraded mesh must not lose its manif
   assert.equal(resolveBusVocabulary("contracts"), "contracts");
 });
 
-test("ordane init scaffolds the collapsed vocabulary, and the scaffold validates", () => {
+test("curule init scaffolds the collapsed vocabulary, and the scaffold validates", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-vocab-init-"));
   try {
     const written = writeDefaultMeshYaml(dir, "vocab-demo");
     const raw = parseMeshSource(fs.readFileSync(written, "utf8"));
-    // The published schema has to know the key, or `ordane init` writes a
+    // The published schema has to know the key, or `curule init` writes a
     // config its own contract rejects.
     const v = validateMeshConfig(raw);
     assert.equal(v.valid, true, JSON.stringify(v.errors));

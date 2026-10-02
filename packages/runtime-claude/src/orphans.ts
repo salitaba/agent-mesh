@@ -26,10 +26,10 @@ import { withoutOuterSession } from "./host-isolation";
  */
 
 /** Stamped on every seat CLI: the pid of the mesh process that spawned it. */
-export const HOST_PID_ENV = "ORDANE_HOST_PID";
+export const HOST_PID_ENV = "CURULE_HOST_PID";
 
 /**
- * What the stamp was called before this product was named Ordane. A seat left running by a host of that version
+ * What the stamp was called before this product was named Curule. A seat left running by a host of that version
  * still carries it, and the first host to start after the upgrade is exactly the one that has to find it: it is
  * read, never written.
  */

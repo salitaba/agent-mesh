@@ -141,7 +141,7 @@ export interface Check {
   message?: string;
 }
 
-const UPGRADE_HINT = "Install a licence with 'ordane license install <key>', or ask your vendor to change your plan.";
+const UPGRADE_HINT = "Install a licence with 'curule license install <key>', or ask your vendor to change your plan.";
 
 function verdict(ent: Entitlements, within: boolean, message: string): Check {
   if (within || ent.enforcement === "off") return { ok: true, blocked: false };

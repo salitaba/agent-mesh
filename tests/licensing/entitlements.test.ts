@@ -117,7 +117,7 @@ test("seat, project and feature checks: the boundary, and what each message says
   const over = checkSeats(community, 9);
   assert.equal(over.ok, false);
   assert.equal(over.blocked, true);
-  assert.match(over.message!, /^This mesh has 9 seats; the Community plan allows 8 per mesh\. Install a licence with 'ordane license install <key>'/);
+  assert.match(over.message!, /^This mesh has 9 seats; the Community plan allows 8 per mesh\. Install a licence with 'curule license install <key>'/);
 
   assert.deepEqual(checkProjects(community, 1), { ok: true, blocked: false });
   assert.match(checkProjects(community, 2).message!, /Opening this project would make 2 open; the Community plan allows 1\./);

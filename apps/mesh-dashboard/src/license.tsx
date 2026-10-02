@@ -2,7 +2,7 @@
  * The licence, as the console shows it: a card on Host settings that says what this install is entitled to
  * and how much of it is in use, and a banner above every view when something needs doing about it.
  *
- * Read-only on purpose. A licence is installed with `ordane license install` on the machine that runs the host,
+ * Read-only on purpose. A licence is installed with `curule license install` on the machine that runs the host,
  * where the file is written owner-only; a web form that wrote it would be a second, weaker way to do the same
  * thing. The banner is quiet for a healthy licence and for no licence at all: Community is a plan, not an error.
  */
@@ -121,7 +121,7 @@ export function LicenseCard(): React.JSX.Element | null {
         </div>
       ))}
       <p className="muted">
-        Install or replace a licence on the machine that runs the host: <code>ordane license install &lt;key&gt;</code>. The host picks it up
+        Install or replace a licence on the machine that runs the host: <code>curule license install &lt;key&gt;</code>. The host picks it up
         within 30 seconds; nothing here is sent anywhere.
       </p>
     </Card>

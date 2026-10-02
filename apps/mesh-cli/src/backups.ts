@@ -1,5 +1,5 @@
 /**
- * `ordane backups` and `ordane restore` — the offline half of mission recovery.
+ * `curule backups` and `curule restore` — the offline half of mission recovery.
  *
  * The server routes of the same names do this against a live, parked mesh. These
  * do it against a mesh that is not running at all, which is the state an
@@ -31,7 +31,7 @@ function humanBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const BACKUPS_HELP = `usage: ordane backups <mesh.yaml>
+export const BACKUPS_HELP = `usage: curule backups <mesh.yaml>
 
 List every archive this mesh has written, newest first. One reset writes one
 set of archives sharing a stamp: the state directory (the mission log — the
@@ -39,9 +39,9 @@ only restorable one), the product checkout, and the agent worktrees.
 
   --json    machine-readable output
 
-Restore one with:  ordane restore <mesh.yaml> <stamp>`;
+Restore one with:  curule restore <mesh.yaml> <stamp>`;
 
-export const RESTORE_HELP = `usage: ordane restore <mesh.yaml> <stamp> [--keep-sessions]
+export const RESTORE_HELP = `usage: curule restore <mesh.yaml> <stamp> [--keep-sessions]
 
 Put an archived mission back. The mesh must not be running.
 
@@ -68,7 +68,7 @@ function openArchive(meshPath: string): { root: string; meshId: string; entries:
 
 export function runBackupsCommand(positional: string[], flags: Flags): number {
   const meshPath = positional[0];
-  if (!meshPath) throw new Error("usage: ordane backups <mesh.yaml>");
+  if (!meshPath) throw new Error("usage: curule backups <mesh.yaml>");
   const { root, meshId, entries } = openArchive(meshPath);
 
   if (flags.json) {
@@ -85,13 +85,13 @@ export function runBackupsCommand(positional: string[], flags: Flags): number {
     const restorable = e.hasEvents ? "restorable" : `${e.kind} — not restorable`;
     console.log(`${e.stamp}  ${e.name.padEnd(42)} ${humanBytes(e.bytes).padStart(9)}  ${restorable}`);
   }
-  console.log(`\nrestore one with: ordane restore ${meshPath} <stamp>`);
+  console.log(`\nrestore one with: curule restore ${meshPath} <stamp>`);
   return 0;
 }
 
 export function runRestoreCommand(positional: string[], flags: Flags): number {
   const [meshPath, stampArg] = positional;
-  if (!meshPath || !stampArg) throw new Error("usage: ordane restore <mesh.yaml> <stamp>");
+  if (!meshPath || !stampArg) throw new Error("usage: curule restore <mesh.yaml> <stamp>");
   const config = resolveConfig(meshPath);
   const root = meshArchiveRoot(config.dir, config.meshId);
   const stamp = stampArg.trim();
@@ -103,7 +103,7 @@ export function runRestoreCommand(positional: string[], flags: Flags): number {
   try {
     const withStamp = listArchives(root).filter((a) => a.stamp === stamp);
     if (withStamp.length === 0) {
-      throw new Error(`no backup with stamp ${stamp} for ${config.meshId} (looked in ${root})\nRun: ordane backups ${meshPath}`);
+      throw new Error(`no backup with stamp ${stamp} for ${config.meshId} (looked in ${root})\nRun: curule backups ${meshPath}`);
     }
     const chosen = withStamp.find((a) => a.hasEvents);
     if (!chosen) {
@@ -123,7 +123,7 @@ export function runRestoreCommand(positional: string[], flags: Flags): number {
     if (result.previousArchivedTo) console.log(`   the state it replaced was archived at ${result.previousArchivedTo}`);
     if (result.snapshotDropped) console.log("   the archive's snapshot was newer than its log and was dropped");
     if (result.sessionsDropped) console.log("   agent sessions were not carried over, so every seat starts a fresh turn");
-    console.log(`\nstart it with: ordane run ${meshPath} --resume`);
+    console.log(`\nstart it with: curule run ${meshPath} --resume`);
     return 0;
   } finally {
     lock.release();

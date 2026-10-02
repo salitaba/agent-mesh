@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ordane.dev/schemas/event.schema.json",
+  "$id": "https://curule.dev/schemas/event.schema.json",
   "title": "MeshEvent",
   "type": "object",
   "required": [

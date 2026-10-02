@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The `ordane` command. `mesh.mjs`, beside it, is the same launcher under the name this product had before it was
-// called Ordane; both stay installed so a script that says `mesh run` keeps working.
+// The `curule` command. `mesh.mjs`, beside it, is the same launcher under the name this product had before it was
+// called Curule; both stay installed so a script that says `mesh run` keeps working.
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 

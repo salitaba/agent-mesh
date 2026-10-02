@@ -12,7 +12,7 @@ import { resolveConfig } from "../../packages/config/src/index";
  *
  * Both keys are kept in the schema on purpose — the block is
  * `additionalProperties: false`, so removing a property would reject every
- * config that sets it, including everything `ordane init` has ever written. These
+ * config that sets it, including everything `curule init` has ever written. These
  * tests pin what makes "accept and warn" safe rather than sloppy: the warnings
  * fire when an author states a key, they stay silent otherwise, each carries
  * its own remedy, and the resolved config exposes neither field for a future
@@ -80,7 +80,7 @@ test("the warning reports the live triage mode, so the remedy sentence stays tru
   assert.match(w, /'heuristic'/, "an operator who already enabled triage must not be told it is off");
 });
 
-test("a config that omits the key is silent — ordane init output must never warn", () => {
+test("a config that omits the key is silent — curule init output must never warn", () => {
   const resolved = resolveRaw(mesh(`  concurrency:
     max_active_agents: 4
 `));

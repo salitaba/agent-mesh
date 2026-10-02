@@ -33,7 +33,7 @@ test("the notices say the Claude Agent SDK is Anthropic's and not covered by thi
   assert.match(text, /## The Claude Agent SDK is not open source/);
   assert.match(text, /Use is subject to the Legal Agreements/);
   assert.match(text, /@anthropic-ai\/claude-agent-sdk \| /);
-  assert.match(text, /not\s+covered by Ordane's licence/);
+  assert.match(text, /not\s+covered by Curule's licence/);
 });
 
 test("a copyleft or unknown licence in the production tree stops the generator, and a dev dependency does not", () => {

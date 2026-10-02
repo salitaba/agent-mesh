@@ -4,7 +4,7 @@ import { makeMesh, stub, waitFor, eventTypes, evidenceContent } from "../helpers
 import type { MeshOp, MeshMessage } from "../../packages/protocol/src/index";
 
 /**
- * The "no active agents, all waiting" stall. Root cause chain: `ordane console`
+ * The "no active agents, all waiting" stall. Root cause chain: `curule console`
  * boots parked; the dashboard's ▶ Start Mission (goLive) started the scheduler
  * and flipped the instance mode but never told the SUPERVISOR — whose liveMode
  * gates the stall watchdog — so the watchdog stayed dead forever. Agents

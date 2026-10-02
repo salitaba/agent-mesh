@@ -1,5 +1,5 @@
 /**
- * `ordane license`: see, check, install and remove a licence.
+ * `curule license`: see, check, install and remove a licence.
  *
  * The vendor's side (key generation and signing) is `tools/license/mesh-license.mjs`, which a customer never
  * has. This is the customer's: it verifies a token against the public keys the build ships, writes it where
@@ -23,11 +23,11 @@ import { meshHome, projectsFilePath, readProjectsFile } from "../../../packages/
 import { resolveConfig } from "../../../packages/config/src/index";
 
 export const LICENSE_HELP = `usage:
-  ordane license [status] [mesh.yaml] [--json]   what this install is entitled to, and how much is in use
-  ordane license install <key|file>              verify a licence and save it to <home>/license.key
-  ordane license verify <key|file>               check a licence without saving it
-  ordane license remove                          delete the saved licence (the install returns to Community)
-    <home> is $MESH_HOME or ~/.ordane. A licence in MESH_LICENSE or MESH_LICENSE_FILE takes precedence over
+  curule license [status] [mesh.yaml] [--json]   what this install is entitled to, and how much is in use
+  curule license install <key|file>              verify a licence and save it to <home>/license.key
+  curule license verify <key|file>               check a licence without saving it
+  curule license remove                          delete the saved licence (the install returns to Community)
+    <home> is $MESH_HOME or ~/.curule. A licence in MESH_LICENSE or MESH_LICENSE_FILE takes precedence over
     the saved one. MESH_LICENSE_ENFORCEMENT is off | warn (default) | enforce: warn reports a breach and never
     refuses; enforce refuses to START what the plan does not allow, and never stops anything that is running.
     A running server picks up a newly installed licence within 30 seconds.`;
@@ -104,7 +104,7 @@ export async function runLicenseCommand(positional: string[], flags: Record<stri
   if (sub === "verify" || sub === "install") {
     const arg = rest[0];
     if (!arg) {
-      err(`ordane license ${sub}: give a licence key or the path of a file that holds one\n\n${LICENSE_HELP}`);
+      err(`curule license ${sub}: give a licence key or the path of a file that holds one\n\n${LICENSE_HELP}`);
       return 2;
     }
     const token = tokenFrom(arg);
@@ -145,6 +145,6 @@ export async function runLicenseCommand(positional: string[], flags: Record<stri
     return 0;
   }
 
-  err(`ordane license: unknown subcommand '${sub}'\n\n${LICENSE_HELP}`);
+  err(`curule license: unknown subcommand '${sub}'\n\n${LICENSE_HELP}`);
   return 2;
 }

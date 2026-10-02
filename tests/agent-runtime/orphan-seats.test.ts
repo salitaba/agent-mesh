@@ -57,7 +57,7 @@ test("a stamped process whose host is gone is an orphan; nothing else is", () =>
   }
 });
 
-test("a seat stamped under the name the product had before Ordane is still found: the upgrade is when it matters", () => {
+test("a seat stamped under the name the product had before Curule is still found: the upgrade is when it matters", () => {
   // A host of the previous version was killed, and the first host of this version is the one that starts next. Its
   // seats carry `AGENT_MESH_HOST_PID`; leaving them running is the leak the reaper exists to close.
   const oldName = (hostPid: number | string) => `PATH=/usr/bin\0${LEGACY_HOST_PID_ENV}=${hostPid}\0HOME=/root\0`;
@@ -167,7 +167,7 @@ test("seatEnv never writes the old stamp name, and drops one it inherited so the
     else process.env[LEGACY_HOST_PID_ENV] = saved;
   }
   // The stamp is a plain variable, not one of the mesh's credentials: it has to reach the seat's own children.
-  assert.equal(HOST_PID_ENV, "ORDANE_HOST_PID");
+  assert.equal(HOST_PID_ENV, "CURULE_HOST_PID");
   assert.equal(LEGACY_HOST_PID_ENV, "AGENT_MESH_HOST_PID");
 });
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Writes the Ordane brand files from one description of the mark: brand/*.svg, brand/tokens.css and the HTML the
+ * Writes the Curule brand files from one description of the mark: brand/*.svg, brand/tokens.css and the HTML the
  * social card is rendered from.
  *
  *   node scripts/build-brand.mjs            write the files
@@ -12,9 +12,10 @@
  * The PNGs are not byte-reproducible across Chrome versions and are not checked for drift; tests/build/brand-assets.test.ts
  * checks that they exist and have the sizes the pages promise.
  *
- * The mark is a ring (the organisation) with one seat filled (the bead on its rim): "ordain" is to appoint someone to
- * a role. The wordmark is lowercase, monoline and geometric, drawn as strokes with round caps; its first "o" is the
- * mark, so the name and the sign are one thing. The letters are paths, so the logo does not depend on a font.
+ * The mark is a ring held open (a "c") with one seat filled: the bead at the end of the arc. A curule is the chair a
+ * Roman magistrate sat in to exercise authority, and in the product a seat is a role. The wordmark is lowercase,
+ * monoline and geometric, drawn as strokes with round caps; its first letter is the mark, so the name and the sign are
+ * one thing. The letters are paths, so the logo does not depend on a font.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -44,52 +45,52 @@ export const SUBLINE = "Roles, authority and an audit trail, enforced by the run
 const n = (x) => String(Math.round(x * 100) / 100);
 
 // ------------------------------------------------------------------------------------------------ the mark
-// A 64 x 64 box. The ring's outer edge is 5.4 from each side, which is what a favicon wants.
-const MARK = { box: 64, c: 32, r: 22, stroke: 9.2, bead: 8, at: -45 };
+// A 64 x 64 box. The ring is open on the right, so it is drawn a little right of centre to put the whole figure, bead
+// included, in the middle of the box; the ring's outer edge is 5.4 from the top, bottom and left, which a favicon wants.
+const MARK = { box: 64, cx: 34, cy: 32, r: 22, stroke: 9.2, bead: 8, half: 48 };
 
 function onCircle(cx, cy, r, deg) {
   const a = (deg * Math.PI) / 180;
   return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
 }
 
-function markParts(colors) {
-  const [bx, by] = onCircle(MARK.c, MARK.c, MARK.r, MARK.at);
+/** An arc round the left from the upper terminal to the lower one, `half` degrees either side of the right. */
+function openRing(cx, cy, r, half) {
+  const [x1, y1] = onCircle(cx, cy, r, -half);
+  const [x2, y2] = onCircle(cx, cy, r, half);
+  return { d: `M${n(x1)} ${n(y1)}A${r} ${r} 0 1 0 ${n(x2)} ${n(y2)}`, seat: [x1, y1] };
+}
+
+function markParts(colors, m = MARK) {
+  const ring = openRing(m.cx, m.cy, m.r, m.half);
   return (
-    `<circle ${colors.ring} cx="${MARK.c}" cy="${MARK.c}" r="${MARK.r}" fill="none" stroke-width="${MARK.stroke}"/>` +
-    `<circle ${colors.seat} cx="${n(bx)}" cy="${n(by)}" r="${MARK.bead}"/>`
+    `<path ${colors.ring} d="${ring.d}" fill="none" stroke-width="${m.stroke}" stroke-linecap="round"/>` +
+    `<circle ${colors.seat} cx="${n(ring.seat[0])}" cy="${n(ring.seat[1])}" r="${m.bead}"/>`
   );
 }
 
 // ------------------------------------------------------------------------------------------------ the wordmark
 // Letters are drawn on an x-height band 40 tall (outer edge to outer edge), 60 from ascender to baseline.
-const T = { s: 7, r: 16.5, xTop: 20, xMid: 40, xBot: 60, asc: 0, bead: 6, at: -45 };
+const T = { s: 7, r: 16.5, xTop: 20, xMid: 40, xBot: 60, asc: 0, bead: 6, half: 48 };
 const TOP = T.xTop + T.s / 2;
 const BOT = T.xBot - T.s / 2;
 const ASC = T.asc + T.s / 2;
-// Space between letters, outer edge to outer edge, tuned by eye: stem to stem needs more than round to stem.
-const GAPS = { or: 8, rd: 5, da: 7, an: 10, ne: 7 };
-
-function bowl(cx) {
-  const { r, xMid } = T;
-  return `M${n(cx - r)} ${xMid}A${r} ${r} 0 1 1 ${n(cx + r)} ${xMid}A${r} ${r} 0 1 1 ${n(cx - r)} ${xMid}Z`;
-}
+// Space between letters, outer edge to outer edge, tuned by eye: stem to stem needs more than round to stem, and the
+// open side of the first letter needs less.
+const GAPS = { cu: 5, ur: 7, ru: 6, ul: 9, le: 7 };
 
 const LETTERS = {
+  u: (x) => {
+    const a = x + T.s / 2;
+    return { d: `M${n(a)} ${TOP}V${T.xMid}A${T.r} ${T.r} 0 0 0 ${n(a + 2 * T.r)} ${T.xMid}M${n(a + 2 * T.r)} ${TOP}V${BOT}`, end: a + 2 * T.r + T.s / 2 };
+  },
   r: (x) => {
     const a = x + T.s / 2;
     return { d: `M${n(a)} ${BOT}V${TOP}M${n(a)} ${T.xMid}A${T.r} ${T.r} 0 0 1 ${n(a + T.r)} ${TOP}`, end: a + T.r + T.s / 2 };
   },
-  d: (x) => {
-    const cx = x + T.s / 2 + T.r;
-    return { d: `${bowl(cx)}M${n(cx + T.r)} ${ASC}V${BOT}`, end: cx + T.r + T.s / 2 };
-  },
-  a: (x) => {
-    const cx = x + T.s / 2 + T.r;
-    return { d: `${bowl(cx)}M${n(cx + T.r)} ${TOP}V${BOT}`, end: cx + T.r + T.s / 2 };
-  },
-  n: (x) => {
+  l: (x) => {
     const a = x + T.s / 2;
-    return { d: `M${n(a)} ${BOT}V${TOP}M${n(a)} ${T.xMid}A${T.r} ${T.r} 0 0 1 ${n(a + 2 * T.r)} ${T.xMid}V${BOT}`, end: a + 2 * T.r + T.s / 2 };
+    return { d: `M${n(a)} ${ASC}V${BOT}`, end: a + T.s / 2 };
   },
   e: (x) => {
     const cx = x + T.s / 2 + T.r;
@@ -102,20 +103,20 @@ const LETTERS = {
 };
 
 function wordmarkGeometry() {
-  // The first "o" is the mark: a ring with a bead on its rim.
+  // The first letter is the mark: an open ring with a bead at the end of the arc.
   const cx = T.s / 2 + T.r;
-  const [bx, by] = onCircle(cx, T.xMid, T.r, T.at);
-  let x = cx + T.r + T.s / 2;
+  const ring = openRing(cx, T.xMid, T.r, T.half);
+  let x = Math.max(ring.seat[0] + T.bead, onCircle(cx, T.xMid, T.r, T.half)[0] + T.s / 2);
   let d = "";
-  let prev = "o";
-  for (const ch of "rdane") {
+  let prev = "c";
+  for (const ch of "urule") {
     x += GAPS[prev + ch];
     const letter = LETTERS[ch](x);
     d += letter.d;
     x = letter.end;
     prev = ch;
   }
-  return { width: x, ring: { cx, cy: T.xMid, r: T.r }, bead: [bx, by, T.bead], d };
+  return { width: x, c: ring, bead: [ring.seat[0], ring.seat[1], T.bead], d };
 }
 
 function wordmarkParts(colors) {
@@ -123,7 +124,7 @@ function wordmarkParts(colors) {
   return {
     width: g.width,
     body:
-      `<circle ${colors.ring} cx="${n(g.ring.cx)}" cy="${g.ring.cy}" r="${g.ring.r}" fill="none" stroke-width="${T.s}"/>` +
+      `<path ${colors.ring} d="${g.c.d}" fill="none" stroke-width="${T.s}" stroke-linecap="round"/>` +
       `<circle ${colors.seat} cx="${n(g.bead[0])}" cy="${n(g.bead[1])}" r="${g.bead[2]}"/>` +
       `<path ${colors.ring} d="${g.d}" fill="none" stroke-width="${T.s}" stroke-linecap="round" stroke-linejoin="round"/>`,
   };
@@ -142,7 +143,7 @@ const ADAPTIVE_STYLE =
   `<style>.ink{stroke:${PALETTE.light.ink}}.seat{fill:${PALETTE.light.blue}}` +
   `@media (prefers-color-scheme:dark){.ink{stroke:${PALETTE.dark.ink}}.seat{fill:${PALETTE.dark.blue}}}</style>`;
 
-function svg({ viewBox, body, scheme, label = "Ordane", extra = "" }) {
+function svg({ viewBox, body, scheme, label = "Curule", extra = "" }) {
   const s = SCHEMES[scheme];
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" role="img" aria-label="${label}"${extra}>` +
@@ -164,8 +165,8 @@ function appIconFile() {
   const s = 0.62;
   const colors = { ring: `stroke="${PALETTE.dark.ink}"`, seat: `fill="${PALETTE.dark.blue}"` };
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ordane">` +
-    `<title>Ordane</title><rect width="64" height="64" fill="${PALETTE.light.ink}"/>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Curule">` +
+    `<title>Curule</title><rect width="64" height="64" fill="${PALETTE.light.ink}"/>` +
     `<g transform="translate(32 32) scale(${s}) translate(-32 -32)">${markParts(colors)}</g></svg>\n`
   );
 }
@@ -174,20 +175,20 @@ function appIconFile() {
 function tokensFile() {
   const vars = (p) =>
     [
-      `--ordane-paper: ${p.paper};`,
-      `--ordane-panel: ${p.panel};`,
-      `--ordane-ink: ${p.ink};`,
-      `--ordane-muted: ${p.muted};`,
-      `--ordane-line: ${p.line};`,
-      `--ordane-blue: ${p.blue};`,
-      `--ordane-on-blue: ${p.onBlue};`,
+      `--curule-paper: ${p.paper};`,
+      `--curule-panel: ${p.panel};`,
+      `--curule-ink: ${p.ink};`,
+      `--curule-muted: ${p.muted};`,
+      `--curule-line: ${p.line};`,
+      `--curule-blue: ${p.blue};`,
+      `--curule-on-blue: ${p.onBlue};`,
     ].map((l) => `  ${l}`).join("\n");
-  return `/* Ordane brand tokens. Generated by scripts/build-brand.mjs: change the script, not this file.
+  return `/* Curule brand tokens. Generated by scripts/build-brand.mjs: change the script, not this file.
    Light is the default; the system's dark preference switches it, and an explicit data-theme wins over both. */
 :root {
 ${vars(PALETTE.light)}
-  --ordane-font: ${FONT};
-  --ordane-mono: ${MONO};
+  --curule-font: ${FONT};
+  --curule-mono: ${MONO};
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -205,10 +206,10 @@ function cardHtml() {
   const { width, body } = wordmarkParts(SCHEMES.light.colors);
   const logoH = 118;
   const logoW = Math.round((logoH * width) / 60);
-  const [bx, by] = onCircle(MARK.c, MARK.c, MARK.r, MARK.at);
+  const sign = openRing(MARK.cx, MARK.cy, MARK.r, MARK.half);
   const p = PALETTE.light;
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Ordane</title>
+<html lang="en"><head><meta charset="utf-8"><title>Curule</title>
 <style>
 html,body{margin:0;padding:0}
 body{width:1200px;height:630px;position:relative;overflow:hidden;background:${p.paper};color:${p.ink};font-family:"Liberation Sans","Helvetica Neue",Arial,system-ui,sans-serif}
@@ -217,8 +218,8 @@ body{width:1200px;height:630px;position:relative;overflow:hidden;background:${p.
 h1{position:absolute;left:84px;top:332px;margin:0;width:760px;font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.02em}
 p{position:absolute;left:84px;top:500px;margin:0;width:760px;font-size:28px;line-height:1.35;color:${p.muted}}
 </style></head><body>
-<svg class="sign" viewBox="0 0 ${MARK.box} ${MARK.box}" aria-hidden="true"><circle cx="${MARK.c}" cy="${MARK.c}" r="${MARK.r}" fill="none" stroke="#efebe3" stroke-width="${MARK.stroke}"/><circle cx="${n(bx)}" cy="${n(by)}" r="${MARK.bead}" fill="${p.blue}"/></svg>
-<svg class="logo" viewBox="0 0 ${n(width)} 60" role="img" aria-label="Ordane">${body}</svg>
+<svg class="sign" viewBox="0 0 ${MARK.box} ${MARK.box}" aria-hidden="true"><path d="${sign.d}" fill="none" stroke="#efebe3" stroke-width="${MARK.stroke}" stroke-linecap="round"/><circle cx="${n(sign.seat[0])}" cy="${n(sign.seat[1])}" r="${MARK.bead}" fill="${p.blue}"/></svg>
+<svg class="logo" viewBox="0 0 ${n(width)} 60" role="img" aria-label="Curule">${body}</svg>
 <h1>${TAGLINE}</h1>
 <p>${SUBLINE}</p>
 </body></html>
@@ -228,14 +229,14 @@ p{position:absolute;left:84px;top:500px;margin:0;width:760px;font-size:28px;line
 // ------------------------------------------------------------------------------------------------ the files
 export function files() {
   return {
-    "ordane-mark.svg": markFile("adaptive"),
-    "ordane-mark-light.svg": markFile("light"),
-    "ordane-mark-dark.svg": markFile("dark"),
-    "ordane-mark-mono.svg": markFile("mono"),
-    "ordane-logo.svg": logoFile("adaptive"),
-    "ordane-logo-light.svg": logoFile("light"),
-    "ordane-logo-dark.svg": logoFile("dark"),
-    "ordane-logo-mono.svg": logoFile("mono"),
+    "curule-mark.svg": markFile("adaptive"),
+    "curule-mark-light.svg": markFile("light"),
+    "curule-mark-dark.svg": markFile("dark"),
+    "curule-mark-mono.svg": markFile("mono"),
+    "curule-logo.svg": logoFile("adaptive"),
+    "curule-logo-light.svg": logoFile("light"),
+    "curule-logo-dark.svg": logoFile("dark"),
+    "curule-logo-mono.svg": logoFile("mono"),
     "favicon.svg": markFile("adaptive"),
     "app-icon.svg": appIconFile(),
     "social-card.html": cardHtml(),
@@ -267,7 +268,7 @@ function freePort() {
  * `shoot(url, width, height, out)` renders the page at exactly width x height.
  */
 async function withChrome(chrome, fn) {
-  const profile = mkdtempSync(join(tmpdir(), "ordane-brand-"));
+  const profile = mkdtempSync(join(tmpdir(), "curule-brand-"));
   const port = await freePort();
   const proc = spawn(
     chrome,

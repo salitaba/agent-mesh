@@ -285,7 +285,7 @@ function Tab({ project, active, parked, onPick, onClose, onDragStart, onDrop, on
  * the registry's view, which is all the host can honestly say about it.
  */
 /**
- * `ordane host` with an empty registry used to render the whole Overview against
+ * `curule host` with an empty registry used to render the whole Overview against
  * a server answering 409 "no project is open": GOAL PROGRESS 0%, "0 of 0 checks
  * done", "SPENT 0/0". Every figure looked like a measurement and none of them
  * meant anything — the worst kind of empty state, one indistinguishable from a
@@ -303,7 +303,7 @@ export function HostEmptyState(): React.JSX.Element {
       </p>
       <Button variant="primary" onClick={() => setAdding(true)}>Add a project folder</Button>
       <p className="muted host-empty-alt">
-        Or from a shell: <code>ordane project add &lt;dir&gt;</code>
+        Or from a shell: <code>curule project add &lt;dir&gt;</code>
       </p>
       {adding ? (
         <>

@@ -19,7 +19,7 @@ import type { Entitlements } from "../../../packages/licensing/src/index";
 
 /**
  * The model prices an operator put in `host.yaml`. A single mesh has no host, but it has a home, and the
- * CLI's `ordane usage` reads this same file: the three answers (CLI, mesh, host) must not differ by which one
+ * CLI's `curule usage` reads this same file: the three answers (CLI, mesh, host) must not differ by which one
  * was asked. A file that will not parse is not a reason to refuse a report; list prices still apply.
  */
 export function configuredPrices(home: string = meshHome()): Readonly<Record<string, TokenPrice>> {
@@ -97,7 +97,7 @@ export async function usageAnswer(
     ...(query.until ? { until: query.until } : {}),
   });
   if (query.format === "csv") {
-    return { contentType: "text/csv; charset=utf-8", body: usageToCsv(report), disposition: 'attachment; filename="ordane-usage.csv"' };
+    return { contentType: "text/csv; charset=utf-8", body: usageToCsv(report), disposition: 'attachment; filename="curule-usage.csv"' };
   }
   return {
     contentType: "application/json",
@@ -114,7 +114,7 @@ export async function usageAnswer(
 export function licenseMetrics(ent: Entitlements, usage: Readonly<Record<string, number>>): PromMetric[] {
   const metrics: PromMetric[] = [
     {
-      name: "ordane_license_info",
+      name: "curule_license_info",
       help: "The licence this install runs under: plan and status as labels, always 1.",
       type: "gauge",
       samples: [{ labels: { plan: ent.plan, status: ent.status, enforcement: ent.enforcement }, value: 1 }],
@@ -122,7 +122,7 @@ export function licenseMetrics(ent: Entitlements, usage: Readonly<Record<string,
   ];
   if (ent.expiresAt) {
     metrics.push({
-      name: "ordane_license_expires_timestamp_seconds",
+      name: "curule_license_expires_timestamp_seconds",
       help: "When the licence expires (Unix time). Alert on this well before it passes.",
       type: "gauge",
       samples: [{ value: Math.floor(Date.parse(ent.expiresAt) / 1000) }],
@@ -134,13 +134,13 @@ export function licenseMetrics(ent: Entitlements, usage: Readonly<Record<string,
     ["concurrent_turns", ent.limits.maxConcurrentTurns],
   ];
   metrics.push({
-    name: "ordane_license_limit",
+    name: "curule_license_limit",
     help: "What the plan allows; a limit that does not exist is left out.",
     type: "gauge",
     samples: limits.filter((l): l is [string, number] => l[1] !== null).map(([limit, value]) => ({ labels: { limit }, value })),
   });
   metrics.push({
-    name: "ordane_license_in_use",
+    name: "curule_license_in_use",
     help: "How much of each limited thing is in use now.",
     type: "gauge",
     samples: Object.entries(usage).map(([what, value]) => ({ labels: { what }, value })),

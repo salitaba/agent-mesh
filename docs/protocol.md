@@ -1,4 +1,4 @@
-# Ordane — Protocol
+# Curule — Protocol
 
 Protocol version `1.0`, carried on every message and event. The protocol is
 runtime- and vendor-independent.

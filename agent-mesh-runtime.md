@@ -2,7 +2,7 @@
 ## Full Implementation Plan
 
 > **Naming.** This is the original design document, written when the product was called Agent Mesh, and it keeps that name. The
-> product is now called **Ordane** (command `ordane`; `mesh` still runs the same program). Nothing below was edited for the rename.
+> product is now called **Curule** (command `curule`; `mesh` still runs the same program). Nothing below was edited for the rename.
 
 # 1. Product Definition
 

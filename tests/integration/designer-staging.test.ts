@@ -9,7 +9,7 @@ type ChatReply = { reply?: string; proposedConfig?: unknown; problems: string[];
 /**
  * The designer runtime is stubbed, but the staging path it exercises is real:
  * the stub speaks JSON-RPC to the bridge URL the server handed it, exactly as
- * the `ordane mcp --staging` process would. What is under test is the turn
+ * the `curule mcp --staging` process would. What is under test is the turn
  * correlation and the drain, not the model.
  */
 async function stagingHarness() {

@@ -257,7 +257,7 @@ budgets:
     tokens: 50000
 
 bus:
-  # The manifest a seat is shown. `ordane init` has written this for every mesh
+  # The manifest a seat is shown. `curule init` has written this for every mesh
   # it scaffolds since the key existed; these examples predate it, so they were
   # teaching the 24-name typed surface to anyone who read them to learn the
   # system. Collapsing it takes no capability away -- the tools it hides stay
@@ -266,22 +266,22 @@ bus:
   vocabulary: contracts
   commitments:
     # Hold an ask that named no contract to the one its type implies, the way
-    # `ordane init` now does. Without it the eight contracts are decoration a
+    # `curule init` now does. Without it the eight contracts are decoration a
     # sender may opt into, and a bare REQUEST_REVIEW opens a debt with no
     # refusal vocabulary, no SLA and no answer shape. These examples set no
     # `ttl_ms`, so nothing here creates a deadline -- what it buys is the
     # closed refusal set (quoted to the debtor in its own prompt) and a
     # verdict on whether an answer actually answered.
     by_type: true
-  # Price attention, the way `ordane init` does for every mesh it scaffolds.
+  # Price attention, the way `curule init` does for every mesh it scaffolds.
   # Without this block every message wakes each of its recipients the instant
   # it is sent, and a wake is a full model turn -- so these examples were
   # demonstrating a mesh no new user is given. Every class still lands in the
-  # mailbox; only the wake differs. The generated mesh.yaml from `ordane init`
+  # mailbox; only the wake differs. The generated mesh.yaml from `curule init`
   # annotates each key in full.
   delivery:
     classes: true
-    # Shorter than the 60s default that `ordane init` writes: these examples are
+    # Shorter than the 60s default that `curule init` writes: these examples are
     # meant to be watched, and a minute of gathering reads as a stall. Measured
     # on examples/demo-stub, which converges in ~3s at this window and ~6s at
     # 5000 -- most bursts are drained by a turn the seat was taking anyway.

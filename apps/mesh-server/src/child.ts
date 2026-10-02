@@ -2,7 +2,7 @@
  * Child entrypoint for the multi-project host.
  *
  * This is a launcher, not a second server: it calls the same `startServer` as
- * `ordane serve`, pinned to loopback on an ephemeral port, and reports the port
+ * `curule serve`, pinned to loopback on an ephemeral port, and reports the port
  * back to the parent on stdout. No route, handler or projection differs from
  * the single-process path — that is the whole point of the child-process
  * design, and why the host can proxy all ~54 routes verbatim.
@@ -133,7 +133,7 @@ export async function runChild(env: NodeJS.ProcessEnv = process.env): Promise<vo
   if (!configPath) throw new Error("MESH_CHILD_CONFIG is required");
   const projectId = env.MESH_CHILD_PROJECT_ID ?? "";
 
-  // The shipped scripted demo behaves the same under a host as under `ordane run`: it starts clean and its
+  // The shipped scripted demo behaves the same under a host as under `curule run`: it starts clean and its
   // scripted team is attached, so it converges with no model and no key. Anything else is a real project.
   const demo = startCleanIfScriptedDemo(resolveConfig(configPath));
 

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Container entrypoint for Ordane.
+# Container entrypoint for Curule.
 #
 #   host            (default) supervise every registered project and serve the dashboard
 #   serve           run one mesh from $MESH_CONFIG
 #   demo            host, with the shipped demo project scaffolded and registered first: scripted agents on
 #                   the stub runtime, so it needs no API key and makes no model calls
-#   anything else   is executed as given, so `docker run … ordane status` and `sh` work
+#   anything else   is executed as given, so `docker run … curule status` and `sh` work
 #
 # Configuration is environment variables; see docs/commercial/deployment.md. This script only turns
 # them into arguments and refuses the one combination that must never start: a server reachable from
@@ -25,7 +25,7 @@ port="${MESH_PORT:-7420}"
 node_cli="node /app/dist/apps/mesh-cli/src/index.js"
 
 fail() {
-  echo "ordane: $*" >&2
+  echo "curule: $*" >&2
   exit 78 # EX_CONFIG
 }
 
@@ -58,7 +58,7 @@ case "$mode" in
     fi
     # Offline and idempotent: registering a project that is already there changes nothing.
     $node_cli project add "$dir" >/dev/null || fail "could not register the demo project"
-    echo "ordane: demo project ready at $dir. Open it in the dashboard, then press Start mission." >&2
+    echo "curule: demo project ready at $dir. Open it in the dashboard, then press Start mission." >&2
     # shellcheck disable=SC2086
     exec $node_cli host --bind "$bind" --port "$port" --home "${MESH_HOME:-/data/home}" "$@"
     ;;

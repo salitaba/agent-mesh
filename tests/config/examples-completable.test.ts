@@ -238,16 +238,16 @@ for (const name of examples) {
 
 /**
  * NOTES-test-gaps 7.3: the load-time warnings for 3/4 only help if the command
- * an operator actually types prints them. `ordane run` goes straight to
- * `launchMesh`, never through `ordane validate`, so this drives the real CLI
+ * an operator actually types prints them. `curule run` goes straight to
+ * `launchMesh`, never through `curule validate`, so this drives the real CLI
  * entry point in a child process on a deliberately broken mesh and reads what
  * it printed before the server came up.
  *
- * Headless (`--no-tui`) only. On a TTY `ordane run` defaults to the TUI, whose
+ * Headless (`--no-tui`) only. On a TTY `curule run` defaults to the TUI, whose
  * first frame clears the screen (`tui.ts` writes `\x1b[2J`) and renders no
  * config warnings — that path cannot be driven without a pty.
  */
-test("`ordane run` prints the unsatisfiable-criterion and unsatisfiable-gate warnings", async () => {
+test("`curule run` prints the unsatisfiable-criterion and unsatisfiable-gate warnings", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-run-warnings-"));
   const configPath = path.join(root, "mesh.yaml");
   fs.writeFileSync(
@@ -290,7 +290,7 @@ startup:
   child.stderr.on("data", (b) => (out += String(b)));
   try {
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`ordane run never came up:\n${out}`)), 30_000);
+      const timer = setTimeout(() => reject(new Error(`curule run never came up:\n${out}`)), 30_000);
       const poll = setInterval(() => {
         if (/online at/.test(out)) {
           clearTimeout(timer);
@@ -302,7 +302,7 @@ startup:
         clearTimeout(timer);
         clearInterval(poll);
         if (/online at/.test(out)) resolve();
-        else reject(new Error(`ordane run exited ${code} before coming up:\n${out}`));
+        else reject(new Error(`curule run exited ${code} before coming up:\n${out}`));
       });
     });
   } finally {
@@ -313,6 +313,6 @@ startup:
     }
     fs.rmSync(root, { recursive: true, force: true });
   }
-  assert.ok(out.includes(criterion), `the unsatisfiable-criterion warning never reached \`ordane run\`'s output:\n${out}`);
-  assert.ok(out.includes(gate), `the unsatisfiable-gate warning never reached \`ordane run\`'s output:\n${out}`);
+  assert.ok(out.includes(criterion), `the unsatisfiable-criterion warning never reached \`curule run\`'s output:\n${out}`);
+  assert.ok(out.includes(gate), `the unsatisfiable-gate warning never reached \`curule run\`'s output:\n${out}`);
 });

@@ -47,7 +47,7 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
       body: [
         "Everything the running mission produced goes away: every event, agent session, budget and step, and the goal restarts from zero.",
         "Three things are archived first, together under one stamp in .mesh-backups/<mesh-id>/ — the state directory holding the mission log, the product checkout, and the agent worktrees (their uncommitted files, plus a git bundle of their branches).",
-        "This console cannot restore them. Run `ordane backups <mesh.yaml>` to list the stamps and `ordane restore <mesh.yaml> <stamp>` to put one back.",
+        "This console cannot restore them. Run `curule backups <mesh.yaml>` to list the stamps and `curule restore <mesh.yaml> <stamp>` to put one back.",
       ],
       danger: true,
       confirmLabel: "Reset to zero",

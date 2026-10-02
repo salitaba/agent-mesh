@@ -1,5 +1,5 @@
 /**
- * `ordane init`: a first project that runs wherever it is put.
+ * `curule init`: a first project that runs wherever it is put.
  *
  * The shipped examples point at the repository's `roles/` with `../../roles/...`. Copied anywhere else (a
  * container's data volume, a customer's repository) that finds no prompts and the project will not register.
@@ -48,7 +48,7 @@ test("every shipped example scaffolds into a directory of its own and loads ther
       const file = resolved.agents[id]!.prompt?.file;
       if (file) assert.ok(path.resolve(dir, file).startsWith(dir) && fs.existsSync(path.resolve(dir, file)), `${name}/${id}: its prompt ${file} is not a file inside the project`);
     }
-    assert.ok(r.out.some((l) => l.startsWith("next: ordane project add ")), name);
+    assert.ok(r.out.some((l) => l.startsWith("next: curule project add ")), name);
   }
 });
 

@@ -152,7 +152,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }): React.JSX.Element {
     <main className="signin">
       <form onSubmit={(ev) => void submit(ev)} aria-labelledby="signin-title">
         <div className="signin-logo"><Wordmark height={30} /></div>
-        <Card title={<span id="signin-title">Sign in to Ordane</span>}>
+        <Card title={<span id="signin-title">Sign in to Curule</span>}>
           <p className="muted">This server is protected by an access token. It is the value of <span className="mono">MESH_API_TOKEN</span> the server was started with.</p>
           <label htmlFor="signin-token">Access token</label>
           <Input

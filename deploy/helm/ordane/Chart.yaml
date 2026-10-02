@@ -1,8 +1,0 @@
-apiVersion: v2
-name: ordane
-description: "Ordane host, a runtime for persistent AI organizations. One release is one isolated instance: one tenant, one team."
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
-kubeVersion: ">=1.25.0-0"
-keywords: [ai, agents, orchestration]

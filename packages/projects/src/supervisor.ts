@@ -11,7 +11,7 @@ import type { ProjectRef, ProjectStatus, ProjectSupervisor } from "./types";
  * Spawns one `mesh-server` child per project on loopback.
  *
  * The child is unmodified: `child.ts` calls the same `startServer` as
- * `ordane serve`. Everything project-specific is carried in the environment, so
+ * `curule serve`. Everything project-specific is carried in the environment, so
  * no route table, projection or handler differs between hosted and standalone
  * runs — and the per-child bearer token never reaches `ps` output.
  *
@@ -38,7 +38,7 @@ export interface ChildProcessSupervisorOptions {
   memoryMb?: number;
   readyTimeoutMs?: number;
   stopGraceMs?: number;
-  /** `parked` mirrors `ordane console`; `live` runs the scheduler. */
+  /** `parked` mirrors `curule console`; `live` runs the scheduler. */
   mode?: "parked" | "live";
   /**
    * Operator's git preference, forwarded verbatim as `MESH_CHILD_GIT`. "auto"

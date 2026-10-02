@@ -1,6 +1,6 @@
-# Ordane for buyers and operators
+# Curule for buyers and operators
 
-Ordane is a runtime for persistent AI organizations: role-based agents (a product manager, an architect,
+Curule is a runtime for persistent AI organizations: role-based agents (a product manager, an architect,
 developers, QA, security) that work toward a mission through explicit authority, communication contracts and an
 event-sourced record of everything they do. You run it on your own infrastructure with your own model
 credentials.

@@ -43,7 +43,7 @@ grep -n "TODO(owner)" site/index.html      # must print nothing before the page 
 ## The logo and icons
 
 `assets/favicon.svg`, `assets/apple-touch-icon.png` and `assets/social-card.png` are copies of the files in
-[`brand/`](../brand/README.md), and the logo in the header is drawn inline from `brand/ordane-logo.svg`.
+[`brand/`](../brand/README.md), and the logo in the header is drawn inline from `brand/curule-logo.svg`.
 `tests/build/brand-assets.test.ts` fails if any of them stops matching the kit. The name, voice and colours are in
 [docs/brand.md](../docs/brand.md).
 
@@ -54,8 +54,8 @@ has finished (`docker run … demo`, see `docs/commercial/deployment.md`), so th
 demo shows. If the dashboard changes, retake them at the same size and keep the `width` and `height` attributes.
 Keep each under 400 KB.
 
-To retake them without Docker: scaffold the demo project into a scratch folder (`ordane init <dir> --example demo-stub`),
-register it under a scratch `MESH_HOME` (`ordane project add <dir>`), start `ordane host --home <scratch>`, open it in a
+To retake them without Docker: scaffold the demo project into a scratch folder (`curule init <dir> --example demo-stub`),
+register it under a scratch `MESH_HOME` (`curule project add <dir>`), start `curule host --home <scratch>`, open it in a
 1440 × 900 browser window with the light colour scheme, start the mission, wait for *Mission delivered* and capture the
 Overview; then open Graph and capture that (JPEG, quality about 80). `npm run demo:capture` does the same for the GIF
 in the README and needs Chrome (`CHROME=/path/to/chrome`) and an ffmpeg that can write GIFs.

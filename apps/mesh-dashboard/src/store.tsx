@@ -305,7 +305,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
    * Whether there is a mesh behind this server to talk to *yet*. Three states
    * collapse into it:
    *   - no projects provider at all  → single mesh, always ready
-   *   - registry answered 404        → `ordane console`, one mesh, ready
+   *   - registry answered 404        → `curule console`, one mesh, ready
    *   - registry answered with rows  → host with a project open, ready
    *   - registry unknown or empty    → hold
    * Every mesh-scoped route answers 409 ("no project is open") in the hold

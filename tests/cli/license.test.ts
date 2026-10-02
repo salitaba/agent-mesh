@@ -1,9 +1,9 @@
 /**
- * `ordane license`: a customer can see what they are entitled to, install a key and take it away again, and a
+ * `curule license`: a customer can see what they are entitled to, install a key and take it away again, and a
  * key that does not verify never reaches the disk.
  *
  * Everything is injected (home, environment, public keys, clock, output), so no test touches the real
- * `~/.ordane` or reads the build's key set.
+ * `~/.curule` or reads the build's key set.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

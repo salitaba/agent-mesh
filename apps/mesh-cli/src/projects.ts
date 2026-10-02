@@ -3,7 +3,7 @@ import { FileProjectRegistry } from "../../../packages/projects/src/index";
 import { ConfigError } from "../../../packages/config/src/index";
 import type { GitMode } from "../../../packages/protocol/src/index";
 
-/** Where `ordane host` listens by default; children never get a fixed port. */
+/** Where `curule host` listens by default; children never get a fixed port. */
 export const DEFAULT_HOST_PORT = 7420;
 
 /** Read at call time, not module load: tests and scripts set the env late. */
@@ -90,7 +90,7 @@ export function authHeaders(flags: Flags): Record<string, string> {
 
 export class HostUnreachable extends Error {
   constructor(readonly url: string, readonly reason: Error) {
-    super(`no ordane host at ${url} (${reason.message}) — start one with: ordane host`);
+    super(`no curule host at ${url} (${reason.message}) — start one with: curule host`);
     this.name = "HostUnreachable";
   }
 }
@@ -134,12 +134,12 @@ interface ProjectRow {
 }
 
 const PROJECT_HELP = `usage:
-  ordane project list [--json]               registered projects + live status
-  ordane project add <dir|mesh.yaml>         register a folder (does not boot it)
-  ordane project remove <id>                 drop the pointer (never deletes files)
-  ordane project open <id>                   boot the project's child process
-  ordane project close <id>                  stop it (clean shutdown, then SIGKILL)
-  ordane project restart <id>                close + open, clearing the crash breaker
+  curule project list [--json]               registered projects + live status
+  curule project add <dir|mesh.yaml>         register a folder (does not boot it)
+  curule project remove <id>                 drop the pointer (never deletes files)
+  curule project open <id>                   boot the project's child process
+  curule project close <id>                  stop it (clean shutdown, then SIGKILL)
+  curule project restart <id>                close + open, clearing the crash breaker
 common flags: --host url (default ${"$MESH_HOST_URL"} or http://127.0.0.1:${DEFAULT_HOST_PORT}), --home dir, --json`;
 
 function mb(bytes: number | undefined): string {
@@ -149,7 +149,7 @@ function mb(bytes: number | undefined): string {
 
 function printRows(rows: ProjectRow[], note?: string): void {
   if (rows.length === 0) {
-    console.log("no projects registered — add one with: ordane project add <dir>");
+    console.log("no projects registered — add one with: curule project add <dir>");
     return;
   }
   for (const r of rows) {
@@ -215,7 +215,7 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
     }
     case "add": {
       const target = positional[1];
-      if (!target) throw new Error("usage: ordane project add <dir|mesh.yaml>");
+      if (!target) throw new Error("usage: curule project add <dir|mesh.yaml>");
       const root = path.resolve(target);
       try {
         const { status, body } = await hostJson(flags, "POST", `${base}/api/projects`, { body: { root }, timeoutMs: 15_000 });
@@ -232,7 +232,7 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
     case "remove":
     case "rm": {
       const id = positional[1];
-      if (!id) throw new Error("usage: ordane project remove <id>");
+      if (!id) throw new Error("usage: curule project remove <id>");
       try {
         const { status, body } = await hostJson(flags, "DELETE", `${base}/api/projects/${encodeURIComponent(id)}`, { timeoutMs: 30_000 });
         if (status !== 200) throw failed(status, body);
@@ -249,7 +249,7 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
     case "close":
     case "restart": {
       const id = positional[1];
-      if (!id) throw new Error(`usage: ordane project ${sub} <id>`);
+      if (!id) throw new Error(`usage: curule project ${sub} <id>`);
       // No offline path on purpose: these own a child process for as long as it
       // lives, and a CLI invocation that exits in a second cannot supervise one.
       const { status, body } = await hostJson(flags, "POST", `${base}/api/projects/${encodeURIComponent(id)}/${sub}`, {
@@ -274,22 +274,22 @@ export async function runProjectCommand(positional: string[], flags: Flags): Pro
       console.log(PROJECT_HELP);
       return 0;
     default:
-      console.error(`unknown subcommand: ordane project ${sub}\n`);
+      console.error(`unknown subcommand: curule project ${sub}\n`);
       console.log(PROJECT_HELP);
       return 1;
   }
 }
 
 export const HOST_HELP = `usage:
-  ordane host [--port n] [--bind addr] [--home dir] [--memory mb] [--live] [--git|--no-git] [--dashboard dir]
+  curule host [--port n] [--bind addr] [--home dir] [--memory mb] [--live] [--git|--no-git] [--dashboard dir]
     supervises every open project as a child process and serves the dashboard.
     --port       default ${DEFAULT_HOST_PORT}
     --bind       address to listen on (default 127.0.0.1). Anything that is not loopback is
                  reachable from the network and needs MESH_API_TOKEN of 32+ characters
                  (openssl rand -hex 32); the host refuses to start without one.
-    --home       registry home (default $MESH_HOME or ~/.ordane)
+    --home       registry home (default $MESH_HOME or ~/.curule)
     --memory     per-child --max-old-space-size in MB
-    --live       children boot live; default is parked, like 'ordane console'
+    --live       children boot live; default is parked, like 'curule console'
                  (either way, a project's remembered mode wins once its child
                  has reported one: restarting a project that was started live
                  brings it back live)
@@ -340,9 +340,9 @@ export async function runHostCommand(flags: Flags): Promise<number> {
   const { startHostServer } = await import("../../mesh-server/src/host");
   const handle = await startHostServer(hostOptionsFromFlags(flags) as Parameters<typeof startHostServer>[0]);
   const open = handle.registry.openIds();
-  console.log(`ordane host online at ${handle.url}  (${handle.registry.list().length} project(s) registered, ${open.length} open)`);
+  console.log(`curule host online at ${handle.url}  (${handle.registry.list().length} project(s) registered, ${open.length} open)`);
   if (handle.reaped.length) console.log(`  reaped stranded children: ${handle.reaped.join(", ")}`);
-  console.log(`  dashboard: ${handle.url}/    projects: ordane project list --host ${handle.url}    (Ctrl-C to stop)`);
+  console.log(`  dashboard: ${handle.url}/    projects: curule project list --host ${handle.url}    (Ctrl-C to stop)`);
   // startHostServer's own SIGTERM/SIGINT handler drains the children and exits,
   // so this never resolves; returning would tear the host down immediately.
   await new Promise<void>(() => {});
