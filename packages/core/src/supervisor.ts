@@ -176,6 +176,12 @@ export interface OpResult {
   reason?: string;
   /** On an accepted op: `reason` is a caveat on how it went, not data the op produced. */
   caveat?: boolean;
+  /**
+   * On the reply to a submission nobody has been asked about: which version, and what the reply said apart from that
+   * sentence. The sentence is true when it is said; the turn's record is made when the turn ends, and drops it if the
+   * seat asked in between (see `caveatReason`).
+   */
+  unaskedSubmission?: { artifactId: string; version: number; rest?: string };
   artifact?: Artifact;
   escalationId?: string;
   /**
@@ -8738,7 +8744,8 @@ export class Supervisor {
         if (!r.ok) return [];
         const lines: string[] = [];
         const flagged = (r as { caveat?: boolean }).caveat === true;
-        if (r.reason && (flagged || !DATA_RESULT_OPS.has(r.op))) lines.push(`${r.op}: ${r.reason}`);
+        const reason = this.caveatReason(r);
+        if (reason && (flagged || !DATA_RESULT_OPS.has(r.op))) lines.push(`${r.op}: ${reason}`);
         if (r.deliveryDowngraded) {
           lines.push(
             `${r.op}: SENT, but it did not wake anyone (${r.deliveryDowngraded}). The message is delivered and sits in the recipient's mailbox — they will see it on their next turn. Do not send it again; escalate to the operator if it truly cannot wait.`,
@@ -10811,7 +10818,17 @@ export class Supervisor {
           }
           const res = await this.transitionArtifact(actorId, targetId, { to: op.to, comment: op.evidence });
           const unasked = res.ok && op.to === "READY_FOR_REVIEW" ? this.submissionAskedNobody(actorId, targetId) : undefined;
-          if (unasked) return { ok: true, op: op.op, reason: [res.reason, unasked].filter(Boolean).join("; "), caveat: true, eventId: res.eventId };
+          if (unasked) {
+            const version = this.state.artifacts.get(targetId)?.version ?? 0;
+            return {
+              ok: true,
+              op: op.op,
+              reason: [res.reason, unasked].filter(Boolean).join("; "),
+              caveat: true,
+              eventId: res.eventId,
+              unaskedSubmission: { artifactId: targetId, version, ...(res.reason ? { rest: res.reason } : {}) },
+            };
+          }
           return { ok: res.ok, op: op.op, reason: res.reason, eventId: res.eventId };
         }
         case "request_review": {
@@ -11707,6 +11724,21 @@ export class Supervisor {
       `submitted for review, but nobody has been asked for a verdict, and a submission wakes no one (an announcement does not either): ask ${who} with ${how}; ` +
       `until you do they meet it minutes from now, on their next turn`
     );
+  }
+
+  /**
+   * What an accepted op's reason says about the turn, said when the turn is over. The reply to a submission says that nobody has
+   * been asked for a verdict (`submissionAskedNobody`): true when it is said, and where the seat reads it. The seat that goes on
+   * to ask in the same turn, which is the order the briefing teaches, would otherwise find "nobody has been asked" among the
+   * warnings in its own record of the turn: all three turns that carried the sentence in the thirteenth run (the pm's, the
+   * architect's and the developer's) asked right after. Only that sentence goes, and only when this version has been asked for by
+   * now; whatever else the reply said stays.
+   */
+  private caveatReason(r: OpResult): string | undefined {
+    const u = r.unaskedSubmission;
+    if (!u) return r.reason;
+    const a = this.state.artifacts.get(u.artifactId);
+    return a && this.reviewAskedFor(a, u.version) ? u.rest : r.reason;
   }
 
   private async opMerge(actorId: string, artifactId: string | undefined, comment?: string, artifactUriRef?: string): Promise<OpResult> {
