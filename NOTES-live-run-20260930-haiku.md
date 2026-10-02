@@ -1279,3 +1279,105 @@ redone as "any subject of the seat lifts".
 - **Put the correction where the mistaken act has just happened.** Submitting and then announcing looks like a request; the reply to the
   submission is the one place left to say it is not.
 - **A first account of a finding is cheap.** R2 was filed as the model's fault until two fields already in the log were read together.
+
+## 18. The rename: Agent Mesh is now Ordane
+
+Not a run. The owner asked whether "Agent Mesh" was a good brand, was told it is a category phrase that several other
+products already use, asked for a name, and then for the brand ("ok start make create ordane brand"). This section records
+what was changed and what was deliberately not, what a rename turned out to touch, how it was checked and what the checks
+could not reach. Two commits above `0fbd26b`: the rename (`486f354`, 142 files) and the brand kit with its application
+(`df194ba`, 36 files). **Status: on the branch and not on `main`.** While finishing, a project of the same name in the same
+space turned up that the first screen had missed, so the owner has to confirm the name before `main` moves; that is in the
+owner's private notes and not in the repository. The name is not cleared as a trademark, and nothing here registers or
+claims one.
+
+### What changed
+
+| | Before | After |
+|---|---|---|
+| The name, in prose, help text, the dashboard and the site | Agent Mesh | Ordane |
+| The command | `mesh` | `ordane`; `mesh` stays installed as the same launcher, beside `ordane.mjs` |
+| Prometheus metrics (14) | `agent_mesh_*` | `ordane_*` |
+| State directory | `~/.agent-mesh` | `~/.ordane`; an existing `~/.agent-mesh` is still used while `~/.ordane` does not exist, and nothing is moved |
+| The stamp on every seat | `AGENT_MESH_HOST_PID` | `ORDANE_HOST_PID`; seats stamped the old way are still found and stopped, and a stamp inherited under the old name is dropped |
+| Container image | `ghcr.io/<owner>/agent-mesh` | `ghcr.io/<owner>/ordane`, named in the release workflow for the product, not for the repository |
+| Helm chart | `agent-mesh` | `ordane` |
+| Compose project | `agent-mesh` | `ordane` |
+| JSON schema `$id`s | `https://agent-mesh.dev/schemas/…` | `https://ordane.dev/schemas/…` (identifiers that nothing fetches; they name a domain nobody has registered yet) |
+| Licensed Work, in `LICENSE` | Agent Mesh | Ordane (previously named Agent Mesh); the hash-pinned terms are untouched |
+| Brand | none | `brand/` (logo, mark, favicon, icons, social card, tokens), `docs/brand.md`, applied to the site, the dashboard's sidebar, sign-in and tab icon, and the README |
+
+### What did not change, and why
+
+`mesh.yaml`, the `MESH_*` variables, the `mesh_*` tools and the MCP server named `mesh`, the `@mesh/*` aliases and the
+`apps/mesh-*` directories: *mesh* is still the product's word for one running organization, and none of them carries the old
+name. The licence-key prefix `AML1`. The repository's address, `github.com/salitaba/agent-mesh`, which only the owner can
+rename; four files carry it (the licence's contact line, `SECURITY.md`, the cosign identity in the deployment guide and the
+site's `DOCS_BASE`). Every document above, `agent-mesh-runtime.md` and `spec/`, which keep the name they
+were written under (each now says so at the top).
+
+### What a rename touches that is not a name
+
+The mechanical part was a script and a diff review. The part that mattered was listing, before editing, every name a *running*
+thing depends on, because each of these would have broken an existing deployment silently:
+
+- **A Helm Deployment's selector is immutable and carries the chart's name.** A release from the old chart refuses to upgrade to
+  the new one. `--set nameOverride=agent-mesh` keeps the selector and every object name, the data volume's claim included. The
+  new chart's templates are identical to the old chart's after the name substitution (diffed file by file), so the override
+  renders the same names. `tests/deploy/rename-upgrade.test.ts` pins that the selector and the claim both come from the
+  overridable name.
+- **A Compose volume is named after the project.** Starting an existing deployment under the new project name would have made a
+  new, empty volume and left the data where it was. `COMPOSE_PROJECT_NAME=agent-mesh` keeps it; the Compose file says so.
+- **Metric names, the state directory and the orphan stamp** are read by things outside the repository (dashboards, a user's
+  home, a process a dead host left running), so each keeps a way to find what the old name wrote, with a test.
+- **A host that was killed during the upgrade** leaves its state lock under the old instance id; an instance with a new id
+  takes it after two minutes without a heartbeat. The runbook says so.
+
+All of it is in `CHANGELOG.md` ("Changed: read this before upgrading") and `docs/operations.md`.
+
+Smaller things the review caught, each fixed:
+
+- The rename script dropped a blank line from `docker-compose.yml` (found by comparing line counts per file: only files the
+  script should have changed by whole lines differed).
+- Its "command" rule turned the noun in "a mesh run" or "the mesh graph" into "a ordane run" in about eight places (found by
+  scanning prose for "a ordane" and for `ordane <command>` outside code spans), and it missed regular-expression literals such
+  as `/mesh license install/` and a heading slug, which failed tests found.
+- `scripts/capture-demo.mjs` needs a GIF-capable ffmpeg; the one on this machine had none, so the README's GIF was recaptured
+  with a static build.
+- Chrome's `--screenshot` flag sizes the window, not the page, and cut the social card short; the kit's PNGs are rendered
+  through the debugging protocol instead, as the demo capture drives the dashboard.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `0fbd26b`, before the rename | 3457 | 3455 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 30 s) | 3474 | 3472 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors and the same 185 warnings (all `no-restricted-imports`) as at `0fbd26b`. New tests: the old-name scan
+(`tests/build/product-name.test.ts`: every text file in the repository, with the history and the migration notes listed by
+name), the brand kit (`tests/build/brand-assets.test.ts`: the files are what the generator writes, every copy equals the kit,
+the PNGs have the promised sizes, the colours equal the site's and every text pair clears WCAG AA), the upgrade steps, both
+launchers, the legacy orphan stamp and the legacy state directory. Mutation checks, each reverted: the brand test (a hand-edited
+variant, a drifted path in the site or the dashboard, an edited copy of the favicon, a drifted site accent, a wrong quoted ratio,
+a dropped title, a low-contrast palette regenerated), and the old-name scan (the old name back in the README, a metric prefix, the
+dashboard's brand line and a script's comment, and the migration note losing its mention).
+
+The container image was **not built** (there is no Docker daemon here). Its layout was simulated: `npm ci` from the edited
+lockfile, the build, `npm prune --omit=dev`, the runtime files laid out as the Dockerfile copies them; then `ordane --help`
+and `mesh --help` exit 0 and both print `ordane 0.1.0`, the dev tools are gone from `node_modules/.bin`, and a host started
+from that layout answers `/healthz`, serves a page titled Ordane and is ready. The container-only checks (uid 10001, the
+read-only root, the refusal to start without a token) and the Helm lint, render and schema validation run in CI, which
+runs on a push to `main` or a pull request and so has not yet seen these commits. No real model run has been made on the
+renamed build: the next cycle's run is the first.
+
+### Worth keeping from this round
+
+- **A rename is a migration.** List what a running thing depends on by name (selectors, volumes, metric names, directories,
+  environment stamps) before touching the text; those are the failures a search-and-replace makes silently.
+- **Make the old name a test, not a grep.** One scan over every text file, with an explicit list of the places that may still
+  say it (each checked to still need the exemption), keeps the rename from decaying.
+- **Copies of a logo drift; generate them and test the copies.** The logo is in six places; one description writes the kit and a
+  test compares each copy with it.
+- **A name screen has to look where the neighbours publish.** The first screen used web search, registries and DNS and said "no
+  product of this name"; GitHub's own pages show one. Screen there first.
