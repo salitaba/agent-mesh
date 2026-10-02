@@ -239,6 +239,10 @@ this, so in the second cronlite run 13 of 24 review requests were refused as
 `review.reviewer-cannot-settle` (all 7 that named reviewers in the request, 6 of the 8 that
 named nobody), each refusal naming the seat that could, and the seat asked the same wrong
 reviewer again because the name it had given never reached the op.
+The seats a refusal names are the briefing's own list (`settlersOf`), the artifact's owner included when no other seat could review
+it. The refusal used to filter the owner out on its own and said "no seat in this mesh can" for a test report only its author could
+settle (the eleventh run's pm, asking the tech lead to review QA's report: QA's own pass settled it eleven minutes later); the owner
+who asks is told "you can" like any other settler, and a peer that could review the artifact keeps the owner off the list.
 
 When the author's own approval is what moved the artifact, it stands — no peer
 could have reviewed it — but it is not a second pair of eyes, and is said so: the

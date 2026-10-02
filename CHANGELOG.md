@@ -93,6 +93,9 @@ sections 1 to 15) are described there, run by run.
 - A verdict or an acceptance that names an artifact the mesh does not hold is refused with the route: the submitted artifacts an
   acceptance could cite (or why there are none), or the reviews the seat still owes. Seats typed ids from memory twelve times in
   runs 7 to 11, and the refusal said only that the artifact was unknown.
+- A review request refused because no named seat can settle the artifact no longer says "no seat in this mesh can" when the artifact's
+  owner is the only one that can (a test report only its author could settle, in the eleventh Haiku run). The refusal reads the
+  same list as the briefing and names the owner, or says "you can" to it.
 - A review request refused because the requesting seat is itself the only one that can settle the artifact says "you" and what to
   do (settle it with `mesh_approve`, and ask a seat to test it first with a `work.request`), instead of naming the seat back to
   itself and telling it to escalate; for an artifact no verdict can move (a draft, or one already past review) it says what state
