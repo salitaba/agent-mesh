@@ -224,7 +224,9 @@ again. Under the list the briefing says, once, that what a seat cites has to be 
 (`mesh_artifact_read`): an acceptance from a turn that read or ran nothing is recorded `ASSERTED` and does not count. The pm
 in the ninth and tenth runs accepted without reading, was told only afterwards (the reply of the call), ended its turn, and
 needed a second wake to read the report and accept again (84 s and two turns in the tenth run's second round); the pm's role
-prompt says the same.
+prompt says the same. The read says what it read: `mesh_artifact_read` returns the artifact's `status`, `version` and `owner` beside `canSettle`, on
+every page, so a seat that reads a report in order to cite it learns that it is still a DRAFT, and whom to ask to submit it, from
+the read and not from a refusal.
 
 The fourth cronlite run's second round sat on one such criterion for 21 minutes, 12 turns and 188k
 tokens: the nudges went to the architect (twice), which asked the developer for a status and set
@@ -775,6 +777,16 @@ review first, as the owner's own transition under the same gates and only after 
 pass leaves the report as it was; the pass then settles it and names it as above. A pass on a draft somebody else wrote
 submits nothing (when its work is put forward is the owner's to say) and names none; a draft of any other type is left
 alone. A draft passed again after a reopen is not caught by identity, and still has to be recorded after the reopen.
+
+**The pass need not name the report.** The eleventh cronlite run's QA wrote its test report (a DRAFT) and passed the merged *patch*
+five seconds later, so the rule above did not apply and the report stayed a draft. The pm, nudged with nothing to cite, asked QA for
+the report's id, was refused twice for citing the draft, asked QA to submit it and waited for QA's next turn: 3 min 13 s of a
+10 min 29 s round. A `pass` that names a patch, or nothing, now submits the newest verification report the giver has written for
+this mission and not submitted, of the type that settles the pass's domain (a `TestReport` or `BenchmarkResult` for `quality`, a
+`SecurityReport` for `security`), and the reply says it did. Only the giver's own (its owner decides when its work is put forward),
+only the newest (an older draft is an attempt the seat abandoned), only this mission's, and only after every refusal a pass can
+meet. A pass that names a report keeps the rule above for that report and submits no other; a report published *after* the pass is
+not caught, because the pass is the trigger.
 
 **A reopen names what it rejects.** `POST /mission/reopen { reason, criteria? }` sends
 the named criteria (every mandatory one when `criteria` is omitted after a verdict) back

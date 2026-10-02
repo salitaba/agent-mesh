@@ -64,6 +64,8 @@ sections 1 to 15) are described there, run by run.
   from the plan table), licensing, security and a security questionnaire under [docs/commercial/](docs/commercial/README.md),
   [SECURITY.md](SECURITY.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) generated from the lockfile.
 - **A landing and pricing page** in [site/](site/README.md), with a plan-and-cost calculator whose numbers are generated.
+- **`mesh_artifact_read` says where the artifact stands.** The result carries `status`, `version` and `owner` beside `canSettle`,
+  on every page, so a seat reading a report to cite it learns that it is a draft, and whom to ask, from the read.
 
 ### Fixed
 
@@ -83,6 +85,14 @@ sections 1 to 15) are described there, run by run.
   tenth runs.
 - The acceptor's briefing and the pm's role prompt now say that an acceptance has to be backed by a read in the same turn; the pm
   had accepted without reading, been recorded `ASSERTED`, and needed a second wake.
+- A pass that names the merged patch (or nothing) now also submits the verification report its giver wrote and left a draft. The
+  eleventh Haiku run's QA wrote its test report, passed the patch five seconds later and left the report a draft that no other
+  seat could see or cite; the pm spent 3 min 13 s of a 10 min 29 s round asking for it, being refused twice and waiting for QA's
+  next turn. Only the giver's own newest report of the type that settles the pass's domain, this mission's, after every refusal;
+  the reply says it was done.
+- A verdict or an acceptance that names an artifact the mesh does not hold is refused with the route: the submitted artifacts an
+  acceptance could cite (or why there are none), or the reviews the seat still owes. Seats typed ids from memory twelve times in
+  runs 7 to 11, and the refusal said only that the artifact was unknown.
 - A review request refused because the requesting seat is itself the only one that can settle the artifact says "you" and what to
   do (settle it with `mesh_approve`, and ask a seat to test it first with a `work.request`), instead of naming the seat back to
   itself and telling it to escalate; for an artifact no verdict can move (a draft, or one already past review) it says what state

@@ -290,6 +290,14 @@ capacity on an artifact of another domain now names the review in the signed cap
 addressed to it, awaiting a verdict), with its id, and says to name that id if it is what was meant; a deliberately
 cross-domain signature with nothing owed behind it says nothing.
 
+A verdict or an acceptance that names an artifact the mesh does not hold (an id typed from memory: twelve across runs 7 to 11; the
+eleventh run's pm cited `art-M3YBS5TT…` in three acceptances in five seconds when the report was `art-M3YBNR4X…`) is refused,
+and the refusal names the route. For an acceptance it lists what the briefing lists, the submitted artifacts that could evidence
+the criterion (`citableEvidence`, three at most), or says that nothing submitted can yet (a draft cannot) and to ask the seat that
+wrote the report to submit it. For a verdict it names the reviews the seat still owes (the requests on its desk whose artifact
+awaits a verdict) and appends nothing when there are none. One helper, `reviewsOwedBy`, reads those asks for this refusal and
+for the cross-domain note above, so what a seat is told it owes cannot differ between them.
+
 The seat that accepts is shown what it may cite. While a mandatory criterion that needs an acceptance is open,
 the briefing of a seat holding the gate lists the submitted artifacts an acceptance would take (the list the stall
 watchdog offers, `citableEvidence`) with `relevantArtifacts[].citable: true`, even though a work-scoped report is
@@ -297,7 +305,8 @@ otherwise shown to its owner, to whoever is mailed it and while it awaits a verd
 artifact, what the operator rejected at a reopen and a report written by a seat that cannot verify are not offered,
 because an acceptance would refuse each. And a `pass` on a draft verification report that the passing seat owns
 submits it first (see *What counts as satisfied* in `docs/runtime.md`), so the report a verdict is about is in
-the store as submitted work, citable at once.
+the store as submitted work, citable at once. A pass that names a patch (or nothing) submits the newest such report the seat has
+written for the mission, of the type that settles the pass's domain, and says so.
 
 ### A pass is the verdict of the seats that verify
 
