@@ -1396,3 +1396,107 @@ read-only root, the refusal to start without a token) and the Helm lint, render 
   product of this name"; GitHub's own pages showed one. Screen there first, and screen again before the name leaves the branch.
 - **A sentence in the docs is a claim: grep for the code that makes it true.** "The doctor says which directory" had been written
   twice before anything did.
+
+## 19. The thirteenth run, the first under the name Curule: five findings (T1–T5)
+
+The ninth cycle of the standing loop: the routine fired at 20:43 UTC on 2026-10-02, and this is the first real run on the renamed
+build. The same mission, SPEC, mesh config, model and clean launch environment, on `main` at `c30feb5`: every fix of §0–§17 and the
+rename of §18. Session 20:46–21:12 UTC: 38 turns, 759.5k billed tokens (about $3.13 at list price), every turn on
+`claude-haiku-4-5`, 751 events; the analysis tool and `curule usage` agree to the token (759,476). The host ran on loopback with no token, as in §13 to §17. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 20:46 | `curule run` | five seats start |
+| 20:56 | goal met, 6/6 | 9 min 43 s after the launch; 20 turns, 408k billed (run 12's round 1: 20 min 19 s, 39 turns, 812k) |
+| 21:05 | operator reopen quoting three defects, naming four criteria and asking for a regression test for each | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED |
+| 21:06:48 | `kill -9` of the host with the architect, developer and QA mid-turn | four seat processes orphaned (parent 1) |
+| 21:06:51 | restart, 3 s after the kill (run 12 waited 17 s, and its orphans had exited by then) | the reaper stopped three of the four at 21:06:54 and the fourth was gone; the three open turns closed as interrupted, seven budget holds released, the seats woken for recovery |
+| 21:12 | goal met again | 6 min 19 s after the reopen, 5 min 15 s after the restart; round 2: 18 turns, 352k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 3022/3049 raw (99.1%) and 3017/3034
+stratified (99.4%), against run 12's round 1 at 67.7% and 97.4%: no list that contains `*` failed, the defect of runs 5 to 12. The
+product's own suite was 33/33 and the CLI probes 23/23. Three defects, all three quoted in the operator's reopen: **the 7th of the
+month never matched** (`0 0 7 * *` threw "No matching run found within 4 years", and every day-of-month list, range or step that
+contains 7 skipped it, 12 of the 17 failing checks; day-of-week 7 worked), **tokens that are not plain decimals were accepted**
+(`1.5`, `0x10`, `+5`, `1e1`, `0b11`, `5.`, and the Quartz `15W` and `5#2`: the other 5), and **two error messages named neither
+the field nor the value** (`parse('')` said "Empty expression", `parse('@daily')` "Macros not supported"; soft checks). The final
+product scored **3025/3040 raw (99.5%) and 3002/3025 stratified (99.2%)**, its own suite 47/47 and the CLI probes 23/23. The
+suite was 33 before: the reopen asked for a regression test for each defect and 14 were added, which run 12's reopen never got.
+All three defects are fixed, and **the fix of the second introduced a regression**: an expression that names `JUL` in capitals is
+refused as "Quartz syntax not supported" (the check for Quartz's `L` found the L of JUL; lower-case `jul` is accepted). All 23 failing
+stratified checks, and all 15 raw, are expressions that name July. QA's second report passed the suite and the operator's examples:
+nothing in the mesh makes a seat test what the operator did not list, and the shape is run 12's `fri-sun`. The messages are still
+soft (59 of 76 soft checks: `Invalid expression: ` for the empty string names no field). 17 of 38 turns (44.7%, 29% of billed
+tokens) changed no durable state (run 12: 57.4% and 38.1%), 8 of 20 in round 1.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| The rename (§18) | **first real run under it**: the four seat and bridge processes seen mid-run carried `CURULE_HOST_PID` and no `AGENT_MESH_HOST_PID`; the Prometheus scrape was `curule_*` throughout and carried no `agent_mesh_*`; `curule --version` printed 0.1.0; the seats' bridges ran the `mesh` launcher (`bin/mesh.mjs mcp`) and no `~/.curule` was created by a headless run. `curule status` showed the garbled bar (T1) |
+| B23 | **exercised for the first time, and on the renamed stamp**: four orphans three seconds after the kill and, at 21:06:54, "claude runtime: stopped 3 seat process(es) left running by a mesh process that died (pid 4468): 4939, 5038, 5040"; the fourth had gone by the scan |
+| B21, B22, M1 | held: the three open turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded", seven holds were released ("boot: released 7 budget hold(s) left open by a process that ended mid-turn"), the selective reopen completed and five seats restarted with their sessions restored |
+| R4 | fired three times in round 1 (the pm, the architect and the developer each moved a document to READY_FOR_REVIEW and asked for the review later in the same turn), so the sentence it left in the turn's record was a false alarm: T4 |
+| P2, F1 | held: the watchdog nudged the pm 16 s after the tech lead's last turn of round 1 ended (20:55:47 against 20:55:31, the acceptance grace) and the pm accepted both criteria within 13 s |
+| B4 | three `ifUnanswered` refusals (architect, tech lead, QA) with the floor named; each seat re-sent with 185,000 ms and was accepted |
+| P3, L1, L3 | held: every criterion landed EVIDENCED; the one `verified=false` acceptance (the pm's on `operator-feedback-…` at 21:10:43, before the patch merged) did not close it, and the `verified=true` one at 21:10:57 did |
+| R1, R2, R3, Q1 to Q4, J1, J3, H1, H2, L5, P1 | **not exercised**: no BLOCK was filed, "does not hold" and "must be MERGEABLE" appear nowhere in the log, and nothing here asked for what they guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| T1 | **UTF-8 that had been saved as Windows-1252 was printed to users.** Found by running `curule status` against the live mesh: where the progress bar goes it printed three characters for each of its two (U+00E2 U+2013 U+02C6 for U+2588, and U+00E2 U+2013 U+2018 for U+2591), the seat dots likewise, and `curule bench`'s header and rule too; the instruction handed to a delegated worker carried a garbled dash. Eight spots in six files (the section marks in comments and a test title as well), all older than the rename, one of them (the busy-seat dot) with its last byte lost | repaired, and a scan reads every text file for a lead character followed by the characters those bytes become, names the code points and what was meant, and says when a byte was lost | `tests/build/no-mojibake.test.ts` (3 tests, 8 mutants) |
+| T2 | **A finished mission waited on a sleeping claimant.** The last criterion was evidenced at 20:56:00; the developer still held its claimed task, only a claimant completes its task (the tech lead's try at 20:55:31 was refused), and nothing woke the developer for 77 s but the unread-mail sweep. The watchdog's cooldown ran from the pm's nudge a minute before and would have held it to 21:00:47, behind a 180 s window, and its driver would have been the first seat with mail (the architect). A claimant with no unread mail would have kept the mission open to the wall-clock budget | at the finish line (every criterion evidenced, no rejected patch, no escalation, a claim its owner still points at, which is the verdict's own predicate, now `liveClaims`): the driver is the claimant, the idle window a twelfth, a nudge sent before the last criterion does not hold the cooldown, and the note names the task and `mesh_task_complete` | `tests/integration/stall-finish-line.test.ts` (10 tests, 12 mutants) |
+| T3 | **A wake that waited in the queue when the mission ended ran after it.** The developer's INFORM to the architect (21:11:38) waited behind `max_active_agents`; the pm's last turn freed a slot at 21:12:14, eight seconds after the goal completed, and the architect spent 9,795 tokens on a turn discarded as `no_ops` (the "done: mission is COMPLETED" refusals in the analysis). After the end a seat may only read and remember | at dequeue, a wake is dropped when the mission is over and it is not an operator's (explicit, operator, `manual`, `recovery`, or the operator's mail); counted as `mission_over` in `suppressedWakes` | `tests/scheduler/mission-over-wake.test.ts` (5 tests, 8 mutants) |
+| T4 | **R4's caveat stayed in the turn's record after the seat had asked.** The reply to a submission says nobody has been asked for a verdict; true when said. It was also written into the turn's summary and notices, and all three turns that carried it asked in the same turn, so the next turn read a warning about an ask it had made | the reply is unchanged; the turn's record is made when the turn ends and drops the sentence when that version has been asked for by then | `tests/core/submission-ask-same-turn.test.ts` (3 tests, 6 mutants) |
+| T5 | **Seats guessed the request of a contract.** Six `work.request` calls from four seats (pm, architect, QA twice, tech lead twice) sent `{title, description, to}` or `{task, description}` for `{ask, to?: [seats]}`; the briefing named each contract and summarised it and said nothing of what it takes, and `mesh_contracts` was never called. The refusal names the expected schema and every seat recovered, the tech lead on its third call | the contracts-vocabulary briefing lists each contract with its request, derived from the contract's own schema: `mesh_call work.request` (request: { ask, to?: […], subject? }) | `tests/protocol/contract-request-shape.test.ts` (4), `tests/core/context-comms-vocabulary.test.ts` (2 added); 9 mutants |
+
+What each does and why is in `docs/runtime.md` (the watchdog's list, *A wake is for a mission that is still running*) and `docs/protocol.md`
+(the contracts paragraph); the commit messages carry the evidence. Two of the mutation checks were redone after a mutant survived: T3's
+explicit-wake test used the `manual` kind, which kept the wake by itself and hid the flag the mutant removed (the test now uses the
+message kind), and T4's lookup mutant survived until an unknown artifact was added to the unit test.
+
+### Not fixed, and the honest limits
+
+- **The product's regression (`JUL`) is the model's, and the mesh did not catch it.** QA verified the three defects as quoted and the
+  suite; a reopen that names three defects gets three defects fixed and, as in run 12, one new one. What would catch it is a check
+  of what was not listed (the SPEC's month and day names), which only a seat can decide to run.
+- **The error messages are still soft.** The third defect was reworded, not fixed: the empty expression names no field, and `L * * * *`
+  names no value.
+- **A turn begun just before the end is still torn down at shutdown.** In round 2 the developer's turn (begun 21:11:58 on the tech
+  lead's approval of its patch's third version) was interrupted at 21:12:41, 35 s after the goal completed; in round 1 the developer's
+  last `mesh_done` met a closed bus ("fetch failed"). Both are the end of a run, bounded, and cost no durable state; T3 removes only
+  the wakes that start after the end.
+- **The `ifUnanswered` floor is a refusal, then a re-send.** Three seats asked for less than this mesh can answer in; each was told the
+  minimum and re-sent. By design (B4); the briefing says the mesh names it.
+- **One run.** T2's finish line was met once, T3's queue once, and none of R1 to R3 was exercised, so none is shown held or broken.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `c30feb5`, before this round | 3476 | 3474 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 31 s) | 3503 | 3501 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (the baseline warnings, one rule). Mutation checks, each reverted: T1 (eight
+mutants: the garble put back in each of three source files, the detector without its three-byte form, without the dash's byte, with a
+global regular expression, a repair that ignores the Windows-1252 table, a walker that skips `apps/`), T2 (twelve: no claimant driver, no
+grace, the cooldown held by an earlier nudge, waived for any nudge, no note, an unmet criterion not stopping it, a residue claim counted,
+no rotation, no finish-line time, a rejected patch not stopping it, an open escalation not stopping it, every seat told it holds the
+claim), T3 (eight: no drop, a seat's mail kept, an explicit or operator wake dropped, a recovery wake dropped, the operator's mail
+dropped, dropped while the mission runs, not counted, not in the tally), T4 (six) and T5 (nine). Every one failed a test.
+
+### Worth keeping from this round
+
+- **Run the product's own commands against the live mesh, not only the log.** The log shows what the mesh did; `curule status`
+  showed what a user sees, and it was wrong in a way no test had looked at for as long as the file had existed.
+- **A finish line is a state the watchdog has to read, not only a count of criteria.** It woke the seat that could accept what was
+  unmet; when nothing was unmet, the one thing the verdict waited for was a claim, and the rule for who to wake did not know it.
+  Read what the verdict is waiting for, with the verdict's own predicate.
+- **A queue outlives the state it was filled in.** The requeue path knew the mission was over and the queue did not; check
+  admission at dequeue, not only at enqueue.
+- **A remark is true when it is said and the record is made later.** R4's sentence was right in the reply and wrong in the turn's
+  summary; record what is still true when the turn ends.
+- **Show a seat what a call takes where it decides to make it.** The refusal had the schema; the briefing, which is read first, had
+  only the name. Six wrong calls from four seats were the same wrong guess.
+- **A fix for one defect can match a word that is not the defect.** `L` for Quartz's last day found the L of JUL. Test the names the
+  operator did not list.
