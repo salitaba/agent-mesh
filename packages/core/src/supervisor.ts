@@ -11603,6 +11603,38 @@ export class Supervisor {
     return out;
   }
 
+  /**
+   * Where a patch stands, and whose move is next, for the refusal of a merge asked of one that is not MERGEABLE.
+   *
+   * "artifact is APPROVED, must be MERGEABLE" was all a seat was told. The twelfth cronlite run's tech-lead was told it three times
+   * (16:54, 16:55 and 16:59), each time in the turn in which it had approved the patch: an approved patch has two rungs left
+   * (VERIFIED, MERGEABLE) and nothing climbs them by itself. The sixth and seventh runs met the same refusal. The seat that holds
+   * `implementation.approve` or a test capability may climb them itself, and the refusal says so when the asker is that seat.
+   */
+  private notMergeableReason(a: Artifact, actorId: string, ctx: PolicyContext): string {
+    const base = `artifact is ${a.status}, must be MERGEABLE`;
+    switch (a.status) {
+      case "APPROVED":
+      case "VERIFIED": {
+        const next = a.status === "APPROVED" ? "VERIFIED" : "MERGEABLE";
+        const climb = a.status === "APPROVED" ? "VERIFIED and then MERGEABLE" : "MERGEABLE";
+        const mine = this.deps.policy.evaluateTransition(a, next, actorId, ctx).decision === "ALLOW";
+        return `${base}: nothing moves a patch up the ladder by itself. ${mine ? "You can" : `${a.owner} (or a seat that may verify) can`} move it to ${climb} with mesh_artifact_transition, and then it can be merged`;
+      }
+      case "DRAFT":
+        return `${base}: it is still a DRAFT, so ${a.owner === actorId ? "you submit" : `${a.owner} submits`} it for review first`;
+      case "READY_FOR_REVIEW":
+      case "UNDER_REVIEW":
+        return `${base}: it has not been approved yet, so a reviewer rules on it first`;
+      case "REJECTED":
+        return `${base}: it was rejected, so ${a.owner === actorId ? "you rework" : `${a.owner} reworks`} it (a new version with asVersionOf) and ask${a.owner === actorId ? "" : "s"} for a review`;
+      case "MERGED":
+        return `${base}: it is already MERGED`;
+      default:
+        return base;
+    }
+  }
+
   private async opMerge(actorId: string, artifactId: string | undefined, comment?: string, artifactUriRef?: string): Promise<OpResult> {
     const targetId = this.resolveArtifactRef(artifactId, artifactUriRef);
     if (!targetId) return { ok: false, op: "merge", reason: "unknown artifact" };
@@ -11616,7 +11648,7 @@ export class Supervisor {
       return { ok: false, op: "merge", reason: decision.reason };
     }
     if (artifact.status !== "MERGEABLE") {
-      return { ok: false, op: "merge", reason: `artifact is ${artifact.status}, must be MERGEABLE` };
+      return { ok: false, op: "merge", reason: this.notMergeableReason(artifact, actorId, ctx) };
     }
     // Check the merge GATE before touching the product branch.
     //
