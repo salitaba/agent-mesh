@@ -392,6 +392,17 @@ const MAX_STALL_NUDGES = 3;
 const HALT_NEGLECT_IDLE_MULTIPLE = 5;
 
 /**
+ * How much of the idle window a mission waiting on an acceptance, with the proof in hand, is left alone for: one twelfth.
+ *
+ * Derived from `stallIdleMs`, as `HALT_NEGLECT_IDLE_MULTIPLE` is, and for the same reason: the shape of the failure, not a
+ * knob. The full window is the watchdog's patience for a mission it cannot read. When every criterion still open is closed by
+ * an acceptance, a seat that may accept exists and a verification report it could cite is submitted, the mesh knows who must act
+ * and has what they need, and waiting out the window is three idle minutes (the pm, in the ninth run's second round and the
+ * tenth run's first, was nudged 3 min 23 s and 3 min 22 s after QA's report landed, and accepted within 18 s of waking).
+ */
+const ACCEPTANCE_GRACE_DIVISOR = 12;
+
+/**
  * How much longer a turn holding a claimed task may take than a coordination one.
  *
  * Not a knob, for the same reason as the constants above: an operator tuning this
@@ -13167,7 +13178,7 @@ export class Supervisor {
     // on `> 0` so a consumed/disarmed retry cannot re-fire on the next tick.
     const noopFastRetry = this.stallNoopRetryAt > 0 && now >= this.stallNoopRetryAt;
     if (!noopFastRetry) {
-      if (now - this.lastTurnAt < this.config.scheduling.stallIdleMs) return;
+      if (now - this.lastTurnAt < this.stallIdleFor()) return;
       if (now - this.lastStallNudgeAt < this.config.scheduling.stallCooldownMs) return;
     }
     // QUIESCENCE GATE. Waking an agent costs a full context window, so the
@@ -13853,6 +13864,25 @@ export class Supervisor {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     if (!goal) return false;
     return goal.acceptanceCriteria.some((c) => c.mandatory && !criterionSatisfied(goal, c));
+  }
+
+  /**
+   * The mission is waiting on an acceptance and the proof is in hand: every mandatory criterion still unmet is one that only
+   * a seat that may accept can close (`unmetManualCriteria`), such a seat exists, and a verification report an acceptance
+   * could cite has been submitted. A report written by a seat that cannot verify, a draft and what the operator rejected at a
+   * reopen are not citable (`citableEvidence`), so a mission that merely has some document in it is not "ready".
+   */
+  private acceptanceReady(): boolean {
+    const goalId = this.state.activeGoalId;
+    const unmet = this.unmetManualCriteria();
+    if (!goalId || unmet.length === 0 || this.criterionAcceptors().length === 0) return false;
+    return citableEvidence(this.state, goalId, unmet).some((a) => VERIFICATION_ARTIFACT_TYPES.includes(a.type));
+  }
+
+  /** How long the mission must have been quiet before the watchdog nudges: the idle window, or its grace when only an acceptance is left. */
+  private stallIdleFor(): number {
+    const idle = this.config.scheduling.stallIdleMs;
+    return this.acceptanceReady() ? Math.max(100, Math.min(idle, Math.floor(idle / ACCEPTANCE_GRACE_DIVISOR))) : idle;
   }
 
   /** Who to wake for a stalled mission: someone with real work, else rotate across the stuck. */
