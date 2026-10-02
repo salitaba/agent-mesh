@@ -131,8 +131,10 @@ const MAX_NUDGES = 3;
  * - `stale_mail`: a wake for mail the seat had been handed, by another turn, by
  *   the time the wake reached the head of the queue. Also counted at dequeue,
  *   and the only entry here that is not an interest wake; see `isStaleMailWake`.
+ * - `mission_over`: a wake that was queued, waiting for a slot, when the mission ended, and
+ *   is not the operator's. Counted at dequeue; see `isMissionOverWake`.
  */
-export type SuppressedWakeReason = "triage_ignore" | "goal_escalated" | "redundant_observation" | "mail_echo" | "stale_request" | "stale_mail";
+export type SuppressedWakeReason = "triage_ignore" | "goal_escalated" | "redundant_observation" | "mail_echo" | "stale_request" | "stale_mail" | "mission_over";
 
 /**
  * A wake the operator can read on the scheduler's queue view. `afterTurn` marks
@@ -353,6 +355,7 @@ export class Scheduler implements SchedulerPort {
   private mailEchoes = 0;
   private staleRequestWakes = 0;
   private staleMailWakes = 0;
+  private missionOverWakes = 0;
   /**
    * Interest-wake event id -> the open ask its event was about, recorded at
    * enqueue so `pump` can drop the wake if that ask closed while it waited.
@@ -581,6 +584,7 @@ export class Scheduler implements SchedulerPort {
     this.mailEchoes = 0;
     this.staleRequestWakes = 0;
     this.staleMailWakes = 0;
+    this.missionOverWakes = 0;
     this.wakeRequestRefs = new Map();
     this.stuckEscalated = new Set();
     this.strikes = new Map();
@@ -1425,6 +1429,7 @@ export class Scheduler implements SchedulerPort {
       mail_echo: this.mailEchoes,
       stale_request: this.staleRequestWakes,
       stale_mail: this.staleMailWakes,
+      mission_over: this.missionOverWakes,
     };
   }
 
@@ -1464,6 +1469,13 @@ export class Scheduler implements SchedulerPort {
           this.staleMailWakes++;
           continue;
         }
+        if (this.isMissionOverWake(item)) {
+          // The mission ended while this wake waited for a slot. Dropped rather than run: after the end a seat may only
+          // read and remember (`MISSION_OVER_ALLOW_OPS`), so the turn buys a context window to be refused its `done`.
+          // The mail stays in the box; a reopen's recovery wake reads it.
+          this.missionOverWakes++;
+          continue;
+        }
         // Half-open with no probe yet: this dispatch IS the probe, and every
         // other wake waits behind it (`providerHolds`) until its verdict.
         if (this.provider.state === "half_open" && !this.provider.probeItem) {
@@ -1500,6 +1512,24 @@ export class Scheduler implements SchedulerPort {
    */
   private hasHumanMail(messageIds: readonly string[]): boolean {
     return messageIds.some((id) => this.state.messages.get(id)?.from === "human");
+  }
+
+  /**
+   * A wake at the head of the queue after the mission ended that nobody asked for. The requeues (`notifyTurnFinished`)
+   * already refuse to start one for an agent's mail; a wake that was waiting in the queue when the mission ended was
+   * not asked and went through. The thirteenth cronlite run's developer sent the architect an INFORM at 21:11:38, the
+   * wake waited behind `max_active_agents`, the pm's last turn freed a slot at 21:12:14, eight seconds after the goal
+   * completed, and the architect spent 9.8k tokens on a turn whose output was refused ("done: mission is COMPLETED").
+   * What is kept is what an operator or a reopen starts: an explicit or operator wake, `manual`, `recovery`, and the
+   * operator's own mail.
+   */
+  private isMissionOverWake(item: QueueItem): boolean {
+    if (!this.missionOver()) return false;
+    if (item.explicit || item.operator) return false;
+    const r = item.reason;
+    if (r.kind === "manual" || r.kind === "recovery") return false;
+    if (r.kind === "message" && this.hasHumanMail(r.messageId ? [r.messageId] : [])) return false;
+    return true;
   }
 
   /**

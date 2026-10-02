@@ -412,6 +412,18 @@ wake with the turn that had already been handed its message, the recorded runs h
 9 of 42 (run 4) and 17 of 42 (run 5): 160k of 1.51M, 98k of 1.03M and 190k of 1.23M billed tokens,
 and nine of run 5's seventeen ended in `wait`, `done` or nothing.
 
+**A wake is for a mission that is still running.** After the end a seat may only read and remember
+(`MISSION_OVER_ALLOW_OPS`), so a turn started then buys a context window to be refused its `done`
+("mission is COMPLETED"). `notifyTurnFinished` already refuses to requeue an agent's deferred mail after
+the end; the queue itself did not: a wake that was waiting for a slot when the mission ended ran when one
+freed. At dequeue, beside the two drops above, a wake is dropped when the mission is COMPLETED or FAILED
+and it is not an operator's (`isMissionOverWake`), and counted as `mission_over` in `suppressedWakes`.
+Not dropped: an explicit or operator wake, `manual`, `recovery` (what a reopen starts) and a `message`
+wake for the operator's own mail. The mail stays in the box. In the thirteenth run the developer's INFORM
+to the architect (21:11:38) waited behind `max_active_agents: 3`; the pm's last turn freed a slot at
+21:12:14, eight seconds after the goal completed, and the architect's turn cost 9,795 tokens and was
+discarded as `no_ops`.
+
 ## Runtime adapter interface
 
 ```ts
