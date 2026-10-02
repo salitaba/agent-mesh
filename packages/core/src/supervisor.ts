@@ -125,7 +125,7 @@ import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches, loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
-import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, TerminationManager, type DeadlockFinding } from "./termination";
+import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, liveClaims, TerminationManager, type DeadlockFinding } from "./termination";
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
 import { isEvidenceRead, isMeshToolCall, settleContinuityCalls, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
@@ -420,6 +420,9 @@ const HALT_NEGLECT_IDLE_MULTIPLE = 5;
  * an acceptance, a seat that may accept exists and a verification report it could cite is submitted, the mesh knows who must act
  * and has what they need, and waiting out the window is three idle minutes (the pm, in the ninth run's second round and the
  * tenth run's first, was nudged 3 min 23 s and 3 min 22 s after QA's report landed, and accepted within 18 s of waking).
+ *
+ * The same fraction for a mission with every criterion evidenced whose only open item is a task its owner still holds
+ * (`finishLineClaims`): the mesh knows who must act and has what they need.
  */
 const ACCEPTANCE_GRACE_DIVISOR = 12;
 
@@ -13351,7 +13354,12 @@ export class Supervisor {
     const noopFastRetry = this.stallNoopRetryAt > 0 && now >= this.stallNoopRetryAt;
     if (!noopFastRetry) {
       if (now - this.lastTurnAt < this.stallIdleFor()) return;
-      if (now - this.lastStallNudgeAt < this.config.scheduling.stallCooldownMs) return;
+      // The cooldown keeps one situation from being nudged again and again. A nudge sent before the mission reached the
+      // finish line was about another one (here the pm's, which accepted the last two criteria and so brought it there),
+      // and the claimant it has not met yet is no reason to wait out another five minutes.
+      const cooling = now - this.lastStallNudgeAt < this.config.scheduling.stallCooldownMs;
+      const sentBeforeTheFinishLine = this.finishLineClaims().length > 0 && this.lastStallNudgeAt < this.finishLineReachedAt();
+      if (cooling && !sentBeforeTheFinishLine) return;
     }
     // QUIESCENCE GATE. Waking an agent costs a full context window, so the
     // decision to wake one must be made from mesh state — for free — BEFORE
@@ -13836,6 +13844,9 @@ export class Supervisor {
       // The criteria are all evidenced and the mission still will not close: a rejected patch is open.
       const rejected = this.openRejectionNote();
       if (rejected) return `${base}. ${rejected} Do NOT re-approve or re-confirm finished work.`;
+      // Or a claim is: the one thing left, and it is the claimant's to close.
+      const claimed = this.finishLineNote(driver);
+      if (claimed) return `${base}. ${claimed} Do NOT re-approve or re-confirm finished work.`;
       return `${base}. Do NOT re-approve or re-confirm finished work. Either close out a concrete loose end (unanswered mail, an open escalation, a claimed task), or reply with a single \`done\` op and stop — the mission will close itself.`;
     }
     // A BLOCK that still stands is the most specific thing there is to say about why the
@@ -14039,6 +14050,67 @@ export class Supervisor {
   }
 
   /**
+   * The tasks that are all that keeps a finished mission open. Every mandatory criterion is evidenced, no rejected
+   * patch is left open and no escalation is, so the one thing the verdict is still waiting for is a claim its owner has
+   * not completed (`liveClaims`). The thirteenth cronlite run reached that state at 20:56:00, with the developer asleep on
+   * the task it had claimed: nothing woke it for 77 s but the unread-mail sweep, the watchdog (whose cooldown ran from the
+   * pm's nudge a minute before) would have come at 21:00:47 and chosen the first seat in the roster with mail, and the
+   * tech lead's own attempt to close it was refused, "task claimed by developer".
+   */
+  private finishLineClaims(): Task[] {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    if (!goal || !goal.acceptanceCriteria.some((c) => c.mandatory) || this.hasUnmetMandatory()) return [];
+    if (openRejections(this.state, goal.id).length > 0) return [];
+    if ([...this.state.escalations.values()].some((e) => e.status === "OPEN")) return [];
+    return liveClaims(this.state);
+  }
+
+  /** The seats that hold those claims, one each: the only seats whose turn closes the mission. */
+  private finishLineClaimants(): string[] {
+    return [...new Set(this.finishLineClaims().flatMap((t) => (t.claimedBy ? [t.claimedBy] : [])))];
+  }
+
+  /**
+   * When the mission reached the finish line: the last moment any mandatory criterion was evidenced, 0 when the record
+   * has none. A nudge sent before it was about something else, so it does not hold back the first one at the finish line.
+   */
+  private finishLineReachedAt(): number {
+    const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
+    let at = 0;
+    for (const c of goal?.acceptanceCriteria ?? []) {
+      if (!c.mandatory) continue;
+      for (const e of c.evidence) {
+        const ms = Date.parse(e.recordedAt);
+        if (Number.isFinite(ms) && ms > at) at = ms;
+      }
+    }
+    return at;
+  }
+
+  /**
+   * What holds a finished mission open, said to a seat the watchdog wakes: "" when no claim does. To the claimant it is
+   * the one act that closes the mission and the tool for it; to any other seat it says whose act it is, since
+   * `mesh_task_complete` is refused for a task another seat claimed.
+   */
+  private finishLineNote(driver?: string): string {
+    const claims = this.finishLineClaims();
+    if (claims.length === 0) return "";
+    const named = (ts: Task[]): string => ts.map((t) => `"${t.title}" (${t.id})`).join(", ");
+    const own = claims.filter((t) => t.claimedBy === driver);
+    if (own.length > 0) {
+      return (
+        `Every mandatory criterion is evidenced; the mission stays open only for ${own.length === 1 ? "a task" : "tasks"} you still hold: ${named(own)}. ` +
+        `If the work is done, finish ${own.length === 1 ? "it" : "each"} with \`mesh_task_complete\` and a summary of what landed: the mission closes when you do.`
+      );
+    }
+    const owners = [...new Set(claims.map((t) => t.claimedBy))].join(", ");
+    return (
+      `Every mandatory criterion is evidenced; the mission stays open only for ${claims.length === 1 ? "a task" : "tasks"} claimed by ${owners}: ${named(claims)}. ` +
+      `Only the claimant can complete ${claims.length === 1 ? "it" : "them"}.`
+    );
+  }
+
+  /**
    * The mission is waiting on an acceptance and the proof is in hand: every mandatory criterion still unmet is one that only
    * a seat that may accept can close (`unmetManualCriteria`), such a seat exists, and a verification report an acceptance
    * could cite has been submitted. A report written by a seat that cannot verify, a draft and what the operator rejected at a
@@ -14051,10 +14123,10 @@ export class Supervisor {
     return citableEvidence(this.state, goalId, unmet).some((a) => VERIFICATION_ARTIFACT_TYPES.includes(a.type));
   }
 
-  /** How long the mission must have been quiet before the watchdog nudges: the idle window, or its grace when only an acceptance is left. */
+  /** How long the mission must have been quiet before the watchdog nudges: the idle window, or its grace when only an acceptance or a claimed task is left. */
   private stallIdleFor(): number {
     const idle = this.config.scheduling.stallIdleMs;
-    return this.acceptanceReady() ? Math.max(100, Math.min(idle, Math.floor(idle / ACCEPTANCE_GRACE_DIVISOR))) : idle;
+    return this.acceptanceReady() || this.finishLineClaims().length > 0 ? Math.max(100, Math.min(idle, Math.floor(idle / ACCEPTANCE_GRACE_DIVISOR))) : idle;
   }
 
   /** Who to wake for a stalled mission: someone with real work, else rotate across the stuck. */
@@ -14089,6 +14161,13 @@ export class Supervisor {
     // not yet resubmitted. Its owner, ahead of the seat with mail: the sixth cronlite run's CLI patch
     // sat REJECTED after the library merged, and the one seat that could resubmit it was never woken.
     for (const owner of this.rejectionOwners().filter(eligible).sort(byOldest)) {
+      if (owner === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
+      return owner;
+    }
+    // A finished mission held open by a task its owner has not completed: the owner, ahead of "whoever has mail", which
+    // returned the first seat in config order with any (the architect, with an unread broadcast, in the thirteenth run)
+    // and would have spent a turn on a seat that has nothing to close.
+    for (const owner of this.finishLineClaimants().filter(eligible).sort(byOldest)) {
       if (owner === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
       return owner;
     }

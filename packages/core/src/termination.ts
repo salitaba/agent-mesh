@@ -1,4 +1,4 @@
-import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type GoalId } from "../../protocol/src/index";
+import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type GoalId, type Task } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
@@ -39,6 +39,22 @@ export function criterionSatisfied(goal: Goal, c: AcceptanceCriterion): boolean 
   if (c.status !== "EVIDENCED") return false;
   if (!goal.reopenedAt || !c.withdrawnAt) return true;
   return c.evidence.some((e) => e.recordedAt > c.withdrawnAt!);
+}
+
+/**
+ * The claims that keep a finished mission open: a CLAIMED task whose owner still points at it.
+ *
+ * The runtime's own pointer is the truth. A claim is live iff the claiming agent still exists and its
+ * `activeTaskId` is this task; a claim whose owner is gone, or who has moved on to another task, is residue,
+ * the same as an unclaimed OPEN ticket (see the verdict below). Read by the verdict, which will not complete
+ * a mission over one, and by the stall watchdog, which has to wake the owner.
+ */
+export function liveClaims(state: Projections): Task[] {
+  return [...state.tasks.values()].filter((t) => {
+    if (t.status !== "CLAIMED" || t.id.startsWith("watch:")) return false;
+    const owner = t.claimedBy ? state.agents.get(t.claimedBy) : undefined;
+    return owner?.state.activeTaskId === t.id;
+  });
 }
 
 /**
@@ -568,11 +584,7 @@ export class TerminationManager {
       // claiming agent still exists and its `activeTaskId` is this task.
       // A claim whose owner is gone, or who has moved on to another task, is
       // residue — the same as an unclaimed OPEN ticket.
-      const ownedTasks = [...state.tasks.values()].filter((t) => {
-        if (t.status !== "CLAIMED" || t.id.startsWith("watch:")) return false;
-        const owner = t.claimedBy ? state.agents.get(t.claimedBy) : undefined;
-        return owner?.state.activeTaskId === t.id;
-      });
+      const ownedTasks = liveClaims(state);
       // A patch a reviewer rejected that has neither landed nor been withdrawn is work the mission left
       // in limbo, however many criteria a merge of its sibling evidenced (`openRejections`). Like a
       // claimed task, it has an owner who has to act, and the watchdog wakes them for it.

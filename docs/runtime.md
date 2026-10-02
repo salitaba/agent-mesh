@@ -145,7 +145,13 @@ begins `stall watchdog: mission active but quiet — …`. Its gates, in the ord
   after **a twelfth** of `stall_idle_ms` instead (15 s of the default 180 s), because nothing but
   that seat's turn is missing: the acceptor is nudged 15 to 45 s after the last turn rather than
   180 to 210 s (the ninth and tenth cronlite runs each sat 3 min 22 s to 3 min 23 s with the proof
-  in hand, a quarter of a 13-minute round). Anything else keeps the full window: nothing submitted
+  in hand, a quarter of a 13-minute round). The same twelfth applies to a mission whose every
+  criterion is evidenced and whose only open item is a task its owner still holds (step 3 below): the
+  claimant is nudged 15 to 45 s after the last turn, not 180 to 210 s, and a nudge sent before the last
+  criterion was evidenced does not hold that first one back for the cooldown, because it was about another
+  state (the thirteenth run's pm, a minute earlier, whose acceptances brought the mission to the finish
+  line). A nudge sent after it is held as before, so a claimant that does nothing is not woken in a loop.
+  Anything else keeps the full window: nothing submitted
   to cite, a criterion the mesh evidences itself still open, only some other document, no seat
   that may accept.
 - **worth waking anyone**, decided from state and never by a model: a patch stalled on the
@@ -171,7 +177,18 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
    (owner dev): dev reworks it (a new version with asVersionOf, then a review request) or, if it is
    abandoned, moves it to DRAFT and then to ARCHIVED.` With every criterion evidenced it takes the place
    of "reply with a single `done` op and stop — the mission will close itself", which would be false;
-3. **while a mandatory criterion is unmet, the seat that can lift a standing BLOCK.** The two
+3. **the claimant of a task that is all that keeps a finished mission open.** With every mandatory criterion
+   evidenced, no rejected patch left open and no escalation open, the one thing the verdict is waiting for is a task
+   its owner has not completed (`liveClaims`, in `termination.ts`: CLAIMED, and the owner's `activeTaskId` still
+   points at it; a claim its owner has moved on from is residue, to the watchdog as to the verdict). Only the claimant
+   can complete it (`mesh_task_complete` for another seat's claim is refused: "task claimed by developer"), and a seat
+   that finished its work and is waiting does not hear that it is the last act. In the thirteenth run the pm accepted
+   the last two criteria at 20:56:00 and the developer, asleep on its claim, was woken 77 s later by the unread-mail
+   sweep; the watchdog's own next nudge was due at 21:00:47 and would have gone to step 6, the architect with an unread
+   broadcast. The note says every mandatory criterion is evidenced, names the task (`"Implementation: …" (task-…)`)
+   and the tool that closes it, with a summary of what landed; to any other seat it says whose act it is. A seat whose
+   previous nudge bought nothing is skipped here when another seat can be tried;
+4. **while a mandatory criterion is unmet, the seat that can lift a standing BLOCK.** The two
    holds lift differently. A block *on an artifact* holds it until a new version exists
    (`active-block`), which only its owner can publish and which drops the record; the
    blocker's own later pass releases nothing. A block on a *subject* with no artifact (QA's
@@ -186,16 +203,16 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
    pm accepted 3 min 11 s later, when the unread-mail timer reached it; in the second round
    5 min 13 s later.) A seat whose previous nudge bought nothing is skipped
    here when another seat can be tried;
-4. **when every unmet mandatory criterion is one the mesh does not evidence from its own
+5. **when every unmet mandatory criterion is one the mesh does not evidence from its own
    events, a seat that may accept it.** A criterion outside `AUTO_EVIDENCED_CRITERIA` (and any
    the operator's reopen mints, `operator-feedback-…`) closes by `approve subject:"criterion:<id>"`
    from a seat holding `requirements.accept` or `requirements.approve`, and by nothing else. The
    acceptors come oldest activity first, and one whose nudge just bought nothing gives the next to
    another seat. With any auto-evidenced criterion also unmet this step is skipped: the work that
    would evidence it is still to do, and who may accept is not yet the question;
-5. a seat with unread mail or a claimed task (the first in config order);
-6. the WAITING or BLOCKED seat with the oldest activity;
-7. the startup seats, then any live seat.
+6. a seat with unread mail or a claimed task (the first in config order);
+7. the WAITING or BLOCKED seat with the oldest activity;
+8. the startup seats, then any live seat.
 
 The note says what holds, since when, who can lift it and how (for a block on a subject:
 re-verify the *current* product, bring the worktree up to `main` first, then pass the subject
