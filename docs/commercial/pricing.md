@@ -52,7 +52,8 @@ whole host.
 What a limit does depends on the instance's enforcement mode ([licensing.md](licensing.md)): by default a
 limit is **reported and never refused**; under `enforce`, what the plan does not allow does not *start*, and
 nothing that is running is ever stopped. The Community plan is real and unlimited in time: one open project,
-eight seats, no licence needed, nothing expires.
+eight seats, no licence needed, nothing expires. Those limits are also what the source licence lets anyone run in
+production for free, whatever the enforcement mode ([licensing.md](licensing.md#the-source-licence)).
 
 What each plan includes beyond the table is in `plans.ts` (`includes`) and on the website. Roadmap items
 (single sign-on, per-operator identity and roles, audit-log export with operator identity) are listed as

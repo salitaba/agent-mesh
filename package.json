@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "A runtime for creating and executing persistent AI organizations.",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "workspaces": [
     "packages/*"
   ],

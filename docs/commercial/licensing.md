@@ -1,8 +1,32 @@
 # Licences and plan limits
 
 How a customer proves what they bought, how the product behaves around it, and how you issue and manage
-licences. For the price list see [pricing.md](pricing.md). The legal terms that make the limits binding are the
-software licence and licence agreement the customer accepts, which are not part of this repository.
+licences. For the price list see [pricing.md](pricing.md). What makes the limits binding is legal, not technical:
+the source licence below and, for the paid plans, the commercial licence agreement the customer signs, which is not
+part of this repository.
+
+## The source licence
+
+The code in this repository is under the [Business Source License 1.1](../../LICENSE): public and readable, but
+**source-available, not open source**. In plain words (the licence text governs wherever they differ):
+
+- **You can read, build, modify and run it**, and use it for anything that is not production, at any size.
+- **Production use is free within the Community plan's limits** ([pricing.md](pricing.md)). The licence's
+  *Additional Use Grant* spells those limits out, and `tests/build/source-licence.test.ts` keeps its numbers equal to
+  the plan table.
+- **Beyond those limits you need a commercial licence**: that is what the paid plans are. The licence does not define
+  "production"; if you are not sure whether a use is, ask (the contact is in [LICENSE](../../LICENSE)).
+- **Two conditions apply to every production use**: do not take the licence-key check out or work around it, and do
+  not provide the software to third parties as a hosted or managed service, or embed it in a product or service you
+  provide to them. Those uses need a commercial licence.
+- **Each version becomes Apache 2.0 four years after it is published.** From then on that version is open source;
+  newer versions keep their own date.
+- **Earlier versions stay MIT.** Everything up to and including commit `d03781c336a4081a446e8e9977fe15011bf66479` was
+  published under the MIT licence, and whoever received it keeps those rights. The Business Source License applies
+  from the next commit.
+
+Anthropic's Agent SDK, which the agents run, is Anthropic's and is not covered by this licence
+([THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)).
 
 ## What a licence is
 
@@ -24,8 +48,10 @@ licence server to run, secure or keep up, nothing phones home, and an air-gapped
 same way a connected one does.
 
 **It is not copy protection.** The runtime is JavaScript; anyone who can edit it can remove the check. A licence
-is how an honest customer shows, and a vendor can verify, what was bought. The contract does the rest, which
-makes the software licence and licence agreement the thing that actually binds a customer to their plan.
+is how an honest customer shows, and a vendor can verify, what was bought. The contract does the rest: the source
+licence above limits free production use to the Community plan and rules out working around the key, and the
+commercial licence agreement a customer signs covers everything beyond it. Those, not the check, are what actually
+bind a customer to their plan.
 
 ## How an install finds its licence
 
@@ -152,3 +178,10 @@ after the grace period.
 customer and limits what one instance may do.
 
 **Do you collect usage?** No. `mesh usage` produces a report for you; nothing sends it anywhere.
+
+**Is it open source?** No. The source is public under the Business Source License 1.1, which is source-available: you
+can read, modify and run it, it is free for production within the Community plan's limits, and each version becomes
+Apache 2.0 four years after it is published. See [The source licence](#the-source-licence).
+
+**Can we host it for our own customers, or build it into our product?** Not under the free grant. That needs a
+commercial licence: use the contact in [LICENSE](../../LICENSE).

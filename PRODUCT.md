@@ -18,7 +18,7 @@ Agent Mesh is a runtime for persistent AI organizations — role-based autonomou
 
 The runtime, not the prompt, is authoritative. Four enforcement layers (prompt awareness, per-agent capability/tool permissions, mesh policy on the bus, and a state-transition reducer that refuses illegal appends) mean a neighboring prompt-based multi-agent chat cannot truthfully copy the guarantees: illegal approvals, commits, delegations, and blocks are rejected before they become events, and even a rogue event cannot force an illegal state.
 
-Commercially it is self-hosted software with a platform fee only: the customer's own model account pays for the model (Anthropic's terms do not allow reselling it), nothing phones home, and the free Community plan (one open project, eight agents) needs no licence. What a plan includes lives in `packages/licensing/src/plans.ts` and is exported from there; prose must not restate a number the table owns.
+Commercially it is self-hosted software with a platform fee only: the customer's own model account pays for the model (Anthropic's terms do not allow reselling it), nothing phones home, and the free Community plan (one open project, eight agents) needs no licence. What a plan includes lives in `packages/licensing/src/plans.ts` and is exported from there; prose must not restate a number the table owns. The source is public under the Business Source License 1.1 (`LICENSE`): free to read, run and modify, free for production within the Community plan, and a commercial licence beyond it. The licence's grant has to carry the Community limits in its own text, so `tests/build/source-licence.test.ts` holds those numbers equal to the table.
 
 ## Operating Context
 

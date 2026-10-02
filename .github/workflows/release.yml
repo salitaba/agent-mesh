@@ -67,6 +67,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+          # GitHub cannot name this licence, so the label the action would derive from the repository is empty.
+          labels: |
+            org.opencontainers.image.licenses=BUSL-1.1
       - id: push
         uses: docker/build-push-action@v6
         with:

@@ -9,6 +9,14 @@ sections 1 to 15) are described there, run by run.
 
 ### Changed: read this before upgrading a deployment
 
+- **The source is now under the Business Source License 1.1** (`LICENSE`); `package.json` used to say MIT, and there
+  was no licence file. Everything up to and including commit `d03781c336a4081a446e8e9977fe15011bf66479` stays MIT for
+  whoever received it; the next commit onward is BSL. Production use is free within the Community plan's limits, which
+  the licence's grant spells out and `tests/build/source-licence.test.ts` keeps equal to the plan table; beyond them,
+  and for hosting it for third parties or embedding it in a product, a commercial licence is needed. Each version
+  becomes Apache 2.0 four years after it is published. `package.json`, the lockfile and the image's
+  `org.opencontainers.image.licenses` label say `BUSL-1.1`, and the image carries the licence file
+  ([docs/commercial/licensing.md](docs/commercial/licensing.md#the-source-licence)).
 - **The server fails closed on the network.** It refuses to listen on any address but loopback unless
   `MESH_API_TOKEN` is set to 32 or more characters (`openssl rand -hex 32`). A blank token on a network address is a
   refusal, not "no authentication". `MESH_ALLOW_INSECURE_BIND=1` overrides it, loudly, for a server whose only way in is a

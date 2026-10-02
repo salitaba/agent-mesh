@@ -28,6 +28,9 @@ Everything the page needs from you is marked `TODO(owner)`:
 - `DOCS_BASE` in the script: where the documents under `docs/` are served. It points at the repository on GitHub
   until a documentation site exists.
 - `CONTACT_HREF`: a `mailto:` or a form for "Talk to us" and the paid plans.
+- The licensing contact in `LICENSE`: its contact line points at the repository's issue tracker until you have an
+  address, and should then use the same one as `CONTACT_HREF`. Change only that line; the licence's terms are pinned
+  by `tests/build/source-licence.test.ts`.
 - The footer: company name and contact address, and the privacy policy and terms once they exist.
 
 ```bash

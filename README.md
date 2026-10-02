@@ -18,6 +18,7 @@ stalemate.
 It runs on your own infrastructure with your own model credentials, and nothing
 phones home. The Community plan (one open project, up to eight agents) needs no
 licence key; the paid plans lift the limits (see [pricing](docs/commercial/pricing.md)).
+The source is public under the Business Source License 1.1: see [Licence](#licence).
 
 ## Demo
 
@@ -237,3 +238,22 @@ project measures rather than assumes. The one real mission measured so far
 (five agents on Haiku 4.5 built a small library for $5.52 of model usage, and an
 independent oracle scored it 99.6%) is in `pricing/measured-runs.json`: one run,
 not a rate.
+
+## Licence
+
+Agent Mesh is **source-available, not open source**: the code is public under the
+[Business Source License 1.1](LICENSE), and you can read, build, modify and run it.
+
+- **Free:** production use within the Community plan's limits
+  ([pricing](docs/commercial/pricing.md)), and non-production use at any size.
+- **Needs a commercial licence:** production use beyond those limits (that is what the paid plans are), taking the
+  licence-key check out, and offering it to others as a hosted or managed service or embedded in a product.
+  [docs/commercial/licensing.md](docs/commercial/licensing.md) says it in plain words; the licence text governs.
+- **Each version becomes Apache 2.0** four years after it is published.
+- **Earlier versions stay MIT.** Everything up to and including commit
+  `d03781c336a4081a446e8e9977fe15011bf66479` was published under the MIT licence (`package.json` said so; there was
+  no licence file), and whoever received those versions keeps those rights. The Business Source License applies from
+  the next commit.
+
+To ask about a commercial licence, use the contact line in [LICENSE](LICENSE). Anthropic's Agent SDK, which the agents
+run, is Anthropic's and is not covered by this licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

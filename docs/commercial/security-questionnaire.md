@@ -78,6 +78,6 @@ Details, and the tests that pin each control, are in [security.md](security.md).
 
 | Question | Answer |
 |---|---|
-| What licence terms apply? | The software licence agreement, and for the model provider your own agreement with them. Anthropic's SDK, which the agents run, is under Anthropic's terms ([THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)). |
+| What licence terms apply? | The Business Source License 1.1 ([LICENSE](../../LICENSE)) for the source and for production use within the Community plan; a commercial licence agreement for the paid plans ([licensing.md](licensing.md#the-source-licence)); and for the model provider your own agreement with them. Anthropic's SDK, which the agents run, is under Anthropic's terms ([THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)). |
 | Does the vendor resell model usage? | **No.** You bring your own credentials and are billed by your provider ([pricing.md](pricing.md)). |
 | Do you need a data processing agreement? | Only if the vendor is given access to personal data, for example to debug on your instance. By default it is not. |
