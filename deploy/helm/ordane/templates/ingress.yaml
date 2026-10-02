@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "agent-mesh.fullname" . }}
+  name: {{ include "ordane.fullname" . }}
   labels:
-    {{- include "agent-mesh.labels" . | nindent 4 }}
+    {{- include "ordane.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -27,7 +27,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "agent-mesh.fullname" . }}
+                name: {{ include "ordane.fullname" . }}
                 port:
                   name: http
 {{- end }}

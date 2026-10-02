@@ -34,7 +34,7 @@ export async function runStdioMcpBridge(options: McpBridgeOptions): Promise<void
   const bus = options.bus || env.MESH_BUS_URL || DEFAULT_BUS;
   const token = options.token || env.MESH_AGENT_TOKEN || "";
   if (!agent || !token) {
-    process.stderr.write("mesh mcp: --agent and --token (or MESH_AGENT_ID / MESH_AGENT_TOKEN) are required\n");
+    process.stderr.write("ordane mcp: --agent and --token (or MESH_AGENT_ID / MESH_AGENT_TOKEN) are required\n");
     process.exit(2);
   }
   const rl = readline.createInterface({ input: process.stdin, terminal: false });

@@ -88,6 +88,6 @@ test("no public document links to, or names, a business-internal paper", () => {
 
 test("the headings used as anchors by the checker agree with GitHub's rules on the awkward ones", () => {
   assert.equal(slug("Many tenants: a fleet"), "many-tenants-a-fleet");
-  assert.equal(slug("`mesh usage` and costs (Team)"), "mesh-usage-and-costs-team");
+  assert.equal(slug("`ordane usage` and costs (Team)"), "ordane-usage-and-costs-team");
   assert.equal(slug("Back up and restore"), "back-up-and-restore");
 });

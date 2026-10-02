@@ -15,7 +15,7 @@ import {
 export const MESH_CONFIG_FILENAME = "mesh.yaml";
 
 export interface FileProjectRegistryOptions {
-  /** Defaults to `MESH_HOME` or `~/.agent-mesh`. */
+  /** Defaults to `MESH_HOME` or `~/.ordane`. */
   home?: string;
   /** Step 3 supplies the child-spawning supervisor; until then nothing boots. */
   supervisor?: ProjectSupervisor;

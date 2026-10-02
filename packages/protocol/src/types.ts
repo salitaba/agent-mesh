@@ -1068,7 +1068,7 @@ export interface HardActionsPolicy {
  * not: `communicationAllows` is a chain of `return true` grants ending in one
  * `return false`, so that key only ever ADDS a route. An empty list denies
  * nothing, a populated one cannot deny either — if the sender's `may_contact`
- * names the target, the inbound list is never consulted — and no `mesh validate`
+ * names the target, the inbound list is never consulted — and no `ordane validate`
  * check reports it. (An earlier version of this comment claimed it "refuses the
  * SEND, so the message never exists". It does not, and nothing in the engine ever
  * did that.)

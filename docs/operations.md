@@ -1,4 +1,4 @@
-# Operating Agent Mesh
+# Operating Ordane
 
 For the person who runs it. This is the reference and the runbooks: what every setting does, how to upgrade,
 how to back up and restore, how to watch it, and what its refusals mean. Getting it running in the first place
@@ -18,7 +18,7 @@ boundary: one instance is one tenant. For many customers, run many instances (se
 
 | Where | What |
 |---|---|
-| `/data/home` (`MESH_HOME`) | `projects.json` (the registry), `host.yaml` (limits), `license.key` (if installed with `mesh license install`) |
+| `/data/home` (`MESH_HOME`) | `projects.json` (the registry), `host.yaml` (limits), `license.key` (if installed with `ordane license install`) |
 | `/data/projects/<name>/` (`MESH_PROJECTS_ROOT`) | one project: `mesh.yaml`, `roles/`, and `workspace/` |
 | `…/workspace/.mesh-state/` | that project's state: `logs/events.jsonl` (the append-only event log, the source of truth), `artifacts/`, `sessions.json`, a snapshot and an index |
 | `/data/user` (`HOME`) | the agents' own CLI sessions: without them a restarted seat cannot resume its conversation |
@@ -50,7 +50,7 @@ start an open server.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MESH_HOME` | `~/.agent-mesh` (`/data/home` in the image) | The registry, `host.yaml` and a saved licence. |
+| `MESH_HOME` | `~/.ordane` (`/data/home` in the image) | The registry, `host.yaml` and a saved licence. |
 | `MESH_PROJECTS_ROOT` | unset (`/data/projects` in the image) | Projects can only be registered, browsed and opened under here (several, separated like `PATH`). Unset means no confinement, which is right on a laptop and wrong on a server. |
 | `MESH_INSTANCE_ID` | the hostname (the release name in the chart) | Who the state-lock holder is. Keep it **stable across restarts of one deployment** and **different between deployments**. See [A lock left behind](#a-lock-left-behind). |
 | `MESH_LOCK_STALE_MS` | 120000 | How long another instance's heartbeat may be silent before its lock is taken over. |
@@ -61,7 +61,7 @@ start an open server.
 | Variable | Default | Meaning |
 |---|---|---|
 | `MESH_LICENSE` | none | The licence key itself. Takes precedence over a file. |
-| `MESH_LICENSE_FILE` | none | Path of a file holding the key. Otherwise `<MESH_HOME>/license.key`, which `mesh license install` writes. |
+| `MESH_LICENSE_FILE` | none | Path of a file holding the key. Otherwise `<MESH_HOME>/license.key`, which `ordane license install` writes. |
 | `MESH_LICENSE_ENFORCEMENT` | `warn` | `off`, `warn` or `enforce`. See [Licence](#licence-1). |
 
 ### The agents' model access
@@ -106,17 +106,41 @@ upgrade when the missions are idle if you can, and the work is not lost if you c
    to five seconds for running ones; a long turn can outlast that, and a restart will then discard it.
 4. **Replace the image.**
    - Compose: `docker compose pull && docker compose up -d`.
-   - Helm: `helm upgrade <release> deploy/helm/agent-mesh --reuse-values --set image.tag=<version>`. The
+   - Helm: `helm upgrade <release> deploy/helm/ordane --reuse-values --set image.tag=<version>`. The
      chart uses the `Recreate` strategy with one replica, so the old pod stops before the new one starts: the
      two never hold the event log at once.
 5. **Watch it come up.** `/healthz` answers as soon as the process is serving; `/readyz` answers 200 `ready`
    until the host begins to shut down, then 503 `draining`. In the dashboard the projects reopen on their own.
-6. **Check the licence** (`mesh license status`) and that the projects are in the modes you expect.
+6. **Check the licence** (`ordane license status`) and that the projects are in the modes you expect.
 7. If it is wrong: restore the snapshot and start the previous image. Do not start the old image on the
    upgraded volume.
 
 The host drains on `SIGTERM` (Compose `stop_grace_period` and the chart's `terminationGracePeriodSeconds`
 are 60 seconds). Give it that long; `SIGKILL` skips the drain and leaves locks for the next start to reclaim.
+
+### Upgrading from a version named Agent Mesh
+
+The product was called Agent Mesh before it was called Ordane. Your data, `mesh.yaml`, the `MESH_*` variables and the
+event log are unchanged, but several names that a running deployment depends on moved, and two of them can cost you
+the upgrade or the data's visibility if they are missed:
+
+- **Helm.** The chart is `ordane` (it was `agent-mesh`), and the Deployment's selector carries the chart's name. A
+  selector cannot be changed on a live Deployment, so `helm upgrade` of a release installed from the old chart
+  refuses. Pass `--set nameOverride=agent-mesh` on the first upgrade and keep it: every object name (the Deployment,
+  the Service and the data volume's claim among them) and the selector stay exactly as they were. A new install needs
+  nothing. For a fleet, put `nameOverride: agent-mesh` in the values file of each tenant created before the rename.
+- **Compose.** The project is `ordane` (it was `agent-mesh`), and the project name prefixes the volume's name. Start an
+  existing deployment with `COMPOSE_PROJECT_NAME=agent-mesh docker compose up -d`. Without it Compose creates a new
+  project with a new, empty volume and leaves the old one, with your data, untouched.
+- **The image** is `ghcr.io/<owner>/ordane`. A registry mirror or a `MESH_IMAGE` that names the old image keeps
+  running the old version; nothing republishes under the old name.
+- **Metrics.** `agent_mesh_*` became `ordane_*`. Change the dashboards and alert rules that query them.
+- **The instance id** (Compose's default; the release name under Helm) says who holds each project's state lock. A
+  host that was stopped released it. One that was killed during the upgrade left it, and an instance with a different
+  id takes it after two minutes without a heartbeat.
+- **On a workstation**, `~/.agent-mesh` is still used when `~/.ordane` does not exist, and nothing is moved for you:
+  `mv ~/.agent-mesh ~/.ordane` adopts the new name. `ordane doctor` says which directory is in use. The `mesh`
+  command still works and runs the same program.
 
 ## Back up and restore
 
@@ -140,7 +164,7 @@ shows as *locked* and retries. Restore only onto a stopped instance.
 
 **Mission archives are a different thing.** *Reset mission* archives the mission's log, product checkout and
 agent worktrees under the project's `.mesh-backups` before it clears them. List them with
-`mesh backups <mesh.yaml>`; put one back, with the mesh stopped, with `mesh restore <mesh.yaml> <stamp>`.
+`ordane backups <mesh.yaml>`; put one back, with the mesh stopped, with `ordane restore <mesh.yaml> <stamp>`.
 Those are for undoing a reset, not for disaster recovery: they sit on the same volume as the thing they
 protect.
 
@@ -152,12 +176,12 @@ protect.
 Without a licence an instance is on the **Community** plan. To install one:
 
 ```
-docker compose exec mesh mesh license install <key>     # verifies it, saves it owner-only to $MESH_HOME/license.key
-docker compose exec mesh mesh license status            # the plan, the limits, what is in use
+docker compose exec mesh ordane license install <key>     # verifies it, saves it owner-only to $MESH_HOME/license.key
+docker compose exec mesh ordane license status            # the plan, the limits, what is in use
 ```
 
 A running host picks up a new licence within 30 seconds, with no restart. A licence in `MESH_LICENSE` or
-`MESH_LICENSE_FILE` takes precedence over the saved one; `mesh license install` tells you when that is so.
+`MESH_LICENSE_FILE` takes precedence over the saved one; `ordane license install` tells you when that is so.
 
 `MESH_LICENSE_ENFORCEMENT` decides what a plan limit does:
 
@@ -169,7 +193,7 @@ A running host picks up a new licence within 30 seconds, with no restart. A lice
 - `off`: nothing is checked.
 
 An expired licence keeps its plan for a 14-day grace period, then the instance is on Community. Expiry is in
-the log at start, in the dashboard's banner, and in the metrics (`agent_mesh_license_expires_timestamp_seconds`):
+the log at start, in the dashboard's banner, and in the metrics (`ordane_license_expires_timestamp_seconds`):
 alert on it.
 
 ## Rotating the token
@@ -197,48 +221,48 @@ events, escalations, loop lag) at `/api/p/<project>/metrics/prometheus`, through
 
 | Metric | What to alert on |
 |---|---|
-| `agent_mesh_up` | `== 0` or absent: the host is down |
-| `agent_mesh_projects{status=…}` | `status="crashed"` or `"error"` above 0 for 5 minutes |
-| `agent_mesh_project_up{project=…}` | a project that should be open is `0` |
-| `agent_mesh_projects_tripped` | above 0: a project's restart breaker is open and it needs a person |
-| `agent_mesh_spend_usd`, `agent_mesh_spend_ceiling_usd` | spend above 80% of the ceiling |
-| `agent_mesh_spend_ceiling_tripped` | `== 1`: the ceiling has parked every open project |
-| `agent_mesh_running_turns`, `agent_mesh_max_concurrent_turns` | running at the cap for a long time (turns are queueing) |
-| `agent_mesh_license_expires_timestamp_seconds` | less than 30 days away |
-| `agent_mesh_license_in_use{what=…}`, `agent_mesh_license_limit{limit=…}` | in use at or above the limit |
-| `agent_mesh_event_loop_lag_seconds` (per project) | above 1 for a minute: something is blocking the loop |
-| `agent_mesh_escalations_open` (per project) | above 0 for longer than your response time: a mission is waiting for a person |
+| `ordane_up` | `== 0` or absent: the host is down |
+| `ordane_projects{status=…}` | `status="crashed"` or `"error"` above 0 for 5 minutes |
+| `ordane_project_up{project=…}` | a project that should be open is `0` |
+| `ordane_projects_tripped` | above 0: a project's restart breaker is open and it needs a person |
+| `ordane_spend_usd`, `ordane_spend_ceiling_usd` | spend above 80% of the ceiling |
+| `ordane_spend_ceiling_tripped` | `== 1`: the ceiling has parked every open project |
+| `ordane_running_turns`, `ordane_max_concurrent_turns` | running at the cap for a long time (turns are queueing) |
+| `ordane_license_expires_timestamp_seconds` | less than 30 days away |
+| `ordane_license_in_use{what=…}`, `ordane_license_limit{limit=…}` | in use at or above the limit |
+| `ordane_event_loop_lag_seconds` (per project) | above 1 for a minute: something is blocking the loop |
+| `ordane_escalations_open` (per project) | above 0 for longer than your response time: a mission is waiting for a person |
 
 Scrape config, with the token from a file: one job for the host, and one per project whose own metrics you want.
 
 ```yaml
 scrape_configs:
-  - job_name: agent-mesh
+  - job_name: ordane
     metrics_path: /metrics/prometheus
-    authorization: { credentials_file: /etc/prometheus/agent-mesh-token }
+    authorization: { credentials_file: /etc/prometheus/ordane-token }
     static_configs: [{ targets: ["mesh.internal:7420"] }]
-  - job_name: agent-mesh-project-hello
+  - job_name: ordane-project-hello
     metrics_path: /api/p/hello/metrics/prometheus
-    authorization: { credentials_file: /etc/prometheus/agent-mesh-token }
+    authorization: { credentials_file: /etc/prometheus/ordane-token }
     static_configs: [{ targets: ["mesh.internal:7420"] }]
 ```
 
 ### Usage and cost
 
-`mesh usage --all` (or `--csv`, `--json`, `--by day,project,agent,model`) reads the event logs and reports
+`ordane usage --all` (or `--csv`, `--json`, `--by day,project,agent,model`) reads the event logs and reports
 what each project, seat and model consumed, with an estimate in dollars. Tokens are exact; dollars are an
 estimate at list prices or your `model_prices`. Reading is safe beside a running mesh.
 
 ### What to send support
 
-`mesh doctor` is the one thing to paste into a ticket. Run it where the instance runs (`docker compose exec mesh
-mesh doctor`, or `kubectl exec` into the pod); it reads files and the environment and changes nothing.
+`ordane doctor` is the one thing to paste into a ticket. Run it where the instance runs (`docker compose exec mesh
+ordane doctor`, or `kubectl exec` into the pod); it reads files and the environment and changes nothing.
 
 ```bash
-mesh doctor                       # the report, in text
-mesh doctor --json                # the same, for a script
-mesh doctor --host http://127.0.0.1:7420     # also ask a running host's /healthz and /readyz
-mesh doctor ./team/mesh.yaml      # also check a mesh that is not registered
+ordane doctor                       # the report, in text
+ordane doctor --json                # the same, for a script
+ordane doctor --host http://127.0.0.1:7420     # also ask a running host's /healthz and /readyz
+ordane doctor ./team/mesh.yaml      # also check a mesh that is not registered
 ```
 
 It reports the version, the plan and the licence's state, each setting **by name** (never its value), the
@@ -260,7 +284,7 @@ A project appears by its id: edit those in the text before pasting if they are s
 | the process exits **78** at start, `MESH_API_TOKEN …` | it would listen on the network without a strong token | set `MESH_API_TOKEN` to 32+ random characters |
 | exit **78**, `license` | `MESH_LICENSE_ENFORCEMENT=enforce` and the plan does not allow what was started | install a licence for the plan you need, or set `warn` |
 | exit **70** | another process took this instance's state lock (a pause longer than the stale window) | check that two instances are not running on the same volume; start one |
-| exit **79** (a project) | its `mesh.yaml` is missing or invalid | `mesh validate <mesh.yaml>` |
+| exit **79** (a project) | its `mesh.yaml` is missing or invalid | `ordane validate <mesh.yaml>` |
 | **421** `host_not_allowed` | the `Host` header is not one the server answers to | add the name to `MESH_ALLOWED_HOSTS` |
 | **403** `cross_origin` | a state-changing request from a page that is not the server's own | add that origin to `MESH_ALLOWED_ORIGINS` if it is yours |
 | **403** `outside_projects_root` | a folder outside `MESH_PROJECTS_ROOT` | put the project under it |

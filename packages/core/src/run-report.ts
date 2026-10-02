@@ -904,7 +904,7 @@ export function renderRunReport(report: RunReport): string {
     out.push(`  NEEDS YOU (${openEsc.length})`);
     for (const e of openEsc) {
       out.push(bullet(`! ${e.title}${e.advisory ? "  (advisory)" : ""}`));
-      out.push(bullet(`    raised by ${e.raisedBy} · mesh respond ${e.id} "<your answer>"`));
+      out.push(bullet(`    raised by ${e.raisedBy} · ordane respond ${e.id} "<your answer>"`));
     }
   }
 

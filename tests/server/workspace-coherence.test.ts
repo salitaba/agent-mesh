@@ -125,7 +125,7 @@ test("workspace coherence: a workspace that does not exist yet is fine", async (
 
 /**
  * The whole failure, reproduced from the top: a brand-new project, nothing
- * hand-edited, no mode flip and no reset. `mesh init` scaffolds one seat — an
+ * hand-edited, no mode flip and no reset. `ordane init` scaffolds one seat — an
  * architect holding `architecture.write` and not `repository.write` — and
  * `startup.activate` wakes it first. It was handed the workspace root, wrote
  * the design there, and nothing could ever cite a revision for it.

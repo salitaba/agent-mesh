@@ -58,8 +58,10 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The image is named for the product, not for the repository it is built from: the repository can be renamed
+      # (it was `agent-mesh`) without the documented image name moving.
       - id: meta
-        run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/ordane" >> "$GITHUB_OUTPUT"
       - id: tags
         uses: docker/metadata-action@v5
         with:
@@ -101,8 +103,8 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           echo "$GH_TOKEN" | helm registry login "${REGISTRY}" --username "${GITHUB_ACTOR}" --password-stdin
-          helm package deploy/helm/agent-mesh --version "$version" --app-version "$version"
-          helm push "agent-mesh-${version}.tgz" "oci://${REGISTRY}/${owner}/charts"
+          helm package deploy/helm/ordane --version "$version" --app-version "$version"
+          helm push "ordane-${version}.tgz" "oci://${REGISTRY}/${owner}/charts"
 
   release:
     name: GitHub release

@@ -1,4 +1,4 @@
-/* ============ Agent Mesh console — design system ============ */
+/* ============ Ordane console — design system ============ */
 /* Breakpoint ladder (UIR-05). Every @media width in the console must be one
    of these. They are NOT custom properties: CSS cannot read a var() inside a
    @media query, so the ladder is enforced by convention, not by the engine.
@@ -1507,7 +1507,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-strong); border-botto
 /* Host-level chrome: one row above everything, spanning both grid columns, so
    the strip survives every project switch and never looks like part of the
    mission it happens to be showing. The row only exists when a registry does
-   (`#app.with-tabs`), so single-mesh `mesh serve` keeps its 2-row layout. */
+   (`#app.with-tabs`), so single-mesh `ordane serve` keeps its 2-row layout. */
 #app.with-tabs {
   /* `auto` for the header row for the same reason as the 2-row template above:
      a fixed track pins #topbar's height regardless of what it holds, so a

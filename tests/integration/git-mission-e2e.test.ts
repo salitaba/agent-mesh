@@ -203,7 +203,7 @@ test("git mission e2e: every MERGED patch is a real merge commit carrying the se
 });
 
 /**
- * `examples/demo-stub` — the mesh `mesh run` ships — booted the way a user
+ * `examples/demo-stub` — the mesh `ordane run` ships — booted the way a user
  * boots it (file-backed, git ON, which is the default for a non-in-memory
  * run), driven by the same scripted team `journey.test.ts` uses.
  *

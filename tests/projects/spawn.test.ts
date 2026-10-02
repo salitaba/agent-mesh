@@ -204,7 +204,7 @@ test("a second child on the same state dir reports locked, not crashed", { timeo
     assert.equal(first.status, "open", `launch failed: ${JSON.stringify(first.error)}`);
 
     // A different supervisor, same folder: exactly the "registry entry plus a
-    // stray mesh run" case. Two writers on one event log is unrecoverable, so
+    // stray ordane run" case. Two writers on one event log is unrecoverable, so
     // the second must refuse rather than interleave.
     const second = await b.launch(ref);
     assert.equal(second.status, "locked");

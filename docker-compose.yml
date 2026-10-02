@@ -1,4 +1,4 @@
-# Single-node deployment of the Agent Mesh host.
+# Single-node deployment of the Ordane host.
 #
 #   export MESH_API_TOKEN="$(openssl rand -hex 32)"      # required: the server refuses to start without one
 #   export ANTHROPIC_API_KEY=sk-ant-...                  # the customer's own key; billed to them by Anthropic
@@ -7,16 +7,20 @@
 #
 # The port is published to loopback only. To serve a network, put a TLS-terminating proxy in front and
 # change the mapping deliberately; do not publish the port on 0.0.0.0 without TLS.
-name: agent-mesh
+#
+# The project name prefixes the volume's name. A deployment started before the product was called Ordane lives in
+# the project `agent-mesh`: keep it with `COMPOSE_PROJECT_NAME=agent-mesh docker compose up -d`, or Compose starts a
+# new project with a new, empty volume and leaves the old one, and your data, where it was.
+name: ordane
 
 services:
   mesh:
-    image: ${MESH_IMAGE:-ghcr.io/salitaba/agent-mesh:latest}
+    image: ${MESH_IMAGE:-ghcr.io/salitaba/ordane:latest}
     build: .
     restart: unless-stopped
     # A name that survives `docker compose up` recreating the container: the state lock records who holds it,
     # and a restarted instance recognises its own stale lock by this.
-    hostname: agent-mesh
+    hostname: ordane
     ports:
       - "127.0.0.1:${MESH_PORT:-7420}:7420"
     environment:
@@ -24,7 +28,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       MESH_LICENSE: ${MESH_LICENSE:-}
       MESH_LICENSE_ENFORCEMENT: ${MESH_LICENSE_ENFORCEMENT:-warn}
-      MESH_INSTANCE_ID: ${MESH_INSTANCE_ID:-agent-mesh}
+      MESH_INSTANCE_ID: ${MESH_INSTANCE_ID:-ordane}
       # Behind a TLS-terminating reverse proxy, say who the instance is reached as and that the proxy is trusted
       # (see docs/commercial/deployment.md). Blank is ignored.
       MESH_ALLOWED_HOSTS: ${MESH_ALLOWED_HOSTS:-}

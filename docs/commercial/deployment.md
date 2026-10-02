@@ -1,4 +1,4 @@
-# Deploying Agent Mesh
+# Deploying Ordane
 
 For whoever installs it: a trial in a minute, a single server, a Kubernetes cluster, and many tenants. After it is
 running, [operations.md](../operations.md) is the reference and the runbooks.
@@ -13,15 +13,15 @@ running, [operations.md](../operations.md) is the reference and the runbooks.
 - **For anything beyond your own laptop**: a host name and TLS in front of it, and a token of 32 or more random
   characters. The server refuses to listen on a network address without one.
 
-The image is `ghcr.io/salitaba/agent-mesh` (the release workflow publishes it), or build your own:
-`docker build -t agent-mesh .`.
+The image is `ghcr.io/salitaba/ordane` (the release workflow publishes it), or build your own:
+`docker build -t ordane .`.
 
 ## Try it in a minute, with no API key
 
 ```bash
 docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
   -e MESH_API_TOKEN="$(openssl rand -hex 32)" \
-  ghcr.io/salitaba/agent-mesh:latest demo
+  ghcr.io/salitaba/ordane:latest demo
 ```
 
 Open <http://127.0.0.1:7420>, paste the token (it is the `MESH_API_TOKEN` you passed; print it first if you let the
@@ -49,15 +49,15 @@ no extra capabilities and `no-new-privileges`, keeps everything that must surviv
 server will register projects from) and can scaffold a new one. From a shell:
 
 ```bash
-docker compose exec mesh mesh init /data/projects/hello                     # the default team, on the Claude runtime
-docker compose exec mesh mesh init /data/projects/hello --runtime stub      # the same on the stub runtime, no key needed
-docker compose exec mesh mesh init /data/projects/hello --example payment-api   # a shipped example (see: mesh init --list)
-docker compose exec mesh mesh project add /data/projects/hello
+docker compose exec mesh ordane init /data/projects/hello                     # the default team, on the Claude runtime
+docker compose exec mesh ordane init /data/projects/hello --runtime stub      # the same on the stub runtime, no key needed
+docker compose exec mesh ordane init /data/projects/hello --example payment-api   # a shipped example (see: ordane init --list)
+docker compose exec mesh ordane project add /data/projects/hello
 ```
 
 Then set the mission's goal in the project's `mesh.yaml` (or in the dashboard's designer) and start it.
 
-**A licence**, if you have one: `docker compose exec mesh mesh license install <key>`, or `MESH_LICENSE` in the
+**A licence**, if you have one: `docker compose exec mesh ordane license install <key>`, or `MESH_LICENSE` in the
 environment. Without one the instance is on the Community plan.
 
 ### TLS and a reverse proxy
@@ -113,14 +113,14 @@ kubectl -n mesh create secret generic mesh-credentials \
   --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
   --from-literal=MESH_LICENSE=AML1....            # optional
 
-helm install mesh oci://ghcr.io/salitaba/charts/agent-mesh --version <version> --namespace mesh \
+helm install mesh oci://ghcr.io/salitaba/charts/ordane --version <version> --namespace mesh \
   --set auth.existingSecret=mesh-credentials \
   --set ingress.enabled=true --set ingress.host=mesh.example.com --set ingress.tlsSecretName=mesh-tls \
   --set ingress.className=nginx \
   --set persistence.size=50Gi
 ```
 
-(From a checkout, replace the chart reference with `deploy/helm/agent-mesh`. The chart refuses to render without
+(From a checkout, replace the chart reference with `deploy/helm/ordane`. The chart refuses to render without
 `auth.existingSecret`: an instance with no token must not be installable. It never holds a credential itself.)
 
 What the chart sets up, and why:
@@ -142,13 +142,13 @@ What the chart sets up, and why:
 Check it:
 
 ```bash
-kubectl -n mesh rollout status deployment/mesh-agent-mesh
+kubectl -n mesh rollout status deployment/mesh-ordane
 scripts/smoke.sh url https://mesh.example.com "$TOKEN"       # health, auth, headers, no CORS, projects-root confinement
 ```
 
 ## Fleets
 
-Agent Mesh is one isolated instance per tenant, and `deploy/fleet/provision-tenant.sh` makes that repeatable. For
+Ordane is one isolated instance per tenant, and `deploy/fleet/provision-tenant.sh` makes that repeatable. For
 each tenant it creates a namespace (labelled for the restricted pod profile), a credentials Secret built from files
 so no credential is ever on a command line, and a Helm release wired to that tenant's host name:
 
@@ -174,7 +174,7 @@ Things that make a fleet work, or not:
 - **Sizing.** The chart asks for 250m CPU and 1 GiB and limits to 2 CPU and 4 GiB. A project is a Node process,
   and each agent in it is a further process while it takes a turn, so memory follows how many projects are open
   and how many turns run at once. Start with the defaults, watch `rss` on the project list and
-  `agent_mesh_running_turns`, and set `project_memory_mb` and the concurrent-turn cap (`host.yaml`) to what the
+  `ordane_running_turns`, and set `project_memory_mb` and the concurrent-turn cap (`host.yaml`) to what the
   pod can carry.
 
 ## Air-gapped
@@ -186,12 +186,12 @@ private model endpoint (Bedrock or Vertex over a private link, or an internal ga
 
 ## Building it yourself
 
-`docker build -t agent-mesh .` builds the image from a checkout, pinned to the lockfile. Pass
+`docker build -t ordane .` builds the image from a checkout, pinned to the lockfile. Pass
 `--build-arg NODE_IMAGE=node:22-bookworm-slim@sha256:…` to pin the base by digest. The release workflow builds the
 published image the same way, adds an SBOM and provenance, and signs the digest keylessly:
 
 ```bash
-cosign verify ghcr.io/salitaba/agent-mesh@sha256:<digest> \
+cosign verify ghcr.io/salitaba/ordane@sha256:<digest> \
   --certificate-identity-regexp 'https://github.com/salitaba/agent-mesh/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

@@ -57,7 +57,7 @@ test("--version, -v and `version` print the package version and exit 0", async (
   for (const flag of ["--version", "-v", "version"]) {
     const r = await run([flag]);
     assert.equal(r.code, 0, flag);
-    assert.equal(r.out, `agent-mesh ${root.version}`, flag);
+    assert.equal(r.out, `ordane ${root.version}`, flag);
   }
 });
 
@@ -67,12 +67,12 @@ test("--bind is a flag the launch commands read, so it draws no unknown-flag war
   }
 });
 
-test("`mesh serve --bind 0.0.0.0` with no token exits 78 with the fix in one line, and starts nothing", async () => {
+test("`ordane serve --bind 0.0.0.0` with no token exits 78 with the fix in one line, and starts nothing", async () => {
   const { dir, file } = meshFile();
   try {
     const r = await run(["serve", file, "--bind", "0.0.0.0", "--port", "0"]);
     assert.equal(r.code, 78);
-    assert.match(r.err, /^mesh serve: refusing to listen on 0\.0\.0\.0: MESH_API_TOKEN is not set/m);
+    assert.match(r.err, /^ordane serve: refusing to listen on 0\.0\.0\.0: MESH_API_TOKEN is not set/m);
     assert.match(r.err, /openssl rand -hex 32/);
     assert.equal(fs.existsSync(path.join(dir, ".mesh")), false, "no state directory was created");
   } finally {
@@ -94,13 +94,13 @@ test("a blank or short token is refused the same way, naming which it was", asyn
   }
 });
 
-test("`mesh host --bind 0.0.0.0` with no token exits 78 as well, without touching the registry home", async () => {
+test("`ordane host --bind 0.0.0.0` with no token exits 78 as well, without touching the registry home", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-cli-hostbind-"));
   const home = path.join(dir, "home");
   try {
     const r = await run(["host", "--bind", "0.0.0.0", "--port", "0", "--home", home]);
     assert.equal(r.code, 78);
-    assert.match(r.err, /^mesh host: refusing to listen on 0\.0\.0\.0/m);
+    assert.match(r.err, /^ordane host: refusing to listen on 0\.0\.0\.0/m);
     assert.equal(fs.existsSync(home), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

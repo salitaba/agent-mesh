@@ -6,7 +6,7 @@ import { attachDemoTeam } from "../../apps/mesh-cli/src/bench";
 
 const configPath = path.resolve(process.cwd(), "examples", "demo-stub", "mesh.yaml");
 
-test("product journey: 'mesh run examples/demo-stub' converges the mission end-to-end (no model)", async () => {
+test("product journey: 'ordane run examples/demo-stub' converges the mission end-to-end (no model)", async () => {
   const instance = await bootstrapMesh({ configPath, inMemory: true });
   const unsub = attachDemoTeam(instance);
   const goalId = instance.kernel.state.activeGoalId!;

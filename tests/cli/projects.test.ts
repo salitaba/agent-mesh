@@ -148,7 +148,7 @@ test("gitModeFromFlags: an unparseable value throws rather than guessing", () =>
 });
 
 test("parseArgs: a boolean flag does not swallow the positional after it", () => {
-  // `mesh run --git mesh.yaml` used to bind "mesh.yaml" as the VALUE of --git,
+  // `ordane run --git mesh.yaml` used to bind "mesh.yaml" as the VALUE of --git,
   // leaving positional empty and reporting a usage error for correct input.
   const a = parseArgs(["run", "--git", "mesh.yaml"]);
   assert.deepEqual(a.positional, ["mesh.yaml"]);
@@ -168,7 +168,7 @@ test("project list/add/remove work with no host, against the registry file", asy
   try {
     const home = path.join(base, "home");
     const root = makeProjectDir(base, "alpha", "alpha");
-    // Port 1 is never a mesh host, so this exercises the unreachable path.
+    // Port 1 is never an ordane host, so this exercises the unreachable path.
     const flags = { host: "http://127.0.0.1:1", home };
 
     const empty = await capture(() => runProjectCommand(["list"], flags));
@@ -203,7 +203,7 @@ test("open/close/restart require a host and say so instead of spawning an orphan
   try {
     const flags = { host: "http://127.0.0.1:1", home: path.join(base, "home") };
     for (const sub of ["open", "close", "restart"]) {
-      await assert.rejects(() => runProjectCommand([sub, "alpha"], flags), /no mesh host at http:\/\/127\.0\.0\.1:1/);
+      await assert.rejects(() => runProjectCommand([sub, "alpha"], flags), /no ordane host at http:\/\/127\.0\.0\.1:1/);
     }
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -279,11 +279,11 @@ test("unknown project and unknown subcommand fail loudly", async () => {
     const bad = await capture(() => runProjectCommand(["frobnicate"], flags));
     assert.equal(bad.code, 1);
     assert.match(bad.err, /unknown subcommand/);
-    assert.match(bad.out, /mesh project list/);
+    assert.match(bad.out, /ordane project list/);
 
     const help = await capture(() => runProjectCommand(["help"], flags));
     assert.equal(help.code, 0);
-    assert.match(help.out, /mesh project restart/);
+    assert.match(help.out, /ordane project restart/);
   } finally {
     await host?.close();
     fs.rmSync(base, { recursive: true, force: true });

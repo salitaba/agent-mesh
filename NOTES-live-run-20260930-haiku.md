@@ -5,7 +5,12 @@ with its own regression test). One live mission, two rounds, one crash; every fi
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4) and §17 (R1–R4).
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4) and §17 (R1–R4). §18 is not a run: it
+records the rename to Ordane.
+
+**Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
+`mesh <command>` spelling of its command line. The product is now called **Ordane** and its command is `ordane`; `mesh` still runs
+the same program, and `mesh.yaml`, the `MESH_*` variables and the `mesh_*` tools did not change (§18).
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
 check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and

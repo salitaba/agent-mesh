@@ -1251,7 +1251,7 @@ export function buildPermissionGate(capabilities: string[], approval?: ApprovalG
     const family = toolFamily(toolName);
     if (family === "mesh" || family === "read") return { behavior: "allow", updatedInput: toolInput };
     // Fail closed. A tool nobody mapped is a tool nobody authorized.
-    if (family === null) return deny(`${toolName} is not available to mesh agents under the claude runtime.`);
+    if (family === null) return deny(`${toolName} is not available to ordane agents under the claude runtime.`);
     const v = verdicts[family];
     if (v.level === "deny") return deny(refusal(family, toolName));
     // Checked before the commit-scope narrowing below: an operator gate is
@@ -3328,7 +3328,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       command: argv[0],
       args: argv.slice(1),
       // The token rides here and not on argv, where `ps` would show it to
-      // every local user; `mesh mcp` reads MESH_AGENT_TOKEN when --token is absent.
+      // every local user; `ordane mcp` reads MESH_AGENT_TOKEN when --token is absent.
       env: {
         MESH_BUS_URL: context.busUrl,
         MESH_AGENT_ID: agent.id,

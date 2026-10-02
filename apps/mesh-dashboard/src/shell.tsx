@@ -111,8 +111,8 @@ function Help(): React.JSX.Element {
       <h2>About</h2>
       <p className="muted">Every screen is a projection of the append-only event log.
         The ✉ / ✓ controls act as the <code>human</code> seat; the designer validates
-        configs server-side with the same engine as <code>mesh validate</code>.
-        Tip: <code>mesh console &lt;file&gt;</code> opens this console parked (nothing runs on its own — wake to step, ▶ to go live).</p>
+        configs server-side with the same engine as <code>ordane validate</code>.
+        Tip: <code>ordane console &lt;file&gt;</code> opens this console parked (nothing runs on its own — wake to step, ▶ to go live).</p>
     </div>
   );
 }
@@ -189,7 +189,7 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
   const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client, confirm } = mesh;
-  // Single-process `mesh serve` / `mesh console` has one mesh and no registry,
+  // Single-process `ordane serve` / `ordane console` has one mesh and no registry,
   // and must not gain an empty tab strip. "Is the provider mounted" did not
   // answer that — the provider mounts in both modes — so ask the server, and
   // show the strip only once it confirms a registry exists.
@@ -651,7 +651,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         Skip to content
       </button>
       {/* Host-level, so it sits above the per-project chrome and survives every
-          project switch. Rendered only under a ProjectsProvider: `mesh serve`
+          project switch. Rendered only under a ProjectsProvider: `ordane serve`
           runs one mesh with no registry and has no tabs to show. */}
       {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} /> : null}
       <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
@@ -727,7 +727,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               the topbar to promote -- the bar is already at its width budget --
               so the h1 is offscreen: it anchors the outline for a screen reader
               without adding chrome nobody asked for. */}
-          <h1 className="sr-only">Agent Mesh console</h1>
+          <h1 className="sr-only">Ordane console</h1>
           {serverDown ? (
             <div className="banner bad server-banner" role="alert">
               <b>Server not responding.</b> <span className="muted">Showing the last known state — it may be stale. Is the mesh process still running?</span>

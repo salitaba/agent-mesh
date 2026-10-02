@@ -1,7 +1,7 @@
 /**
  * The shipped demo, and only the shipped demo, starts clean and runs a scripted team.
  *
- * The scripted team is what lets a first-time user see the whole flow with no model and no key: under `mesh run`
+ * The scripted team is what lets a first-time user see the whole flow with no model and no key: under `ordane run`
  * since the beginning, and, now, under a host, where a project of the same name used to boot seven idle seats and
  * do nothing. What it must never do is the other half of the same convention: wipe the state of a real project
  * that happens to carry the example's id.
@@ -48,7 +48,7 @@ test("starting clean wipes the demo's state and nobody else's", () => {
   fs.mkdirSync(path.join(demoCfg.stateDir, "logs"), { recursive: true });
   fs.writeFileSync(path.join(demoCfg.stateDir, "logs", "events.jsonl"), '{"id":"old"}\n');
   assert.equal(startCleanIfScriptedDemo(demoCfg), true);
-  assert.equal(fs.existsSync(demoCfg.stateDir), false, "the demo begins from nothing, as under mesh run");
+  assert.equal(fs.existsSync(demoCfg.stateDir), false, "the demo begins from nothing, as under ordane run");
 
   const real = demoProject();
   fs.writeFileSync(real.configPath, fs.readFileSync(real.configPath, "utf8").replace(/runtime: stub/g, "runtime: claude").replace(/default: stub/, "default: claude"));

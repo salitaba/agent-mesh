@@ -1353,7 +1353,7 @@ export function importState(state: Projections, data: {
   for (const g of (data.goals ?? []) as Array<{ id: string }>) state.goals.set(g.id as never, g as never);
   // `progress` is not in the snapshot: it is a function of the criteria just
   // restored. Left empty it read null until the next criterion moved, so a
-  // restarted mesh showed 0% on a goal that was 6/6 (`mesh status` after a
+  // restarted mesh showed 0% on a goal that was 6/6 (`ordane status` after a
   // completed run, cronlite 2026-09-30) and any tail replay that did not touch
   // a criterion never corrected it.
   for (const g of state.goals.values()) {

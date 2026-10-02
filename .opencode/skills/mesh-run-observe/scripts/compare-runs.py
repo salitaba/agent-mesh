@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Side-by-side: one agent-mesh run vs one plain opencode baseline.
+"""Side-by-side: one Ordane run vs one plain opencode baseline.
 
 Reads the mesh state dir (events.jsonl / turns.jsonl / projection-rejections.log)
 and the baseline dir written by run-baseline.sh (baseline-events.json,
@@ -227,7 +227,7 @@ def main():
     args = ap.parse_args()
 
     if not os.path.exists(os.path.join(args.state_dir, "logs", "events.jsonl")):
-        print(f"no mesh run at {args.state_dir}/logs/events.jsonl")
+        print(f"no ordane run at {args.state_dir}/logs/events.jsonl")
         return 1
     if not os.path.exists(
         os.path.join(args.baseline_dir, "baseline-events.json")

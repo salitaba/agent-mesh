@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { spawn } from "child_process";
-import { HOST_PID_ENV, findOrphanSeats, reapOrphanSeats, seatEnv } from "../../packages/runtime-claude/src/orphans";
+import { HOST_PID_ENV, LEGACY_HOST_PID_ENV, findOrphanSeats, reapOrphanSeats, seatEnv } from "../../packages/runtime-claude/src/orphans";
 import { ClaudeRuntimeAdapter, type ClaudeAdapterOptions } from "../../packages/runtime-claude/src/index";
 import type { AgentDefinition, RuntimeContext } from "../../packages/protocol/src/index";
 
@@ -52,6 +52,30 @@ test("a stamped process whose host is gone is an orphan; nothing else is", () =>
   try {
     const found = findOrphanSeats({ procDir, selfPid: SELF, isAlive: (pid) => pid === LIVE_HOST || pid === SELF });
     assert.deepEqual(found, [{ pid: 100, hostPid: DEAD_HOST }]);
+  } finally {
+    fs.rmSync(procDir, { recursive: true, force: true });
+  }
+});
+
+test("a seat stamped under the name the product had before Ordane is still found: the upgrade is when it matters", () => {
+  // A host of the previous version was killed, and the first host of this version is the one that starts next. Its
+  // seats carry `AGENT_MESH_HOST_PID`; leaving them running is the leak the reaper exists to close.
+  const oldName = (hostPid: number | string) => `PATH=/usr/bin\0${LEGACY_HOST_PID_ENV}=${hostPid}\0HOME=/root\0`;
+  const both = (current: number | string, legacy: number | string) => `${HOST_PID_ENV}=${current}\0${LEGACY_HOST_PID_ENV}=${legacy}\0`;
+  const procDir = fakeProc({
+    "100": oldName(DEAD_HOST), // an orphan of the previous version
+    "101": oldName(LIVE_HOST), // a seat of a previous-version mesh that is still running
+    "102": oldName("not-a-pid"), // names nothing
+    "103": both(LIVE_HOST, DEAD_HOST), // the current name is authoritative: its host is up
+    "104": both(DEAD_HOST, LIVE_HOST), // ...and when it names a dead host the old name does not rescue the process
+    "105": both("not-a-pid", DEAD_HOST), // a current stamp that names nothing is left alone, not read as the old one
+  });
+  try {
+    const found = findOrphanSeats({ procDir, selfPid: SELF, isAlive: (pid) => pid === LIVE_HOST || pid === SELF });
+    assert.deepEqual(found, [
+      { pid: 100, hostPid: DEAD_HOST },
+      { pid: 104, hostPid: DEAD_HOST },
+    ]);
   } finally {
     fs.rmSync(procDir, { recursive: true, force: true });
   }
@@ -123,6 +147,28 @@ test("seatEnv: the stamp rides on the operator's own environment, which it does 
   assert.equal(inherited.PATH, process.env.PATH);
   // A stale stamp inherited from a parent mesh is overwritten, never kept.
   assert.equal(seatEnv({ [HOST_PID_ENV]: "1" }, 99)[HOST_PID_ENV], "99");
+});
+
+test("seatEnv never writes the old stamp name, and drops one it inherited so the seat answers to this process alone", () => {
+  // The old name is read by the reaper and never written. A seat of a previous-version mesh that started this one
+  // hands down its own host's pid under it; kept, that would name a second host for the same process.
+  assert.deepEqual(seatEnv({ PATH: "/x" }, 99), { PATH: "/x", [HOST_PID_ENV]: "99" });
+  assert.deepEqual(seatEnv({ PATH: "/x", [LEGACY_HOST_PID_ENV]: "5" }, 99), { PATH: "/x", [HOST_PID_ENV]: "99" });
+  const saved = process.env[LEGACY_HOST_PID_ENV];
+  process.env[LEGACY_HOST_PID_ENV] = "5";
+  try {
+    for (const isolate of [false, true]) {
+      const env = seatEnv(undefined, 99, { isolate });
+      assert.equal(LEGACY_HOST_PID_ENV in env, false, `isolate=${isolate}`);
+      assert.equal(env[HOST_PID_ENV], "99");
+    }
+  } finally {
+    if (saved === undefined) delete process.env[LEGACY_HOST_PID_ENV];
+    else process.env[LEGACY_HOST_PID_ENV] = saved;
+  }
+  // The stamp is a plain variable, not one of the mesh's credentials: it has to reach the seat's own children.
+  assert.equal(HOST_PID_ENV, "ORDANE_HOST_PID");
+  assert.equal(LEGACY_HOST_PID_ENV, "AGENT_MESH_HOST_PID");
 });
 
 test("a real orphan is found by its stamp and stopped", { skip: process.platform !== "linux" }, async () => {

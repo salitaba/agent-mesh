@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Vendor-side licence tool. Issues and inspects Agent Mesh licences.
+ * Vendor-side licence tool. Issues and inspects Ordane licences.
  *
  *   node tools/license/mesh-license.mjs keygen  --kid k1 --out ~/secrets/mesh-license-k1.pem
  *   node tools/license/mesh-license.mjs sign    --key ~/secrets/mesh-license-k1.pem --kid k1 \

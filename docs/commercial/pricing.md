@@ -9,7 +9,7 @@ proposals: nothing in this repository measures what customers will pay.
 
 ## The constraint that shapes everything
 
-Agent Mesh runs the Claude Code agent runtime, through the Claude Agent SDK. Anthropic's terms for products that
+Ordane runs the Claude Code agent runtime, through the Claude Agent SDK. Anthropic's terms for products that
 run Claude Code say (read from [code.claude.com/docs/en/legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance)
 on 2026-10-01; confirm they have not changed before you rely on them):
 

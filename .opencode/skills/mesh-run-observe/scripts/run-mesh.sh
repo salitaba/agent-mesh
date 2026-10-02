@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one agent-mesh mission headless to termination, with a hard wall-clock cap.
+# Run one Ordane mission headless to termination, with a hard wall-clock cap.
 # Prints STATE_DIR=<path> as its last line so the digest step needs no guessing.
 #
 # usage: run-mesh.sh [config.yaml] [timeout-seconds]

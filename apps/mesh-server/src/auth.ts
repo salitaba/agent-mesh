@@ -17,7 +17,7 @@ function pathOf(parts: string[]): string {
  * A multi-project child binds to loopback and executes agent-authored code and
  * shell commands. Any other local process could otherwise drive it directly and
  * bypass the host entirely, so a child accepts only requests carrying its own
- * per-child bearer token. Single-process `mesh serve` keeps the friendlier
+ * per-child bearer token. Single-process `ordane serve` keeps the friendlier
  * default where the dashboard's page and assets need no credentials.
  */
 export function isStrictAuth(): boolean {

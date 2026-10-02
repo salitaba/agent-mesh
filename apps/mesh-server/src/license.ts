@@ -3,7 +3,7 @@
  *
  * `packages/licensing` decides what an install is entitled to from a token, a clock and a mode; this reads
  * the token from where the operator put it and keeps the answer fresh. It re-reads on a short timer
- * rather than once at boot, so `mesh license install` takes effect on a running server without a restart,
+ * rather than once at boot, so `ordane license install` takes effect on a running server without a restart,
  * and an expiry that passes while the server is up is noticed.
  *
  * Nothing here talks to a network, and nothing here stops anything that is running: `enforce` refuses to

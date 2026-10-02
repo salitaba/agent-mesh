@@ -119,7 +119,7 @@ test("resolve: project.id is independent of mesh.id", () => {
   assert.notEqual(resolved.meshId, resolved.projectId);
 });
 
-test("mesh init: scaffolds a project block with a slugged id", () => {
+test("ordane init: scaffolds a project block with a slugged id", () => {
   const dir = tmpDir("My New Mesh");
   const file = writeDefaultMeshYaml(dir, path.basename(dir), "stub");
   const text = fs.readFileSync(file, "utf8");
@@ -135,7 +135,7 @@ test("mesh init: scaffolds a project block with a slugged id", () => {
   assert.equal(resolved.projectIdDerived, false, "an init-generated file must not warn");
 });
 
-test("mesh init: the scaffold's own runtime default is one the loader still accepts", () => {
+test("ordane init: the scaffold's own runtime default is one the loader still accepts", () => {
   const dir = tmpDir("defaulted");
   // Omitting the runtime must not scaffold the removed 'opencode' backend:
   // the loader rejects that name outright, so the file would not load at all.
@@ -148,13 +148,13 @@ test("mesh init: the scaffold's own runtime default is one the loader still acce
   assert.equal(resolved.defaultRuntime, "claude");
 });
 
-test("mesh init: an explicit projectId overrides the folder-derived one", () => {
+test("ordane init: an explicit projectId overrides the folder-derived one", () => {
   const dir = tmpDir("whatever");
   const file = writeDefaultMeshYaml(dir, "whatever", "stub", { projectId: "payment-api" });
   assert.match(fs.readFileSync(file, "utf8"), /^ {2}id: payment-api$/m);
 });
 
-test("mesh init: an invalid explicit projectId is rejected up front", () => {
+test("ordane init: an invalid explicit projectId is rejected up front", () => {
   const dir = tmpDir("whatever");
   assert.throws(() => writeDefaultMeshYaml(dir, "whatever", "stub", { projectId: "Not Valid" }), ConfigError);
 });

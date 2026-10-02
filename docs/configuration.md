@@ -1,8 +1,8 @@
-# Agent Mesh — Configuration (`mesh.yaml`)
+# Ordane — Configuration (`mesh.yaml`)
 
 Validated by `packages/config` against `schemas/mesh.schema.json` (Ajv 2020-12)
 plus cross-field checks (unknown agents in `startup`/`may_contact`/`budgets`,
-missing prompt files, malformed interest patterns). Run `mesh validate
+missing prompt files, malformed interest patterns). Run `ordane validate
 mesh.yaml`.
 
 ```yaml
@@ -45,7 +45,7 @@ and the other two sources do not.
 A mission that boots on **generated** criteria starts held: the goal is paused
 with the reason "acceptance criteria were generated from the goal — review them,
 then resume the mission to start work", and no agent is woken. Review the list
-and resume to begin — `mesh resume`, or the dashboard's unpause button (`r`).
+and resume to begin — `ordane resume`, or the dashboard's unpause button (`r`).
 The hold exists because the criteria are the completion gate, so running against
 an unreviewed list means every agent works toward a definition of done nobody
 agreed to. Declared and built-in-default criteria are never held: the operator
@@ -107,7 +107,7 @@ A route whose cache outlives that pays for rotations it does not need: measured 
 a proxied `deepseek-v4.1-flash` on 2026-09-27, 94% of the prompt was still cached
 after a 10-minute idle gap, and each rotation discards the seat's working context
 and costs it a re-orientation turn. Set an hour (`stale_after_ms: 3600000`) there.
-Mesh-wide only; there is no per-seat form. `mesh validate` refuses a value below
+Mesh-wide only; there is no per-seat form. `ordane validate` refuses a value below
 a minute (60000), because anything shorter is a seconds-written-as-milliseconds
 typo rather than a window anyone means.
 
@@ -159,7 +159,7 @@ were kept.
 The operator's own `extraOptions` (the adapter's escape hatch) still wins over it: an
 `env` or `settingSources` passed there is taken as given.
 
-Without the key, `mesh run` and `mesh serve` say what would leak when a mesh runs any
+Without the key, `ordane run` and `ordane serve` say what would leak when a mesh runs any
 Claude seat: one line if it was started from inside another session (naming the first six
 variables and counting the rest), another when any of them looks like the outer session's own
 credentials (a `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL` or `KEY` word in the name), one if
@@ -543,7 +543,7 @@ Size it for a coordination turn, not for the longest build.
 
 Budgets are hierarchical: `mission → agent/task/thread/tool`. Overrun emits
 `budget.exceeded` and the termination manager escalates (it does **not** silently
-halt). `mesh run` writes `events.jsonl`, snapshots, turn audit, and a projection
+halt). `ordane run` writes `events.jsonl`, snapshots, turn audit, and a projection
 rejection log under `server.state_dir`.
 
 A seat whose own ledger is spent past its auto-raise ceiling is **parked**, not
@@ -583,20 +583,20 @@ bus:
                           #   every one of which you may still write yourself
   commitments:
     semantic: compat        # or omit for "strict"
-    ttl_ms: 1800000         # 30 min, and what `mesh init` writes; omit (or 0) for no deadline
+    ttl_ms: 1800000         # 30 min, and what `ordane init` writes; omit (or 0) for no deadline
     ttl_ms_by_role: { security: 7200000 }
-    by_type: true           # and what `mesh init` writes; a bare typed ask inherits its
+    by_type: true           # and what `ordane init` writes; a bare typed ask inherits its
                             #   type's contract (refusals + SLA). Omit to leave it ungoverned.
     min_default_ms: 240000  # the soonest an `ifUnanswered` default may come due; omit and the mesh
                             #   derives it from its own clock (see below); 0 = no floor
-  vocabulary: contracts     # and what `mesh init` writes; omit (or "typed") for the full manifest
+  vocabulary: contracts     # and what `ordane init` writes; omit (or "typed") for the full manifest
   delivery:
     classes: true           # omit for "every message wakes its recipients"
     coalesce_ms: 60000      # how long a `deliver` burst gathers before one wake
     interrupt_cost_tokens: 2000   # what one interrupt costs its sender, per seat woken
     attention_tokens: 200000      # what a seat may spend on wakes before they stop
                                   #   being interrupts; 0 = never buy one (low contact)
-    congestion_every: 4           # and what `mesh init` writes; +1x to the tariff per 4
+    congestion_every: 4           # and what `ordane init` writes; +1x to the tariff per 4
                                   #   unread in the recipient's box, capped at 4x. Omit
                                   #   for the flat price at every depth.
 ```
@@ -683,7 +683,7 @@ How long an ask may go unanswered before the runtime closes it with
 `expired`. Omitted or `0` means no deadline, which is how every mesh behaved
 before this key existed — expiry is opt-in, not inherited from an upgrade.
 
-`mesh init` writes `ttl_ms: 1800000` (30 minutes) into the `bus.commitments`
+`ordane init` writes `ttl_ms: 1800000` (30 minutes) into the `bus.commitments`
 block of a freshly scaffolded mesh, so a new mesh has deadlines from its first
 run rather than obligations that never close on their own. Without a TTL the
 debtor is still nudged and a request that stays stuck still raises an operator
@@ -856,7 +856,7 @@ the entire reason `op-aliases.ts` exists (60 name aliases, 31 type aliases,
 thirteen words for "here is your answer" folded onto `INFORM`). An alias table
 is what you build when a surface cannot be learned; this shrinks the surface.
 
-`mesh init` writes `vocabulary: contracts` into a freshly scaffolded mesh, and
+`ordane init` writes `vocabulary: contracts` into a freshly scaffolded mesh, and
 that scaffold is the **only** place the default is applied — exactly like
 `commitments.ttl_ms` and `delivery.classes`. The resolver reads an absent key as
 "keep the full manifest", so a mesh that already exists advertises the same tool
@@ -901,7 +901,7 @@ different mechanism and not a class.
 
 **An absent class is today's behaviour, not a cheap default.** With no
 `bus.delivery` block nothing is classed and every message wakes every
-recipient, exactly as before this key existed. `mesh init` writes the block
+recipient, exactly as before this key existed. `ordane init` writes the block
 into a freshly scaffolded mesh so a new mesh is priced from its first run; an
 existing mesh keeps the behaviour it has and opts in by hand. This mirrors
 `commitments.ttl_ms` and for the same reason — re-routing wakes under a running
@@ -952,7 +952,7 @@ where every one degrades to mail. That is the low-contact setting, stated
 exactly.** It is not the same as `interrupt_cost_tokens: 0`, which makes
 interrupts *free* and therefore unrationed — a line that can never run out
 cannot refuse. Free interrupts are not rationed; cheap-to-own attention is.
-`mesh init` writes `200000`, which against the `2000` default is a hundred
+`ordane init` writes `200000`, which against the `2000` default is a hundred
 interrupts — the same rationing the agent line used to give by accident, now
 landing on the wake instead.
 
@@ -1242,8 +1242,8 @@ a config key.
 ## host.yaml — the multi-project host
 
 Everything above lives in a project's `mesh.yaml`, and describes one mission.
-`mesh host` supervises many of them and keeps its own settings in
-`<home>/host.yaml` (default `~/.agent-mesh/host.yaml`), beside `projects.json`:
+`ordane host` supervises many of them and keeps its own settings in
+`<home>/host.yaml` (default `~/.ordane/host.yaml`), beside `projects.json`:
 each knob here is **cross-project**, and a value declared by one project would
 be one of N conflicting ones. The file is optional — absent, unreadable or
 malformed all resolve to the defaults below — and every key may sit inside a
@@ -1287,7 +1287,7 @@ model stays priced.
 
 The figure is an estimate from list prices, not an invoice: committed-use
 discounts, regional pricing and batch rates are not modelled. The usage report
-(`mesh usage`) uses the same prices and says so on its face.
+(`ordane usage`) uses the same prices and says so on its face.
 
 `heartbeat_timeout_ms` is how long a child may go **silent** before the
 supervision watchdog stops it and restarts it with backoff. The child beats
@@ -1318,7 +1318,7 @@ each project was doing — a child restart never needed it, since the supervisor
 remembers the mode in memory for as long as it lives. When a project is opened,
 the mode to spawn it with is decided in this order: what this host heard from
 its child, then `lastMode`, then the host's own default (`parked`, or `live`
-under `mesh host --live`). `lastMode` outranks `--live` on purpose: `--live`
+under `ordane host --live`). `lastMode` outranks `--live` on purpose: `--live`
 answers "this project's mode is unknown", and the same field records a park the
 aggregate ceiling imposed — a host that overrode it would spend straight back
 through the ceiling. Resume a parked project with `POST /mission/start`.

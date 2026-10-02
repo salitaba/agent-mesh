@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Mesh: a team of AI agents, run like an organization</title>
-<meta name="description" content="Agent Mesh runs role-based AI agents on your own infrastructure, with the rules enforced by the runtime, every action recorded and replayable, and your own model credentials.">
+<title>Ordane: a team of AI agents, run like an organization</title>
+<meta name="description" content="Ordane runs role-based AI agents on your own infrastructure, with the rules enforced by the runtime, every action recorded and replayable, and your own model credentials.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232b5fd9'/%3E%3Ccircle cx='9' cy='10' r='3.2' fill='%23fff'/%3E%3Ccircle cx='23' cy='10' r='3.2' fill='%23fff'/%3E%3Ccircle cx='16' cy='23' r='3.2' fill='%23fff'/%3E%3Cpath d='M9 10h14M9 10l7 13M23 10l-7 13' stroke='%23fff' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -112,7 +112,7 @@ footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--m
 <a class="skip" href="#main">Skip to the content</a>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#top">Agent Mesh</a>
+    <a class="brand" href="#top">Ordane</a>
     <nav aria-label="Sections">
       <a href="#how">How it works</a>
       <a href="#try">Try it</a>
@@ -129,21 +129,21 @@ footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--m
   <div class="wrap">
     <div>
       <h1>A team of AI agents, run like an organization.</h1>
-      <p class="lede">Agent Mesh runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
+      <p class="lede">Ordane runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
       <div class="cta">
         <a class="btn primary" href="#try">Try it in a minute, no API key</a>
         <a class="btn" href="#pricing">See pricing</a>
       </div>
       <p class="muted small" style="margin-top:18px">Self-hosted. Nothing phones home. Free to start: one open project, eight agents, no licence needed.</p>
     </div>
-    <img class="shot" src="assets/overview.jpg" width="1440" height="900" alt="The Agent Mesh dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the goal is met and every acceptance criterion has evidence.">
+    <img class="shot" src="assets/overview.jpg" width="1440" height="900" alt="The Ordane dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the goal is met and every acceptance criterion has evidence.">
   </div>
 </section>
 
 <section id="how">
   <div class="wrap">
     <h2>What makes it different from agents in a group chat</h2>
-    <p class="lede">A single agent writes code. A team of them needs rules: who may approve a design, merge a change, block a release, spend the budget. Agent Mesh makes those rules part of the system, not part of a prompt.</p>
+    <p class="lede">A single agent writes code. A team of them needs rules: who may approve a design, merge a change, block a release, spend the budget. Ordane makes those rules part of the system, not part of a prompt.</p>
     <div class="grid four" style="margin-top:28px">
       <div class="card"><h3>Enforced, not asked</h3><p>An approval, merge or block an agent is not allowed to make is refused by the runtime before it becomes an event. A prompt can be argued with; the kernel cannot.</p></div>
       <div class="card"><h3>Recorded and replayable</h3><p>Every action is an event in an append-only log, and every screen is a view of it. Any run can be replayed to any moment and audited afterwards.</p></div>
@@ -166,13 +166,13 @@ footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--m
     <p class="lede">The demo runs a scripted team on the real runtime, so it needs no model and no credentials. It exists so you can see the whole flow before you decide anything.</p>
     <pre><code>docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
   -e MESH_API_TOKEN="$(openssl rand -hex 32)" \
-  ghcr.io/salitaba/agent-mesh:latest demo</code></pre>
+  ghcr.io/salitaba/ordane:latest demo</code></pre>
     <ol class="steps">
       <li>Open <code>http://127.0.0.1:7420</code> and sign in with the token you passed.</li>
       <li>Open the <b>demo-stub</b> project and press <b>Start mission</b>.</li>
       <li>Watch seven agents take a payment-API mission from requirements to a merged, reviewed, verified result. QA blocks it once so you can see conflict handling.</li>
     </ol>
-    <p class="muted small">With your own credentials the same seats are real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry credentials), then <code>mesh init</code> a project.</p>
+    <p class="muted small">With your own credentials the same seats are real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry credentials), then <code>ordane init</code> a project.</p>
   </div>
 </section>
 
@@ -237,8 +237,8 @@ footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--m
 
 <footer>
   <div class="wrap">
-    <p><b>Agent Mesh</b> &middot; <span id="contact">TODO(owner): company name, contact email</span></p>
-    <p class="small">Agent Mesh runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Agent Mesh is not affiliated with or endorsed by Anthropic. Prices are in US dollars and exclude taxes.</p>
+    <p><b>Ordane</b> &middot; <span id="contact">TODO(owner): company name, contact email</span></p>
+    <p class="small">Ordane runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Ordane is not affiliated with or endorsed by Anthropic. Prices are in US dollars and exclude taxes.</p>
     <p class="small"><a href="#" data-doc="commercial/pricing.md">Pricing details</a> &middot; <a href="#" data-doc="commercial/deployment.md">Deployment</a> &middot; <a href="#" data-doc="operations.md">Operations</a> &middot; <a href="#" data-doc="commercial/licensing.md">Licences</a> &middot; <a href="#" data-doc="../LICENSE">Source licence</a> &middot; <a href="#" data-doc="../SECURITY.md">Report a vulnerability</a></p>
   </div>
 </footer>

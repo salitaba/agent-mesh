@@ -4,9 +4,9 @@ import { PROMETHEUS_CONTENT_TYPE, escapeLabelValue, renderPrometheus } from "../
 
 test("a metric renders as HELP, TYPE and its samples, in the text format a scraper expects", () => {
   const text = renderPrometheus([
-    { name: "agent_mesh_up", help: "1 while the server is serving.", type: "gauge", samples: [{ value: 1 }] },
+    { name: "ordane_up", help: "1 while the server is serving.", type: "gauge", samples: [{ value: 1 }] },
     {
-      name: "agent_mesh_projects",
+      name: "ordane_projects",
       help: "Projects by status.",
       type: "gauge",
       samples: [
@@ -18,13 +18,13 @@ test("a metric renders as HELP, TYPE and its samples, in the text format a scrap
   assert.equal(
     text,
     [
-      "# HELP agent_mesh_up 1 while the server is serving.",
-      "# TYPE agent_mesh_up gauge",
-      "agent_mesh_up 1",
-      "# HELP agent_mesh_projects Projects by status.",
-      "# TYPE agent_mesh_projects gauge",
-      'agent_mesh_projects{status="open"} 2',
-      'agent_mesh_projects{status="closed"} 3',
+      "# HELP ordane_up 1 while the server is serving.",
+      "# TYPE ordane_up gauge",
+      "ordane_up 1",
+      "# HELP ordane_projects Projects by status.",
+      "# TYPE ordane_projects gauge",
+      'ordane_projects{status="open"} 2',
+      'ordane_projects{status="closed"} 3',
       "",
     ].join("\n"),
   );

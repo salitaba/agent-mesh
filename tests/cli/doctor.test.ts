@@ -1,5 +1,5 @@
 /**
- * `mesh doctor`: a report a customer can paste into a ticket.
+ * `ordane doctor`: a report a customer can paste into a ticket.
  *
  * The property that matters is a negative one, so most of this file looks for what must NOT be in the output:
  * a credential, a licence key, an event's payload, a path, the licensee's name. Everything else is the diagnosis
@@ -190,7 +190,7 @@ test("a YAML syntax error is reported by position only: the source line it quote
   fs.writeFileSync(path.join(root, "mesh.yaml"), 'mesh:\n  id: x\n    goal: "CANARY-GOAL-LINE the secret roadmap"\n  - CANARY-LIST-LINE\n', "utf8");
   const r = await run(f);
   assert.equal(r.code, 1);
-  assert.match(r.text, /FAIL\s+Project syntax: mesh\.yaml does not load: not valid YAML \(line \d+, column \d+; `mesh validate` prints the message\)/);
+  assert.match(r.text, /FAIL\s+Project syntax: mesh\.yaml does not load: not valid YAML \(line \d+, column \d+; `ordane validate` prints the message\)/);
   assert.ok(!r.text.includes("CANARY"), r.text);
 });
 
@@ -280,7 +280,7 @@ test("an expired licence in grace and a lapsed one are reported by id and date, 
   assert.match(lapsed.text, /plan in force\s+community/);
   const wrongKey = await run(f, { env: { MESH_LICENSE: signLicense({ v: 1, id: "lic_x", customer: "Eve", plan: "business", issuedAt: at(-1), expiresAt: at(30) }, "k1", generateLicenseKeyPair().privateKeyPem) } });
   assert.match(wrongKey.text, /WARN\s+Licence not accepted \(bad-signature\)/);
-  assert.match(wrongKey.text, /found but not accepted \(mesh license verify says why\)/);
+  assert.match(wrongKey.text, /found but not accepted \(ordane license verify says why\)/);
   for (const r of [grace, lapsed, wrongKey]) assert.ok(!r.text.includes("Acme") && !r.text.includes("Eve"), "no licensee name");
 });
 
@@ -409,11 +409,11 @@ test("the settings it knows are the ones docs/operations.md documents", () => {
   }
   const known = new Set(DOCTOR_SETTINGS.map((s) => s.name).filter((n) => n.startsWith("MESH_")));
   assert.ok(documented.size >= 15, "found the settings tables");
-  assert.deepEqual([...documented].filter((n) => !known.has(n)).sort(), [], "documented but not reported by mesh doctor");
-  assert.deepEqual([...known].filter((n) => !documented.has(n)).sort(), [], "reported by mesh doctor but not documented");
+  assert.deepEqual([...documented].filter((n) => !known.has(n)).sort(), [], "documented but not reported by ordane doctor");
+  assert.deepEqual([...known].filter((n) => !documented.has(n)).sort(), [], "reported by ordane doctor but not documented");
 });
 
-test("wired into the command line: `mesh doctor --json` prints a report and `--help` the usage", () => {
+test("wired into the command line: `ordane doctor --json` prints a report and `--help` the usage", () => {
   const cli = path.join(__dirname, "..", "..", "apps", "mesh-cli", "src", "index.js");
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-doctor-cli-"));
   const env = { PATH: process.env.PATH ?? "", MESH_HOME: home, MESH_API_TOKEN: LONG_TOKEN };
@@ -424,7 +424,7 @@ test("wired into the command line: `mesh doctor --json` prints a report and `--h
   assert.ok(!json.stdout.includes(LONG_TOKEN));
   const help = spawnSync(process.execPath, [cli, "doctor", "--help"], { env, encoding: "utf8" });
   assert.equal(help.status, 0);
-  assert.match(help.stdout, /mesh doctor \[mesh\.yaml \.\.\.\] \[--json\] \[--host <url>\]/);
+  assert.match(help.stdout, /ordane doctor \[mesh\.yaml \.\.\.\] \[--json\] \[--host <url>\]/);
   const top = spawnSync(process.execPath, [cli, "nonsense"], { env, encoding: "utf8" });
-  assert.match(top.stdout + top.stderr, /mesh doctor/, "listed in the command summary");
+  assert.match(top.stdout + top.stderr, /ordane doctor/, "listed in the command summary");
 });

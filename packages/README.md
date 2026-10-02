@@ -1,4 +1,4 @@
-# Agent Mesh packages
+# Ordane packages
 
 Each directory in `packages/` is a TypeScript source package of the mesh runtime.
 They are compiled by the root `tsconfig.json` (single build graph) and import each
@@ -18,5 +18,5 @@ other via relative paths:
 | `runtime-claude` | Claude Code adapter through the Agent SDK (long-lived streaming query, sessions, tokens, restore) |
 | `runtime-http` | generic HTTP agent adapter for custom/remote agents |
 | `observability` | projections → views: mesh graph, goal view, artifact timeline, cost, metrics, usage report, SSE hub |
-| `projects` | multi-project registry (`~/.agent-mesh/projects.json`) |
+| `projects` | multi-project registry (`~/.ordane/projects.json`) |
 | `licensing` | offline Ed25519 licence keys, the plan table and its entitlements, the pricing export |

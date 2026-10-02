@@ -774,7 +774,7 @@ function wireSim(instance: MeshInstance, sim: Sim): () => void {
 
 /**
  * Attach the scripted payment-API demo team to a running (stub-runtime) mesh.
- * This makes `mesh run examples/demo-stub/mesh.yaml` actually converge out of
+ * This makes `ordane run examples/demo-stub/mesh.yaml` actually converge out of
  * the box, so a first-time user sees the full event-driven flow with zero setup.
  */
 export function attachDemoTeam(instance: MeshInstance): { cleanup(): void } {

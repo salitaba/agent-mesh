@@ -1,4 +1,4 @@
-# Agent Mesh — Protocol
+# Ordane — Protocol
 
 Protocol version `1.0`, carried on every message and event. The protocol is
 runtime- and vendor-independent.

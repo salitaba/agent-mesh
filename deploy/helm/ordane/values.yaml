@@ -1,4 +1,4 @@
-# One release = one isolated Agent Mesh instance. For many customers, install this chart once per
+# One release = one isolated Ordane instance. For many customers, install this chart once per
 # customer into its own namespace (see docs/commercial/deployment.md, "Fleets"): the agents run shell
 # commands, so the pod and the namespace around it are the isolation boundary. Do not share one
 # release between tenants.
@@ -7,7 +7,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/salitaba/agent-mesh
+  repository: ghcr.io/salitaba/ordane
   # Defaults to the chart's appVersion. Pin a digest in production: tag: "0.1.0@sha256:…"
   tag: ""
   pullPolicy: IfNotPresent
@@ -24,7 +24,7 @@ auth:
 # warn: report plan limits, refuse nothing. enforce: refuse to start what the plan does not allow.
 licenseEnforcement: warn
 
-# Passed to `mesh host` after the chart's own flags, for example ["--live"] to boot projects live.
+# Passed to `ordane host` after the chart's own flags, for example ["--live"] to boot projects live.
 extraArgs: []
 extraEnv: []
 

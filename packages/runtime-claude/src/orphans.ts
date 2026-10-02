@@ -26,7 +26,14 @@ import { withoutOuterSession } from "./host-isolation";
  */
 
 /** Stamped on every seat CLI: the pid of the mesh process that spawned it. */
-export const HOST_PID_ENV = "AGENT_MESH_HOST_PID";
+export const HOST_PID_ENV = "ORDANE_HOST_PID";
+
+/**
+ * What the stamp was called before this product was named Ordane. A seat left running by a host of that version
+ * still carries it, and the first host to start after the upgrade is exactly the one that has to find it: it is
+ * read, never written.
+ */
+export const LEGACY_HOST_PID_ENV = "AGENT_MESH_HOST_PID";
 
 /**
  * The mesh's own credentials, which no seat has a use for.
@@ -71,7 +78,14 @@ export function seatEnv(
   // `isolate`: also drop the variables that describe the session the mesh was started
   // from (see host-isolation.ts).
   const inherited = base ?? withoutMeshSecrets(process.env);
-  return { ...(opts.isolate && base === undefined ? withoutOuterSession(inherited) : inherited), [HOST_PID_ENV]: String(pid) };
+  const env: Record<string, string | undefined> = {
+    ...(opts.isolate && base === undefined ? withoutOuterSession(inherited) : inherited),
+    [HOST_PID_ENV]: String(pid),
+  };
+  // A stamp under the old name would name some other host, a mesh this one was started from. This seat answers to
+  // this process alone.
+  delete env[LEGACY_HOST_PID_ENV];
+  return env;
 }
 
 export interface OrphanSeat {
@@ -104,10 +118,16 @@ export interface ReapResult {
   survivors: number[];
 }
 
+/**
+ * The host a process was stamped by. The current name is authoritative when it is present at all, even with a value
+ * that names nothing (that process is left alone, as ever); the old name is read only when the current one is absent.
+ */
 function stampOf(environ: string): number | undefined {
-  const prefix = `${HOST_PID_ENV}=`;
-  for (const entry of environ.split("\0")) {
-    if (!entry.startsWith(prefix)) continue;
+  const entries = environ.split("\0");
+  for (const name of [HOST_PID_ENV, LEGACY_HOST_PID_ENV]) {
+    const prefix = `${name}=`;
+    const entry = entries.find((e) => e.startsWith(prefix));
+    if (entry === undefined) continue;
     const n = Number(entry.slice(prefix.length));
     return Number.isInteger(n) && n > 1 ? n : undefined;
   }

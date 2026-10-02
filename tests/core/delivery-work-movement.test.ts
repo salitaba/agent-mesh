@@ -34,7 +34,7 @@ function quiet(m: MeshInstance, ids: string[]): void {
 }
 
 /**
- * The shipped `mesh init` regime, with a coalesce window short enough that a
+ * The shipped `ordane init` regime, with a coalesce window short enough that a
  * `deliver` can be observed draining inside a test rather than in a minute.
  */
 const REGIME = { delivery: { classes: true, coalesceMs: 120 } };

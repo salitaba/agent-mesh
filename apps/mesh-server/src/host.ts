@@ -156,7 +156,7 @@ function hostAuditTrail(line: string): void {
 export interface HostOptions {
   /** Where the licence comes from; defaults to the environment and `<home>/license.key`. Tests inject one. */
   licenses?: LicenseProvider;
-  /** Registry home; defaults to `MESH_HOME` or `~/.agent-mesh`. */
+  /** Registry home; defaults to `MESH_HOME` or `~/.ordane`. */
   home?: string;
   port?: number;
   host?: string;
@@ -168,7 +168,7 @@ export interface HostOptions {
   projectMemoryMb?: number;
   /** Resource policy. Loaded from `<home>/host.yaml` when omitted. */
   hostConfig?: HostConfig;
-  /** Children boot parked by default, mirroring `mesh console`. */
+  /** Children boot parked by default, mirroring `ordane console`. */
   childMode?: "parked" | "live";
   /**
    * Host-wide git override for every child. Omit (or "auto") to let each
@@ -700,31 +700,31 @@ export function createHostServer(deps: {
     const licence = licenses.current().entitlements;
     const running = supervisor.runningIds();
     return [
-      { name: "agent_mesh_up", help: "1 while the host is serving.", type: "gauge", samples: [{ value: 1 }] },
-      { name: "agent_mesh_info", help: "The running version; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "host" }, value: 1 }] },
-      { name: "agent_mesh_uptime_seconds", help: "Seconds since the host started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
+      { name: "ordane_up", help: "1 while the host is serving.", type: "gauge", samples: [{ value: 1 }] },
+      { name: "ordane_info", help: "The running version; always 1.", type: "gauge", samples: [{ labels: { version: serverVersion(), role: "host" }, value: 1 }] },
+      { name: "ordane_uptime_seconds", help: "Seconds since the host started.", type: "gauge", samples: [{ value: Math.round((Date.now() - startedAt) / 1000) }] },
       {
-        name: "agent_mesh_projects",
+        name: "ordane_projects",
         help: "Registered projects by status.",
         type: "gauge",
         samples: [...byStatus].map(([status, value]) => ({ labels: { status }, value })),
       },
-      { name: "agent_mesh_projects_tripped", help: "Projects whose restart breaker is open.", type: "gauge", samples: [{ value: refs.filter((r) => tree.isTripped(r.id)).length }] },
-      { name: "agent_mesh_spend_usd", help: "Estimated spend of open projects since each last started, at list prices (the provider's invoice is the bill).", type: "gauge", samples: [{ value: spend.usd }] },
-      { name: "agent_mesh_spend_ceiling_usd", help: "The aggregate spend ceiling; absent when it is disabled.", type: "gauge", samples: spend.ceilingUsd === null ? [] : [{ value: spend.ceilingUsd }] },
-      { name: "agent_mesh_spend_ceiling_tripped", help: "1 when the ceiling has parked open projects.", type: "gauge", samples: [{ value: spend.ceilingTripped ? 1 : 0 }] },
-      { name: "agent_mesh_tokens", help: "Fresh input and output tokens reported by open projects since each last started.", type: "gauge", samples: [{ value: spend.tokens }] },
-      { name: "agent_mesh_running_turns", help: "Agent turns running now, across open projects.", type: "gauge", samples: [{ value: spend.runningTurns }] },
-      { name: "agent_mesh_max_concurrent_turns", help: "The concurrent-turn cap in force (host.yaml tightened to the plan's); absent when unlimited.", type: "gauge", samples: spend.maxConcurrentTurns === null ? [] : [{ value: spend.maxConcurrentTurns }] },
-      { name: "agent_mesh_sse_clients", help: "Event-stream subscribers connected to this host.", type: "gauge", samples: [{ value: multiplex.clientCount }] },
+      { name: "ordane_projects_tripped", help: "Projects whose restart breaker is open.", type: "gauge", samples: [{ value: refs.filter((r) => tree.isTripped(r.id)).length }] },
+      { name: "ordane_spend_usd", help: "Estimated spend of open projects since each last started, at list prices (the provider's invoice is the bill).", type: "gauge", samples: [{ value: spend.usd }] },
+      { name: "ordane_spend_ceiling_usd", help: "The aggregate spend ceiling; absent when it is disabled.", type: "gauge", samples: spend.ceilingUsd === null ? [] : [{ value: spend.ceilingUsd }] },
+      { name: "ordane_spend_ceiling_tripped", help: "1 when the ceiling has parked open projects.", type: "gauge", samples: [{ value: spend.ceilingTripped ? 1 : 0 }] },
+      { name: "ordane_tokens", help: "Fresh input and output tokens reported by open projects since each last started.", type: "gauge", samples: [{ value: spend.tokens }] },
+      { name: "ordane_running_turns", help: "Agent turns running now, across open projects.", type: "gauge", samples: [{ value: spend.runningTurns }] },
+      { name: "ordane_max_concurrent_turns", help: "The concurrent-turn cap in force (host.yaml tightened to the plan's); absent when unlimited.", type: "gauge", samples: spend.maxConcurrentTurns === null ? [] : [{ value: spend.maxConcurrentTurns }] },
+      { name: "ordane_sse_clients", help: "Event-stream subscribers connected to this host.", type: "gauge", samples: [{ value: multiplex.clientCount }] },
       {
-        name: "agent_mesh_project_up",
+        name: "ordane_project_up",
         help: "1 for a project whose process is running.",
         type: "gauge",
         samples: refs.map((r) => ({ labels: { project: r.id }, value: running.includes(r.id) ? 1 : 0 })),
       },
       {
-        name: "agent_mesh_project_spend_usd",
+        name: "ordane_project_spend_usd",
         help: "Estimated spend of one open project since it last started.",
         type: "gauge",
         samples: running.flatMap((id) => {
@@ -862,7 +862,7 @@ export function createHostServer(deps: {
 
       // ------------------------------------------------------------ commercial
       // What this install is entitled to and how much of it is in use. Read by the dashboard's banner and by
-      // `mesh license status --bus`. Authenticated like everything else here.
+      // `ordane license status --bus`. Authenticated like everything else here.
       if (parts[0] === "api" && parts[1] === "license" && parts.length === 2 && req.method === "GET") {
         return json(200, licenseView(licenses.current(), { registered: registry.list().length, open: supervisor.runningIds().length }));
       }
@@ -1070,7 +1070,7 @@ export function createHostServer(deps: {
       }
 
       // ------------------------------------------------- legacy bare routes
-      // Pre-multi-project clients (`mesh --bus`, scripts) call `/status` and
+      // Pre-multi-project clients (`ordane --bus`, scripts) call `/status` and
       // `/events/stream` with no project segment. With exactly one project
       // open the intent is unambiguous, so forward it; with several it is a
       // guess, and guessing which mission a script meant to drive is worse
@@ -1349,7 +1349,7 @@ function serveStatic(res: http.ServerResponse, dir: string | undefined, parts: s
     applySecurityHeaders(res, "dashboard");
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(
-      "<!doctype html><meta charset=utf-8><title>Agent Mesh</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Agent Mesh host online (no dashboard assets). See <a style='color:#58a6ff' href='/api/projects'>/api/projects</a></body>",
+      "<!doctype html><meta charset=utf-8><title>Ordane</title><body style='font-family:monospace;background:#0d1117;color:#e6edf3;padding:24px'>Ordane host online (no dashboard assets). See <a style='color:#58a6ff' href='/api/projects'>/api/projects</a></body>",
     );
     return true;
   }
@@ -1388,7 +1388,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   // First, before a child is reaped or a registry read: a refusal costs nothing to undo.
   const listenHost = options.host ?? "127.0.0.1";
   for (const w of assertSafeListen(listenHost).warnings) process.stderr.write(`[mesh-host] warn: ${w}\n`);
-  // File first, flags on top: `mesh host --memory 512` is a deliberate
+  // File first, flags on top: `ordane host --memory 512` is a deliberate
   // one-run override of a persisted default, so the flag has to win.
   const hostConfig = options.hostConfig ?? loadHostConfig(options.home);
   const memoryMb = options.projectMemoryMb ?? hostConfig.projectMemoryMb;
@@ -1544,7 +1544,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error & { code?: string }): void => {
       if (err?.code === "EADDRINUSE") {
-        reject(new Error(`port ${port} is already in use — another mesh host still holds it. Stop it first (or pick another --port).`));
+        reject(new Error(`port ${port} is already in use — another ordane host still holds it. Stop it first (or pick another --port).`));
       } else {
         reject(err);
       }

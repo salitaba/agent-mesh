@@ -157,7 +157,7 @@ test("every feature a plan can carry is checked by code that exists, and every c
 test("what the Business plan promises to support exists in the repository", () => {
   const text = PLANS.business.includes.join("\n");
   if (/container image and Helm chart/.test(text)) {
-    for (const f of ["Dockerfile", path.join("deploy", "helm", "agent-mesh", "Chart.yaml")]) assert.ok(fs.existsSync(path.join(ROOT, f)), `${f} is promised and missing`);
+    for (const f of ["Dockerfile", path.join("deploy", "helm", "ordane", "Chart.yaml")]) assert.ok(fs.existsSync(path.join(ROOT, f)), `${f} is promised and missing`);
   }
   if (/upgrade and backup runbooks/.test(text)) {
     const ops = path.join(ROOT, "docs", "operations.md");

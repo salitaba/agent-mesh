@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reduce one agent-mesh run's state dir to a bounded, deterministic digest.
+"""Reduce one Ordane run's state dir to a bounded, deterministic digest.
 
 The event log is thousands of lines of JSONL; turns.jsonl carries the full
 prompt of every turn. Reading either into an agent context burns a session and
@@ -62,7 +62,7 @@ def main() -> int:
     by_type = collections.Counter(e.get("type") for e in events)
 
     # ---- outcome -------------------------------------------------------
-    print("# mesh run digest")
+    print("# ordane run digest")
     outcome = "UNTERMINATED"
     reason = ""
     for e in events:

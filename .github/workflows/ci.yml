@@ -45,11 +45,11 @@ jobs:
         with:
           context: .
           load: true
-          tags: agent-mesh:ci
+          tags: ordane:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test
-        run: scripts/smoke.sh image agent-mesh:ci
+        run: scripts/smoke.sh image ordane:ci
 
   chart:
     name: Lint and render the Helm chart
@@ -59,16 +59,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - name: Lint
-        run: helm lint deploy/helm/agent-mesh --strict --set auth.existingSecret=mesh-credentials
+        run: helm lint deploy/helm/ordane --strict --set auth.existingSecret=mesh-credentials
       - name: Render with every optional object on
         run: >
-          helm template mesh deploy/helm/agent-mesh --kube-version 1.29.0
+          helm template mesh deploy/helm/ordane --kube-version 1.29.0
           --set auth.existingSecret=mesh-credentials
           --set ingress.enabled=true --set ingress.host=mesh.example.com --set ingress.tlsSecretName=mesh-tls
           > rendered.yaml
       - name: Refuse an install with no credentials Secret
         run: |
-          if helm template mesh deploy/helm/agent-mesh --kube-version 1.29.0 >/dev/null 2>rendered.err; then
+          if helm template mesh deploy/helm/ordane --kube-version 1.29.0 >/dev/null 2>rendered.err; then
             echo "the chart rendered without auth.existingSecret: an instance with no token must not be installable" >&2
             exit 1
           fi

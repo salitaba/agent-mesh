@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "agent-mesh.fullname" . }}
+  name: {{ include "ordane.fullname" . }}
   labels:
-    {{- include "agent-mesh.labels" . | nindent 4 }}
+    {{- include "ordane.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,4 +12,4 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "agent-mesh.selectorLabels" . | nindent 4 }}
+    {{- include "ordane.selectorLabels" . | nindent 4 }}

@@ -61,7 +61,7 @@ export interface ProjectRegistry {
   openIds(): string[];
 }
 
-/** On-disk shape of `~/.agent-mesh/projects.json`. */
+/** On-disk shape of `~/.ordane/projects.json`. */
 export interface ProjectsFile {
   version: number;
   projects: ProjectRef[];

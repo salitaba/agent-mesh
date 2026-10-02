@@ -114,7 +114,7 @@ test("usage export: under enforce, Community is told which plan has it; Team get
     assert.equal(r.json.code, "license_feature");
     assert.equal(r.json.feature, "usage-export");
     assert.match(r.json.error, /Usage export is not part of the Community plan/);
-    assert.match(r.json.error, /mesh license install/, "and what to do about it");
+    assert.match(r.json.error, /ordane license install/, "and what to do about it");
   });
   await withMesh(provider({ token: licence("team"), enforcement: "enforce" }), async ({ base }) => {
     const r = await call(base, "GET", "/usage?by=day,agent");
@@ -154,7 +154,7 @@ test("usage export: CSV and JSON, a bad query is the caller's 400, and the answe
     const csv = await call(base, "GET", "/usage?format=csv&by=model");
     assert.equal(csv.status, 200);
     assert.match(String(csv.headers["content-type"]), /^text\/csv/);
-    assert.match(String(csv.headers["content-disposition"]), /attachment; filename="agent-mesh-usage\.csv"/);
+    assert.match(String(csv.headers["content-disposition"]), /attachment; filename="ordane-usage\.csv"/);
     assert.match(csv.text.split("\n")[0]!, /^model,turns,inputTokens,outputTokens/);
     for (const bad of ["by=planet", "format=xml", "since=yesterday", "until=2026-13-45"]) {
       const r = await call(base, "GET", `/usage?${bad}`);
@@ -164,7 +164,7 @@ test("usage export: CSV and JSON, a bad query is the caller's 400, and the answe
   }, { persist: true });
 });
 
-test("a single mesh prices /usage from the same host.yaml `mesh usage` reads, so the two never disagree", async () => {
+test("a single mesh prices /usage from the same host.yaml `ordane usage` reads, so the two never disagree", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-usage-prices-"));
   fs.writeFileSync(path.join(home, "host.yaml"), "host:\n  model_prices:\n    claude-haiku-4-5: { input_per_mtok: 2, output_per_mtok: 10, cache_write_per_mtok: 2, cache_read_per_mtok: 0.2 }\n    acme-house-model: 10\n", "utf8");
   const saved = process.env.MESH_HOME;
@@ -209,13 +209,13 @@ test("the Prometheus endpoint is a scrape in the text format, gated by plan, and
     for (const line of r.text.split("\n").filter((l) => l.length > 0)) {
       assert.match(line, /^(# (HELP|TYPE) [a-zA-Z_:][a-zA-Z0-9_:]* .+|[a-zA-Z_:][a-zA-Z0-9_:]*(\{[^}]*\})? \S+)$/, `every line is exposition format: ${line}`);
     }
-    assert.match(r.text, /^agent_mesh_up 1$/m);
-    assert.match(r.text, /^agent_mesh_info\{version="[^"]+",role="mesh",mode="parked",mesh="[^"]+"\} 1$/m);
-    assert.match(r.text, /^agent_mesh_agents\{lifecycle="[A-Z_]+"\} 2$/m);
-    assert.match(r.text, /^agent_mesh_license_info\{plan="team",status="valid",enforcement="enforce"\} 1$/m);
-    assert.match(r.text, /^agent_mesh_license_expires_timestamp_seconds \d{10}$/m);
-    assert.match(r.text, /^agent_mesh_license_limit\{limit="seats_per_mesh"\} 12$/m);
-    assert.match(r.text, /^agent_mesh_license_in_use\{what="seats"\} 2$/m);
+    assert.match(r.text, /^ordane_up 1$/m);
+    assert.match(r.text, /^ordane_info\{version="[^"]+",role="mesh",mode="parked",mesh="[^"]+"\} 1$/m);
+    assert.match(r.text, /^ordane_agents\{lifecycle="[A-Z_]+"\} 2$/m);
+    assert.match(r.text, /^ordane_license_info\{plan="team",status="valid",enforcement="enforce"\} 1$/m);
+    assert.match(r.text, /^ordane_license_expires_timestamp_seconds \d{10}$/m);
+    assert.match(r.text, /^ordane_license_limit\{limit="seats_per_mesh"\} 12$/m);
+    assert.match(r.text, /^ordane_license_in_use\{what="seats"\} 2$/m);
   });
   await withMesh(provider({ enforcement: "warn" }), async ({ base }) => {
     assert.equal((await call(base, "GET", "/metrics/prometheus")).status, 200, "warn never refuses");
@@ -237,7 +237,7 @@ test("a mesh over the plan's seats does not START under enforce, before it opens
   try {
     await assert.rejects(
       startServer({ configPath, gitMode: "off", host: "127.0.0.1", port: 0, mode: "parked", licenses: provider({ enforcement: "enforce" }) }),
-      (err: unknown) => err instanceof LicenseLimitError && /9 seats; the Community plan allows 8 per mesh/.test((err as Error).message) && /mesh license install/.test((err as Error).message),
+      (err: unknown) => err instanceof LicenseLimitError && /9 seats; the Community plan allows 8 per mesh/.test((err as Error).message) && /ordane license install/.test((err as Error).message),
     );
     assert.equal(fs.existsSync(path.join(dir, "workspace")), false, "nothing was created: the refusal came before the boot");
   } finally {
@@ -338,7 +338,7 @@ test("host: the second open project is refused under enforce on Community, with 
     assert.equal(second.json.code, "license_limit");
     assert.equal(second.json.limit, "projects");
     assert.match(second.json.error, /Opening this project would make 2 open; the Community plan allows 1/);
-    assert.match(second.json.error, /mesh license install/);
+    assert.match(second.json.error, /ordane license install/);
     // Nothing that was running was touched, and asking again for the one that is open is not a second one.
     const listing = await call(base, "GET", "/api/projects");
     assert.deepEqual(listing.json.projects.map((p: { id: string; status: string }) => [p.id, p.status]), [["one", "open"], ["two", "closed"]]);
@@ -404,15 +404,15 @@ test("host: usage export and the Prometheus scrape are gated by plan, honest abo
     assert.match(String(csv.headers["content-type"]), /^text\/csv/);
     const scrape = await call(base, "GET", "/metrics/prometheus");
     assert.equal(scrape.status, 200);
-    assert.match(scrape.text, /^agent_mesh_info\{version="[^"]+",role="host"\} 1$/m);
-    assert.match(scrape.text, /^agent_mesh_projects\{status="open"\} 1$/m);
-    assert.match(scrape.text, /^agent_mesh_projects\{status="closed"\} 1$/m);
-    assert.match(scrape.text, /^agent_mesh_project_up\{project="one"\} 1$/m);
-    assert.match(scrape.text, /^agent_mesh_project_up\{project="two"\} 0$/m);
-    assert.match(scrape.text, /^agent_mesh_spend_ceiling_usd 50$/m, "the default $50 ceiling is on the scrape");
-    assert.match(scrape.text, /^agent_mesh_license_in_use\{what="projects"\} 1$/m);
-    assert.match(scrape.text, /^agent_mesh_license_in_use\{what="registered"\} 2$/m);
-    assert.match(scrape.text, /^agent_mesh_license_limit\{limit="projects"\} 5$/m);
+    assert.match(scrape.text, /^ordane_info\{version="[^"]+",role="host"\} 1$/m);
+    assert.match(scrape.text, /^ordane_projects\{status="open"\} 1$/m);
+    assert.match(scrape.text, /^ordane_projects\{status="closed"\} 1$/m);
+    assert.match(scrape.text, /^ordane_project_up\{project="one"\} 1$/m);
+    assert.match(scrape.text, /^ordane_project_up\{project="two"\} 0$/m);
+    assert.match(scrape.text, /^ordane_spend_ceiling_usd 50$/m, "the default $50 ceiling is on the scrape");
+    assert.match(scrape.text, /^ordane_license_in_use\{what="projects"\} 1$/m);
+    assert.match(scrape.text, /^ordane_license_in_use\{what="registered"\} 2$/m);
+    assert.match(scrape.text, /^ordane_license_limit\{limit="projects"\} 5$/m);
   });
 });
 
@@ -423,6 +423,6 @@ test("host: the legacy bare /metrics still reaches a project, and /metrics/prome
     const bare = await call(base, "GET", "/metrics");
     assert.equal(bare.status, 200, "the child answered it (the stub answers {} to anything)");
     assert.equal((await call(base, "GET", "/metrics/prometheus")).status, 200);
-    assert.match((await call(base, "GET", "/metrics/prometheus")).text, /agent_mesh_up 1/);
+    assert.match((await call(base, "GET", "/metrics/prometheus")).text, /ordane_up 1/);
   });
 });

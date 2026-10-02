@@ -1,5 +1,5 @@
 #!/bin/sh
-# Smoke test for a running Agent Mesh host: the checks a deployment must pass before anyone is told it works.
+# Smoke test for a running Ordane host: the checks a deployment must pass before anyone is told it works.
 #
 #   scripts/smoke.sh native                 build output on this machine (after `npm run build`)
 #   scripts/smoke.sh image <image-ref>      a container image (needs docker); also checks it runs unprivileged,
@@ -115,13 +115,16 @@ case "$mode" in
     if docker exec "$cid" sh -c 'touch /app/.write-test' >/dev/null 2>&1; then fail "the image's own filesystem is writable"; else pass "the image's own filesystem is read-only"; fi
     if docker exec "$cid" sh -c 'touch /data/.write-test && rm /data/.write-test' >/dev/null 2>&1; then pass "the data volume is writable"; else fail "the data volume is not writable"; fi
     # Two different failures, said apart: a command that is not on the path, and one that is and does not run.
-    if ! docker exec "$cid" sh -c 'command -v mesh' >/dev/null 2>&1; then
-      fail "the mesh command is not on the path"
-    elif docker exec "$cid" mesh --help >/dev/null 2>&1; then
-      pass "the mesh command is on the path and \`mesh --help\` exits 0"
-    else
-      fail "the mesh command is on the path but \`mesh --help\` exits non-zero"
-    fi
+    # `mesh` is the name the product had before it was Ordane; it stays installed so an old script keeps working.
+    for cmd in ordane mesh; do
+      if ! docker exec "$cid" sh -c "command -v $cmd" >/dev/null 2>&1; then
+        fail "the $cmd command is not on the path"
+      elif docker exec "$cid" "$cmd" --help >/dev/null 2>&1; then
+        pass "the $cmd command is on the path and \`$cmd --help\` exits 0"
+      else
+        fail "the $cmd command is on the path but \`$cmd --help\` exits non-zero"
+      fi
+    done
 
     # No token, reachable from the network: it must refuse to start, and say why.
     if out="$(docker run --rm --env MESH_BIND=0.0.0.0 "$image" 2>&1)"; then

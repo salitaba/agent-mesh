@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "agent-mesh.fullname" . }}
+  name: {{ include "ordane.fullname" . }}
   labels:
-    {{- include "agent-mesh.labels" . | nindent 4 }}
+    {{- include "ordane.labels" . | nindent 4 }}
   annotations:
     # Everything the instance has done lives here: the event log, the workspaces, the agents' sessions.
     # Removing the release must not remove it.

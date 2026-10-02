@@ -1,6 +1,9 @@
 # Agent Mesh Runtime
 ## Full Implementation Plan
 
+> **Naming.** This is the original design document, written when the product was called Agent Mesh, and it keeps that name. The
+> product is now called **Ordane** (command `ordane`; `mesh` still runs the same program). Nothing below was edited for the rename.
+
 # 1. Product Definition
 
 ### 1.1 What we are building

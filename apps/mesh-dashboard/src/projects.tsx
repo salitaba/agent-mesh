@@ -100,8 +100,8 @@ interface ProjectsState {
   hostDown: boolean;
   /**
    * Whether this server has a project registry at all — `null` until the first
-   * answer lands. `mesh console` serves exactly one mesh and has no `/api/projects`
-   * route; `mesh host` does. Without this the two were indistinguishable (both
+   * answer lands. `ordane console` serves exactly one mesh and has no `/api/projects`
+   * route; `ordane host` does. Without this the two were indistinguishable (both
    * "no projects"), so the console grew a tab strip it can never fill and a
    * "+ Add a project" button whose POST 404s too.
    */
@@ -178,7 +178,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const [hasRegistry, setHasRegistry] = useState<boolean | null>(null);
   const [hostSpend, setHostSpend] = useState<HostSpend | null>(null);
   // Read from inside the 5s poll, which must not be rebuilt when the verdict
-  // lands. `mesh console` has no /api/projects route and never grows one, so
+  // lands. `ordane console` has no /api/projects route and never grows one, so
   // once it has 404ed the poll was asking a question already answered — twelve
   // console errors a minute that read like a bug to anyone opening devtools.
   const noRegistryRef = useRef(false);

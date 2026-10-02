@@ -20,8 +20,8 @@ npm run typecheck     # tsc --noEmit (root) + dashboard tsconfig
 npm run lint          # eslint packages apps tests
 npm test              # build, then node --test "dist/tests/**/*.test.js"
 npm run test:only     # node --test "dist/tests/**/*.test.js" (no rebuild)
-npm run mesh -- <cmd> # node dist/apps/mesh-cli/src/index.js
-npm run dev           # mesh console (port 7421) + vite dev, concurrently
+npm run ordane -- <cmd> # node dist/apps/mesh-cli/src/index.js
+npm run dev           # ordane console (port 7421) + vite dev, concurrently
 npm run dev:ui        # vite dev only
 npm run clean         # rm -rf dist
 ```
@@ -54,7 +54,7 @@ packages/
   runtime-claude/    Claude Code adapter (Agent SDK, no server)
   runtime-http/      generic HTTP agent adapter
   observability/     graph, views, metrics, SSE hub
-  projects/          multi-project registry (~/.agent-mesh/projects.json)
+  projects/          multi-project registry (~/.ordane/projects.json)
 tests/               mirrors packages/ layout
 roles/               role prompt files
 schemas/             canonical JSON schemas (event, message, artifact, mesh)

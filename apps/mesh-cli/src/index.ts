@@ -30,7 +30,7 @@ interface Args {
 /**
  * Flags that never take a value.
  *
- * Without this, `mesh run --git mesh.yaml` binds "mesh.yaml" as the *value* of
+ * Without this, `ordane run --git mesh.yaml` binds "mesh.yaml" as the *value* of
  * `--git` and leaves `positional` empty, so an ordinary invocation reports a
  * usage error naming the command the operator just typed. Listed rather than
  * derived: the alternative is a denylist of value-taking flags, which fails
@@ -88,8 +88,8 @@ const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
  * Unknown flags, for the commands whose flag set is written down here.
  *
  * `parseArgs` collects every `--x` into a bag and each command reads the keys it
- * knows, so anything else is silently dropped: `mesh status --json` printed the
- * human format and said nothing, and `mesh init --dir /tmp/x` scaffolded into the
+ * knows, so anything else is silently dropped: `ordane status --json` printed the
+ * human format and said nothing, and `ordane init --dir /tmp/x` scaffolded into the
  * cwd because the directory is positional. The flag looked accepted in both.
  *
  * Deliberately narrow. Only the launch commands are checked, because their flag
@@ -106,7 +106,7 @@ export function unknownFlagWarnings(command: string, flags: Record<string, strin
   if (unknown.length === 0) return [];
   const one = unknown.length === 1;
   return [
-    `${unknown.map((f) => `--${f}`).join(", ")} ${one ? "is not a flag" : "are not flags"} \`mesh ${command}\` reads, and ${one ? "it was" : "they were"} ignored rather than refused. Accepted here: ${[...LAUNCH_FLAGS].filter((f) => f !== "help").map((f) => `--${f}`).join(", ")}`,
+    `${unknown.map((f) => `--${f}`).join(", ")} ${one ? "is not a flag" : "are not flags"} \`ordane ${command}\` reads, and ${one ? "it was" : "they were"} ignored rather than refused. Accepted here: ${[...LAUNCH_FLAGS].filter((f) => f !== "help").map((f) => `--${f}`).join(", ")}`,
   ];
 }
 
@@ -139,8 +139,8 @@ export function parseArgs(argv: string[]): Args {
  * mesh read as a dead one. No `Authorization` header was ever sent, so a direct
  * `--bus` call to a child — which always demands a token — came back 401; and
  * the status was returned but never checked, so that error body was rendered as
- * data. `mesh status --bus <child>` printed `Goal: (none)` and `events:
- * undefined` for a mission that was running fine, and `mesh agents --bus` died
+ * data. `ordane status --bus <child>` printed `Goal: (none)` and `events:
+ * undefined` for a mission that was running fine, and `ordane agents --bus` died
  * with `body is not iterable`.
  *
  * Auth failures THROW rather than return: no call site can do anything useful
@@ -330,20 +330,20 @@ function printAgentDetail(body: any, limit: number): void {
   console.log(`\n--json for full payload`);
 }
 
-const HELP = `agent-mesh — runtime for persistent AI organizations
+const HELP = `ordane — runtime for persistent AI organizations
 
 usage:
-  mesh init [dir] [--runtime stub] [--example name] | --list   scaffold a project: mesh.yaml + roles (see: mesh init --help)
-  mesh validate <mesh.yaml>                schema + cross-field validation
-  mesh emit-schemas [dir]                  write canonical JSON schemas
-  mesh run <mesh.yaml> [--port n] [--bind addr] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
-  mesh serve <mesh.yaml> [--port n] [--bind addr] [--git|--no-git]   live + dashboard (alias: up; same as run --no-tui)
-  mesh console <mesh.yaml> [--port n] [--bind addr] [--git|--no-git] parked stepper console (alias: ui)
+  ordane init [dir] [--runtime stub] [--example name] | --list   scaffold a project: mesh.yaml + roles (see: ordane init --help)
+  ordane validate <mesh.yaml>                schema + cross-field validation
+  ordane emit-schemas [dir]                  write canonical JSON schemas
+  ordane run <mesh.yaml> [--port n] [--bind addr] [--no-tui] [--git|--no-git] [--fresh]   live: scheduler on, startup agents fire, TUI when TTY
+  ordane serve <mesh.yaml> [--port n] [--bind addr] [--git|--no-git]   live + dashboard (alias: up; same as run --no-tui)
+  ordane console <mesh.yaml> [--port n] [--bind addr] [--git|--no-git] parked stepper console (alias: ui)
     --bind       address to listen on (default mesh.server.host, 127.0.0.1). Anything that is not
                  loopback is reachable from the network and needs MESH_API_TOKEN of 32+ characters
                  (openssl rand -hex 32); the server refuses to start without one.
-  mesh --version                           print the version
-  mesh --help | -h | help                  print this usage
+  ordane --version                           print the version
+  ordane --help | -h | help                  print this usage
     git: writing agents commit through worktrees. Default comes from
     mesh.workspace.git, which is ON when the key is absent. With git off
     every mesh_commit is refused, so criteria needing landed code never
@@ -352,34 +352,34 @@ usage:
     send with "wake after send" (or wake buttons) steps single turns;
     ▶ start mission (POST /mission/start) flips parked -> live.
     flags: --live forces live, --parked / --ui-only forces parked.
-  mesh status [--bus url]                  mission/agent/budget overview
-  mesh graph [--bus url]                   live collaboration graph
-  mesh events [--type t] [--limit n]       event timeline
-  mesh agents [--bus url]                  agent table
-  mesh inspect <agentId> [--json] [--limit n]  full agent detail: inbox, steps, tasks, artifacts, budgets
-  mesh replay <goalId> [--upToSeq n]       deterministic state replay
-  mesh pause | resume [goalId]             goal control
-  mesh wake <agentId>                      manual activation
-  mesh send --to a,b --type INFORM --payload '{}'
-  mesh approve --subject s [--artifact id] [--by agentId]
-  mesh reject --subject s [--artifact id] [--comment text]
-  mesh respond <escalationId> <text>       human escalation response
-  mesh artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
-  mesh budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
-  mesh ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written
+  ordane status [--bus url]                  mission/agent/budget overview
+  ordane graph [--bus url]                   live collaboration graph
+  ordane events [--type t] [--limit n]       event timeline
+  ordane agents [--bus url]                  agent table
+  ordane inspect <agentId> [--json] [--limit n]  full agent detail: inbox, steps, tasks, artifacts, budgets
+  ordane replay <goalId> [--upToSeq n]       deterministic state replay
+  ordane pause | resume [goalId]             goal control
+  ordane wake <agentId>                      manual activation
+  ordane send --to a,b --type INFORM --payload '{}'
+  ordane approve --subject s [--artifact id] [--by agentId]
+  ordane reject --subject s [--artifact id] [--comment text]
+  ordane respond <escalationId> <text>       human escalation response
+  ordane artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
+  ordane budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
+  ordane ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written
     vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
     Offline: reads logs/turn-audit.jsonl, needs no running mesh. Ratios are published Anthropic
     units (cache read 0.1x, write 1.25x, output 5x) — a comparable unit, not a price.
-  mesh host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git]
+  ordane host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git]
     multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
     git flags force every child on/off; without them each child obeys its own mesh.workspace.git
-  mesh project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
+  ordane project list | add <dir> | remove <id> | open <id> | close <id> | restart <id>
     project registry; add/remove/list work without a host, open/close/restart need one (--host url)
-  mesh license [status|install|verify|remove]   this install's plan, limits and licence (see: mesh license --help)
-  mesh usage <mesh.yaml>... | --all             what meshes consumed, by day/seat/model, from their logs (see: mesh usage --help)
-  mesh doctor [mesh.yaml ...] [--json] [--host url]   diagnose this install; safe to paste into a support ticket (see: mesh doctor --help)
-  mesh backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
-  mesh restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
+  ordane license [status|install|verify|remove]   this install's plan, limits and licence (see: ordane license --help)
+  ordane usage <mesh.yaml>... | --all             what meshes consumed, by day/seat/model, from their logs (see: ordane usage --help)
+  ordane doctor [mesh.yaml ...] [--json] [--host url]   diagnose this install; safe to paste into a support ticket (see: ordane doctor --help)
+  ordane backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
+  ordane restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
     a reset writes one set of archives under one stamp: the state dir (the only
     restorable one), the product checkout, and the agent worktrees. The archive
     is copied, never consumed, so the same stamp keeps working.
@@ -391,6 +391,9 @@ usage:
   mcp --agent id --bus url --token t       (internal) stdio MCP bridge
   designer-mcp                             (internal) stdio MCP server for the config designer
   bench [--mesh config.yaml] [--single config.yaml] [--out report.json]
+
+  \`mesh\` is the same command under the name this product had before it was called Ordane: both are installed, and
+  a script that says \`mesh run\` keeps working.
 `;
 
 export type LaunchMode = "live" | "parked";
@@ -405,7 +408,7 @@ export function resolveLaunchMode(command: string, flags: Record<string, string 
   const wantsParked = Boolean(flags["parked"] ?? flags["ui-only"]);
   const wantsLive = Boolean(flags["live"]);
   const warnings: string[] = [];
-  if (flags["ui-only"]) warnings.push("flag --ui-only is deprecated, use --parked (or `mesh console`)");
+  if (flags["ui-only"]) warnings.push("flag --ui-only is deprecated, use --parked (or `ordane console`)");
   if (wantsParked && wantsLive) {
     warnings.push("--parked and --live conflict; --live wins");
     return { mode: "live", warnings };
@@ -427,7 +430,7 @@ export function resolveLaunchMode(command: string, flags: Record<string, string 
  * The report used to be composed the moment the goal's status changed, and the turn that changed it (the pm's last
  * acceptance, as a rule) was still running: its spend was booked a few seconds later, so the closing figure was short by
  * that turn in every run (run 8: 22k tokens of 861k and one turn of 49; run 9: 14k of 548k and 19k of 836k), a figure a
- * customer reads against `mesh usage` and the invoice. `settle` is the shutdown, which joins the completion and so drains
+ * customer reads against `ordane usage` and the invoice. `settle` is the shutdown, which joins the completion and so drains
  * those turns (bounded), and what is read after it is the whole run. The report is printed whether or not the shutdown
  * went cleanly. An interrupted run (Ctrl-C) still reports first: whoever pressed it is waiting.
  */
@@ -455,7 +458,7 @@ async function launchMesh(opts: {
 }): Promise<number> {
   const file = opts.configPath;
   const preflight = resolveConfig(file);
-  // The same warnings `mesh validate` prints. Booting is when they matter most
+  // The same warnings `ordane validate` prints. Booting is when they matter most
   // — an uncovered commit gate deadlocks the mission with no runtime error —
   // and run/serve/up/console/ui used to compute these and drop them, so the
   // only way to see one was to remember to validate first.
@@ -565,11 +568,11 @@ export function packageVersion(): string {
 
 export async function main(argv: string[]): Promise<number> {
   if (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "version") {
-    console.log(`agent-mesh ${packageVersion()}`);
+    console.log(`ordane ${packageVersion()}`);
     return 0;
   }
   // The first thing anyone types. It used to fall through to "unknown command: --help", which printed the usage and
-  // exited 1, and failed the image's smoke test (`mesh --help` in the built container) on every push.
+  // exited 1, and failed the image's smoke test (`ordane --help` in the built container) on every push.
   if (argv[0] === "--help" || argv[0] === "-h") {
     console.log(HELP);
     return 0;
@@ -634,7 +637,7 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "validate": {
         const file = args.positional[0];
-        if (!file) throw new Error("usage: mesh validate <mesh.yaml>");
+        if (!file) throw new Error("usage: ordane validate <mesh.yaml>");
         const raw = loadMeshFile(file);
         const resolved = resolveConfig(file);
         void raw;
@@ -726,7 +729,7 @@ export async function main(argv: string[]): Promise<number> {
       case "graph": {
         const { body } = await httpJson("GET", `${bus}/graph`, undefined, args.flags);
         if (!Array.isArray(body?.nodes) || !Array.isArray(body?.edges)) {
-          console.error(`mesh graph: unexpected response from ${bus}/graph: ${JSON.stringify(body).slice(0, 200)}`);
+          console.error(`ordane graph: unexpected response from ${bus}/graph: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
         for (const n of body.nodes) console.log(`  ${n.lifecycle.padEnd(11)} ${n.id.padEnd(14)} (${n.role})  ${n.tokens}t`);
@@ -737,7 +740,7 @@ export async function main(argv: string[]): Promise<number> {
       case "agents": {
         const { body } = await httpJson("GET", `${bus}/agents`, undefined, args.flags);
         if (!Array.isArray(body)) {
-          console.error(`mesh agents: unexpected response from ${bus}/agents: ${JSON.stringify(body).slice(0, 200)}`);
+          console.error(`ordane agents: unexpected response from ${bus}/agents: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
         for (const a of body) console.log(`  ${a.id.padEnd(14)} ${a.role.padEnd(16)} ${a.lifecycle.padEnd(11)} ${a.taskId ? `task:${a.taskId}` : ""}`);
@@ -745,7 +748,7 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "inspect": {
         const id = args.positional[0];
-        if (!id) throw new Error("usage: mesh inspect <agentId> [--json] [--limit n]");
+        if (!id) throw new Error("usage: ordane inspect <agentId> [--json] [--limit n]");
         const limit = args.flags.limit ? Number(args.flags.limit) : 10;
         const { body } = await httpJson("GET", `${bus}/agents/${encodeURIComponent(id)}?limit=${limit}`, undefined, args.flags);
         if (body.error) {
@@ -767,7 +770,7 @@ export async function main(argv: string[]): Promise<number> {
           async () => ({ status: 200, body: await offlineEvents(args, limit, type) }),
         );
         if (!Array.isArray(result.body)) {
-          console.error(`mesh events: unexpected response: ${JSON.stringify(result.body).slice(0, 200)}`);
+          console.error(`ordane events: unexpected response: ${JSON.stringify(result.body).slice(0, 200)}`);
           return 1;
         }
         const rows = (result.body as any[]).slice(-limit);
@@ -778,7 +781,7 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "replay": {
         const goalId = args.positional[0];
-        if (!goalId) throw new Error("usage: mesh replay <goalId>");
+        if (!goalId) throw new Error("usage: ordane replay <goalId>");
         const upTo = args.flags.upToSeq ? `&upToSeq=${args.flags.upToSeq}` : "";
         const { body } = await httpJson("GET", `${bus}/goals/${encodeURIComponent(goalId)}/replay${upTo}`, undefined, args.flags);
         if (body.error) {
@@ -850,7 +853,7 @@ export async function main(argv: string[]): Promise<number> {
       case "escalations": {
         const { body } = await httpJson("GET", `${bus}/escalations`, undefined, args.flags);
         if (!Array.isArray(body)) {
-          console.error(`mesh escalations: unexpected response from ${bus}/escalations: ${JSON.stringify(body).slice(0, 200)}`);
+          console.error(`ordane escalations: unexpected response from ${bus}/escalations: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
         for (const e of body) console.log(`  ${e.status.padEnd(10)} ${e.id}  [${e.reason}] by ${e.raisedBy}`);
@@ -864,7 +867,7 @@ export async function main(argv: string[]): Promise<number> {
         // first, and let `--status` / `--settled` narrow it further.
         const want = args.flags.status ? String(args.flags.status).toUpperCase() : null;
         if (!Array.isArray(body)) {
-          console.error(`mesh artifacts: unexpected response from ${bus}/artifacts: ${JSON.stringify(body).slice(0, 200)}`);
+          console.error(`ordane artifacts: unexpected response from ${bus}/artifacts: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
         const rows = (body as any[]).filter((a) => !want || a.status.toUpperCase() === want);
@@ -894,7 +897,7 @@ export async function main(argv: string[]): Promise<number> {
       case "budgets": {
         const { body } = await httpJson("GET", `${bus}/budgets`, undefined, args.flags);
         if (!Array.isArray(body?.entries)) {
-          console.error(`mesh budgets: unexpected response from ${bus}/budgets: ${JSON.stringify(body).slice(0, 200)}`);
+          console.error(`ordane budgets: unexpected response from ${bus}/budgets: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
         for (const b of body.entries) console.log(`  ${b.key.padEnd(36)} ${String(b.consumed).padStart(8)}/${String(b.limit ?? "?").padStart(8)}${b.exceeded ? "  EXCEEDED" : ""}`);
@@ -920,15 +923,15 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (err instanceof LicenseLimitError) {
       // Same code as a refusal to listen: it will not start as configured, and retrying will not change that.
-      console.error(`mesh ${args.command}: ${err.message}`);
+      console.error(`ordane ${args.command}: ${err.message}`);
       return 78;
     }
     if (err instanceof UnsafeListenError) {
       // EX_CONFIG: a service manager can tell "will never start as configured" from a crash.
-      console.error(`mesh ${args.command}: ${err.message}`);
+      console.error(`ordane ${args.command}: ${err.message}`);
       return 78;
     }
-    console.error(`mesh ${args.command}: ${(err as Error).message}`);
+    console.error(`ordane ${args.command}: ${(err as Error).message}`);
     return 1;
   }
 }
@@ -967,7 +970,7 @@ async function offlineEvents(args: Args, limit: number, type?: string): Promise<
 }
 
 /**
- * `mesh ledger` — what each settled turn cost, from the audit file, and since
+ * `ordane ledger` — what each settled turn cost, from the audit file, and since
  * the written column got a breakdown, what the most expensive line was spent on.
  *
  * Offline on purpose: `logs/turn-audit.jsonl` is append-only and independent of
@@ -985,13 +988,13 @@ async function offlineLedger(args: Args): Promise<number> {
   // it would print is real, and about the wrong mission. Only the built-in
   // default is allowed to be absent (the audit check below reports that case).
   if (candidate !== "mesh.yaml" && !fs.existsSync(candidate)) {
-    console.error(`mesh ledger: no config at ${candidate}`);
+    console.error(`ordane ledger: no config at ${candidate}`);
     return 1;
   }
   const dir = stateDirFor(candidate);
   const audit = path.join(dir, "logs", "turn-audit.jsonl");
   if (!fs.existsSync(audit)) {
-    console.error(`mesh ledger: no audit file at ${audit}\nthe mesh writes one line per settled turn once it has run`);
+    console.error(`ordane ledger: no audit file at ${audit}\nthe mesh writes one line per settled turn once it has run`);
     return 1;
   }
   const { parseTurnAudit, buildCacheLedger } = await import("../../../packages/observability/src/index");

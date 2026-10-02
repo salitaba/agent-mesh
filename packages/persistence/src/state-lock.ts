@@ -15,7 +15,7 @@ import { processAlive, processIdentity } from "./process-identity";
  * enforceable rather than conventional.
  *
  * Advisory, not mandatory: a process that never calls `acquireStateLock` is
- * unaffected. Every path that opens a state dir (`mesh run`, the console, and
+ * unaffected. Every path that opens a state dir (`ordane run`, the console, and
  * later the multi-project host's children) must go through it.
  */
 export interface StateLockInfo {

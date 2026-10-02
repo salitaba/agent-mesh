@@ -28,7 +28,7 @@ const MP4 = flag("mp4") ? OUT.replace(/\.gif$/i, ".mp4") : null;
 const KEEP_FRAMES = flag("keep-frames");
 const W = 1280, H = 720;
 const T_START = 2500, T_EVENTS = 4600, T_GRAPH = 8200, T_END = 12800;
-const FRAMES_DIR = join(tmpdir(), "agent-mesh-demo-capture");
+const FRAMES_DIR = join(tmpdir(), "ordane-demo-capture");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const children = [];
@@ -60,7 +60,7 @@ while (Date.now() < wait) {
   await sleep(250);
 }
 if (!up) die(`dashboard never came up on :${PORT}\n${serverLog.join("")}`);
-console.log(`mesh console up on :${PORT}`);
+console.log(`ordane console up on :${PORT}`);
 
 rmSync(FRAMES_DIR, { recursive: true, force: true });
 mkdirSync(FRAMES_DIR, { recursive: true });

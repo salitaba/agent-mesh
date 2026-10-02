@@ -408,7 +408,7 @@ test("permission gate fails closed on tools nobody mapped", async () => {
   // Even a fully-capable seat cannot reach a tool the mapping never named.
   const res = await gate("SomeFutureTool", {}, gateCtx());
   assert.ok(res && res.behavior === "deny");
-  assert.match(res.message, /not available to mesh agents/);
+  assert.match(res.message, /not available to ordane agents/);
 });
 
 test("permission gate resolves capability aliases", async () => {

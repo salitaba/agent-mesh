@@ -1,6 +1,6 @@
 ---
 name: mesh-run-observe
-description: "Use when running a real agent-mesh mission to find out how the runtime actually behaves - observe a live run, digest its event log into a report of denials, stuck artifacts and no-op turns, run a plain opencode baseline on the same goal, compare quality and cost against the mesh, then propose and implement one fix. Triggers on run the mesh, observe a run, mesh vs opencode, baseline or cost comparison, is the mesh worth it, what went wrong in that mission, demo-stub, examples/*/mesh.yaml. Not for writing unit tests or reading a mission that already ran elsewhere."
+description: "Use when running a real Ordane mission to find out how the runtime actually behaves - observe a live run, digest its event log into a report of denials, stuck artifacts and no-op turns, run a plain opencode baseline on the same goal, compare quality and cost against the mesh, then propose and implement one fix. Triggers on run the mesh, observe a run, mesh vs opencode, baseline or cost comparison, is the mesh worth it, what went wrong in that mission, demo-stub, examples/*/mesh.yaml. Not for writing unit tests or reading a mission that already ran elsewhere."
 ---
 
 # Run a mesh, observe it, fix one thing
@@ -47,7 +47,7 @@ What the script handles so you do not have to:
 - picks a free port, so concurrent runs do not collide.
 - `--no-tui --fresh`. Fresh wipes prior state so two runs are comparable.
 - **the timeout is the only backstop.** There is no `--max-turns` /
-  `--timeout` / `--budget` flag on `mesh run`. Headless mode exits on its own
+  `--timeout` / `--budget` flag on `ordane run`. Headless mode exits on its own
   only when the goal reaches `COMPLETED` / `FAILED` / `ESCALATED`; a stalled
   mission idles forever. `RUN_STATUS=timeout-after-Ns` is itself a finding —
   digest it anyway, a stalled run's log is the most interesting kind.

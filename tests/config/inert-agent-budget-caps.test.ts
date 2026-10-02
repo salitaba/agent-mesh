@@ -99,7 +99,7 @@ test("a seat with no budget block is silent", () => {
 });
 
 test("every shipped example is silent", async () => {
-  // These warnings print on every `mesh run`. An example that trips one would
+  // These warnings print on every `ordane run`. An example that trips one would
   // train operators to read past the whole class.
   // process.cwd(), not __dirname: tests run from compiled output under dist/,
   // so a path relative to the test file lands in dist/examples, which is empty.

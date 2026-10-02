@@ -1,5 +1,5 @@
 /**
- * `mesh doctor`: what a support engineer needs to diagnose an install, and nothing that belongs to the customer.
+ * `ordane doctor`: what a support engineer needs to diagnose an install, and nothing that belongs to the customer.
  *
  * It reports the version, the plan, which settings are present (never their values), whether each project's
  * configuration parses, who holds its state lock, how big its event log is and when it last grew, and how much
@@ -21,7 +21,7 @@ import { ProjectError, meshHome, projectsFilePath, readProjectsFile, type Projec
 import { serverVersion } from "../../mesh-server/src/version";
 
 export const DOCTOR_HELP = `usage:
-  mesh doctor [mesh.yaml ...] [--json] [--host <url>]
+  ordane doctor [mesh.yaml ...] [--json] [--host <url>]
     Diagnoses this install: version, plan, which settings are present, each registered project (and any mesh.yaml
     you name) and the host's probes. Exit 0 when nothing failed, 1 when something did.
     The report contains no event-log content, prompts, files the agents wrote, credentials or paths, and shows
@@ -174,7 +174,7 @@ function configProblem(err: unknown, known: readonly string[]): string {
   if (!(err instanceof ConfigError)) return "the file could not be read";
   const problems = err.errors.map((e) => {
     const yaml = /^YAML parse error[\s\S]*? at line (\d+), column (\d+)/.exec(e);
-    return yaml ? `not valid YAML (line ${yaml[1]}, column ${yaml[2]}; \`mesh validate\` prints the message)` : scrub(e.split("\n")[0] ?? "", known);
+    return yaml ? `not valid YAML (line ${yaml[1]}, column ${yaml[2]}; \`ordane validate\` prints the message)` : scrub(e.split("\n")[0] ?? "", known);
   });
   const shown = problems.slice(0, 5);
   return shown.join("; ") + (problems.length > shown.length ? `; and ${problems.length - shown.length} more` : "");
@@ -429,7 +429,7 @@ export async function buildDoctorReport(positional: string[], flags: Record<stri
 
   const needsModel = new Set<string>();
   for (const p of projects) {
-    if (!p.rootExists) add("fail", `Project ${p.id}: its folder is gone. Remove it with \`mesh project remove ${p.id}\` or restore the volume.`);
+    if (!p.rootExists) add("fail", `Project ${p.id}: its folder is gone. Remove it with \`ordane project remove ${p.id}\` or restore the volume.`);
     else if (!p.config.exists) add("fail", `Project ${p.id}: it has no mesh.yaml.`);
     else if (p.config.valid === false) add("fail", `Project ${p.id}: mesh.yaml does not load: ${p.config.error}`, "docs/configuration.md");
     if (p.underProjectsRoot === false) add("warn", `Project ${p.id} sits outside MESH_PROJECTS_ROOT, so the host will not open it.`, "docs/operations.md#where-things-live");
@@ -444,7 +444,7 @@ export async function buildDoctorReport(positional: string[], flags: Record<stri
     for (const r of p.config.runtimes ?? []) if (r === "claude") needsModel.add(p.id);
   }
   if (needsModel.size && !modelAccess.some((m) => m.name !== "ANTHROPIC_BASE_URL")) {
-    add("warn", `${needsModel.size === 1 ? "A project uses" : `${needsModel.size} projects use`} the Claude runtime and none of ANTHROPIC_API_KEY, Bedrock, Vertex or Foundry is set in this environment. Agents will fail to start a turn. (A mesh run with credentials set elsewhere will not see this.)`, "docs/operations.md#the-agents-model-access");
+    add("warn", `${needsModel.size === 1 ? "A project uses" : `${needsModel.size} projects use`} the Claude runtime and none of ANTHROPIC_API_KEY, Bedrock, Vertex or Foundry is set in this environment. Agents will fail to start a turn. (An Ordane run with credentials set elsewhere will not see this.)`, "docs/operations.md#the-agents-model-access");
   }
 
   // The host, only when asked for
@@ -478,7 +478,7 @@ export async function buildDoctorReport(positional: string[], flags: Record<stri
 function renderText(r: DoctorReport): string[] {
   const out: string[] = [];
   const row = (label: string, value: string): void => void out.push(`  ${label.padEnd(16)}${value}`);
-  out.push(`Agent Mesh doctor, ${r.generatedAt}`, r.about, "");
+  out.push(`Ordane doctor, ${r.generatedAt}`, r.about, "");
   out.push("INSTALL");
   row("version", r.install.version);
   row("runtime", `node ${r.install.node} on ${r.install.platform}/${r.install.arch}`);
@@ -488,7 +488,7 @@ function renderText(r: DoctorReport): string[] {
   const day = (iso: string): string => iso.slice(0, 10);
   const n = (v: number | null): string => (v === null ? "unlimited" : String(v));
   row("plan in force", r.licence.plan);
-  row("licence", r.licence.licenceId ? `${r.licence.licenceId}: ${r.licence.status}${r.licence.licensedPlan ? `, names the ${r.licence.licensedPlan} plan` : ""}${r.licence.expiresAt ? `, expires ${day(r.licence.expiresAt)}` : ""}${r.licence.graceEndsAt ? `, grace to ${day(r.licence.graceEndsAt)}` : ""}` : r.licence.status === "invalid" ? "found but not accepted (mesh license verify says why)" : "none installed");
+  row("licence", r.licence.licenceId ? `${r.licence.licenceId}: ${r.licence.status}${r.licence.licensedPlan ? `, names the ${r.licence.licensedPlan} plan` : ""}${r.licence.expiresAt ? `, expires ${day(r.licence.expiresAt)}` : ""}${r.licence.graceEndsAt ? `, grace to ${day(r.licence.graceEndsAt)}` : ""}` : r.licence.status === "invalid" ? "found but not accepted (ordane license verify says why)" : "none installed");
   row("limits", `${n(r.licence.limits.maxSeatsPerMesh)} seats per mesh, ${n(r.licence.limits.maxProjects)} project(s), ${n(r.licence.limits.maxConcurrentTurns)} concurrent turns`);
   row("source", r.licence.source ?? "none");
   row("enforcement", r.licence.enforcement);
@@ -528,12 +528,12 @@ export async function runDoctorCommand(positional: string[], flags: Record<strin
     return 0;
   }
   if (flags.host === true) {
-    err(`mesh doctor: --host needs a URL\n\n${DOCTOR_HELP}`);
+    err(`ordane doctor: --host needs a URL\n\n${DOCTOR_HELP}`);
     return 2;
   }
   for (const file of positional) {
     if (!fs.existsSync(file)) {
-      err(`mesh doctor: no such file: ${file}\n\n${DOCTOR_HELP}`);
+      err(`ordane doctor: no such file: ${file}\n\n${DOCTOR_HELP}`);
       return 2;
     }
   }

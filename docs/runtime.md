@@ -1,4 +1,4 @@
-# Agent Mesh — Runtime & Runtimes Adapters
+# Ordane — Runtime & Runtimes Adapters
 
 ## The supervisor pump
 
@@ -41,10 +41,10 @@ log, and every line is `<ISO timestamp> <text>`: for a settled turn the text is 
 JSON record; for everything else (`boot: released 3 budget hold(s)…`, `turn … for pm:
 2/5 ops rejected`, `provider breaker: …`) it is a sentence, which may itself span
 physical lines when it quotes a rendered artifact. Read it with `parseTurnAudit`
-(`packages/observability`), which is what `mesh ledger` does: it counts prose as normal
+(`packages/observability`), which is what `ordane ledger` does: it counts prose as normal
 and reports only a stamped line that opens a JSON record and does not parse as
 *damaged*. A reader that `JSON.parse`s every line fails on the first notice. The name is
-kept because existing state directories, `mesh ledger` and earlier notes already
+kept because existing state directories, `ordane ledger` and earlier notes already
 use it.
 
 ### Turn deadlines
@@ -494,7 +494,7 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
   never caches is under-billed by the guard, and the audit line is how you would
   spot one
 - the mesh MCP bridge is wired through the SDK's `mcpServers` option, the same
-  `mesh mcp` stdio bridge the other adapters spawn. A bridge that is not
+  `ordane mcp` stdio bridge the other adapters spawn. A bridge that is not
   connected in the `init` frame is read as a **startup race before it is read as
   a mute seat**: the CLI settles that status once, as the query starts, so the
   adapter tears the query down and respawns it — up to 3 times, waiting 1s, 2s
@@ -624,7 +624,9 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
   calling the API, its spend recorded nowhere (measured: still going 56 s after the
   kill), while the restarted mesh resumes the **same** session id, so two CLIs can
   write one transcript. The adapter stamps every seat it spawns with the pid of its
-  host (`AGENT_MESH_HOST_PID`, inherited by whatever the seat started). Before the
+  host (`ORDANE_HOST_PID`, inherited by whatever the seat started; seats started before
+  the product was renamed carry `AGENT_MESH_HOST_PID`, which is still read and never
+  written). Before the
   first seat of a new process starts, the adapter scans `/proc/<pid>/environ` of the
   processes it may read, and sends SIGTERM, then SIGKILL after a 2 s grace, to those
   whose stamp names a host that no longer exists, reporting the ones it stopped (and
@@ -656,7 +658,7 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
 
 ### `agent-runtime` `StubRuntime`
 - deterministic scripted agents; powers the unit/integration tests, the
-  simulation engine, and the token-free `mesh bench` comparison
+  simulation engine, and the token-free `ordane bench` comparison
 
 ## Recovery & replacement
 
@@ -844,16 +846,16 @@ The seat prompts the Claude adapter writes (`.mesh/agents/<seat>/ROLE.md`,
 unstages `.mesh`. Before that, a seat's `git add -A` committed the seat prompts to `main`
 and the delivered tree shipped them.
 
-`mesh status` reads the mission's progress from the criteria themselves: progress is a
+`ordane status` reads the mission's progress from the criteria themselves: progress is a
 projection of the acceptance criteria, so a restored state rebuilds it on import instead
 of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
 
 ## CLI / server / dashboard
 
-- `mesh run mesh.yaml` boots the supervisor live (scheduler on, startup agents
+- `ordane run mesh.yaml` boots the supervisor live (scheduler on, startup agents
   fire), starts the HTTP/SSE server and (on a
-  TTY) the TUI. `mesh serve`/`up` is live + dashboard without the TUI.
-  `mesh console mesh.yaml` (alias `ui`; or `run --parked`) serves the same
+  TTY) the TUI. `ordane serve`/`up` is live + dashboard without the TUI.
+  `ordane console mesh.yaml` (alias `ui`; or `run --parked`) serves the same
   dashboard/API with the scheduler **parked**: no startup, interest or timer
   cascades run on their own. Operator actions still work — a manual *wake* runs
   exactly one turn (step the mesh agent by agent), `POST /messages` with
@@ -861,15 +863,15 @@ of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
   parked) sends mail and steps recipients in one action, and
   `POST /mission/start` (the ▶ button, idempotent) flips the console live in
   place. `POST /mission/park` parks it again.
-  `mesh status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
+  `ordane status|graph|events|agents|inspect|replay|pause|resume|approve|reject|respond|artifacts|budgets|escalations`
   talk to `/api`.
-- A `mesh run` that reaches a verdict (completed, failed or escalated) prints its report **after** the turns still running
+- A `ordane run` that reaches a verdict (completed, failed or escalated) prints its report **after** the turns still running
   have settled, and says so on a line of its own first ("letting the turns still running finish, then the report"). The
   verdict used to be reported the moment the goal changed, while the turn that changed it (the pm's last acceptance, as a
   rule) was still running, so the `SPEND` line was short by that turn in every run: 2.2% to 2.6% against the ledger and
-  `mesh usage`, which agree with each other to the token. The report is printed whether or not the shutdown went cleanly,
+  `ordane usage`, which agree with each other to the token. The report is printed whether or not the shutdown went cleanly,
   and an interrupted run (Ctrl-C) still reports first, because whoever pressed it is waiting.
-- `mesh host` supervises one child per registered project. Each child's mode is
+- `ordane host` supervises one child per registered project. Each child's mode is
   remembered **per project**, taken from the mode that child reports on its
   heartbeat — the host only ever proxies `/mission/start` and `/mission/park`,
   so the child is the only process that knows which mode it is in. Opening or
@@ -904,13 +906,13 @@ of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
   `silenceMs`, never alone. The child samples its own lag on a 1s timer and
   reports it on the 2s beat; the same numbers are on `GET /health` as
   `eventLoopLagMs` / `eventLoopLagMaxMs`.
-- `mesh init` templates `runtime: default: claude`. There is no PATH probe for
+- `ordane init` templates `runtime: default: claude`. There is no PATH probe for
   it and there should not be: its executable ships with the SDK, so a check
-  would fail on a working install. `mesh run` needs no backend preflight to
+  would fail on a working install. `ordane run` needs no backend preflight to
   print guidance about.
-- `mesh emit-schemas` regenerates `schemas/*.json` from the code (single source).
-- `mesh bench` runs the mesh-vs-single comparison across the A–F corpus.
-- `mesh mcp` is the internal stdio↔HTTP bridge, spawned by the Claude adapter
+- `ordane emit-schemas` regenerates `schemas/*.json` from the code (single source).
+- `ordane bench` runs the mesh-vs-single comparison across the A–F corpus.
+- `ordane mcp` is the internal stdio↔HTTP bridge, spawned by the Claude adapter
   (`runtime-claude` registers it as the `mesh` MCP server) to reach `/api`.
 - The dashboard (`apps/mesh-dashboard`) renders five views from the same event
   projections: mesh graph, goal progress, artifact timeline, cost, live event

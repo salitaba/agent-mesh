@@ -72,7 +72,7 @@ test("a role token in the inbound list covers the seats holding that role", () =
 });
 
 test("every shipped example is silent", () => {
-  // This warning prints on every `mesh run`. An example that trips one would
+  // This warning prints on every `ordane run`. An example that trips one would
   // train operators to read past the whole class.
   // process.cwd(), not __dirname: tests run from compiled output under dist/.
   const root = path.resolve(process.cwd(), "examples");

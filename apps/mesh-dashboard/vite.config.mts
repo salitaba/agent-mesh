@@ -23,7 +23,7 @@ const API_ROOTS = [
 // Dev proxy target: override with MESH_BUS_URL (e.g. when your mesh runs on a
 // non-default port).
 //
-// Defaults to the multi-project host on 7420, not `mesh console` on 7421: the
+// Defaults to the multi-project host on 7420, not `ordane console` on 7421: the
 // host serves every route console does (it proxies them straight through to
 // the active project's child) *plus* /api/*, so pointing dev at the host is
 // strictly more capable. Single-project dev still works — run

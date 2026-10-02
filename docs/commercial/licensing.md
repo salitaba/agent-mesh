@@ -59,21 +59,21 @@ In this order, first one found:
 
 1. `MESH_LICENSE`: the key itself, in the environment.
 2. `MESH_LICENSE_FILE`: the path of a file that holds it.
-3. `<MESH_HOME>/license.key`, which `mesh license install` writes (owner-readable only).
+3. `<MESH_HOME>/license.key`, which `ordane license install` writes (owner-readable only).
 
 No licence, or one that does not verify, means the **Community** plan. A running host re-reads its licence every
 30 seconds, so installing or replacing one needs no restart.
 
 ```
-mesh license status [mesh.yaml]     the plan, limits, what is in use (and, given a mesh.yaml, its seat count)
-mesh license install <key|file>     verify it, then save it; a key that does not verify is never written
-mesh license verify <key|file>      check a key without saving it
-mesh license remove                 delete the saved licence: back to Community
+ordane license status [mesh.yaml]     the plan, limits, what is in use (and, given a mesh.yaml, its seat count)
+ordane license install <key|file>     verify it, then save it; a key that does not verify is never written
+ordane license verify <key|file>      check a key without saving it
+ordane license remove                 delete the saved licence: back to Community
 ```
 
 The dashboard shows the same on *Host settings*, and a banner appears above every view when the licence is
 expiring, has lapsed, or more projects are open than the plan allows. `GET /license` (a single mesh) and
-`GET /api/license` (a host) return it as JSON, and the metrics carry it (`agent_mesh_license_*`).
+`GET /api/license` (a host) return it as JSON, and the metrics carry it (`ordane_license_*`).
 
 ## What a limit does
 
@@ -95,14 +95,14 @@ Two promises hold in every mode, and a test pins each:
 
 The checks are: seats per mesh (checked when a mesh starts), projects open at once (checked when one opens),
 concurrent turns (the host's cap is tightened to the plan's, only under `enforce`, and never loosened), and the
-features `usage-export` (the usage report and `mesh usage`) and `prometheus-metrics`.
+features `usage-export` (the usage report and `ordane usage`) and `prometheus-metrics`.
 
 ## From purchase to expiry
 
 | When | What the install does |
 |---|---|
 | Valid | the plan's limits. |
-| 30 days before expiry | says so: at start, in the log, in the dashboard banner and in `agent_mesh_license_expires_timestamp_seconds`. |
+| 30 days before expiry | says so: at start, in the log, in the dashboard banner and in `ordane_license_expires_timestamp_seconds`. |
 | Expired, in grace (14 days by default; the claims can say 0 to 90) | **keeps the plan's limits** and tells the operator every way it can. A card that lapsed over a weekend is not an outage. |
 | After grace | the Community plan. Nothing is deleted; missions, logs and artifacts are as they were. Install a renewed licence and the plan returns within 30 seconds. |
 
@@ -134,7 +134,7 @@ node tools/license/mesh-license.mjs sign --key ~/secrets/mesh-license-k1.pem --k
 # optional: --grace 30, --max-seats 20, --max-projects 8, --max-turns 12, --feature usage-export
 ```
 
-Send the printed key to the customer; they run `mesh license install <key>` or put it in `MESH_LICENSE`. Keep a
+Send the printed key to the customer; they run `ordane license install <key>` or put it in `MESH_LICENSE`. Keep a
 record of what you issued (`id`, customer, plan, expiry, price, who approved it): the tool prints the claims, and
 `inspect` reads any token's claims back (without checking its signature), so a customer's key can be matched to
 your records when they write in.
@@ -157,9 +157,9 @@ are still live: an old build still trusts `k1`, so the customer must also move t
 
 - **Revoke a licence.** There is no server to ask. Short terms and a grace period are the only lever, which is
   one reason the term follows the billing term. If a licence is shared beyond its customer, the remedy is the
-  contract; the claims name the customer, and `mesh license status` shows it.
+  contract; the claims name the customer, and `ordane license status` shows it.
 - **Meter by use.** A licence states limits; it does not count. Usage reports are the customer's to produce
-  (`mesh usage`) and yours to ask for if a contract says so.
+  (`ordane usage`) and yours to ask for if a contract says so.
 
 ## For the customer: questions you will be asked
 
@@ -177,7 +177,7 @@ after the grace period.
 **Can I move it to another machine or cluster?** Yes. A licence is not bound to a machine. It names the
 customer and limits what one instance may do.
 
-**Do you collect usage?** No. `mesh usage` produces a report for you; nothing sends it anywhere.
+**Do you collect usage?** No. `ordane usage` produces a report for you; nothing sends it anywhere.
 
 **Is it open source?** No. The source is public under the Business Source License 1.1, which is source-available: you
 can read, modify and run it, it is free for production within the Community plan's limits, and each version becomes

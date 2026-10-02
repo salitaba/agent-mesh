@@ -217,7 +217,7 @@ test("http api: dashboard SPA shell + bundle served (vite build)", async () => {
     assert.equal(idx.status, 200);
     assert.equal(idx.headers.get("content-type"), "text/html; charset=utf-8");
     const html = await idx.text();
-    assert.ok(html.includes("Agent Mesh"));
+    assert.ok(html.includes("Ordane"));
     assert.ok(html.includes('id="root"'), "SPA mount point rendered");
 
     // Bundle + stylesheet referenced by the shell must serve and stay wired
@@ -255,7 +255,7 @@ test("http api: dashboard SPA shell + bundle served (vite build)", async () => {
     const notFound = await fetch(`${base}/missing.does-not-exist`);
     assert.equal(notFound.status, 404);
     const trav = await fetch(`${base}/..%2F..%2Fpackage.json`);
-    assert.ok(trav.status === 404 || !(await trav.text()).includes("agent-mesh\""));
+    assert.ok(trav.status === 404 || !(await trav.text()).includes('"name": "ordane"'), "package.json is not served");
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     await m.cleanup();
