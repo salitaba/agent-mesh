@@ -1143,6 +1143,13 @@ const PASS_CRITERIA = {
   security: { criterion: "security-verified", evidence: "security-pass" },
 } as const;
 
+/**
+ * What a seat is told to do when the seat that can settle an artifact is itself. Asking someone else to "review" a
+ * thing only the asker can settle was the tech lead's mistake in the seventh, eighth and ninth runs: it wanted QA to test
+ * the patch, which is a work request, and the verdict is its own.
+ */
+const SETTLE_IT_YOURSELF = ": settle it yourself with `mesh_approve` (or `mesh_reject`), and ask a seat to test it first with a `work.request` if you need that";
+
 /** Most reads one turn records as a publish's inputs — the schema's `inputs.maxItems`. */
 const MAX_ARTIFACT_INPUTS = 20;
 /** Held (not yet re-issued) review asks kept per artifact. */
@@ -10679,7 +10686,12 @@ export class Supervisor {
             const able = [...this.state.agents.values()]
               .map((rec) => rec.definition.id)
               .filter((id) => id !== HUMAN_AGENT_ID && id !== a.owner && approverMayAdvance(this.state, id, a, HUMAN_AGENT_ID));
-            const remedy = able.length > 0 ? ` — ${able.join(", ")} can` : ` — no seat in this mesh can`;
+            // Said to the seat that is one of them as "you", with what to do: the tech lead was told "tech-lead can"
+            // in three runs running, after asking QA to review a patch only the tech lead can settle.
+            const remedy =
+              able.length > 0
+                ? ` — ${able.map((id) => (id === actorId ? "you" : id)).join(", ")} can${able.includes(actorId) ? this.settleYourself(actorId, a) : ""}`
+                : ` — no seat in this mesh can`;
             const ownerNote = cannotSettle.includes(a.owner) ? ` (${a.owner} owns it and cannot review their own work)` : "";
             const reason = `none of ${op.reviewers.join(", ")} can deliver a verdict on this ${a.type}${remedy}${ownerNote}`;
             await this.denied(actorId, a.id, "request review", { decision: "DENY", reason, ruleId: "review.reviewer-cannot-settle" });
@@ -12108,6 +12120,18 @@ export class Supervisor {
   }
 
   /**
+   * What the seat that can settle `a` is told to do with it. A verdict moves only an artifact that is awaiting one, which is
+   * the question `verdictAdvances` answers for the verdict itself, so a patch that is already past review (the ninth run's
+   * tech lead asked about one that was MERGEABLE), or not yet submitted, is not met with "settle it yourself": a seat that
+   * did would be told its verdict moved nothing. Testing it is a work request in every state.
+   */
+  private settleYourself(actorId: string, a: Artifact): string {
+    return verdictAdvances(this.state, actorId, a, "approve")
+      ? SETTLE_IT_YOURSELF
+      : `, but it is ${a.status} and a verdict does not move it from there. If you need it tested, ask a seat with a \`work.request\``;
+  }
+
+  /**
    * The recipient of a `review.artifact` call that named nobody: the first seat the
    * caller may contact AND whose verdict would settle the artifact, in config order.
    * `candidates` is what `resolveProviders` found contactable. When the artifact does
@@ -12126,6 +12150,13 @@ export class Supervisor {
     const able = settlersOf(this.state, a, HUMAN_AGENT_ID);
     const reviewer = candidates.find((id) => able.includes(id));
     if (reviewer) return { ok: true, reviewer };
+    // The requester can settle it itself: the seat the router could not find is the asker, so there is no one to
+    // name and nothing to escalate. Say so and say what to do, instead of "tech-lead can, but you may not contact them".
+    if (able.includes(actorId)) {
+      const reason = `no other seat you may contact can deliver a verdict on this ${a.type} — you can${this.settleYourself(actorId, a)}.`;
+      await this.denied(actorId, a.id, "request review", { decision: "DENY", reason, ruleId: "review.reviewer-cannot-settle" });
+      return { ok: false, reason };
+    }
     const why = able.length > 0
       ? `${able.join(", ")} can, but you may not contact ${able.length === 1 ? "them" : "any of them"}`
       : "no seat in this mesh can, so only the operator can";
