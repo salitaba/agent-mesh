@@ -79,10 +79,13 @@ test("QA's report is submitted and passed, and only the pm's acceptance is left:
 test("with nothing submitted to cite there is no early nudge: a draft report is not proof", async () => {
   const m = await mesh();
   try {
-    await publish(m, "qa", "QA Report", "TestReport", false);
-    // quality-verified is closed by a pass that names nothing, so only the acceptance is open and nothing is citable.
+    // quality-verified is closed by a pass that names nothing, so only the acceptance is open and nothing is citable. The report is
+    // written after the pass: a draft that exists at the pass is submitted with it (a pass submits its giver's own report), and
+    // that would make it citable. One written afterwards stays a draft, which is what this case needs.
     const passed = await m.supervisor.recordDecision("qa", "pass", "quality", undefined, "ran the suite: 31/31");
     assert.equal(passed.ok, true, passed.reason);
+    const draft = await publish(m, "qa", "QA Report", "TestReport", false);
+    assert.equal(m.kernel.state.artifacts.get(draft)?.status, "DRAFT", "fixture: nothing submitted");
     await new Promise((r) => setTimeout(r, WINDOW));
     assert.equal((await nudgesTo(m, "pm")).length, 0, "the full window applies");
   } finally {
