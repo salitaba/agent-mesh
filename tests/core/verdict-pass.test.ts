@@ -154,7 +154,7 @@ test("a domain nobody else holds anything in says only that nobody holds it", as
 
 // -------------------------------------------------------------------- the tool
 
-test("mesh_approve takes kind, and a pass through it is the declared pass without a note", async () => {
+test("mesh_approve takes kind, and a pass through it is the declared pass with no upgrade to explain", async () => {
   const m = await parked([{ id: "qa2", role: "qa", authority: ["quality.approve", "quality.pass"], capabilities: ["repository.read", "test.execute"], interests: [] }]);
   try {
     const call = caller(m);
@@ -164,7 +164,9 @@ test("mesh_approve takes kind, and a pass through it is the declared pass withou
 
     const asked = await call("qa2", "mesh_approve", { subject: "quality", kind: "pass", comment: "all green" });
     assert.equal(asked.ok, true, JSON.stringify(asked));
-    assert.equal(asked.note, undefined, "asked for directly, there is nothing to explain");
+    // Asked for directly, the verdict word needs no explaining. (These calls are made outside any turn that checked
+    // anything, so the criterion lands ASSERTED and the note says that; `tests/core/pass-evidence.test.ts` pins it.)
+    assert.doesNotMatch(String(asked.note ?? ""), /recorded as your quality\.pass/, "asked for directly, there is no upgrade to explain");
     assert.deepEqual(recorded(m, "qa2").map((r) => r.kind), ["pass"], "and the seat that could have given either gave the one it named");
 
     const approved = await call("qa2", "mesh_approve", { subject: "architecture" });

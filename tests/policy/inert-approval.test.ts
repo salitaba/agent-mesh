@@ -125,6 +125,7 @@ test("approving an artifact that cannot be advanced by any approval also says so
 
     assert.equal(res.ok, true, "still recorded");
     assert.match(res.reason ?? "", /cannot advance/i, "an approval that can never move this type must not read as one that did");
+    assert.doesNotMatch(res.reason ?? "", /move it to review first/, "and it is not sent to a review the release machine does not have");
   } finally {
     await m.cleanup();
   }

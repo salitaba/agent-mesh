@@ -506,6 +506,19 @@ export function approvalPath(type: Artifact["type"], status: ArtifactStatus): Ar
 }
 
 /**
+ * Can this artifact be moved into review from the status it is in?
+ *
+ * What decides whether "move it to review first" is advice or an instruction nobody can follow: a DRAFT has
+ * the move, a FINAL report, an APPROVED patch and a ReleasePlan do not. The eighth cronlite run's QA was
+ * asked to make that move on a FINAL report and the transition was refused
+ * (`illegal_transition_final_to_ready_for_review`).
+ */
+export function canEnterReview(type: Artifact["type"], status: ArtifactStatus): boolean {
+  const allowed = MACHINE_TRANSITIONS[artifactMachineOf(type)][status] ?? [];
+  return allowed.includes("READY_FOR_REVIEW") || allowed.includes("UNDER_REVIEW");
+}
+
+/**
  * Would a verdict of this kind MOVE the artifact, or only record a signature?
  *
  * `approvalPath` alone does not answer this, and the gap is the bug it was

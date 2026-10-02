@@ -652,7 +652,9 @@ intentional: a `<role>.approve` gate token is a signature, and seats legitimatel
 sign artifacts sitting where no approval can advance them. What the op result now
 carries is a caveat saying so, with a route (`move it to review first`; `already
 MERGED — open a revert or publish a new version`), because the silent version let
-a reviewer believe it had rejected shipped code.
+a reviewer believe it had rejected shipped code. The route is named only where it exists: a `DRAFT`
+has a move to review, a `FINAL` report, an `APPROVED` patch and a `ReleasePlan` do not, and a seat that
+passed a `FINAL` report again to close a criterion was told to make it.
 
 ## Trust / provenance classes
 

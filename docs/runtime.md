@@ -727,6 +727,26 @@ tech lead that read a whole artifact twice before approving it produced a criter
 accepted blind and then accepted *again* after a token-cheap `ls` — five extra PM rounds
 in the cronlite run.
 
+**The seat is told when its verdict did not close the criterion.** The gate used to say nothing to the
+seat it downgraded. A `mesh_approve` `pass` (the verdict that evidences `quality-verified` and
+`security-verified`) from a turn that checked nothing was recorded `ASSERTED` and answered `ok`; an
+acceptance told the seat of `ASSERTED` but not of a refusal. Both now carry a `note` on the call:
+`recorded as ASSERTED, not EVIDENCED … in the turn that gives the pass`, and, for an artifact the
+operator rejected when it reopened the mission, `'<criterion>' stays open: <uri> is what the operator
+rejected … publish a new version (asVersionOf) or a new artifact that answers the rejection, and give
+the pass on that` (an acceptance is told to cite). A repeat pass from a turn that did check is the
+repair, so it is not told that a second signature "changes nothing", and a settled report is not told to
+"move it to review first" when it has no such move. In the eighth cronlite run a QA seat's unchecked pass
+left `quality-verified` open with no word of it; the tech lead asked for a second pass on the round-one
+report instead, and the mission completed five and a half minutes later on a verdict about the product as
+it stood before the fix.
+
+A pass also names the artifact it was about, when that artifact is submitted work, so the reopen gate
+below (which compares artifact URIs) can refuse the same artifact twice: it was blind to a verdict that
+carried none. A pass on a draft names none, because the workflow gate would refuse a draft as evidence and
+passing the report one has just published is the commonest pass there is; a draft passed again after a
+reopen is not caught by identity, and still has to be recorded after the reopen.
+
 **A reopen names what it rejects.** `POST /mission/reopen { reason, criteria? }` sends
 the named criteria (every mandatory one when `criteria` is omitted after a verdict) back
 to `UNSATISFIED` and stamps each with `withdrawnAt`: the round they must now be satisfied

@@ -80,7 +80,7 @@ import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingT
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
-import { approvalPath, planCoversHardOp, verdictAdvances } from "./projections-helpers";
+import { approvalPath, canEnterReview, planCoversHardOp, verdictAdvances } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
@@ -1121,6 +1121,27 @@ interface CarriedReviewAsk {
   contract?: string;
   ifUnanswered?: DefaultAnswer;
 }
+
+/**
+ * What `recordCriterionEvidence` did with one piece of evidence. `rejectedUri` is set when it was turned away
+ * because the artifact is the one the operator rejected when it reopened the mission, the one refusal the seat
+ * that offered the artifact can act on and used not to be told; a criterion that is already settled, or that the
+ * mission does not have, is a SKIPPED with nothing to say.
+ */
+interface CriterionRecording {
+  outcome: "EVIDENCED" | "ASSERTED" | "SKIPPED";
+  rejectedUri?: string;
+}
+
+/**
+ * The criterion a `pass` verdict closes, by the authority domain it was given in, and the kind of evidence it
+ * records. Only these two domains have one: a release sign-off or a design pass is not a quality or a security
+ * review.
+ */
+const PASS_CRITERIA = {
+  quality: { criterion: "quality-verified", evidence: "quality-pass" },
+  security: { criterion: "security-verified", evidence: "security-pass" },
+} as const;
 
 /** Most reads one turn records as a publish's inputs — the schema's `inputs.maxItems`. */
 const MAX_ARTIFACT_INPUTS = 20;
@@ -5353,17 +5374,34 @@ export class Supervisor {
     criterionId: string,
     evidence: Goal["acceptanceCriteria"][number]["evidence"][number],
   ): Promise<"EVIDENCED" | "ASSERTED" | "SKIPPED"> {
+    return (await this.recordCriterionEvidence(criterionId, evidence)).outcome;
+  }
+
+  /**
+   * `markCriterionEvidence`, and WHY when the evidence was refused.
+   *
+   * SKIPPED covers a criterion that is already settled and a criterion that does not exist, which need no
+   * word to anyone, and a refusal that does: the artifact is the one the operator rejected when it reopened
+   * the mission. That left the criterion open and the seat that cited the artifact with `ok: true`;
+   * `rejectedUri` is what it must be told about (`criterionNote` words it). An artifact that was never
+   * submitted is refused here too, but the acceptance has already said so by the time it gets this far
+   * (`mandatory-evidence-not-submitted`), and a pass is never offered one.
+   */
+  async recordCriterionEvidence(
+    criterionId: string,
+    evidence: Goal["acceptanceCriteria"][number]["evidence"][number],
+  ): Promise<CriterionRecording> {
     const goalId = this.state.activeGoalId;
-    if (!goalId) return "SKIPPED";
+    if (!goalId) return { outcome: "SKIPPED" };
     const goal = this.state.goals.get(goalId);
-    if (!goal) return "SKIPPED";
+    if (!goal) return { outcome: "SKIPPED" };
     const c = goal.acceptanceCriteria.find((x) => x.id === criterionId);
-    if (!c) return "SKIPPED";
+    if (!c) return { outcome: "SKIPPED" };
     // Already settled: a waiver, or a verdict that still stands. One that is
     // EVIDENCED but no longer satisfies the termination rule (withdrawn by a
     // reopen, yet carrying only the rejected round's evidence) is not settled, and
     // skipping it here would leave a mission no acceptance could ever move.
-    if (c.status === "WAIVED" || (c.status === "EVIDENCED" && criterionSatisfied(goal, c))) return "SKIPPED";
+    if (c.status === "WAIVED" || (c.status === "EVIDENCED" && criterionSatisfied(goal, c))) return { outcome: "SKIPPED" };
     // A reopened criterion cannot be satisfied by the artifact the operator
     // just rejected. Without this the reopen loop is closed: reset status ->
     // agent re-cites the same URI -> EVIDENCED -> watchdog completes again.
@@ -5373,7 +5411,7 @@ export class Supervisor {
       this.auditLine(
         `criterion ${criterionId}: refusing rejected evidence ${uri} — the operator reopened the mission on this artifact; supersede it`,
       );
-      return "SKIPPED";
+      return { outcome: "SKIPPED", rejectedUri: uri };
     }
     // THE VERIFICATION GATE. An unverified claim may still be recorded — the
     // work described may well be real — but it lands as ASSERTED, which no
@@ -5398,14 +5436,14 @@ export class Supervisor {
         this.auditLine(
           `criterion ${criterionId}: refusing ${cited.status} evidence '${cited.name}' — a mandatory criterion needs an artifact that was at least submitted for review`,
         );
-        return "SKIPPED";
+        return { outcome: "SKIPPED" };
       }
     }
     if (!verified && c.status === "ASSERTED") {
       // Already on the record and nothing changed: re-asserting the same
       // unverified claim every turn must not spam the log.
       this.auditLine(`criterion ${criterionId}: repeat unverified claim by ${evidence.by} ignored (still ASSERTED)`);
-      return "ASSERTED";
+      return { outcome: "ASSERTED" };
     }
     if (!verified) {
       this.auditLine(
@@ -5424,7 +5462,29 @@ export class Supervisor {
     const updated = goal.acceptanceCriteria.filter((x) => x.mandatory && (x.status === "EVIDENCED" || x.status === "WAIVED")).length;
     const total = goal.acceptanceCriteria.filter((x) => x.mandatory).length;
     await this.deps.kernel.emit("goal.progress", { completed: updated, total, ratio: total ? updated / total : 0 }, { goalId });
-    return verified ? "EVIDENCED" : "ASSERTED";
+    return { outcome: verified ? "EVIDENCED" : "ASSERTED" };
+  }
+
+  /**
+   * What the seat that gave a verdict or an acceptance is told when it did not close the criterion it was
+   * given for. Both ways it can fail were silent to it: a claim from a turn that checked nothing lands
+   * ASSERTED, and evidence the operator rejected is refused. The op said `ok: true`, the seat reported the
+   * criterion done, and the next seat to read the status asked for the work again.
+   *
+   * `how` is the act in the seat's own words: `giving` finishes "in the turn that …" and `naming` is what it
+   * does with an artifact to put it forward ("cite" for an acceptance, "give the pass on" for a pass).
+   */
+  private criterionNote(criterionId: string, r: CriterionRecording, how: { giving: string; naming: string }): string | undefined {
+    if (r.outcome === "ASSERTED") {
+      return `recorded as ASSERTED, not EVIDENCED: this turn invoked no verification tool, so nothing was checked — '${criterionId}' still does not count toward completion. Run the check (read the artifact, execute the tests, inspect the workspace) in the turn that ${how.giving}.`;
+    }
+    if (r.rejectedUri) {
+      return (
+        `'${criterionId}' stays open: ${r.rejectedUri} is what the operator rejected when it reopened the mission, so it cannot close the criterion again. ` +
+        `Supersede it: publish a new version (asVersionOf) or a new artifact that answers the rejection, and ${how.naming} that.`
+      );
+    }
+    return undefined;
   }
 
   async requestApproval(artifactId: string, roleOrAgent: string): Promise<SendResult> {
@@ -5632,7 +5692,7 @@ export class Supervisor {
         { actorId, goalId },
       );
       await this.auditTransition(artifactId, evt.id, goalId, undefined, actorId, before);
-      const landed = await this.markCriterionEvidence(criterionId, {
+      const landed = await this.recordCriterionEvidence(criterionId, {
         kind: "criteria-acceptance",
         artifactRef: artifact ? { uri: artifactUri(artifact.type, artifact.name, artifact.version) } : undefined,
         eventId: evt.id,
@@ -5642,14 +5702,8 @@ export class Supervisor {
       // The acceptance was recorded either way, so this is not a failure — but
       // the agent MUST learn that the criterion is not closed, or it will
       // report the mission done and go idle on an unproven claim.
-      if (landed === "ASSERTED") {
-        return {
-          ok: true,
-          eventId: evt.id,
-          reason:
-            `recorded as ASSERTED, not EVIDENCED: this turn invoked no verification tool, so nothing was checked — '${criterionId}' still does not count toward completion. Run the check (read the artifact, execute the tests, inspect the workspace) in the turn that accepts it.`,
-        };
-      }
+      const note = this.criterionNote(criterionId, landed, { giving: "accepts it", naming: "cite" });
+      if (note) return { ok: true, eventId: evt.id, reason: note };
       return { ok: true, eventId: evt.id };
     }
     // A verdict naming an artifact the mesh does not hold is refused, not
@@ -5775,7 +5829,11 @@ export class Supervisor {
               // review first" was what the sixth run's tech-lead was told, after it approved the CLI patch it had
               // rejected; the developer was never asked, and the mission completed without the CLI.
               `the verdict is recorded, but ${artifact.type} "${artifact.name}" is REJECTED and an approval cannot advance it: a rejected artifact goes back to DRAFT and only its owner (${artifact.owner}) can move it, so ask ${artifact.owner} to rework it (a new version with asVersionOf, then a review request) if you now want the work`
-            : `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and an approval cannot advance it from there — move it to review first if you meant to approve the work`
+            : // The route is named only where there is one: a FINAL report has no move to review, and a seat that
+              // passes it again to close a criterion its first pass left ASSERTED must not be sent to find one.
+              `the verdict is recorded, but ${artifact.type} "${artifact.name}" is ${artifact.status} and an approval cannot advance it from there${
+                canEnterReview(artifact.type, artifact.status) ? " — move it to review first if you meant to approve the work" : ""
+              }`
         : undefined;
     // The same seat, the same verdict, the same version, and nothing moves. pm
     // signed one v1 three times in the 2026-09-25 run. Still recorded — a repeat
@@ -5802,7 +5860,6 @@ export class Supervisor {
       selfSettled && artifact
         ? `no other seat could review this ${artifact.type}, so your own approval settled it — it stands, recorded as an approval by its author, and the run report lists it as self-approved`
         : undefined;
-    const caveat = [inertApproval, repeatNote, selfNote, passNote].filter(Boolean).join("; ") || undefined;
     let type: EventType;
     if (kind === "approve" || kind === "pass") type = "review.approved";
     else if (kind === "reject" || kind === "veto") type = "review.rejected";
@@ -5881,17 +5938,40 @@ export class Supervisor {
     // Nothing pinned the old mapping: the one test in this area
     // (`supervisor-turn.test.ts:569`) passes `subject: "security"`, which is
     // the separate branch below and is unaffected.
-    if (kind === "pass" && domain === "quality") {
-      await this.markCriterionEvidence("quality-verified", {
-        kind: "quality-pass",
+    //
+    //
+    // The pass names the artifact it was about, when that artifact is submitted work. A verdict with
+    // no artifact on it is invisible to the gate that keeps a reopened mission from closing on what
+    // the operator rejected (`rejectedEvidence` is a list of artifact URIs): `architecture-approved`
+    // and the acceptances carry theirs, these two did not, so a QA seat could pass the patch the
+    // operator had just rejected and close `quality-verified` unchanged. A draft or a rejected
+    // artifact is left off on purpose: the workflow gate would refuse it as evidence, and passing
+    // the report one has just published, still a draft, is the commonest pass there is (3 of the 7
+    // in the sixth to eighth live runs) and has always closed the criterion.
+    //
+    // The seat is told when the pass did not close the criterion. A pass from a turn that ran no
+    // check lands ASSERTED and said nothing: the eighth run's QA gave one on its defect report and
+    // reported the verdict recorded; the tech lead, still seeing `quality-verified` open, asked it to
+    // move that report back to review (it was FINAL, so the move was refused) and then to pass the
+    // round-one report instead, which closed the mission five and a half minutes later on a verdict
+    // about the product as it stood before the fix (45 tests at a775df9, not 61 at 3e9617a).
+    const passFor = kind === "pass" && (domain === "quality" || domain === "security") ? PASS_CRITERIA[domain] : undefined;
+    let closedByThis = false;
+    let criterionTold: string | undefined;
+    if (passFor) {
+      const submitted = !!moved && moved.status !== "DRAFT" && moved.status !== "REJECTED";
+      const landed = await this.recordCriterionEvidence(passFor.criterion, {
+        kind: passFor.evidence,
+        ...(moved && submitted ? { artifactRef: { uri: artifactUri(moved.type, moved.name, moved.version) } } : {}),
         by: actorId,
         recordedAt: this.deps.kernel.clock.iso(),
       });
+      closedByThis = landed.outcome === "EVIDENCED";
+      criterionTold = this.criterionNote(passFor.criterion, landed, { giving: "gives the pass", naming: "give the pass on" });
     }
-    if (kind === "pass" && domain === "security") {
-      await this.markCriterionEvidence("security-verified", { kind: "security-pass", by: actorId, recordedAt: this.deps.kernel.clock.iso() });
-    }
-    return { ok: true, eventId: evt.id, reason: caveat };
+    // A second signature "changes nothing" unless it is the one that closed the criterion.
+    const told = [inertApproval, closedByThis ? undefined : repeatNote, selfNote, passNote, criterionTold].filter(Boolean).join("; ") || undefined;
+    return { ok: true, eventId: evt.id, reason: told };
   }
 
   private domainOfSubject(subject: string, artifactId?: string): string {
