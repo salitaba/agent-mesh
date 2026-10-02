@@ -1219,6 +1219,12 @@ export interface ApprovalRecord {
   goalId: GoalId;
   kind: ApprovalKind;
   subject: string;
+  /**
+   * What the seat said it was ruling on, when `subject` is the artifact's own (`artifact:<id>`): a verdict that
+   * names an artifact is recorded under the artifact, and `quality` is only what the seat called it. Read to
+   * tell that a pass on a report is a sign-off of the subject a block was on.
+   */
+  domainSubject?: string;
   artifactId?: ArtifactId;
   artifactRef?: ArtifactRef;
   actorId: AgentId;

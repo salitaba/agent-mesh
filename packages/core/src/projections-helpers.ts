@@ -825,6 +825,7 @@ export function recordApproval(
     goalId: event.goalId ?? state.activeGoalId ?? "",
     kind: kind as any,
     subject,
+    ...(typeof p.fallbackSubject === "string" && p.fallbackSubject !== subject ? { domainSubject: p.fallbackSubject } : {}),
     artifactId: p.artifactId,
     artifactRef: p.artifactRef,
     actorId: p.actorId ?? event.actorId ?? "unknown",
@@ -1029,7 +1030,8 @@ export function checkApprovals(
  *    later `pass` releases nothing.
  *  - A block on a SUBJECT with no artifact (QA's `quality`) sinks that seat's earlier sign-off in
  *    every gate that names it, until the same seat signs off again (`alternativeStatus` reads it
- *    that way). Only the blocker can lift it, by re-verifying and passing.
+ *    that way). Only the blocker can lift it, by re-verifying and passing. A pass that names a report
+ *    is that sign-off: it is recorded under the report, with `quality` kept as `domainSubject`.
  *
  * Read by the stall watchdog, which used to wake whichever seat had mail and say nothing of the
  * block: in the second cronlite run QA's block stood for ten minutes of nudges to the tech-lead,
@@ -1045,12 +1047,27 @@ export function standingBlocks(state: Projections): StandingBlock[] {
   // One hold per seat, subject and artifact: a seat that blocks the same thing again has
   // restated its block, not added a second one, and the latest record is the one that stands.
   const latest = new Map<string, ApprovalRecordOf>();
+  // When each seat last signed each subject off. A verdict that names an artifact is recorded under the
+  // artifact's own subject and keeps the subject the seat named in `domainSubject`; both are the seat
+  // signing that subject off. Read by subject alone, QA's pass on its test report did not lift QA's block
+  // on `quality`: the twelfth run's watchdog woke QA to "lift" a block it had passed over 80 seconds
+  // before, and not the pm that had to accept.
+  const signedOff = new Map<string, string>();
   for (const list of state.approvals.values()) {
     for (const r of list) {
-      if (r.kind !== "block") continue;
-      const key = `${r.actorId}|${r.subject}|${r.artifactId ?? ""}`;
-      const seen = latest.get(key);
-      if (!seen || r.recordedAt > seen.recordedAt) latest.set(key, r);
+      if (r.kind === "block") {
+        const key = `${r.actorId}|${r.subject}|${r.artifactId ?? ""}`;
+        const seen = latest.get(key);
+        if (!seen || r.recordedAt > seen.recordedAt) latest.set(key, r);
+        continue;
+      }
+      if (r.kind !== "approve" && r.kind !== "pass" && r.kind !== "accept" && r.kind !== "merge") continue;
+      for (const subject of [r.subject, r.domainSubject]) {
+        if (!subject) continue;
+        const key = `${r.actorId}|${subject}`;
+        const seen = signedOff.get(key);
+        if (!seen || r.recordedAt > seen) signedOff.set(key, r.recordedAt);
+      }
     }
   }
   const out: StandingBlock[] = [];
@@ -1062,10 +1079,8 @@ export function standingBlocks(state: Projections): StandingBlock[] {
       out.push({ record: r, artifact });
       continue;
     }
-    const signedOffSince = ["approve", "pass", "accept", "merge"].some((kind) =>
-      (state.approvals.get(approvalKey(r.subject, kind)) ?? []).some((s) => s.actorId === r.actorId && s.recordedAt > r.recordedAt),
-    );
-    if (!signedOffSince) out.push({ record: r });
+    const signed = signedOff.get(`${r.actorId}|${r.subject}`);
+    if (!(signed !== undefined && signed > r.recordedAt)) out.push({ record: r });
   }
   return out.sort((a, b) => a.record.recordedAt.localeCompare(b.record.recordedAt));
 }

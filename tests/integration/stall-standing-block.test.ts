@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor, evidenceContent } from "../helpers";
-import { standingBlocks } from "../../packages/core/src/projections-helpers";
+import { standingBlocks, recordApproval } from "../../packages/core/src/projections-helpers";
 import type { ActivationReason, MeshOp } from "../../packages/protocol/src/index";
 
 /**
@@ -29,6 +29,15 @@ const ALL = AGENTS.map((a) => a.id);
 const COMM = Object.fromEntries(ALL.map((id) => [id, ALL.filter((o) => o !== id)]));
 const CRITERIA = [{ id: "never", description: "never evidenced here, so the mission always has work", mandatory: true }];
 
+/** The cronlite team's shape: nobody but QA holds the quality authority or the test capabilities, so QA may pass the report it wrote. */
+const SOLO_QA = AGENTS.map((a) =>
+  a.id === "lead"
+    ? { ...a, authority: ["implementation.approve"] }
+    : a.id === "qa"
+      ? { ...a, capabilities: ["repository.read", "test.execute", "test.write"] }
+      : a,
+);
+
 type Mesh = Awaited<ReturnType<typeof makeMesh>>;
 
 interface StallInternals {
@@ -46,12 +55,12 @@ const turnFor = (agentId: string) =>
 const op = (m: Mesh, actorId: string, o: MeshOp) => m.supervisor.executeOp(actorId, o, turnFor(actorId));
 
 /** A live mesh whose seats only record the wake they were handed and wait. Stall timers are inert. */
-async function mesh(startup: string[] = []) {
+async function mesh(startup: string[] = [], criteria: Array<{ id: string; description: string; mandatory: boolean }> = CRITERIA, agents: typeof AGENTS = AGENTS) {
   const m = await makeMesh({
-    agents: AGENTS,
+    agents,
     mayContact: COMM,
     startup,
-    criteria: CRITERIA,
+    criteria,
     mode: "parked",
     stallIdleMs: 60_000,
     stallCooldownMs: 300_000,
@@ -255,6 +264,101 @@ test("a block the blocker has signed off since holds nothing, so the nudge is th
     await tick(m, nudges, 1);
     assert.doesNotMatch(nudges[0]!.note, /BLOCK/, "nothing stands, so nothing is named");
     assert.match(nudges[0]!.note, /drive the next step toward an unmet criterion/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+// ------------------------------------------------------------- a pass that names a report signs the subject off
+
+/** A TestReport `owner` wrote and has not submitted: what a pass that names it puts forward. */
+async function draftReport(m: Mesh, owner: string, name: string): Promise<string> {
+  const created = await m.supervisor.createArtifact({ actorId: owner, name, type: "TestReport", content: evidenceContent(name) });
+  if (!("artifact" in created)) throw new Error(`create failed: ${JSON.stringify(created)}`);
+  return created.artifact.id;
+}
+
+/** A verdict as `recordDecision` emits it for a named artifact: recorded under the artifact, the subject kept beside it. */
+function artifactVerdict(m: Mesh, kind: "pass" | "approve", actorId: string, artifactId: string, domain: string, at: string): void {
+  const event = { id: `evt-${actorId}-${domain}-${at}`, timestamp: at } as never;
+  recordApproval(m.kernel.state, { subject: `artifact:${artifactId}`, fallbackSubject: domain, kind, artifactId, actorId, actorRole: actorId }, event, kind);
+}
+
+/**
+ * The twelfth cronlite run (2026-10-02). QA blocked `quality` at 16:55:50 (it had tested a main that held the test suite and the
+ * stubs, and not the implementation, which was still waiting for its merge) and passed it at 17:00:25, naming its new test report.
+ * `quality-verified` was evidenced by that pass, and the watchdog still said "qa's BLOCK on quality still stands", because the pass
+ * was recorded under `artifact:art-…` and the block's sign-off was looked up under `quality`. At 17:01:44 it woke QA to lift a block
+ * QA had passed over 80 seconds earlier, instead of the pm that had to accept the two criteria left; QA tried a contract called
+ * `criterion:library-contract-met`, and the pm's own timer was the first thing to wake it, 4 min 19 s after the report was FINAL.
+ */
+test("a pass that names QA's test report is QA signing quality off: it lifts QA's own block on quality", async () => {
+  const { m } = await mesh([], CRITERIA, SOLO_QA);
+  try {
+    assert.equal((await qaBlocksQuality(m)).ok, true);
+    assert.equal(standingBlocks(m.kernel.state).length, 1, "fixture: the block stands");
+
+    const report = await draftReport(m, "qa", "QA report");
+    await new Promise((r) => setTimeout(r, 5));
+    const passed = await m.supervisor.recordDecision("qa", "pass", "quality", report, "ran the suite: 31/31");
+    assert.equal(passed.ok, true, passed.reason);
+    const record = [...m.kernel.state.approvals.values()].flat().find((r) => r.kind === "pass" && r.actorId === "qa");
+    assert.equal(record?.subject, `artifact:${report}`, "fixture: the verdict is recorded under the report");
+    assert.equal(record?.domainSubject, "quality", "and keeps the subject QA named");
+    assert.deepEqual(standingBlocks(m.kernel.state), [], "the block is lifted");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("only the blocker's own later sign-off of the same subject lifts a block, whatever it names", async () => {
+  const { m } = await mesh();
+  try {
+    // QA signs quality off with a report BEFORE it blocks: the block is the later word.
+    const earlier = await draftReport(m, "qa", "earlier report");
+    artifactVerdict(m, "pass", "qa", earlier, "quality", "2026-10-02T16:00:00.000Z");
+    assert.equal((await qaBlocksQuality(m)).ok, true);
+    assert.equal(standingBlocks(m.kernel.state).length, 1, "a sign-off from before the block lifts nothing");
+
+    // Another seat signs quality off on a report: the gates read the blocker's own sign-off.
+    const other = await draftReport(m, "qa", "report the lead rules on");
+    artifactVerdict(m, "approve", "lead", other, "quality", "2999-01-01T00:00:00.000Z");
+    assert.equal(standingBlocks(m.kernel.state).length, 1, "another seat's approval of a report does not lift qa's block");
+
+    // QA signs a different subject off, on a report: that is not quality.
+    artifactVerdict(m, "pass", "qa", other, "security", "2999-01-01T00:00:01.000Z");
+    assert.equal(standingBlocks(m.kernel.state).length, 1, "a sign-off of another subject does not lift a block on quality");
+
+    // QA signs quality off on a report, afterwards: lifted.
+    artifactVerdict(m, "pass", "qa", other, "quality", "2999-01-01T00:00:02.000Z");
+    assert.deepEqual(standingBlocks(m.kernel.state), [], "its own later sign-off of the subject lifts it");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("after QA's pass on its report the watchdog nudges the seat that has to accept, not QA, and names no block", async () => {
+  const criteria = [
+    { id: "quality-verified", description: "the tests pass", mandatory: true },
+    { id: "contract-met", description: "the product does what the goal says, shown by a QA report", mandatory: true },
+  ];
+  const { m, nudges } = await mesh([], criteria, SOLO_QA);
+  try {
+    assert.equal((await qaBlocksQuality(m)).ok, true);
+    const report = await draftReport(m, "qa", "QA report");
+    await new Promise((r) => setTimeout(r, 5));
+    const passed = await m.supervisor.recordDecision("qa", "pass", "quality", report, "ran the suite: 31/31");
+    assert.equal(passed.ok, true, passed.reason);
+    const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId!)!;
+    assert.equal(goal.acceptanceCriteria.find((c) => c.id === "quality-verified")?.status, "EVIDENCED", "fixture: only the acceptance is left");
+    await m.goLive();
+    await idle(m, "go-live to settle");
+
+    await tick(m, nudges, 1);
+    assert.equal(nudges[0]!.agent, "pm", "the one seat that can close contract-met; qa has nothing to lift");
+    assert.doesNotMatch(nudges[0]!.note, /BLOCK/, "the block was passed over");
+    assert.match(nudges[0]!.note, /contract-met/);
+    assert.match(nudges[0]!.note, /Submitted and citable: TestReport "QA report"/, "and it is shown the report to cite");
   } finally {
     await m.cleanup();
   }
