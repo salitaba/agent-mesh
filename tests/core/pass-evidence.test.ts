@@ -249,12 +249,13 @@ for (const s of SCENARIOS) {
 }
 
 test("a pass on a draft closes the criterion as it always did, and names no artifact", async () => {
-  // QA passing the report it has just published, still a draft, is the commonest pass there is (3 of the 7
-  // in the sixth to eighth live runs). The workflow gate refuses a draft as evidence, so naming one would
-  // have left `quality-verified` open on the verdict the criterion is named for.
+  // Passing a report that is still a draft was the commonest pass there is (5 of the 9 in the sixth to ninth live runs).
+  // The workflow gate refuses a draft as evidence, so naming one would have left `quality-verified` open on the verdict the
+  // criterion is named for. (A draft the passer wrote is now submitted by the pass: tests/core/own-report-pass.test.ts. The
+  // draft here is another seat's, which the pass leaves alone.)
   const m = await mesh([{ id: "quality-verified", description: "the tests pass", mandatory: true }]);
   try {
-    const draft = await publish(m, "qa", "draft report", "TestReport", true);
+    const draft = await publish(m, "dev", "draft report", "TestReport", true);
     assert.equal(m.kernel.state.artifacts.get(draft)?.status, "DRAFT", "fixture");
     const res = await m.supervisor.recordDecision("qa", "pass", "quality", draft, "all green");
     assert.equal(res.ok, true, res.reason);

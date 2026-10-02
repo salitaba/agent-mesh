@@ -5594,7 +5594,9 @@ export class Supervisor {
     if (frozen) return { ok: false, reason: frozen };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
     const domain = this.domainOfSubject(subject, artifactId);
-    const artifact = artifactId ? this.state.artifacts.get(artifactId) : undefined;
+    // `let`: a seat that passes the report it wrote submits it first (below), and a transition replaces the
+    // artifact object rather than editing it.
+    let artifact = artifactId ? this.state.artifacts.get(artifactId) : undefined;
     if (subject.startsWith("criterion:") && (kind === "approve" || kind === "accept")) {
       const criterionId = subject.slice("criterion:".length);
       if (!artifactId && !comment) {
@@ -5770,6 +5772,19 @@ export class Supervisor {
         return { ok: false, reason };
       }
     }
+    // A seat that passes the verification report it wrote has put it forward as the evidence of its verdict,
+    // so it is submitted with the pass. Left a DRAFT, the pass could not settle it ("move it to review first"
+    // was the reply, to a seat whose business was the product, not the report), and a DRAFT is invisible to
+    // every other seat and refused as evidence: in the ninth run the pm and the architect spent six turns and
+    // four minutes asking for a test report that QA had published and passed three minutes before, and then
+    // waited a QA turn to have it submitted. Runs 7 and 8 lost one to two minutes the same way, and five of
+    // the nine passes in runs 6 to 9 were given on a draft, every one on the report QA itself had just written. The owner may submit it (this is its own
+    // transition, under the same gates), and only after every refusal above, so a pass that is refused
+    // submits nothing.
+    if (kind === "pass" && artifact && artifact.status === "DRAFT" && artifact.owner === actorId && VERIFICATION_ARTIFACT_TYPES.includes(artifact.type)) {
+      const submitted = await this.transitionArtifact(actorId, artifact.id, { to: "READY_FOR_REVIEW", comment: `submitted with ${actorId}'s own ${domain} pass` });
+      if (submitted.ok) artifact = this.state.artifacts.get(artifact.id) ?? artifact;
+    }
     const payload = {
       subject: artifactId ? `artifact:${artifactId}` : subject,
       fallbackSubject: subject,
@@ -5944,9 +5959,10 @@ export class Supervisor {
     // the operator rejected (`rejectedEvidence` is a list of artifact URIs): `architecture-approved`
     // and the acceptances carry theirs, these two did not, so a QA seat could pass the patch the
     // operator had just rejected and close `quality-verified` unchanged. A draft or a rejected
-    // artifact is left off on purpose: the workflow gate would refuse it as evidence, and passing
-    // the report one has just published, still a draft, is the commonest pass there is (3 of the 7
-    // in the sixth to eighth live runs) and has always closed the criterion.
+    // artifact is left off on purpose: the workflow gate would refuse it as evidence, and a pass
+    // given on a draft has always closed the criterion (5 of the 9 passes in the sixth to ninth live
+    // runs were on one). Since a seat that passes the report it wrote now submits it first (above), what
+    // is left here is a draft some other seat wrote, or a report that was rejected.
     //
     // The seat is told when the pass did not close the criterion. A pass from a turn that ran no
     // check lands ASSERTED and said nothing: the eighth run's QA gave one on its defect report and
