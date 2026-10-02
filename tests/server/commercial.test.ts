@@ -138,6 +138,8 @@ test("usage export: CSV and JSON, a bad query is the caller's 400, and the answe
       actorId: "system",
       payload: { agentId: "a", model: "claude-haiku-4-5-20251001", amount: 1200, key: "agent:g/a", input: 100, output: 200, cacheRead: 5000 },
     } as never);
+    // An append is visible in memory at once and reaches the file after it; /usage reads the file, so the test waits for the write.
+    await m.store.flush?.();
     const json = await call(base, "GET", "/usage?by=model");
     assert.equal(json.status, 200);
     assert.match(json.json.note, /Tokens are exact/);
@@ -178,6 +180,7 @@ test("a single mesh prices /usage from the same host.yaml `mesh usage` reads, so
           payload: { agentId: "a", model, amount: 1200, key: "agent:g/a", input: 100, output: 200, cacheRead: 5000 },
         } as never);
       }
+      await m.store.flush?.(); // /usage reads the file, which an append reaches after it is visible in memory
       const r = await call(base, "GET", "/usage?by=model");
       assert.equal(r.status, 200);
       const cost = Object.fromEntries(r.json.rows.map((x: { model: string; costUsd: number | null }) => [x.model, x.costUsd]));
