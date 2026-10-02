@@ -20,7 +20,7 @@ import {
   effectiveHardActions,
   artifactScope,
   obligesRecipients, movesWork } from "../../protocol/src/catalog";
-import { BUILTIN_CONTRACTS, contractForMessageType, findContract } from "../../protocol/src/contracts";
+import { BUILTIN_CONTRACTS, contractForMessageType, describeRequestShape, findContract } from "../../protocol/src/contracts";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { loadRolePrompt } from "../../config/src/index";
 import type { Kernel } from "./kernel";
@@ -2040,7 +2040,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       // so the ones a seat looks for a tool by name for. Named by its TOOL,
       // since that is what the seat's list holds.
       const alsoOp = c.desugarsTo === "send" ? "" : ` / \`${DESUGARED_OP_TOOL[c.desugarsTo]}\``;
-      lines.push(`- \`${c.messageType}\`${alsoOp} → \`mesh_call ${c.name}\` — ${c.summary}`);
+      lines.push(`- \`${c.messageType}\`${alsoOp} → \`mesh_call ${c.name}\` (request: ${describeRequestShape(c.request)}) — ${c.summary}`);
     }
     lines.push(
       "Anything your brief tells you to report, announce, or hand over that nobody has to answer is `mesh_announce` — it obliges no one and wakes no one: a seat reads it the next time it takes a turn, so it is for what can wait. What a seat must act on (a patch to rework, a blocker, something to merge) is a `mesh_call` to that seat, which does wake it. An answer to an ask is `mesh_reply`, naming the message you are answering.",

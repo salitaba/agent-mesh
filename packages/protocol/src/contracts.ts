@@ -310,6 +310,41 @@ export const BUILTIN_CONTRACTS: readonly Contract[] = Object.freeze([
   },
 ]);
 
+/**
+ * The request a contract takes, in one short line a seat can write a call from: `{ ask, to?: […], subject? }`.
+ *
+ * Derived from the contract's own request schema and never kept beside it, so a contract that changes its request changes what
+ * the seat is told. A required property is its bare name, an optional one carries `?`, an array carries `: […]` (the seat's
+ * mistake is a string where a list goes: `to: "developer"`), and properties of which one of several must be given (an `anyOf` of
+ * single `required`s, as `review.artifact` takes `artifact` or `artifactId`) are written `a | b` once, where the first of them
+ * stands.
+ *
+ * The thirteenth cronlite run's pm, architect, QA (twice) and tech lead (twice) each called `work.request` with `{title,
+ * description, to}` or `{task, description}`: the briefing listed the contract by name and summary and said nothing of what it
+ * takes, and `mesh_contracts`, which does, was never called. The refusal names the expected schema and every seat recovered, at a
+ * round trip each.
+ */
+export function describeRequestShape(schema: Record<string, unknown>): string {
+  const props = (schema.properties ?? {}) as Record<string, { type?: unknown }>;
+  const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
+  const named = (Array.isArray(schema.anyOf) ? (schema.anyOf as Array<{ required?: unknown }>) : [])
+    .flatMap((branch) => (Array.isArray(branch.required) && branch.required.length === 1 ? [String(branch.required[0])] : []))
+    .filter((name) => name in props && !required.has(name));
+  // One name left is not a choice: the rest of the schema already settled the other branch.
+  const alternatives = named.length > 1 ? named : [];
+  const parts: string[] = [];
+  let alternativesWritten = false;
+  for (const [name, def] of Object.entries(props)) {
+    if (alternatives.includes(name)) {
+      if (!alternativesWritten) parts.push(alternatives.join(" | "));
+      alternativesWritten = true;
+      continue;
+    }
+    parts.push(`${name}${required.has(name) ? "" : "?"}${def?.type === "array" ? ": […]" : ""}`);
+  }
+  return parts.length > 0 ? `{ ${parts.join(", ")} }` : "{ }";
+}
+
 export function findContract(name: string): Contract | undefined {
   if (typeof name !== "string") return undefined;
   const wanted = name.trim().toLowerCase();

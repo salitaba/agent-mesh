@@ -278,6 +278,16 @@ promise that a seat can reach a hidden tool: a client that checks names against 
 list it was given (Claude Code) refuses the call before it is sent, so the briefing
 names only what the manifest carries. See `docs/configuration.md`.
 
+Under that vocabulary the briefing lists every contract with the request it takes, as the seat
+would write it: `mesh_call work.request` (request: { ask, to?: […], subject? }). The line is
+derived from the contract's own request schema (`describeRequestShape` in `contracts.ts`), never
+kept beside it: a required property is its bare name, an optional one carries `?`, a list carries
+`: […]`, and a choice of names (`review.artifact` takes `artifact` or `artifactId`) is written
+`a | b`. The thirteenth cronlite run's pm, architect, QA (twice) and tech lead (twice) each called
+`work.request` with `{title, description, to}` or `{task, description}`: the line named the contract
+and its summary and nothing of what it takes, and `mesh_contracts`, which says, was never called.
+The refusal names the expected schema and every seat recovered, at a round trip each.
+
 ### Evidence for a criterion
 
 A mandatory criterion closes by `approve subject:"criterion:<id>"` from a seat holding

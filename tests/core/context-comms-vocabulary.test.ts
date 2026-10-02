@@ -223,3 +223,25 @@ test("the style reaches the bundle, and only from low-contact", async () => {
     }
   }
 });
+
+test("each contract's line says what request it takes, so a seat does not guess one", () => {
+  const text = renderContextInstructions(bundle({ commsVocabulary: "contracts" }));
+  const lines = text.split("\n").filter((l) => l.startsWith("- `") && l.includes("→ `mesh_call "));
+  // The thirteenth cronlite run's pm, architect, QA and tech lead called `work.request` six times with {title, description, to} or
+  // {task, description}: the line named the contract and summarised it and said nothing of the request it takes.
+  const line = (name: string): string => lines.find((l) => l.includes(`\`mesh_call ${name}\``)) ?? "";
+  assert.match(line("work.request"), /→ `mesh_call work\.request` \(request: \{ ask, to\?: \[…\], subject\? \}\) — /, "a required ask, and the list a string is not");
+  assert.match(line("review.artifact"), /\(request: \{ artifact \| artifactId, reviewers\?: \[…\], note\? \}\)/, "one of two names, written once");
+  assert.match(line("research.question"), /\(request: \{ question, to\?, artifactRefs\?: \[…\] \}\)/, "`to` is one seat here, not a list");
+  assert.match(line("decision.challenge"), /\(request: \{ claim, reason, to\?: \[…\] \}\)/, "two required");
+  for (const c of BUILTIN_CONTRACTS) {
+    const props = Object.keys((c.request.properties ?? {}) as Record<string, unknown>);
+    const shown = line(c.name);
+    assert.ok(shown.includes("(request: {"), `${c.name}: no request shape`);
+    for (const p of props) assert.ok(new RegExp(`\\b${p}\\b`).test(shown.slice(0, shown.indexOf(" — "))), `${c.name}: \`${p}\` is not in the line`);
+  }
+});
+
+test("a typed mesh's prompt carries no request shapes: the section is not rendered there", () => {
+  assert.equal(renderContextInstructions(bundle()).includes("(request: {"), false);
+});
