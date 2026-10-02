@@ -5939,7 +5939,6 @@ export class Supervisor {
     // (`supervisor-turn.test.ts:569`) passes `subject: "security"`, which is
     // the separate branch below and is unaffected.
     //
-    //
     // The pass names the artifact it was about, when that artifact is submitted work. A verdict with
     // no artifact on it is invisible to the gate that keeps a reopened mission from closing on what
     // the operator rejected (`rejectedEvidence` is a list of artifact URIs): `architecture-approved`
