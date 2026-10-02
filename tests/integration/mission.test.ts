@@ -31,7 +31,7 @@ function patchUri(sim: { patchName: string; patchVersion: number }): string {
   return `artifact://CodePatch/${sim.patchName}/${sim.patchVersion}`;
 }
 
-test("integration: the Â§30 mission converges without a predefined workflow", async () => {
+test("integration: the §30 mission converges without a predefined workflow", async () => {
   const m = await makeMesh({
     agents: MISSION_AGENTS,
     mayContact: COMM,
@@ -322,7 +322,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
   assert.ok(at("requirements.created") < at("message.sent"), "requirements precede downstream traffic");
   assert.ok(at("research.requested") >= 0, "architect consulted explorer");
   assert.ok(at("architecture.approved") > at("research.completed"), "architecture after research");
-  assert.ok(at("task.claimed") > at("architecture.approved"), "developer claimed after approval â€” emergent, not scripted");
+  assert.ok(at("task.claimed") > at("architecture.approved"), "developer claimed after approval — emergent, not scripted");
   assert.ok(at("patch.ready") > at("task.claimed"));
   assert.ok(at("review.rejected") >= 0 || [...m.kernel.state.approvals.keys()].some((k) => k.endsWith("::block")), "first QA block observed");
   assert.ok(at("patch.merged") > at("patch.ready"), "rework followed the block");
@@ -337,7 +337,7 @@ test("integration: the Â§30 mission converges without a predefined workflow", 
   await m.cleanup();
 });
 
-test("integration: explorer cache answers repeat research without waking the model (Â§26)", async () => {
+test("integration: explorer cache answers repeat research without waking the model (§26)", async () => {
   const m = await makeMesh({
     agents: [
       { id: "arch", role: "architect", capabilities: ["repository.read"], interests: [] },

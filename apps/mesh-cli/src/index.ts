@@ -710,14 +710,14 @@ export async function main(argv: string[]): Promise<number> {
           async () => ({ status: 200, body: await offlineStatus(args) }),
         );
         const st = result.body;
-        const bar = (ratio: number) => "â–ˆ".repeat(Math.round(ratio * 20)).padEnd(20, "â–‘");
+        const bar = (ratio: number) => "█".repeat(Math.round(ratio * 20)).padEnd(20, "░");
         console.log(`Goal:      ${st.goal?.description?.split("\n")[0]?.slice(0, 60) ?? "(none)"} [${st.goal?.status ?? "-"}]`);
         console.log(`Progress:  ${bar(st.progress?.ratio ?? 0)} ${Math.round((st.progress?.ratio ?? 0) * 100)}%`);
         const tokens = st.budgets?.find?.((b: any) => b.key.startsWith("mission:"));
         console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}`);
         console.log("");
         for (const a of st.agents ?? []) {
-          const dot = ["THINKING", "WORKING", "REQUESTING", "AWAKENED", "OBSERVING", "REVIEWING"].includes(a.lifecycle) ? "â—" : "â—‹";
+          const dot = ["THINKING", "WORKING", "REQUESTING", "AWAKENED", "OBSERVING", "REVIEWING"].includes(a.lifecycle) ? "●" : "○";
           console.log(`  ${dot} ${a.id.padEnd(14)} ${a.lifecycle.padEnd(11)} mailbox:${String(a.mailbox).padStart(2)}  tokens:${a.tokens}`);
         }
         if (st.openEscalations?.length) {

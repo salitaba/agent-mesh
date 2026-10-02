@@ -1767,7 +1767,7 @@ export class Supervisor {
     return this.activeTurnByAgent.get(agentId);
   }
 
-  // ---------------------------------------------------------------- boot (Â§63)
+  // ---------------------------------------------------------------- boot (§63)
 
   async boot(opts: {
     resume?: boolean;
@@ -1856,7 +1856,7 @@ export class Supervisor {
       const createdMs = active ? Date.parse(active.createdAt) : NaN;
       if (Number.isFinite(createdMs)) this.startedAt = createdMs;
     }
-    // 7. register agents (+ human seat, Â§36)
+    // 7. register agents (+ human seat, §36)
     await this.registerHuman();
     for (const id of this.config.agentOrder) {
       const existing = this.state.agents.get(id);
@@ -2526,7 +2526,7 @@ export class Supervisor {
     this.termination = new TerminationManager();
   }
 
-  // ------------------------------------------------------- MeshRuntime API (Â§48)
+  // ------------------------------------------------------- MeshRuntime API (§48)
 
   /**
    * Criteria for a mission that declared none.
@@ -11467,7 +11467,7 @@ export class Supervisor {
       to: [workerId],
       type: "REQUEST_EXECUTION",
       newThread: { subject: `worker task ${task.id}` },
-      payload: { taskId: task.id, instruction: "You are a delegated worker. Return your outcome ONLY via submit_result (structured) â€” the parent never sees your transcript.", spec: op.taskSpec },
+      payload: { taskId: task.id, instruction: "You are a delegated worker. Return your outcome ONLY via submit_result (structured) — the parent never sees your transcript.", spec: op.taskSpec },
       taskId: task.id,
     });
     await this.activateAgent(workerId, { kind: "message", note: "assigned worker task" });

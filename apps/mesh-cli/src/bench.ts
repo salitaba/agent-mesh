@@ -978,9 +978,9 @@ export async function runAllBenchmarks(timeoutMs = 30000): Promise<BenchReport> 
 export async function runBenchmark(flags: Record<string, string | boolean>): Promise<number> {
   const timeoutMs = flags.timeout ? Number(flags.timeout) : 30000;
   const report = await runAllBenchmarks(timeoutMs);
-  const header = "cat  mesh(tokens/msgs/act)   solo(tokens/msgs)   qualityÎ”   relCost   advantage";
+  const header = "cat  mesh(tokens/msgs/act)   solo(tokens/msgs)   qualityΔ   relCost   advantage";
   console.log(header);
-  console.log("â”€".repeat(header.length));
+  console.log("─".repeat(header.length));
   for (const row of report.categories) {
     const a = row.advantage!;
     console.log(
@@ -995,7 +995,7 @@ export async function runBenchmark(flags: Record<string, string | boolean>): Pro
   return 0;
 }
 
-// ------------------------------------------------------------- simulation engine (Â§69)
+// ------------------------------------------------------------- simulation engine (§69)
 
 export interface SimulationReport {
   iterations: number;

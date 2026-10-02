@@ -128,7 +128,7 @@ test("mcp bus: read-only toolset serves only read tools", async () => {
   await m.cleanup();
 });
 
-test("http api: Â§60 endpoints serve projections built from events", async () => {
+test("http api: §60 endpoints serve projections built from events", async () => {
   const m = await makeMesh({
     agents: [
       { id: "dev", role: "developer", capabilities: ["repository.write"], interests: [] },
