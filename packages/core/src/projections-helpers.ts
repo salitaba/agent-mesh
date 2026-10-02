@@ -1,4 +1,4 @@
-﻿import { HARD_OP_CAPABILITY, VERIFICATION_ARTIFACT_TYPES, effectiveHardActions } from "../../protocol/src/index";
+﻿import { HARD_OP_CAPABILITY, VERIFICATION_ARTIFACT_TYPES, artifactUri, effectiveHardActions } from "../../protocol/src/index";
 import type {
   AcceptanceCriterion,
   AgentDefinition,
@@ -690,6 +690,35 @@ export function unqualifiedAuthor(state: Projections, artifact: Artifact, humanA
     if (qualifiedForDomain(rec.definition, domain, cap)) qualified.push(id);
   }
   return qualified.length > 0 ? { qualified } : null;
+}
+
+/**
+ * Submitted artifacts of a mission that an acceptance of the `unmet` criteria could cite, three at most:
+ * verification reports first, then whatever was published last. What `recordDecision` would refuse is not
+ * offered: a draft, an artifact the operator already rejected for one of these criteria, a verification
+ * report written by a seat that cannot verify.
+ *
+ * One list for its two readers, so what a seat is told it may cite is what the mesh then accepts: the stall
+ * watchdog's note to the seat that can accept, and that seat's own briefing, where a test report that was
+ * submitted and passed three minutes ago was invisible (a work-scoped artifact is shown to its owner, to
+ * whoever is mailed it, and while it awaits a verdict) and the pm asked for it twice.
+ */
+export function citableEvidence(state: Projections, goalId: string, unmet: readonly AcceptanceCriterion[]): Artifact[] {
+  const rejected = new Set(unmet.flatMap((c) => c.rejectedEvidence ?? []));
+  const isReport = (a: Artifact): number => (VERIFICATION_ARTIFACT_TYPES.includes(a.type) ? 1 : 0);
+  return [...state.artifacts.values()]
+    .filter(
+      (a) =>
+        a.goalId === goalId &&
+        a.status !== "DRAFT" &&
+        a.status !== "REJECTED" &&
+        a.status !== "ARCHIVED" &&
+        !rejected.has(artifactUri(a.type, a.name, a.version)) &&
+        // Nor one the acceptance would be refused for: a report written by a seat that cannot verify.
+        !unqualifiedAuthor(state, a),
+    )
+    .sort((a, b) => isReport(b) - isReport(a) || b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 3);
 }
 
 /**

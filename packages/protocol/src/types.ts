@@ -2847,6 +2847,12 @@ export interface AgentContextBundle {
      * review it, the rule `request_review` applies.
      */
     settlers?: string[];
+    /**
+     * Set for a seat that can accept criteria, on a submitted artifact it could cite for one that is
+     * still open (`citableEvidence`): what the acceptance would take, said where the seat reads its
+     * artifacts. A work-scoped report otherwise reaches such a seat only while it awaits a verdict.
+     */
+    citable?: true;
   }>;
   unreadMail: MeshMessage[];
   /**

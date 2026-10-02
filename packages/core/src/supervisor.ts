@@ -80,7 +80,7 @@ import { BUILTIN_CONTRACTS, CODE_ARTIFACT_TRANSITIONS, findContract, isObligingT
 import { validateContractRequest } from "../../protocol/src/validation";
 import type { Contract, DefaultAnswer, MeshOpCall, MeshOpContracts } from "../../protocol/src/index";
 import { collectAgentOutput } from "../../agent-runtime/src/index";
-import { approvalPath, canEnterReview, planCoversHardOp, verdictAdvances } from "./projections-helpers";
+import { approvalPath, canEnterReview, citableEvidence, planCoversHardOp, verdictAdvances } from "./projections-helpers";
 import { sanitizeAgentMessageInput } from "../../protocol/src/index";
 import type { MessageControl, CollabSession, DeliveryClass } from "../../protocol/src/index";
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
@@ -13635,30 +13635,6 @@ export class Supervisor {
   }
 
   /**
-   * Submitted artifacts of the active mission that an acceptance could cite, three at most:
-   * verification reports first, then whatever was published last. What `recordDecision` would
-   * refuse is not offered: a draft, an artifact the operator already rejected for this criterion,
-   * a verification report written by a seat that cannot verify.
-   */
-  private citableEvidence(goalId: GoalId, unmet: readonly AcceptanceCriterion[]): Artifact[] {
-    const rejected = new Set(unmet.flatMap((c) => c.rejectedEvidence ?? []));
-    const isReport = (a: Artifact): number => (VERIFICATION_ARTIFACT_TYPES.includes(a.type) ? 1 : 0);
-    return [...this.state.artifacts.values()]
-      .filter(
-        (a) =>
-          a.goalId === goalId &&
-          a.status !== "DRAFT" &&
-          a.status !== "REJECTED" &&
-          a.status !== "ARCHIVED" &&
-          !rejected.has(artifactUri(a.type, a.name, a.version)) &&
-          // Nor one the acceptance would be refused for: a report written by a seat that cannot verify.
-          !unqualifiedAuthor(this.state, a),
-      )
-      .sort((a, b) => isReport(b) - isReport(a) || b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 3);
-  }
-
-  /**
    * What to say about criteria only an acceptance can close, addressed to `driver` when known.
    * "" when something the mesh evidences itself is also unmet (see `unmetManualCriteria`).
    *
@@ -13683,7 +13659,7 @@ export class Supervisor {
         `only the operator can close ${unmet.length === 1 ? "it" : "them"}, and no nudge to a seat changes that.`
       );
     }
-    const citable = this.citableEvidence(goalId, unmet);
+    const citable = citableEvidence(this.state, goalId, unmet);
     const cite =
       citable.length > 0
         ? `Submitted and citable: ${citable.map((a) => `${a.type} "${a.name}" v${a.version} (${a.id}, by ${a.owner}, ${a.status})`).join("; ")}.`

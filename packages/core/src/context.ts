@@ -13,7 +13,7 @@ import type {
   Task,
   ThreadId,
 } from "../../protocol/src/index";
-import { CODE_ARTIFACT_TRANSITIONS, HIDDEN_BY_CONTRACT_VOCABULARY, IMPLEMENTATION_GATE_MARKER, VERIFICATION_ARTIFACT_TYPES, episodeOf, hiddenToolsFor } from "../../protocol/src/index";
+import { AUTO_EVIDENCED_CRITERIA, CODE_ARTIFACT_TRANSITIONS, HIDDEN_BY_CONTRACT_VOCABULARY, IMPLEMENTATION_GATE_MARKER, VERIFICATION_ARTIFACT_TYPES, episodeOf, hiddenToolsFor } from "../../protocol/src/index";
 import { refToString } from "../../protocol/src/uri";
 import {
   HARD_OP_CAPABILITY,
@@ -27,7 +27,8 @@ import type { Kernel } from "./kernel";
 import { agentKey, MAX_INTERRUPT_SURCHARGE, missionKey } from "./budgets";
 import { outstandingDebtors, readableMailDepth, resolveUnread, stillOwes, isAutoMemoryNote, ELIDED_MEMORY_KEY, type Projections } from "./state";
 import { mailBrief, renderMailDigest } from "./projections-messaging";
-import { capabilityForReview, holdsAuthority, mayAcceptCriteria, passOnlyDomains, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { capabilityForReview, citableEvidence, holdsAuthority, mayAcceptCriteria, passOnlyDomains, settlersOf, staleArtifactInputs, staleTaskPins, unmetTaskDependencies } from "./projections-helpers";
+import { criterionSatisfied } from "./termination";
 
 export interface ContextBuilderDeps {
   config: ResolvedMeshConfig;
@@ -608,18 +609,33 @@ export function buildAgentContext(
     .filter((a) => a.goalId === goalId && isRelevantArtifact(a, agentId, unread))
     .reverse();
   countOmitted("artifacts", artifactPool.length, Math.min(artifactPool.length, maxArtifactRefs));
-  const relevantArtifacts = rankByRelevance(
+  const ranked = rankByRelevance(
     artifactPool,
     maxArtifactRefs,
     focus,
     (a) => `${a.name} ${a.type}`,
-  )
+  );
+  // What a seat that can accept criteria could cite for the ones still open, shown to it whatever else is
+  // relevant. A test report is work-scoped, so its briefing showed it only while the report awaited a verdict
+  // and not once QA had passed it: in the ninth run the pm and the architect spent six turns and four minutes
+  // asking for a report that sat submitted in the store, and round two sat idle for two minutes with three
+  // criteria open that only the pm can close. The same list the stall watchdog offers (`citableEvidence`), so
+  // what the briefing says it may cite is what an acceptance then takes.
+  const needsAcceptance = goal
+    ? goal.acceptanceCriteria.filter((c) => c.mandatory && !criterionSatisfied(goal, c) && !AUTO_EVIDENCED_CRITERIA.includes(c.id))
+    : [];
+  const citable =
+    goalId && needsAcceptance.length > 0 && mayAcceptCriteria(config.agents[agentId]?.authority) ? citableEvidence(state, goalId, needsAcceptance) : [];
+  const citableIds = new Set(citable.map((a) => a.id));
+  const relevantArtifacts = [...ranked, ...citable.filter((a) => !ranked.some((r) => r.id === a.id))]
     .map((a) => ({
       ref: refToString({ uri: `artifact://${a.type}/${a.name}/${a.version}` }),
       type: a.type,
       status: a.status,
       name: a.name,
       version: a.version,
+      // Said on the line, because "SUBMITTED, PASSED" in a list of artifacts is not an instruction.
+      ...(citableIds.has(a.id) ? { citable: true as const } : {}),
       // Narrow on purpose: a CodePatch mid-ladder, and nothing else.
       ...(a.type === "CodePatch" && (a.status === "APPROVED" || a.status === "VERIFIED" || a.status === "MERGEABLE")
         ? { pendingRung: (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0] }
@@ -1460,7 +1476,8 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           : a.settlers.length > 0
             ? ` — a review of it is settled by: ${a.settlers.join(", ")} (name only these)`
             : " — no seat here can settle a review of it: only the operator can";
-      lines.push(`- ${a.ref} (${a.type}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}`);
+      const cite = a.citable ? " — submitted: you may accept a criterion that is still open against it" : "";
+      lines.push(`- ${a.ref} (${a.type}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}${cite}`);
     }
     partial(bundle.omitted?.artifacts, "artifact(s)", "this is a selection, not the full index");
     lines.push("");
