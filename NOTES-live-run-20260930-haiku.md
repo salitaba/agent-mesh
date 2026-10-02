@@ -5,7 +5,7 @@ with its own regression test). One live mission, two rounds, one crash; every fi
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3) and §16 (Q1–Q4).
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4) and §17 (R1–R4).
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
 check quality of output of mesh"*, then *"fix all problems"*; for §8, *"ok now rerun again and check quality and
@@ -1159,3 +1159,118 @@ T1 was the first).
   minutes on, by a seat settling the artifact. Read refusals against the events that follow them.
 - **The cheapest repair in a refusal is the list the briefing already prints.** Q2 added no lookup: `citableEvidence` and the owed asks
   were already computed for the seat's briefing, and the refusal had never been told to use them.
+
+---
+
+## 17. The twelfth run, on the Q-fixes build: four more findings (R1–R4)
+
+The eighth cycle of the standing loop: the routine fired at 16:43 UTC on 2026-10-02. The same mission, SPEC, mesh config, model and
+clean launch environment, on `main` at `24bfea3`: every fix of §0–§16 and the repair of the image's `mesh --help` smoke check. Session
+16:44–17:28 UTC: 61 turns, 1,182,125 billed tokens (about $5.50 at list price), every turn on `claude-haiku-4-5`, 1,171 events; the
+analysis tool and `mesh usage` agree to the token. One run, so the rates are illustrative. The host ran on loopback with no token, as
+in §13 to §16.
+
+| When | What | Result |
+|---|---|---|
+| 16:44 | `mesh run` | five seats start |
+| 17:04 | goal met, 6/6 | 20 min 19 s, 39 turns, 812k billed (run 11's round 1: 10 min 29 s, 25 turns, 509k) |
+| 17:09 | operator reopen quoting four defects and naming four criteria | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED |
+| 17:10 | `kill -9` of the host 60 s later, with the architect, tech lead and developer mid-turn | three seat processes orphaned (parent 1); all three had exited by themselves before the restart |
+| 17:11 | restart, 17 s after the kill | the three open turns closed as interrupted, 0 `agent.failed`, seven budget reservations released, all five seats woken for recovery, two sessions rotated |
+| 17:24 | goal met again | 14 min 41 s after the reopen, 13 min 24 s after the restart; round 2: 22 turns, 370k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 1523/2251 raw (67.7%) and 2904/2980
+stratified (97.4%), the raw figure of the runs in which a list item failed (§10 to §15). Four defects, all four quoted in the operator's
+reopen: a day-of-week range ending in 7 (`5-7`, `6-7`, `1-7`) rejected as reversed, and `0-7` accepted but read as Sunday alone; a list
+that contains `*` (`*,3`, `5,*`) rejected as an invalid value; names in ranges and steps (`WED-3/3`, `JUL-11/4`) rejected as Quartz
+extensions; and no README (the workspace placeholder, 55 characters, against the SPEC's 300). The product's own suite was 243/243 and
+the CLI probes 23/23. The final product scored **3046/3049 raw (99.9%) and 3032/3034 stratified (99.9%)**, its own suite 243/243, the
+CLI probes 23/23 (9/9 soft), the README 8/8. Three cases still fail: `* * * * fri-sun` is accepted (the reopen said named reversed
+ranges must keep being rejected, so fixing the first defect regressed it), and two schedules that list `*` beside a day-of-month
+`31-31` (`20-50,36 0-8/1,* 31-31 *,3-11,aug *`) are refused as "impossible schedule". The reopen asked for a regression test for each
+defect and none was added: the suite is 243 tests before and after. That is 99.9% of a mission that was told its defects, on one run:
+a measurement, not a rate. 35 of 61 turns (57.4%, 38.1% of billed tokens) changed no durable state (run 11: 53.5% and 34%), 20 of 39 in
+round 1.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| P2 | **exercised for the first time, and defeated by R1.** The watchdog nudged 26 s after the last turn ended in round 1 (17:01:44) and 25 s after in round 2 (17:19:18), where the 180 s window would have waited until 17:04:18 and 17:21:53; no no-op retry explains them (it fires 45 s after a no-op turn ends, and the last turn before each nudge ended 25 to 26 s earlier). Both nudges went to QA |
+| P3, L1, L3 | held: all 11 criterion records (6 and 5) landed `EVIDENCED`, none `ASSERTED`. The pm read QA's report before each of its two acceptance turns (17:04:44 `artifact_read`, 2 × `approve`; 17:24:18 `artifact_read`, 3 × `approve`), and 7 of its 8 briefings carried the submitted-and-citable lines (the eighth was its startup turn) |
+| L2 | held twice: QA's passes at 17:00:25 and 17:18:32 were each on the report it had just written, and each submitted it in the same second ("submitted with qa's own quality pass", then FINAL) |
+| L4 | the closing report said 1.2M tokens and 1,171 events; the analysis tool (1182.1k) and `mesh usage` (1,182,125) agree to the token |
+| F4 | stamped all three of QA's reports with the tree they were published from. The stamp is the record R2 needed (the false report: head `f2d8bc9`, naming `7fa5fa27`); F4's own comparison did not fire, because QA read no patch. The third report named no commit at all (its head, `ee53481`, is the merged one), which R2 cannot say anything about |
+| N5 | `patch.merged` and `implementation.completed` carried the tech lead, the seat that ran the merge, on all three merges |
+| B21, B22, M1 | held: the three open turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded", seven reservations released (three mission, three seat, one thread), the selective reopen completed (four criteria withdrawn, the operator-feedback criterion minted and accepted), two sessions rotated at the restart (tech lead 81.6k, architect 91.8k transcript tokens, under the 120k threshold) |
+| B23 | **not exercised**: the three orphans were alive three seconds after the kill and gone before the restart 17 s later (the list taken then was empty) |
+| S1–S5 | 312 `mesh_*` calls from five seats through their signed bridges; 26 of 301 ops refused (8.6%), none for authentication: the mesh's own refusals and contract-shape errors |
+| P1, Q1, Q2, Q3, Q4, J1, J3, H1, H2, L5 | **not exercised**: no seat signed as `architecture` on another kind of artifact; both passes named the report itself (Q1's case is a pass that names the patch); no verdict or acceptance named an artifact the mesh does not hold (the one "unknown artifact" refusal was an `acquire_lease` on an id the developer made up); no review request was refused as unable to settle; no seat wrote into the product checkout; no unclaimable task; the one rejected patch was reworked and merged within 3 min 19 s |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| R1 | **A pass that named a report left the blocker's own block standing, and the watchdog woke the wrong seat.** QA blocked `quality` at 16:55:50 (R2) and passed it with its test report at 17:00:25. A verdict that names an artifact is filed under `artifact:<id>`, with the subject the seat gave on the event as `fallbackSubject`; the gates read that and counted QA's pass as lifting its block, `standingBlocks` read the key and did not. So at 17:01:44 the watchdog, whose step 3 (the seat that can lift a standing block) comes before step 4 (the seat that can accept), woke QA, who had passed and cannot accept, with "qa's BLOCK on quality still stands … only qa can lift it", instead of the pm. QA answered with a contract it invented (`criterion:library-contract-met`); the pm was woken by its own unread-mail timer at 17:04:44, 4 min 19 s after the report was FINAL. Round 2 did it again: QA's pass at 17:18:32, a nudge to QA at 17:19:18, the pm woken at 17:24:18, 5 min 46 s after the pass. About nine minutes of a forty-minute run were this | the approval record keeps the subject it was given (`domainSubject`) and `standingBlocks` counts the same seat's later pass, approval, acceptance or merge under either subject as the sign-off. Not an earlier one, not another seat's, not another subject's | `tests/integration/stall-standing-block.test.ts` (3 new) |
+| R2 | **A report named a commit its tree did not hold, and a good patch was rejected on it.** QA, handed the commit by its briefing, never read the patch, so F4's stamp (which compares the tree with the patches the turn *read*) had nothing to compare. At 16:55:07 the first merge (a test-suite patch that also carried stubs of `src/` and `bin/`) fired `implementation.completed`; QA ran the tests in a worktree at that merge, `f2d8bc9` (233 of 243 fail), named the implementation patch's commit `7fa5fa27` in its report (243 of 243 pass), published it, blocked `quality` three seconds later and told the tech lead, who rejected the patch (16:56:21). The developer re-versioned the same tree twice; the commit merged at 16:59:40 holds exactly the files of `7fa5fa27`. The patch had stood MERGEABLE at 16:56:34. The window held 14 turns and about 233k billed tokens of round 1's 812k | the commit a report names under `metadata.commit` is checked like the patches the turn read (`WorktreeStamp.claimed`); when the tree does not hold it the reply to the publish says what the report describes and how to test the commit, as a caveat, before the seat's next call; the run report flags a delivered one. Nothing is refused | `tests/core/verification-stamp.test.ts` (+11), `tests/core/verification-stamp-git.test.ts` (+1) |
+| R3 | **A merge refused as "artifact is APPROVED, must be MERGEABLE" named neither the rungs nor whose move they were.** The tech lead was refused three times (16:54:03, 16:55:43, 16:59:05), each in the turn in which it approved the patch (runs 6 and 7 met the same words), and asked the developer, in six `mesh_call`s, to move the patch up the ladder; the developer climbed it three times (16:54:55, 16:56:34, 16:59:05). In round 2 the tech lead approved, moved the patch to VERIFIED and MERGEABLE and merged it in 5.6 s: it held `implementation.approve` all along | the refusal keeps its first clause and adds where the patch stands and whose move is next: "You can" when the asking seat's own transition would be allowed, the owner or a seat that may verify when not; a draft, a patch in review, a rejected one and a merged one each say what they wait for | `tests/core/merge-refusal-route.test.ts` (3) |
+| R4 | **A submission asks nobody, and the briefing read as if it did.** The developer moved two patches to `READY_FOR_REVIEW` and announced them with `mesh_announce`, which "wakes no one". The tech lead's first turn on each came 3 min 2 s (16:50:24 to 16:53:26) and 2 min 39 s (17:14:00 to 17:16:39) later, from the unread-mail sweep; the architect's document, asked for with `review.artifact`, was approved 1 min 28 s after the ask. "A DRAFT nobody transitions is never reviewed" read as "a transition gets it reviewed", and the contracts translation reads "hand over" as an announcement. Round 1 had seven unread-mail wakes, five of them no-op turns (75k billed) | the briefing says a submission asks nobody and names the ask as the seat has it (`mesh_request_review`, or `mesh_call review.artifact`); the reply to the submission says so too, naming the seats that can settle the artifact, while it is still `READY_FOR_REVIEW`, no review of that version was asked for and some other seat could settle it. A caveat; the submission stands | `tests/core/submission-asks-nobody.test.ts` (10) |
+
+What each does and why is in `docs/runtime.md` (the watchdog's list, *Testing a patch*) and `docs/protocol.md` (the merge section, *Who can
+settle a review*); the commit messages carry the evidence. R2's first account was wrong and was corrected before it was fixed: it was
+recorded, after the analysis, as a limit (a premature `implementation.completed` and a seat that tested the wrong tree: the model's doing),
+and only setting the report's own metadata beside the runtime's stamp, which was in the log all along, showed that the runtime held both
+the claim and the answer.
+
+### Not fixed, and the honest limits
+
+- **`implementation.completed` follows any merged CodePatch.** The first merge of the run was a test-suite patch (with stubs of the
+  library), at 16:55:07, with the implementation patch READY_FOR_REVIEW since 16:54:30. The event woke QA, which listens for it, and
+  evidenced `implementation-merged`. By design: the mirror cannot know which patch is "the implementation" (the `implementation.gate`
+  marker binds task completion, not the event). R2 limits what a premature wake can cost; it does not remove the wake. If it recurs, the
+  next step is the wake's note naming what merged and which patches are still open.
+- **R4 teaches; it does not wake.** If a live run still shows a submission waiting more than two minutes for its reviewer, the
+  state-driven alternative is to wake the seat that can settle a `READY_FOR_REVIEW` artifact nobody asked about, after a short debounce.
+  It changes who is woken and when, so it waits for evidence that the sentence was not enough.
+- **The unread-mail sweep woke seats for FYI mail 3.5 to 5 minutes after it was sent.** Round 1: seven such wakes, the oldest mail
+  214 to 299 s old (the floor, `STALE_MAIL_MS`, is 240 s, swept each minute), five of them no-op turns (75k billed), two of them the
+  wakes that moved the mission (the tech lead's review, the pm's acceptance). The floor is by design (mail is never left unread); what
+  it carries is the seats' choice of `mesh_announce`.
+- **The round-2 regression and the missing regression tests.** `fri-sun` was accepted after the fix of `5-7`, and the reopen's
+  instruction to add a test for each defect was not followed. QA verified the operator's own inputs, and nothing in the mesh makes a seat
+  add tests. Recorded.
+- **Cost.** The most expensive run of the loop: round 1 took 20 min 19 s, 39 turns and 812k billed against run 11's 10 min 29 s, 25 turns
+  and 509k. The 16:55 to 16:59 window (R2's rework) held 14 turns and 233k of it; R1 added about ten minutes of waiting across the two
+  rounds. Both are what the round's fixes are for, and neither is shown to be fixed until a run says so.
+- **One run.** R1's nudge target, R2's notice and R4's sentence are pinned by tests built from the recorded sequences and are not yet seen
+  live; B23, Q1 to Q4, J1, J3, H1, H2 and L5 are still to be confirmed live.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `24bfea3`, before this round | 3429 | 3427 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 32 s) | 3457 | 3455 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (the baseline warnings, one rule). Mutation checks on the new tests, each
+reverted: R1 (five mutants: the domain subject ignored when reading, not recorded, any subject of the seat lifting, the order ignored,
+another seat lifting), R3 (the bare refusal: 3 tests fail; "You can" for everyone: 1; never "You can": 2; two rungs named for VERIFIED: 1;
+the DRAFT wording: 1), R2 (no claimed check: 7 + 1; notice dropped: 3 + 1; `inHead` inverted: 7 + 1; no trim: 2; notice even when held:
+1 + 1; run-report flag dropped: 1; dedupe dropped: 2; dedupe by equality: 1; non-string stringified: 1; claimed only when nothing was
+read: 1; run-report line dropped: 1), R4 (hint dropped: 4; status guard dropped: 1, after a first version of the tests let that one
+survive; asked-for guard dropped: 1; actor not excluded: 1; vocabulary inverted: 2; always a list: 2; briefing sentence dropped: 1;
+briefing vocabulary inverted: 1). A first mutant of R1 was badly designed (keyed by seat on one side, so nothing lifted at all) and was
+redone as "any subject of the seat lifts".
+
+### Worth keeping from this round
+
+- **A record compared with the wrong thing says nothing.** F4 compared the tree with what the turn *read*; the briefing hands a verifier
+  the commit, so the seat the check was for read nothing. Compare the record with what the seat *wrote down* as well.
+- **A fact stored under a derived key needs its original for every reader.** The verdict was filed under `artifact:<id>` and carried the
+  subject on the side; the gates read the side and the watchdog read the key, and they disagreed for as long as verdicts have named
+  reports.
+- **Two rules in one priority list: audit the earlier one against states in which it is stale.** The watchdog's step 3 outranked step 4,
+  and a stale step-3 fact sent the nudge to the one seat that could not act.
+- **A refusal is also a measurement of what the seat does next.** R3's refused merge was followed by six asks to another seat for a move
+  the refused seat could make itself.
+- **Put the correction where the mistaken act has just happened.** Submitting and then announcing looks like a request; the reply to the
+  submission is the one place left to say it is not.
+- **A first account of a finding is cheap.** R2 was filed as the model's fault until two fields already in the log were read together.
