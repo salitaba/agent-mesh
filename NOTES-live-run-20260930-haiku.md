@@ -941,3 +941,99 @@ never receives the budget lines: fails; the file receives an event twice: fails)
   kept writing. Read one, flush, read the other, and the order is the proof.
 - **Count from the logs before writing the number in a commit.** The drafts were counted three times, 4 of 8 and 3 of 7 from memory of
   what had been looked at and 5 of 9 from the turn records; only the last is in the commit.
+
+
+## 15. The tenth run, on the L-fixes build: three more findings (P1–P3)
+
+The sixth cycle of the standing loop: the routine fired at 08:43 UTC on 2026-10-02. The same mission, SPEC, mesh config, model and
+clean launch environment, on `main` at `9f80740` (every fix of §0–§14, L1 to L5 included; the branch and `main` were the same
+commit). Session 08:45–09:14 UTC: 41 turns, 869k billed tokens (about $3.60 at list price), every turn on
+`claude-haiku-4-5`, 779 events. One run, so the rates are illustrative. The host ran on loopback with no token, as in §13 and §14.
+
+| When | What | Result |
+|---|---|---|
+| 08:45 | `mesh run` | five seats start |
+| 08:59 | goal met, 6/6 | 13 min 23 s, 22 turns, 445k billed (run 9's round 1: 13 min 26 s, 34 turns, 548k) |
+| 09:02 | operator reopen quoting the oracle's five defects and naming four criteria | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED |
+| 09:03 | `kill -9` of the host a minute later, with the architect, developer and tech lead mid-turn | three seat processes orphaned (parent 1); none was left when the host came back 36 s later |
+| 09:04 | restart | the three open turns closed as interrupted, 0 `agent.failed`, three seats rotated their sessions |
+| 09:13 | goal met again | 10 min 45 s after the reopen, 9 min 9 s after the restart; round 2: 19 turns, 424k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 1525/2251 raw (67.7%) and 2904/2980
+stratified (97.4%): the `*`-as-a-list-item loss that held runs 1, 3, 4 and 7 to about 69% raw (§10 to §12) was back, with nearly all
+of the failures. A `*` (or `*/n`) used as an item of a list (`*,5`, `*/9,*`) was rejected, which is 690 of the 726 failing cases (the
+stratified form leaves star lists out; the product's own suite was 59/59). The others: names in ranges, steps and lists rejected as Quartz
+extensions (21 cases), a day-of-week range ending in 7 (`5-7`) rejected as reversed (5), `0-7` for the day of week not matching
+every day, alone and with a restricted day of month (9), and a range with a second dash accepted (1). The final product scored
+**3049/3049 raw (100%) and 3034/3034 stratified (100%)**, its own suite 78/78, the CLI probes 23/23 (9/9 soft). That is 100% of a
+mission that was told its defects, on one run: a measurement, not a rate. 16 of 41 turns (39%, 25% of billed tokens) changed no
+durable state (run 9: 56% and 36%).
+
+**Earlier fixes, checked live** (each was pinned by tests only until now):
+
+| Fix | Live |
+|---|---|
+| L1 | 14 criterion records; 3 landed `ASSERTED` (the pm's acceptances at 09:12:11, :14 and :17, from a turn with no verification tool call) and all three carried the note; none was silent (P3) |
+| L2 | 4 passes, none on a draft. QA's first pass of round 1 named the merged patch; its three later passes (08:55:28, 09:11:43, 09:12:34) were each on a report it had just written, and each submitted it: DRAFT to READY_FOR_REVIEW with the comment "submitted with qa's own quality pass", then FINAL, within the second, and named it. 35 s from creating the first report to its being citable, where the ninth run's took 3 min or more |
+| L3 | 9 of the pm's 11 briefings carried the "submitted: you may accept …" lines; on its first turn after a report was final the pm cited it within 18 s (08:58:57 to 08:59:15). No seat asked for a report after one was submitted (the ninth run: three asks) |
+| L4 | the closing report said 445k and 22 turns after round 1 and 869k and 41 turns at the end; the analysis tool, the host's heartbeat and `mesh usage` (S6) say the same to the token (869,336) |
+| B21, B22, M1 | the three open turns closed with "abandoned by server restart: the process ended before the turn did, so its spend was never recorded"; the selective reopen completed; five session rotations, one with a handover (the pm's, continuity written) |
+| S1–S5 | 213 `mesh_*` calls from five seats through their signed bridges; 20 were refused or failed, none for authentication: the mesh's own refusals, and the last calls of two turns made after the host had stopped ("mesh bus unreachable") |
+| L5, B23, J1, J3, H1, H2 | **not exercised**: no review was refused; the three orphans of the kill had exited by themselves within 36 s; no seat wrote into the product checkout, no unclaimable task, no patch rejected |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| P1 | **An approval signed as `architecture` on a RequirementsDoc closed `architecture-approved` and told everyone the architecture was approved.** The architect and the pm each asked the tech lead for a review within sixteen seconds (the ArchitectureDocument at 08:48:48, the RequirementsDoc at 08:49:04; the pm's own request named the requirements document's id with a note about "Architecture design"). At 08:49:16 the tech lead signed `architecture`, wrote "Architecture is sound and complete" and named the RequirementsDoc. The verdict moved the RequirementsDoc, as it should, and the mesh then derived `architecture.approved` and marked the criterion with the RequirementsDoc as evidence: the architect told the others the architecture was approved (08:49:32), the pm broadcast it, the developer was woken for it. The ArchitectureDocument sat UNDER_REVIEW until the tech lead's next turn approved it, 2 min 49 s later (08:52:05), and the closing report still listed the RequirementsDoc as the evidence of "Architecture approved by architect and tech-lead". The reply to the slip said `ok` | **fixed** — the derived approval and the criterion follow the artifact: they fire for an artifact of the architecture domain (or a subject-level sign-off that names none), not for whatever a seat signed in that capacity. The signature itself stands and moves the artifact it named. And the reply to a verdict signed in one capacity on an artifact of another domain names the review in the signed capacity that the seat still owes (a request addressed to it, awaiting a verdict), with its id; a cross-domain signature with nothing owed behind it says nothing | `tests/core/cross-domain-approval.test.ts` (7) |
+| P2 | **The seat that had to accept was woken three minutes late.** QA published its report, passed it and told the pm (an INFORM, the `accrue` class); `goal.progress` is observational and wakes nobody. The stall watchdog's idle window was the only wake there was: the pm was nudged 3 min 22 s after QA's last event (08:55:35, nudged 08:58:57), a quarter of the round (the ninth run's second round: 3 min 23 s) — and accepted both criteria within 18 s of waking | **fixed** — when every criterion still open closes only by an acceptance, a seat that may accept exists and a verification report it could cite is submitted, the watchdog waits a twelfth of the idle window (15 s of 180 s) instead of all of it: the acceptor is nudged 15 to 45 s after the last turn. Everything else keeps the full window | `tests/lifecycle/acceptance-grace.test.ts` (5) |
+| P3 | **The pm accepted without reading, and was told only after the turn.** Round 2: three acceptances at 09:12:11–17 from a turn whose only calls were the `mesh_approve`s and `mesh_done` ("Mission complete: Accepted final 3 criteria"), all `ASSERTED`, the mission waiting; the watchdog woke the pm 34 s after that turn, it read the report and accepted again, and the goal was met at 09:13:41, 84 s and two turns later (one a session handover). The ninth run's pm did it with two criteria. Round 1's pm read first and had no `ASSERTED`: it reads or it does not, and the reply that says why arrives after the turn's ops have run | **fixed** — under the artifact list in the briefing of a seat shown something to cite, once: "Read what you cite in the same turn (`mesh_artifact_read`): an acceptance from a turn that read or ran nothing is recorded ASSERTED and does not count."; and a bullet in `roles/pm.md`. A seat shown nothing to cite is not told | `tests/core/acceptor-evidence.test.ts` (8; one new) |
+
+What each does and why is in `docs/protocol.md` (*Evidence for a criterion*) and `docs/runtime.md` (the quiet gate of *The stall
+watchdog*, the briefing paragraph); the commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **Phantom artifact ids** (the J2 pattern: an id the seat typed from memory that is not in the store): three more, the architect's
+  twice (08:52:33, :36) and the tech lead's once (09:10:57), each recovered within 4 s; eight across runs 7 to 10. Naming the review
+  the seat owes in that refusal would make it actionable (P1 now has the lookup); it costs about ten seconds a run, so it is
+  recorded and not changed.
+- **Contract-shape refusals** (an extra property: `criterion`, `domains`, `artifactUri`; `work.request` without `ask`): four, each
+  recovered by the next call (the refusal names the field and gives the shape).
+- **QA's task was completed before its work was done** (08:48:38, blocked on an unmerged implementation): the fourth run running.
+  Prose in a role prompt, not enforced.
+- **QA's first pass of round 1 named the merged patch, not a report**, so `quality-verified`, which reads "backed by a test report",
+  lists the patch as its evidence; the pass on the report followed 31 s later and was skipped as already settled. The pass is real
+  and the criterion text is looser than the evidence rule.
+- **The developer committed `PATCH.txt` (15 KB, a transcription of its own patch) into the product root** in round 2 (`6168172`);
+  the tech lead approved and merged it, the suite and the oracle are unaffected. Nothing in the mesh knows what belongs in a product
+  tree.
+- **The pm's review request named one document and described another** (08:48:46), which is what the tech lead acted on in P1.
+  The mesh cannot know which a seat meant; P1 makes the consequence visible instead.
+- **A `DesignSpec`, `ADR` or `DatabaseSchema` approved as `architecture` still evidences the criterion** (they are
+  architecture-domain types; `markTypeKeyedCriteria` lists only `ArchitectureDocument` and `ApiSpec`, and a DesignSpec signed as
+  `quality` evidences nothing, per `coord-design-spec.test.ts`). Unchanged: the same artifact answers to the word it was signed under.
+- **One run.** L5 (no review was refused), B23, J1, J3, H1 and H2 are still to be confirmed live, and a clean launch on a network
+  address (S1, S3) has not been run with real seats.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `9f80740`, before this round | 3387 | 3385 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 34 s) | 3400 | 3398 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (185 warnings, one rule, the baseline). Mutation checks on the new
+tests, each reverted: P1 (the artifact's domain ignored: 2 tests fail; no note: 1; the note for same-domain approvals: 1; owed reviews
+of any domain named: 1; reviews owed by others named: 1), P2 (the grace never applied: 1; ready without a report: 2; the mesh's own
+criteria ignored: 1; no acceptor required: 1), P3 (never rendered: 2; rendered for every seat that has artifacts: 1). The 44 test files
+that exercise the watchdog and the 32 that render a briefing were run on their own first.
+
+### Worth keeping from this round
+
+- **Evidence is half of a wake.** L3 put the report in the pm's briefing; the briefing still opened three minutes after the report,
+  because nothing woke the pm. A fix to what a seat sees is not a fix to when it looks.
+- **The word a seat types is not the artifact it means.** A capacity word picked which criterion a verdict closed; the criterion is a
+  statement about the artifact, and the code's own comment said so. Two requests on one desk and one wrong id were enough.
+- **A note that arrives after the turn cannot teach the turn.** L1's sentence was right and late: the pm's ops had already run. The
+  same sentence belongs where the decision is made.
+- **Build elsewhere while a mesh runs.** `dist/` stays untouched until the run ends (a rebuilt bridge under live seats is its own
+  experiment); the fixes were compiled into a scratch output directory (`tsc --outDir dist-dev`) and tested there meanwhile.
