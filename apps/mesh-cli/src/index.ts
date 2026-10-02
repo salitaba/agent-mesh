@@ -343,6 +343,7 @@ usage:
                  loopback is reachable from the network and needs MESH_API_TOKEN of 32+ characters
                  (openssl rand -hex 32); the server refuses to start without one.
   mesh --version                           print the version
+  mesh --help | -h | help                  print this usage
     git: writing agents commit through worktrees. Default comes from
     mesh.workspace.git, which is ON when the key is absent. With git off
     every mesh_commit is refused, so criteria needing landed code never
@@ -565,6 +566,12 @@ export function packageVersion(): string {
 export async function main(argv: string[]): Promise<number> {
   if (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "version") {
     console.log(`agent-mesh ${packageVersion()}`);
+    return 0;
+  }
+  // The first thing anyone types. It used to fall through to "unknown command: --help", which printed the usage and
+  // exited 1, and failed the image's smoke test (`mesh --help` in the built container) on every push.
+  if (argv[0] === "--help" || argv[0] === "-h") {
+    console.log(HELP);
     return 0;
   }
   const args = parseArgs(argv);

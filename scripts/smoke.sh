@@ -114,7 +114,14 @@ case "$mode" in
     if [ "$(docker exec "$cid" id -u)" = 10001 ]; then pass "runs as the unprivileged user (uid 10001)"; else fail "the container does not run as uid 10001"; fi
     if docker exec "$cid" sh -c 'touch /app/.write-test' >/dev/null 2>&1; then fail "the image's own filesystem is writable"; else pass "the image's own filesystem is read-only"; fi
     if docker exec "$cid" sh -c 'touch /data/.write-test && rm /data/.write-test' >/dev/null 2>&1; then pass "the data volume is writable"; else fail "the data volume is not writable"; fi
-    if docker exec "$cid" mesh --help >/dev/null 2>&1; then pass "the mesh command is on the path"; else fail "the mesh command is not on the path"; fi
+    # Two different failures, said apart: a command that is not on the path, and one that is and does not run.
+    if ! docker exec "$cid" sh -c 'command -v mesh' >/dev/null 2>&1; then
+      fail "the mesh command is not on the path"
+    elif docker exec "$cid" mesh --help >/dev/null 2>&1; then
+      pass "the mesh command is on the path and \`mesh --help\` exits 0"
+    else
+      fail "the mesh command is on the path but \`mesh --help\` exits non-zero"
+    fi
 
     # No token, reachable from the network: it must refuse to start, and say why.
     if out="$(docker run --rm --env MESH_BIND=0.0.0.0 "$image" 2>&1)"; then

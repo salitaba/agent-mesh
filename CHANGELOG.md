@@ -69,6 +69,8 @@ sections 1 to 16) are described there, run by run.
 
 ### Fixed
 
+- `mesh --help` and `mesh -h` print the usage and exit 0. They answered "unknown command: --help" and exited 1, so a script that
+  checked the command ran (the image's smoke test does) saw a failure; a command that does not exist still exits 1.
 - A seat that passes the verification report it wrote now submits it with the pass. The report used to stay a draft, which is
   shown to nobody but its owner and is refused as evidence, so the seats that needed it spent minutes asking for a report that
   existed (the ninth Haiku run: six turns and four minutes). The pass is the owner's own transition under the same gates, taken
