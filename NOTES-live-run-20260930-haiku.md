@@ -6,10 +6,10 @@ with no model or traced to a line. Open items, and the things a fix deliberately
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
 §11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4) and §17 (R1–R4). §18 is not a run: it
-records the rename to Ordane.
+records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
-`mesh <command>` spelling of its command line. The product is now called **Ordane** and its command is `ordane`; `mesh` still runs
+`mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
 the same program, and `mesh.yaml`, the `MESH_*` variables and the `mesh_*` tools did not change (§18).
 
 Requested: *"run a real mesh with a real goal with the haiku model and monitor it and find bugs of system and
@@ -1280,31 +1280,40 @@ redone as "any subject of the seat lifts".
   submission is the one place left to say it is not.
 - **A first account of a finding is cheap.** R2 was filed as the model's fault until two fields already in the log were read together.
 
-## 18. The rename: Agent Mesh is now Ordane
+## 18. The rename: Agent Mesh is now Curule
 
 Not a run. The owner asked whether "Agent Mesh" was a good brand, was told it is a category phrase that several other
-products already use, asked for a name, and then for the brand ("ok start make create ordane brand"). This section records
-what was changed and what was deliberately not, what a rename turned out to touch, how it was checked and what the checks
-could not reach. Two commits above `0fbd26b`: the rename (`486f354`, 142 files) and the brand kit with its application
-(`df194ba`, 36 files). **Status: on the branch and not on `main`.** While finishing, a project of the same name in the same
-space turned up that the first screen had missed, so the owner has to confirm the name before `main` moves; that is in the
-owner's private notes and not in the repository. The name is not cleared as a trademark, and nothing here registers or
-claims one.
+products already use, and asked for a name. A first name was chosen, built, verified and pushed to this branch. Before
+anything reached `main`, a search of GitHub's own pages found a project of that name in the same space, which the first
+name check (web search, package registries and DNS) had not; the owner said to pick another, and the product is now
+**Curule**. The first name never shipped, so nothing keeps compatibility with it: the second rename was a substitution over
+the same tree, and the only older name the code still knows is Agent Mesh. The first name is in the history of the
+commits that built it and nowhere else in the repository (a test checks). This section records what
+changed and what did not, what a rename turned out to touch, how it was checked and what the checks could not reach.
+**Status:** on the branch and on `main`. The name is not cleared as a trademark, and nothing here registers or claims one;
+what the name screen showed and did not show is in the owner's private notes.
+
+### The name
+
+A curule is the chair a Roman magistrate sat in to exercise authority (the *sella curulis*), the seat only an office-holder
+could take. In the product a seat is a role, and what a seat may do is written down and enforced. Pronounced *KYOOR-ool*.
+The mark is a ring held open with one seat filled at the end of the arc, and it is also the letter *c*: the name and the sign
+are one thing (`docs/brand.md`).
 
 ### What changed
 
 | | Before | After |
 |---|---|---|
-| The name, in prose, help text, the dashboard and the site | Agent Mesh | Ordane |
-| The command | `mesh` | `ordane`; `mesh` stays installed as the same launcher, beside `ordane.mjs` |
-| Prometheus metrics (14) | `agent_mesh_*` | `ordane_*` |
-| State directory | `~/.agent-mesh` | `~/.ordane`; an existing `~/.agent-mesh` is still used while `~/.ordane` does not exist, and nothing is moved |
-| The stamp on every seat | `AGENT_MESH_HOST_PID` | `ORDANE_HOST_PID`; seats stamped the old way are still found and stopped, and a stamp inherited under the old name is dropped |
-| Container image | `ghcr.io/<owner>/agent-mesh` | `ghcr.io/<owner>/ordane`, named in the release workflow for the product, not for the repository |
-| Helm chart | `agent-mesh` | `ordane` |
-| Compose project | `agent-mesh` | `ordane` |
-| JSON schema `$id`s | `https://agent-mesh.dev/schemas/…` | `https://ordane.dev/schemas/…` (identifiers that nothing fetches; they name a domain nobody has registered yet) |
-| Licensed Work, in `LICENSE` | Agent Mesh | Ordane (previously named Agent Mesh); the hash-pinned terms are untouched |
+| The name, in prose, help text, the dashboard and the site | Agent Mesh | Curule |
+| The command | `mesh` | `curule`; `mesh` stays installed as the same launcher, beside `curule.mjs` |
+| Prometheus metrics (14) | `agent_mesh_*` | `curule_*` |
+| State directory | `~/.agent-mesh` | `~/.curule`; an existing `~/.agent-mesh` is still used while `~/.curule` does not exist, nothing is moved, and `curule doctor` says so |
+| The stamp on every seat | `AGENT_MESH_HOST_PID` | `CURULE_HOST_PID`; seats stamped the old way are still found and stopped, and a stamp inherited under the old name is dropped |
+| Container image | `ghcr.io/<owner>/agent-mesh` | `ghcr.io/<owner>/curule`, named in the release workflow for the product, not for the repository |
+| Helm chart | `agent-mesh` | `curule` |
+| Compose project | `agent-mesh` | `curule` |
+| JSON schema `$id`s | `https://agent-mesh.dev/schemas/…` | `https://curule.dev/schemas/…` (identifiers that nothing fetches; they name a domain the project does not own) |
+| Licensed Work, in `LICENSE` | Agent Mesh | Curule (previously named Agent Mesh); the hash-pinned terms are untouched |
 | Brand | none | `brand/` (logo, mark, favicon, icons, social card, tokens), `docs/brand.md`, applied to the site, the dashboard's sidebar, sign-in and tab icon, and the README |
 
 ### What did not change, and why
@@ -1313,8 +1322,8 @@ claims one.
 `apps/mesh-*` directories: *mesh* is still the product's word for one running organization, and none of them carries the old
 name. The licence-key prefix `AML1`. The repository's address, `github.com/salitaba/agent-mesh`, which only the owner can
 rename; four files carry it (the licence's contact line, `SECURITY.md`, the cosign identity in the deployment guide and the
-site's `DOCS_BASE`). Every document above, `agent-mesh-runtime.md` and `spec/`, which keep the name they
-were written under (each now says so at the top).
+site's `DOCS_BASE`). Every document above, `agent-mesh-runtime.md` and `spec/`, which keep the name they were written under
+(each now says so at the top).
 
 ### What a rename touches that is not a name
 
@@ -1339,9 +1348,11 @@ Smaller things the review caught, each fixed:
 
 - The rename script dropped a blank line from `docker-compose.yml` (found by comparing line counts per file: only files the
   script should have changed by whole lines differed).
-- Its "command" rule turned the noun in "a mesh run" or "the mesh graph" into "a ordane run" in about eight places (found by
-  scanning prose for "a ordane" and for `ordane <command>` outside code spans), and it missed regular-expression literals such
+- Its "command" rule turned the noun in "a mesh run" or "the mesh graph" into "a curule run" in about eight places (found by
+  scanning prose for the article and for `<name> <command>` outside code spans), and it missed regular-expression literals such
   as `/mesh license install/` and a heading slug, which failed tests found.
+- `curule doctor` and the runbook claimed to say which state directory is in use; it did not. It now does, as one information
+  line, only for the directory from before the rename, with a test and three mutants.
 - `scripts/capture-demo.mjs` needs a GIF-capable ffmpeg; the one on this machine had none, so the README's GIF was recaptured
   with a static build.
 - Chrome's `--screenshot` flag sizes the window, not the page, and cut the social card short; the kit's PNGs are rendered
@@ -1351,33 +1362,37 @@ Smaller things the review caught, each fixed:
 
 | | tests | pass | fail | cancelled | skipped |
 |---|---|---|---|---|---|
-| head `0fbd26b`, before the rename | 3457 | 3455 | 0 | 0 | 2 |
-| this round, final (the test run: 3 min 30 s) | 3474 | 3472 | 0 | 0 | 2 |
+| head `0fbd26b`, before the first rename | 3457 | 3455 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 30 s) | 3476 | 3474 | 0 | 0 | 2 |
 
-`npm run typecheck` is clean and `npm run lint` has 0 errors and the same 185 warnings (all `no-restricted-imports`) as at `0fbd26b`. New tests: the old-name scan
-(`tests/build/product-name.test.ts`: every text file in the repository, with the history and the migration notes listed by
-name), the brand kit (`tests/build/brand-assets.test.ts`: the files are what the generator writes, every copy equals the kit,
-the PNGs have the promised sizes, the colours equal the site's and every text pair clears WCAG AA), the upgrade steps, both
-launchers, the legacy orphan stamp and the legacy state directory. Mutation checks, each reverted: the brand test (a hand-edited
-variant, a drifted path in the site or the dashboard, an edited copy of the favicon, a drifted site accent, a wrong quoted ratio,
-a dropped title, a low-contrast palette regenerated), and the old-name scan (the old name back in the README, a metric prefix, the
-dashboard's brand line and a script's comment, and the migration note losing its mention).
+`npm run typecheck` is clean and `npm run lint` has 0 errors and the same 185 warnings (all `no-restricted-imports`) as at `0fbd26b`.
+New tests: the old-name scan (`tests/build/product-name.test.ts`: every text file in the repository, with the history and the
+migration notes listed by name, and a second scan for the name the product almost had), the brand kit
+(`tests/build/brand-assets.test.ts`: the files are what the generator writes, every copy equals the kit, the PNGs have the
+promised sizes, the colours equal the site's and every text pair clears WCAG AA), the upgrade steps, both launchers, the
+legacy orphan stamp, the legacy state directory and the doctor's line about it. Mutation checks, each reverted: the brand test
+(a hand-edited variant, drifted letters or a moved seat in the site or the dashboard, an edited favicon copy, a drifted site
+accent, a wrong quoted ratio, a dropped title, a low-contrast palette regenerated), the name scans (the old name or the first
+name back in a script, the README and the changelog, the dashboard's brand line, and the migration note losing its mention) and
+the doctor line (no `MESH_HOME` guard, a warning instead of information, a note for the new directory too).
 
 The container image was **not built** (there is no Docker daemon here). Its layout was simulated: `npm ci` from the edited
-lockfile, the build, `npm prune --omit=dev`, the runtime files laid out as the Dockerfile copies them; then `ordane --help`
-and `mesh --help` exit 0 and both print `ordane 0.1.0`, the dev tools are gone from `node_modules/.bin`, and a host started
-from that layout answers `/healthz`, serves a page titled Ordane and is ready. The container-only checks (uid 10001, the
-read-only root, the refusal to start without a token) and the Helm lint, render and schema validation run in CI, which
-runs on a push to `main` or a pull request and so has not yet seen these commits. No real model run has been made on the
-renamed build: the next cycle's run is the first.
+lockfile, the build, `npm prune --omit=dev`, the runtime files laid out as the Dockerfile copies them; then `curule --help`
+and `mesh --help` exit 0 and both print `curule 0.1.0`, the dev tools are gone from `node_modules/.bin`, and a host started
+from that layout answers `/healthz`, serves a page titled Curule and is ready. The container-only checks (uid 10001, the
+read-only root, the refusal to start without a token) and the Helm lint, render and schema validation run in CI, on a push to
+`main` or a pull request. No real model run has been made on the renamed build: the next cycle's run is the first.
 
 ### Worth keeping from this round
 
 - **A rename is a migration.** List what a running thing depends on by name (selectors, volumes, metric names, directories,
   environment stamps) before touching the text; those are the failures a search-and-replace makes silently.
 - **Make the old name a test, not a grep.** One scan over every text file, with an explicit list of the places that may still
-  say it (each checked to still need the exemption), keeps the rename from decaying.
+  say it (each checked to still need the exemption), keeps the rename from decaying; a second scan keeps a name that never
+  shipped from appearing at all.
 - **Copies of a logo drift; generate them and test the copies.** The logo is in six places; one description writes the kit and a
   test compares each copy with it.
 - **A name screen has to look where the neighbours publish.** The first screen used web search, registries and DNS and said "no
-  product of this name"; GitHub's own pages show one. Screen there first.
+  product of this name"; GitHub's own pages showed one. Screen there first, and screen again before the name leaves the branch.
+- **A sentence in the docs is a claim: grep for the code that makes it true.** "The doctor says which directory" had been written
+  twice before anything did.
