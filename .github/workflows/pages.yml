@@ -1,0 +1,45 @@
+name: Publish the site
+
+# By hand, on purpose: Actions -> Publish the site -> Run workflow. The page names a domain, an address and a company; a
+# page published before they are set puts a placeholder on the public internet, and a push should never do that.
+#
+# Before the first run (site/README.md, "Putting it on a domain"): choose the domain, run
+# `npm run site:domain -- <domain> --contact <address> ...`, commit what it wrote, and in the repository's settings set
+# Pages -> Source to "GitHub Actions" and enter the domain under "Custom domain".
+#
+# The first step is the gate: `npm run site:check` exits 1 while anything is still marked TODO(owner) or a file the host and
+# the crawlers read has not been written, and then nothing below it runs.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Check, then publish site/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Stop while anything is still to fill in
+        run: npm run site:check
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
