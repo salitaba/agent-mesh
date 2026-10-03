@@ -736,6 +736,15 @@ and that a verdict on an earlier version does not stand. The reply to a publish 
 and tells the publisher to record its own again, with the call (`mesh_approve { kind, artifactId }`). The `commit` gate's refusal
 is unchanged.
 
+**The verdict that brings the mission to the finish line says what holds it open.** When every mandatory criterion is evidenced and
+the only thing left is a task its owner still holds, the watchdog tells the seat it wakes (*The stall watchdog*, `runtime.md`). The
+sixteenth cronlite run's pm gave the acceptance that brought the mission there at 09:04:22 and was told nothing: it broadcast
+MISSION_COMPLETE four seconds later ("Ready for production"), and the unread broadcast woke three seats at 09:08:34, 4 min 8 s on,
+for turns that did nothing (7.1k, 8.9k and 10.8k tokens). The reply to a verdict that does this now carries the same note, once: to
+the seat that holds the claim ("a task you still hold … finish it with `mesh_task_complete`"), to any other seat whose act it was
+("claimed by dev … Only the claimant can complete it"), after whatever caveat the verdict already carried. A verdict given once the
+mission is already there, a refused one and one that leaves a criterion open say nothing of it.
+
 A task is claimed only by a seat that holds **every** capability it lists, so a list no seat
 can satisfy is a task that stays `OPEN` for good: no op withdraws a task. `create_task` with
 `assignedTo` therefore makes the check `delegate` always made, and both say the same thing

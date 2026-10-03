@@ -5652,6 +5652,29 @@ export class Supervisor {
   }
 
   /**
+   * Record a verdict. One that brings the mission to the finish line, every mandatory criterion evidenced with a task its owner
+   * still holds the only thing left (`finishLineClaims`), says so in its reply: the seat that gave it is the one that would
+   * announce a finished mission. The sixteenth cronlite run's pm accepted the last criterion at 09:04:22 with the developer's task
+   * still claimed, was told nothing, and broadcast MISSION_COMPLETE four seconds later ("Ready for production"); the unread mail
+   * woke three seats 4 min 8 s on, for turns that did nothing (26.8k tokens). A verdict that finds the mission already there, or
+   * is refused, or leaves it short of there, adds nothing.
+   */
+  async recordDecision(
+    actorId: string,
+    requestedKind: ApprovalKind,
+    subject: string,
+    artifactId?: string,
+    comment?: string,
+    citedUri?: string,
+  ): Promise<{ ok: boolean; reason?: string; eventId?: string }> {
+    const heldBefore = this.finishLineClaims().length > 0;
+    const res = await this.settleDecision(actorId, requestedKind, subject, artifactId, comment, citedUri);
+    if (!res.ok || heldBefore) return res;
+    const held = this.finishLineNote(actorId);
+    return held ? { ...res, reason: [res.reason, held].filter(Boolean).join("; ") } : res;
+  }
+
+  /**
    * @param citedUri The `artifact://…/<version>` the caller actually reviewed, when
    *   it supplied one. Checked against the artifact's CURRENT version, because
    *   nothing else in the pipeline does: `resolveArtifactRef` throws the version
@@ -5665,7 +5688,7 @@ export class Supervisor {
    *   fixed in the version the reviewer had not seen. The author found it by hand
    *   and said so in prose; nothing in the mesh noticed.
    */
-  async recordDecision(
+  private async settleDecision(
     actorId: string,
     requestedKind: ApprovalKind,
     subject: string,
