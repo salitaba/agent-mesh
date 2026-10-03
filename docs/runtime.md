@@ -397,6 +397,19 @@ the frames carried (`abortedUsage`) when the abort's reads zero, for a handover,
 a timed-out one alike; a frame that reports anything is the figure, and a turn no frame measured stays
 unmeasured rather than free.
 
+### A commit announces what it changed
+
+`mesh_commit` classifies the diff of the commit into `dependency.changed` (a manifest: `package.json`, `pom.xml`,
+`build.gradle`, `requirements.txt`, `go.mod`, `Cargo.toml`), `authentication.changed` and `authorization.changed`, and the
+seats whose `interests` name them are woken. The diff the workspace returns is the cumulative `main...HEAD` diff of the seat's
+branch, so a file an earlier commit touched is in it again, unchanged, for every commit after it; read whole, a manifest created
+once announced a dependency change at every later commit. The fifteenth cronlite run woke its architect at both of the developer's
+commits for the same `package.json` hunk (7.1k and 9.6k tokens, and the second began a chain of status mail of 47k), and runs 8 to
+13 woke it once or twice each for a project that has no dependency. The commit now reads only the file sections the version it
+replaces did not already have: a section that is the same in both diffs is not news, one that changed (a dependency added to the
+manifest) or is new is, and a previous version that cannot be read (or is prose, not a diff) hides nothing. What the classification
+looks for inside a section is unchanged, and so is its crudeness: a manifest created with no dependency in it is still announced once.
+
 ### When a mail wake is paid for
 
 Mail buys a turn three ways: the wake the send path makes when it arrives (stashed behind the

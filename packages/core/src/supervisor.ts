@@ -11718,6 +11718,13 @@ export class Supervisor {
       this.auditLine(`commit for '${artifact.name}' by ${actorId}: ${reason}`);
       return { ok: false, op: "commit", reason };
     }
+    // Read before the new version replaces it: the previous version's diff says which files this commit left alone.
+    let previousDiff: string | undefined;
+    try {
+      previousDiff = await this.deps.content.read(artifact.contentRef);
+    } catch {
+      previousDiff = undefined;
+    }
     const versioned = await this.createArtifact({
       actorId,
       name: artifact.name,
@@ -11726,16 +11733,27 @@ export class Supervisor {
       asVersionOf: artifactId,
       metadata: { commit, diffDigest },
     });
-    const changeEvents = this.changeEventsFromDiff(diff);
+    const changeEvents = this.changeEventsFromDiff(diff, previousDiff);
     for (const t of changeEvents) {
       await this.deps.kernel.emit(t, { artifactId, commit, diffDigest }, { actorId });
     }
     return { ok: true, op: "commit", artifactId, reason: commit, artifact: "artifact" in versioned ? versioned.artifact : undefined };
   }
 
-  private changeEventsFromDiff(diff: string): EventType[] {
+  /**
+   * Which interests a commit must notify (`dependency.changed`, `authentication.changed`, `authorization.changed`).
+   *
+   * `diff` is the cumulative `main...HEAD` diff of the seat's branch, so a file an earlier commit touched is in it again, unchanged,
+   * for every commit after it: read whole, a manifest created once announced a dependency change at every later commit. The fifteenth
+   * cronlite run woke its architect at both of the developer's commits for the same `package.json` hunk (04:52:42 and 04:54:38, 7.1k
+   * and 9.6k tokens, and the second began a chain of status mail: the architect's question, the developer's answer and the architect's
+   * unrequested review, 47k in all); runs 8 to 13 and 15 woke it once or twice each for a project that has no dependency at all. With `previous` (the diff of the version being replaced), only the file sections this
+   * commit added or changed are read: a section that is the same in both is not news.
+   */
+  private changeEventsFromDiff(diff: string, previous?: string): EventType[] {
     const out: EventType[] = [];
-    const lower = diff.toLowerCase();
+    const seen = new Set(previous === undefined ? [] : diffSections(previous));
+    const lower = diffSections(diff).filter((section) => !seen.has(section)).join("\n").toLowerCase();
     if (/(package\.json|pom\.xml|build\.gradle|requirements\.txt|go\.mod|cargo\.toml)/.test(lower)) out.push("dependency.changed");
     if (/(oauth|jwt|authenticat|session|login|password)/.test(lower)) out.push("authentication.changed");
     if (/(rbac|permission|authoriz|role|acl|policy)/.test(lower)) out.push("authorization.changed");
@@ -14506,6 +14524,11 @@ export class Supervisor {
   async status(): Promise<MissionStatus> {
     return missionStatus(this.state, this.deps.budget.snapshot());
   }
+}
+
+/** A unified diff cut into its per-file sections (`diff --git` onward); a text with no such header is one section. */
+function diffSections(diff: string): string[] {
+  return diff.split(/^(?=diff --git )/m).filter((section) => section.length > 0);
 }
 
 export class RuntimeFailure extends Error {
