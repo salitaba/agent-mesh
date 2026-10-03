@@ -65,6 +65,13 @@ sections 1 to 21) are described there, run by run.
   a credentials Secret and a release per tenant; a release workflow that builds for amd64 and arm64, attaches an SBOM and
   provenance and signs the digest; CI and security workflows; Dependabot. See
   [docs/commercial/deployment.md](docs/commercial/deployment.md).
+- **On your own domain.** `docker-compose.caddy.yml` puts Caddy in front of the host, for HTTPS on a hostname you name: it gets
+  and renews the certificate, redirects http to https, passes the live stream through unbuffered, and sets the four proxy
+  settings (`MESH_ALLOWED_HOSTS`, `MESH_ALLOWED_ORIGINS`, `MESH_TRUST_PROXY`, `MESH_COOKIE_SECURE`) for you. `npm run site:domain`
+  (`scripts/set-domain.mjs`) applies the domain you chose to the landing page, `SECURITY.md` and the files a host and a
+  crawler read (`CNAME`, `robots.txt`, `sitemap.xml`, `security.txt`), and `npm run site:check` lists what is still to fill in.
+  **Publish the site** is a workflow you start by hand: it checks first and publishes `site/` to GitHub Pages. See
+  [docs/commercial/deployment.md](docs/commercial/deployment.md#tls-and-a-reverse-proxy) and [site/README.md](site/README.md).
 - **`curule doctor`** prints what a support engineer needs and nothing that is yours: version, plan and licence state, the
   settings that are present (by name, never value), each project's configuration, lock and event-log size, disk space,
   and the host's probes with `--host`. No event content, prompt, credential, licensee name or path is in it, so it is

@@ -65,7 +65,8 @@ docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
 
 Open <http://127.0.0.1:7420>, sign in with the token, open **demo-stub** and press **Start mission**. The server
 refuses to listen on a network address without a token of 32 or more characters, so anything beyond your own machine
-needs a real token and TLS in front of it. Tagged releases publish the image as `ghcr.io/salitaba/curule`.
+needs a real token and TLS in front of it ([one Compose overlay does that](docs/commercial/deployment.md#tls-and-a-reverse-proxy)).
+Tagged releases publish the image as `ghcr.io/salitaba/curule`.
 
 | Read | For |
 |---|---|
