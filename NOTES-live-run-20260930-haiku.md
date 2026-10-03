@@ -1815,7 +1815,7 @@ What each does and why is in `docs/protocol.md` (completing a task; a refused ga
 
 `npm run typecheck` is clean and `npm run lint` has 0 errors (189 warnings, one rule; the baseline was 188 and the one extra is the new file's relative import of the protocol package). Mutation checks, each reverted: X1 (27
 mutants: each condition inverted or dropped, each kind of work removed from or a message, claim or escalation added to what counts, the tally not
-carried, the reply, the audit line and the description sentence removed), X2 (20), X3 (9) and X4 (11). Every one now fails a test but three, the
+carried, the reply, the audit line and the description sentence removed), X2 (20), X3 (9) and X4 (11): 67 in all (the message of `db3c440` says 73, a miscount). Every one now fails a test but three, the
 equivalents above (the two survivors of X2's first tests were closed by a test each).
 
 ### Worth keeping from this round
