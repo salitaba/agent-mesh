@@ -55,6 +55,7 @@ import {
   type ActivationReason,
   type AgentContextBundle,
   type ApprovalKind,
+  type ApprovalRecord,
   type BudgetHint,
   type PolicyDecisionResult,
   type TrustSource,
@@ -127,6 +128,7 @@ import { interestMatches, loadRolePrompt } from "../../config/src/index";
 import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, liveClaims, TerminationManager, type DeadlockFinding } from "./termination";
+import { droppedVerdictsNotice, gateRoute } from "./gate-route";
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
 import { isEvidenceRead, isMeshToolCall, settleContinuityCalls, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
@@ -4917,6 +4919,8 @@ export class Supervisor {
     let amending: number | undefined;
     /** The predecessor's status, so the version bump can record the step it takes. */
     let previousStatus: ArtifactStatus | undefined;
+    /** The verdicts recorded on the predecessor: a new version drops every one (see `artifact.versioned`), and its publisher is told. */
+    let droppedVerdicts: ApprovalRecord[] = [];
     if (input.asVersionOf) {
       const current = this.versionTarget(input.asVersionOf, input.type);
       if (!current) return { error: this.unknownVersionTarget(input.asVersionOf, input.type, input.actorId) };
@@ -4966,6 +4970,7 @@ export class Supervisor {
         createdAt: this.deps.kernel.clock.iso(),
         createdBy: input.actorId,
       };
+      droppedVerdicts = [...this.state.approvals.values()].flat().filter((r) => r.artifactId === current.id);
       isVersion = true;
     } else {
       const existing = this.state.artifactByName.get(artifactKey(input.type, input.name));
@@ -5071,6 +5076,10 @@ export class Supervisor {
       // reviews themselves are carried to the new version, not dropped.
       notice = await this.carryReviewAsksOver(artifact, input.actorId);
       await this.flagDependentsOf(artifact, input.actorId);
+    }
+    if (isVersion && amending === undefined) {
+      const dropped = droppedVerdictsNotice(droppedVerdicts, artifact.version, artifact.id, input.actorId);
+      if (dropped) notice = [notice, dropped].filter(Boolean).join("; ");
     }
     if (stampNotice) notice = [notice, stampNotice].filter(Boolean).join("; ");
     return { artifact, uri, ...(notice ? { notice } : {}) };
@@ -6334,7 +6343,10 @@ export class Supervisor {
     const gate = this.config.transitionGates["implementation.completed"];
     if (gate && gate.length > 0 && task.requiredCapabilities.includes(IMPLEMENTATION_GATE_MARKER)) {
       const res = checkApprovals(this.state, gate, undefined);
-      if (!res.ok) return { ok: false, reason: `implementation gate unsatisfied, missing: ${res.missing.join(", ")}` };
+      if (!res.ok) {
+        const seats = [...this.state.agents.values()].map((r) => ({ id: r.definition.id, role: r.definition.role }));
+        return { ok: false, reason: `implementation gate unsatisfied, missing: ${res.missing.join(", ")}${gateRoute(res.missing, seats, HUMAN_AGENT_ID)}` };
+      }
     } else if (gate && gate.length > 0 && !this.completionGateUnboundWarned) {
       // Said, not widened. skill-panel configured `implementation.completed:
       // requires tech-lead.approve` and none of its 10 tasks carried the

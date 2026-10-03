@@ -720,6 +720,22 @@ briefing's list of claimable tasks already did. It used to be refused as a missi
 capability no seat could ever be granted, so the task stayed open and the gate was never
 consulted.
 
+**A completion the gate refuses names who can lift it, and a new version says which verdicts it dropped.** The gate a task
+carrying `implementation.gate` meets (`implementation.completed` requires `tech-lead.approve` and `qa.pass` in the sixteenth
+cronlite run's mesh) reads the verdicts that stand on the log, and a new version of an artifact drops every verdict recorded on the
+old one: a verdict is about content, and a version is new content. QA published a new version of its own report at 08:57:20, two and
+a half minutes after it had passed the first, so its `qa.pass` was gone, and nothing said so. A criterion's evidence outlives the verdict
+that produced it, so all six criteria were evidenced at 09:04:22 and the mission still could not close: the developer's
+`mesh_task_complete` was refused in three turns with "missing: qa.pass", which names a token and not who can give it or how. It was
+nudged five times, asked QA once, was told "qa.pass verdict recorded" by a QA that had recorded nothing, and raised an escalation
+that read "Appears to be system state synchronization issue". QA recorded its pass seven seconds after the operator's one message
+naming the call, and the goal completed at 09:18:06, 13 minutes 44 seconds after the last criterion. The refusal now says who holds each
+missing requirement (a gate names an actor by seat id or by role, so every seat that matches is named, an alternative nobody
+holds says so, and the operator is never the holder) and the call that records it, that the claimant cannot give it for them,
+and that a verdict on an earlier version does not stand. The reply to a publish of a new version names the verdicts it dropped,
+and tells the publisher to record its own again, with the call (`mesh_approve { kind, artifactId }`). The `commit` gate's refusal
+is unchanged.
+
 A task is claimed only by a seat that holds **every** capability it lists, so a list no seat
 can satisfy is a task that stays `OPEN` for good: no op withdraws a task. `create_task` with
 `assignedTo` therefore makes the check `delegate` always made, and both say the same thing
