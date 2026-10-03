@@ -151,6 +151,13 @@ begins `stall watchdog: mission active but quiet — …`. Its gates, in the ord
   criterion was evidenced does not hold that first one back for the cooldown, because it was about another
   state (the thirteenth run's pm, a minute earlier, whose acceptances brought the mission to the finish
   line). A nudge sent after it is held as before, so a claimant that does nothing is not woken in a loop.
+  The acceptance has the same rule. The sixteenth run's tech lead was nudged about a patch at 08:59:04.7,
+  QA's report went FINAL at 08:59:20 and its turn ended at 08:59:27, and the pm, who could close the last
+  two criteria, was nudged at 09:04:04.7: exactly five minutes after the nudge before, which had been
+  about something else (the first tick past the 15 s window, 09:00:04.7, would have been four minutes
+  sooner; the pm accepted both 16 s after it was woken). The watchdog dates the moment it first saw
+  acceptance ready, on every tick and a turn in flight or not, and a nudge sent before that does not hold
+  back the first one; a nudge sent after it is held as before.
   Anything else keeps the full window: nothing submitted
   to cite, a criterion the mesh evidences itself still open, only some other document, no seat
   that may accept.

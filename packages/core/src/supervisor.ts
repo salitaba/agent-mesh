@@ -1502,6 +1502,11 @@ export class Supervisor {
   private liveMode = false;
   private lastTurnAt = 0;
   private lastStallNudgeAt = 0;
+  /**
+   * When the watchdog first saw acceptance ready (`acceptanceReady`) and has seen it ready on every tick since, 0 while it is not.
+   * A nudge sent before that was about another situation, so the cooldown it started does not hold back the first one acceptance needs.
+   */
+  private acceptanceReadySince = 0;
   /** The seat the last stall nudge went to: the next one looks elsewhere if that nudge bought nothing. */
   private lastStallDriver: string | undefined;
   /**
@@ -1665,6 +1670,7 @@ export class Supervisor {
     }
     this.stallNoopRetryAt = 0;
     this.lastStallNudgeAt = 0;
+    this.acceptanceReadySince = 0;
     this.quiesced = false;
     // The nudge cap is a statement about one live run. Going live (or being
     // re-parked and sent live again) starts a new one, so a streak earned
@@ -2535,6 +2541,7 @@ export class Supervisor {
     this.startedAt = this.nowMs();
     this.lastTurnAt = this.nowMs();
     this.lastStallNudgeAt = 0;
+    this.acceptanceReadySince = 0;
     this.stallNoopRetryAt = 0;
     if (this.stallNoopTimer) {
       this.timers.clearTimeout(this.stallNoopTimer);
@@ -13500,6 +13507,8 @@ export class Supervisor {
   private async checkStall(): Promise<void> {
     if (this.stopping || !this.liveMode) return;
     const now = this.nowMs();
+    // Read on every tick, a turn in flight or not, so that the moment acceptance became ready is the tick that saw it.
+    this.acceptanceReadySince = this.acceptanceReady() ? this.acceptanceReadySince || now : 0;
     // Before every other gate below. A deadline that passed while a turn was
     // in flight, or while the goal was not ACTIVE, still passed — the early
     // returns further down are about whether to NUDGE, which is a different
@@ -13550,10 +13559,13 @@ export class Supervisor {
       if (now - this.lastTurnAt < this.stallIdleFor()) return;
       // The cooldown keeps one situation from being nudged again and again. A nudge sent before the mission reached the
       // finish line was about another one (here the pm's, which accepted the last two criteria and so brought it there),
-      // and the claimant it has not met yet is no reason to wait out another five minutes.
+      // and the claimant it has not met yet is no reason to wait out another five minutes. The same holds for the acceptance:
+      // the sixteenth run's nudge to the tech lead, about a patch, came 16 s before QA's report made the pm's acceptance
+      // possible, and the pm's nudge waited out the five minutes that nudge had started.
       const cooling = now - this.lastStallNudgeAt < this.config.scheduling.stallCooldownMs;
       const sentBeforeTheFinishLine = this.finishLineClaims().length > 0 && this.lastStallNudgeAt < this.finishLineReachedAt();
-      if (cooling && !sentBeforeTheFinishLine) return;
+      const sentBeforeAcceptance = this.acceptanceReadySince > 0 && this.lastStallNudgeAt < this.acceptanceReadySince;
+      if (cooling && !sentBeforeTheFinishLine && !sentBeforeAcceptance) return;
     }
     // QUIESCENCE GATE. Waking an agent costs a full context window, so the
     // decision to wake one must be made from mesh state — for free — BEFORE
