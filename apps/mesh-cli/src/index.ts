@@ -443,6 +443,31 @@ export async function reportWhenSettled(settle: () => Promise<void>, report: () 
   }
 }
 
+/**
+ * The rows of `curule budgets`: a key, what it has consumed, its limit.
+ *
+ * The key column was a fixed 36 characters, and a key is longer than that as soon as it names a goal and a seat
+ * (`agent:goal-M3ZKMQQP00b23ad76ed5/architect` is 41; a task's is 60): its numbers were pushed to the right of the
+ * column on every row that had one, so the table read as a staircase. The column is as wide as the longest key.
+ */
+export function formatBudgetRows(entries: Array<{ key: string; consumed: number; limit: number | null | undefined; exceeded?: boolean }>): string[] {
+  const width = Math.max(36, ...entries.map((b) => b.key.length));
+  return entries.map((b) => `  ${b.key.padEnd(width)} ${String(b.consumed).padStart(8)}/${String(b.limit ?? "?").padStart(8)}${b.exceeded ? "  EXCEEDED" : ""}`);
+}
+
+/**
+ * The first line of a goal for a status header, cut to `max` characters at a word with an ellipsis, so a cut reads as one and not
+ * as the end of the sentence.
+ */
+export function goalHeadline(description: string | undefined, max = 60): string {
+  const first = description?.split("\n")[0]?.trimEnd();
+  if (first === undefined) return "(none)";
+  if (first.length <= max) return first;
+  const cut = first.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 async function launchMesh(opts: {
   configPath: string;
   mode: LaunchMode;
@@ -711,7 +736,7 @@ export async function main(argv: string[]): Promise<number> {
         );
         const st = result.body;
         const bar = (ratio: number) => "█".repeat(Math.round(ratio * 20)).padEnd(20, "░");
-        console.log(`Goal:      ${st.goal?.description?.split("\n")[0]?.slice(0, 60) ?? "(none)"} [${st.goal?.status ?? "-"}]`);
+        console.log(`Goal:      ${goalHeadline(st.goal?.description)} [${st.goal?.status ?? "-"}]`);
         console.log(`Progress:  ${bar(st.progress?.ratio ?? 0)} ${Math.round((st.progress?.ratio ?? 0) * 100)}%`);
         const tokens = st.budgets?.find?.((b: any) => b.key.startsWith("mission:"));
         console.log(`Tokens:    ${tokens ? `${tokens.consumed} / ${tokens.limit ?? "?"}` : "-"}   events: ${st.eventCount}`);
@@ -900,7 +925,7 @@ export async function main(argv: string[]): Promise<number> {
           console.error(`curule budgets: unexpected response from ${bus}/budgets: ${JSON.stringify(body).slice(0, 200)}`);
           return 1;
         }
-        for (const b of body.entries) console.log(`  ${b.key.padEnd(36)} ${String(b.consumed).padStart(8)}/${String(b.limit ?? "?").padStart(8)}${b.exceeded ? "  EXCEEDED" : ""}`);
+        for (const row of formatBudgetRows(body.entries)) console.log(row);
         return 0;
       }
       case "ledger": {
