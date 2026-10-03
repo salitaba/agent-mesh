@@ -3,6 +3,7 @@ import * as path from "path";
 import { resolveConfig, loadMeshFile, ConfigError } from "../../../packages/config/src/index";
 import { SCHEMAS, isSettledArtifactStatus, type GitMode } from "../../../packages/protocol/src/index";
 import { buildRunReport, renderRunReport } from "../../../packages/core/src/run-report";
+import { statusFromLog } from "../../../packages/core/src/status";
 import { JsonlEventStore } from "../../../packages/event-store/src/index";
 import { systemClock } from "../../../packages/protocol/src/index";
 import { startServer } from "../../mesh-server/src/index";
@@ -961,28 +962,31 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
+/**
+ * `curule status` against a mesh that is not running: the event log replayed through the projections the server keeps, so the
+ * goal, the progress and the tokens are what `GET /status` would have said when the mesh stopped. It used to take the goal as
+ * `goal.created` wrote it, so a mission that had finished printed `[ACTIVE]` at 0%.
+ */
 async function offlineStatus(args: Args): Promise<unknown> {
   const file = args.positional[0] ?? process.env.MESH_CONFIG ?? "mesh.yaml";
-  const dir = stateDirFor(fs.existsSync(file) ? file : "mesh.yaml");
+  const configPath = fs.existsSync(file) ? file : "mesh.yaml";
+  const dir = stateDirFor(configPath);
   const store = new JsonlEventStore(path.join(dir, "logs", "events.jsonl"));
   const events = await store.read().finally(() => store.close());
-  const goal = [...events].reverse().find((e) => e.type === "goal.created");
-  const agentStates = new Map<string, string>();
-  const tokens = new Map<string, number>();
-  for (const e of events) {
-    if (e.type === "agent.state_changed") agentStates.set((e.payload as any).agentId, (e.payload as any).to);
-    if (e.type === "agent.created") agentStates.set((e.payload as any).agent.id, "IDLE");
-    if (e.type === "budget.consumed" && (e.payload as any).agentId) {
-      tokens.set((e.payload as any).agentId, (tokens.get((e.payload as any).agentId) ?? 0) + ((e.payload as any).amount ?? 0));
-    }
+  let config: ReturnType<typeof resolveConfig> | undefined;
+  try {
+    config = resolveConfig(configPath);
+  } catch {
+    // The goal, the progress and the spend do not depend on the config; only the shape of a commitment or a transition gate does.
   }
-  return {
-    goal: goal ? (goal.payload as any).goal : undefined,
-    agents: [...agentStates.entries()].map(([id, lifecycle]) => ({ id, role: id, lifecycle, mailbox: 0, tokens: tokens.get(id) ?? 0 })),
-    eventCount: events.length,
-    progress: null,
-    openEscalations: [],
-  };
+  const { status, unapplied } = statusFromLog(events, config);
+  if (unapplied.length > 0) {
+    const first = unapplied[0]!;
+    console.error(
+      `warning: ${unapplied.length} event(s) in the log did not replay and were skipped (the first: ${first.type}${first.seq === undefined ? "" : ` at seq ${first.seq}`}: ${first.message}); these figures may be off by what they carried`,
+    );
+  }
+  return status;
 }
 
 async function offlineEvents(args: Args, limit: number, type?: string): Promise<unknown[]> {

@@ -888,6 +888,13 @@ and the delivered tree shipped them.
 projection of the acceptance criteria, so a restored state rebuilds it on import instead
 of reporting `null` (0%) on a completed 6/6 goal until the next criterion moved.
 
+With no server to ask, `curule status` replays `logs/events.jsonl` through the projections the server keeps, with the function behind
+`GET /status` (`missionStatus` in `packages/core/src/status.ts`), so a mission that finished reads `[COMPLETED]` at 100% with its tokens,
+a reopened one `[ACTIVE]` again, and a seat's tokens are what `curule usage` bills (a turn's spend is booked on the seat's ledger and on
+the mission's, and counted once). A line of the log the projections refuse is skipped and named on stderr; the figures may then be off by
+what it carried. Before this the command read the goal as `goal.created` first wrote it, and printed `[ACTIVE]` at 0% with no tokens
+line for a mission that was over, and about 2.4 times the tokens a seat had spent.
+
 ## CLI / server / dashboard
 
 - `curule run mesh.yaml` boots the supervisor live (scheduler on, startup agents

@@ -87,6 +87,7 @@ import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJE
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, openRejections, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
+import { missionStatus, type MissionStatus } from "./status";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -14502,46 +14503,8 @@ export class Supervisor {
     return { ok: true };
   }
 
-  async status(): Promise<{
-    goal?: Goal;
-    agents: Array<{
-      id: string; role: string; lifecycle: LifecycleState; mailbox: number; tokens: number;
-      taskId: string | null; activations: number;
-      /**
-       * Scalar projection of the agent's private plan, for the dashboard's card
-       * badge. Deliberately NOT the plan itself: this payload is polled for
-       * every agent at once, so a growing array does not belong here. The full
-       * steps stay on the per-agent detail fetch.
-       */
-      planDone: number | null; planTotal: number; planTaskId: string | null;
-    }>;
-    budgets: ReturnType<BudgetManager["snapshot"]>;
-    progress: { completed: number; total: number; ratio: number } | null;
-    openEscalations: Escalation[];
-    eventCount: number;
-  }> {
-    const goalId = this.state.activeGoalId;
-    const goal = goalId ? this.state.goals.get(goalId) : undefined;
-    const progress = goalId ? this.state.progress.get(goalId) : undefined;
-    return {
-      goal,
-      agents: [...this.state.agents.values()].map((r) => ({
-        id: r.definition.id,
-        role: r.definition.role,
-        lifecycle: r.state.lifecycle,
-        mailbox: readableMailDepth(this.state, r.definition.id),
-        tokens: r.state.tokensConsumed,
-        taskId: r.state.activeTaskId ?? null,
-        activations: r.state.activations,
-        planDone: r.state.plan ? r.state.plan.steps.filter((s) => s.status === "DONE").length : null,
-        planTotal: r.state.plan?.steps.length ?? 0,
-        planTaskId: r.state.plan?.taskId ?? null,
-      })),
-      budgets: this.deps.budget.snapshot(),
-      progress: progress ? { completed: progress.completed, total: progress.total, ratio: progress.ratio } : null,
-      openEscalations: [...this.state.escalations.values()].filter((e) => e.status === "OPEN"),
-      eventCount: this.state.eventCount,
-    };
+  async status(): Promise<MissionStatus> {
+    return missionStatus(this.state, this.deps.budget.snapshot());
   }
 }
 

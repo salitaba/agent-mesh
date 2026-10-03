@@ -646,6 +646,18 @@ export function ensureBudget(
   return b;
 }
 
+/** The budget ledgers as the status and the budgets route list them (the live manager's snapshot and a log read from disk both). */
+export function budgetEntries(state: Projections): BudgetProjectionEntry[] {
+  return [...state.budgets.values()].map((b) => ({
+    key: b.key,
+    limit: b.limit,
+    limitKind: b.limitKind,
+    reserved: b.reserved,
+    consumed: b.consumed,
+    exceeded: b.exceeded,
+  }));
+}
+
 export function artifactKey(type: string, name: string): string {
   return `${type}:${name}`;
 }

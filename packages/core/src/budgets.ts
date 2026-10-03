@@ -3,7 +3,7 @@ import { monotonicId } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Kernel } from "./kernel";
 import type { Projections } from "./state";
-import { ensureBudget } from "./state";
+import { budgetEntries, ensureBudget } from "./state";
 
 export type BudgetKey = string;
 
@@ -526,13 +526,6 @@ export class BudgetManager {
   }
 
   snapshot(): BudgetProjectionEntry[] {
-    return [...this.kernel.state.budgets.values()].map((b) => ({
-      key: b.key,
-      limit: b.limit,
-      limitKind: b.limitKind,
-      reserved: b.reserved,
-      consumed: b.consumed,
-      exceeded: b.exceeded,
-    }));
+    return budgetEntries(this.kernel.state);
   }
 }
