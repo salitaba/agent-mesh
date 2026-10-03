@@ -13956,7 +13956,9 @@ export class Supervisor {
     // the note that would have turned 12.76M tokens of approved-but-unmerged work
     // into a commit.
     const pending = this.mergeLadderPending();
-    if (pending.length > 0) {
+    // The acceptor of a mission that waits on nothing else is told its own act (below), not the rungs of a patch it cannot move.
+    const toAcceptor = driver !== undefined && this.acceptanceReady() && this.criterionAcceptors().includes(driver);
+    if (pending.length > 0 && !toAcceptor) {
       const p = pending[0]!;
       const uri = artifactUri(p.artifact.type, p.artifact.name, p.artifact.version);
       const rest = p.next === "MERGED" ? "then `merge` it" : `then keep walking it: VERIFIED -> MERGEABLE -> merge`;
@@ -14272,14 +14274,29 @@ export class Supervisor {
     const byOldest = (a: string, b: string): number =>
       (this.state.agents.get(a)?.state.lastActivityAt ?? "").localeCompare(this.state.agents.get(b)?.state.lastActivityAt ?? "");
     const all = [...this.state.agents.keys()].filter(eligible);
+    // Everything still unmet closes by an acceptance and the proof is in hand: the seat that may accept, ahead of a patch
+    // parked on the ladder. A parked patch is the mission's blocker only when something unmet waits on its merge, and
+    // `acceptanceReady` is true only when nothing does (`unmetManualCriteria` is empty as soon as a criterion the mesh evidences
+    // itself, a merge among them, is unmet). The fourteenth cronlite run reached that state 5 s before its first nudge, with the
+    // CLI patch MERGEABLE (its merge refused, and its work already in the product): the nudge went to the tech lead, who could
+    // not move it, and the pm, who could close both criteria, was woken 4 min 25 s later by the unread-mail sweep.
+    if (this.acceptanceReady()) {
+      for (const id of this.criterionAcceptors().filter(eligible).sort(byOldest)) {
+        if (id === this.lastStallDriver && this.stallNudgeStreak > 0) continue;
+        return id;
+      }
+    }
     // A seat that can move a parked patch outranks the mail/task heuristic. Waking
     // someone with mail is a good default, but if the mission's only real blocker is
     // a patch nobody has advanced, the seat that CAN advance it is the one turn worth
-    // buying — and it is not usually the seat with mail.
+    // buying — and it is not usually the seat with mail. Not a seat whose previous
+    // nudge bought nothing, like every branch below: it was just told, and a patch it
+    // cannot move (the merge refused, whatever the reason) would otherwise draw every
+    // nudge up to the cap while the seats that could do something else were never woken.
     const pending = this.mergeLadderPending();
     if (pending.length > 0) {
       for (const p of pending) {
-        const mover = p.who.filter(eligible).sort(byOldest)[0];
+        const mover = p.who.filter(eligible).filter((id) => !(id === this.lastStallDriver && this.stallNudgeStreak > 0)).sort(byOldest)[0];
         if (mover) return mover;
       }
     }

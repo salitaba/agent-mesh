@@ -165,7 +165,16 @@ Whom it wakes, the first that applies (seats the mesh parked or suspended are sk
 
 1. a seat that can move a patch parked on the merge ladder. A patch under a BLOCK is not
    parked, it is held, and is not listed: the policy refuses its next rung until a new
-   version exists, so the nudge would buy a refusal;
+   version exists, so the nudge would buy a refusal. Two exceptions, both from the fourteenth
+   run. When every unmet criterion closes by an acceptance and a report an acceptance could
+   cite has been submitted (the state that shortens the idle window, above), nothing waits on
+   the parked patch, and **the seat that may accept is woken first**, with its own note
+   (`the acceptance is yours to give`) instead of the patch's rungs: QA passed at 00:55:55 with
+   the CLI patch MERGEABLE, the first nudge went to the tech lead, who could not move it, and
+   the pm, who could close both criteria, was woken 4 min 25 s later by the unread-mail sweep.
+   And a seat whose previous nudge bought nothing is skipped here as in every step below, so a
+   patch its merger cannot move does not draw every nudge to the cap while the seats that could
+   do something else are never woken;
 2. **the owner of a rejected patch the mission is waiting on** (`openRejections`; see *A mission does
    not complete over a rejected patch*, below): a CodePatch a reviewer rejected that is REJECTED, or
    reworked to DRAFT and not resubmitted. Only its owner can move it, and nothing else tells them: an
