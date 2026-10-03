@@ -9,7 +9,7 @@ import {
   rotateAtFor,
   type ClaudeAdapterOptions,
 } from "../../packages/runtime-claude/src/index";
-import { TurnTimeoutError, type AgentDefinition, type AgentInput, type RuntimeContext } from "../../packages/protocol/src/index";
+import { InterruptedTurnError, TurnTimeoutError, type AgentDefinition, type AgentInput, type RuntimeContext } from "../../packages/protocol/src/index";
 
 /**
  * What the rotation decision measures, fed the frames a real run produced.
@@ -86,15 +86,17 @@ const input = (instructions: string): AgentInput => ({
   instructions,
 });
 
-type Call = { input_tokens: number; cache_read_input_tokens: number; output_tokens: number };
+type Call = { input_tokens: number; cache_read_input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number };
 interface TurnPlan {
   calls: Call[];
   /** Where the per-call usage rides: the proxy's shape, Anthropic's, or nowhere. */
-  usageOn: "message_delta" | "message_start" | "none";
+  usageOn: "message_delta" | "message_start" | "none" | "silent";
   /** Emit the frames, then never answer — the timeout shape. */
   hang?: boolean;
   /** Emit the frames, then wait for `interrupt()` and answer it as the CLI does. */
   awaitInterrupt?: boolean;
+  /** What the abort's `result` frame reports: the turn's sum (the default), or nothing, as the real CLI sometimes does. */
+  abortUsage?: "summed" | "zero" | "reads-only";
 }
 
 const zeroUsage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -117,7 +119,7 @@ function fakeQuery(plans: (queryIndex: number, turnIndex: number) => TurnPlan, m
       for await (const _msg of prompt as AsyncIterable<unknown>) {
         const plan = plans(index, turnIndex);
         for (const [i, c] of plan.calls.entries()) {
-          const real = { ...zeroUsage, ...c, cache_creation_input_tokens: 0 };
+          const real = { ...zeroUsage, ...c, cache_creation_input_tokens: c.cache_creation_input_tokens ?? 0 };
           const id = `msg_${index}_${turnIndex}_${i}`;
           yield {
             type: "stream_event",
@@ -133,7 +135,7 @@ function fakeQuery(plans: (queryIndex: number, turnIndex: number) => TurnPlan, m
             event: {
               type: "message_delta",
               delta: { stop_reason: "tool_use", stop_sequence: null },
-              usage: plan.usageOn === "message_delta" ? { ...real, output_tokens_details: { thinking_tokens: 0 }, server_tool_use: { web_search_requests: 0 } } : { output_tokens: c.output_tokens },
+              usage: plan.usageOn === "message_delta" ? { ...real, output_tokens_details: { thinking_tokens: 0 }, server_tool_use: { web_search_requests: 0 } } : plan.usageOn === "silent" ? {} : { output_tokens: c.output_tokens },
             },
           };
         }
@@ -142,11 +144,11 @@ function fakeQuery(plans: (queryIndex: number, turnIndex: number) => TurnPlan, m
           input_tokens: plan.calls.reduce((a, c) => a + c.input_tokens, 0),
           output_tokens: plan.calls.reduce((a, c) => a + c.output_tokens, 0),
           cache_read_input_tokens: plan.calls.reduce((a, c) => a + c.cache_read_input_tokens, 0),
-          cache_creation_input_tokens: 0,
+          cache_creation_input_tokens: plan.calls.reduce((a, c) => a + (c.cache_creation_input_tokens ?? 0), 0),
         };
         if (plan.awaitInterrupt) {
           await new Promise<void>((resolve) => (onInterrupt = resolve));
-          yield { type: "result", subtype: "error_during_execution", is_error: true, session_id: sdkSessionId, usage: summed, errors: ["Request was aborted."] };
+          yield { type: "result", subtype: "error_during_execution", is_error: true, session_id: sdkSessionId, usage: plan.abortUsage === "zero" ? zeroUsage : plan.abortUsage === "reads-only" ? { ...zeroUsage, cache_read_input_tokens: 5_000 } : summed, errors: ["Request was aborted."] };
         } else {
           yield { type: "result", subtype: "success", is_error: false, result: "ok", session_id: sdkSessionId, num_turns: turnIndex + 1, usage: summed };
         }
@@ -337,5 +339,91 @@ test("endTurn ends a turn as COMPLETE, not as an interrupted failure", async () 
   assert.equal(out.text, "", "the abort's own prose is not a reply");
   assert.equal(out.tokensUsed.input, REAL_CALLS[0].input_tokens, "and the tokens it spent are still billed");
   assert.equal(await rt.getStatus(session), "IDLE");
+  await rt.stop(session);
+});
+
+/**
+ * A handover is ended by the mesh the moment its continuity record lands, and the CLI answers that abort with a `result` frame. That
+ * frame can report nothing at all though the call it cut short was billed in full. In the fifteenth cronlite run the developer's
+ * handover (05:06:23) booked 0 tokens for a call whose transcript says 14,826 cache-write and 139,638 cache-read tokens, and so did
+ * five other handovers of runs 9 to 15 (six of the eleven recorded): the abort's frame was taken at its word, where the timeout branch
+ * has always fallen back to the figure the stream carried. Absent or zero is unmeasured, and unmeasured is not free.
+ */
+const HANDOVER_CALL = { input_tokens: 10, cache_read_input_tokens: 139_638, output_tokens: 312, cache_creation_input_tokens: 14_826 };
+
+test("endTurn books what the stream reported when the abort's own frame reads zero", async () => {
+  const { queryFn } = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "message_delta", awaitInterrupt: true, abortUsage: "zero" }));
+  const rt = new ClaudeRuntimeAdapter({ queryFn });
+  const session = await rt.start(def(), ctx(tmp()));
+  const pending = rt.send(session, input("handover"));
+  await new Promise((r) => setTimeout(r, 30));
+  await rt.endTurn(session);
+  const out = await pending;
+  assert.equal(out.error, undefined);
+  assert.equal(out.tokensUsed.input, 10);
+  assert.equal(out.tokensUsed.output, 312);
+  assert.equal(out.tokensUsed.cacheRead, 139_638, "the reads are real money too, even at weight 0 in the budgets");
+  assert.equal(out.tokensUsed.total, 10 + 312 + 14_826, "billed = input + output + cache writes, as for any turn");
+  await rt.stop(session);
+});
+
+test("an abort frame that reports usage is still the figure, and a turn that nobody measured stays unmeasured", async () => {
+  const reported = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "message_delta", awaitInterrupt: true, abortUsage: "summed" }));
+  const rt = new ClaudeRuntimeAdapter({ queryFn: reported.queryFn });
+  const session = await rt.start(def(), ctx(tmp()));
+  const pending = rt.send(session, input("handover"));
+  await new Promise((r) => setTimeout(r, 30));
+  await rt.endTurn(session);
+  const out = await pending;
+  assert.equal(out.tokensUsed.total, 10 + 312 + 14_826, "the frame carried the sum, and it is that");
+  await rt.stop(session);
+
+  // No frame of the turn carried usage and the abort's reads zero: nothing is made up.
+  const blind = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "silent", awaitInterrupt: true, abortUsage: "zero" }));
+  const rt2 = new ClaudeRuntimeAdapter({ queryFn: blind.queryFn });
+  const s2 = await rt2.start(def(), ctx(tmp()));
+  const p2 = rt2.send(s2, input("handover"));
+  await new Promise((r) => setTimeout(r, 30));
+  await rt2.endTurn(s2);
+  const o2 = await p2;
+  assert.equal(o2.tokensUsed.total, 0);
+  assert.equal(o2.tokensUsed.cacheRead ?? 0, 0);
+  await rt2.stop(s2);
+});
+
+test("a turn the mesh interrupts is billed what the stream reported when the abort's frame reads zero, as a timed-out one always was", async () => {
+  const { queryFn } = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "message_delta", awaitInterrupt: true, abortUsage: "zero" }));
+  const rt = new ClaudeRuntimeAdapter({ queryFn });
+  const session = await rt.start(def(), ctx(tmp()));
+  const settled = rt.send(session, input("work")).then(() => undefined, (e: unknown) => e);
+  await new Promise((r) => setTimeout(r, 30));
+  await rt.interrupt(session);
+  const err = await settled;
+  assert.ok(err instanceof InterruptedTurnError, `an interrupt is an interrupt: ${String(err)}`);
+  assert.equal(err.tokensUsed?.total, 10 + 312 + 14_826, "its spend rides on the error, not 0");
+  assert.equal(err.tokensUsed?.cacheRead, 139_638);
+  await rt.stop(session);
+});
+
+test("a frame that reports only cache reads is a report: it is not replaced by the stream's figure", async () => {
+  const { queryFn } = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "message_delta", awaitInterrupt: true, abortUsage: "reads-only" }));
+  const rt = new ClaudeRuntimeAdapter({ queryFn });
+  const session = await rt.start(def(), ctx(tmp()));
+  const pending = rt.send(session, input("handover"));
+  await new Promise((r) => setTimeout(r, 30));
+  await rt.endTurn(session);
+  const out = await pending;
+  assert.equal(out.tokensUsed.cacheRead, 5_000, "the frame said something, and that is the figure");
+  assert.equal(out.tokensUsed.total, 0);
+  await rt.stop(session);
+});
+
+test("a turn the backstop timed out is billed what the stream reported when the abort's frame reads zero", async () => {
+  const { queryFn } = fakeQuery(() => ({ calls: [HANDOVER_CALL], usageOn: "message_delta", awaitInterrupt: true, abortUsage: "zero" }));
+  const rt = new ClaudeRuntimeAdapter({ queryFn, turnTimeoutMs: 300 });
+  const session = await rt.start(def(), ctx(tmp()));
+  const err = await rt.send(session, input("work")).then(() => undefined, (e: unknown) => e);
+  assert.ok(err instanceof TurnTimeoutError, String(err));
+  assert.equal(err.tokensUsed?.total, 10 + 312 + 14_826);
   await rt.stop(session);
 });

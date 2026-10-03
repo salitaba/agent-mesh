@@ -379,6 +379,14 @@ completed when the mesh's own op result says it landed (`settleContinuityCalls`)
 landed write; before, all 13 handovers in the recorded runs were audited as failed beside the
 `continuity.recorded` event that said otherwise.
 
+What the handover spent is booked from the stream when the abort's own frame says nothing. The CLI
+answers an abort with a `result` frame whose usage can read zero for a call that was billed in full:
+six of the eleven handovers of the ninth to fifteenth cronlite runs booked 0 tokens, the developer's of
+the fifteenth for a call that wrote 14,826 and read 139,638 tokens of cache. The adapter takes the figure
+the frames carried (`abortedUsage`) when the abort's reads zero, for a handover, an interrupted turn and
+a timed-out one alike; a frame that reports anything is the figure, and a turn no frame measured stays
+unmeasured rather than free.
+
 ### When a mail wake is paid for
 
 Mail buys a turn three ways: the wake the send path makes when it arrives (stashed behind the

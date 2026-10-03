@@ -971,6 +971,19 @@ function liveUsage(turn: TurnState): AgentOutput["tokensUsed"] | undefined {
 }
 
 /**
+ * What a turn the mesh cut short spent: the abort's own `result` frame, or the figure the stream carried when that frame reads zero.
+ *
+ * The CLI answers an abort with a frame whose usage can be all zero though the call it cut short was billed in full. Six of the eleven
+ * handovers of the ninth to fifteenth cronlite runs (each ended by `endTurn` the moment its continuity record landed) booked 0 tokens
+ * that way, the developer's of the fifteenth for a call that wrote 14,826 and read 139,638 tokens of cache. Absent or zero is
+ * unmeasured, and unmeasured is not free.
+ */
+function abortedUsage(turn: TurnState, u: ClaudeTurnUsage | undefined): AgentOutput["tokensUsed"] {
+  const reported = settledUsage(turn, u);
+  return reported.total + (reported.cacheRead ?? 0) > 0 ? reported : (liveUsage(turn) ?? reported);
+}
+
+/**
  * The prompt the turn's final model call was handed — the record a NEXT turn's
  * first call is judged against — or 0 when no call reported usage.
  *
@@ -2281,7 +2294,8 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     // Billed as the live figure was (`noteCallUsage`), so the two still agree;
     // what the backend actually reported rides along whenever they differ.
     const raw = usageToTokens(result.usage);
-    const tokensUsed = settledUsage(turn, result.usage);
+    // A turn the mesh ended itself (a handover's `endTurn`) was answered by an abort frame: see `abortedUsage`.
+    const tokensUsed = turn.endRequested ? abortedUsage(turn, result.usage) : settledUsage(turn, result.usage);
     const usageGuard: ClaudeUsageGuard | undefined =
       turn.reattributedCalls > 0
         ? {
@@ -3195,9 +3209,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
             // answer. A timeout, typed as one so `isTimeoutError` routes it to
             // "slow" rather than the crash ladder, carrying what the frame
             // reports — the frames' own figure if the abort's reads zero.
-            const reported = settledUsage(pending, result.usage);
-            const spent = reported.total + (reported.cacheRead ?? 0) > 0 ? reported : (liveUsage(pending) ?? reported);
-            pending.settle({ ok: false, err: new TurnTimeoutError(this.turnTimeoutMs, spent, s.lastModel, BACKSTOP_NOTE) });
+            pending.settle({ ok: false, err: new TurnTimeoutError(this.turnTimeoutMs, abortedUsage(pending, result.usage), s.lastModel, BACKSTOP_NOTE) });
             // Answered, so alive and between turns: same reasoning as below.
             this.statuses.set(agentId, "IDLE");
           } else if (pending?.interrupted && result.is_error) {
@@ -3223,7 +3235,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
               ok: false,
               err: new InterruptedTurnError(
                 "turn interrupted by the mesh before the backend answered",
-                settledUsage(pending, result.usage),
+                abortedUsage(pending, result.usage),
                 // What the backend REPORTED running; the configured id is no
                 // stand-in (see the error's own doc: configured `sonnet`, ran
                 // `deepseek-v4.1-flash`), so an unreported model stays unknown.
