@@ -370,6 +370,16 @@ it three seconds later, and the tech lead rejected a good patch; the developer r
 twice (the commit merged at 16:59:40 holds exactly the files of `7fa5fa27`), after the patch had stood
 MERGEABLE at 16:56:34.
 
+What the verifier tests is in its prompt (`roles/qa.md`, *What to test, and what the report says*), because nothing in
+the mesh can know a contract's cases: derive them from the contract and not from the developer's tests or the examples it prints;
+test an enumeration member by member in every spelling the contract allows, a form in every place it is allowed and combined with
+the others, and every rejection with a near-miss that must be accepted; and write what was *run* (the command and its output),
+listing what was not under NOT TESTED and what only the developer's suite covers as theirs. The fifteenth cronlite run's QA ran
+the developer's 51 tests, eleven CLI commands and eight library checks and listed every behaviour of the contract as verified,
+among them case-insensitive names, tried with `JAN` and `MON`; the library refused `JUL` and `WED` as Quartz syntax, the defect of
+the runs of sections 8, 9, 14, 17, 19 and 20 of the notes, each of which QA had passed. Whether the section changes what QA runs is
+for the next live run to show.
+
 ### A handover's continuity call
 
 A handover turn exists to write one record. When `write_continuity` lands the supervisor ends the
