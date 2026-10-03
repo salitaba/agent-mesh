@@ -740,6 +740,23 @@ went on asking the tech-lead (whose "claim the tasks and proceed" could not work
 tasks were still `OPEN` when the mission completed. `mesh_task_create` now says what
 `requiredCapabilities` means: what the seat that claims the task must hold, all of it.
 
+**Completing a task says the work is done, and `mesh_done` completes it too.** `mesh_task_complete` takes a summary and the
+evidence the seat chooses to cite, and nothing checks that the work exists; it cannot be undone, and no tool releases a claim.
+`mesh_done`, which every role prompt tells a seat to end its turn with, completes the task its seat holds with the turn's summary
+(never in a handover), and it was described as "Finish your current activation turn": no seat could know. 23 of the 46 task
+completions of the eighth to the fifteenth cronlite runs were made that way, 19 of them in a turn that had also called `mesh_wait`.
+QA's were the worst: in each of the eight runs it claimed its verification task on its first turn and the task was COMPLETED by
+the end of it, with a summary that says it is waiting ("Implementation not yet available — standing by to test once code appears
+in repository", the fifteenth: claimed 04:48:37, completed 04:48:56, five minutes before the first line was merged). The board
+said "QA verification: done" for the rest of the run, and QA's real completion was refused ("task is COMPLETED"). `mesh_done` and
+`mesh_task_complete` now say that completing is DONE and not an acknowledgement, and what to do instead (leave the task claimed,
+`mesh_wait`, end the turn without `mesh_done`); `mesh_task_claim` says to claim what you can start now; and `roles/qa.md` has a
+section on the verification task: claim it only with something to verify, otherwise answer the delegate with when QA will start
+and wait (`patch.ready` and `implementation.completed` wake it). It is wording, and the next live run shows whether it holds. A
+`mesh_done` after a `mesh_wait` could simply not complete the task: that would have held back 11 of the 19 (ten of QA's and a
+tech lead's), but also the 8 whose work was done (a design or a patch awaiting its review), which would stay claimed to the finish
+line, where an open claim holds the mission and wakes its claimant. That trade is not made without a run that shows it.
+
 `REJECTED` has one edge out, to `DRAFT`, and it is the owner's: a reviewer's later approval of a
 rejected patch records a signature and moves nothing, and says so with the route ("only its owner (dev)
 can move it, so ask dev to rework it"; it used to say "move it to review first", which the reviewer
