@@ -4,9 +4,9 @@ Status: **FIXED** on branch `claude/exciting-gates-n75s1z` (one commit per findi
 with its own regression test). One live mission, two rounds, one crash; every finding below was either reproduced
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
-five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5), §20 (U1–U5, V1) and
-§21 (W1–W4). §18 is not a run: it records the rename to Curule.
+five more (F1–F4, M1), also fixed: §9. The standing loop's runs follow (every four hours to §21, once a day from §22 on, at the operator's request): §10 (G1–G3, G5, G6),
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5), §20 (U1–U5, V1),
+§21 (W1–W4) and §22 (X1–X4). §18 is not a run: it records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
 `mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
