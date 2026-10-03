@@ -26,6 +26,8 @@
     "pricing:check": "node scripts/export-pricing.mjs --check",
     "brand:build": "node scripts/build-brand.mjs",
     "brand:check": "node scripts/build-brand.mjs --check",
+    "site:domain": "node scripts/set-domain.mjs",
+    "site:check": "node scripts/set-domain.mjs --check",
     "test": "npm run build && node --test \"dist/tests/**/*.test.js\"",
     "test:only": "node --test \"dist/tests/**/*.test.js\"",
     "test:coverage": "npm run build && node --test --experimental-test-coverage \"dist/tests/**/*.test.js\"",

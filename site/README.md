@@ -21,24 +21,53 @@ npm run pricing:check      # fails if any of them is out of date (CI runs the sa
 The sentences that quote a number in prose (the free plan's size, the measured mission) are checked against the same
 data by `tests/build/site.test.ts`, so changing a price or a limit fails a test until the copy is updated.
 
-## Before it is published
+## Putting it on a domain
 
-Everything the page needs from you is marked `TODO(owner)`:
-
-- `DOCS_BASE` in the script: where the documents under `docs/` are served. It points at the repository on GitHub
-  until a documentation site exists.
-- `CONTACT_HREF`: a `mailto:` or a form for "Talk to us" and the paid plans.
-- The licensing contact in `LICENSE`: its contact line points at the repository's issue tracker until you have an
-  address, and should then use the same one as `CONTACT_HREF`. Change only that line; the licence's terms are pinned
-  by `tests/build/source-licence.test.ts`.
-- The footer: company name and contact address, and the privacy policy and terms once they exist.
-- `og:image` and `twitter:image` in the page's head: they name `assets/social-card.png`, and a link preview needs an
-  absolute address (`https://<your-domain>/assets/social-card.png`) once the domain is chosen; crawlers do not resolve
-  a relative one.
+Everything the page needs from you is marked `TODO(owner)`, and one command fills them, from the domain you chose and the
+addresses you have. It never buys, registers or publishes anything; those are yours.
 
 ```bash
-grep -n "TODO(owner)" site/index.html      # must print nothing before the page goes live
+npm run site:domain -- curule.dev --contact hello@curule.dev --security security@curule.dev \
+    --company "Your Company Ltd" --docs-base github --dry-run     # say what would change, write nothing
+npm run site:domain -- curule.dev --contact hello@curule.dev --security security@curule.dev \
+    --company "Your Company Ltd" --docs-base github               # the same, for real
+npm run site:check                                                # exits 1 while anything is still marked
 ```
+
+It writes, and a test (`tests/build/set-domain.test.ts`) pins each of these against the page and the policy as they are:
+
+- `index.html`: `og:image` and `twitter:image` as absolute addresses (a link preview needs them; a crawler does not
+  resolve a relative one), a canonical link and `og:url`, `CONTACT_HREF` (the "Talk to us" button and the paid plans) and
+  the footer's company and contact, and, with `--docs-base github`, the decision that the documents stay in the repository.
+- `SECURITY.md`: the reporting address (`--security`).
+- `CNAME`, `robots.txt`, `sitemap.xml`, and `security.txt` (RFC 9116, also at `.well-known/security.txt`, which is where
+  the RFC looks first; a host that drops dotfiles still serves the other copy).
+
+Run it again with the same arguments and nothing changes; run it with another domain and it replaces what it wrote, so a
+change of mind is one command. `security.txt` expires after a year, as the RFC asks: run the command again before then
+(with the same arguments only the dates change). `--dry-run` and `--check` write nothing. A page or policy that is no
+longer the shape it expects is refused whole, with the text it could not find, and nothing is written.
+
+What it leaves to you, because it is yours to decide:
+
+- The licensing contact in `LICENSE`: its contact line points at the repository's issue tracker until you have an
+  address, and should then use the same one as `--contact`. Change only that line, with your counsel; the licence's terms
+  are pinned by `tests/build/source-licence.test.ts`. `--check` reminds you while it still points at the repository.
+- The footer's privacy policy and terms, once they exist.
+- A documentation site, if you want one: `DOCS_BASE` in the page's script, and the test that pins it, change by hand.
+
+### Publishing
+
+The page is plain files, so any static host serves it. The repository carries one way, GitHub Pages, as a workflow you run
+by hand: **Actions → Publish the site → Run workflow**. It runs `npm run site:check` first and stops while anything is
+still marked, so a placeholder cannot reach the internet by accident. It has to be switched on once, in the repository's
+settings (Pages → Source: *GitHub Actions*, then your domain under *Custom domain*; when the certificate is ready, *Enforce
+HTTPS*). A publish from Actions takes the domain from those settings and ignores `CNAME`, which is there for hosts that read
+it and as the repository's own record of the domain. GitHub serves Pages from a private repository only on a paid plan.
+
+DNS, at your registrar: for an apex domain (`curule.dev`), the four `A` records (and four `AAAA`) GitHub lists for Pages;
+for a subdomain (`www`), a `CNAME` to `<owner>.github.io`. Take the addresses from GitHub's current "custom domain"
+documentation rather than from a copy of them here.
 
 ## The logo and icons
 

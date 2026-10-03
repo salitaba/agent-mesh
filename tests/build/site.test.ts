@@ -22,7 +22,8 @@ const data = JSON.parse(/<script type="application\/json" id="plans-data">([\s\S
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 test("every file the page references exists, and nothing is loaded from another host", () => {
-  const refs = [...markup.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]!);
+  // `<link rel="canonical">` names the page's own address (`scripts/set-domain.mjs` adds it): nothing is fetched from it.
+  const refs = [...markup.replace(/<link rel="canonical" href="[^"]*">/g, "").matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]!);
   assert.ok(refs.length > 10, "the page has references to check");
   const missing: string[] = [];
   const external: string[] = [];
@@ -105,4 +106,21 @@ test("the page states what is planned and not included, and does not sell it", (
   for (const plan of Object.values(PLANS)) {
     for (const item of plan.roadmap ?? []) assert.ok(!copy.toLowerCase().includes(`includes ${item.toLowerCase()}`), item);
   }
+});
+
+test("once the page names its own address, the canonical link, og:url, the social images and the CNAME agree", () => {
+  const canonical = /<link rel="canonical" href="([^"]+)">/.exec(page)?.[1];
+  if (canonical === undefined) {
+    // The template: the domain is not chosen, so the markers are still there for `scripts/set-domain.mjs` to fill.
+    assert.match(page, /TODO\(owner\)/, "an unset page says what is left to do");
+    assert.ok(!fs.existsSync(path.join(ROOT, "site", "CNAME")), "and a CNAME without a canonical link is a half-applied domain");
+    return;
+  }
+  assert.match(canonical, /^https:\/\/[a-z0-9.-]+\/$/, "the canonical address is the site's origin, over https");
+  assert.equal(/<meta property="og:url" content="([^"]+)">/.exec(page)?.[1], canonical);
+  for (const re of [/<meta property="og:image" content="([^"]+)">/, /<meta name="twitter:image" content="([^"]+)">/]) {
+    assert.equal(re.exec(page)?.[1], `${canonical}assets/social-card.png`, "a link preview needs an absolute address on the same origin");
+  }
+  assert.equal(fs.readFileSync(path.join(ROOT, "site", "CNAME"), "utf8").trim(), new URL(canonical).host, "the CNAME is the canonical host");
+  // What is still marked TODO(owner) is the publish workflow's concern (`npm run site:check`), not a reason for CI to fail.
 });
