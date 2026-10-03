@@ -20,7 +20,9 @@ import { makeMesh } from "../helpers";
  * results, is refused ("task is COMPLETED").
  *
  * The side effect is now said where the seat decides to call the tool, `mesh_task_complete` says what completing means, and the QA
- * role prompt says when to claim and how to wait.
+ * role prompt says when to claim and how to wait. The sixteenth run's QA did it again with all of that in place (claimed 08:47:56,
+ * completed 08:48:17, after `mesh_wait`), so a `done` in a turn that waited and made nothing no longer completes the task while the
+ * mission is unfinished (`tests/core/done-waiting.test.ts`); the description says so too.
  */
 
 const AGENTS = [
@@ -58,6 +60,7 @@ test("mesh_done says that it completes the claimed task, and what to do when the
   assert.match(done.description, /If you hold a claimed task, finishing COMPLETES it with this summary, exactly as mesh_task_complete does/);
   assert.match(done.description, /end a turn with mesh_done only when the task's work is done/);
   assert.match(done.description, /Waiting for something, or not started yet\? Say so \(mesh_wait\) and end the turn without mesh_done: the task stays yours\./);
+  assert.match(done.description, /A turn that called mesh_wait and made nothing \(no artifact, commit, review, verdict or task\) does not complete it even if it ends with mesh_done: the reply says so and the task stays claimed\. Once every mandatory criterion is evidenced, mesh_done completes it as before\./);
   assert.match(done.inputSchema.properties.summary?.description ?? "", /the task's completion summary when you hold a claimed task/);
 });
 

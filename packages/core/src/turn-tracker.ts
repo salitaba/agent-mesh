@@ -543,6 +543,17 @@ export interface TurnEffectTally {
 /** Names kept per list in a {@link TurnEffectTally}: enough to act on, small enough to render. */
 export const MAX_TALLY_NAMES = 5;
 
+/**
+ * Did the turn MAKE anything: an artifact, a commit, a merge, a request for review, a verdict, a task or a decision?
+ *
+ * What a seat says (a message), what it holds (a claim) and what it raises (an escalation) are not in it, and neither is a
+ * plan or a note: a turn that only talked has made nothing. Read by `done`, which must know whether a seat that said it was
+ * waiting has anything to show for the task it holds.
+ */
+export function turnMadeSomething(t: TurnEffectTally): boolean {
+  return t.published + t.versioned + t.commits + t.merges + t.reviewRequests + t.verdicts + t.tasksCreated + t.decisions > 0;
+}
+
 export function newTurnEffectTally(): TurnEffectTally {
   return {
     published: 0,

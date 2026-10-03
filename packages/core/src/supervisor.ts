@@ -130,7 +130,7 @@ import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, liveClaims
 import { refToString, artifactUri, parseArtifactUri } from "../../protocol/src/uri";
 import { isEvidenceRead, isMeshToolCall, settleContinuityCalls, traceToolCalls } from "./turn-tracker";
 import { TurnTracker, RECENT_TURNS_MAX, MAX_DELIVERED_PER_TURN, describeError, ABNORMAL_TURN_ENDINGS, abnormalTurnNote, workerBudgetFor, READ_RESULT_OPS, type TurnRecord, type TurnPhaseName, type TurnTrackerPersist } from "./turn-tracker";
-import { DATA_RESULT_OPS, newTurnEffectTally, noteTurnEffect, summarizeTurnEffects, type TurnEffectTally, type UnfinishedTurnFacts } from "./turn-tracker";
+import { DATA_RESULT_OPS, newTurnEffectTally, noteTurnEffect, summarizeTurnEffects, turnMadeSomething, type TurnEffectTally, type UnfinishedTurnFacts } from "./turn-tracker";
 import { MAX_FILES_TOUCHED, type TurnCheckpoint } from "./turn-tracker";
 import { TurnTimeoutError, type TurnUsage } from "../../protocol/src/index";
 import {
@@ -1125,6 +1125,12 @@ interface TurnState {
   handover?: boolean;
   /** The summary a `done` op stated, so the turn can report it. */
   declaredSummary?: string;
+  /**
+   * What this turn has landed on the mesh so far, counted from the events the kernel correlates to it. `done` reads it:
+   * a seat that said it is waiting and has made nothing has not finished the task it holds. Absent on an op run outside a
+   * turn, which reads as "no information" and completes as before.
+   */
+  landed?: TurnEffectTally;
 }
 
 /**
@@ -8321,7 +8327,7 @@ export class Supervisor {
         },
       };
 
-      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [], handover: handover !== null };
+      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [], handover: handover !== null, landed };
       this.liveTurnByAgent.set(agentId, turn);
       // Open the verification tally BEFORE the runtime runs. MCP ops execute
       // during the call, and with no entry `claimIsVerified` reads "no turn in
@@ -11170,14 +11176,27 @@ export class Supervisor {
           // turn whose only ops were write_continuity + done, with the patch
           // unreviewed and later rejected (NOTES-live-run-20260925-2040.md §7).
           const task = turn.handover ? undefined : this.state.agents.get(actorId)?.state.activeTaskId;
+          let kept: string | undefined;
           if (task) {
             const t = this.state.tasks.get(task);
             if (t && (t.status === "CLAIMED" || t.status === "IN_PROGRESS")) {
-              await this.completeTask(actorId, task, op.summary ?? "done");
+              // `done` completes the task a seat holds, and a seat that has said it is waiting and has made nothing this
+              // turn is ending the turn, not the task. In every cronlite run from the eighth to the sixteenth QA claimed
+              // its verification task on its first turn, waited for the developer and ended with `done`, and the task read
+              // COMPLETED, "standing by to test", for the rest of the mission (13 of the 13 such completions of the third to
+              // the fifteenth runs were a turn that waited and made nothing). Once every mandatory criterion is evidenced
+              // nothing is left to wait for, and a `done` closes the claim as it always did: that is the turn the
+              // watchdog's nudge asks for.
+              if (turn.waitRequested && turn.landed && !turnMadeSomething(turn.landed) && this.hasUnmetMandatory()) {
+                kept = `task ${task} stays claimed by you: this turn waited and made nothing (no artifact, commit, review, verdict or task), so ending it is not finishing the task. Complete it (mesh_task_complete, or the mesh_done that ends a turn in which the work was done) when its work exists.`;
+                this.auditLine(`${actorId}'s done did not complete ${task}: the turn waited and made nothing, and the mission is not finished`);
+              } else {
+                await this.completeTask(actorId, task, op.summary ?? "done");
+              }
             }
           }
           if (typeof op.summary === "string" && op.summary.trim()) turn.declaredSummary = op.summary.trim();
-          return { ok: true, op: op.op };
+          return kept ? { ok: true, op: op.op, reason: kept, caveat: true } : { ok: true, op: op.op };
         }
         case "remember": {
           await this.rememberMemory(actorId, op.key, op.value);

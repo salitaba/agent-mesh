@@ -752,10 +752,25 @@ said "QA verification: done" for the rest of the run, and QA's real completion w
 `mesh_task_complete` now say that completing is DONE and not an acknowledgement, and what to do instead (leave the task claimed,
 `mesh_wait`, end the turn without `mesh_done`); `mesh_task_claim` says to claim what you can start now; and `roles/qa.md` has a
 section on the verification task: claim it only with something to verify, otherwise answer the delegate with when QA will start
-and wait (`patch.ready` and `implementation.completed` wake it). It is wording, and the next live run shows whether it holds. A
-`mesh_done` after a `mesh_wait` could simply not complete the task: that would have held back 11 of the 19 (ten of QA's and a
-tech lead's), but also the 8 whose work was done (a design or a patch awaiting its review), which would stay claimed to the finish
-line, where an open claim holds the mission and wakes its claimant. That trade is not made without a run that shows it.
+and wait (`patch.ready` and `implementation.completed` wake it).
+
+**Wording did not hold, so a `done` that only ends a turn completes nothing.** The sixteenth run (QA's first turn, 08:47:56, with
+the sentences above in the tool descriptions and the role prompt) claimed its task, called `mesh_wait`, called `mesh_done`, and
+the task was COMPLETED 21 seconds after the claim: "Implementation not yet available - developer is working on it. Standing by".
+It was the ninth run in a row, the eighth to the sixteenth. In the thirteen runs before it (the third to the fifteenth), 31 tasks
+were completed by `mesh_done`, 25 of them in a turn that also waited. Counting what each turn had landed (the events the kernel
+correlates to it: an artifact created or versioned, a commit, a merge, a review requested, a verdict, a task, a decision), 15 of
+the 31 were in a turn that waited **and made nothing** while the mission still had an unmet mandatory criterion: 13 were QA's
+first turn ("standing by"), one a tech lead's whose merge had been refused (its summary says "CLI patch merge blocked"), one a
+developer's closing turn that moved a patch's state and had nothing else to show. The 10 that waited and **did** make something
+(a design published, a patch committed and sent to review) were work finished and awaiting its review, and the other 6 did not
+wait. So a `mesh_done` in a turn that called `mesh_wait` and landed none of those no longer completes the task its seat holds
+while a mandatory criterion is still unmet: the reply says "task … stays claimed by you" and what would complete it, the audit log
+records it, and the task stays CLAIMED. The seat's next `mesh_done` or `mesh_task_complete` completes it as before; so does a
+`done` in a turn that did not wait, or that made something; and once every mandatory criterion is evidenced nothing is left to wait
+for, so a `done` closes the claim as it always did (that is the turn the finish-line nudge asks for). The cost is that a task which
+a seat completes only by a `done` in a turn that waited stays claimed until its next turn, or until the finish line, where the
+watchdog wakes the claimant once.
 
 `REJECTED` has one edge out, to `DRAFT`, and it is the owner's: a reviewer's later approval of a
 rejected patch records a signature and moves nothing, and says so with the route ("only its owner (dev)
