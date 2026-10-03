@@ -10017,6 +10017,66 @@ export class Supervisor {
     );
   }
 
+  /**
+   * Whether a patch that records no commit is in the product all the same: asked when its merge moved nothing.
+   *
+   * That outcome has two causes that need opposite answers. The seat wrote files and never committed them: its work is in
+   * a worktree and on no branch, and the merge is rightly refused. Or the seat committed with its own git, published
+   * several patches from the one branch, and the merge of the first took the whole branch (a patch that records no commit
+   * has nothing to scope it by): every later patch's work is in the product already, and refusing it as "never committed"
+   * is false. The fourteenth cronlite run's developer published a library patch and a CLI patch that way; the tech lead
+   * merged the library, the CLI was refused three times with that sentence, the remedy it named (`mesh_commit`) was refused
+   * in turn ("nothing was committed: the branch holds nothing that is not already on the product branch"), and the CLI sat
+   * MERGEABLE for the rest of the run with its code on main.
+   *
+   * It is the second only when both hold: the owner's worktree holds nothing uncommitted (the first cause leaves files there),
+   * and every file the patch lists is in the product checkout with the content the patch carries. The second is what keeps a
+   * patch that describes work nobody wrote, or work since rewritten, from being recorded as merged because some other patch
+   * left the branch clean. `undefined` is "cannot say" (no worktree for this seat, or git would not answer), and the
+   * refusal then stands as it was.
+   */
+  private async landedWithItsBranch(
+    artifact: Artifact,
+  ): Promise<{ landed: true; files: string[] } | { landed: false; dirty: string[]; why: string } | undefined> {
+    const workspace = this.deps.workspace;
+    if (!workspace) return undefined;
+    const held = await this.uncommittedFiles(artifact.owner);
+    if (!held) return undefined;
+    if (held.dirty.length > 0) return { landed: false, dirty: held.dirty, why: "" };
+    const meta = artifact.metadata as { path?: unknown } | undefined;
+    const metadataPath = typeof meta?.path === "string" && meta.path.trim() ? meta.path.trim() : undefined;
+    let content: string;
+    try {
+      content = await this.deps.content.read(artifact.contentRef);
+    } catch {
+      return undefined;
+    }
+    const files = extractPatchFiles(content, metadataPath);
+    if (files.length === 0) {
+      return { landed: false, dirty: [], why: "the patch lists no file to look for in the product (a `## File: <path>` section for each, or `metadata.path`)" };
+    }
+    const plain = (text: string): string => text.replace(/\r\n/g, "\n").trimEnd();
+    const missing: string[] = [];
+    const differing: string[] = [];
+    for (const file of files) {
+      const target = safeProductPath(workspace.mainPath, file.path);
+      let there: string | undefined;
+      try {
+        there = target ? fs.readFileSync(target, "utf8") : undefined;
+      } catch {
+        there = undefined;
+      }
+      if (there === undefined) missing.push(file.path);
+      else if (plain(there) !== plain(file.content)) differing.push(file.path);
+    }
+    if (missing.length === 0 && differing.length === 0) return { landed: true, files: files.map((f) => f.path) };
+    const said = [
+      ...(missing.length > 0 ? [`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not in the product`] : []),
+      ...(differing.length > 0 ? [`${differing.join(", ")} ${differing.length === 1 ? "is" : "are"} in the product but not as the patch lists ${differing.length === 1 ? "it" : "them"}`] : []),
+    ];
+    return { landed: false, dirty: [], why: said.join(", and ") };
+  }
+
   /** Would `opCommit` let this seat commit? Asked the same way it asks. */
   private canCommit(agentId: string): boolean {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
@@ -11819,6 +11879,8 @@ export class Supervisor {
       // -- so a conflicted merge became a thrown turn rather than an op result,
       // and the commit sha of a successful one was discarded by a bare `void`.
       let merged: { commit: string; alreadyUpToDate?: boolean; leftBehind?: string[] };
+      // The files a patch that records no commit lists, when the product holds them all as published (see `landedWithItsBranch`).
+      let landedWithBranch: string[] | undefined;
       // The product checkout holds nothing legitimately uncommitted: work reaches it through this op alone.
       // Whatever a seat wrote there directly is on no branch and makes `git merge` refuse, for this merge
       // and every one after it (see `setAsideProductChanges`), so it is set aside, saved, before the merge.
@@ -11861,24 +11923,40 @@ export class Supervisor {
         //    main: an earlier merge landed it. MERGED is true.
         //  - it recorded no commit: the branch arm merged the seat's branch,
         //    and "already up to date" there means the branch holds nothing
-        //    main lacks -- a seat that wrote files and never committed them.
-        //    Its work is untracked in a worktree, on no branch at all.
+        //    main lacks. Two things look alike here. A seat that wrote files
+        //    and never committed them has its work untracked in a worktree, on
+        //    no branch at all. A seat that committed with its own git, whose
+        //    branch an earlier merge took whole, has its work in the product
+        //    already: `landedWithItsBranch` tells them apart.
         //  - it recorded a commit with an EMPTY diff (logs from before
         //    `opCommit` refused empty commits): the sha is main's own, so
         //    being "on main" says nothing about the patch.
         //
-        // The last two are refused, leaving the patch MERGEABLE: the fix is a
-        // `commit`, then the same merge.
+        // What is left of the last two is refused, leaving the patch MERGEABLE.
         const recordedCommit = typeof artifact.metadata?.commit === "string" && artifact.metadata.commit.length > 0;
         const emptyDiff = artifact.metadata?.diffDigest === EMPTY_DIFF_DIGEST;
-        if (!recordedCommit || emptyDiff) {
+        const found = !recordedCommit && !emptyDiff ? await this.landedWithItsBranch(artifact) : undefined;
+        if (found?.landed) {
+          landedWithBranch = found.files;
+        } else if (!recordedCommit || emptyDiff) {
+          const owner = artifact.owner;
+          const commitIt =
+            `${owner} must \`mesh_commit\` the patch's files. That records the commit as a NEW version of the patch, which starts over at DRAFT and needs review again before it can be merged ` +
+            `(commit BEFORE asking for review next time).`;
+          const why = recordedCommit
+            ? `and the commit it records has an empty diff, so none of this patch's work is on the product branch. ${commitIt}`
+            : !found
+              ? `and the patch records no commit, so its work was never committed: files ${owner} wrote but did not commit are on no branch. ${commitIt}`
+              : found.dirty.length > 0
+                ? `and the patch records no commit, and ${owner} has ${found.dirty.length} uncommitted file(s) in its worktree (${found.dirty.slice(0, 5).join(", ")}${found.dirty.length > 5 ? `, +${found.dirty.length - 5} more` : ""}): ` +
+                  `written and never committed, they are on no branch. ${commitIt}`
+                : // Nothing is uncommitted and the branch is in the product, so `mesh_commit` would refuse too ("nothing to commit"):
+                  // the remedy is not the commit.
+                  `and the patch records no commit. ${owner}'s worktree holds nothing uncommitted and its branch holds nothing the product lacks, so \`mesh_commit\` has nothing to record, yet ${found.why}. ` +
+                  `${owner} must publish a new version of the patch (\`asVersionOf\`) that lists what the product holds, or names the commit it was made in (\`metadata.commit\`).`;
           const reason =
-            `git reports '${artifact.name}' already in the product as ${merged.commit.slice(0, 12)} — the merge moved nothing, ` +
-            (recordedCommit
-              ? "and the commit it records has an empty diff, so none of this patch's work is on the product branch. "
-              : `and the patch records no commit, so its work was never committed: files ${artifact.owner} wrote but did not commit are on no branch. `) +
-            `${artifact.owner} must \`mesh_commit\` the patch's files. That records the commit as a NEW version of the patch, which starts over at DRAFT and needs review again before it can be merged ` +
-            `(commit BEFORE asking for review next time). This version stays MERGEABLE, and implementation-merged stays UNEVIDENCED`;
+            `git reports '${artifact.name}' already in the product as ${merged.commit.slice(0, 12)} — the merge moved nothing, ${why} ` +
+            "This version stays MERGEABLE, and implementation-merged stays UNEVIDENCED";
           this.auditLine(`merge of '${artifact.name}': ${reason}`);
           await this.denied(actorId, artifactId, "merge (nothing landed)", { decision: "DENY", reason, ruleId: "merge.nothing-committed" });
           return { ok: false, op: "merge", reason };
@@ -11886,7 +11964,11 @@ export class Supervisor {
       }
       proof = { via: "git", commit: merged.commit, ...(merged.alreadyUpToDate ? { alreadyUpToDate: true } : {}) };
       landed = merged.alreadyUpToDate
-        ? `already in the product as ${merged.commit.slice(0, 12)} (landed by an earlier merge)`
+        ? `already in the product as ${merged.commit.slice(0, 12)} (landed by an earlier merge${
+            landedWithBranch
+              ? `: ${artifact.owner}'s branch holds nothing the product lacks, and ${landedWithBranch.length === 1 ? "the file" : "every file"} this patch lists (${landedWithBranch.join(", ")}) ${landedWithBranch.length === 1 ? "is" : "are"} there as published`
+              : ""
+          })`
         : `merged as ${merged.commit.slice(0, 12)}`;
       if (merged.leftBehind && merged.leftBehind.length > 0) {
         // Either the scope held (later commits deliberately not landed) or there
