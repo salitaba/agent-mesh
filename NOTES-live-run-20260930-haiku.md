@@ -1729,3 +1729,104 @@ one). Every one failed a test.
   have in common, before saying what the operator found.
 - **A verifier that lists everything as verified has told you nothing.** The report has to separate what it ran from what the developer's suite covers
   and from what nobody ran.
+
+## 22. The sixteenth run, on the W-fixes build: four findings (X1–X4)
+
+The twelfth cycle of the standing loop: the routine fired at 08:43 UTC on 2026-10-03. The same mission, SPEC, mesh config, model and clean
+launch environment, on the branch at `ce4974b` (`main` was at `db5771a`; the four commits between them are the site, a Pages workflow and a
+Compose overlay, none of them runtime): every fix of §0–§21. Session 08:45–09:34 UTC: 61 turns, 1,145,939 billed tokens (about $4.47 at list
+price; `curule usage` and the analysis tool agree to the token), every turn on `claude-haiku-4-5`, 1,031 events. Round 1 ran headless
+(`curule run --no-tui`); the reopen went through a parked console, and the restart after the kill ran on the same state directory. One run, so
+the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 08:45:33 | `curule run` | five seats start |
+| 09:18:06 | goal met, 6/6 | 32 min 33 s after the launch (run 15: 11 min 44 s); 40 turns, 747.3k billed (run 15: 25 turns, 490.2k). The last 13 min 44 s are X2: all six criteria were evidenced at 09:04:22 and the developer's task could not complete. **The mesh did not finish this round by itself**: the developer's escalation (09:16:13) was answered by me as the operator at 09:16:53, with the cause and the call, and QA recorded its pass seven seconds later |
+| 09:23:30 | operator reopen quoting four defects, naming four criteria and asking for a regression test for each | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED, five seats resumed |
+| 09:27:32 | `kill -9` of the host with the developer (three minutes into a 43-call turn) and QA mid-turn | three processes orphaned (the developer's seat and its bridge, and QA's seat) |
+| 09:27:35 | restart, 3 s after the kill | the two open turns closed as interrupted, five budget holds released, architect, tech lead and developer woken for recovery (QA 17 s later); the reaper stopped the developer's two orphans at 09:27:38 |
+| 09:33:32 | goal met again | 10 min 2 s after the reopen, 5 min 57 s after the restart; round 2: 21 turns, 398.6k billed (run 15: 17 turns, 295.5k) |
+
+**Quality** (the oracle of §2): round 1 scored 1539/2254 raw (68.3%) and 2937/2992 stratified (98.2%), against run 15's round 1 at 63.3% and
+88.7%; the product's own suite was 128/128 and the CLI probes 23/23. Four families, all four verified on the merged product before the reopen
+and quoted in it: **`*` as a list item is refused** (`*,5 * * * *` throws "Invalid value: *"; the defect of runs 5 to 12 and 15), **a month or
+day name in capitals that contains an `L` or a `W` is refused as Quartz syntax** (`JUL`, `WED`, `WED-FRI`: the family of §8, §9, §14, §17, §19,
+§20 and §21, the eighth run in which it appears), **numbers that are not plain decimal digits are accepted** (`1.5`, `0x10`, `+5`), and **the
+messages** (`parse('')` says "Empty input", `@daily` says "Expected 5 fields, got 1"; 21 of 70 soft checks). All four are fixed: the final
+product scored **3049/3049 raw (100%) and 3034/3034 stratified (100%)**, its own suite 154/154, the CLI probes 23/23; the messages are better
+and not done (57 of 76 soft checks: `*/0`, `5/15`, `L`, `?`, `1-2-3` and `1/2/3` still do not name the field, `@daily` does not name the
+value and `-1` prints it empty). As after most reopens the final product has no hard failure, and what the reopen named is what was fixed: it named every family the
+oracle found, which is §21's lesson applied (probe past the first failures and sort the rest by what they have in common). 28 of 61 turns (45.9%, 27.3% of the
+billed tokens) changed no durable state (run 15: 50% and 27.5%); seven turns and 170k tokens were woken by an INFORM.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| W1 | held: the developer's two handover turns (08:58:20 and 09:29:56, 12 s each) booked 6,926 and 9,561 tokens (input 10, output 1,109 and 1,189, the rest cache), where the build before it booked 0 for six of eleven. Not compared with the seat's own transcript |
+| W2 | **did not hold**: QA claimed its verification task at 08:47:56 and the task was COMPLETED at 08:48:17 ("Implementation not yet available - developer is working on it. Standing by"), with the tool descriptions and the QA section of §21 in place. X1 is the answer |
+| W3 | **did not hold**: QA ran `npm test` (the developer's 128 tests) and eight CLI commands (none a star list, a name in capitals, a number that is not an integer or a message) and wrote a report with no NOT TESTED section that lists "All CronParseError messages include field name" as verified, where 49 of 70 soft checks failed. After the reopen it ran `npm test`, one script for the four defects it was told about and two CLI calls. Wording failed twice in a row |
+| W4 | consistent, not proved: the one `mesh_commit` (09:30:08) came on a branch whose manifest the patch's previous version already carried, and no `dependency.changed` event was emitted in the run, where the build before it announced a manifest at every commit |
+| V1 | held: `curule status` after both hosts had exited printed `[COMPLETED]`, 100%, `Tokens: 1145939 / 3000000` and the seats' own figures |
+| B23 | **exercised for the fourth time**: three orphans three seconds after the kill and, at 09:27:38, "claude runtime: stopped 2 seat process(es) left running by a mesh process that died (pid 7682): 8130, 8145" (the developer's seat and its bridge); QA's seat, three seconds old at the kill, was gone on its own. The notice is in `projection-rejections.log` |
+| B21, B22, M1 | held: the developer's and QA's open turns closed as interrupted ("abandoned by server restart: the process ended before the turn did, so its spend was never recorded", 09:27:36), "boot: released 5 budget hold(s) left open by a process that ended mid-turn", and the reopen resumed five seats and withdrew the four criteria it named |
+| U5 and the verdict route | held: the tech lead wrote an artifact id from memory three times (08:48:28, 09:29:50, 09:31:57); each refusal named the artifacts it owed a verdict on, and the next call in the same turn carried the right id |
+| U3, P2 | the nudges went where they should (08:59:04.7 to the tech lead, who merged the parked patch six seconds later; 09:04:04.7 to the pm, "the acceptance is yours to give"), and the finish-line note went to the developer at 09:05:04.7 ("the mission stays open only for a task you still hold"). P2's short grace did not apply to the pm's nudge: X3 |
+| U1, U2, U4, T2, T3, T5, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1 | **not exercised**: nothing here asked for what they guard (no `work.request` call, no unclaimable task, no second patch from a merged branch) |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| X1 | **`mesh_done` still completed the task its seat held, after wording that said it would not.** In every cronlite run from the eighth to the sixteenth QA's first turn claimed its verification task, called `mesh_wait` and ended with `mesh_done`, and the task read COMPLETED for the rest of the run with a summary that says it is standing by. §21's W2 changed the wording and the sixteenth run had all of it; QA did the same 21 seconds after the claim | the rule is code: a `done` in a turn that called `mesh_wait` and landed no artifact, commit, merge, review request, verdict, task or decision (counted from the events the kernel correlates to the turn) completes nothing while a mandatory criterion is unmet; the reply is a caveat that names the claim, the audit line says so, and the seat's next `done` or `mesh_task_complete` completes it as before; once every mandatory criterion is evidenced a `done` closes the claim as it always did, which is what the finish-line nudge asks for. Measured on the 31 tasks that runs 3 to 15 completed by `mesh_done`: it would have held 15 (13 of them QA's first turn, one a tech lead whose merge had been refused, one a developer's closing turn); the 10 that waited and made something and the 6 that did not wait complete as before | `tests/core/done-waiting.test.ts` (17 tests), a pin in `tests/core/task-completion-meaning.test.ts`; 27 mutants |
+| X2 | **A refused completion named a token and not who could give it, and nothing told QA that its pass was gone.** The developer's task carried the implementation gate (`implementation.completed` requires `tech-lead.approve` and `qa.pass`). QA's pass, given at 08:54:51, was dropped at 08:57:20 when QA published a new version of its own report (a new version drops every verdict recorded on the old one, by design), and QA did not record it again. All six criteria were evidenced at 09:04:22 and the goal completed at 09:18:06: the developer's `mesh_task_complete` was refused in three turns with "missing: qa.pass", it was nudged five times, asked QA once (who answered "qa.pass verdict recorded" and recorded nothing) and raised an escalation that read "Appears to be system state synchronization issue". My one message to QA with the exact call settled it in seven seconds | the refusal names, for each missing requirement, the seats that hold it (a gate names an actor by seat id or by role; every match is named, an alternative nobody holds says so, the operator is never the holder), the call that records it, that the claimant cannot give it for them, and that a verdict on an earlier version does not stand. The reply to a publish of a new version names the verdicts it dropped, once each, and tells the publisher to record its own again with the call | `tests/core/verdict-routing.test.ts` (9 tests); 20 mutants, two of them survivors of the first tests (a seat found by its id when its role differs; another artifact's verdicts collected) that a test each now kills |
+| X3 | **A nudge about a patch held back the nudge for the acceptance.** The watchdog nudged the tech lead at 08:59:04.7 to move a patch (merged at 08:59:10); QA's report went FINAL at 08:59:20 and its turn ended at 08:59:27; what was left was the pm's acceptance of the last two criteria, with the proof in hand. The acceptance nudge waits a twelfth of the idle window (15 s), so the first tick past it, 09:00:04.7, was the one. It came at 09:04:04.7, exactly 300.000 s after the nudge before it, and the pm accepted both criteria 16 s later: 4 min 37 s with nothing to wait for. The thirteenth run had taught the cooldown that exception for a claimed task (`sentBeforeTheFinishLine`) and for nothing else | the watchdog dates the moment it first saw acceptance ready (on every tick, a turn in flight or not, cleared when it is not ready), and a nudge sent before that does not count as cooling (`sentBeforeAcceptance`); a nudge sent after it is held as before, and readiness lost and regained is a new situation | `tests/integration/stall-acceptance-cooldown.test.ts` (3 tests); 9 mutants, 7 killed; the two that survive are the resets of the new field at go-live and at stop, equivalent because the cooldown is zeroed there too and the next tick rewrites the value |
+| X4 | **The acceptance that brought the mission to the finish line said nothing of what still held it open.** The pm accepted the last criterion at 09:04:22 with the developer's task still claimed; the reply was silent, and four seconds later the pm broadcast MISSION_COMPLETE to the other four seats ("Ready for production"). The unread broadcast woke QA, the tech lead and the architect at 09:08:34, 4 min 8 s on, for turns that did nothing (7.1k, 8.9k and 10.8k tokens; the tech lead's one op was a `complete_task` refused, "task claimed by developer") | `recordDecision` says, in the reply to a verdict that brings the mission to the finish line, what the watchdog already says to a seat it wakes: to the claimant "a task you still hold … finish it with `mesh_task_complete`", to any other seat "claimed by dev … Only the claimant can complete it", after whatever caveat the verdict carried. A verdict given once the mission is already there, a refused one, one that leaves a criterion open and one that completes the mission say nothing | `tests/core/finish-line-reply.test.ts` (6 tests); 11 mutants, 10 killed; the one that survives (a refused verdict noted too) is equivalent in a single sequence of acts and stays as a guard |
+
+What each does and why is in `docs/protocol.md` (completing a task; a refused gate and a new version's dropped verdicts; the finish-line reply) and
+`docs/runtime.md` (the stall watchdog); the commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **QA's breadth did not change with the wording, twice.** Runs 15 and 16 both had QA run the developer's suite and about ten commands and list
+  the contract as verified, and the report's claim that every message names its field was false. The prompt is the only lever the mesh has
+  without reading prose, and a rule that refused a pass without a NOT TESTED section would police the shape of a report and not what was run. What
+  works is the operator's reopen that names the families (runs 12 to 14 and this one): four quoted, four fixed. A suite or an oracle handed to QA
+  is the next thing to try, and it is the customer's to provide.
+- **The first round needed the operator.** X2 is what the mesh could not do for itself; the reply to a publish now tells QA what its new version
+  dropped, which is the point where QA could have acted. Whether Haiku reads it is for the next run.
+- **X1 trades a premature completion for a claim held to the finish line.** A task a seat completes only by a `done` in a turn that waited stays
+  claimed until its next turn or until the finish line, where an open claim holds the mission and the watchdog wakes its claimant (one nudge, about
+  8k tokens). That trade is what the last two cycles argued for, and the next run shows what it costs.
+- **A turn begun just before the end ran after it.** The developer's turn begun at 09:32:54 ended at 09:33:42, after the goal completed at
+  09:33:32, with all three ops refused ("mission is COMPLETED") and 17.8k tokens spent. Bounded; carried from §21.
+- **The messages are still soft** (57 of 76) and the model's `*` list-item defect came back (ten of the twelve runs from the fifth). Both are the product's,
+  not the mesh's.
+- **The developer's first turn called `mesh_plan_step` nine times with no plan** ("no plan yet — call `mesh_plan` first", each refused) in one
+  five-minute turn of 100k tokens, in parallel and not seeing the first reply; nothing was lost but the plan. Seen once.
+- **X3 and X4 are decisions, not fixes of a seat.** Whether the pm announces less after X4 and nudges come sooner after X3 shows in the next run.
+- **One run.** X1's effect on QA's task, X2's and X4's replies and X3's first nudge are for the next run.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `ce4974b`, before this round | 3590 | 3588 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 28 s) | 3625 | 3623 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (189 warnings, one rule; the baseline was 188 and the one extra is the new file's relative import of the protocol package). Mutation checks, each reverted: X1 (27
+mutants: each condition inverted or dropped, each kind of work removed from or a message, claim or escalation added to what counts, the tally not
+carried, the reply, the audit line and the description sentence removed), X2 (20), X3 (9) and X4 (11). Every one now fails a test but three, the
+equivalents above (the two survivors of X2's first tests were closed by a test each).
+
+### Worth keeping from this round
+
+- **When wording fails twice, make it code, and measure the rule on the log first.** X1 was simulated on the 31 completions of thirteen runs
+  before it was written: it would have held 15 and every one was a seat standing by.
+- **A refusal that names a token is half an answer.** "Missing: qa.pass" says what is absent; the seat that has to act needs who holds it, the
+  call, and that the claimant cannot give it for them. A verdict is about content: say, where a new version is published, what that dropped.
+- **A cooldown belongs to a situation.** 300.000 s to the millisecond between two nudges is a cooldown at work, not a coincidence; each new state the
+  mission reaches (a claim, an acceptance) has to be a way out of it, or the mission waits out the last one.
+- **Tell the seat whose act it was.** The pm's acceptance was the act that brought the mission to the finish line, and it learned what was left from
+  nothing; the watchdog's note existed for the seat it woke.
+- **The one thing a loop must report honestly is what a person did.** Round 1 ended with my message to QA; a mesh that ends that way has not finished
+  by itself, and the table says so.

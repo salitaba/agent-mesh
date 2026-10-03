@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 21) are described there, run by run.
+sections 1 to 22) are described there, run by run.
 
 ## Unreleased
 
@@ -86,6 +86,22 @@ sections 1 to 21) are described there, run by run.
   on every page, so a seat reading a report to cite it learns that it is a draft, and whom to ask, from the read.
 
 ### Fixed
+
+- A `mesh_done` in a turn that called `mesh_wait` and made nothing (no artifact, commit, merge, review request, verdict, task or
+  decision) no longer completes the task its seat holds while a mandatory criterion is unmet. QA's verification task was completed on its
+  first turn in each of the nine runs from the eighth (the sixteenth's: 21 s after the claim, "Standing by"), after a round of wording
+  that did not hold. The reply says the task stays claimed; the seat's next `done` or `mesh_task_complete` completes it, and once every
+  mandatory criterion is evidenced a `done` closes it as it always did.
+- A completion the implementation gate refuses says who can lift it, and a seat that publishes a new version of an artifact is told which
+  verdicts that dropped. The refusal named a token ("missing: qa.pass") and not who gives it or how; QA's pass had been dropped by its own
+  new version of the report, nothing said so, and the sixteenth run's mission, with every criterion evidenced, sat 13 min 44 s: three
+  refused completions, five nudges, an escalation that blamed "system state synchronization", until the operator named the call.
+- The stall watchdog's cooldown no longer holds back the first nudge the acceptance needs. A nudge about a parked patch came 16 s before
+  QA's report made the pm's acceptance possible, and the pm's nudge waited out the five minutes that nudge had started (4 min 37 s with
+  nothing to wait for), as the thirteenth run's claimed task had already taught the cooldown for one other state.
+- The verdict that brings a mission to the finish line says what still holds it open. The sixteenth run's pm accepted the last criterion
+  with the developer's task still claimed, was told nothing, and broadcast MISSION_COMPLETE; the unread broadcast woke three seats for
+  turns that did nothing (26.8k tokens).
 
 - A turn the mesh cuts short is billed what the stream reported when the abort's own frame reads zero. A handover is ended by the mesh
   the moment its continuity record lands, the CLI answers that abort with a frame whose usage can read zero, and the ledger booked 0 tokens
