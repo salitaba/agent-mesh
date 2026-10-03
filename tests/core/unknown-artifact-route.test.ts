@@ -129,14 +129,14 @@ test("the run-11 tech lead: a verdict on an id typed from memory is refused with
   }
 });
 
-test("with no review owed the refusal is what it was, and another seat's reviews are not named", async () => {
+test("with no review owed the refusal names the artifacts the mission holds instead, and another seat's reviews are not named", async () => {
   const m = await mesh([LEAD2]);
   try {
     await asked(m, "dev", "Implementation", "CodePatch", "lead-2");
     const res = await m.supervisor.recordDecision("tech-lead", "approve", "implementation", "art-ghost", "LGTM");
     assert.equal(res.ok, false);
     assert.doesNotMatch(res.reason ?? "", /Still waiting for your verdict/, "the patch is lead-2's to rule on, not this seat's");
-    assert.match(res.reason ?? "", /\(mesh_inbox and mesh_query_events show both\)\.$/, "nothing is appended");
+    assert.match(res.reason ?? "", /\(mesh_inbox and mesh_query_events show both\)\. Artifacts in this mission, newest first: art-\S+ CodePatch "Implementation" v1 \(\w+\)\.$/, "what the mission holds, not another seat's reviews");
   } finally {
     await m.cleanup();
   }

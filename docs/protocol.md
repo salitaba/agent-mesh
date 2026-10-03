@@ -322,8 +322,15 @@ eleventh run's pm cited `art-M3YBS5TT…` in three acceptances in five seconds w
 and the refusal names the route. For an acceptance it lists what the briefing lists, the submitted artifacts that could evidence
 the criterion (`citableEvidence`, three at most), or says that nothing submitted can yet (a draft cannot) and to ask the seat that
 wrote the report to submit it. For a verdict it names the reviews the seat still owes (the requests on its desk whose artifact
-awaits a verdict) and appends nothing when there are none. One helper, `reviewsOwedBy`, reads those asks for this refusal and
-for the cross-domain note above, so what a seat is told it owes cannot differ between them.
+awaits a verdict) and, when there are none, the artifacts the mission holds (below). One helper, `reviewsOwedBy`, reads those asks
+for this refusal and for the cross-domain note above, so what a seat is told it owes cannot differ between them.
+
+The same list ends the refusal of every op that names an artifact by an id the mesh does not hold (`transition_artifact`,
+`request_review`, `read_artifact`, `acquire_lease`, `commit`, `merge`, `request_commit`): `unknown artifact art-M3ZN0TAJ… —
+artifacts in this mission, newest first: art-M3ZN0BTK… CodePatch "cronlite: Fix three critical defects" v1 (DRAFT); …`, five at
+most, each with its id, type, name, version and status, and a count of the rest. In the fourteenth cronlite run the tech lead's
+ten refused ops in one turn were one id, copied wrong, tried again; the hint it had ("mesh_inbox and mesh_query_events show
+both") costs a call and a page and was not taken. A mission with no artifact yet says so.
 
 The seat that accepts is shown what it may cite. While a mandatory criterion that needs an acceptance is open,
 the briefing of a seat holding the gate lists the submitted artifacts an acceptance would take (the list the stall

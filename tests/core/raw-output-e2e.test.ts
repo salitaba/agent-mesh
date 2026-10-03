@@ -238,8 +238,8 @@ test("tool output: ops naming an artifact that does not exist are refused, and a
   ]);
   try {
     assert.deepEqual(opResults(o.turn), [
-      { op: "transition_artifact", ok: false, reason: "unknown artifact art-DOESNOTEXIST" },
-      { op: "request_review", ok: false, reason: "unknown artifact art-DOESNOTEXIST" },
+      { op: "transition_artifact", ok: false, reason: "unknown artifact art-DOESNOTEXIST — no artifact has been published in this mission yet" },
+      { op: "request_review", ok: false, reason: "unknown artifact art-DOESNOTEXIST — no artifact has been published in this mission yet" },
     ]);
     assert.equal(devSentTo(m, "pm").length, 0, "no review ask was opened against nothing");
     const d = assertDiscarded(o, "all_rejected");

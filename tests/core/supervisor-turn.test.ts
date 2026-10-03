@@ -214,7 +214,7 @@ test("request_commit on an unknown artifact fails before any message is sent", a
     const before = m.kernel.state.messages.size;
     const res = await m.supervisor.executeOp("dev", { op: "request_commit", artifactId: "art-nope" } as MeshOp, fakeTurn("dev"));
     assert.equal(res.ok, false);
-    assert.equal(res.reason, "unknown artifact");
+    assert.equal(res.reason, "unknown artifact art-nope — no artifact has been published in this mission yet");
     assert.equal(m.kernel.state.messages.size, before);
   } finally {
     await m.cleanup();
@@ -598,7 +598,7 @@ test("commit refuses an artifact the mesh has never seen", async () => {
   try {
     const res = await m.supervisor.executeOp("dev", { op: "commit", artifactId: "art-ghost", message: "wip" } as MeshOp, fakeTurn("dev"));
     assert.equal(res.ok, false);
-    assert.equal(res.reason, "unknown artifact");
+    assert.equal(res.reason, "unknown artifact art-ghost — no artifact has been published in this mission yet");
   } finally {
     await m.cleanup();
   }
@@ -757,7 +757,7 @@ test("merge with no resolvable reference reports the unknown artifact", async ()
   try {
     const res = await m.supervisor.executeOp("lead", { op: "merge", artifactUri: "CodePatch-nothing-v1" } as MeshOp, fakeTurn("lead"));
     assert.equal(res.ok, false);
-    assert.equal(res.reason, "unknown artifact");
+    assert.equal(res.reason, "unknown artifact CodePatch-nothing-v1 — no artifact has been published in this mission yet");
   } finally {
     await m.cleanup();
   }

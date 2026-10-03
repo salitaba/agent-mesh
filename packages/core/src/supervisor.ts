@@ -5245,7 +5245,7 @@ export class Supervisor {
     const goalId = this.state.activeGoalId;
     if (!goalId) return { ok: false, reason: "no active goal" };
     const artifact = this.state.artifacts.get(artifactId);
-    if (!artifact) return { ok: false, reason: `unknown artifact ${artifactId}` };
+    if (!artifact) return { ok: false, reason: `unknown artifact ${artifactId} — ${this.heldArtifactsNote()}` };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(goalId) };
     const decision = this.deps.policy.evaluateTransition(artifact, transition.to, actorId, ctx);
     if (decision.decision !== "ALLOW") {
@@ -5783,7 +5783,8 @@ export class Supervisor {
       // The tenth and eleventh runs' reviewers each ruled on an id typed from memory and were told nothing about where the
       // artifact they owed a verdict on was; the ask is on the seat's desk, so the refusal names it.
       const owed = this.reviewsOwedBy(actorId);
-      const route = owed.length > 0 ? ` Still waiting for your verdict: ${this.nameArtifacts(owed)}.` : "";
+      const held = this.heldArtifactsNote();
+      const route = owed.length > 0 ? ` Still waiting for your verdict: ${this.nameArtifacts(owed)}.` : ` ${held.charAt(0).toUpperCase()}${held.slice(1)}.`;
       const reason = `unknown artifact '${artifactId}' — nothing was recorded. Name the artifact by the id or artifact:// URI its publish returned (mesh_inbox and mesh_query_events show both).${route}`;
       await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason, ruleId: "verdict.unknown-artifact" });
       return { ok: false, reason };
@@ -6140,6 +6141,23 @@ export class Supervisor {
       }
     }
     return [...owed.values()];
+  }
+
+  /**
+   * The artifacts this mission holds, newest first, said in the refusal of an id that names none.
+   *
+   * An id is a dozen characters of base-36 a model has to copy exactly, and it does not: the fourteenth cronlite run's tech lead
+   * wrote `art-M3ZN0TAJ003cc847ab44` for `art-M3ZN0BTK00678bdd816b`, and ten of its fifteen ops in one turn were the same
+   * refusal, "unknown artifact", with nothing to say which artifact was meant. Seats cite a wrong id in nearly every run (the
+   * `approve` refusal alone, in nine of the twelve); the hint it had, "mesh_inbox and mesh_query_events show both", costs a call
+   * and a page, and was not taken. Five at most, so a refusal stays a few lines.
+   */
+  private heldArtifactsNote(): string {
+    const all = [...this.state.artifacts.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (all.length === 0) return "no artifact has been published in this mission yet";
+    const name = (n: string): string => (n.length > 60 ? `${n.slice(0, 59)}…` : n);
+    const shown = all.slice(0, 5).map((a) => `${a.id} ${a.type} "${name(a.name)}" v${a.version} (${a.status})`);
+    return `artifacts in this mission, newest first: ${shown.join("; ")}${all.length > 5 ? `; and ${all.length - 5} more (mesh_query_events lists them all)` : ""}`;
   }
 
   /** `TestReport "QA Report" (art-…), CodePatch "Implementation" (art-…)`: three at most, so a refusal stays a sentence. */
@@ -10815,7 +10833,7 @@ export class Supervisor {
         }
         case "read_artifact": {
           const a = this.findArtifactByUri(op.artifactRef);
-          if (!a) return { ok: false, op: op.op, reason: "unknown artifact ref" };
+          if (!a) return { ok: false, op: op.op, reason: `unknown artifact ref ${op.artifactRef} — ${this.heldArtifactsNote()}` };
           this.noteArtifactRead(actorId, a, turn);
           const content = await this.deps.content.read(a.contentRef);
           // Refs keep artifacts OUT of the assembled prompt, but a read put the
@@ -10843,7 +10861,7 @@ export class Supervisor {
         }
         case "transition_artifact": {
           const targetId = this.resolveArtifactRef(op.artifactId, op.artifactUri);
-          if (!targetId) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri}` };
+          if (!targetId) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri} — ${this.heldArtifactsNote()}` };
           // MERGED is not a status a seat may simply declare.
           //
           // `opMerge` was hardened to land the change before recording it, so a
@@ -10895,7 +10913,7 @@ export class Supervisor {
           // Same-turn publish → review: the model's URI guess didn't resolve, but it just
           // published something — reviewing that is the intent (`reviewTarget`).
           const a = this.reviewTarget(op.artifactId, op.artifactUri, turn);
-          if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"}` };
+          if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId ?? op.artifactUri ?? "(none given)"} — ${this.heldArtifactsNote()}` };
           // Can the seats being asked actually produce a verdict that MOVES this?
           //
           // The predicate is `approverMayAdvance`, not `canReviewArtifactType`.
@@ -11204,7 +11222,7 @@ export class Supervisor {
         }
         case "request_commit": {
           const a = this.state.artifacts.get(op.artifactId);
-          if (!a) return { ok: false, op: op.op, reason: "unknown artifact" };
+          if (!a) return { ok: false, op: op.op, reason: `unknown artifact ${op.artifactId} — ${this.heldArtifactsNote()}` };
           const techLeads = [...this.state.agents.values()].filter((r) => r.definition.authority.includes("implementation.approve")).map((r) => r.definition.id);
           const res = await this.sendMessage({
             from: actorId,
@@ -11589,7 +11607,7 @@ export class Supervisor {
 
   private async opAcquireLease(actorId: string, artifactId: string, files: string[]): Promise<OpResult> {
     const artifact = this.state.artifacts.get(artifactId);
-    if (!artifact) return { ok: false, op: "acquire_lease", reason: "unknown artifact" };
+    if (!artifact) return { ok: false, op: "acquire_lease", reason: `unknown artifact ${artifactId} — ${this.heldArtifactsNote()}` };
     if (artifact.owner !== actorId && actorId !== HUMAN_AGENT_ID) {
       return { ok: false, op: "acquire_lease", reason: `only the artifact owner may write (${artifact.owner})` };
     }
@@ -11640,7 +11658,7 @@ export class Supervisor {
 
   private async opCommit(actorId: string, artifactId: string, message: string, files?: string[]): Promise<OpResult> {
     const artifact = this.state.artifacts.get(artifactId);
-    if (!artifact) return { ok: false, op: "commit", reason: "unknown artifact" };
+    if (!artifact) return { ok: false, op: "commit", reason: `unknown artifact ${artifactId} — ${this.heldArtifactsNote()}` };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(artifact.goalId) };
     const decision = this.deps.policy.evaluateCapability(actorId, "git.commit", ctx);
     if (decision.decision !== "ALLOW") {
@@ -11803,10 +11821,10 @@ export class Supervisor {
 
   private async opMerge(actorId: string, artifactId: string | undefined, comment?: string, artifactUriRef?: string): Promise<OpResult> {
     const targetId = this.resolveArtifactRef(artifactId, artifactUriRef);
-    if (!targetId) return { ok: false, op: "merge", reason: "unknown artifact" };
+    if (!targetId) return { ok: false, op: "merge", reason: `unknown artifact ${artifactId ?? artifactUriRef ?? "(none given)"} — ${this.heldArtifactsNote()}` };
     artifactId = targetId;
     const artifact = this.state.artifacts.get(artifactId);
-    if (!artifact) return { ok: false, op: "merge", reason: "unknown artifact" };
+    if (!artifact) return { ok: false, op: "merge", reason: `unknown artifact ${artifactId} — ${this.heldArtifactsNote()}` };
     const ctx = { config: this.config, projections: this.state, goal: this.state.goals.get(artifact.goalId) };
     const decision = this.deps.policy.evaluateCapability(actorId, "git.merge", ctx);
     if (decision.decision !== "ALLOW") {
