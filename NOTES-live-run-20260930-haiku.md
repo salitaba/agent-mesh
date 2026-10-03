@@ -5,8 +5,8 @@ with its own regression test). One live mission, two rounds, one crash; every fi
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4) and §17 (R1–R4). §18 is not a run: it
-records the rename to Curule.
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5) and §20 (U1–U5, V1).
+§18 is not a run: it records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
 `mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
@@ -1500,3 +1500,126 @@ dropped, dropped while the mission runs, not counted, not in the tally), T4 (six
   only the name. Six wrong calls from four seats were the same wrong guess.
 - **A fix for one defect can match a word that is not the defect.** `L` for Quartz's last day found the L of JUL. Test the names the
   operator did not list.
+
+## 20. The fourteenth run, on the T-fixes build: six findings (U1–U5, V1)
+
+The tenth cycle of the standing loop: the routine fired at 00:43 UTC on 2026-10-03. The same mission, SPEC, mesh config, model and clean
+launch environment, on `main` at `9710781`: every fix of §0–§19. Session 00:46–01:14 UTC: 44 turns, 825,740 billed tokens (about $3.65 at
+list price), every turn on `claude-haiku-4-5`, 826 events; the analysis tool and `curule usage` agree to the token. Round 1 ran headless
+(`curule run --no-tui`); the reopen went through a parked console, and the restart after the kill ran on the same state directory. One
+run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 00:46:49 | `curule run` | five seats start |
+| 01:01:19 | goal met, 6/6 | 14 min 30 s after the launch; 24 turns, 504.5k billed (run 13's round 1: 9 min 43 s, 20 turns, 408k) |
+| 01:05:59 | operator reopen quoting three defects, naming four criteria and asking for a regression test for each | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED, five seats resumed |
+| 01:07:00 | `kill -9` of the host with the developer and tech lead mid-turn | two seat processes orphaned (parent 1) |
+| 01:07:03 | restart, 3 s after the kill | the two open turns closed as interrupted, five budget holds released, pm, tech lead and developer woken for recovery; the reaper stopped one orphan at 01:07:06 and the other was gone |
+| 01:14:19 | goal met again | 8 min 19 s after the reopen, 7 min 16 s after the restart; round 2: 20 turns, 321k billed |
+
+**Quality** (the oracle of §2, written from the SPEC before any output was read): round 1 scored 2896/2983 raw (97.1%) and 2896/2971
+stratified (97.5%), run 13's round 1 at 99.1% and 99.4%. The product's own suite was 30/30 and the CLI probes 23/23. Three defects, the
+three quoted in the operator's reopen: **a month or day name in capitals that contains an `L` or a `W` was refused as Quartz** (`0 0 * JUL *`,
+`0 9 * * WED`, `JAN-JUL`, `MON-WED`: the family of §8, §9, §14, §17 and §19, here in the first version), **schedules that can fire were
+refused as impossible** (`0 0 29-31 4 *`: April has a 29th and a 30th; 29 February exists in leap years), and **two error messages named
+neither the field nor the value** (`parse('')`, `parse('@hourly')`; soft checks 56/76). The final product scored **3049/3049 raw (100%) and
+3032/3034 stratified (99.9%)**, its own suite 42/42 (12 regression tests added: the reopen asked for one per defect) and the CLI probes 23/23.
+Two stratified failures remain, the second defect fixed for the cases it quoted and not beyond them: a day-29 schedule in November
+(`4-38,46-58 * 29 11-nov/3 *`) and `29-31/5` in January are still refused as impossible. The messages are still soft (58 of 76: the
+empty string names no field). 24 of 44 turns (54.5%, 34% of billed tokens) changed no durable state (run 13: 44.7% and 29%), 12 of 24
+in round 1.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| T1 | held: `curule status` printed its bar and seat dots as intended, live and on the stopped mesh |
+| B23 | exercised for the second time: two orphans (parent 1) three seconds after the kill and, at 01:07:06, "claude runtime: stopped 1 seat process(es) left running by a mesh process that died (pid 4854): 5289" in `logs/projection-rejections.log`; the other had gone by the scan |
+| B21, B22, M1 | held: the developer's and the tech lead's open turns closed as interrupted ("abandoned by server restart") at 01:07:03, and five holds (the mission's two, the two seats', one thread's) were released at 01:07:03.913 with "the process that held it ended before settling it"; the reopen had resumed the five seats and withdrawn the four criteria it named |
+| R4, T4 | R4's sentence ("nobody has been asked for a verdict") was in five op replies of four turns (developer twice, pm, architect), each of which asked later in the same turn; it reached no turn summary and no notice (0 in `turn-audit.jsonl` and in the event log; run 13: all three turns) |
+| T5 | three `work.request` calls (developer, pm, tech lead), none refused for its shape (run 13: six wrong guesses from four seats) |
+| B4 | one `ifUnanswered` refusal (the architect's, 5,000 ms) with the floor named; the next call, accepted, was the re-send |
+| P3, L1, L3 | held: every criterion landed EVIDENCED, six satisfied events in round 1 and eleven for seven criteria by the end of round 2 |
+| P2, F1 | **not held in a parked-patch case**: the acceptance came 5 min 22 s after QA's pass (run 13: 13 s), because the watchdog's first nudge went to the merger: U3 |
+| T2, T3, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1 | **not exercised**: no claimant outlived the finish line, no wake was queued past the end, and nothing here asked for what the others guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| U1 | **The reply to a merge of a whole branch said the opposite of what had happened.** The developer committed with its own git (setup, library, CLI, README) and published two patches that recorded no commit. A patch that records none has nothing to scope its merge by, so the tech lead's merge of the library (00:54:21) took the branch whole, the CLI with it. The reply was "merged as e1cdc36 - 4 commit(s) on developer's branch were NOT part of this artifact: …": `mergeWorktree` returns one list for two opposite outcomes (what stayed behind when a commit was recorded, what came in when none was) and the sentence was written for the first. The commit it called "not part of this artifact" was the one just landed, the CLI was in the list, and the tech lead's own memory kept the sentence for the rest of the run (its transcript) | the reply says which: for a patch that records no commit "developer's branch went in whole: this patch records no commit (`mesh_commit` records one), so the merge had nothing to scope it by, and N commit(s) came in with it"; the old sentence, now with "and stay there", only where a commit was recorded; a list longer than five says how many more | `tests/core/merge-whole-branch-note.test.ts` (4 tests, 8 mutants) |
+| U2 | **A second patch from a branch the first merge had taken was refused as "never committed", with a remedy that was refused in turn.** The CLI patch's merge moved nothing (the file was on main) and the reply said the patch records no commit, so its work was never committed, and its owner must `mesh_commit`; `mesh_commit` said "nothing was committed: the worktree had no changes and the branch holds nothing that is not already on the product branch". Refused at 00:54:22, 00:56:05 and 00:56:36; the developer asked the tech lead to merge and was declined; the tech lead closed the CLI task "merge blocked". The patch ended the run MERGEABLE, listed as delivered, with `bin/cronlite.js` on main. The tech lead took 7 turns and 113k tokens (run 13: 2 and 42k), and 12 of round 1's 24 turns changed nothing | the merge asks what the two causes differ in: the owner holds nothing uncommitted and every file the patch lists is in the product as published (line endings and trailing blank lines aside), so the patch is recorded MERGED, "already in the product … (landed by an earlier merge …)". Uncommitted files keep the refusal and are named; a file missing from the product, a file that differs and a patch that lists no file are refused with that fact, without `mesh_commit` (which would be refused), and with the way out: a new version of the patch, or the commit it was made in | `tests/core/merge-nothing-landed.test.ts` (8), `tests/integration/merge-second-patch-same-branch.test.ts` (5, real git); 18 mutants |
+| U3 | **The watchdog's first nudge went to the seat that could not act while the seat that could was waiting.** QA passed at 00:55:55, which left two acceptances for the pm with a TestReport to cite (the idle window is then a twelfth). The CLI patch was parked MERGEABLE, so the driver's first branch, "a seat that can move a patch parked on the merge ladder", won: the nudge (00:56:20) went to the tech lead, whose merge was refused again; the cooldown held the next one to 01:01:20, and the pm was woken at 01:00:50 by the unread-mail sweep and accepted at 01:01:17, 5 min 22 s after the proof (run 13, same flow: 13 s). That branch was also the only one without the rule the others carry, that a seat whose last nudge bought nothing is passed over: the next nudge would have gone to the tech lead again, and the third, until the cap raised a card to the operator | when the mission waits on acceptances alone (`acceptanceReady()`), the acceptor is the driver, ahead of the ladder, and its note is the acceptance sentence, not the patch's rungs; the ladder's mover is passed over when its last nudge bought nothing | `tests/integration/stall-parked-patch.test.ts` (9 tests, 11 mutants) |
+| U4 | **Two commands printed what a customer reads first in a form that misled.** Found by running `curule budgets` and `curule status` against the live mesh: the budgets table padded each key to 36 characters and a goal-and-seat key is 41 (a task's is 60), so those rows' numbers sat to the right of the others', a staircase; `status` cut the goal at 60 characters with nothing to say it had ("… plain ESM [ACTIVE]" read as if the goal ended there) | the key column is as wide as the longest key (never narrower than before); the goal line is cut at a word and marked with an ellipsis, within the same 60 | `tests/cli/display-helpers.test.ts` (4 tests, 12 mutants) |
+| U5 | **An id the mission does not hold was refused with no way to find the right one.** An id is a dozen characters of base-36 a model has to copy exactly, and it does not: the tech lead wrote `art-M3ZN0TAJ003cc847ab44` for `art-M3ZN0BTK00678bdd816b`, and ten of the fifteen ops of one turn (01:11:33) were the same refusal. `approve` carried a hint ("mesh_inbox and mesh_query_events show both") that costs a call and a page and was not taken; the other seven ops that take an id said only "unknown artifact", some without the id. The `approve` refusal alone is in nine of the twelve runs' turn records | every such refusal ends with the artifacts there are, newest first, five at most (id, type, name cut at 60, version, status) and a count of the rest; an `approve` whose seat owes reviews still names those, the better answer; a mission with no artifact says so | `tests/core/unknown-artifact-held-list.test.ts` (5 tests, 17 mutants) |
+| V1 | **`curule status` on a finished mission said it was ACTIVE at 0% with no tokens.** Found at the end by running it against the finished run: `Goal: … [ACTIVE]`, `Progress: ░░░░ 0%`, `Tokens: -`, and the pm's tokens as 424,771 (billed: 174,483), for a mission COMPLETED at 100% with 825,740 spent. The fallback it takes once `curule run` has exited, which is the usual case, was a pass of its own over the log: the goal as `goal.created` wrote it, no progress, no budgets, and each seat's tokens summed over every `budget.consumed` event naming it, which a turn writes twice (the seat's ledger and the mission's): about 2.4 times the truth | the status of a mission is one function over the projections (`missionStatus`), called by `Supervisor.status()` with the live budget snapshot and by `statusFromLog`, which replays the log; the same run reads `[COMPLETED]`, 100%, `825740 / 3000000` and the pm's 174,483. An event the projections refuse is skipped and named on stderr | `tests/cli/offline-status.test.ts` (8 tests, on missions run by the real kernel; 16 mutants) |
+
+What each does and why is in `docs/protocol.md` (a patch that records no commit takes its owner's whole branch; the unknown-artifact
+paragraph) and `docs/runtime.md` (the watchdog's list; `curule status`); the commit messages carry the evidence. Seven mutants survived
+the first version of their tests and each got a test: U2's CRLF file, unreadable patch body and every-listed-file cases, U3's order of
+two acceptors, U4's wiring through `main` (twice) and V1's unread mail. One of U5's was aimed at an earlier copy of the same sort and was
+re-aimed.
+
+### Not fixed, and the honest limits
+
+- **The product's two remaining defects are the model's, and the mesh did not catch them.** The `L`/`W` family is back for the sixth
+  time (written in the first version, and fixed after the reopen), and the impossible-day check was fixed for the schedules the reopen
+  quoted and not beyond them. A reopen that names three defects gets three fixed for the cases it names, as in runs 12 and 13; nothing
+  in the mesh makes a seat test what the operator did not list.
+- **The error messages are still soft** (58 of 76): the empty expression names no field.
+- **A seat cannot say that a task depends on another.** The engine has `Task.dependsOn` (an unmet dependency refuses the claim and the
+  briefing shows a task board), but `mesh_task_create` and `mesh_delegate` take no such field, so nothing a seat sends can set it. QA
+  claimed both its tasks at 00:48:37 and closed them at 00:49:40 and 00:49:46, five minutes before the first line was merged. A fix
+  needs a design, because the `implementation.gate` marker skips the capability checks a dependency would sit beside: not touched.
+- **A seat that cannot write claimed an implementation task.** The two implementation tasks carry the `implementation.gate` marker,
+  which skips the capability check, and `assignedTo` on `create_task` only sends a DELEGATE message, so the tech lead (no write
+  capability) claimed "Implement cronlite CLI" at 00:49:39 and closed it at 00:56:12 as blocked, with the developer's patch for it
+  waiting at the gate.
+- **QA's 87-test suite never landed.** It sits on `mesh/qa` (four commits not on `main`) and QA's report cites 99 tests where the
+  product has 42. Committed work on a seat's branch that no patch publishes is shown nowhere (the end-of-turn advisory is for files
+  that are not committed). Runs 9 to 13 had no such branch, so it is one run in six; a run-report section for unlanded commits was
+  looked into and not built.
+- **A recovery turn that changed nothing cost 45.7k tokens.** The developer's first turn after the restart (01:08:58) ended as
+  `no_ops` ("Summary of Fixes Completed"); its work was in the log and the patch merged at 01:12:23, so the turn was discarded as a
+  record and not as a loss.
+- **The reaper's notice is in `logs/projection-rejections.log`**, not on the console of the process that did the reaping.
+- **One run.** U3's ordering and the U1/U2 loop were met once each; T2, T3 and R1 to R3 were not exercised, so none is shown held or
+  broken.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `9710781`, before this round | 3503 | 3501 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 24 s) | 3546 | 3544 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (the baseline warnings, one rule). Mutation checks, each reverted: U1 (eight
+mutants: the old note for both arms, the whole-branch note for both, the arms swapped, no "and N more", cut at six, the count of the
+listed ones, not a caveat, recorded read as always set), U2 (eighteen: a patch never landed, the owner's uncommitted files ignored, a
+missing or a differing file fine, a patch that lists no file landed, no whitespace normalisation, line endings compared as they are,
+nobody-can-say landed, the wrong directory, the empty-diff commit through the same check, the old wording in three places, the two
+wordings swapped, the owner's state read for another seat, more than five files all named, an unreadable body landed, only the first
+file looked at), U3 (eleven: no acceptor-first branch, no rotation guard on either branch, the guard on the wrong seat, the acceptor
+told its own act without a report, every seat told it, the acceptor first without proof, only when no patch is parked, a suspended
+acceptor as driver, the sort reversed), U4 (twelve), U5 (seventeen: no list on each of nine refusals, oldest first, six not five, the
+rest miscounted, a long name uncut, an empty mission silent, the list ahead of a review owed, not a sentence, no status) and V1
+(sixteen: the old summary back, `goal.completed` not applied, a bad event ending the read, no warning or a miscounted one, progress
+null, tokens doubled, no offline budgets, a skipped event counted, no live budgets, the command ignoring its config, every escalation
+open, the first goal and not the active one, the mailbox 0, the spent ledgers dropped, a ledger's consumed not carried). Every one failed
+a test.
+
+### Worth keeping from this round
+
+- **A field that holds two things will be read as the one the sentence was written for.** `leftBehind` was "what stayed" for a scoped
+  merge and "what came in" for an unscoped one, and the reply said the first for both. A wrong sentence in a reply is also remembered:
+  the tech lead's memory held "NOT part of this artifact" until the end of the run.
+- **A refusal whose remedy is refused is a loop.** The merge said `mesh_commit`; `mesh_commit` said there was nothing to commit. For each
+  remedy a refusal names, ask whether it would be accepted in the state the refusal describes.
+- **The seat the watchdog wakes first is the one that can act on what is unmet, not the one the oldest rule names.** A patch parked
+  on the merge ladder is only a reason to wake its merger when something waits on it; with acceptances alone unmet, the acceptor goes
+  first, and a seat whose last nudge bought nothing is passed over on every branch.
+- **List what the seat could have meant.** An id is a dozen characters a model must copy; the refusal now names the artifacts there
+  are. Nine of twelve runs had the same wrong guess.
+- **Run the product's commands against the finished run, not only the live one.** The finished state is the one a customer looks at,
+  and V1 was a status that had been wrong for as long as the mission could end.
+- **A second summary of the same state drifts.** The offline status was a hand-written pass over the log, and it was wrong in four
+  ways at once. One function now serves both, and a test holds the offline answer equal to the live one.

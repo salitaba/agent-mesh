@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 19) are described there, run by run.
+sections 1 to 20) are described there, run by run.
 
 ## Unreleased
 
@@ -80,6 +80,23 @@ sections 1 to 19) are described there, run by run.
 
 ### Fixed
 
+- `curule status` on a mesh that is not running (what you get once `curule run` has exited) reads the event log through the same
+  projections the server keeps. It used to print `[ACTIVE]` at 0% with no tokens line for a mission that was over, and about 2.4
+  times the tokens each seat had spent (the fourteenth Haiku run: 825,740 spent, 2,019,225 shown). A line of the log it cannot
+  apply is skipped and named on stderr.
+- A merge of a patch that records no commit takes its owner's whole branch, and the reply now says so instead of calling the commits
+  that came in "NOT part of this artifact". A second patch from a branch that merge already took is recorded as merged when its owner
+  has nothing uncommitted and every file the patch lists is in the product as published; otherwise the refusal names what is wrong and
+  does not send the owner to `mesh_commit` when `mesh_commit` would refuse. In the fourteenth run the developer's second patch sat
+  `MERGEABLE` to the end with its file on `main`, after three refused merges and 7 turns of the tech lead.
+- The stall watchdog, when only acceptances are unmet, wakes the seat that may accept before the merger of a patch parked on the merge
+  ladder, and passes over a merger whose last nudge bought nothing. The acceptance came 5 min 22 s after the proof (13 s in the
+  thirteenth run) because the first nudge went to the seat whose merge was being refused.
+- An artifact id the mission does not hold is refused with the artifacts there are (newest first, five at most, with id, type, name,
+  version and status), for every op that takes one. `approve` carried a hint that cost a call and a page; the other seven ops said
+  only "unknown artifact".
+- `curule budgets` aligns its columns to the longest key (a goal-and-seat key is 41 characters, a task's 60, and the table was a
+  staircase), and `curule status` marks a goal line it cut at 60 characters with an ellipsis, at a word.
 - A seat that submits an artifact for review is told that nobody has been asked. Moving an artifact to `READY_FOR_REVIEW` sends no
   request and wakes no one, and neither does announcing it; the briefing's "a DRAFT nobody transitions is never reviewed" read as "a
   transition gets it reviewed". The twelfth Haiku run's developer submitted two patches that way and the tech lead's first turn on

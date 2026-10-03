@@ -693,6 +693,26 @@ may not change the product checkout, nor may its file tools write there; what is
 uncommitted in the product checkout is set aside, saved, before a merge (`docs/runtime.md`,
 `runtime-claude`).
 
+**A patch that records no commit takes its owner's whole branch, and says so.** With no commit to
+scope it by, `merge` lands everything on the owner's branch, and the reply names what came in
+(`<owner>'s branch went in whole: this patch records no commit (…), so the merge had nothing to scope
+it by, and N commit(s) came in with it: …`); for a patch that records a commit, the commits left on the
+branch are said to stay there, which is the only case where "were NOT part of this artifact" is true. A
+second patch from that branch then finds nothing to move, and the merge asks what its two causes
+differ in. The owner holds nothing uncommitted and every file the patch lists (`## File: <path>`
+sections, or `metadata.path`) is in the product as published, line endings and trailing blank lines
+aside: the work landed with the first merge, and the patch is recorded `MERGED` (`already in the product
+as <sha> (landed by an earlier merge: …)`). Otherwise the refusal says which part failed, and never sends
+the owner to `mesh_commit` when `mesh_commit` would refuse: uncommitted files are named and committing
+them is the remedy; a listed file that is missing from the product or differs, or a patch that lists no
+file, is answered with a new version of the patch (`asVersionOf`) that lists what the product holds, or
+names the commit it was made in (`metadata.commit`). When nothing can be said of the owner's worktree the
+refusal is the old one. In the fourteenth cronlite run the developer committed with its own git and
+published two patches that recorded no commit; the first merge took the CLI with the library, was told
+the CLI was "not part of this artifact", and the tech lead then tried to merge the CLI three times, was told
+to `mesh_commit` work that was committed, and left the patch `MERGEABLE` for the rest of the run with its
+file on `main`.
+
 A task that carries the `implementation.gate` marker (what the `implementation.completed`
 gate keys on) is claimable like any other: the marker is a tag the completion gate reads,
 not a capability a seat could hold, and the claim check skips it exactly as the seat
