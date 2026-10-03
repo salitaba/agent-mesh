@@ -1,0 +1,64 @@
+# Curule on your own hostname, over HTTPS, on one server. Add this file to docker-compose.yml and Caddy goes in front of the
+# host: it gets a certificate from Let's Encrypt, renews it, redirects http to https, and passes the dashboard's live stream
+# through unbuffered.
+#
+#   export CURULE_DOMAIN=app.example.com            # its DNS record must already point at this server (see below)
+#   export ACME_EMAIL=you@example.com               # where Let's Encrypt writes if a certificate cannot be renewed
+#   export MESH_API_TOKEN="$(openssl rand -hex 32)"
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#   scripts/smoke.sh url "https://$CURULE_DOMAIN" "$MESH_API_TOKEN"
+#
+# Before the first start: the hostname must resolve to this server, and ports 80 and 443 (443/udp for HTTP/3) must reach it.
+# Port 80 stays open even though everything is served on 443: it redirects to https, and it is one of the two ways Let's
+# Encrypt checks that the hostname is yours. Let's Encrypt limits failed attempts per hostname per hour: to rehearse, add
+# ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory (a certificate from it is not trusted by browsers), and
+# remove it for the real thing.
+#
+# What this changes in the host's settings: the names it answers to are the hostname and the loopback names (so an SSH tunnel
+# to the loopback port still works if DNS or the certificate does not), a state-changing request is accepted from the page on
+# https://<hostname>, the proxy's forwarded address and protocol are believed, and the session cookie is HTTPS-only. Those are
+# the four settings docs/commercial/deployment.md names; this file sets them, because a proxy with the host's defaults leaves
+# the sign-in cookie without the Secure flag and every client looking like the proxy.
+#
+# The certificate and its account key live in the caddy-data volume: keep it with the rest of the backups, because losing it
+# means asking for new ones, and the limits above apply.
+services:
+  caddy:
+    # The current Caddy 2. Pin a version (or a digest) here when you want upgrades to be a decision.
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - mesh
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CURULE_DOMAIN: "${CURULE_DOMAIN:?set CURULE_DOMAIN to the hostname this instance is served at, for example app.example.com}"
+      ACME_EMAIL: "${ACME_EMAIL:?set ACME_EMAIL to an address Let's Encrypt can write to about your certificate}"
+      ACME_CA: "${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}"
+    volumes:
+      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # The one process facing the internet gets the same closed box as the host: a read-only image, two volumes, a scratch
+    # space, and the single privilege it needs, to listen on 80 and 443.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+
+  mesh:
+    environment:
+      MESH_ALLOWED_HOSTS: "${CURULE_DOMAIN:?set CURULE_DOMAIN to the hostname this instance is served at, for example app.example.com},127.0.0.1,localhost"
+      MESH_ALLOWED_ORIGINS: "https://${CURULE_DOMAIN}"
+      MESH_TRUST_PROXY: "1"
+      MESH_COOKIE_SECURE: "1"
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

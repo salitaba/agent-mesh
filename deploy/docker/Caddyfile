@@ -1,0 +1,20 @@
+# Caddy in front of Curule: HTTPS on the hostname you chose, with a certificate Caddy gets and renews by itself, and the
+# dashboard's live event stream passed through as it arrives. Used by docker-compose.caddy.yml, which supplies the three
+# values below from its environment and refuses to start without the first two. The certificate authority is named, so a
+# failure says which one answered (Caddy's own default tries Let's Encrypt and then ZeroSSL); the default is Let's Encrypt.
+#
+# `mesh` is the host's service name on the Compose network; 7420 is the port the container always listens on.
+{
+	email {$ACME_EMAIL}
+	acme_ca {$ACME_CA}
+}
+
+{$CURULE_DOMAIN} {
+	reverse_proxy mesh:7420 {
+		# The console is a live stream: send each event on as it arrives, not when a buffer fills.
+		flush_interval -1
+	}
+	# Only ever over HTTPS from here on, for a year. No includeSubDomains and no preload: those are decisions about
+	# the whole domain, and this file only knows one hostname of it.
+	header Strict-Transport-Security "max-age=31536000"
+}

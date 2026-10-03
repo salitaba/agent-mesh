@@ -62,8 +62,45 @@ environment. Without one the instance is on the Community plan.
 
 ### TLS and a reverse proxy
 
-Do not publish the port to a network without TLS in front. On one server, a reverse proxy on the same machine is
-the simplest, and Caddy is the least to configure:
+Do not publish the port to a network without TLS in front. Two ways: the file below, if you want your own hostname over
+HTTPS on one server and nothing more to maintain, or a proxy you already run.
+
+**The short way: Caddy in the same Compose project.** `docker-compose.caddy.yml` puts Caddy in front of the host. It gets
+a Let's Encrypt certificate for the hostname you give it, renews it, redirects http to https, passes the dashboard's live
+stream through unbuffered, and sets the four settings under *Then tell the server it is behind one* below, so you do
+not.
+
+```bash
+export CURULE_DOMAIN=app.example.com            # its DNS record must already point at this server
+export ACME_EMAIL=you@example.com               # where Let's Encrypt writes if it cannot renew the certificate
+export MESH_API_TOKEN="$(openssl rand -hex 32)"
+export ANTHROPIC_API_KEY=sk-ant-...
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+scripts/smoke.sh url "https://$CURULE_DOMAIN" "$MESH_API_TOKEN"
+```
+
+Before the first start:
+
+- **DNS.** An `A` record (and an `AAAA` if the server has an IPv6 address) for `CURULE_DOMAIN` must point at the server.
+  If Caddy starts before the record resolves, the certificate request fails, and Let's Encrypt allows only a handful of
+  failures per hostname per hour. To rehearse without spending that allowance, add
+  `ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory` to the environment (browsers do not trust what it
+  issues), then remove it and start again for the real certificate.
+- **Ports.** 80 and 443 (and 443/udp, for HTTP/3) must reach the server from the internet. Port 80 stays open even
+  though everything is served on 443: it redirects to https, and it is one of the two ways Let's Encrypt checks that the
+  hostname is yours. The host's own port stays on `127.0.0.1`, so an SSH tunnel to it still works if DNS or the
+  certificate does not.
+- **The certificate** and its account key live in the `caddy-data` volume. Back it up with the rest: losing it means
+  asking for new ones, under the same limits.
+
+The overlay pins Caddy to its current major version (`caddy:2-alpine`); pin a version or a digest in the file when you want
+upgrades to be your decision. It adds nothing to the host's own service except the four settings, and a test
+(`tests/deploy/caddy-overlay.test.ts`) pins that. It has not been run against a live Docker daemon by the project's CI, which
+builds and smoke-tests the image and renders the chart but does not start Compose with a domain: the first start on your
+server, with the smoke test above, is what proves your DNS and ports.
+
+**A proxy of your own.** On one server, a reverse proxy on the same machine is the simplest, and Caddy is the least to
+configure:
 
 ```
 mesh.example.com {
