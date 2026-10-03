@@ -5,8 +5,8 @@ with its own regression test). One live mission, two rounds, one crash; every fi
 with no model or traced to a line. Open items, and the things a fix deliberately does not do, are in §6. A rerun on
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing four-hourly loop's runs follow: §10 (G1–G3, G5, G6),
-§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5) and §20 (U1–U5, V1).
-§18 is not a run: it records the rename to Curule.
+§11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5), §20 (U1–U5, V1) and
+§21 (W1–W4). §18 is not a run: it records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
 `mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
@@ -1623,3 +1623,109 @@ a test.
   and V1 was a status that had been wrong for as long as the mission could end.
 - **A second summary of the same state drifts.** The offline status was a hand-written pass over the log, and it was wrong in four
   ways at once. One function now serves both, and a test holds the offline answer equal to the live one.
+
+## 21. The fifteenth run, on the U-fixes build: four findings (W1–W4)
+
+The eleventh cycle of the standing loop: the routine fired at 04:43 UTC on 2026-10-03. The same mission, SPEC, mesh config, model and clean
+launch environment, on `main` at `b7dc2c8`: every fix of §0–§20. Session 04:46–05:10 UTC: 42 turns, 785,730 billed tokens (about $3.69 at
+list price; `curule usage` and the analysis tool agree to the token, and W1 below is why the figure is about 15k short), every turn on
+`claude-haiku-4-5`, 778 events. Round 1 ran headless (`curule run --no-tui`); the reopen went through a parked console, and the restart after
+the kill ran on the same state directory. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 04:46:13 | `curule run` | five seats start |
+| 04:57:58 | goal met, 6/6 | 11 min 44 s after the launch; 25 turns, 490.2k billed (run 14's round 1: 14 min 30 s, 24 turns, 504.5k) |
+| 05:01:36 | operator reopen quoting four defects, naming four criteria and asking for a regression test for each | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED, five seats resumed |
+| 05:06:04 | `kill -9` of the host with the tech lead and developer mid-turn | four processes orphaned (two seats and their two bridges, parent 1) |
+| 05:06:07 | restart, 3 s after the kill | the two open turns closed as interrupted, five budget holds released, pm, architect and tech lead woken for recovery; the reaper stopped all four orphans at 05:06:10 |
+| 05:09:38 | goal met again | 8 min 2 s after the reopen, 3 min 31 s after the restart; round 2: 17 turns, 295.5k billed |
+
+**Quality** (the oracle of §2): round 1 scored 1402/2215 raw (63.3%) and 2469/2785 stratified (88.7%), against run 14's round 1 at 97.1%
+and 97.5%; the product's own suite was 51/51 and the CLI probes 23/23. Its defects were four I quoted and two I did not. **Quoted, all
+four verified on the merged product before the reopen**: a list whose first item is a step drops every other item (`*/10,45-55` does not
+match 09:47; `*/6,*/27` never fires at :27), a step on the day-of-month field throws `TypeError: schedule.dom.values is not iterable` out of
+`nextRun` (`0 0 */2 * *`), a step on the month field with a restricted day of month throws `months is not iterable` (`0 0 1 */3 *`), and a
+range with two dashes is accepted (`1-2-3 * * * *`). All four are fixed (60/60 own tests: nine regression tests). **Not quoted**: a month or
+day name in capitals that contains an `L` or a `W` is refused as Quartz syntax (`JUL`, `WED`, `WED-FRI`: the family of §8, §9, §14, §17, §19
+and §20, seven runs in all), and `*` as a list item (`*,5`) is refused, the defect of runs 5 to 12 that the products of runs 13 and 14 did not have. The
+final product scored **1542/2254 raw (68.4%) and 2940/2992 stratified (98.3%)**, its own suite 60/60, the CLI probes 23/23 and the messages
+76/76; every stratified failure is a name with an L or a W, and the raw score is the star lists. The reopen under-quoted: the oracle's first
+six failures were the TypeErrors, the names were among the ~50 behind them, and I quoted what the top of the list showed. A reopen that
+names four defects gets four fixed, as in runs 12 to 14, and what the operator did not list stayed. 21 of 42 turns (50%, 27.5% of the billed
+tokens) changed no durable state (run 14: 54.5% and 34%); eight turns and 110k tokens were woken by an INFORM.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| U5 | held: the architect's `transition_artifact` of an id no artifact has (04:55:08; it shares its first characters with the thread the seat was answering in) was refused with the artifacts there are, newest first, three of them with id, type, name, version and status. Older routes met the same mistake and worked: the architect's `approve` of a wrong id (04:47:55) named the review it owed and was re-sent two seconds later, and the pm's three citations of an unknown id as evidence (05:08:24–27, one wrong id sent three times in parallel) were each answered with the artifacts it could cite |
+| V1 | held: `curule status` after each host had exited printed `[COMPLETED]`, 100%, `Tokens: 490189 / 3000000` (round 1) and the seats' own figures (pm 79,235, as billed); it is the first thing run after `curule run` returns |
+| U4 | held: `curule budgets` against the live parked console put the numbers of 23 rows (keys of 33 to 60 characters) in one column, and `curule status` cut the goal at "plain…" and said `[ACTIVE]` after it |
+| B23 | **exercised for the third time**: four orphans (two seats, two bridges) three seconds after the kill and, at 05:06:10, "claude runtime: stopped 4 seat process(es) left running by a mesh process that died (pid 3105): 3525, 3541, 4888, 4907" |
+| B21, B22, M1 | held: the tech lead's and developer's open turns closed as interrupted ("abandoned by server restart") at 05:06:07 and five holds were released; the reopen resumed five seats and withdrew the four criteria it named |
+| R4, T4 | R4's sentence was in five op replies, one in each of five turns, and in no turn summary or notice (0 in `turn-audit.jsonl` and in the event log) |
+| T5 | six `work.request` calls from four seats (developer, tech lead three times, QA, pm), none refused for its shape |
+| B4 | one `ifUnanswered` refusal (the architect's, 15,000 ms) with the floor named; the next call, accepted, was the re-send |
+| P2, F1 | held: QA passed at 04:57:11, the watchdog nudged the pm at 04:57:46 and the pm accepted both criteria at 04:57:56, nine seconds after the nudge |
+| U1, U2, U3 | **not exercised**: one patch, no parked patch (the developer committed through `mesh_commit` and published one patch at version 3) |
+| T2, T3, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1 | **not exercised**: nothing here asked for what they guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| W1 | **A handover booked 0 tokens for a call that was billed in full.** The developer's handover (05:06:23, a recovery wake after the `kill -9`) ran 14 s; its audit line says `tokens: {input 0, output 0, total 0}` with an estimated input of 6,837; the seat's own transcript says the call wrote 14,826 and read 139,638 tokens of cache. The mesh ends a handover the moment its continuity record lands (`endTurn`, an abort), and the CLI answers an abort with a `result` frame whose usage can read zero; the adapter took it at its word, where the timeout branch has always fallen back to the figure the stream carried. Six of the eleven handover turns of runs 9 to 15 booked 0 that way (the other five 7.9k to 9.6k): the frame carries the sum when the interrupt lands after the call's last frame, and nothing when it lands before | one helper, `abortedUsage`: the frame's figure, or the stream's when the frame reads zero, for a handover, an interrupted turn and a timed-out one; a frame that reports anything (cache reads alone) is the figure, and a turn no frame measured stays unmeasured | `tests/integration/rotation-stream-usage.test.ts` (5 tests added, on a fake CLI that can answer an abort with a zero frame); 9 mutants |
+| W2 | **QA's verification task was completed before there was anything to verify, in every run.** In each of the eight runs from the eighth to the fifteenth QA's first turn claimed its task and the task was COMPLETED by the end of it, with a summary that says it is waiting ("Implementation not yet available — standing by to test once code appears in repository": claimed 04:48:37, completed 04:48:56, five minutes before the first line was merged). Nobody called `mesh_task_complete`: the turn was claim, reply, plan, wait, `mesh_done`, and **`mesh_done` completes the task its seat holds**. It was described as "Finish your current activation turn". 23 of the 46 task completions of those runs were made that way, 19 of them in a turn that also waited (eleven premature, eight with the work done and awaiting its review). I first read the log as `mesh_task_complete` and changed that tool's description; the turn's op list showed there was no such call, and the commit was amended before it left the branch | `mesh_done` says it completes the claimed task, exactly as `mesh_task_complete` does, and what to do when the work is not done (`mesh_wait`, and end the turn without it); `mesh_task_complete` says completing is DONE, not an acknowledgement and not undoable; `mesh_task_claim` says to claim what you can start now; `roles/qa.md` has a section on the verification task. Wording, and the next run shows whether it holds | `tests/core/task-completion-meaning.test.ts` (4 tests); 14 mutants |
+| W3 | **QA's report listed everything as verified and had run a fraction of it.** Its commands were `npm test` (the developer's 51 tests), eleven CLI invocations and eight library checks, none of them a name in capitals containing an L or a W, a step on the day-of-month field or a list that starts with a step; the report listed every behaviour of the contract as verified, among them "Case-insensitive month and day names (`JAN`, `jan`, `MON`, `mon`)". After the reopen it tested the four defects it was told about and nothing else. The names family had passed QA in every run it appeared in | `roles/qa.md` gets *What to test, and what the report says*: cases from the contract and not from the developer's tests or the examples; an enumeration member by member in every spelling; a form in every place, combined, in both orders; each rejection with its near-miss; a report that says what was run (command and output), lists the rest under NOT TESTED and what only the developer's suite covers as theirs. Wording, and the next run shows whether it changes what QA runs | `tests/core/qa-test-breadth.test.ts` (6 tests); 11 mutants |
+| W4 | **A commit announced the changes its branch already carried.** `mesh_commit` classifies the diff into `dependency.changed` and two more events that wake the seats interested in them. The diff is the cumulative `main...HEAD` diff, so a manifest created once announced a dependency change at every later commit: the architect was woken at both of the developer's commits for the same `package.json` hunk (04:52:42 and 04:54:38: 7.1k and 9.6k tokens), and the second began a chain of status mail (the architect's question, the developer's answer, the architect's unrequested review: 47k). Runs 8 to 13 and 15 woke it once or twice each (nine wakes in seven runs) for a project with no dependency | the commit reads only the file sections the version it replaces did not already have: a section the same in both is not news, a manifest that gained a dependency is; an unreadable or prose previous version hides nothing | `tests/core/change-events-since-last-commit.test.ts` (5 tests); 8 mutants; the existing `supervisor-pure` tests unchanged |
+
+What each does and why is in `docs/runtime.md` (a handover's spend; what the verifier tests; a commit announces what it changed) and `docs/protocol.md`
+(completing a task; `mesh_done`); the commit messages carry the evidence. One mutant of W4 survived its first tests (only the first new section was read)
+and a diff with two new sections killed it.
+
+### Not fixed, and the honest limits
+
+- **The product's two remaining defects are the model's, and my reopen did not name them.** `JUL` and `WED` refused as Quartz (the seventh run
+  in which it appears) and `*,5` refused. W3 is the lever the mesh has, and it is wording: whether a QA that is told to test every member of an
+  enumeration finds the names is for the next run to show. The stratified score would have been 100% had the reopen named the names.
+- **`mesh_done` still completes the task.** Only its description changed. Making a `mesh_done` after a `mesh_wait` complete nothing would have
+  held back the eleven premature completions and also the eight whose work was done; those would stay claimed to the finish line, where an open claim
+  holds the mission and wakes its claimant. That trade is not made without a run that shows it.
+- **A seat cannot say that a task depends on another** (`Task.dependsOn` is unreachable from `mesh_task_create` and `mesh_delegate`), and the pm
+  files its tasks in parallel in one turn, so it could not name the ids of the tasks it files beside. Carried from §20; it needs a design.
+- **The run report said "LEFT UNFINISHED: pm → tech-lead (REQUEST) — never answered"** for a request to merge that the tech lead answered by merging:
+  the merge completed the mission, and the reply in the same turn was refused ("mission is COMPLETED"). Two of the last seven reports have
+  this line (run 13's two asks to the same seat); an act does not discharge an ask, only a reply does.
+- **A turn begun just before the end ran after it.** QA's wake came from the merge's own `implementation.completed`, one millisecond before
+  `goal.completed`, so T3 had nothing to drop; the turn ran 27 s and spent 12k tokens on `no_ops`. Bounded, and it cost no durable state.
+- **The pm invented capability names for tasks** (`architecture.design`, `implementation.code`, `qa.testing`; three refusals in its first turn,
+  the third run of eight to do it); the refusal lists the known ones and it re-filed at once.
+- **W4 leaves the first announcement:** a manifest created with no dependency in it is still announced once, because the classification looks
+  for the file's name and not for a dependency. Reading `package.json`'s sections is a design of its own.
+- **One run.** W2's and W3's effect, and the U1 to U3 loop, are for the next run.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `b7dc2c8`, before this round | 3546 | 3544 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 24 s) | 3566 | 3564 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (the baseline warnings, one rule). Mutation checks, each reverted: W1 (nine mutants: the
+abort's frame taken at its word in all three branches and in the helper, the fallback inverted, cache reads not counting as a report, the stream
+always winning, an unmeasured turn charged an invented figure, the cache writes left out), W2 (fourteen: each sentence of the three tool descriptions,
+the summary fields and the QA section removed), W3 (eleven: each bullet of the new section removed, and the section moved behind the verdict contract)
+and W4 (eight: the previous version ignored, sections unfiltered, a changed manifest read as the same file, a diff as one section, the commit
+not passing the previous version, an unreadable one hiding everything, only the first new section read, the previous version read from the new
+one). Every one failed a test.
+
+### Worth keeping from this round
+
+- **Check which op did it before describing the fix.** The log said "TASK-DONE by qa" and I read `mesh_task_complete`; the turn's op list had no such
+  call. `mesh_done` has a side effect no description mentioned, and 23 of 46 completions went through it. Half of a fix is the right tool.
+- **A zero in a ledger is a claim.** Six of eleven handovers booked 0 tokens and the number looked like a quiet turn until the seat's transcript was
+  put beside it. Absent is unmeasured, never zero, and the timeout branch had known it for a long time.
+- **A cumulative diff announces the same thing at every commit.** Classify what this commit added, not what the branch holds.
+- **A reopen that quotes the top of the oracle's list quotes one family.** Probe deeper than the first six failures, and sort the rest by what they
+  have in common, before saying what the operator found.
+- **A verifier that lists everything as verified has told you nothing.** The report has to separate what it ran from what the developer's suite covers
+  and from what nobody ran.

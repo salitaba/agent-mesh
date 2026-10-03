@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 20) are described there, run by run.
+sections 1 to 21) are described there, run by run.
 
 ## Unreleased
 
@@ -79,6 +79,22 @@ sections 1 to 20) are described there, run by run.
   on every page, so a seat reading a report to cite it learns that it is a draft, and whom to ask, from the read.
 
 ### Fixed
+
+- A turn the mesh cuts short is billed what the stream reported when the abort's own frame reads zero. A handover is ended by the mesh
+  the moment its continuity record lands, the CLI answers that abort with a frame whose usage can read zero, and the ledger booked 0 tokens
+  for six of the eleven handovers of the ninth to fifteenth Haiku runs (the fifteenth's developer: a call that wrote 14,826 and read 139,638
+  tokens of cache). `curule usage`, the budgets and the cost estimate were short by that much; an interrupted or timed-out turn is read the
+  same way.
+- `mesh_done` says that it completes the task the seat holds, and QA's prompt says when to claim its verification task. QA claimed it and
+  had it completed on its first turn in each of the eight runs from the eighth, with a summary that says it was waiting (23 of 46 task
+  completions in those runs were made by `mesh_done`, which no description mentioned). The tool descriptions and `roles/qa.md` are wording;
+  nothing refuses a `mesh_done`.
+- QA is told what its verification has to cover: cases from the contract and not from the developer's tests, every member of an
+  enumeration, forms in every place and combination, each rejection with its near-miss, and a report that lists what it ran (command and
+  output) apart from what it did not (NOT TESTED). The fifteenth run's QA ran eleven CLI commands and eight library checks and listed every
+  behaviour as verified; the library refused `JUL` and `WED` as Quartz syntax, as in six runs before it.
+- A commit announces the manifest, login and permission changes it made, not the ones its branch already carried. The diff is cumulative,
+  so a `package.json` created once woke the architect at every later commit (nine wakes in seven runs, for a project with no dependency).
 
 - `curule status` on a mesh that is not running (what you get once `curule run` has exited) reads the event log through the same
   projections the server keeps. It used to print `[ACTIVE]` at 0% with no tokens line for a mission that was over, and about 2.4
