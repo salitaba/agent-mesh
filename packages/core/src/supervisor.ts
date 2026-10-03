@@ -11835,14 +11835,15 @@ export class Supervisor {
       } catch (err) {
         this.auditLine(`merge of '${artifact.name}': could not set aside uncommitted changes in the product checkout: ${err instanceof Error ? err.message : String(err)}`);
       }
+      // Scope the merge to the commit this artifact recorded, not the branch
+      // tip. `opCommit` stores it as `metadata.commit`, and `createArtifact`'s
+      // version branch carries metadata forward under the same artifact id, so
+      // the sha here belongs to the version that was actually approved.
+      // Without it the whole agent branch merges and unreviewed commits ride
+      // in on this approval — see `mergeWorktree`. Read ahead of the call
+      // because the note below says different things for the two arms.
+      const recorded = typeof artifact.metadata?.commit === "string" ? artifact.metadata.commit : undefined;
       try {
-        // Scope the merge to the commit this artifact recorded, not the branch
-        // tip. `opCommit` stores it as `metadata.commit`, and `createArtifact`'s
-        // version branch carries metadata forward under the same artifact id, so
-        // the sha here belongs to the version that was actually approved.
-        // Without it the whole agent branch merges and unreviewed commits ride
-        // in on this approval — see `mergeWorktree`.
-        const recorded = typeof artifact.metadata?.commit === "string" ? artifact.metadata.commit : undefined;
         merged = await this.deps.workspace.mergeWorktree(artifactId, artifact.owner, comment ?? `merge ${artifact.name}`, recorded);
       } catch (err) {
         const failure = err instanceof Error ? err.message : String(err);
@@ -11890,8 +11891,19 @@ export class Supervisor {
       if (merged.leftBehind && merged.leftBehind.length > 0) {
         // Either the scope held (later commits deliberately not landed) or there
         // was no sha to scope by (the whole branch went in). Both are facts the
-        // seat and the log should carry rather than infer.
-        const note = `${merged.leftBehind.length} commit(s) on ${artifact.owner}'s branch were NOT part of this artifact: ${merged.leftBehind.slice(0, 5).join("; ")}`;
+        // seat and the log should carry rather than infer, and they are opposite
+        // facts: for a recorded commit the list is what STAYED on the branch, for
+        // a patch that records none it is what the merge TOOK. The fourteenth
+        // cronlite run's tech lead was told the second in the words of the first,
+        // in the reply that said "merged as e1cdc36": "4 commit(s) on developer's
+        // branch were NOT part of this artifact: e1cdc36 …; 30028bc …". The commit
+        // it was told was not part of the artifact was the one it had just landed,
+        // and 30028bc, the CLI, was the patch it then tried three times to merge.
+        const n = merged.leftBehind.length;
+        const listed = `${merged.leftBehind.slice(0, 5).join("; ")}${n > 5 ? `; and ${n - 5} more` : ""}`;
+        const note = recorded
+          ? `${n} commit(s) on ${artifact.owner}'s branch were NOT part of this artifact and stay there: ${listed}`
+          : `${artifact.owner}'s branch went in whole: this patch records no commit (\`mesh_commit\` records one), so the merge had nothing to scope it by, and ${n} commit(s) came in with it: ${listed}`;
         this.auditLine(`merge of '${artifact.name}': ${note}`);
         landed = `${landed} — ${note}`;
         landedCaveat = true;
