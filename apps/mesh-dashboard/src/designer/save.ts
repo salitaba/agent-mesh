@@ -38,7 +38,6 @@ export function classifyDrift(drift: Drift | null | undefined): DriftReport {
   return { apply, restart, notes, noMission, inLine: apply.length === 0 && restart.length === 0 && notes.length === 0 && !noMission };
 }
 
-/** A plain reading of one line of the apply route's report. */
 /**
  * Whether a mesh file is the shipped scripted demo. The product clears that one mesh's state at every start (apps/mesh-server/src/demo.ts: the id
  * `demo-stub` and every seat on the stub runtime), so restarting it is a new run and not a resumed one: the goal and the done-when checks are read
@@ -50,6 +49,94 @@ export function isScriptedDemo(file: any): boolean {
   return file?.mesh?.id === "demo-stub" && seats.length > 0 && seats.every((a) => (a?.runtime ?? fallback) === "stub");
 }
 
+/** What a save wrote, and what the server said about the running mission when it did. */
+export interface Saved {
+  path: string;
+  archived: string | null;
+  warnings: string[];
+  running: boolean;
+  /** What the server says the running mission still differs by. Null when it said nothing, which is not the same as "nothing". */
+  drift: Drift | null;
+  /** The server compared the file with the mission. False when it did not (the comparison failed), so no claim about the mission is made. */
+  driftKnown: boolean;
+  payload: any;
+}
+
+/** The live changes a restart does not make moot: it reads seats and budgets from the file, and a resumed mission keeps the goal and checks it has. */
+const GOAL_KINDS = new Set(["goal.description", "criteria.add", "criteria.edit", "criteria.delete"]);
+
+export interface Remaining {
+  /** The live changes that were on offer after the save and the restart, whether or not they have been applied since: the record of what Apply did. */
+  offered: StagedMutation[];
+  /** Of those, the ones still to apply. */
+  apply: StagedMutation[];
+  /** What only a restart carries, and has not yet been restarted for. */
+  restart: string[];
+  /** Sentences that only inform: nothing here can be done from the Designer. */
+  notes: string[];
+  /** The server did not compare the mission with the file, so nothing is claimed about it. */
+  unknown: boolean;
+  /** No mission is running: the file is simply what the next boot reads. */
+  noMission: boolean;
+}
+
+/**
+ * What a save to the running file still leaves for the running mission, given what has been done since. An apply that landed leaves nothing to
+ * apply; a restart reads the file again, so seat and budget changes are moot, and so is everything for the scripted demo, which starts from nothing.
+ */
+export function remainingAfter(saved: Pick<Saved, "drift" | "driftKnown" | "payload">, done: { applied: boolean; restarted: boolean }): Remaining {
+  const report = classifyDrift(saved.drift);
+  const demo = isScriptedDemo(saved.payload);
+  const offered = done.restarted ? (demo ? [] : report.apply.filter((m) => GOAL_KINDS.has(m.kind))) : report.apply;
+  return {
+    offered,
+    apply: done.applied ? [] : offered,
+    restart: done.restarted ? [] : report.restart,
+    notes: report.notes,
+    unknown: !saved.driftKnown,
+    noMission: report.noMission,
+  };
+}
+
+/** A save to the running file, and what has been done about the running mission since. Kept by the Designer so closing the sheet does not forget it. */
+export interface FollowUp {
+  saved: Saved;
+  /** The apply route's answer, once Apply was pressed. */
+  applied: ApplyOutcome | null;
+  restarted: boolean;
+  /** When the file was written, so a line about it says how old it is. */
+  at: number;
+  /** The person said they know. The facts are unchanged; the reminder is not shown. */
+  dismissed: boolean;
+}
+
+export interface Lag {
+  apply: number;
+  restart: number;
+  /** The server could not compare, so the mission may not match. */
+  unknown: boolean;
+}
+
+/** How far the running mission is behind the file the person saved, or null when it is not, or there is nothing to say. */
+export function lagOf(f: FollowUp | null | undefined): Lag | null {
+  if (!f || !f.saved.running || f.dismissed) return null;
+  const r = remainingAfter(f.saved, { applied: f.applied?.ok === true, restarted: f.restarted });
+  if (r.noMission) return null;
+  if (r.unknown && !f.restarted) return { apply: 0, restart: 0, unknown: true };
+  if (r.apply.length + r.restart.length === 0) return null;
+  return { apply: r.apply.length, restart: r.restart.length, unknown: false };
+}
+
+/** The sentence the save bar shows while the mission is behind the file. `time` is the clock time of the save. */
+export function lagSentence(lag: Lag, time: string): string {
+  if (lag.unknown) return `Saved at ${time}. The server could not compare the running mission with the file, so it may not match.`;
+  const parts: string[] = [];
+  if (lag.apply) parts.push(`${lag.apply} ${lag.apply === 1 ? "change" : "changes"} you can apply now`);
+  if (lag.restart) parts.push(`${lag.restart} that ${lag.restart === 1 ? "needs" : "need"} a restart`);
+  return `Saved at ${time}. The running mission has not picked up ${parts.join(" and ")}.`;
+}
+
+/** A plain reading of one line of the apply route's report. */
 export interface ApplyLine { kind: string; ok: boolean; detail: string }
 
 export interface ApplyOutcome {

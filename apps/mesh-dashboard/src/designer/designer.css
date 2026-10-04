@@ -119,6 +119,7 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 .ms-bar-file { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; flex: 1 1 320px; }
 .ms-bar-state { font: var(--tx-meta); color: var(--text-dim); }
 .ms-bar-state .bad { color: var(--bad); }
+.ms-bar-state button.linklike { margin-left: var(--s2); }
 .ms-bar-acts { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
 
 /* A file path that has to fit: the folder is cut from the left, the file name never. */

@@ -18,14 +18,24 @@ import { CloseButton, PathLabel } from "./ui";
 import { diffMesh, sameMesh, savePayload, type Change } from "./diff";
 import { baseName, deepCopy, saveLandsOnRunning } from "./model";
 import { confirmationFor, confirmationSatisfied, summarizeMutation } from "./mutations";
-import { classifyDrift, isScriptedDemo, readApply, shortPath, type ApplyOutcome, type Drift, type DraftStatus } from "./save";
+import { classifyDrift, isScriptedDemo, lagSentence, readApply, remainingAfter, shortPath, type ApplyOutcome, type Drift, type DraftStatus, type FollowUp, type Lag, type Saved } from "./save";
 import { locateIssue, whereLabel, type Where } from "./locate";
 import { useMesh } from "../store";
 import { useMission } from "../useMission";
 import { useProjectsOptional } from "../projects";
 import type { StagedMutation } from "@mesh/protocol";
 
-export type SheetMode = "file" | "copy";
+/** `after` reopens the follow-up to a save to the running file, so closing the sheet does not lose what is left to do for the mission. */
+export type SheetMode = "file" | "copy" | "after";
+
+/* The follow-up to a save, kept per project for as long as the page lives, so a visit to another view does not forget that the mission is behind the file.
+   It is memory, not storage: a reload forgets it, because the server only works out the difference at the moment of a save. */
+const FOLLOW_UPS = new Map<string, FollowUp>();
+export const rememberedFollowUp = (project: string): FollowUp | null => FOLLOW_UPS.get(project) ?? null;
+export function rememberFollowUp(project: string, f: FollowUp | null): void {
+  if (f) FOLLOW_UPS.set(project, f);
+  else FOLLOW_UPS.delete(project);
+}
 
 /* ---------------------------------------------------------------- the bar */
 
@@ -41,12 +51,18 @@ export interface SaveBarProps {
   open: SheetMode | null;
   onOpen: (mode: SheetMode) => void;
   onShowErrors: () => void;
+  /** How far the running mission is behind the file that was saved, when it is; the bar says so until it is not. */
+  lag: Lag | null;
+  lagAt: number | null;
+  onShowLag: () => void;
+  onDismissLag: () => void;
   /** The sheet, which hangs above the bar. */
   children?: React.ReactNode;
 }
 
-export function SaveBar({ path, hasFile, status, checking, valid, offline, errors, open, onOpen, onShowErrors, children }: SaveBarProps): React.JSX.Element {
+export function SaveBar({ path, hasFile, status, checking, valid, offline, errors, open, onOpen, onShowErrors, lag, lagAt, onShowLag, onDismissLag, children }: SaveBarProps): React.JSX.Element {
   const blocked = !checking && !offline && !valid;
+  const showLag = !!lag && status.kind === "clean";
   const barRef = useRef<HTMLDivElement | null>(null);
   // The bar is pinned to the bottom of the page, where the toasts are. Its height is published so they can sit above it (designer.css) and
   // not on the Save buttons, which a toast with an Undo button used to cover for as long as it stayed.
@@ -71,6 +87,12 @@ export function SaveBar({ path, hasFile, status, checking, valid, offline, error
               <>
                 <b className="bad">{errors} {errors === 1 ? "error blocks" : "errors block"} saving.</b>{" "}
                 <Button variant="linklike" onClick={onShowErrors}>Show the {errors === 1 ? "error" : "errors"}</Button>
+              </>
+            ) : showLag && lag ? (
+              <>
+                {lagSentence(lag, new Date(lagAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}{" "}
+                <Button variant="linklike" aria-expanded={open === "after"} onClick={onShowLag}>What&rsquo;s left</Button>{" "}
+                <Button variant="linklike" onClick={onDismissLag}>Dismiss</Button>
               </>
             ) : checking ? "Checking the draft." : offline ? "Could not reach the server to check the draft." : status.detail}
           </span>
@@ -138,43 +160,35 @@ export interface SaveSheetProps {
   onGo: (w: Where) => void;
   /** Called once the server has written the file. */
   onSaved: (info: { path: string; running: boolean; payload: any }) => void;
+  /** The follow-up to the last save to the running file, kept by the Designer, and how the sheet changes it. */
+  followUp: FollowUp | null;
+  setFollowUp: (f: FollowUp | null) => void;
   onClose: () => void;
   onYaml: () => void;
   onHome: () => void;
 }
 
-interface Saved {
-  path: string;
-  archived: string | null;
-  warnings: string[];
-  running: boolean;
-  /** What the server says the running mission still differs by. Null when it said nothing, which is not the same as "nothing". */
-  drift: Drift | null;
-  /** The server compared the file with the mission. False when it did not (the comparison failed), so no claim about the mission is made. */
-  driftKnown: boolean;
-  payload: any;
-}
-
-const GOAL_KINDS = new Set(["goal.description", "criteria.add", "criteria.edit", "criteria.delete"]);
-
 export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
-  const { mode, model, rev, baseline, runningPath, copyPath, setCopyPath, checking, valid, offline, errors, seats, onGo, onSaved, onClose, onYaml, onHome } = props;
+  const { mode, model, rev, baseline, runningPath, copyPath, setCopyPath, checking, valid, offline, errors, seats, onGo, onSaved, followUp, setFollowUp, onClose, onYaml, onHome } = props;
   const { client, status: meshStatus, confirm, refreshStatus, projectId } = useMesh();
   const { facts } = useMission();
   const projects = useProjectsOptional();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
 
-  const [phase, setPhase] = useState<"review" | "saving" | "saved">("review");
+  const reopened = mode === "after" && !!followUp;
+  const [phase, setPhase] = useState<"review" | "saving" | "saved">(reopened ? "saved" : "review");
   const [fresh, setFresh] = useState<{ state: "loading" | "ok" | "failed"; raw: any | null }>({ state: mode === "file" ? "loading" : "ok", raw: null });
   const [failure, setFailure] = useState<string | null>(null);
-  const [saved, setSaved] = useState<Saved | null>(null);
+  const [justSaved, setJustSaved] = useState<Saved | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
-  const [applied, setApplied] = useState<ApplyOutcome | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [restartBusy, setRestartBusy] = useState(false);
-  const [restarted, setRestarted] = useState<"no" | "yes">("no");
   const [restartFailure, setRestartFailure] = useState<string | null>(null);
+  // What was saved: this sheet's own save, or, reopened, the follow-up the Designer kept. What was done about the mission since lives in the follow-up.
+  const saved: Saved | null = mode === "after" ? followUp?.saved ?? null : justSaved;
+  const applied: ApplyOutcome | null = saved?.running ? followUp?.applied ?? null : null;
+  const restarted = saved?.running ? followUp?.restarted === true : false;
 
   // Focus moves into the sheet when it opens and back to the button that opened it when it closes: keyboard users are not left behind it.
   useEffect(() => {
@@ -229,7 +243,9 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
       const d = json.drift;
       const driftKnown = running && !!d && typeof d === "object";
       const drift: Drift | null = driftKnown ? { mutations: d.mutations ?? [], problems: d.problems ?? [] } : null;
-      setSaved({ path: String(json.savedTo), archived: json.archived ?? null, warnings: Array.isArray(json.saveWarnings) ? json.saveWarnings : [], running, drift, driftKnown, payload: deepCopy(payload) });
+      const result: Saved = { path: String(json.savedTo), archived: json.archived ?? null, warnings: Array.isArray(json.saveWarnings) ? json.saveWarnings : [], running, drift, driftKnown, payload: deepCopy(payload) };
+      setJustSaved(result);
+      if (running) setFollowUp({ saved: result, applied: null, restarted: false, at: Date.now(), dismissed: false });
       setPhase("saved");
       onSaved({ path: String(json.savedTo), running, payload: deepCopy(payload) });
     } catch (err) {
@@ -250,11 +266,11 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
     try {
       const { status, json } = await client.post("/designer/staged/apply", { mutations: report.apply, confirmId: confirmText });
       const outcome = readApply(status, json, report.apply.length);
-      setApplied(outcome);
+      if (followUp) setFollowUp({ ...followUp, applied: outcome });
       void refreshStatus();
     } catch (err) {
       const outcome: ApplyOutcome = { ok: false, applied: 0, total: report.apply.length, lines: [], summary: `${err instanceof Error ? err.message : "The server did not answer."} Nothing was applied.` };
-      setApplied(outcome);
+      if (followUp) setFollowUp({ ...followUp, applied: outcome });
     } finally {
       setApplyBusy(false);
     }
@@ -269,7 +285,9 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
     const n = facts.working;
     const turns = n === 0
       ? "No seat is in the middle of a turn."
-      : `${n} ${n === 1 ? "seat is" : "seats are"} in the middle of a turn. ${n === 1 ? "That turn is" : "Those turns are"} stopped${demo ? "." : " and run again from where the seat left off. Tokens already spent are still billed."}`;
+      // The server's own words for it (packages/core supervisor): a turn the restart interrupts is ended as "interrupted", and its spend is billed by the model
+      // provider whether or not the mission's ledger recorded it. Nothing here says the turn is run again: whether the seat is woken again is the mission's decision.
+      : `${n} ${n === 1 ? "seat is" : "seats are"} in the middle of a turn. ${n === 1 ? "That turn is" : "Those turns are"} stopped before ${n === 1 ? "it finishes" : "they finish"}${demo ? "." : ", so whatever was not yet done is not done. The tokens already used are still charged by the model provider."}`;
     const answer = await confirm({
       title: "Restart this project?",
       body: [
@@ -290,7 +308,7 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
       if (!summary || summary.status === "crashed" || summary.status === "locked" || summary.status === "error") {
         setRestartFailure(summary?.error?.detail ?? "The project did not come back. Check its tab in the strip above.");
       } else {
-        setRestarted("yes");
+        if (followUp) setFollowUp({ ...followUp, restarted: true });
         void refreshStatus();
       }
     } catch {
@@ -300,16 +318,16 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
     }
   };
 
-  /* After a restart the file's seats and budgets are what is running. A resumed mission keeps its goal and its checks, so those
-     changes stay on offer; the seat and budget changes are moot. */
-  const stillToApply: StagedMutation[] = restarted === "yes" ? (demo ? [] : report.apply.filter((m) => GOAL_KINDS.has(m.kind))) : report.apply;
-  const restartItems = restarted === "yes" ? [] : report.restart;
+  // What is still to do for the running mission, given the apply and the restart so far (save.ts says how each one changes it).
+  const remaining = saved ? remainingAfter(saved, { applied: applied?.ok === true, restarted }) : null;
+  const stillToApply = remaining?.offered ?? [];
+  const restartItems = remaining?.restart ?? [];
 
   const onKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); onClose(); }
   };
 
-  const fileName = baseName(target || "mesh.yaml");
+  const fileName = baseName((phase === "saved" && saved?.path) || target || "mesh.yaml");
   const title = phase === "saved" ? (saved?.running ? `Saved to ${fileName}` : "Saved a copy") : mode === "file" ? `Save changes to ${fileName}` : "Save a copy";
   const canSave = valid && !checking && !offline && phase !== "saving" && !!target && !landsOnRunning && (mode === "copy" || changes.length > 0);
 
@@ -421,7 +439,7 @@ export function SaveSheet(props: SaveSheetProps): React.JSX.Element {
             <CopyNext path={saved.path} />
           ) : (
             <MissionNext
-              saved={saved} report={report} stillToApply={stillToApply} restartItems={restartItems} restarted={restarted === "yes"}
+              saved={saved} report={report} stillToApply={stillToApply} restartItems={restartItems} restarted={restarted}
               confirmation={confirmation} confirmText={confirmText} setConfirmText={setConfirmText} confirmed={confirmed}
               applyBusy={applyBusy} applied={applied} onApply={() => void apply()}
               canRestart={canRestart} restartBusy={restartBusy} restartFailure={restartFailure} onRestart={() => void restart()}

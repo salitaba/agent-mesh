@@ -22,14 +22,14 @@ import { SetupGuide, needsGuide } from "./Guide";
 import Inspector from "./Inspector";
 import SeatList from "./SeatList";
 import Topology, { type ConnectResult } from "./Topology";
-import { SaveBar, SaveSheet, type SheetMode } from "./SavePanel";
+import { rememberFollowUp, rememberedFollowUp, SaveBar, SaveSheet, type SheetMode } from "./SavePanel";
 import { ToolButton, CloseButton } from "./ui";
 import { diffMesh, savePayload } from "./diff";
 import { addSeat, duplicateSeat, hasWire, isPlaceholderRole, removeSeat, renameSeat, seatIds, setWire, toggleContact, toggleGrant, toggleStart, wiresOf } from "./edits";
 import { labels as historyLabels, record, redo as redoStep, undo as undoStep, emptyHistory } from "./history";
 import { locateIssue, type Where } from "./locate";
 import { deepCopy, densure, goalIsPlaceholder, TEMPLATES, type Template } from "./model";
-import { draftStatus } from "./save";
+import { draftStatus, lagOf, type FollowUp } from "./save";
 import { clearStored, commitDraft, getDraftSnapshot, guideHidden, loadLayout, readStored, ringLayout, saveLayout, setGuideHidden, storeDraft, useDraft, type DraftState } from "./storage";
 import { cardFor, freeSpot, stageHeight } from "./topology";
 import type { Advice, DCtx, Pos, Reveal, Tab } from "./types";
@@ -71,7 +71,7 @@ function describeEdit(el: Element | null): { label: string; key?: string } {
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "mesh";
 
 export default function Designer(): React.JSX.Element {
-  const { vocab, toast, setView, client, status: meshStatus, confirm } = useMesh();
+  const { vocab, toast, setView, client, status: meshStatus, confirm, projectId } = useMesh();
   // Shell-owned: this component only paints the mode onto its regions.
   const { focusMode } = useFocusMode();
   const draft = useDraft();
@@ -94,6 +94,12 @@ export default function Designer(): React.JSX.Element {
   const [importBusy, setImportBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetMode | null>(null);
+  // The last save to the running file and what has been done about the running mission since. The sheet that shows it can be closed, and the bar
+  // goes on saying the mission is behind the file until it is not; it is kept per project across visits to other views.
+  const projectKey = String(projectId ?? "");
+  const [followUp, setFollowUpState] = useState<FollowUp | null>(() => rememberedFollowUp(projectKey));
+  const setFollowUp = useCallback((f: FollowUp | null) => { rememberFollowUp(projectKey, f); setFollowUpState(f); }, [projectKey]);
+  const lag = lagOf(followUp);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   const [starter, setStarter] = useState<string | null>(null);
   const [guideOff, setGuideOff] = useState(guideHidden);
@@ -224,7 +230,11 @@ export default function Designer(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     void (async () => {
-      if (getDraftSnapshot().loaded && getDraftSnapshot().model) return;
+      if (getDraftSnapshot().loaded && getDraftSnapshot().model) {
+        // A draft that outlived a visit to another view: this mount has not checked it, and without a check the page stays on "Checking" and cannot save.
+        void validate();
+        return;
+      }
       setLoadError(null);
       const applyModel = (raw: any, filePath: string | null) => {
         const model = deepCopy(raw);
@@ -751,10 +761,12 @@ export default function Designer(): React.JSX.Element {
         path={runningPath || copyPath} hasFile={hasFile} status={status}
         checking={checking && !result} valid={valid} offline={checkFailed && !result} errors={errors.length} open={sheet}
         onOpen={openSheet} onShowErrors={() => setChecksOpen(true)}
+        lag={lag} lagAt={followUp?.at ?? null} onShowLag={() => openSheet("after")}
+        onDismissLag={() => { if (followUp) setFollowUp({ ...followUp, dismissed: true }); }}
       >
         {sheet ? (
           <SaveSheet
-            mode={sheet} model={m} rev={rev} baseline={runningRaw} runningPath={runningPath}
+            key={sheet} mode={sheet} model={m} followUp={followUp} setFollowUp={setFollowUp} rev={rev} baseline={runningRaw} runningPath={runningPath}
             copyPath={copyPath} setCopyPath={(p) => commitDraft({ copyPath: p })}
             checking={checking} valid={valid} offline={checkFailed} errors={errors} seats={ids}
             onGo={go}

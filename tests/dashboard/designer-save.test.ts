@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyDrift, draftStatus, isScriptedDemo, readApply, shortPath } from "../../apps/mesh-dashboard/src/designer/save";
+import { classifyDrift, draftStatus, isScriptedDemo, lagOf, lagSentence, readApply, remainingAfter, shortPath, type FollowUp, type Saved } from "../../apps/mesh-dashboard/src/designer/save";
 
 /* The three problems the server really returns (apps/mesh-server/src/config-drift.ts). */
 const SEAT_DIFFERS = "seat 'pm' differs from the running definition. No staged kind replaces a live seat's definition \u2014 boot does that, so restart the mesh to pick it up.";
@@ -117,4 +117,71 @@ test("any other id, no seats, or no file is not the demo", () => {
   assert.equal(isScriptedDemo({ mesh: { id: "demo-stub", runtime: { default: "stub" } }, agents: {} }), false);
   assert.equal(isScriptedDemo(null), false);
   assert.equal(isScriptedDemo(undefined), false);
+});
+
+/* ------------------------------------------------ what is left for the running mission, and for how long the bar says so */
+
+const GOAL = { kind: "goal.description", description: "x" };
+const SPAWN = { kind: "seat.spawn", agentId: "scribe" };
+const NOT_DEMO = { mesh: { id: "payments" }, agents: { pm: { role: "pm" } } };
+const DEMO = { mesh: { id: "demo-stub", runtime: { default: "stub" } }, agents: { pm: { role: "pm" } } };
+
+function saved(over: Partial<Saved> = {}): Saved {
+  return { path: "/p/mesh.yaml", archived: null, warnings: [], running: true, drift: { mutations: [GOAL, SPAWN] as never, problems: [SEAT_DIFFERS] }, driftKnown: true, payload: NOT_DEMO, ...over };
+}
+function followUp(over: Partial<FollowUp> = {}, s: Saved = saved()): FollowUp {
+  return { saved: s, applied: null, restarted: false, at: 0, dismissed: false, ...over };
+}
+
+test("right after a save, the live changes and the restart are both still to do", () => {
+  const r = remainingAfter(saved(), { applied: false, restarted: false });
+  assert.deepEqual([r.offered.length, r.apply.length, r.restart.length], [2, 2, 1]);
+});
+
+test("an apply that landed leaves nothing to apply but still lists what it applied, and the restart is still to do", () => {
+  const r = remainingAfter(saved(), { applied: true, restarted: false });
+  assert.deepEqual([r.offered.length, r.apply.length, r.restart.length], [2, 0, 1]);
+});
+
+test("a restart reads seats and budgets from the file, so only the goal and the checks stay on offer for a project that resumes", () => {
+  const r = remainingAfter(saved(), { applied: false, restarted: true });
+  assert.deepEqual(r.offered.map((m) => m.kind), ["goal.description"]);
+  assert.deepEqual([r.apply.length, r.restart.length], [1, 0]);
+});
+
+test("the scripted demo starts from nothing on a restart, so nothing stays on offer after one", () => {
+  const r = remainingAfter(saved({ payload: DEMO }), { applied: false, restarted: true });
+  assert.deepEqual([r.offered.length, r.apply.length, r.restart.length], [0, 0, 0]);
+});
+
+test("the bar knows how far the mission is behind, in counts", () => {
+  assert.deepEqual(lagOf(followUp()), { apply: 2, restart: 1, unknown: false });
+  assert.deepEqual(lagOf(followUp({ applied: { ok: true, applied: 2, total: 2, lines: [], summary: "" } })), { apply: 0, restart: 1, unknown: false });
+  assert.equal(lagOf(followUp({ applied: { ok: true, applied: 2, total: 2, lines: [], summary: "" }, restarted: true })), null, "applied, then restarted: nothing is behind");
+});
+
+test("a refused or partial apply does not count as applied: the changes are still behind", () => {
+  const partial = { ok: false, applied: 1, total: 2, lines: [], summary: "" };
+  assert.deepEqual(lagOf(followUp({ applied: partial })), { apply: 2, restart: 1, unknown: false });
+});
+
+test("nothing is said when there is nothing to say: no follow-up, a copy, a dismissed reminder, no mission running, or a mission in line", () => {
+  assert.equal(lagOf(null), null);
+  assert.equal(lagOf(followUp({}, saved({ running: false }))), null, "a copy changes nothing running");
+  assert.equal(lagOf(followUp({ dismissed: true })), null);
+  assert.equal(lagOf(followUp({}, saved({ drift: { mutations: [], problems: [NO_MISSION] } }))), null);
+  assert.equal(lagOf(followUp({}, saved({ drift: { mutations: [], problems: [] } }))), null);
+});
+
+test("when the server could not compare, the bar says that and claims no counts; a restart settles it", () => {
+  const unknown = saved({ drift: null, driftKnown: false });
+  assert.deepEqual(lagOf(followUp({}, unknown)), { apply: 0, restart: 0, unknown: true });
+  assert.equal(lagOf(followUp({ restarted: true }, unknown)), null);
+});
+
+test("the sentence says what is behind, in the singular and the plural, and when it was saved", () => {
+  assert.equal(lagSentence({ apply: 1, restart: 0, unknown: false }, "10:42"), "Saved at 10:42. The running mission has not picked up 1 change you can apply now.");
+  assert.equal(lagSentence({ apply: 0, restart: 1, unknown: false }, "10:42"), "Saved at 10:42. The running mission has not picked up 1 that needs a restart.");
+  assert.equal(lagSentence({ apply: 2, restart: 3, unknown: false }, "10:42"), "Saved at 10:42. The running mission has not picked up 2 changes you can apply now and 3 that need a restart.");
+  assert.match(lagSentence({ apply: 0, restart: 0, unknown: true }, "10:42"), /could not compare the running mission with the file, so it may not match/);
 });
