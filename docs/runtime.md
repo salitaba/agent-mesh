@@ -586,6 +586,43 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
   init …` line per seat session, which is what tells a race from a real failure.
   A `pending` bridge — the CLI's non-blocking connect still dialling — is not
   down, and costs no spawn and no delay
+- **an end-of-turn reminder for a seat that stops without calling the mesh**
+  (`endOfTurnHooks`, a `Stop` hook). A turn that ends with no `mcp__mesh__*` call
+  reported nothing to anyone, whatever it did: text outside a mesh call goes
+  nowhere, and the supervisor discards the turn as `no_ops`. The hook blocks that
+  stop **once**, with `NO_MESH_CALL_REMINDER` as the reason, and the model carries
+  on in the same turn and session (same cache; the turn's usage is the sum of both
+  rounds). It is a hook for the reason `advise` is one: a message pushed after the
+  stop is a second user turn to the CLI, answered with a second `result` frame,
+  and the pump settles the mesh turn on the first. The reminder says what the seat
+  could not know — that the mesh is running and its tools work — and names the tool
+  that reports each kind of result. Why it exists: in the seventeenth cronlite run
+  a `kill -9` of the host left the CLI's record `failedMcpServers` (`mesh bus
+  unreachable: fetch failed`) in two seat transcripts, QA's and the developer's,
+  written at the second the host died; the ten other seat transcripts carried
+  none. After the restart both seats resumed with it and neither made a mesh call:
+  QA did a full verification with its own tools (41.5k tokens; by its own count a
+  regression file with 39 of 44 subtests failing) and ended on "Awaiting mesh
+  recovery … The mesh bus is currently unavailable (`fetch failed`)", having
+  called nothing; the developer did the same for three turns (151k tokens), typing
+  "Now I'll call the mesh operations:" and the calls themselves as prose, and its
+  first mesh effect came 10 min 52 s after the reopen, from the fresh session a
+  rotation gave it. The tools were not gone: a resumed copy of such a
+  transcript, given a live server, called them. Scope: only tools of the `mesh`
+  server count (not another server's, not a bare `mesh_done` from a seat's own
+  shell); once per turn (`endReminded`, and the CLI's own `stop_hook_active`, so a
+  stop another hook already continued is never blocked again by ours); and never
+  for a turn the mesh is itself ending — interrupted (a deadline's abort is one) or
+  closed through `endTurn`. An operator's own `Stop` hooks run beside it. Checked
+  with the real CLI and a stand-in `mesh` server that has the real tool names: a
+  fresh seat session told to "reply OK, call no tool" made no mesh call without
+  the hook (2 of 2) and called mesh tools with it (2 of 2), for about 2k more
+  tokens. That instruction was chosen to be the opposite of the reminder, so it
+  shows the block works and is obeyed, not how often a real stuck seat complies.
+  The role prompts end every
+  seat's turn with `mesh_done` or `mesh_wait`, and the seventeenth run's first
+  round (23 turns) had none that ended without a mesh op, so a healthy run pays
+  nothing for it
 - **a bound on one `mcp__mesh__*` tool result**, applied where the payload is
   produced rather than where it arrives. Over the 2026-09-27 skill-panel run the
   five read tools (`mesh_artifact_read`, `mesh_inbox`, `mesh_query_events`,

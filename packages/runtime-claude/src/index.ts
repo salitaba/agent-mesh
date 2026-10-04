@@ -544,6 +544,55 @@ function adviceHooks(turn: () => TurnState | undefined): SessionHooks {
   return { PostToolUse: [deliver("PostToolUse")], PostToolUseFailure: [deliver("PostToolUseFailure")] };
 }
 
+/** The prefix the CLI gives every tool of the `mesh` MCP server. */
+const MESH_TOOL_PREFIX = "mcp__mesh__";
+
+/**
+ * What a seat is told, once, when it is about to end a turn having called no mesh tool.
+ *
+ * The seventeenth cronlite run lost turns this way: after a `kill -9` and a restart, the developer's and QA's resumed
+ * sessions carried the CLI's record that the `mesh` server had failed ("mesh bus unreachable: fetch failed", written at the
+ * moment the host died), believed it, did their work with their own tools and ended each turn with prose that said
+ * what they would call ("Now I'll call the mesh operations:"). The mesh saw no ops and discarded the turn: QA's 41.5k
+ * tokens of reproductions and the developer's four turns (169k) never reached anyone, and the developer's first mesh call
+ * came 11 minutes after the reopen. A fresh session made its calls at once, so the tools were never gone.
+ */
+export const NO_MESH_CALL_REMINDER =
+  "You are ending this turn without having called a single mesh tool, so nothing you did, found or wrote in it has reached anyone: " +
+  "text outside a mesh call goes nowhere, and work done in your own checkout counts for nothing until it is reported. " +
+  "The mesh is running and your mesh tools work: an earlier notice in this conversation that the mesh server failed or was unreachable " +
+  "(\"fetch failed\") described a restart that has ended. Report now, with the tool that fits: mesh_artifact_publish or mesh_commit " +
+  "(work you produced), mesh_send or mesh_reply (what you found, or an answer), mesh_approve or mesh_block (a verdict), mesh_task_complete " +
+  "(a task you finished). If there is truly nothing to report, call mesh_done.";
+
+/**
+ * The hook that gives a seat one more chance when it stops without a mesh call.
+ *
+ * A `Stop` hook and not a user message, for the reason `adviceHooks` is a hook: a message pushed after the turn ends is a second
+ * user turn to the CLI, answered with a second `result` frame, and the pump settles the mesh turn on the first. Blocking the stop
+ * keeps it ONE turn: the model carries on in the same session, its cache warm, and the turn's usage is the sum of both rounds.
+ * Once per turn (`endReminded`, and the CLI's own `stop_hook_active`), and never for a turn the mesh is itself ending: an abort
+ * (a timeout is one, and marks the turn `interrupted` too) or a handover it closed.
+ */
+function endOfTurnHooks(turn: () => TurnState | undefined): SessionHooks {
+  return {
+    Stop: [
+      {
+        hooks: [
+          async (input) => {
+            const t = turn();
+            if (!t || t.interrupted || t.endRequested) return {};
+            if (t.meshCalls > 0 || t.endReminded) return {};
+            if ((input as { stop_hook_active?: boolean }).stop_hook_active) return {};
+            t.endReminded = true;
+            return { decision: "block", reason: NO_MESH_CALL_REMINDER };
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /**
  * What a seat is told about reading, appended to the role prompt beside the
  * shared output-voice rules.
@@ -1469,6 +1518,13 @@ interface TurnState {
    * dies with its turn instead of surfacing in the next one.
    */
   advice: string[];
+  /**
+   * Mesh tool calls (`mcp__mesh__*`) this turn has announced so far. Read by the end-of-turn
+   * hook: a turn that stops at zero reported nothing to anyone, whatever else it did.
+   */
+  meshCalls: number;
+  /** Set once the end-of-turn reminder has been given, so a turn is reminded at most once. */
+  endReminded: boolean;
 }
 
 /**
@@ -2139,6 +2195,8 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       reattributedTokens: 0,
       reattributedFirstCalls: 0,
       advice: [],
+      meshCalls: 0,
+      endReminded: false,
       ...(firstCallPrev !== undefined ? { firstCallPrevPrompt: firstCallPrev } : {}),
       ...(respawns > 0 ? { bridgeRespawns: respawns } : {}),
       settle: (outcome) => {
@@ -2948,7 +3006,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       // change (its `additionalContext`). Reads the session through `hookRef`
       // because the session object is built below, from the query these
       // options create.
-      hooks: mergedHooks(combineHooks(adviceHooks(() => hookRef.live?.pending)), this.options.extraOptions),
+      hooks: mergedHooks(combineHooks(adviceHooks(() => hookRef.live?.pending), endOfTurnHooks(() => hookRef.live?.pending)), this.options.extraOptions),
     };
 
     const q = (this.options.queryFn ?? query)({ prompt: inbox, options });
@@ -3115,6 +3173,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
               // watching a slow turn needs to see the call while it runs.
               const pending = s.pending;
               if (pending) {
+                if (String(b.name ?? "").startsWith(MESH_TOOL_PREFIX)) pending.meshCalls++;
                 pending.events.push({
                   kind: "tool_call",
                   toolCallId: String(b.id ?? `tool-${pending.toolSeq++}`),
