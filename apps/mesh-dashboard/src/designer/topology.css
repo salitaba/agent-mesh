@@ -40,12 +40,11 @@
 .ms-pair.sel .hit { stroke: color-mix(in srgb, var(--accent) 16%, transparent); }
 .ms-wires .guide { fill: none; stroke: var(--accent); stroke-width: 2px; stroke-dasharray: 6 6; pointer-events: none; }
 
-.ms-pills { position: absolute; z-index: 3; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: var(--s1); }
+.ms-wire-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .ms-cut {
-  display: inline-flex; align-items: center; gap: var(--s1); min-height: 28px; max-width: 240px; padding: 0 var(--s2-5);
-  border: 1px solid transparent; border-radius: 999px; background: var(--bad); color: var(--text-on-hot);
-  font: 600 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
-  box-shadow: 0 0 0 2px var(--bg);
+  display: inline-flex; align-items: center; gap: var(--s1); min-height: 32px; max-width: 100%; padding: 0 var(--s3);
+  border: 1px solid transparent; border-radius: var(--r-sm); background: var(--bad); color: var(--text-on-hot);
+  font: 600 13px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
 }
 .ms-cut:hover { filter: brightness(1.08); }
 

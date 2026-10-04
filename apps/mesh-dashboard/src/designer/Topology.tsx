@@ -334,6 +334,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
         <ToolButton icon="arrange" label="Arrange" text onClick={onArrange} title="Space the seats out again. Where seats sit is kept in this browser, not in mesh.yaml." disabled={ids.length < 2} />
         <ToolButton icon="expand" label="Focus" text pressed={focusMode} id="ms-focus-toggle" onClick={() => setFocusMode(!focusMode)} title="Hide the inspector and the notes below, and give the canvas the page" />
         <KeysHelp />
+        {activePair ? <WireActions pair={activePair} onCut={(s, t) => { onCut([[s, t]]); say(`Cut ${s} to ${t}.`); }} /> : null}
         <span className="ms-tool-hint" id="ms-canvas-hint">{hint}</span>
       </div>
 
@@ -424,8 +425,6 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
             </div>
           ) : null}
 
-          {activePair ? <PairPills pair={activePair} segs={pairSegs.find((x) => x.pair.key === activePair.key)?.seg ?? null} onCut={(s, t) => { onCut([[s, t]]); say(`Cut ${s} to ${t}.`); }} /> : null}
-
           {!ids.length ? <EmptySeats onAddSeat={onAddSeat} onTemplate={onTemplate} onAsk={onAsk} /> : null}
         </div>
       </div>
@@ -452,14 +451,15 @@ function wireTitle(p: Pair): string {
   return `${p.ab ? p.a : p.b} may message ${p.ab ? p.b : p.a}. Click to select the wire.`;
 }
 
-/** The buttons that cut a selected wire, at its middle. HTML, so they are real controls with a real focus ring. */
-function PairPills({ pair, segs, onCut }: { pair: Pair; segs: { mid: Pos } | null; onCut: (src: string, tgt: string) => void }): React.JSX.Element | null {
-  if (!segs) return null;
-  const two = pair.ab && pair.ba;
+/**
+ * The buttons that cut the selected wire. They sit in the toolbar, not on the wire: a button at a wire's middle landed on the seats beside it
+ * whenever two seats were close (the pm and architect pair, in the demo), covering the very labels it was meant to leave readable.
+ */
+function WireActions({ pair, onCut }: { pair: Pair; onCut: (src: string, tgt: string) => void }): React.JSX.Element {
   return (
-    <div className="ms-pills" style={{ left: segs.mid.x, top: segs.mid.y }} role="group" aria-label="Cut this wire">
-      {pair.ab ? <button type="button" className="ms-cut" onClick={() => onCut(pair.a, pair.b)}><Icon name="x" size={12} />{two ? `Cut ${pair.a} to ${pair.b}` : "Cut wire"}</button> : null}
-      {pair.ba ? <button type="button" className="ms-cut" onClick={() => onCut(pair.b, pair.a)}><Icon name="x" size={12} />{two ? `Cut ${pair.b} to ${pair.a}` : "Cut wire"}</button> : null}
+    <div className="ms-wire-actions" role="group" aria-label={`The selected wire between ${pair.a} and ${pair.b}`}>
+      {pair.ab ? <button type="button" className="ms-cut" onClick={() => onCut(pair.a, pair.b)}><Icon name="x" size={12} />Cut {pair.a} to {pair.b}</button> : null}
+      {pair.ba ? <button type="button" className="ms-cut" onClick={() => onCut(pair.b, pair.a)}><Icon name="x" size={12} />Cut {pair.b} to {pair.a}</button> : null}
     </div>
   );
 }
