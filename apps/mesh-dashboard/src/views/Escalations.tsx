@@ -83,11 +83,6 @@ export default function Inbox(): React.JSX.Element {
         onChange={(id) => setView(viewOfTab(id as InboxTab))}
       />
       <TabPanel idPrefix="inbox" id={tab}>
-        {serverDown ? (
-          <Banner tone="warn" title="The server is not answering.">
-            This page shows what it last reported. A decision or a tool request may have arrived, or been answered, since.
-          </Banner>
-        ) : null}
         {tab === "tools" ? (
           <ToolAccess seats={tools.seats} state={tools.state} reload={tools.reload} />
         ) : (
