@@ -14,6 +14,7 @@ import {
   changeKind,
   describeScript,
   failureLines,
+  hasManifest,
   hasPlayground,
   isCapped,
   lastLines,
@@ -221,7 +222,13 @@ export default function Product(): React.JSX.Element {
       if (!dead && Array.isArray(json)) setChanges(json as Change[]);
     }).catch(() => { if (!dead) setChanges([]); });
     // What the scripts do is in the product's own package.json; reading it is how a button can say so without guessing.
-    client.api("GET", "/workspace/file?path=package.json").then(({ status, json }) => {
+    // The root listing says first whether there is one to read; a listing that does not come back falls through to reading the file.
+    client.api("GET", "/workspace/tree?path=").then(async ({ json: root }) => {
+      if (Array.isArray(root) && !hasManifest(root as TreeEntry[])) {
+        if (!dead) setPkg({ state: "missing", scripts: null });
+        return;
+      }
+      const { status, json } = await client.api("GET", "/workspace/file?path=package.json");
       if (dead) return;
       if (status === 404) setPkg({ state: "missing", scripts: null });
       else setPkg(typeof json?.content === "string" ? readPackage(json.content) : { state: "unknown", scripts: null });

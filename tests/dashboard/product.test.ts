@@ -10,6 +10,7 @@ import {
   changeKind,
   describeScript,
   failureLines,
+  hasManifest,
   hasPlayground,
   isCapped,
   lastLines,
@@ -217,6 +218,14 @@ test("with nothing to run, the card says why: no package.json, an unreadable one
   const ok = noScriptsCopy("ok").body;
   for (const name of RUN_SCRIPT_NAMES) assert.match(ok, new RegExp(`\\b${name}\\b`), `${name} is named`);
   assert.equal(noScriptsCopy("unknown").body, ok, "a read that failed says what the others say, not a guess");
+});
+
+test("the scripts are read only when the root lists a package.json, so a product without one is not a 404 in the console", () => {
+  assert.equal(hasManifest([{ name: "package.json", type: "file" }, { name: "src", type: "dir" }]), true);
+  assert.equal(hasManifest([{ name: "src", type: "dir" }]), false);
+  assert.equal(hasManifest([{ name: "package.json", type: "dir" }]), false, "a folder called package.json is not a manifest");
+  assert.equal(hasManifest([]), false, "an empty product has none");
+  assert.equal(hasManifest(null), false, "a listing that did not come back says nothing, and the caller reads the file instead");
 });
 
 test("the playground is offered only when the checkout holds the page the server opens", () => {

@@ -179,6 +179,15 @@ export function hasPlayground(entries: ReadonlyArray<{ name: string; type: strin
   return Array.isArray(entries) && entries.some((e) => e.name === "index.html" && e.type === "file");
 }
 
+/**
+ * Whether the product's root holds a package.json to read the scripts from. Asked of the root listing, not of the file: a mission's
+ * product usually has none until the agents write one, and a request for a file that is not there is a red 404 in the console on
+ * every visit to the page.
+ */
+export function hasManifest(entries: ReadonlyArray<{ name: string; type: string }> | null): boolean {
+  return Array.isArray(entries) && entries.some((e) => e.name === "package.json" && e.type === "file");
+}
+
 const OFFERED = "build, test, typecheck, lint, dev, start, serve and preview";
 
 /** What the Run card says when there is nothing to run: why, and what would make buttons appear. */
