@@ -1,91 +1,27 @@
 import { activationDeniedKind, COLLAB_CLOSE_PLAIN, fmt, friendlyBudgetKey, MESSAGE_PLAIN, plainArtifact, plainEvent, plainLifecycle, plainReason } from "./format";
+import { Icon } from "./icons";
+import { SEVERITY_META, type Severity } from "./eventmodel";
 import type { TimelineEvent } from "./store";
-// Deep import, not the package barrel: `packages/protocol/src/index` star-exports
-// the AJV-backed validators and schemas, and none of that belongs in a browser
-// bundle. `catalog.ts` imports only types from `./types`, so this pulls in the
-// const table and nothing else. It is the dashboard's one dependency on
-// packages/ — worth it to keep a single source of truth for severity rather
-// than a second 68-entry table here that would silently drift.
-import { EVENT_SEVERITY } from "../../../packages/protocol/src/catalog";
-import type { EventType, Severity } from "../../../packages/protocol/src/types";
 
-export type { Severity };
-
-export function evClass(type: string): string {
-  const p = String(type).split(".")[0];
-  return (
-    {
-      goal: "t-goal", agent: "t-agent", message: type === "message.rejected" ? "t-bad" : "t-message",
-      artifact: "t-artifact", budget: "t-budget", review: "t-review", task: "t-task", patch: "t-artifact",
-      release: "t-artifact", escalation: "t-escalation", lease: "t-lease", requirements: "t-artifact",
-      requirement: "t-artifact", architecture: "t-review", design: "t-message", dependency: "t-artifact",
-      authentication: "t-artifact", authorization: "t-artifact", research: "t-artifact",
-      implementation: "t-review", decision: "t-review", memory: "t-agent", human: "t-message",
-      plan: type === "plan.gate_rejected" ? "t-bad" : "t-task",
-      // A collaboration is a conversation, so it reads in the same tone as one.
-      // `collab.closed` is deliberately not t-bad even when the watchdog is the
-      // one closing it: an overrun is worth noticing, and the Overview card is
-      // where it gets noticed. A red line for every expiry would cry wolf over
-      // a session that merely ran to the end of its box.
-      collab: "t-message",
-    }[p] || ""
-  );
-}
-
-/* ---------------------------- severity -------------------------------- */
-
-export const SEVERITY_META: Record<Severity, { label: string; glyph: string; hint: string }> = {
-  alert: { label: "Alerts", glyph: "▲", hint: "went wrong, or needs you" },
-  notice: { label: "Activity", glyph: "●", hint: "real progress" },
-  routine: { label: "Routine", glyph: "·", hint: "bookkeeping — folded by default" },
-};
-
-export const SEVERITY_ORDER: Severity[] = ["alert", "notice", "routine"];
-
-/** Lifecycle states that mean an agent is stuck or dead rather than working. */
-const BAD_LIFECYCLE = new Set(["FAILED", "BLOCKED"]);
+// The model (severity, kinds, filters, folding) is DOM-free and lives in eventmodel.ts, where node:test covers it. These names
+// are re-exported so the components that grew up importing them from here keep working.
+export {
+  EV_FILTER_GROUPS, EV_GROUP, SEVERITY_META, SEVERITY_ORDER, evClass, evGroupOf, evSearchText, evSeverity,
+  type Severity,
+} from "./eventmodel";
 
 /**
- * The type-level floor from `EVENT_SEVERITY`, refined where the payload knows
- * better.
- *
- * Only `agent.state_changed` is refined today, and deliberately so: it is both
- * the highest-volume type in the log and the one whose importance swings most
- * on its payload — a transition into FAILED is the single most useful line in a
- * crashed run, and ranking it `routine` alongside the dozen THINKING/WORKING
- * churns per turn would fold the crash away. Other types are left at their
- * floor rather than guessed at; a refinement is only worth adding for a payload
- * shape that has actually been read.
- *
- * Unknown types fall back to `notice`, not `routine`: a dashboard older than the
- * server it is pointed at should show new events too loudly rather than hide them.
+ * How serious an event is, drawn so that colour is never the only cue: a triangle for an alert, a filled dot for activity and a
+ * ring for routine bookkeeping. Rows, filters and the detail pane all use it, so an alert looks like an alert wherever it turns up.
  */
-export function evSeverity(e: TimelineEvent): Severity {
-  const base: Severity = EVENT_SEVERITY[e.type as EventType] ?? "notice";
-  if (e.type === "agent.state_changed" && BAD_LIFECYCLE.has(String(e.payload?.to))) return "alert";
-  return base;
+export function SevMark({ s }: { s: Severity }): React.JSX.Element {
+  return s === "alert"
+    ? <Icon name="alert" size={14} className="sev-mark alert" />
+    : <i className={`sev-mark ${s}`} aria-hidden="true" />;
 }
 
-/* ------------------------------ facets --------------------------------- */
-
-export const EV_GROUP = (t: string): string => String(t).split(".")[0];
-
-/** Multi-select now: an empty selection means "everything", so there is no
-    "All" pseudo-facet to keep in sync with the real ones. */
-export const EV_FILTER_GROUPS: { id: string; label: string; match: string[] }[] = [
-  { id: "message", label: "Messages", match: ["message", "thread"] },
-  { id: "agent", label: "Agents", match: ["agent", "memory"] },
-  { id: "work", label: "Files & tasks", match: ["artifact", "task", "plan", "patch", "review", "release", "architecture", "implementation", "design", "dependency", "requirements", "requirement"] },
-  { id: "system", label: "System", match: ["goal", "budget", "escalation", "lease", "human", "decision", "research", "authentication", "authorization", "deadlock", "commitment"] },
-];
-
-export const evGroupOf = (t: string): string => {
-  const g = EV_GROUP(t);
-  for (const f of EV_FILTER_GROUPS) if (f.match.includes(g)) return f.id;
-  return "system";
-};
-
-/* ----------------------------- summary --------------------------------- */
+/** What a screen reader hears for the mark. Activity is the default and says nothing. */
+export const sevWord = (s: Severity): string => (s === "alert" ? "Alert. " : s === "routine" ? "Routine. " : "");
 
 /**
  * The one-line "what happened" for an event.
@@ -101,8 +37,11 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
   const p = e.payload || {};
   if (typeof p.summary === "string" && p.summary) return <>{p.summary}</>;
   switch (e.type) {
-    case "message.sent":
-      return <><b>{p.message?.from}</b>{" → "}{(p.message?.to || []).join(", ")}{" · "}{MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase()}</>;
+    case "message.sent": {
+      const to = (p.message?.to || []).join(", ");
+      const kind = MESSAGE_PLAIN[p.message?.type] || String(p.message?.type || "").toLowerCase();
+      return <><b>{p.message?.from}</b> messaged {to}{kind ? ` · ${kind}` : ""}</>;
+    }
     case "message.rejected": {
       // An activation denial names the seat that could not be woken, not a
       // message that could not be delivered — see `activationDeniedKind`.
@@ -136,7 +75,7 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
     case "escalation.responded":
       return <>you decided: {String(p.response || "").slice(0, 80)}</>;
     case "goal.completed":
-      return <>mission complete 🏁</>;
+      return <>mission complete</>;
     case "goal.escalated":
       return <>paused — {p.reason || ""}</>;
     case "task.claimed":
@@ -183,11 +122,5 @@ export function EventSummary({ e }: { e: TimelineEvent }): React.JSX.Element {
   }
 }
 
-/** Plain-text fallback of the same thing, for search haystacks and tooltips
-    where nodes are not usable. Kept deliberately crude — it exists to be
-    matched against, not read. */
-export function evSearchText(e: TimelineEvent): string {
-  const p = e.payload || {};
-  if (typeof p.summary === "string" && p.summary) return p.summary;
-  return `${plainEvent(e.type, p)} ${e.actorId || ""}`;
-}
+/** The title a severity chip carries: the label and what it means, so a hover or a screen reader gets both. */
+export const severityTitle = (s: Severity): string => `${SEVERITY_META[s].label}. ${SEVERITY_META[s].hint}`;

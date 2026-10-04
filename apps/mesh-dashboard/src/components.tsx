@@ -677,3 +677,61 @@ export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResol
     </>
   );
 }
+
+/* ------------------------------ copy and ids ------------------------------ */
+// Imports sit with the code they serve so the shared primitives above stay as other work packages left them.
+import "./live.css";
+import { copyText } from "./clipboard";
+import { middleClip } from "./text";
+
+/**
+ * A button that copies `text`, and says what happened: the icon turns to a tick and the label to "Copied" for two seconds, and a
+ * hidden status line says the same to a screen reader. `compact` is the icon-only form for a row that has no room for a word;
+ * `what` then carries the name ("Copy event id"), because an icon alone names nothing.
+ *
+ * It copies through `copyText`, which falls back to the selection route on an http origin that has no clipboard API, so the
+ * button works on a self-hosted console and not only on localhost.
+ */
+export function CopyButton({ text, label = "Copy", what, compact }: { text: string; label?: string; what?: string; compact?: boolean }): React.JSX.Element {
+  const [state, setState] = useState<"idle" | "done" | "fail">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const go = async (): Promise<void> => {
+    const ok = await copyText(text);
+    setState(ok ? "done" : "fail");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 2000);
+  };
+  const name = what ? `${label} ${what}` : label;
+  const icon: IconName = state === "done" ? "check" : state === "fail" ? "alert" : "copy";
+  const shown = state === "done" ? "Copied" : state === "fail" ? "Can't copy" : label;
+  return (
+    <>
+      <button
+        type="button"
+        className={compact ? "copy-btn compact" : "small copy-btn"}
+        onClick={() => void go()}
+        aria-label={state === "idle" && (compact || what) ? name : undefined}
+        title={state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : compact ? name : undefined}
+      >
+        <Icon name={icon} size={14} />
+        {compact ? null : <span>{shown}</span>}
+      </button>
+      <span className="sr-only" role="status">{state === "done" ? "Copied" : state === "fail" ? "Could not copy" : ""}</span>
+    </>
+  );
+}
+
+/**
+ * An identifier short enough for a row, with a way to get the whole thing. The ends are kept (a prefix says what it is, a
+ * suffix tells two apart) and the full id is the tooltip and what the copy button takes. Long ids used to be cut by a stylesheet
+ * ellipsis that removed exactly the part that differs.
+ */
+export function IdChip({ value, label, max = 24 }: { value: string; label: string; max?: number }): React.JSX.Element {
+  return (
+    <span className="idchip">
+      <code title={value}>{middleClip(value, max)}</code>
+      <CopyButton text={value} what={label} compact />
+    </span>
+  );
+}

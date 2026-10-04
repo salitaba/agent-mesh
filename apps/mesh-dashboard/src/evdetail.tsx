@@ -1,36 +1,31 @@
-import React, { useMemo } from "react";
-import { ago, hhmmss, plainEvent } from "./format";
-import { CopyBtn } from "./stepdetail";
+import React, { useMemo, useState } from "react";
+import { ago, localDateTime, localTime, plainEvent, zoneLabel } from "./format";
+import { Button, CopyButton, IconButton, IdChip } from "./components";
+import { Icon } from "./icons";
 import { JsonTree } from "./jsontree";
-import { EventSummary, SEVERITY_META, evClass, evSeverity } from "./events";
+import { EventSummary, SevMark, evSeverity, sevWord } from "./events";
 import type { TimelineEvent } from "./store";
 
 /**
  * The right pane of the events console.
  *
- * It answers three questions in order, because that is the order an operator
- * asks them while a run is live: what happened, what caused it, and what else
- * belongs to the same turn. The payload comes last — it is the thing you read
- * once the first three have told you which event to care about.
+ * It answers three questions in order, because that is the order an operator asks them while a run is live: what happened, what
+ * caused it, and what else belongs to the same turn. The payload comes last: it is the thing you read once the first three have
+ * told you which event to care about.
  *
- * Deliberately propless of the store: the console owns the buffer and the
- * selection, and passes both down. That keeps this renderable against any list
- * of events, including a future server-fetched one.
+ * Deliberately propless of the store: the console owns the buffer and the selection, and passes both down. That keeps this
+ * renderable against any list of events, including a future server-fetched one.
  */
 
-/* --------------------------- small pieces ------------------------------ */
+/** A thread longer than this shows its first rows and a button, so one chatty turn does not become two hundred buttons. */
+const THREAD_ROWS = 40;
 
 function ThreadRow({ e, current, onSelect }: { e: TimelineEvent; current: boolean; onSelect: (seq: number) => void }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      className={`evd-tr sev-${evSeverity(e)}${current ? " on" : ""}`}
-      aria-current={current ? "true" : undefined}
-      onClick={() => onSelect(e.seq)}
-    >
-      <time>{hhmmss(e.timestamp)}</time>
-      <span className={`type ${evClass(e.type)}`}>{plainEvent(e.type)}</span>
-      <span className="summary"><EventSummary e={e} /></span>
+    <button type="button" className={`evd-tr sev-${evSeverity(e)}${current ? " on" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onSelect(e.seq)}>
+      <span className="sr-only">{sevWord(evSeverity(e))}</span>
+      <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
+      <span className="evd-tr-sum"><EventSummary e={e} /></span>
     </button>
   );
 }
@@ -41,8 +36,7 @@ function IdField({ label, value }: { label: string; value?: string }): React.JSX
   return (
     <div className="evd-id">
       <span className="k">{label}</span>
-      <code>{value}</code>
-      <CopyBtn text={value} />
+      <IdChip value={value} label={label} max={30} />
     </div>
   );
 }
@@ -52,25 +46,20 @@ function IdField({ label, value }: { label: string; value?: string }): React.JSX
 /**
  * A deep link to an event the client no longer holds.
  *
- * The old drawer said "event #N is no longer in the live window" and stopped
- * there, which reads as a bug. The situation is not a bug and not recoverable
- * on the client either: `primeEvents` feeds the same retain cap the live
- * stream does, so re-fetching history would be trimmed straight back to the
- * newest 800. Reaching further genuinely needs the server-side query. Say that
+ * The situation is not a bug and not recoverable on the client: `primeEvents` feeds the same retain cap the live stream does, so
+ * re-fetching history would be trimmed straight back to the newest 800. Reaching further needs a server-side query. Say that
  * plainly and give back the one control that works.
  */
 export function EventMissing({ seq, onClose }: { seq: number; onClose: () => void }): React.JSX.Element {
   return (
     <div className="evd evd-gone">
-      <div className="evd-gone-body">
-        <div className="big">#{seq}</div>
-        <p>This event has scrolled out of the live buffer.</p>
-        <p className="muted">
-          The console keeps the most recent events in memory. Older ones are still on disk on the
-          server — fetching them needs a query this build does not have yet.
-        </p>
-        <button type="button" className="fchip" onClick={onClose}>back to the stream</button>
-      </div>
+      <span className="empty-icon"><Icon name="info" size={22} /></span>
+      <b className="empty-title">Event #{seq} is no longer in the live buffer.</b>
+      <p className="empty-body">
+        The console keeps the newest events in memory. Older ones are still in the log on the server, but this console cannot fetch
+        them yet.
+      </p>
+      <Button variant="small" onClick={onClose}>Back to the stream</Button>
     </div>
   );
 }
@@ -95,10 +84,9 @@ export function EventDetail({
   onClose: () => void;
 }): React.JSX.Element {
   const sev = evSeverity(e);
-  const meta = SEVERITY_META[sev];
-  // A correlation id that names a turn is the one link out of here that goes
-  // somewhere richer: the step view knows what the agent was doing, not just
-  // what it emitted. Other correlation ids have no such page.
+  const [allRows, setAllRows] = useState(false);
+  // A correlation id that names a turn is the one link out of here that goes somewhere richer: the step view knows what the agent
+  // was doing, not just what it emitted. Other correlation ids have no such page.
   const turnId = e.correlationId && String(e.correlationId).startsWith("turn-") ? String(e.correlationId) : null;
 
   const { parent, thread } = useMemo(() => {
@@ -106,84 +94,82 @@ export function EventDetail({
     for (const x of all) byId.set(x.id, x);
     return {
       parent: e.causationId ? byId.get(e.causationId) ?? null : null,
-      thread: e.correlationId
-        ? all.filter((x) => x.correlationId === e.correlationId).sort((a, b) => a.seq - b.seq)
-        : [],
+      thread: e.correlationId ? all.filter((x) => x.correlationId === e.correlationId).sort((a, b) => a.seq - b.seq) : [],
     };
   }, [e, all]);
+  const shownThread = allRows ? thread : thread.slice(0, THREAD_ROWS);
 
   return (
     <div className="evd">
       <header className="evd-head">
         <div className="evd-title">
-          <span className={`evd-sev sev-${sev}`} title={meta.hint} aria-label={meta.label}>{meta.glyph}</span>
-          <h3 className={evClass(e.type)}>{plainEvent(e.type)}</h3>
-          <button type="button" className="evd-x" onClick={onClose} aria-label="Close this event">✕</button>
+          <span title={sevWord(sev).trim() || undefined}><SevMark s={sev} /></span>
+          <h3>{plainEvent(e.type, e.payload)}</h3>
+          <IconButton icon="x" label="Close event detail" title="Close (Esc)" onClick={onClose} />
         </div>
-        <div className="evd-meta">
-          <span title={e.timestamp}>{hhmmss(e.timestamp)} · {ago(e.timestamp)}</span>
-          {e.actorId ? <><span aria-hidden="true">·</span><b>{e.actorId}</b></> : null}
-          <span aria-hidden="true">·</span>
+        <p className="evd-meta">
+          <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)} {zoneLabel()}</time>
+          <span>{ago(e.timestamp)}</span>
+          {e.actorId ? <b>{e.actorId}</b> : null}
           <code className="evd-seq">#{e.seq}</code>
-          {/* The raw type is here and not in the heading: the heading is the
-              human label, and this is the string you would grep the log for. */}
-          <code className="evd-raw">{e.type}</code>
-        </div>
+        </p>
         <p className="evd-sum"><EventSummary e={e} /></p>
+        {/* The raw type is here and not in the heading: the heading is the human label, and this is the string you would grep for. */}
+        <p className="evd-raw">
+          <code>{e.type}</code>
+          <CopyButton text={e.type} what="event type" compact />
+        </p>
       </header>
 
-      <section className="evd-sec">
-        <h4>Why it happened</h4>
+      <section className="evd-sec" aria-labelledby="evd-why">
+        <h4 id="evd-why">Why it happened</h4>
         {parent ? (
-          <ThreadRow e={parent} current={false} onSelect={onSelect} />
+          <div className="evd-thread"><ThreadRow e={parent} current={false} onSelect={onSelect} /></div>
         ) : e.causationId ? (
-          <p className="muted evd-note">
-            Caused by <code>{e.causationId}</code>, which is not in the live buffer.
-          </p>
+          <p className="evd-note">Caused by <IdChip value={e.causationId} label="causation id" max={26} />, which has scrolled out of the live buffer.</p>
         ) : (
-          <p className="muted evd-note">
-            This event does not record what caused it. Most emitters do not set a causation id yet,
-            so an empty answer here means "not recorded", not "nothing caused it".
-          </p>
+          <p className="evd-note">No cause is recorded. Most events do not name one, so an empty answer does not mean nothing caused it.</p>
         )}
       </section>
 
-      <section className="evd-sec">
+      <section className="evd-sec" aria-labelledby="evd-thread">
         <div className="evd-sec-head">
-          <h4>Thread{thread.length ? <span className="evd-n">{thread.length}</span> : null}</h4>
+          <h4 id="evd-thread">Thread{thread.length ? <span className="evd-n">{thread.length}</span> : null}</h4>
+          {e.correlationId ? <span className="evd-zone">Times in {zoneLabel()}</span> : null}
           {turnId ? (
-            <button type="button" className="fchip" onClick={() => onOpenStep(turnId)}>see the full step →</button>
+            <Button variant="small" onClick={() => onOpenStep(turnId)}>
+              Open the step <Icon name="chevron-right" size={14} />
+            </Button>
           ) : null}
           {e.correlationId ? (
-            <button
-              type="button"
-              className="fchip"
-              aria-pressed={threadOn}
-              onClick={() => onFollowThread(threadOn ? null : e.correlationId ?? null)}
-            >
-              {threadOn ? "stop following" : "follow this thread"}
-            </button>
+            <Button variant="small" aria-pressed={threadOn} onClick={() => onFollowThread(threadOn ? null : e.correlationId ?? null)}>
+              {threadOn ? "Stop following" : "Follow this thread"}
+            </Button>
           ) : null}
         </div>
         {e.correlationId ? (
-          <div className="evd-thread">
-            {thread.map((x) => <ThreadRow key={x.seq || x.id} e={x} current={x.seq === e.seq} onSelect={onSelect} />)}
-          </div>
+          <>
+            <div className="evd-thread">
+              {shownThread.map((x) => <ThreadRow key={x.seq || x.id} e={x} current={x.seq === e.seq} onSelect={onSelect} />)}
+            </div>
+            {thread.length > THREAD_ROWS ? (
+              <Button variant="linklike" onClick={() => setAllRows((a) => !a)} aria-expanded={allRows}>
+                {allRows ? `Show the first ${THREAD_ROWS} only` : `Show all ${thread.length.toLocaleString("en-US")} events in this thread`}
+              </Button>
+            ) : null}
+          </>
         ) : (
-          <p className="muted evd-note">
-            No correlation id, so this event cannot be tied to the rest of its turn. Coverage is
-            partial today — a thread is only as complete as the emitter that wrote it.
-          </p>
+          <p className="evd-note">Not part of a thread. This event carries no correlation id, so it cannot be tied to the rest of its turn.</p>
         )}
       </section>
 
-      <JsonTree value={e.payload} />
+      <JsonTree key={e.id} value={e.payload} />
 
-      <section className="evd-sec evd-ids">
-        <IdField label="event id" value={e.id} />
-        <IdField label="correlation" value={e.correlationId} />
-        <IdField label="causation" value={e.causationId} />
-        <IdField label="goal" value={e.goalId} />
+      <section className="evd-sec evd-ids" aria-label="Identifiers">
+        <IdField label="Event id" value={e.id} />
+        <IdField label="Correlation id" value={e.correlationId} />
+        <IdField label="Causation id" value={e.causationId} />
+        <IdField label="Goal id" value={e.goalId} />
       </section>
     </div>
   );

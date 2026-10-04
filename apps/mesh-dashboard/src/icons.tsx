@@ -56,6 +56,8 @@ const ICONS = {
   // Status
   alert: (<><path d="M10 3.2l7.3 12.7H2.7z" /><path d="M10 8.4v3.4" /><circle cx="10" cy="14" r=".7" {...SOLID} /></>),
   info: (<><circle cx="10" cy="10" r="7.2" /><path d="M10 9.2v4.6" /><circle cx="10" cy="6.4" r=".7" {...SOLID} /></>),
+  // Live views
+  "arrow-down": (<path d="M10 4v12M5 11l5 5 5-5" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

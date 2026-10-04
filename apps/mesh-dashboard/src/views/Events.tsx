@@ -1,143 +1,98 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMesh, type TimelineEvent } from "../store";
-import { Button, ErrorState, Input, useNow } from "../components";
+import { Button, EmptyState, ErrorState, Input, PageHeader, Select, useNow } from "../components";
 import { EventDetail, EventMissing } from "../evdetail";
+import { Icon } from "../icons";
+import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord } from "../events";
 import {
-  EV_FILTER_GROUPS,
-  EventSummary,
-  SEVERITY_META,
-  SEVERITY_ORDER,
-  evClass,
-  evGroupOf,
-  evSearchText,
-  evSeverity,
-  type Severity,
-} from "../events";
-import { hhmmss, plainEvent } from "../format";
+  applySeverity, buildRows, eventHaystack, facetOne, facetValues, filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
+  type EventFilter, type Severity,
+} from "../eventmodel";
+import { heldList, newestKey } from "../feed";
+import { FeedStatus, HoldBar, PauseButton, useFeedHold } from "../feedstatus";
+import { useRoving } from "../rovinglist";
+import { titleWhenClipped } from "../domutil";
+import { localDateTime, localTime, plainEvent, zoneLabel } from "../format";
+import { useMission } from "../useMission";
+import { useMissionActions } from "../useMissionActions";
+import "./events.css";
 
 /**
  * The events console.
  *
- * This is the page you leave open while a run is live, so every decision here
- * bends toward "can you find the one line that matters, right now": severity
- * ranking so failures are not shaped like bookkeeping, folding so routine runs
- * take one row instead of forty, and a detail pane beside the list rather than
- * a modal over it — because reading an event must not stop you watching the
- * stream that produced it.
+ * This is the page you leave open while a run is live, so every decision here bends toward "can you find the one line that
+ * matters, right now": severity ranking so failures are not shaped like bookkeeping, folding so routine runs take one row
+ * instead of forty, and a detail pane beside the list rather than a modal over it, because reading an event must not stop you
+ * watching the stream that produced it.
+ *
+ * The decisions themselves (severity, facets, folding, what a hold hides) live in eventmodel.ts and feed.ts, which node:test
+ * covers. This file lays them out.
  */
 
 /** Rows built at once. Folding usually keeps the real DOM count far below this. */
 const CAP = 300;
-/** A run of this many consecutive routine events collapses into one row. */
-const FOLD_AT = 3;
 
-/* ------------------------------ facets --------------------------------- */
-
-/* One comma-joined, namespaced string holds every facet -- `sev:alert,grp:message`.
-   It lives in the store's `evFilter`, which already survives view switches and
-   was previously a single group id. Keeping it as one string means no new store
-   state for four independent filters, and the whole filter set is one value to
-   reset. */
-
-const parseFacets = (s: string): Set<string> => new Set(s.split(",").filter(Boolean));
-const pick = (f: Set<string>, ns: string): string[] => [...f].filter((x) => x.startsWith(`${ns}:`)).map((x) => x.slice(ns.length + 1));
-const one = (f: Set<string>, ns: string): string | null => pick(f, ns)[0] ?? null;
+const NO_EVENT_FILTER: EventFilter = { search: "", groups: new Set(), actor: null, thread: null };
 
 /* ------------------------------- rows ---------------------------------- */
 
-const BUCKETS: { id: string; label: string; ms: number }[] = [
-  { id: "now", label: "Last 5 minutes", ms: 5 * 60_000 },
-  { id: "recent", label: "5 to 30 minutes ago", ms: 30 * 60_000 },
-  { id: "hour", label: "30 minutes to 2 hours ago", ms: 2 * 3_600_000 },
-  { id: "day", label: "2 to 12 hours ago", ms: 12 * 3_600_000 },
-  { id: "older", label: "Earlier", ms: Infinity },
-];
-
-const bucketOf = (e: TimelineEvent, now: number): { id: string; label: string } => {
-  const age = now - Date.parse(e.timestamp);
-  return BUCKETS.find((b) => age < b.ms) ?? BUCKETS[BUCKETS.length - 1];
-};
-
-type Row =
-  | { kind: "bucket"; key: string; label: string }
-  | { kind: "event"; key: string; e: TimelineEvent }
-  | { kind: "fold"; key: string; items: TimelineEvent[] };
-
-/**
- * Bucket headers and folded runs in one pass.
- *
- * A run is flushed on a non-routine event *and* on a bucket boundary, so a fold
- * never straddles two time headings and claim events happened closer together
- * than they did.
- */
-function buildRows(list: TimelineEvent[], now: number, fold: boolean): Row[] {
-  const out: Row[] = [];
-  let run: TimelineEvent[] = [];
-  let bucket = "";
-
-  const flush = (): void => {
-    if (run.length >= FOLD_AT) out.push({ kind: "fold", key: `f${run[0].seq}`, items: run });
-    else for (const e of run) out.push({ kind: "event", key: String(e.seq || e.id), e });
-    run = [];
-  };
-
-  for (const e of list) {
-    const b = bucketOf(e, now);
-    if (b.id !== bucket) {
-      flush();
-      bucket = b.id;
-      out.push({ kind: "bucket", key: `b${b.id}`, label: b.label });
-    }
-    if (fold && evSeverity(e) === "routine") {
-      run.push(e);
-      continue;
-    }
-    flush();
-    out.push({ kind: "event", key: String(e.seq || e.id), e });
-  }
-  flush();
-  return out;
-}
-
-function EvLine({ e, selected, onOpen }: { e: TimelineEvent; selected: boolean; onOpen: (seq: number) => void }): React.JSX.Element {
+const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab }: {
+  e: TimelineEvent; selected: boolean; tab: boolean; onOpen: (seq: number) => void; onTab: (key: string) => void;
+}): React.JSX.Element {
   const sev = evSeverity(e);
   return (
     <button
       type="button"
+      data-rv=""
+      data-seq={e.seq}
+      tabIndex={tab ? 0 : -1}
       className={`evc-row sev-${sev}${selected ? " on" : ""}`}
       aria-current={selected ? "true" : undefined}
       onClick={() => onOpen(e.seq)}
+      onFocus={() => onTab(String(e.seq))}
     >
-      <span className="evc-glyph" aria-hidden="true">{SEVERITY_META[sev].glyph}</span>
-      <time title={e.timestamp}>{hhmmss(e.timestamp)}</time>
-      <span className={`type ${evClass(e.type)}`}>{plainEvent(e.type)}</span>
-      <span className="summary"><EventSummary e={e} /></span>
-      {e.actorId ? <span className="evc-actor">{e.actorId}</span> : null}
+      <span className="evc-sev"><SevMark s={sev} /><span className="sr-only">{sevWord(sev)}</span></span>
+      <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
+      <span className="evc-sum" onMouseEnter={titleWhenClipped}><EventSummary e={e} /></span>
+      <span className="evc-type" onMouseEnter={titleWhenClipped}>{plainEvent(e.type, e.payload)}</span>
+      <span className="evc-actor" onMouseEnter={titleWhenClipped}>{e.actorId ?? ""}</span>
     </button>
+  );
+});
+
+function Skeleton(): React.JSX.Element {
+  return (
+    <div className="evc-skel" aria-busy="true" aria-label="Loading events">
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <div key={i} className="evc-skel-row">
+          <span className="sk" /><span className="sk sk-t" /><span className="sk sk-s" />
+        </div>
+      ))}
+    </div>
   );
 }
 
 /* ------------------------------- view ---------------------------------- */
 
 export default function Events(): React.JSX.Element {
-  const {
-    events, evSearch, setEvSearch, evFilter, setEvFilter,
-    livePaused, setLivePaused, primeEvents, client, detail, openDetail, closeDetail,
-  } = useMesh();
+  const { events, evSearch, setEvSearch, evFilter, setEvFilter, primeEvents, client, detail, openDetail, closeDetail, status } = useMesh();
+  const { state } = useMission();
+  const missionActions = useMissionActions();
 
-  // "No matching events" used to be shown while the first fetch was still in
-  // flight and again after it failed, so an empty log, a slow server and a dead
-  // one were the same screen. Three states, three answers.
+  // "No matching events" used to be shown while the first fetch was still in flight and again after it failed, so an empty log,
+  // a slow server and a dead one were the same screen. Three states, three answers.
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [foldPref, setFoldPref] = useState(true);
+  // On a phone the chips are folded behind a button; on a wide screen they are always there and this does nothing.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(() => new Set());
-  const [awaySeq, setAwaySeq] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const paneRef = useRef<HTMLElement | null>(null);
 
-  // 15s: fast enough that "2m ago" is never a lie worth noticing, slow enough
-  // that a quiet console is not re-rendering a 300-row list every second.
+  // 15s: fast enough that "2m ago" is never a lie worth noticing, slow enough that a quiet console is not re-rendering a 300-row
+  // list every second.
   const now = useNow(15_000);
 
   useEffect(() => {
@@ -148,7 +103,7 @@ export default function Events(): React.JSX.Element {
     client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 })
       .then(({ json, timeout }) => {
         if (dead) return;
-        if (timeout) setLoadErr("the request timed out — the server may be busy.");
+        if (timeout) setLoadErr("The request timed out. The server may be busy.");
         else primeEvents(json || []);
       })
       .catch((e: unknown) => {
@@ -162,100 +117,107 @@ export default function Events(): React.JSX.Element {
     };
   }, [events.length, client, primeEvents, attempt]);
 
+  // The log is the authority, and the live stream is not complete: it carries only the event types the console subscribed to by
+  // name, so the rest (a seat restarted, a requirement satisfied, a release accepted) used to appear only after a reload. The
+  // status poll already says how long the log is. When it is longer than what this console has seen, fetch the difference, a few
+  // times at most: an honest "Live" has to mean "nothing is missing", not "nothing has arrived".
+  // The newest event this console has seen. It is also the place a hold is marked at, below: a place in the whole stream, not in
+  // the filtered list, so a filter changing under a hold must not move it.
+  const newest = useMemo(() => newestKey(events, (e) => e.seq), [events]);
+  const logLength = status?.eventCount;
+  const behind = typeof logLength === "number" && logLength > newest;
+  const reconcileTries = useRef(0);
+  useEffect(() => {
+    if (!behind) {
+      reconcileTries.current = 0;
+      return;
+    }
+    if (reconcileTries.current >= 3) return;
+    const t = setTimeout(() => {
+      reconcileTries.current++;
+      client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 })
+        .then(({ json }) => { if (Array.isArray(json)) primeEvents(json); })
+        .catch(() => undefined);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [behind, logLength, newest, client, primeEvents]);
+
   /* ----------------------------- facets -------------------------------- */
 
   const facets = useMemo(() => parseFacets(evFilter), [evFilter]);
-  const sevOn = useMemo(() => new Set(pick(facets, "sev")), [facets]);
-  const grpOn = useMemo(() => new Set(pick(facets, "grp")), [facets]);
-  const actorOn = one(facets, "actor");
-  const threadOn = one(facets, "thread");
+  const sevOn = useMemo(() => new Set(facetValues(facets, "sev")), [facets]);
+  const grpOn = useMemo(() => new Set(facetValues(facets, "grp")), [facets]);
+  const actorOn = facetOne(facets, "actor");
+  const threadOn = facetOne(facets, "thread");
 
-  const toggle = useCallback((token: string) => {
-    setEvFilter([...(() => {
-      const next = parseFacets(evFilter);
-      if (next.has(token)) next.delete(token);
-      else next.add(token);
-      return next;
-    })()].join(","));
-  }, [evFilter, setEvFilter]);
-
+  // What the folded button counts: the chips that are on (the agent is in plain sight, the thread has its own bar).
+  const chipCount = sevOn.size + grpOn.size;
+  const toggle = useCallback((token: string) => setEvFilter(toggleFacet(evFilter, token)), [evFilter, setEvFilter]);
   /** Single-valued facets replace rather than accumulate. */
-  const setOne = useCallback((ns: string, value: string | null) => {
-    const next = [...parseFacets(evFilter)].filter((x) => !x.startsWith(`${ns}:`));
-    if (value) next.push(`${ns}:${value}`);
-    setEvFilter(next.join(","));
-  }, [evFilter, setEvFilter]);
+  const setOne = useCallback((ns: string, value: string | null) => setEvFilter(setFacet(evFilter, ns, value)), [evFilter, setEvFilter]);
 
   /* ---------------------------- filtering ------------------------------ */
 
-  // The haystack only changes when the buffer does; building it inside the
-  // filter re-stringified up to 800 payloads on every keystroke.
-  const hay = useMemo(
-    () => events.map((e) => `${e.type} ${e.actorId || ""} ${evSearchText(e)} ${JSON.stringify(e.payload || {}).slice(0, 600)}`.toLowerCase()),
-    [events],
+  // The haystack only changes when the buffer does; building it inside the filter re-stringified up to 800 payloads on every
+  // keystroke.
+  const hay = useMemo(() => events.map(eventHaystack), [events]);
+  const actors = useMemo(() => topActors(events), [events]);
+
+  // Everything except the severity facet. Severity counts are taken from this, so "Alerts 3" means three alerts within what you
+  // are already looking at: a count against the whole buffer would send you to an empty list.
+  const base = useMemo(
+    () => filterBase(events, hay, { ...NO_EVENT_FILTER, search: evSearch.trim().toLowerCase(), groups: grpOn, actor: actorOn, thread: threadOn }),
+    [events, hay, evSearch, grpOn, actorOn, threadOn],
   );
+  const counts = useMemo(() => severityCounts(base), [base]);
+  const matched = useMemo(() => applySeverity(base, sevOn), [base, sevOn]);
 
-  const actors = useMemo(() => {
-    const n = new Map<string, number>();
-    for (const e of events) if (e.actorId) n.set(e.actorId, (n.get(e.actorId) ?? 0) + 1);
-    return [...n.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id]) => id);
-  }, [events]);
+  /* ----------------------- holding the list still ---------------------- */
 
-  // Everything except the severity facet. Severity counts are taken from this,
-  // so "Alerts 3" means three alerts *within what you are already looking at* —
-  // a count against the whole buffer would send you to an empty list.
-  const base = useMemo(() => {
-    const q = evSearch.trim().toLowerCase();
-    const out: TimelineEvent[] = [];
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (grpOn.size && !grpOn.has(evGroupOf(e.type))) continue;
-      if (actorOn && e.actorId !== actorOn) continue;
-      if (threadOn && e.correlationId !== threadOn) continue;
-      if (q && !hay[i].includes(q)) continue;
-      out.push(e);
-    }
-    return out;
-  }, [events, hay, evSearch, grpOn, actorOn, threadOn]);
+  const hold = useFeedHold(newest);
+  const held = useMemo(() => heldList(matched, (e) => e.seq, hold.mark), [matched, hold.mark]);
+  const shown = useMemo(() => held.shown.slice(0, CAP), [held.shown]);
 
-  const counts = useMemo(() => {
-    const c: Record<Severity, number> = { alert: 0, notice: 0, routine: 0 };
-    for (const e of base) c[evSeverity(e)]++;
-    return c;
-  }, [base]);
-
-  const matched = useMemo(() => (sevOn.size ? base.filter((e) => sevOn.has(evSeverity(e))) : base), [base, sevOn]);
-  const shown = useMemo(() => matched.slice(0, CAP), [matched]);
-
-  // Folding a list you have explicitly filtered down to routine events would
-  // collapse the entire result into one row. Asking for them turns it off.
+  // Folding a list you have explicitly filtered down to routine events would collapse the entire result into one row. Asking for
+  // them turns it off.
   const folding = foldPref && !sevOn.has("routine");
   const rows = useMemo(() => buildRows(shown, now, folding), [shown, now, folding]);
 
   /* ---------------------------- selection ------------------------------ */
 
   const selectedSeq = detail?.kind === "event" ? Number(detail.id) : null;
-  const selected = useMemo(
-    () => (selectedSeq == null ? null : events.find((e) => e.seq === selectedSeq) ?? null),
-    [events, selectedSeq],
-  );
+  const selected = useMemo(() => (selectedSeq == null ? null : events.find((e) => e.seq === selectedSeq) ?? null), [events, selectedSeq]);
   const open = useCallback((seq: number) => openDetail("event", String(seq)), [openDetail]);
 
-  /* --------------------------- follow tail ----------------------------- */
+  // Every row the list holds, in order: the roving tab stop is one of these, and arrows walk them.
+  const rowKeys = useMemo(
+    () => rows.flatMap((r) => (r.kind === "event" ? [String(r.e.seq)] : r.kind === "fold" ? [r.key, ...(openFolds.has(r.key) ? r.items.map((e) => String(e.seq)) : [])] : [])),
+    [rows, openFolds],
+  );
+  const roving = useRoving(rowKeys);
 
-  /* Newest-first, so following the tail is just being at the top: prepended
-     rows do not move the scroll position. All this has to do is notice when
-     you have scrolled away and count what arrived while you were reading. */
-  const onScroll = useCallback((ev: React.UIEvent<HTMLDivElement>) => {
-    const top = ev.currentTarget.scrollTop;
-    setAwaySeq((cur) => (top > 24 ? cur ?? (shown[0]?.seq ?? 0) : null));
-  }, [shown]);
+  // Esc closes the pane (the shell owns that), and the row it was opened from is where focus belongs afterwards.
+  const returnTo = useRef<number | null>(null);
+  useEffect(() => {
+    if (selectedSeq !== null) {
+      returnTo.current = selectedSeq;
+      return;
+    }
+    const seq = returnTo.current;
+    returnTo.current = null;
+    if (seq !== null && (document.activeElement === document.body || !document.activeElement)) {
+      listRef.current?.querySelector<HTMLElement>(`[data-seq="${seq}"]`)?.focus();
+    }
+  }, [selectedSeq]);
+  // On a phone the pane takes the whole area and the list is not on screen: land on the pane, not on nothing.
+  useEffect(() => {
+    if (selectedSeq !== null && window.matchMedia("(max-width: 900px)").matches) paneRef.current?.focus();
+  }, [selectedSeq]);
 
-  const newAbove = awaySeq == null ? 0 : matched.reduce((n, e) => (e.seq > awaySeq ? n + 1 : n), 0);
-  const jumpToNewest = useCallback(() => {
+  const showNewest = useCallback(() => {
+    hold.release();
     listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    setAwaySeq(null);
-  }, []);
+  }, [hold]);
 
   const clearAll = useCallback(() => {
     setEvFilter("");
@@ -264,70 +226,71 @@ export default function Events(): React.JSX.Element {
 
   const firstLoad = !events.length;
   const filtered = facets.size > 0 || evSearch.trim().length > 0;
+  const zone = zoneLabel();
+  const startable = state.primary && (state.primary.action === "start" || state.primary.action === "resume") ? state.primary : null;
 
   return (
-    <>
-      <div className="view-title">
-        <h2>Events</h2>
-        <span className="muted">{livePaused ? "paused" : "live"}</span>
-        <span className="page-actions">
-          <Button variant="small" aria-pressed={livePaused} onClick={() => setLivePaused(!livePaused)}>
-            {livePaused ? "▶ resume" : "❚❚ pause"}
-          </Button>
-        </span>
-      </div>
-      <div className="view-sub">
-        Everything the mesh is doing, newest first. Filter down to alerts when something breaks;
-        open a line to see what caused it.
+    <div className="ev-page">
+      <PageHeader
+        title="Events"
+        status={<FeedStatus />}
+        actions={<PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="events" />}
+        lede={`Everything the mesh does, newest first. Times are in ${zone}.`}
+      />
+
+      <div className="ev-tools" role="search">
+        <label className="sr-only" htmlFor="ev-search">Search events</label>
+        <Input search id="ev-search" placeholder="Search messages, agents, files…  ( / )" value={evSearch} onChange={(e) => setEvSearch(e.target.value)} />
+        <label className="sr-only" htmlFor="ev-actor">Filter by agent</label>
+        <Select id="ev-actor" value={actorOn ?? ""} onChange={(e) => setOne("actor", e.target.value || null)}>
+          <option value="">Every agent</option>
+          {actors.map((a) => <option key={a} value={a}>{a}</option>)}
+        </Select>
+        <Button variant="soft" icon="sliders" extra="ev-filters-toggle" aria-expanded={filtersOpen} aria-controls="ev-facets" onClick={() => setFiltersOpen((o) => !o)}>
+          Filters{chipCount ? ` (${chipCount})` : ""}
+        </Button>
+        {filtered ? <Button variant="small" icon="x" onClick={clearAll}>Clear filters</Button> : null}
       </div>
 
-      <div className="evc-filters">
-        <Input
-          search id="ev-search" aria-label="Search events"
-          placeholder="search messages, agents, files… ( / )"
-          value={evSearch} onChange={(e) => setEvSearch(e.target.value)}
-        />
-        <div className="evc-facets" role="group" aria-label="Filter by importance">
-          {SEVERITY_ORDER.map((s) => (
+      <div className={`ev-facets${filtersOpen ? " open" : ""}`} id="ev-facets">
+        <div className="ev-facet-group" role="group" aria-label="Filter by importance">
+          {SEVERITY_ORDER.map((s: Severity) => (
             <button
-              key={s} type="button" className={`fchip sev-${s} ${sevOn.has(s) ? "on" : ""}`}
-              aria-pressed={sevOn.has(s)} title={SEVERITY_META[s].hint}
+              key={s}
+              type="button"
+              className={`fchip sev-${s}${sevOn.has(s) ? " on" : ""}`}
+              aria-pressed={sevOn.has(s)}
+              title={severityTitle(s)}
               onClick={() => toggle(`sev:${s}`)}
             >
-              <span aria-hidden="true">{SEVERITY_META[s].glyph}</span> {SEVERITY_META[s].label}
-              <span className="evc-n">{counts[s]}</span>
+              <SevMark s={s} />
+              {SEVERITY_META[s].label}
+              <span className="fchip-n">{counts[s]}</span>
             </button>
           ))}
         </div>
-        <div className="evc-facets" role="group" aria-label="Filter by kind">
+        <div className="ev-facet-group" role="group" aria-label="Filter by kind">
           {EV_FILTER_GROUPS.map((g) => (
-            <button
-              key={g.id} type="button" className={`fchip ${grpOn.has(g.id) ? "on" : ""}`}
-              aria-pressed={grpOn.has(g.id)} onClick={() => toggle(`grp:${g.id}`)}
-            >{g.label}</button>
+            <button key={g.id} type="button" className={`fchip${grpOn.has(g.id) ? " on" : ""}`} aria-pressed={grpOn.has(g.id)} onClick={() => toggle(`grp:${g.id}`)}>
+              {g.label}
+            </button>
           ))}
         </div>
-        <div className="evc-facets evc-right">
-          <select
-            className="evc-actor-sel" aria-label="Filter by agent"
-            value={actorOn ?? ""} onChange={(e) => setOne("actor", e.target.value || null)}
-          >
-            <option value="">every agent</option>
-            {actors.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <button
-            type="button" className={`fchip ${foldPref ? "on" : ""}`} aria-pressed={foldPref}
-            title="Collapse runs of routine bookkeeping into a single row"
-            onClick={() => setFoldPref((f) => !f)}
-          >fold routine</button>
-          {filtered ? <button type="button" className="fchip evc-clear" onClick={clearAll}>clear</button> : null}
-        </div>
+        <button
+          type="button"
+          className={`fchip fold${foldPref ? " on" : ""}`}
+          aria-pressed={foldPref}
+          title="Collapse runs of routine bookkeeping into a single row"
+          onClick={() => setFoldPref((f) => !f)}
+        >
+          Fold routine events
+        </button>
       </div>
 
       {threadOn ? (
-        <div className="evc-thread-bar" role="status">
-          Following one thread — <code>{threadOn}</code>
-          <button type="button" className="fchip" onClick={() => setOne("thread", null)}>show everything</button>
+        <div className="ev-thread-bar" role="status">
+          <span>Following one thread: <code>{threadOn}</code></span>
+          <Button variant="small" onClick={() => setOne("thread", null)}>Show everything</Button>
         </div>
       ) : null}
 
@@ -336,34 +299,42 @@ export default function Events(): React.JSX.Element {
           {loadErr && firstLoad ? (
             <ErrorState what="the event log" detail={loadErr} onRetry={() => setAttempt((n) => n + 1)} />
           ) : loading && firstLoad ? (
-            <div className="empty"><div className="big">…</div><div>loading events</div></div>
-          ) : !rows.length ? (
-            <div className="empty">
-              <div className="big">{events.length ? "◦" : "·"}</div>
-              {events.length ? (
-                <div>Nothing matches.<br /><span className="muted">Widen a filter, or <button type="button" className="linky" onClick={clearAll}>clear them all</button>.</span></div>
-              ) : (
-                <div>No events yet.<br /><span className="muted">They appear the moment an agent takes a turn.</span></div>
-              )}
-            </div>
+            <Skeleton />
+          ) : !rows.length && !hold.paused && held.fresh === 0 ? (
+            events.length ? (
+              <EmptyState icon="search" title="No events match" action={<Button variant="small" onClick={clearAll}>Clear filters</Button>}>
+                Widen a filter, or clear them all to see every event.
+              </EmptyState>
+            ) : (
+              <EmptyState
+                icon="events"
+                title="No events yet"
+                action={startable ? <Button variant="primary" icon="play" onClick={() => missionActions.run(startable.action)}>{startable.label}</Button> : undefined}
+              >
+                {startable ? "Events appear as soon as the mesh does something. Nothing is running yet." : "Events appear as soon as an agent takes a turn."}
+              </EmptyState>
+            )
           ) : (
             <>
-              {newAbove > 0 ? (
-                <button type="button" className="evc-new" onClick={jumpToNewest} role="status">
-                  {newAbove} new event{newAbove === 1 ? "" : "s"} above — jump to newest
-                </button>
-              ) : null}
-              <div className="evc-list" ref={listRef} onScroll={onScroll}>
+              <HoldBar paused={hold.paused} fresh={held.fresh} noun="event" onShow={showNewest} />
+              <div className="evc-list" ref={listRef} onKeyDown={roving.onKeyDown} {...hold.listProps}>
                 {rows.map((r) => {
-                  if (r.kind === "bucket") return <div key={r.key} className="evc-bucket">{r.label}</div>;
+                  if (r.kind === "bucket") return <h3 key={r.key} className="evc-bucket">{r.label}</h3>;
                   if (r.kind === "event") {
-                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} onOpen={open} />;
+                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} tab={roving.stop === String(r.e.seq)} onOpen={open} onTab={roving.setLast} />;
                   }
                   const isOpen = openFolds.has(r.key);
+                  const newestItem = r.items[0]!;
+                  const oldestItem = r.items[r.items.length - 1]!;
                   return (
                     <div key={r.key} className="evc-fold">
                       <button
-                        type="button" className="evc-foldbar" aria-expanded={isOpen}
+                        type="button"
+                        data-rv=""
+                        tabIndex={roving.stop === r.key ? 0 : -1}
+                        className="evc-foldbar"
+                        aria-expanded={isOpen}
+                        onFocus={() => roving.setLast(r.key)}
                         onClick={() => setOpenFolds((cur) => {
                           const next = new Set(cur);
                           if (next.has(r.key)) next.delete(r.key);
@@ -371,29 +342,28 @@ export default function Events(): React.JSX.Element {
                           return next;
                         })}
                       >
-                        <span aria-hidden="true">{isOpen ? "▾" : "▸"}</span>
-                        {r.items.length} routine events
-                        <span className="muted">{hhmmss(r.items[r.items.length - 1].timestamp)}–{hhmmss(r.items[0].timestamp)}</span>
+                        <Icon name="chevron-right" size={12} className={isOpen ? "caret turned" : "caret"} />
+                        <span>{r.items.length} routine events</span>
+                        <span className="muted">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
                       </button>
                       {isOpen ? r.items.map((e) => (
-                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} onOpen={open} />
+                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} onOpen={open} onTab={roving.setLast} />
                       )) : null}
                     </div>
                   );
                 })}
+                {held.shown.length > shown.length ? (
+                  <p className="list-more" role="status">
+                    Showing the newest <b>{shown.length}</b> of <b>{held.shown.length.toLocaleString("en-US")}</b> matching events. Narrow the search to reach older ones.
+                  </p>
+                ) : null}
               </div>
-              {matched.length > shown.length ? (
-                <div className="list-more" role="status">
-                  Showing the newest <b>{shown.length}</b> of <b>{matched.length}</b> matching events.
-                  Narrow the search to reach older ones.
-                </div>
-              ) : null}
             </>
           )}
         </div>
 
         {selectedSeq != null ? (
-          <aside className="evc-detail" aria-label="Event detail">
+          <aside className="evc-detail" aria-label="Event detail" ref={paneRef} tabIndex={-1}>
             {selected ? (
               <EventDetail
                 e={selected}
@@ -410,6 +380,6 @@ export default function Events(): React.JSX.Element {
           </aside>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
