@@ -59,6 +59,21 @@ test("all clear is a verdict: only when both lists have been read and both are e
   assert.equal(inboxSummary(none, { decisions: "loading", tools: "ready" }).clear, false);
 });
 
+test("when the server has stopped answering, the lists are the last it sent and the header says so instead of all clear", () => {
+  const none = inboxCounts([], []);
+  const ready = { decisions: "ready", tools: "ready" } as const;
+  const quiet = inboxSummary(none, ready, { stale: true });
+  assert.deepEqual([quiet.tone, quiet.label, quiet.clear], ["bad", "Not updating", false]);
+  assert.match(quiet.line, /^The server is not answering, so what was last reported may be out of date\.$/);
+  assert.equal(inboxSummary(none, ready, { stale: false }).clear, true, "answering again: the verdict is back");
+  assert.equal(inboxSummary(none, ready).clear, true, "no option: not stale");
+  const waiting = inboxSummary(inboxCounts([card("a")], []), ready, { stale: true });
+  assert.equal(waiting.label, "1 waiting", "what was waiting is still counted");
+  assert.match(waiting.line, /1 decision holds the mission\. The server is not answering: this is what it last reported\.$/);
+  assert.equal(inboxSummary(none, { decisions: "error", tools: "ready" }, { stale: true }).label, "Not loaded", "a list that never loaded is the sharper fact");
+  assert.equal(inboxSummary(none, { decisions: "loading", tools: "loading" }, { stale: true }).label, "Not updating", "no list and no server: nothing to wait for");
+});
+
 test("a queue that failed to load never reads as quiet, and says which list is missing", () => {
   const none = inboxCounts([], []);
   const a = inboxSummary(none, { decisions: "error", tools: "ready" });

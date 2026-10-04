@@ -58,7 +58,7 @@ function AnsweredRow({ a, latest, onDismiss }: { a: Answered; latest: boolean; o
  * same component, so moving between the tabs keeps the page and its data instead of loading it again.
  */
 export default function Inbox(): React.JSX.Element {
-  const { view, setView, status, client } = useMesh();
+  const { view, setView, status, client, serverDown } = useMesh();
   const { facts, state } = useMission();
   const actions = useMissionActions();
   const d = useDecisions();
@@ -66,7 +66,7 @@ export default function Inbox(): React.JSX.Element {
 
   const tab = tabOfView(view);
   const counts = inboxCounts(d.list, tools.seats);
-  const summary = inboxSummary(counts, { decisions: d.load, tools: tools.state });
+  const summary = inboxSummary(counts, { decisions: d.load, tools: tools.state }, { stale: serverDown });
   const ordered = useMemo(() => orderDecisions(d.list), [d.list]);
   const answeredIds = new Set(d.answered.map((a) => a.id));
   const done = ordered.done.filter((e) => !answeredIds.has(String(e.id)));
@@ -83,6 +83,11 @@ export default function Inbox(): React.JSX.Element {
         onChange={(id) => setView(viewOfTab(id as InboxTab))}
       />
       <TabPanel idPrefix="inbox" id={tab}>
+        {serverDown ? (
+          <Banner tone="warn" title="The server is not answering.">
+            This page shows what it last reported. A decision or a tool request may have arrived, or been answered, since.
+          </Banner>
+        ) : null}
         {tab === "tools" ? (
           <ToolAccess seats={tools.seats} state={tools.state} reload={tools.reload} />
         ) : (
@@ -98,7 +103,7 @@ export default function Inbox(): React.JSX.Element {
             ) : null}
             {d.load === "loading" && !d.list.length ? <p className="ov-empty" role="status">Loading decisions.</p> : null}
 
-            {d.load === "ready" && counts.decisions === 0 && !d.answered.length ? (
+            {d.load === "ready" && counts.decisions === 0 && !d.answered.length && !serverDown ? (
               <EmptyState icon="inbox" title="No decisions are waiting">
                 A decision appears here when the mesh needs an answer: a budget runs out, agents deadlock, a seat crashes, or an agent calls <code>mesh_escalate</code>.
               </EmptyState>

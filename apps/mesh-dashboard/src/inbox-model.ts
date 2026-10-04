@@ -62,10 +62,12 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
 
 /**
  * The header. "All clear" is a verdict, so it may only be said once everything that can wait has been read: before the lists
- * arrive it must not appear, and when one of them failed to load the page says so instead of reporting a quiet queue. That
+ * arrive it must not appear, when one of them failed to load the page says so instead of reporting a quiet queue, and when
+ * the server has stopped answering the lists are the last it sent, so the page says that and not that nothing is waiting. That
  * is the screen where a false all-clear costs the most.
  */
-export function inboxSummary(c: InboxCounts, load: { decisions: LoadState; tools: LoadState }): InboxSummary {
+export function inboxSummary(c: InboxCounts, load: { decisions: LoadState; tools: LoadState }, opts: { stale?: boolean } = {}): InboxSummary {
+  const stale = opts.stale === true;
   const failed: string[] = [];
   if (load.decisions === "error") failed.push("The decision queue did not load.");
   if (load.tools === "error") failed.push("Tool requests did not load.");
@@ -79,11 +81,12 @@ export function inboxSummary(c: InboxCounts, load: { decisions: LoadState; tools
     if (c.advisory > 0) parts.push(plural(c.advisory, "notice"));
     if (c.toolRequests > 0) parts.push(plural(c.toolRequests, "tool request"));
     const tone: SummaryTone = c.blocking > 0 ? "bad" : c.toolRequests > 0 ? "warn" : "neutral";
-    return { tone, label: `${c.waiting} waiting`, line: [parts.join(" · ") + ".", ...failed].join(" "), clear: false };
+    return { tone, label: `${c.waiting} waiting`, line: [parts.join(" · ") + ".", ...failed, ...(stale ? ["The server is not answering: this is what it last reported."] : [])].join(" "), clear: false };
   }
   if (failed.length) {
     return { tone: "bad", label: "Not loaded", line: `${failed.join(" ")} There may be items waiting that this page cannot show.`, clear: false };
   }
+  if (stale) return { tone: "bad", label: "Not updating", line: "The server is not answering, so what was last reported may be out of date.", clear: false };
   if (pending) return { tone: "neutral", label: "Checking", line: "Checking what is waiting on you.", clear: false };
   return { tone: "ok", label: "All clear", line: "Nothing is waiting on you.", clear: true };
 }
