@@ -756,6 +756,9 @@ form.stack { display: flex; flex-direction: column; gap: var(--s2-5); }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .field input, .field select, .field textarea { width: 100%; }
+/* The answer a form gives under its button: what was recorded, or why it was not. */
+.form-out { font-size: 13px; color: var(--muted); }
+.form-out.bad { color: var(--bad); }
 .row { display: flex; gap: var(--s2); align-items: center; }
 .row-edit { display: grid; grid-template-columns: 1fr 2fr auto auto; gap: var(--s2); align-items: center; margin: var(--s1-5) 0; }
 /* A grid item's default min-width is auto, so the two text inputs refuse to go

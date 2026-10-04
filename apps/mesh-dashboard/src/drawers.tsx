@@ -139,7 +139,7 @@ export function ApprovalDrawer(): React.JSX.Element {
   const [kind, setKind] = useState("approve");
   const [subject, setSubject] = useState("");
   const [comment, setComment] = useState("");
-  const [out, setOut] = useState("");
+  const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   useEffect(() => {
     client.api("GET", "/artifacts").then(({ json }) => {
@@ -150,12 +150,20 @@ export function ApprovalDrawer(): React.JSX.Element {
     ev.preventDefault();
     if (sending) return;
     setSending(true);
+    setOut(null);
     try {
       const { status: st, json } = await client.post("/approvals", { kind, subject, comment: comment || undefined });
-      setOut(st === 200 ? "Recorded." : `Couldn't record: ${json?.reason ?? st}`);
-      if (st === 200) toast("Recorded", `${kind} ${subject}`, "ok");
+      if (st === 200) {
+        // Cleared so the next decision can be typed straight away: several criteria are often answered in one sitting.
+        setOut({ ok: true, text: `Recorded: ${kind} ${subject}.` });
+        toast("Recorded", `${kind} ${subject}`, "ok");
+        setSubject("");
+        setComment("");
+      } else {
+        setOut({ ok: false, text: `Could not record it: ${json?.reason ?? `the server answered ${st}`}` });
+      }
     } catch {
-      setOut("The server did not answer — try again.");
+      setOut({ ok: false, text: "The server did not answer. Try again." });
     } finally {
       setSending(false);
     }
@@ -163,15 +171,22 @@ export function ApprovalDrawer(): React.JSX.Element {
   };
   return (
     <>
-      <h2 id="drawer-title">Decide <CloseX /></h2>
-      <p className="muted" style={{ marginTop: 0 }}>Say yes or no to something. Gates listen to this — e.g. release can't finish without your approval.</p>
+      <h2 id="drawer-title">Approve or reject <CloseX /></h2>
+      <p className="muted" style={{ marginTop: 0 }}>Record a decision that a gate may be waiting for, such as approving the release. It goes in the log.</p>
       <form className="stack" onSubmit={submit}>
         <div className="field"><label htmlFor="appr-kind">Decision</label><Select id="appr-kind" value={kind} onChange={(e) => setKind(e.target.value)}><option value="approve">Approve</option><option value="reject">Reject</option><option value="accept">Accept</option></Select></div>
-        <div className="field"><label htmlFor="appr-subject">About what?</label><input id="appr-subject" list="subj" placeholder="release, architecture…" required autoComplete="off" value={subject} onChange={(e) => setSubject(e.target.value)} />
-          <datalist id="subj">{[...subjects, ...((status?.goal?.acceptanceCriteria || []).map((c: any) => `criterion:${c.id}`))].map((s: string) => <option key={s}>{s}</option>)}</datalist></div>
-        <div className="field"><label htmlFor="appr-comment">Why? (optional)</label><Input id="appr-comment" placeholder="one line for the log" value={comment} onChange={(e) => setComment(e.target.value)} /></div>
-        {arts.length > 0 && <div className="muted" style={{ fontSize: 12 }}>Recent files: {arts.slice(0, 3).map((a) => a.name).join(", ")}</div>}
-        <div className="row"><Button variant="primary" type="submit" disabled={sending}>{sending ? "recording…" : "record it"}</Button><span className="muted">{out}</span></div>
+        <div className="field">
+          <label htmlFor="appr-subject">What it is about</label>
+          <Input id="appr-subject" list="subj" placeholder="release" required autoComplete="off" value={subject} onChange={(e) => setSubject(e.target.value)} aria-describedby="appr-subject-hint" />
+          <datalist id="subj">{[...subjects, ...((status?.goal?.acceptanceCriteria || []).map((c: any) => `criterion:${c.id}`))].map((s: string) => <option key={s}>{s}</option>)}</datalist>
+          <span id="appr-subject-hint" className="muted" style={{ fontSize: 12 }}>A gate reads this name exactly. Pick one from the list or type your own.</span>
+        </div>
+        <div className="field"><label htmlFor="appr-comment">Reason (optional)</label><Input id="appr-comment" placeholder="One line, kept in the log" value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+        {arts.length > 0 && <div className="muted" style={{ fontSize: 12 }}>Files made recently: {arts.slice(0, 3).map((a) => a.name).join(", ")}</div>}
+        <div className="row">
+          <Button variant="primary" type="submit" disabled={sending}>{sending ? "Recording…" : "Record the decision"}</Button>
+          <span className={`form-out${out && !out.ok ? " bad" : ""}`} role={out && !out.ok ? "alert" : "status"}>{out?.text ?? ""}</span>
+        </div>
       </form>
     </>
   );
