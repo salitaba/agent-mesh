@@ -4,7 +4,7 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, producedCount, p
 import { buildLedger, ledgerTally, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import { Icon } from "./icons";
 import { actionNote, controlsHint, controlsOf, pauseWarning } from "./agents";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
@@ -64,7 +64,7 @@ export async function confirmPause(confirm: ConfirmFn, id: string, midTurn: bool
 }
 
 export function MessageDrawer(): React.JSX.Element {
-  const { status, vocab, toast, refreshStatus, closeDrawer, client } = useMesh();
+  const { status, vocab, toast, refreshStatus, client } = useMesh();
   const ids = (status?.agents || []).filter((a: any) => a.id !== "human").map((a: any) => a.id);
   const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
   const missionOver = status?.goal?.status === "COMPLETED" || status?.goal?.status === "FAILED";
@@ -78,7 +78,7 @@ export function MessageDrawer(): React.JSX.Element {
   // the "feedback did nothing" bug — a completed mission reported live, so the
   // box stayed unticked and the message sat unread in the mailbox.
   const [wake, setWake] = useState(parked || missionOver);
-  const [out, setOut] = useState("");
+  const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -88,7 +88,7 @@ export function MessageDrawer(): React.JSX.Element {
       try {
         body = JSON.parse(payload || "{}");
       } catch {
-        setOut("That doesn't look like valid JSON.");
+        setOut({ ok: false, text: "That is not valid JSON." });
         return;
       }
     } else {
@@ -96,12 +96,19 @@ export function MessageDrawer(): React.JSX.Element {
     }
     const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
     setSending(true);
+    setOut(null);
     try {
       const { status: st, json } = await client.post("/messages", { to: recipients, type, payload: body, wake });
-      setOut(st === 202 ? "Sent." : `Couldn't send: ${json?.reason ?? st}`);
-      if (st === 202) toast("Sent", `to ${recipients.join(", ")}`, "ok");
+      if (st === 202) {
+        // The words are cleared and the recipients kept: a second note to the same seat is the common next step.
+        setOut({ ok: true, text: `Sent to ${recipients.join(", ")}.` });
+        toast("Message sent", `to ${recipients.join(", ")}`, "ok");
+        setNote("");
+      } else {
+        setOut({ ok: false, text: `Could not send it: ${json?.reason ?? `the server answered ${st}`}` });
+      }
     } catch {
-      setOut("The server did not answer — try again.");
+      setOut({ ok: false, text: "The server did not answer. Try again." });
     } finally {
       setSending(false);
     }
@@ -110,23 +117,33 @@ export function MessageDrawer(): React.JSX.Element {
   return (
     <>
       <h2 id="drawer-title">Message an agent <CloseX /></h2>
-      <p className="muted" style={{ marginTop: 0 }}>You speak as <b>human</b> — agents always listen. {parked ? <>Currently <b>parked</b>: tick <i>run them right after</i> so they act immediately.</> : null}</p>
+      <p className="muted" style={{ marginTop: 0 }}>
+        You write as the human, the one seat every agent listens to.{parked ? " The project is parked and nothing runs on its own, so a message waits until the agent is run." : ""}
+      </p>
       {missionOver ? (
-        <p className="status-strip warn" style={{ marginTop: 0 }}>
-          The mission is <b>{status?.goal?.status?.toLowerCase()}</b>. Agents can still reply, but every op that would <i>produce</i> something (publish, task, approve) is rejected — so feedback alone changes nothing. Reopen the mission from Overview first.
-        </p>
+        <Banner tone="warn" title={`The mission is ${status?.goal?.status === "COMPLETED" ? "delivered" : "failed"}.`}>
+          Agents can still reply, but anything that would produce something (a file, a task, an approval) is refused, so a message alone changes nothing. Reopen the mission from the Overview first.
+        </Banner>
       ) : null}
       <form className="stack" onSubmit={submit}>
-        <div className="field"><label htmlFor="send-to">To</label><input id="send-to" list="send-to-list" placeholder="pick an agent…" required autoComplete="off" value={to} onChange={(e) => setTo(e.target.value)} /><datalist id="send-to-list">{ids.map((i: string) => <option key={i}>{i}</option>)}</datalist></div>
+        <div className="field">
+          <label htmlFor="send-to">To</label>
+          <Input id="send-to" list="send-to-list" placeholder="Choose an agent" required autoComplete="off" value={to} onChange={(e) => setTo(e.target.value)} aria-describedby="send-to-hint" />
+          <datalist id="send-to-list">{ids.map((i: string) => <option key={i}>{i}</option>)}</datalist>
+          <span id="send-to-hint" className="muted" style={{ fontSize: 12 }}>To write to several agents, separate their names with commas.</span>
+        </div>
         <div className="field"><label htmlFor="send-type">What is this?</label><Select id="send-type" value={type} onChange={(e) => setType(e.target.value)}>{(vocab?.messageTypes || ["INFORM", "MISSION", "REQUEST", "REQUEST_REVIEW", "ESCALATE", "DONE"]).map((t: string) => <option key={t} value={t}>{MESSAGE_PLAIN[t] || t.toLowerCase()} ({t})</option>)}</Select></div>
         {advanced ? (
-          <div className="field"><label htmlFor="send-payload">Message (JSON)</label><TextArea id="send-payload" rows={4} spellCheck={false} value={payload} onChange={(e) => setPayload(e.target.value)} /></div>
+          <div className="field"><label htmlFor="send-payload">Message (JSON)</label><TextArea id="send-payload" rows={4} mono spellCheck={false} value={payload} onChange={(e) => setPayload(e.target.value)} /></div>
         ) : (
-          <div className="field"><label htmlFor="send-note">Message</label><TextArea id="send-note" rows={4} placeholder="Say it in plain words…" required value={note} onChange={(e) => setNote(e.target.value)} /></div>
+          <div className="field"><label htmlFor="send-note">Message</label><TextArea id="send-note" rows={4} placeholder="Say it in plain words" required value={note} onChange={(e) => setNote(e.target.value)} /></div>
         )}
-        <div className="row"><label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} /> send a raw JSON payload</label></div>
-        <div className="row"><label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={wake} onChange={(e) => setWake(e.target.checked)} /> run them right after sending</label></div>
-        <div className="row"><Button variant="primary" type="submit" disabled={sending}>{sending ? "sending…" : "send"}</Button><span className="muted">{out}</span></div>
+        <label className="chk"><input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} /> Send a raw JSON payload instead</label>
+        <label className="chk"><input type="checkbox" checked={wake} onChange={(e) => setWake(e.target.checked)} /> Run them right after sending</label>
+        <div className="row">
+          <Button variant="primary" type="submit" disabled={sending}>{sending ? "Sending…" : "Send"}</Button>
+          <span className={`form-out${out && !out.ok ? " bad" : ""}`} role={out && !out.ok ? "alert" : "status"}>{out?.text ?? ""}</span>
+        </div>
       </form>
     </>
   );
