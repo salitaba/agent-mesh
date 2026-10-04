@@ -14,10 +14,11 @@
  * means one of them has gone quiet.
  * ---------------------------------------------------------------------- */
 import React, { useMemo } from "react";
-import { AgentAvatar, Card, Pill, useNow, type PillTone } from "./components";
+import { AgentAvatar, Pill, useNow, type PillTone } from "./components";
 import { foldCollabs, pressedFirst, type CollabPressure, type CollabThread } from "./collab";
 import { ago, dur } from "./format";
 import { useMesh } from "./store";
+import { Panel } from "./views/Panel";
 
 /** Green while there is room, amber at 75%, red at 90% — the tones the rest of
  *  the console already uses for a budget running out. */
@@ -102,12 +103,8 @@ function CollabBoard({ threads }: { threads: CollabThread[] }): React.JSX.Elemen
   const now = useNow(1000);
   const open = pressedFirst(threads, now);
   return (
-    <Card
-      title="Talking to each other"
-      actions={<span className="muted">{open.length} open</span>}
-      style={{ marginTop: 12 }}
-    >
+    <Panel id="ov-collab" title="Talking to each other" meta={`${open.length} open`}>
       {open.map(({ t, p }) => <CollabRow key={t.threadId} t={t} p={p} />)}
-    </Card>
+    </Panel>
   );
 }
