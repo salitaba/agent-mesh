@@ -187,9 +187,24 @@ export function escAgents(e: EscalationLike): string[] {
     const m = /^agent:[^/]+\/(.+)$/.exec(d.key);
     if (m && m[1]) out.add(m[1]);
   }
-  if (typeof e.raisedBy === "string" && !["termination-manager", "recovery-manager", "deadlock-detector", "human", "host-limiter"].includes(e.raisedBy)) out.add(e.raisedBy);
+  if (typeof e.raisedBy === "string" && !isSystemRaiser(e.raisedBy) && e.raisedBy !== "human") out.add(e.raisedBy);
   if (Array.isArray(d.participants)) for (const a of d.participants) if (typeof a === "string") out.add(a);
   return [...out].filter((a) => a && a !== "human");
+}
+
+/* ------------------------------ who raised it ------------------------------- */
+
+/**
+ * The components that raise cards, as against the seats and the operator. None of them is an agent: a chip for one would open an
+ * agent drawer for something that has no seat, and "raised by stall-watchdog" names a part of the machinery, not a decision-maker.
+ */
+const SYSTEM_RAISERS: readonly string[] = ["termination-manager", "recovery-manager", "deadlock-detector", "collab-watchdog", "stall-watchdog", "host-limiter"];
+export const isSystemRaiser = (raisedBy: unknown): boolean => SYSTEM_RAISERS.includes(String(raisedBy ?? ""));
+
+/** Who raised the card, in words: the host, the mesh's watchdogs, or the seat by its name. */
+export function raisedByLabel(raisedBy: unknown): string {
+  const who = String(raisedBy ?? "");
+  return who === "host-limiter" ? "the host" : isSystemRaiser(who) ? "the mesh watchdog" : who;
 }
 
 /* ------------------------------- what it holds ------------------------------ */
@@ -243,7 +258,8 @@ export function budgetInfoOf(e: EscalationLike, status: any, phrase: Phrase): Bu
       return {
         title: `${agent} ran out of tokens`, key, agent, consumed, limit, unit: "tokens", raisable: true,
         what: `${agent} is parked: it has spent ${spent}, and nothing raises it automatically. It takes no turns until you add tokens. ${waits} The rest of the mesh keeps working.`,
-        next: "Add tokens below. It takes effect at once, with no restart.",
+        // Nothing to add: the line under the form says the raise takes effect at once, and the card says what is held.
+        next: "",
         placeholder: `e.g. raised ${agent} to ${fmt(Math.ceil((limit * 1.5) / 1000) * 1000)}; keep research shallow`,
       };
     }
@@ -251,7 +267,7 @@ export function budgetInfoOf(e: EscalationLike, status: any, phrase: Phrase): Bu
     return {
       title: "Every seat is out of tokens", key, agent, consumed, limit, unit: "tokens", raisable: true,
       what: `Every live seat has spent its own token budget${parked.length ? ` (${parked.join(", ")})` : ""}, so nobody can take a turn and the watchdog halted the mission. ${agent} has spent ${spent}.`,
-      next: "Add tokens below. It takes effect at once, with no restart. Responding without adding tokens leaves the budget spent, so the mission halts again.",
+      next: "Responding without adding tokens leaves the budget spent, so the mission halts again.",
       placeholder: `e.g. raised ${agent} to ${fmt(Math.ceil((limit * 1.5) / 1000) * 1000)}; keep research shallow`,
     };
   }
@@ -264,7 +280,7 @@ export function budgetInfoOf(e: EscalationLike, status: any, phrase: Phrase): Bu
       title: word(String(e.reason)), key, consumed, limit, unit: "tokens", raisable: typeof key === "string",
       // The door raises this card when the next turn does not fit in what is left, so the ledger can read under its limit.
       what: `${fmt(consumed)} of ${fmt(limit)} mission tokens are spent${limit > 0 && consumed < limit ? ", and what is left is not enough for the next turn" : ""}. Nobody can run until you raise the limit.`,
-      next: "Add tokens below. It takes effect at once, with no restart. Responding without adding tokens leaves the budget spent, so nobody can run.",
+      next: "Responding without adding tokens leaves the budget spent, so nobody can run.",
       placeholder: `e.g. raised mission to ${fmt(Math.ceil((limit * 1.5) / 1000) * 1000)}; skip optional criteria`,
     };
   }
@@ -274,7 +290,7 @@ export function budgetInfoOf(e: EscalationLike, status: any, phrase: Phrase): Bu
     return {
       title: word("thread_budget_exhausted"), key, consumed: entry?.consumed ?? 0, limit: entry?.limit ?? 0, unit: "tokens", raisable: !!key,
       what: "One conversation thread spent its token budget, so work in it stopped and the mission halted.",
-      next: key ? "Add tokens to the thread below, or start a fresh thread with a tighter question." : "Start a fresh thread with a tighter question, then respond.",
+      next: key ? "Add tokens to the thread, or start a fresh thread with a tighter question." : "Start a fresh thread with a tighter question, then respond.",
       placeholder: "e.g. raised thread budget; continue with a yes/no question",
     };
   }
@@ -304,6 +320,8 @@ export interface CardContext {
   parked: boolean;
   phrase: Phrase;
   nowMs?: number;
+  /** The host's ceiling has been raised past the spend since the card was written (`ceilingTripped` is false again). */
+  ceilingRaised?: boolean;
 }
 
 function textBody(e: EscalationLike, ctx: CardContext): CardText {
@@ -311,8 +329,7 @@ function textBody(e: EscalationLike, ctx: CardContext): CardText {
   const d = detailOf(e);
   const failed: string[] = d.failedAgents || (d.agentId ? [d.agentId] : []);
   const err = d.error ? String(d.error).slice(0, 220) : "";
-  const isSys = ["termination-manager", "recovery-manager", "deadlock-detector"].includes(String(e.raisedBy));
-  const who = isSys ? "Mesh watchdog" : String(e.raisedBy);
+  const who = isSystemRaiser(e.raisedBy) ? "Mesh watchdog" : String(e.raisedBy);
   switch (e.reason) {
     case "runtime_failure":
       return {
@@ -354,10 +371,23 @@ function textBody(e: EscalationLike, ctx: CardContext): CardText {
       const usd = num(d.usd);
       const cap = num(d.ceilingUsd);
       const figures = usd !== undefined && cap !== undefined ? ` Total spend across open projects reached $${usd.toFixed(2)} against a ceiling of $${cap.toFixed(2)}.` : "";
+      // The host does not clear this card when the ceiling goes up, and an open card holds the mission's completion, so once the
+      // ceiling is past the spend the card's only job is to be cleared. Saying so ends a card that otherwise reads as unresolved.
+      if (ctx.ceilingRaised) {
+        return {
+          title: phrase("host_spend_ceiling").title,
+          what: `The host parked every open project.${figures} The ceiling has since been raised past the spend, so this card only needs clearing.`,
+          next: ctx.parked
+            ? "The host does not restart a project it parked when the ceiling goes up, so start the mission when you are ready. An open card also holds a finished mission back from delivery."
+            : "An open card holds a finished mission back from delivery, so clear it.",
+          placeholder: "e.g. ceiling raised",
+        };
+      }
       return {
         title: phrase("host_spend_ceiling").title,
-        what: `The host parked every open project.${figures} ${PAUSED_CLAUSE}`,
-        next: "Continuing will not hold: while the total is over the ceiling, the host parks every open project again on its next heartbeat. The ceiling is host-wide, so raise it in host settings. It takes effect on the next heartbeat, with no restart.",
+        // Not PAUSED_CLAUSE: the goal is not paused, the host parked the project from outside, and answering this card starts nothing.
+        what: `The host parked every open project.${figures}`,
+        next: "Continuing will not hold: while the total is over the ceiling, the host parks every open project again on its next heartbeat. The ceiling is host-wide, so raise it in host settings.",
         placeholder: "e.g. raised the ceiling to $25",
       };
     }
@@ -369,9 +399,9 @@ function textBody(e: EscalationLike, ctx: CardContext): CardText {
         return {
           title: phrase("stalemate", { waiting: n }).title,
           what: n > 0
-            ? `The mission is paused: ${n} answer${n === 1 ? " is" : "s are"} still missing. Answer them below, or answer all at once.`
-            : "The mission is paused on a stalemate whose underlying requests are already resolved. The mesh retires this automatically; answer below to clear it now.",
-          next: "Answer the requests below, or send one decision that covers all of them.",
+            ? `The mission is paused: ${n} answer${n === 1 ? " is" : "s are"} still missing. Answer ${n === 1 ? "it" : "each one"}, or answer all at once.`
+            : "The mission is paused on a stalemate whose underlying requests are already resolved. The mesh retires this automatically; answering clears it now.",
+          next: "Answer each request, or send one decision that covers all of them.",
           placeholder: "e.g. approved it myself; continue",
         };
       }
@@ -467,6 +497,8 @@ export interface AnswerPlan {
   primaryWithText?: string;
   /** A second action that answers the card itself, when the primary leaves the page (the ceiling is raised in host settings, then the card is cleared here). */
   secondary?: { id: "respond"; label: string };
+  /** What is sent when the box is left empty and an empty answer is allowed. */
+  emptyText?: string;
   /** Present when a typed answer belongs to the card. */
   text?: { label: string; placeholder: string; required: boolean };
   /** A budget card's alternatives to the one-click raise. */
@@ -491,6 +523,8 @@ export interface AnswerInput {
   supports?: number;
   asker?: string;
   placeholder: string;
+  /** The ceiling was raised past the spend: the card no longer asks for it to be raised, only to be cleared. */
+  ceilingRaised?: boolean;
 }
 
 const PARKED_TAIL = "The project is parked, so nothing runs until you start the mission.";
@@ -513,13 +547,13 @@ export function answerPlan(i: AnswerInput): AnswerPlan {
     }
     case "derived": {
       const n = i.supports ?? 0;
-      const all = n > 0 ? `Answer all ${n}` : "Clear this card";
+      const all = n > 1 ? `Answer all ${n}` : n === 1 ? "Answer it" : "Clear this card";
       return {
         ...base,
         primary: { id: "answer-all", label: i.parked ? all : `${all} and resume` },
         text: { label: "Your decision for all of them", placeholder: i.placeholder || "Your decision", required: true },
         consequence: n > 0
-          ? i.parked ? `Sends this decision to all ${n} requests listed above. ${PARKED_TAIL}` : `Sends this decision to all ${n} requests listed above and resumes the mission.`
+          ? `Sends this decision to ${n === 1 ? "the request" : `all ${n} requests`} listed above${i.parked ? `. ${PARKED_TAIL}` : " and resumes the mission."}`
           : i.parked ? `Clears the card. ${PARKED_TAIL}` : "Clears the card and resumes the mission.",
       };
     }
@@ -553,18 +587,28 @@ export function answerPlan(i: AnswerInput): AnswerPlan {
       };
     }
     case "ceiling":
+      if (i.ceilingRaised) {
+        return {
+          ...base,
+          primary: { id: "respond", label: i.parked ? "Clear this card" : "Clear this card and resume" },
+          text: { label: "Note (optional)", placeholder: i.placeholder || "e.g. ceiling raised", required: false },
+          emptyText: "ceiling raised",
+          consequence: i.parked ? `Clears the card. ${PARKED_TAIL}` : "Clears the card and resumes the mission.",
+        };
+      }
       return {
         ...base,
         primary: { id: "open-settings", label: "Raise the ceiling" },
         secondary: { id: "respond", label: "Clear this card" },
         text: { label: "Note (optional)", placeholder: i.placeholder || "e.g. raised the ceiling", required: false },
-        consequence: "Raising the ceiling takes effect on the next heartbeat. Answer here afterwards to clear this card, then start the mission: the host leaves the project parked.",
+        consequence: "Raising the ceiling takes effect on the next heartbeat, with no restart. Clear this card afterwards, then start the mission: the host leaves the project parked, and an open card holds a finished mission back from delivery.",
       };
     case "notice":
       return {
         ...base,
         primary: { id: "acknowledge", label: "Acknowledge" },
         primaryWithText: "Send reply",
+        emptyText: "acknowledged",
         text: { label: "Reply (optional)", placeholder: i.placeholder || "e.g. noted; carry on", required: false },
         consequence: "Nothing is held. The mission carries on whether or not you answer. Acknowledging clears the notice from this list.",
       };
@@ -585,6 +629,11 @@ export interface OutcomeInput {
   /** Decisions that still hold the mission after this one. */
   blockingDecisions: number;
   primaryLabel: string | null;
+  /**
+   * What the answered card held. A seat's card and a notice never stopped the mission, so "running again" would say something
+   * that did not happen. Absent reads as a card that held the mission.
+   */
+  holds?: Holds;
 }
 
 export interface Outcome {
@@ -601,18 +650,27 @@ export interface Outcome {
  */
 export function answerOutcome(i: OutcomeInput): Outcome {
   const plural = (n: number): string => `${n} more decision${n === 1 ? " still holds" : "s still hold"} the mission.`;
+  const held = i.holds ?? { scope: "mission" as const };
+  // A notice is acknowledged, not answered: it asked for nothing.
+  const lead = held.scope === "nothing" ? "Acknowledged." : "Answered.";
+  // Only a live mission has anything to say about "again", and only a card that stopped something can have started it again.
+  const moving = (idle: boolean): string => {
+    if (held.scope === "nothing") return idle ? "The mission is running; no agent is working right now." : "The mission carried on.";
+    if (held.scope === "seat") return idle ? `${held.seat} takes turns again; no agent is working right now.` : `${held.seat} takes turns again. The mission never stopped.`;
+    return idle ? "The mission is running; no agent is working right now." : "The mission is running again.";
+  };
   switch (i.phase) {
-    case "running": return { tone: "ok", text: "Answered. The mission is running again.", action: false };
-    case "quiet": return { tone: "ok", text: "Answered. The mission is running; no agent is working right now.", action: false };
-    case "stalled": return { tone: "warn", text: "Answered. The mission is live, but no agent is working yet.", action: i.primaryLabel !== null };
-    case "needs-you": return { tone: "warn", text: `Answered. ${plural(Math.max(1, i.blockingDecisions))}`, action: false };
-    case "parked": return { tone: "warn", text: "Answered. The project is parked, so nothing is running yet.", action: i.primaryLabel !== null };
-    case "paused": return { tone: "warn", text: "Answered. The mission is paused.", action: i.primaryLabel !== null };
-    case "ceiling": return { tone: "bad", text: "Answered. The host's spend ceiling still has this project parked.", action: i.primaryLabel !== null };
-    case "done": return { tone: "ok", text: "Answered. The mission is delivered.", action: false };
-    case "failed": return { tone: "bad", text: "Answered. The mission is marked failed.", action: i.primaryLabel !== null };
-    case "offline": return { tone: "bad", text: "Answered, but the server stopped answering, so the mission's state is not known.", action: false };
-    default: return { tone: "neutral", text: "Answered. Waiting for the server to report the mission's state.", action: false };
+    case "running": return { tone: "ok", text: `${lead} ${moving(false)}`, action: false };
+    case "quiet": return { tone: "ok", text: `${lead} ${moving(true)}`, action: false };
+    case "stalled": return { tone: "warn", text: `${lead} The mission is live, but no agent is working yet.`, action: i.primaryLabel !== null };
+    case "needs-you": return { tone: "warn", text: `${lead} ${plural(Math.max(1, i.blockingDecisions))}`, action: false };
+    case "parked": return { tone: "warn", text: `${lead} The project is parked, so nothing is running yet.`, action: i.primaryLabel !== null };
+    case "paused": return { tone: "warn", text: `${lead} The mission is paused.`, action: i.primaryLabel !== null };
+    case "ceiling": return { tone: "bad", text: `${lead} The host's spend ceiling still has this project parked.`, action: i.primaryLabel !== null };
+    case "done": return { tone: "ok", text: `${lead} The mission is delivered.`, action: false };
+    case "failed": return { tone: "bad", text: `${lead} The mission is marked failed.`, action: i.primaryLabel !== null };
+    case "offline": return { tone: "bad", text: `${lead.replace(/\.$/, "")}, but the server stopped answering, so the mission's state is not known.`, action: false };
+    default: return { tone: "neutral", text: `${lead} Waiting for the server to report the mission's state.`, action: false };
   }
 }
 
@@ -621,9 +679,10 @@ export function answerOutcome(i: OutcomeInput): Outcome {
  * stopped scheduler, so the answer is recorded and nothing resumes. The old toasts said "work resumed" in every case, then
  * (for a parked project) asked a question about starting it.
  */
-export function answerToast(i: { parked: boolean; advisory: boolean; what?: string }): { title: string; msg: string } {
+export function answerToast(i: { parked: boolean; holds: Holds; what?: string }): { title: string; msg: string } {
   const what = i.what ?? "Response";
-  if (i.advisory) return { title: `${what} sent`, msg: "Nothing was held, so the mission carried on." };
+  if (i.holds.scope === "nothing") return { title: `${what} sent`, msg: "Nothing was held, so the mission carried on." };
   if (i.parked) return { title: `${what} recorded`, msg: "The project is parked, so nothing runs until you start the mission." };
+  if (i.holds.scope === "seat") return { title: `${what} sent`, msg: `${i.holds.seat} takes turns again. The rest of the mesh was never held.` };
   return { title: `${what} sent`, msg: "The mission resumes." };
 }

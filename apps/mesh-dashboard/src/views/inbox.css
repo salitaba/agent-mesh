@@ -1,0 +1,102 @@
+/* ============ Needs you: decisions, notices and tool requests ============
+   One card shape for every kind of decision: what is asked and what it holds up, the context, then one answer. Tokens only; type
+   from the ramp; breakpoints from the ladder. A tinted card uses --text and --text-dim, never --muted (see overview.css). */
+
+.ib { display: flex; flex-direction: column; gap: var(--s3); }
+.ib .tabs { margin: 0; }
+.ib-section { display: flex; flex-direction: column; }
+.ib-section > .group-h { margin: var(--s2) 2px var(--s2-5); }
+.ib-hint { margin: 0 0 var(--s2-5) 2px; font-size: 13px; color: var(--muted); }
+
+/* ---------- a decision ---------- */
+.dc { display: flex; flex-direction: column; gap: var(--s3); margin: 0 0 var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
+.dc.bad { border-color: color-mix(in srgb, var(--bad) 42%, var(--line)); background: color-mix(in srgb, var(--bad) 5%, var(--panel)); }
+.dc.warn { border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); background: color-mix(in srgb, var(--warn) 5%, var(--panel)); }
+.dc .muted { color: var(--text-dim); }
+.dc-head { display: flex; align-items: flex-start; gap: var(--s3); }
+.dc-ico { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); }
+.dc-ico.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.dc-ico.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.dc-ico.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.dc-titles { min-width: 0; }
+.dc-titles h4 { margin: 0; font: 600 16px/1.35 var(--sans); overflow-wrap: anywhere; }
+.dc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); margin: var(--s1) 0 0; font: var(--tx-meta); color: var(--text-dim); }
+.dc-holds { padding: 1px 10px; border-radius: 20px; font: 600 12px var(--sans); }
+/* Over --panel, not transparent: the card behind is itself tinted, and a wash on a wash costs the text its contrast. */
+.dc-holds.mission { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+.dc-holds.seat { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+.dc-holds.nothing { color: var(--info); background: color-mix(in srgb, var(--info) 12%, var(--panel)); }
+.dc-what { margin: 0; max-width: 80ch; font-size: 15px; overflow-wrap: anywhere; }
+.dc-next { margin: 0; max-width: 80ch; font-size: 14px; color: var(--text-dim); }
+
+.dc-meter { max-width: 560px; }
+.dc-meter-line { display: flex; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s1-5); font-size: 14px; }
+
+.dc-ask { display: grid; gap: var(--s1-5); padding: var(--s2-5) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); font-size: 14px; }
+.dc-ask p { margin: 0; }
+.dc-ask-what { color: var(--text-dim); overflow-wrap: anywhere; }
+.dc-supports { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1-5); }
+.dc-supports li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); }
+.dc-context { display: grid; gap: var(--s2); }
+.dc-refs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 13px; color: var(--text-dim); }
+.dc-refs code { font: 12px var(--mono); color: var(--text-dim); }
+
+/* One answer: the typed words where words are the answer, the one button that names its consequence, then what it does. */
+.dc-answer { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.dc-label { font: var(--tx-label); color: var(--text-dim); }
+.dc-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.dc-row .dc-label { flex-basis: 100%; }
+.dc-row input { flex: 1 1 200px; min-width: 0; }
+.dc-answer input.txt { width: 100%; min-width: 0; }
+.dc-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+/* Skipping discards an agent's request and cannot be undone, so it sits at the far end, off the path to the other buttons. */
+.dc-skip { margin-left: auto; }
+.dc-cons { margin: 0; max-width: 80ch; font-size: 13px; color: var(--text-dim); }
+.dc-hint { font-size: 13px; color: var(--bad); }
+.dc-hint:empty { display: none; }
+.dc-tech { margin: 0; }
+.dc-tech[open] > .dc-acts { margin-top: var(--s2); }
+
+/* ---------- answered in this visit ---------- */
+.ib-answered-list { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.ib-answered { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: start; padding: var(--s3) var(--s4); border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--line)); border-radius: var(--r-lg); background: color-mix(in srgb, var(--ok) 6%, var(--panel)); }
+.ib-answered-body { min-width: 0; }
+.ib-answered-body > b { font-weight: 600; overflow-wrap: anywhere; }
+.ib-sent, .ib-outcome { margin: var(--s0) 0 0; font-size: 14px; }
+.ib-sent { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-outcome { font-weight: 600; color: var(--text-dim); }
+.ib-outcome.ok { color: var(--ok); }
+.ib-outcome.warn { color: var(--warn); }
+.ib-outcome.bad { color: var(--bad); }
+.ib-outcome button { font-weight: 400; }
+.ib-answered .icon-btn { flex: none; }
+
+.ib-done { margin: var(--s3) 0 0; }
+.ib-done ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s1-5); }
+.ib-done li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); font-size: 13px; color: var(--text-dim); }
+.ib-done li .icon { flex: none; color: var(--ok); }
+.ib-done-title { color: var(--text); overflow-wrap: anywhere; }
+.ib-done-resp { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- tool gates ---------- */
+.tg-lede { margin: 0 0 var(--s3); max-width: 80ch; font-size: 14px; color: var(--text-dim); }
+.tg-list { list-style: none; margin: 0; padding: 0; }
+.tg-req, .tg-seat { display: grid; gap: var(--s2-5); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.tg-list > li:first-child { border-top: 0; padding-top: 0; }
+.tg-list > li:last-child { padding-bottom: 0; }
+.tg-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.tg-who code { font: 12px var(--mono); }
+.tg-acts, .tg-grants { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.tg-manual { display: grid; gap: var(--s1); max-width: 520px; }
+.tg-note { margin: var(--s3) 0 0; font-size: 13px; color: var(--muted); }
+.ib .card + .card { margin-top: var(--s3); }
+
+@media (max-width: 620px) {
+  .dc { padding: var(--s3-5); }
+  .dc-acts > button.primary { flex: 1 1 100%; justify-content: center; }
+  .dc-skip { margin-left: 0; }
+  .ib-answered { grid-template-columns: auto minmax(0, 1fr); }
+  .ib-answered .icon-btn { grid-column: 2; justify-self: start; }
+  .ib-sent { white-space: normal; }
+  .tg-acts > button { flex: 1 1 auto; justify-content: center; }
+}

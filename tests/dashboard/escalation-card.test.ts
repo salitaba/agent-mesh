@@ -14,7 +14,9 @@ import {
   escalationText,
   holdsLine,
   holdsOf,
+  isSystemRaiser,
   openSupports,
+  raisedByLabel,
   resolveArtifactId,
   seatOfBudgetCard,
   stuckInfoOf,
@@ -86,7 +88,8 @@ test("a stuck request is titled by what was asked, and offers a suggested answer
 test("a derived stalemate says how many answers are missing, and what to do when they are all already resolved", () => {
   const some = escalationText(esc({ reason: "stalemate", detail: { openDeadlockEscalations: [{ id: "a" }, { id: "b" }] } }), ctx());
   assert.equal(some.title, "Stalemate (2 waiting)");
-  assert.match(some.what, /2 answers are still missing/);
+  assert.match(some.what, /2 answers are still missing\. Answer each one, or answer all at once\./);
+  assert.doesNotMatch(some.what + some.next, /below|above/, "the card does not say where the requests are: another card may sit between");
   const none = escalationText(esc({ reason: "stalemate", detail: { openDeadlockEscalations: [] } }), ctx());
   assert.equal(none.title, "Stalemate (clearing)");
   assert.match(none.what, /already resolved/);
@@ -153,6 +156,21 @@ test("a mission budget card raised at the door carries no figures, so they come 
   assert.equal(none.raisable, false, "no ledger to raise: the card can only be answered");
 });
 
+test("a budget card does not say its effect twice: the line under the form says it, so the text above says only what a bare response leaves", () => {
+  const status = { budgets: [ledger("mission:goal-1", 16_850, 20_000), ledger(`agent:${GOAL}/dev`, 200_000, 200_000)] };
+  const door = esc({ reason: "budget_exhausted", raisedBy: "dev", detail: { key: "mission:goal-1" } });
+  const all = esc({ reason: "agent_budget_exhausted", detail: { key: `agent:${GOAL}/dev`, parkedSeats: ["dev"] } });
+  for (const [name, e] of [["mission", door], ["every seat", all], ["one seat", seatCard()]] as const) {
+    const b = budgetInfoOf(e, status, verdictText);
+    assert.doesNotMatch(b.next, /takes effect|no restart|below|above/i, `${name}: the form's own line says when it takes effect, and where the form is is plain to see`);
+  }
+  assert.equal(budgetInfoOf(seatCard(), status, verdictText).next, "", "a seat's card has nothing to add to what it says and to the line under the form");
+  assert.match(budgetInfoOf(door, status, verdictText).next, /^Responding without adding tokens leaves the budget spent, so nobody can run\.$/);
+  assert.match(budgetInfoOf(all, status, verdictText).next, /so the mission halts again\.$/);
+  const plan = answerPlan({ kind: "budget", parked: false, holds: { scope: "mission" }, limit: 20_000, placeholder: "" });
+  assert.match(plan.consequence, /^Takes effect at once, with no restart\./, "said once, where the button is");
+});
+
 test("the event cap and the time limit are raised to double, and a thread without a key cannot be raised", () => {
   const events = budgetInfoOf(esc({ reason: "max_events_exceeded", detail: { events: 10_050, limit: 10_000 } }), { goal: { budget: { maxEvents: 10_000 } } }, verdictText);
   assert.equal(events.configCap, "events");
@@ -178,6 +196,19 @@ test("who a card involves: the seats it names, never the watchdogs or the host t
   assert.deepEqual(escAgents(esc({ reason: "x", raisedBy: "termination-manager", detail: { failedAgents: ["dev"], participants: ["qa", "human"] } })).sort(), ["dev", "qa"]);
   assert.deepEqual(escAgents(esc({ raisedBy: "host-limiter", detail: { usd: 1, ceilingUsd: 1 } })), []);
   assert.deepEqual(escAgents(seatCard()), ["dev"]);
+});
+
+test("a watchdog is not a seat: it is named as the mesh, offered no agent chip, and the host is named as the host", () => {
+  for (const r of ["termination-manager", "recovery-manager", "deadlock-detector", "collab-watchdog", "stall-watchdog", "host-limiter"]) {
+    assert.equal(isSystemRaiser(r), true, r);
+    assert.deepEqual(escAgents(esc({ reason: "x", raisedBy: r })), [], `${r} has no seat to open`);
+  }
+  assert.equal(isSystemRaiser("developer"), false);
+  assert.equal(isSystemRaiser(undefined), false);
+  assert.equal(raisedByLabel("collab-watchdog"), "the mesh watchdog");
+  assert.equal(raisedByLabel("host-limiter"), "the host");
+  assert.equal(raisedByLabel("developer"), "developer");
+  assert.deepEqual(escAgents(esc({ reason: "collab_overrun:expired", advisory: true, raisedBy: "collab-watchdog", detail: { participants: ["architect", "developer"] } })).sort(), ["architect", "developer"], "the conversation's own seats are still offered");
 });
 
 test("waiting time reads as minutes under an hour and hours and minutes after, and is empty when the stamp is unreadable", () => {
@@ -213,6 +244,9 @@ test("on a live project the primary action names what it does to the mission", (
   assert.equal(plan().primary.label, "Respond and resume");
   assert.equal(plan({ kind: "stuck", asker: "pm" }).primary.label, "Send answer and resume");
   assert.equal(plan({ kind: "derived", supports: 3 }).primary.label, "Answer all 3 and resume");
+  assert.equal(plan({ kind: "derived", supports: 1 }).primary.label, "Answer it and resume", "one request is not 'all 1'");
+  assert.equal(plan({ kind: "derived", supports: 1 }).consequence, "Sends this decision to the request listed above and resumes the mission.");
+  assert.equal(plan({ kind: "derived", supports: 3 }).consequence, "Sends this decision to all 3 requests listed above and resumes the mission.");
   assert.equal(plan({ kind: "derived", supports: 0 }).primary.label, "Clear this card and resume");
   assert.equal(plan({ kind: "budget", limit: 2_000_000 }).primary.label, "Add 1M tokens and resume");
   assert.equal(plan({ kind: "budget", limit: 200_000 }).primary.label, "Add 100k tokens and resume");
@@ -272,13 +306,39 @@ test("the ceiling card sends the operator to host settings and keeps a separate 
   const p = plan({ kind: "ceiling", parked: true });
   assert.deepEqual(p.primary, { id: "open-settings", label: "Raise the ceiling" });
   assert.deepEqual(p.secondary, { id: "respond", label: "Clear this card" });
-  assert.match(p.consequence, /takes effect on the next heartbeat/);
+  assert.match(p.consequence, /takes effect on the next heartbeat, with no restart/);
   assert.match(p.consequence, /then start the mission: the host leaves the project parked/);
   assert.equal(plan({ kind: "decision" }).secondary, undefined, "no other card needs a second action");
 });
 
+test("once the ceiling is past the spend the card stops asking for it to be raised and only asks to be cleared", () => {
+  const raised = plan({ kind: "ceiling", parked: true, ceilingRaised: true });
+  assert.deepEqual(raised.primary, { id: "respond", label: "Clear this card" });
+  assert.equal(raised.secondary, undefined);
+  assert.equal(raised.emptyText, "ceiling raised", "an empty note is allowed: clearing needs no prose");
+  assert.equal(raised.text?.required, false);
+  assert.match(raised.consequence, /^Clears the card\. The project is parked, so nothing runs until you start the mission\.$/);
+  assert.equal(plan({ kind: "ceiling", parked: false, ceilingRaised: true }).primary.label, "Clear this card and resume");
+  const t = escalationText(esc({ reason: "host_spend_ceiling", raisedBy: "host-limiter", detail: { usd: 12.5, ceilingUsd: 10 } }), ctx({ parked: true, ceilingRaised: true }));
+  assert.match(t.what, /The ceiling has since been raised past the spend, so this card only needs clearing\./);
+  assert.match(t.next, /An open card also holds a finished mission back from delivery\./);
+  assert.doesNotMatch(t.next, /Continuing will not hold/, "that warning is false once the ceiling is up");
+  assert.match(t.next, /does not restart a project it parked/);
+  const live = escalationText(esc({ reason: "host_spend_ceiling", raisedBy: "host-limiter", detail: { usd: 12.5, ceilingUsd: 10 } }), ctx({ parked: false, ceilingRaised: true }));
+  assert.doesNotMatch(live.next, /start the mission/, "a project that is already live has nothing to start");
+});
+
+test("the ceiling card does not say the mission is paused or that deciding runs anything: the host parked the project, and an answer starts nothing", () => {
+  const e = esc({ reason: "host_spend_ceiling", raisedBy: "host-limiter", detail: { usd: 12.5, ceilingUsd: 10 } });
+  for (const over of [{ parked: true }, { parked: false }, { parked: true, ceilingRaised: true }]) {
+    const t = escalationText(e, ctx(over));
+    assert.doesNotMatch(`${t.what} ${t.next}`, /mission is paused|until you decide/i, JSON.stringify(over));
+  }
+});
+
 test("a notice never promises a restart and never asks for an answer it does not need", () => {
   const p = plan({ kind: "notice", holds: { scope: "nothing" } });
+  assert.equal(p.emptyText, "acknowledged", "an empty reply is an acknowledgement");
   assert.match(p.consequence, /^Nothing is held\. The mission carries on whether or not you answer\./);
   assert.doesNotMatch(p.consequence, /resume/);
   assert.equal(p.text?.required, false);
@@ -307,10 +367,34 @@ test("after an answer the card says whether the mission moved, from the same sta
 });
 
 test("the toast after an answer says what it did: a parked project records it, a notice held nothing, a live one resumes", () => {
-  assert.deepEqual(answerToast({ parked: false, advisory: false }), { title: "Response sent", msg: "The mission resumes." });
-  assert.deepEqual(answerToast({ parked: true, advisory: false, what: "Answer" }), { title: "Answer recorded", msg: "The project is parked, so nothing runs until you start the mission." });
-  assert.equal(answerToast({ parked: false, advisory: true }).msg, "Nothing was held, so the mission carried on.");
-  assert.doesNotMatch(answerToast({ parked: true, advisory: true }).msg, /resumes|parked/, "a notice held nothing, so there is nothing to say about parking");
+  const mission = { scope: "mission" } as const;
+  assert.deepEqual(answerToast({ parked: false, holds: mission }), { title: "Response sent", msg: "The mission resumes." });
+  assert.deepEqual(answerToast({ parked: true, holds: mission, what: "Answer" }), { title: "Answer recorded", msg: "The project is parked, so nothing runs until you start the mission." });
+  assert.equal(answerToast({ parked: false, holds: { scope: "nothing" } }).msg, "Nothing was held, so the mission carried on.");
+  assert.doesNotMatch(answerToast({ parked: true, holds: { scope: "nothing" } }).msg, /resumes|parked/, "a notice held nothing, so there is nothing to say about parking");
+});
+
+test("an answer to a seat's card says that seat takes turns again, not that the mission resumes: it never stopped", () => {
+  const seat = { scope: "seat", seat: "dev" } as const;
+  assert.equal(answerToast({ parked: false, holds: seat }).msg, "dev takes turns again. The rest of the mesh was never held.");
+  assert.doesNotMatch(answerToast({ parked: false, holds: seat }).msg, /resumes/);
+  assert.match(answerToast({ parked: true, holds: seat }).msg, /parked, so nothing runs/, "a parked project runs no seat, whatever it held");
+  const say = (phase: string, holds: Parameters<typeof answerOutcome>[0]["holds"]) => answerOutcome({ phase, blockingDecisions: 0, primaryLabel: "Pause", holds }).text;
+  assert.equal(say("running", seat), "Answered. dev takes turns again. The mission never stopped.");
+  assert.equal(say("quiet", seat), "Answered. dev takes turns again; no agent is working right now.");
+  assert.equal(say("running", { scope: "mission" }), "Answered. The mission is running again.");
+  assert.equal(say("running", undefined), "Answered. The mission is running again.", "no record of what it held: the usual card");
+});
+
+test("a notice is acknowledged, not answered, and the mission it never held is not said to have started", () => {
+  const none = { scope: "nothing" } as const;
+  const say = (phase: string) => answerOutcome({ phase, blockingDecisions: 1, primaryLabel: "Continue", holds: none }).text;
+  assert.equal(say("running"), "Acknowledged. The mission carried on.");
+  assert.equal(say("quiet"), "Acknowledged. The mission is running; no agent is working right now.");
+  assert.equal(say("parked"), "Acknowledged. The project is parked, so nothing is running yet.", "the state is still the state");
+  assert.equal(say("needs-you"), "Acknowledged. 1 more decision still holds the mission.");
+  assert.equal(say("offline"), "Acknowledged, but the server stopped answering, so the mission's state is not known.");
+  for (const phase of ["running", "quiet", "stalled", "needs-you", "parked", "paused", "ceiling", "done", "failed", "offline", "loading"]) assert.doesNotMatch(say(phase), /^Answered/, phase);
 });
 
 test("a derived card links only to the requests it summarises that are still open", () => {
