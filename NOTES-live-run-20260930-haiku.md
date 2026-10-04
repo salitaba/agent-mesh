@@ -6,7 +6,7 @@ with no model or traced to a line. Open items, and the things a fix deliberately
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing loop's runs follow (every four hours to §21, once a day from §22 on, at the operator's request): §10 (G1–G3, G5, G6),
 §11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5), §20 (U1–U5, V1),
-§21 (W1–W4) and §22 (X1–X4). §18 is not a run: it records the rename to Curule.
+§21 (W1–W4), §22 (X1–X4) and §23 (Y1–Y3). §18 is not a run: it records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
 `mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
@@ -1830,3 +1830,103 @@ equivalents above (the two survivors of X2's first tests were closed by a test e
   nothing; the watchdog's note existed for the seat it woke.
 - **The one thing a loop must report honestly is what a person did.** Round 1 ended with my message to QA; a mesh that ends that way has not finished
   by itself, and the table says so.
+
+## 23. The seventeenth run, on the X-fixes build: three findings (Y1–Y3)
+
+The thirteenth cycle of the standing loop and the first at the daily cadence: the routine fired at 03:19 UTC on 2026-10-04. The same mission,
+SPEC, mesh config, model and clean launch environment, on the branch at `911ffa1` (its code is that of `6aa3ea8`): every fix of §0–§22. Session
+03:22–04:00 UTC: 52 turns, 1,085,983 billed tokens (about $4.93 at list price; `curule usage` and the analysis tool agree to the token), every
+turn on `claude-haiku-4-5`, 929 events, no escalation. Round 1 ran headless (`curule run --no-tui`); the reopen went through a parked console,
+and the restart after the kill ran on the same state directory. One run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 03:22:11 | `curule run` | five seats start |
+| 03:30:28 | goal met, 6/6 | 8 min 17 s after the launch (run 16: 32 min 33 s); 23 turns, 438.7k billed (run 16: 40 turns, 747.3k). **The mesh finished this round by itself**: nobody helped it and no seat escalated |
+| 03:38:49 | operator reopen quoting five defects and naming four criteria | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED |
+| 03:39:51 | `kill -9` of the host with the architect, the developer and QA mid-turn | three turns open, two seat processes orphaned |
+| 03:39:54 | restart, 3 s after the kill | the three open turns closed as interrupted, seven budget holds released, four seats woken for recovery; the reaper stopped the two orphans at 03:39:56.9 |
+| 04:00:23 | goal met again | 21 min 34 s after the reopen, 20 min 29 s after the restart; round 2: 29 turns, 647.3k billed (run 16: 21 turns, 398.6k). The developer's first mesh effect came 10 min 52 s after the reopen (Y1); the approved patch took 5 min 50 s to climb one rung, and 7 min 4 s to reach the merge, where round 1's had taken 30 s and 40 s (Y3) |
+
+**Quality** (the oracle of §2): round 1 scored 1466/2227 raw (65.8%) and 2891/2971 stratified (97.3%), against run 16's round 1 at 68.3% and 98.2%;
+the product's own suite was 54/54 and the CLI probes 23/23. Five families, all verified on the merged product before the reopen and quoted in it:
+**`*` as a list item is refused** (the defect of eleven of the thirteen runs from the fifth), **a month or day name in capitals that contains an `L` or a
+`W` is refused as Quartz syntax**, **a day range that reaches the 29th to the 31st is refused as one that can never fire** (`29-31`), **numbers that
+are not plain decimal digits are accepted and a repeated dash or slash is not refused** (`1.5`, `0x10`, `1-2-3`, `1/2/3`), and **the messages**. All five
+were fixed: the final product scored **2976/3049 raw (97.6%) and 3034/3034 stratified (100%)**, its own suite 99/99, the CLI probes 23/23, the soft
+message checks 74/76 (run 16: 57/76). The 73 raw failures left are one defect, the model's own and not one the reopen named: **a day field that merely
+contains `*` is read as unrestricted** (`*,5`, `*/2,*,*/1`), where SPEC says a day field is unrestricted "only if it is exactly `*`" and the day rule is
+then OR; it became reachable when the first family was fixed. 30 of 52 turns (57.7%, 44% of the billed tokens) changed no durable state (run 16: 45.9% and
+27.3%); five of them, 210.5k tokens (19% of the run), are Y1's.
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| W1 | held: the developer's handover turn (03:48:54, 39 s) booked 17,861 tokens, where the build before W1 booked 0 for six of eleven handovers |
+| W2 | held: QA claimed its verification task at 03:28:56, 4 s after the tech lead's merge, and the claim stood 1 min 21 s, until the report was published and the task completed (03:30:16.9: "QA verification completed. All 54 developer tests passed…"). X1, which refuses a `done` that completes nothing, was therefore not exercised |
+| W3 | **did not hold, a third run**: QA ran the developer's 54 tests and seven CLI commands (two `validate`, three `next` of which one with a bad date, no command, an unknown one), wrote "All library and CLI contracts verified" and no NOT TESTED section, and the oracle failed 761 of 2,227 checks |
+| W4 | the case it guards did not arise (the manifest was already merged, so the round-2 commits' diffs did not carry it); the one `dependency.changed` the run has, at the first commit, is Y2 |
+| V1 | held: `curule status` after both hosts had exited printed `[COMPLETED]` and `Tokens: 1085983 / 3000000` |
+| B23 | **exercised for the fifth time**: two orphaned seat processes after the kill and, at 03:39:56.9, "claude runtime: stopped 2 seat process(es) left running by a mesh process that died (pid 5446): 5862, 5953" |
+| B21, B22, M1 | held: the three open turns closed as interrupted ("turn abandoned by server restart"), "boot: released 7 budget hold(s) left open by a process that ended mid-turn", and the reopen put the four criteria it named back to UNSATISFIED |
+| U5 and the verdict route | held: an artifact id written from memory three times (the architect once, the tech lead twice) was refused with the list of what the seat owed a verdict on, and the next call carried the right id |
+| X2, X3, X4 | **not exercised**: no completion was refused (the developer's `mesh_task_complete` at 03:50:59 was accepted), no nudge preceded the acceptance (the merge's `goal.progress` woke the pm 52 s later and it accepted the last three criteria in one turn, 04:00:11–04:00:23), and every task was complete when the mission completed |
+| U3, P2 | the parked-patch nudge fired twice: 03:28:46, 4 s after MERGEABLE, to the tech lead, who merged six seconds later; and 03:56:24.7 to QA, which moved the patch 83 s later (Y3) |
+| U1, U2, U4, T2, T3, T5, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1 | **not exercised**: nothing here asked for what they guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| Y1 | **Two seats resumed after the kill and ended their turns without a mesh call.** When its bridge meets a dead host the CLI writes into the seat's transcript that the `mesh` server failed ("mesh bus unreachable: fetch failed"). Two of the three seats mid-turn at the kill carry it (QA's at 03:39:51.601 and the developer's at 03:39:52.101; the other ten seat transcripts, the architect's among them, carry none) and both resumed with it. QA did a full verification with its own tools (41.5k tokens; by its own count a regression file with 39 of 44 subtests failing) and ended on "Awaiting mesh recovery … The mesh bus is currently unavailable (`fetch failed`)", having called nothing; the developer fixed the five defects over three turns (151k tokens) and announced the calls it never made ("Now I'll call the mesh operations:", then `mesh_artifact_publish:` and its arguments, in 39 text blocks). The mesh saw no ops and discarded each turn (`no_ops`). QA's findings never reached anyone, and the developer's first mesh effect came 10 min 52 s after the reopen, from the fresh session a rotation gave it (the rotation's own handover turn, 17.9k, was discarded too). The tools were never gone: a copy of the stuck developer transcript, resumed against a stand-in `mesh` server with the real tool names, loaded them through ToolSearch and called `mesh_send` when asked | a `Stop` hook on every seat's session: a turn about to end with no `mcp__mesh__*` call is blocked once, with a reminder that says the mesh is running and its tools work and names the tool that reports each kind of result, and the turn carries on in the same session (a message pushed after the stop would be a second user turn and a second `result` frame, and the pump settles on the first). Once per turn (`endReminded` and the CLI's `stop_hook_active`), never for an interrupted turn or one the mesh is closing, and an operator's own `Stop` hooks run beside it. With the real CLI and the same stand-in, a fresh seat session told to reply OK and call no tool made no mesh call without the hook (2 of 2) and called mesh tools with it (2 of 2), for about 2k tokens more; round 1 of this run (23 turns) had no turn that ended without a mesh op, so a healthy run pays nothing | `tests/integration/claude-end-of-turn.test.ts` (9 tests); 27 mutant runs over three rounds, 25 killed. The two survivors were guards that cannot be reached (`t.timedOut`: a timeout marks the turn interrupted in the same statement; `t.settled`: settling clears the pending turn in the same synchronous block) and were removed, with a test added for the timeout path; the four mutants of the final guard are all killed |
+| Y2 | **The first manifest of a project with no dependency woke the architect.** The developer's first commit (03:26:23) created a `package.json` with a name, scripts, bin and keywords, and `dependency.changed` woke the architect for 7.2k tokens and nothing; runs 8 to 13 and 15 did the same | a `package.json` that the diff creates, whose added lines parse as JSON and name none of the dependency fields or `workspaces` (an empty one counting as none), is not a dependency change; a changed manifest (a few hunks of a file the section does not show), text that is not JSON, the other manifest kinds and what the manifest says to the authentication and authorization kinds are read as before | `tests/core/change-events-since-last-commit.test.ts` (10 tests, five of them new, five existing ones changed to a manifest that names a dependency); 22 mutants, 20 killed at first, the survivors a changed manifest read as exempt (a whole-file rewrite now kills it) and a `.slice(1)` the `+` filter made redundant (removed); 21 of 21 killed on the final code |
+| Y3 | **The note to the owner of an approved patch said "needs VERIFIED next, and only you can move it there", and the developer read VERIFIED as a verdict to wait for.** The tech lead approved v4 at 03:51:57; the developer (a rotated session) tried two `mesh_approve` passes on its own patch (refused: it holds no such authority), asked for a review of the patch it believed was QA's to give (`mesh_call review.artifact` with no `reviewers`: the mesh picked the tech lead and the reply, `{"ok":true,"messageId":…}`, did not say so, so the tech lead was woken for a second approval, 12.7k tokens) and waited. The tech lead's INFORM asking the developer to transition (03:53:18) obliged nobody and was read when the stale-mail floor woke the developer, 4 min 36 s later. QA, woken by the watchdog at 03:56:24.7, moved the patch itself (03:57:48 and 03:57:57) and the tech lead merged at 03:59:02: 5 min 50 s to climb a rung that round 1's developer took in 30 s with the same note. "Only you" was never so: a seat with `test.execute`, `security.review` or `implementation.approve` may take the VERIFIED rung | the note is computed from the policy it describes: when the policy lets the owner make the move it names the call (`mesh_artifact_transition` with the artifact id and the rung) and says that nothing else is needed for it; when it does not it gives the policy's own reason and, only when the reason is a missing capability, the seats that may (a configured gate or a standing block binds every seat alike, so none is named) | `tests/policy/owner-verdict-notice.test.ts` (8 tests, four of them new, one changed); 17 mutants, all killed (one of the first 16 failed only to compile and was rerun type-safe) |
+
+What each does and why is in `docs/runtime.md` (the end-of-turn reminder; what a commit announces) and `docs/protocol.md` (the owner's wake); the commit
+messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **QA's breadth did not change with the wording, a third run.** Runs 15, 16 and 17 had QA run the developer's suite and a few commands and list the
+  contract as verified; this time the oracle then failed 761 of 2,227 checks. A rule that refused a pass without a NOT TESTED section would police the
+  shape of a report and not what was run. The reopen that names the families works (runs 12 to 14, 16 and 17: five quoted, five fixed); a suite or an
+  oracle handed to QA is the next thing to try, and it is the customer's to provide.
+- **Y1's effect in a live mesh is not yet seen.** It needs the same coincidence (a seat whose transcript carries the failed-server record: two of twelve here,
+  and the architect, also mid-turn, did not), and the check above is two runs on a fresh session with an instruction that was the opposite of the reminder: it
+  shows the block works and is obeyed, not how often a real stuck seat complies. A seat that narrates again after the reminder is not stopped a second time (once per
+  turn), and its turn is discarded as before. The reminder costs about 2k tokens when it fires.
+- **A review asked of a seat that has already ruled is still sent.** In runs 14, 15 and 17 the developer asked the tech lead to review a patch the tech lead
+  had approved (the woken turns cost 10.1k, 21.1k, which merged the patch, and 12.7k). `review.artifact` advertises an `already-reviewed` refusal and nothing
+  implements it; it was left alone because a second seat's approval can be a gate's requirement, so "approved" does not mean "nothing left to ask", and
+  because in run 15 the ask was how a merge got requested. The reply to a review asked with no reviewer named still does not say whom the mesh picked.
+- **The nudge for the parked patch waited for two gates that opened together.** It came 300.0 s after the previous nudge (the cooldown) and 180 s after the
+  tech lead's second turn ended (the idle window), within 0.3 s of each other. X3's lesson, that a cooldown belongs to a situation, applies to a parked
+  patch as it did to an acceptance, but here lifting it would have bought nothing: the idle window ran out at the same moment.
+- **Y3 changes a sentence.** Of the nine patch approvals of runs 14 to 17 the tech lead climbed five itself, in the approving turn (0.3 to 2.9 s), the
+  developer climbed three after the note (11 s, 30 s and 2 min 1 s) and this one was QA's (5 min 50 s): one miss in four for the sentence. Whether the next
+  developer given the call climbs the rung is for the next run.
+- **The residual day-rule defect and the messages** (74/76) are the product's, not the mesh's.
+- **One run.** Y1 and Y3 in a live mesh are for the next run.
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `911ffa1`, before this round | 3625 | 3623 | 0 | 0 | 2 |
+| this round, final (the test run: 3 min 39 s) | 3643 | 3641 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (189 warnings, one rule). Mutation checks, each reverted: Y1 (27 runs, 25 killed, the two survivors
+removed as unreachable), Y2 (22, 21 on the final code) and Y3 (17): every one now fails a test.
+
+### Worth keeping from this round
+
+- **A transcript is a memory, and a crash writes into it.** The CLI recorded that the server failed, which was true for a second. QA's resumed session read it
+  as current ("the mesh bus is currently unavailable"); the developer's wrote "Mesh is back!" and still typed its calls as prose, and why is not known (its
+  fourth turn found `mesh_send` through ToolSearch and called it). The fix keys on the symptom, a turn that ended without a call to the mesh, and not on a
+  cause only half understood, so it covers the next record of the same kind.
+- **Read the transcript, not the log.** The log said `no_ops`, four times; the transcripts said why (and showed that the two seats had said different things:
+  QA believed the mesh was down, the developer wrote calls as prose). My first hypothesis, that the tools were lost on resume, was wrong, and a probe
+  with a stand-in server settled it before any code was written.
+- **A sentence a seat acts on has to be as true as the policy.** "Only you can move it there" was wrong for the VERIFIED rung (the tech lead took it five
+  times in runs 14 and 16, QA in this one); the note is now computed from the same `evaluateTransition` the transition goes through.
+- **A mutation survivor is sometimes a line that should not exist.** Two guards of the hook and the `.slice(1)` of Y2 survived because they could not be
+  reached; deleting them left less to read than a test that pinned them would have.

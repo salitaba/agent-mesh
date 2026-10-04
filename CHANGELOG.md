@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 22) are described there, run by run.
+sections 1 to 23) are described there, run by run.
 
 ## Unreleased
 
@@ -86,6 +86,23 @@ sections 1 to 22) are described there, run by run.
   on every page, so a seat reading a report to cite it learns that it is a draft, and whom to ask, from the read.
 
 ### Fixed
+
+- A seat that is about to end a turn without having called a single mesh tool is told, once and in the same turn, that the mesh is
+  running and which tool reports what. After a `kill -9` and a restart the seventeenth run's QA and developer resumed sessions that
+  carried the CLI's record that the mesh server had failed ("mesh bus unreachable: fetch failed"), did their work with their own
+  tools and ended each turn on prose ("Awaiting mesh recovery", "Now I'll call the mesh operations:"); the mesh discarded four turns
+  (QA's 41.5k tokens, the developer's three, 151k), nothing either found reached anyone, and the developer's first mesh call came
+  10 min 52 s after the reopen, from the fresh session a rotation gave it. The reminder is a `Stop` hook, so the turn goes on in the
+  same session and is billed once; it is given once per turn and never to a turn the mesh is interrupting or closing.
+- The note to the owner of a patch that has just been approved names the call that moves it. It said "needs VERIFIED next, and only you
+  can move it there", which was never so (any seat with `test.execute`, `security.review` or `implementation.approve` may take that
+  rung) and which the seventeenth run's developer read as a verdict to wait for: two refused `mesh_approve` passes on its own patch, a
+  review asked of a patch that was already approved, and 5 min 50 s to climb a rung that round 1's developer took in 30 s. The note now
+  says `mesh_artifact_transition` with the artifact id and the rung, and that nothing else is needed, when the policy lets the owner make
+  the move; otherwise it gives the policy's reason and, for a missing capability, the seats that may.
+- A `package.json` created with no dependency in it is no longer announced as a dependency change. The first manifest of a project
+  that has none (every cronlite run) woke the architect in most runs, 7.2k tokens in the seventeenth, and nothing came of it. A changed
+  manifest, one that names a dependency (or workspaces) and the other manifest kinds are announced as before.
 
 - A `mesh_done` in a turn that called `mesh_wait` and made nothing (no artifact, commit, merge, review request, verdict, task or
   decision) no longer completes the task its seat holds while a mandatory criterion is unmet. QA's verification task was completed on its
