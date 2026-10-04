@@ -64,6 +64,11 @@ const ICONS = {
   "arrow-up": (<path d="M10 16V4.5M5 9.2l5-4.7 5 4.7" />),
   // Live views
   "arrow-down": (<path d="M10 4v12M5 11l5 5 5-5" />),
+  // Designer
+  redo: (<><path d="M13 4.5l3.2 3.2L13 10.9" /><path d="M16 7.7H8.8a4.6 4.6 0 0 0 0 9.2h4.7" /></>),
+  "arrow-right": (<path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" />),
+  arrange: (<><rect x="3.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="3.5" y="11.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="11.5" width="5" height="5" rx="1.3" /></>),
+  expand: (<path d="M3.5 8V4.5a1 1 0 0 1 1-1H8M12 3.5h3.5a1 1 0 0 1 1 1V8M16.5 12v3.5a1 1 0 0 1-1 1H12M8 16.5H4.5a1 1 0 0 1-1-1V12" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

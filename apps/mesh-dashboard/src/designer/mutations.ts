@@ -20,7 +20,7 @@
 
 import { parse as parseYaml } from "yaml";
 import type { StagedMutation, StagedProposal } from "@mesh/protocol";
-import { summarizeDiff } from "./model";
+import { summarizeDiff } from "./diff";
 
 /** Where an applied mutation actually lands. See the file header: these are
  *  not interchangeable, and the UI must keep them visibly distinct. */

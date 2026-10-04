@@ -1,10 +1,12 @@
-/* Inspector column: tab bar (Crew / Mesh / Policy & budget) + active panel.
+/* Inspector column: tab bar (Seat / Mesh / Policy) + active panel.
  * Error counts per tab come from validation routing. */
 
 import CrewPanel from "./panels/CrewPanel";
 import MeshPanel from "./panels/MeshPanel";
 import PolicyPanel from "./panels/PolicyPanel";
+import { TabPanel, Tabs, type TabDef } from "../components";
 import type { DCtx, Tab } from "./types";
+import "./inspector.css";
 
 export interface InspectorProps {
   ctx: DCtx;
@@ -13,42 +15,20 @@ export interface InspectorProps {
   errTabs: Record<Tab, number>;
 }
 
-const TABS: Array<[Tab, string]> = [["crew", "Crew"], ["mesh", "Mesh"], ["policy", "Policy & budget"]];
+const TABS: Array<[Tab, string, string]> = [
+  ["crew", "Seat", "The selected seat: its role, tools, wires and budget"],
+  ["mesh", "Mesh", "The goal, the done-when checks, the runtime and the scheduler"],
+  ["policy", "Policy", "Gates, escalation and the mission budget"],
+];
 
 export default function Inspector({ ctx, tab, setTab, errTabs }: InspectorProps): React.JSX.Element {
+  const tabs: TabDef[] = TABS.map(([id, label, hint]) => ({ id, label, hint, badge: errTabs[id] || undefined, badgeHot: errTabs[id] > 0 }));
   return (
-    <aside className="card ms-insp" aria-label="inspector">
-      <div className="insp-tabs" role="tablist">
-        {TABS.map(([k, label], i) => (
-          <button
-            key={k}
-            id={`insp-tab-${k}`}
-            role="tab"
-            aria-selected={tab === k}
-            aria-controls="insp-panel"
-            tabIndex={tab === k ? 0 : -1}
-            className={tab === k ? "on" : ""}
-            onClick={() => setTab(k)}
-            onKeyDown={(e) => {
-              const n = e.key === "ArrowRight" ? (i + 1) % TABS.length
-                : e.key === "ArrowLeft" ? (i - 1 + TABS.length) % TABS.length
-                : e.key === "Home" ? 0
-                : e.key === "End" ? TABS.length - 1
-                : -1;
-              if (n < 0) return;
-              e.preventDefault();
-              const next = TABS[n][0];
-              setTab(next);
-              document.getElementById(`insp-tab-${next}`)?.focus();
-            }}
-          >
-            {label}{errTabs[k] ? <span className="sec-badge">{errTabs[k]}</span> : null}
-          </button>
-        ))}
-      </div>
-      <div className="insp-body" id="insp-panel" role="tabpanel" tabIndex={0} aria-labelledby={`insp-tab-${tab}`}>
+    <aside className="card ms-insp" aria-label="Inspector">
+      <Tabs idPrefix="insp" label="Inspector" tabs={tabs} value={tab} onChange={(id) => setTab(id as Tab)} />
+      <TabPanel idPrefix="insp" id={tab}>
         {tab === "crew" ? <CrewPanel ctx={ctx} /> : tab === "mesh" ? <MeshPanel ctx={ctx} /> : <PolicyPanel ctx={ctx} />}
-      </div>
+      </TabPanel>
     </aside>
   );
 }

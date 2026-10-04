@@ -1,15 +1,25 @@
 /* Model facts + pure helpers: known capability list, mesh defaults, starter
- * templates, schema padding (densure), diff summary, source-of-truth state and
- * error routing. No React here — import from anywhere. */
+ * templates, schema padding (densure) and error routing. No React here — import
+ * from anywhere. What changed between two configs lives in ./diff, what a seat or
+ * wire edit does in ./edits. */
 
-import { CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
-import type { SaveTarget, Tab } from "./types";
+import { AUTHORITY_DOMAINS, AUTHORITY_TOKENS, AUTHORITY_VERBS, CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
+import { locateIssue } from "./locate";
+import type { Tab } from "./types";
 
 /* Derived, not duplicated: this list was hand-maintained and drifted — it was
  * missing `request_review`, so the designer could not offer a token the runtime
  * accepts. Sourcing it from the runtime's own catalog makes that class of drift
  * impossible rather than merely fixed once. */
 export const CAPS: string[] = [...CAPABILITY_TOKENS];
+
+/** What a seat may hold as authority, from the same catalogue the runtime checks: a token outside it grants nothing. */
+export const AUTHORITY = {
+  domains: AUTHORITY_DOMAINS as readonly string[],
+  /** The verbs the grid offers. `*` is the wildcard the human seat holds; it is shown when a file has it, not offered as a switch. */
+  verbs: AUTHORITY_VERBS.filter((v) => v !== "*") as readonly string[],
+  tokens: AUTHORITY_TOKENS,
+};
 
 /* Capability → permissions group. Explicit for every known CAPS entry because
  * the name and the prefix don't always agree (`code.review` is Review, not
@@ -158,6 +168,8 @@ export interface Template {
   key: string;
   name: string;
   desc: string;
+  /** How many seats it brings, so the picker can say so without building one. */
+  seats: number;
   make: () => any;
 }
 
@@ -188,7 +200,7 @@ function tplSolo(): any {
 }
 
 function tplTriad(): any {
-  const m = baseMesh("my-mesh", "My Mesh", "Describe the mission goal here.", "stub");
+  const m = baseMesh("my-mesh", "My Mesh", GOAL_PLACEHOLDER, "stub");
   m.startup.activate = ["architect"];
   m.agents.architect = {
     role: "architect", capabilities: ["repository.read", "architecture.write", "review.design", "code.review"], authority: ["architecture.approve", "implementation.approve"],
@@ -253,92 +265,27 @@ function tplSquad(): any {
 }
 
 export const TEMPLATES: Template[] = [
-  { key: "solo", name: "Solo builder", desc: "one agent, no gates", make: tplSolo },
-  { key: "triad", name: "Triad", desc: "architect · developer · qa", make: tplTriad },
-  { key: "squad", name: "Full squad", desc: "7 roles, review + release gates", make: tplSquad },
+  { key: "solo", name: "Solo builder", desc: "One seat that designs, builds and tests. No gates.", seats: 1, make: tplSolo },
+  { key: "triad", name: "Triad", desc: "An architect, a developer and a tester, with a merge gate.", seats: 3, make: tplTriad },
+  { key: "squad", name: "Full squad", desc: "Seven roles with review and release gates.", seats: 7, make: tplSquad },
 ];
 
-/* ---------------- diff summary (review before save) ---------------- */
+/* ---------------- the goal a scaffold starts with ---------------- */
 
-export function summarizeDiff(cur: any, base: any | null): string[] {
-  if (!base) return [];
-  const out: string[] = [];
-  if (cur?.mesh?.id !== base?.mesh?.id) out.push(`mesh id “${base?.mesh?.id}” → “${cur?.mesh?.id}”`);
-  if ((cur?.mesh?.goal || "") !== (base?.mesh?.goal || "")) out.push("goal text changed");
-  if (JSON.stringify(cur?.mesh?.defaults || {}) !== JSON.stringify(base?.mesh?.defaults || {})) out.push("agent defaults changed");
-  const ca = Object.keys(cur?.agents || {});
-  const ba = Object.keys(base?.agents || {});
-  for (const id of ca.filter((x) => !ba.includes(x))) out.push(`agent +${id}`);
-  for (const id of ba.filter((x) => !ca.includes(x))) out.push(`agent −${id}`);
-  for (const id of ca.filter((x) => ba.includes(x))) {
-    const keys = new Set([...Object.keys(cur.agents[id] || {}), ...Object.keys(base.agents[id] || {})]);
-    const changed = [...keys].filter((k) => JSON.stringify((cur.agents[id] || {})[k]) !== JSON.stringify((base.agents[id] || {})[k]));
-    if (changed.length) out.push(`agent ~${id} (${changed.join(", ")})`);
-  }
-  const ct = cur?.policies?.transitions || {};
-  const bt = base?.policies?.transitions || {};
-  for (const g of Object.keys(ct).filter((x) => !(x in bt))) out.push(`gate +${g}`);
-  for (const g of Object.keys(bt).filter((x) => !(x in ct))) out.push(`gate −${g}`);
-  for (const g of Object.keys(ct).filter((x) => x in bt)) {
-    if (JSON.stringify(ct[g]) !== JSON.stringify(bt[g])) out.push(`gate ~${g}`);
-  }
-  if (JSON.stringify(cur?.policies?.communication || {}) !== JSON.stringify(base?.policies?.communication || {})) out.push("wiring changed");
-  if (JSON.stringify(cur?.startup?.activate || []) !== JSON.stringify(base?.startup?.activate || [])) {
-    out.push(`startup: ${(base?.startup?.activate || []).join(", ") || "none"} → ${(cur?.startup?.activate || []).join(", ") || "none"}`);
-  }
-  if (JSON.stringify(cur?.budgets?.mission) !== JSON.stringify(base?.budgets?.mission)) {
-    out.push(`mission budget → ${fmtNum(cur?.budgets?.mission?.tokens)} tokens / ${fmtNum(cur?.budgets?.mission?.wall_clock_minutes)} min / ${fmtNum(cur?.budgets?.mission?.max_events)} events`);
-  }
-  return out;
-}
+/** What `curule init` and the Triad template write as a goal. A mesh that still says this has no goal yet, and the Designer says so. */
+export const GOAL_PLACEHOLDER = "Describe the mission goal here.";
 
-/* ---------------- source-of-truth state (draft vs running file vs process) ---------------- */
+/** True for an empty goal and for the scaffold's own placeholder. */
+export const goalIsPlaceholder = (goal: unknown): boolean => {
+  const g = typeof goal === "string" ? goal.trim() : "";
+  return g === "" || g === GOAL_PLACEHOLDER;
+};
 
-export type SourceStateKind = "NEW" | "MATCHES_RUNNING_FILE" | "DIFFERS" | "RESTORED_DRAFT" | "COPY_SAVED";
-
-export interface SourceState {
-  kind: SourceStateKind;
-  /** Differences from the running file when known (meaningful for DIFFERS). */
-  n: number;
-  /** Unsaved edits vs the loaded baseline — NOT the same as differing from running. */
-  dirty: boolean;
-  /** Active save target; "copy" means the running FILE and live process stay untouched. */
-  target: SaveTarget;
-  /** Whether a running file/process is known; false means new mesh or offline. */
-  hasRunning: boolean;
-}
-
-export interface SourceStateInput {
-  dirty: boolean;
-  diff: string[];
-  runningRaw: any | null;
-  saveMode: SaveTarget;
-  restoredAt: number | null;
-}
-
-/**
- * Pure selector for the local draft ↔ saved running file ↔ live process state.
- * Precedence: restored draft > new mesh > copy target > differs > matches.
- * `dirty` upgrades a clean diff to DIFFERS because summarizeDiff can miss
- * nested fields; copy mode never claims to match or differ from the runtime.
- */
-export function sourceState({ dirty, diff, runningRaw, saveMode, restoredAt }: SourceStateInput): SourceState {
-  const n = diff.length;
-  const base = { n, dirty, target: saveMode, hasRunning: runningRaw != null };
-  if (restoredAt !== null) return { ...base, kind: "RESTORED_DRAFT" };
-  if (!runningRaw) return { ...base, kind: "NEW" };
-  if (saveMode === "copy") return { ...base, kind: "COPY_SAVED" };
-  if (n > 0 || dirty) return { ...base, kind: "DIFFERS" };
-  return { ...base, kind: "MATCHES_RUNNING_FILE" };
-}
+/** The longest goal the schema accepts (`mesh.goal.maxLength`). */
+export const GOAL_MAX = 2000;
 
 /* ---------------- error → inspector tab routing ---------------- */
 
 export function tabOfError(e: string): Tab {
-  const s = e.toLowerCase();
-  if (s.includes("transition") || s.includes("escalation") || s.includes("budget")) return "policy";
-  if (s.includes("communication") || s.includes("may_contact") || s.includes("may_be_contacted") || s.includes("startup") || s.includes("activate") || s.includes("agent") || s.includes("interest")) return "crew";
-  return "mesh";
+  return locateIssue(e, []).tab;
 }
-
-

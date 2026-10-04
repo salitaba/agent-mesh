@@ -1,0 +1,135 @@
+/* ============ The canvas, the seat cards, the wires, and the phone's seat list ============
+ * Tokens only. Selection, hover and focus share one family: a selected seat is an accent edge and a faint accent wash, hover is the
+ * accent edge, focus is the console's own 2px ring (styles.css :focus-visible), so a seat that is selected and focused shows both
+ * and none of the three is a different colour from the others. A wire is a control edge (3:1 against the stage) at rest, accent
+ * when it belongs to the selected seat, and fades to a quarter when the person is looking at another seat. */
+
+.ms-canvas { display: flex; flex-direction: column; gap: var(--s2-5); padding: var(--s3); min-width: 0; }
+.ms-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.ms-tool-hint { flex: 1 1 240px; min-width: 0; text-align: right; font: var(--tx-meta); color: var(--muted); }
+
+/* The stage keeps the unit space's aspect ratio (geom.ts), so the pixels a card is drawn in map to one scale. */
+.ms-stage-wrap { min-width: 0; }
+/* Never wider than a window can hold whole: on a short screen the canvas is a smaller canvas, not one that has to be scrolled to see its lower seats.
+   1.6129 is the unit space's width over its height (1000 / 620); 330px is the page above the stage and the bar below it. */
+.ms-stage {
+  position: relative; width: min(100%, max(560px, calc((100dvh - 330px) * 1.6129))); margin-inline: auto; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: radial-gradient(circle, var(--line) 1px, transparent 1.5px) 0 0 / 26px 26px, var(--bg);
+}
+.ms-stage.wiring { cursor: crosshair; }
+.ms-wires { position: absolute; inset: 0; display: block; }
+.ms-nodes { position: absolute; inset: 0; pointer-events: none; }
+
+.ms-keys-anchor { position: relative; display: inline-flex; }
+.ms-keys { width: min(440px, calc(100vw - 2 * var(--s4))); right: auto; left: 0; }
+.ms-keys dl { display: flex; flex-direction: column; gap: var(--s2); margin: 0; }
+.ms-keys dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--s3); align-items: baseline; }
+.ms-keys dt { margin: 0; }
+.ms-keys dd { margin: 0; font: var(--tx-value); color: var(--text-dim); }
+.ms-keys .ms-hint { margin: 0; }
+
+/* ---------- wires ---------- */
+.ms-pair .line { fill: none; stroke: var(--line-control); stroke-width: 1.5px; pointer-events: none; transition: stroke .12s, opacity .12s; }
+.ms-pair .hit { fill: none; stroke: transparent; stroke-width: 16px; pointer-events: stroke; cursor: pointer; }
+.ms-pair:hover .line { stroke: var(--accent); stroke-width: 2px; }
+.ms-pair.rel .line { stroke: var(--accent); stroke-width: 2px; }
+.ms-pair.dim .line { opacity: .28; }
+.ms-pair.dim:hover .line { opacity: 1; }
+.ms-pair.sel .line { stroke: var(--accent); stroke-width: 3px; opacity: 1; }
+.ms-pair.sel .hit { stroke: color-mix(in srgb, var(--accent) 16%, transparent); }
+.ms-wires .guide { fill: none; stroke: var(--accent); stroke-width: 2px; stroke-dasharray: 6 6; pointer-events: none; }
+
+.ms-wire-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.ms-cut {
+  display: inline-flex; align-items: center; gap: var(--s1); min-height: 32px; max-width: 100%; padding: 0 var(--s3);
+  border: 1px solid transparent; border-radius: var(--r-sm); background: var(--bad); color: var(--text-on-hot);
+  font: 600 13px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.ms-cut:hover { filter: brightness(1.08); }
+
+/* ---------- seats ---------- */
+.ms-node { position: absolute; z-index: 2; width: var(--card-w); height: var(--card-h); transform: translate(-50%, -50%); pointer-events: auto; }
+.ms-seat {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--s2);
+  width: 100%; height: 100%; padding: 0 var(--s3) 0 var(--s2); margin: 0;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-control); border-radius: var(--r);
+  font: inherit; text-align: left; cursor: grab; touch-action: none; user-select: none;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.ms-seat:active { cursor: grabbing; }
+.ms-seat:hover { border-color: var(--accent); }
+.ms-seat[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.ms-seat.err { border-color: var(--bad); }
+.ms-seat.svc { border-style: dashed; }
+.ms-node.from .ms-seat { border-color: var(--accent); border-style: dashed; }
+.ms-node.drop .ms-seat { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.ms-seat .avatar { flex: none; }
+.ms-seat-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.ms-seat-top { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; }
+.ms-seat .nm { display: block; min-width: 0; font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat .rl { display: block; font: 12px var(--sans); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-flags { display: inline-flex; flex: none; align-items: center; gap: var(--s1); }
+.flag-bad { color: var(--bad); }
+.flag-start { color: var(--ok); }
+
+/* The wiring handle: a 24px target on the card's right edge, there when the seat is hovered, focused or selected. It is a sibling of the
+   card, not a child, because a button inside a button is the defect this canvas was rebuilt to remove. */
+.ms-handle {
+  position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--accent); border-radius: 50%; background: var(--accent); color: var(--text-on-accent);
+  cursor: crosshair; opacity: 0; touch-action: none; transition: opacity .12s;
+}
+.ms-node:hover .ms-handle, .ms-node:focus-within .ms-handle, .ms-node.sel .ms-handle, .ms-node.from .ms-handle { opacity: 1; }
+.ms-stage.wiring .ms-handle { display: none; }
+
+/* ---------- foot of the canvas ---------- */
+.ms-stage-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4); margin: 0; font: var(--tx-meta); color: var(--muted); }
+.ms-stage-foot b { color: var(--text); font-family: var(--mono); }
+.ms-legend { display: inline-flex; align-items: center; gap: var(--s1-5); }
+
+/* ---------- a mesh with no seat ---------- */
+.ms-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s3); padding: var(--s4); }
+.ms-stage > .ms-empty { position: absolute; inset: 0; z-index: 4; overflow: auto; background: color-mix(in srgb, var(--bg) 82%, transparent); }
+.ms-templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s2); width: min(700px, 100%); }
+.ms-template {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); padding: var(--s3) var(--s3-5);
+  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r); color: var(--text); text-align: left; cursor: pointer;
+  font: var(--tx-value);
+}
+.ms-template:hover { border-color: var(--accent); }
+.ms-template b { font-weight: 600; }
+.ms-template span { color: var(--text-dim); font: var(--tx-meta); }
+.ms-template em { font: 600 11px var(--sans); font-style: normal; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+/* ---------- the phone's seat list ---------- */
+.ms-seats { display: flex; flex-direction: column; gap: var(--s3); }
+.ms-seats-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.ms-seats-head h3 { margin: 0; }
+.ms-seatlist { display: flex; flex-direction: column; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.ms-seatrow {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--s3);
+  width: 100%; min-height: 60px; padding: var(--s2-5) var(--s3); text-align: left; cursor: pointer;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-control); border-radius: var(--r); font: inherit;
+}
+.ms-seatrow:hover { border-color: var(--accent); }
+.ms-seatrow.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.ms-seatrow.err { border-color: var(--bad); }
+.ms-seatrow-text { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.ms-seatrow-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); min-width: 0; }
+.ms-seatrow .nm { min-width: 0; font: 600 14px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seatrow .rl { font: var(--tx-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seatrow-meta { font: var(--tx-meta); color: var(--muted); white-space: nowrap; }
+.ms-flag { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px var(--s2); border-radius: 999px; font: 600 11px var(--sans); color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
+.ms-flag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.ms-seatrow-go { color: var(--muted); }
+.ms-seats-note { margin: 0; font: var(--tx-meta); color: var(--muted); }
+
+@media (max-width: 760px) {
+  .ms-canvas { padding: var(--s2-5); }
+}

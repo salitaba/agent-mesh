@@ -2,27 +2,35 @@
  * re-fetching the running mesh) plus localStorage mirrors for the draft + node
  * positions. The store is a module singleton with useSyncExternalStore
  * subscriptions; `model` is still mutated in place by the designer's edit
- * handlers, so every commit must replace the snapshot wrapper to notify. */
+ * handlers, so every commit must replace the snapshot wrapper to notify.
+ *
+ * The undo history lives here too, for the same reason the draft does: it used to
+ * be component state, so leaving the Designer forgot every step. */
 
 import { useSyncExternalStore } from "react";
-import { CX, CY } from "./geom";
-import type { Pos, SaveTarget } from "./types";
+import { emptyHistory, type History } from "./history";
+import { defaultLayout } from "./topology";
+import type { Pos } from "./types";
 
 export interface DraftState {
   model: any | null;
   cur: string | null;
   layout: Record<string, Pos>;
+  /** Absolute path of the project's mesh.yaml, "" when no file is known. */
   runningPath: string;
+  /** The file as the server last returned it: what the draft is compared with and saved over. */
   runningRaw: any | null;
-  saveMode: SaveTarget;
+  /** Where "Save a copy" writes, relative to the project folder; "" until the person picks. */
   copyPath: string;
   loaded: boolean;
+  history: History;
 }
 
 const INITIAL: DraftState = {
   model: null, cur: null, layout: {},
   runningPath: "", runningRaw: null,
-  saveMode: "copy", copyPath: "examples/my-mesh/mesh.yaml", loaded: false,
+  copyPath: "", loaded: false,
+  history: emptyHistory(),
 };
 
 let snapshot: DraftState = INITIAL;
@@ -57,15 +65,15 @@ const DRAFT_KEY = "mesh-designer-draft-v2";
 
 export function storeDraft(): void {
   try {
-    const { model, saveMode, copyPath } = snapshot;
+    const { model, copyPath } = snapshot;
     if (!model) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), model, saveMode, copyPath }));
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), model, copyPath }));
   } catch {
     /* storage may be unavailable */
   }
 }
 
-export function readStored(): { ts: number; model: any; saveMode?: SaveTarget; copyPath?: string } | null {
+export function readStored(): { ts: number; model: any; copyPath?: string } | null {
   try {
     const s = JSON.parse(String(localStorage.getItem(DRAFT_KEY) || "null"));
     return s && s.model ? s : null;
@@ -88,19 +96,7 @@ export function layoutKey(meshId: string): string {
   return `mesh-designer-layout:${meshId || "default"}`;
 }
 
-function circleLayout(ids: string[]): Record<string, Pos> {
-  const out: Record<string, Pos> = {};
-  const n = ids.length;
-  if (!n) return out;
-  const R = n === 1 ? 0 : Math.min(255, 110 + n * 22);
-  ids.forEach((id, i) => {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    out[id] = { x: CX + R * Math.cos(a), y: CY + R * 0.72 * Math.sin(a) };
-  });
-  return out;
-}
-
-/** Saved positions win where they exist; everything else sits on a circle. */
+/** Saved positions win where they exist; everything else is placed by the default arrangement. */
 export function loadLayout(meshId: string, ids: string[]): Record<string, Pos> {
   let saved: Record<string, Pos> = {};
   try {
@@ -108,20 +104,43 @@ export function loadLayout(meshId: string, ids: string[]): Record<string, Pos> {
   } catch {
     saved = {};
   }
-  const out = circleLayout(ids);
+  const out = defaultLayout(ids);
   for (const id of ids) if (saved[id] && Number.isFinite(saved[id].x) && Number.isFinite(saved[id].y)) out[id] = saved[id];
   return out;
 }
 
-export function saveLayout(meshId: string, layout: Record<string, Pos>): void {
+/** Positions are saved for the seats that exist: a seat that was deleted does not leave a stale place behind. */
+export function saveLayout(meshId: string, layout: Record<string, Pos>, ids?: string[]): void {
   try {
-    localStorage.setItem(layoutKey(meshId), JSON.stringify(layout));
+    const keep = ids ? Object.fromEntries(Object.entries(layout).filter(([id]) => ids.includes(id))) : layout;
+    localStorage.setItem(layoutKey(meshId), JSON.stringify(keep));
   } catch {
     /* noop */
   }
 }
 
-/** A fresh ring layout, used by "arrange" and as the base for new meshes. */
+/** A fresh default arrangement, used by "Arrange" and as the base for new meshes. */
 export function ringLayout(ids: string[]): Record<string, Pos> {
-  return circleLayout(ids);
+  return defaultLayout(ids);
+}
+
+/* ---------------- small preferences ---------------- */
+
+const GUIDE_KEY = "mesh-designer-guide-hidden";
+
+export function guideHidden(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setGuideHidden(hidden: boolean): void {
+  try {
+    if (hidden) localStorage.setItem(GUIDE_KEY, "1");
+    else localStorage.removeItem(GUIDE_KEY);
+  } catch {
+    /* noop */
+  }
 }

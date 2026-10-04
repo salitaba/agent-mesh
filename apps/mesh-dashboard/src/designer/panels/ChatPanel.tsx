@@ -7,13 +7,13 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { parse as parseYaml } from "yaml";
 import type { StagedMutation } from "@mesh/protocol";
-import { summarizeDiff } from "../model";
+import { summarizeDiff } from "../diff";
 import { confirmationFor, confirmationSatisfied, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
 import { getDraftSnapshot, type DraftState } from "../storage";
-import { setPendingProposal } from "../../commands";
+import { list as listCommands, setPendingProposal } from "../../commands";
 
 /* Diffs are pure but not cheap; streamed tokens re-render the panel on every
  * delta, so cache each proposal's diff until the draft store commits again. */
@@ -26,6 +26,15 @@ function proposalDiff(proposed: any, snapshot: DraftState): string[] {
   DIFF_CACHE.set(proposed, { snapshot, diff });
   return diff;
 }
+
+/** What was typed and not sent, kept while the page lives: closing the panel (Esc) must not throw a half-written message away. */
+let UNSENT = "";
+
+/** Undo the Designer's last step, when the Designer is on the page to do it. */
+const designerUndo = (): (() => void) | null => {
+  const cmd = listCommands().find((c) => c.id === "designer.undo");
+  return cmd ? () => cmd.run() : null;
+};
 
 export default function ChatPanel(): React.JSX.Element {
   const { client, toast, setView, status } = useMesh();
@@ -42,7 +51,8 @@ export default function ChatPanel(): React.JSX.Element {
       criteria: (g.acceptanceCriteria ?? []).map((c: any) => ({ id: String(c?.id ?? ""), description: String(c?.description ?? "") })),
     };
   }, [status?.goal]);
-  const [input, setInput] = useState("");
+  const [input, setInputState] = useState(UNSENT);
+  const setInput = (v: string): void => { UNSENT = v; setInputState(v); };
   /* Per-entry state for the live-run card: the typed confirmation, and the
    * server's own report. Local rather than in chatStore on purpose — applying
    * to a running mesh is an action taken now, not part of the transcript that
@@ -69,7 +79,7 @@ export default function ChatPanel(): React.JSX.Element {
     setPendingProposal(proposed);
     markApplied(i);
     setView("designer");
-    toast("designer chat", "proposal applied to the draft — review and save", "ok");
+    toast("Draft updated", "The proposal is in your draft. Nothing is saved yet.", "ok");
   };
 
   /* A staged config.replace carries YAML; the Designer's draft path wants a
@@ -82,7 +92,7 @@ export default function ChatPanel(): React.JSX.Element {
     try {
       model = parseYaml(rep.yaml);
     } catch (err) {
-      toast("designer chat", `the proposed YAML does not parse — nothing applied (${err instanceof Error ? err.message : String(err)})`, "bad");
+      toast("Nothing applied", `The proposed YAML does not parse (${err instanceof Error ? err.message : String(err)}).`, "bad");
       return;
     }
     apply(i, model);
@@ -111,27 +121,27 @@ export default function ChatPanel(): React.JSX.Element {
         ? `${report?.applied ?? 0} of ${mutations.length} applied — ${details.join("; ")}`
         : `the server refused this apply (HTTP ${res.status})`;
     setRunApply((s) => ({ ...s, [i]: { busy: false, ok, msg } }));
-    toast("designer chat", msg, ok ? "ok" : "bad");
+    toast(ok ? "Mission updated" : "Not everything applied", msg, ok ? "ok" : "bad");
   };
 
   return (
     <div className="ms-panel ms-chat">
       <p className="ms-hint">
-        Describe the crew or the change you want. Each answer proposes a whole mesh.yaml; applying it opens the
-        Designer with the proposal in the draft, so you can review the diff before saving.
+        Describe the team or the change you want. The designer answers with a proposal for the whole team. Nothing changes until you apply it,
+        and applying it changes only your draft in the Designer: you review it there and save it yourself.
       </p>
       <div
         className="ms-chat-log"
         role="log"
         aria-live="polite"
-        aria-label="designer conversation"
+        aria-label="Designer conversation"
         ref={logRef}
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
       >
-        {entries.length === 0 ? <div className="muted">No messages yet.</div> : null}
+        {entries.length === 0 ? <div className="muted">No messages yet. Try: add a security reviewer, or describe the team you want in a sentence.</div> : null}
         {entries.map((e, i) => {
           const staged = e.proposal ?? null;
           const split = staged ? splitByTarget(staged.mutations) : { draft: [] as StagedMutation[], server: [] as StagedMutation[] };
@@ -154,7 +164,7 @@ export default function ChatPanel(): React.JSX.Element {
               <span className="ms-chat-who">{e.role === "user" ? "You" : "Designer"}</span>
               {e.role === "assistant" && showThinking && e.thinking ? (
                 <details className="ms-chat-thinking">
-                  <summary>thinking</summary>
+                  <summary>Thinking</summary>
                   <pre>{e.thinking}</pre>
                 </details>
               ) : null}
@@ -168,25 +178,30 @@ export default function ChatPanel(): React.JSX.Element {
                 <div className="ms-chat-review">
                   <div className="ms-chat-actions">
                     <Button variant="small" aria-expanded={review === i} onClick={() => setReview(review === i ? null : i)}>
-                      {review === i ? "hide review" : `review proposal (${changes} change${changes === 1 ? "" : "s"})`}
+                      {review === i ? "Hide review" : `Review proposal (${changes} change${changes === 1 ? "" : "s"})`}
                     </Button>
-                    {applied === i ? <span className="muted">applied to draft</span> : null}
+                    {applied === i ? (
+                      <>
+                        <span className="muted">Applied to your draft.</span>
+                        {designerUndo() ? <Button variant="small" onClick={() => designerUndo()?.()}>Undo</Button> : null}
+                      </>
+                    ) : null}
                   </div>
                   {review === i ? (
                     <>
-                      {e.problems?.length ? <div className="verdict warn">the server flagged this proposal — applying it puts those problems in your draft.</div> : null}
+                      {e.problems?.length ? <div className="verdict warn">The server flagged this proposal. Applying it puts those problems in your draft.</div> : null}
                       {staged?.problems?.length ? (
-                        <div className="verdict warn">the assistant could not stage everything: {staged.problems.join("; ")}</div>
+                        <div className="verdict warn">The designer could not stage everything: {staged.problems.join("; ")}</div>
                       ) : null}
 
                       {showText ? (
                         <div className="ms-chat-card draft">
-                          <div className="tx-meta">Draft change — local, still needs Save</div>
-                          <div className="muted tx-meta">Edits the file only — the running mesh keeps what it booted with until it restarts.</div>
-                          {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">no itemized differences from the current draft.</div>}
+                          <div className="tx-meta">Draft change: in this browser only, until you save</div>
+                          <div className="muted tx-meta">It replaces your current draft, and you can undo that. mesh.yaml is not written until you save, and the running mission does not change until you apply or restart after saving.</div>
+                          {diff.length ? <ul className="diff-list">{diff.map((d) => <li key={d}>{d}</li>)}</ul> : <div className="muted tx-meta">No itemized differences from the current draft.</div>}
                           <div className="ms-chat-actions">
                             <Button variant="primary" disabled={applied === i} onClick={() => apply(i, e.proposed)}>
-                              {e.problems?.length ? "apply anyway" : "apply to draft"}
+                              {e.problems?.length ? "Apply anyway" : "Apply to draft"}
                             </Button>
                           </div>
                         </div>
@@ -194,19 +209,19 @@ export default function ChatPanel(): React.JSX.Element {
 
                       {split.draft.length ? (
                         <div className="ms-chat-card draft">
-                          <div className="tx-meta">Draft change — local, still needs Save</div>
-                          <div className="muted tx-meta">Edits the file only — the running mesh keeps what it booted with until it restarts.</div>
+                          <div className="tx-meta">Draft change: in this browser only, until you save</div>
+                          <div className="muted tx-meta">It replaces your current draft, and you can undo that. mesh.yaml is not written until you save, and the running mission does not change until you apply or restart after saving.</div>
                           {drift ? <div className="verdict warn">{drift}</div> : null}
                           <ul className="diff-list">{draftLines.map((d, k) => <li key={`d${k}-${d}`}>{d}</li>)}</ul>
                           <div className="ms-chat-actions">
-                            <Button variant="primary" disabled={applied === i} onClick={() => applyStagedDraft(i, split.draft)}>apply to draft</Button>
+                            <Button variant="primary" disabled={applied === i} onClick={() => applyStagedDraft(i, split.draft)}>Apply to draft</Button>
                           </div>
                         </div>
                       ) : null}
 
                       {split.server.length ? (
                         <div className="ms-chat-card server">
-                          <div className="verdict warn">Live run change — applies to the running mesh now, with no Save step.</div>
+                          <div className="verdict warn">Live change: it applies to the running mission now, with no Save step.</div>
                           <ul className="diff-list">{runLines.map((d, k) => <li key={`s${k}-${d}`}>{d}</li>)}</ul>
                           {runConfirmation ? (
                             <div className="ms-chat-confirm">
@@ -215,13 +230,13 @@ export default function ChatPanel(): React.JSX.Element {
                                 value={confirmText[i] ?? ""}
                                 onChange={(ev) => setConfirmText((c) => ({ ...c, [i]: ev.target.value }))}
                                 placeholder={runConfirmation.word}
-                                aria-label={`type ${runConfirmation.word} to confirm a destructive change`}
+                                aria-label={`Type ${runConfirmation.word} to confirm a destructive change`}
                               />
                             </div>
                           ) : null}
                           <div className="ms-chat-actions">
                             <Button variant="primary" disabled={run?.busy === true || run?.ok === true || !confirmed} onClick={() => void applyToRun(i, split.server)}>
-                              {run?.busy ? "applying…" : "apply to the running mesh"}
+                              {run?.busy ? "Applying…" : "Apply to the running mission"}
                             </Button>
                           </div>
                           {run && !run.busy && run.msg ? <div className={`verdict ${run.ok ? "ok" : "bad"}`}>{run.msg}</div> : null}
@@ -229,7 +244,7 @@ export default function ChatPanel(): React.JSX.Element {
                       ) : null}
 
                       <div className="ms-chat-actions">
-                        <Button variant="ghost" onClick={() => setReview(null)}>cancel</Button>
+                        <Button variant="ghost" onClick={() => setReview(null)}>Cancel</Button>
                       </div>
                     </>
                   ) : null}
@@ -250,14 +265,14 @@ export default function ChatPanel(): React.JSX.Element {
             {live.text}
           </div>
         ) : null}
-        {busy && !live?.text && !(showThinking && live?.thinking) ? <div className="muted" role="status">designer is thinking…</div> : null}
+        {busy && !live?.text && !(showThinking && live?.thinking) ? <div className="muted" role="status">The designer is thinking…</div> : null}
       </div>
       {failed ? <div className="verdict bad" role="alert">{failed}</div> : null}
       <div className="ms-chat-compose">
         <TextArea
           rows={3}
-          placeholder="e.g. add a security reviewer that qa must consult before release"
-          aria-label="message to the designer"
+          placeholder="For example: add a security reviewer that qa must consult before release"
+          aria-label="Message to the designer"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -268,13 +283,13 @@ export default function ChatPanel(): React.JSX.Element {
           }}
         />
         <div className="ms-chat-actions">
-          <Button variant="primary" disabled={busy || !input.trim()} onClick={send}>{busy ? "waiting…" : "send"}</Button>
-          <Button variant="ghost" disabled={busy || entries.length === 0} onClick={clearChat}>clear</Button>
+          <Button variant="primary" disabled={busy || !input.trim()} onClick={send}>{busy ? "Waiting…" : "Send"}</Button>
+          <Button variant="ghost" disabled={busy || entries.length === 0} onClick={clearChat}>Clear</Button>
           <label className="ms-chat-think" title="show the model's reasoning as it streams">
             <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
-            show thinking
+            Show thinking
           </label>
-          <span className="ms-chat-kbd muted" aria-hidden="true">Ctrl/⌘ + Enter sends</span>
+          <span className="ms-chat-kbd muted">Ctrl or Cmd and Enter sends</span>
         </div>
       </div>
     </div>
