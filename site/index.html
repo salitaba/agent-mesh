@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Curule: a team of AI agents, run like an organization</title>
 <meta name="description" content="Curule runs role-based AI agents on your own infrastructure, with the rules enforced by the runtime, every action recorded and replayable, and your own model credentials.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="assets/site.css">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Curule: a team of AI agents, run like an organization">
 <meta property="og:description" content="Role-based AI agents on your own infrastructure, with the rules enforced by the runtime and every action recorded and replayable.">
@@ -18,323 +20,333 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="assets/social-card.png">
-<style>
-:root {
-  --bg: #fbfaf8; --panel: #ffffff; --ink: #1c1b1a; --muted: #5d5a55; --line: #e4e0d9;
-  --accent: #2b5fd9; --accent-ink: #ffffff; --ok: #1d7a46; --warn: #8a5a00; --code: #f2efe9;
-  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #131211; --panel: #1b1a18; --ink: #efece6; --muted: #aaa59c; --line: #302e2a;
-          --accent: #7ba0ff; --accent-ink: #0e1220; --ok: #5ac488; --warn: #e0b04a; --code: #23211e;
-          --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); }
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-a { color: var(--accent); }
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.skip { position: absolute; left: -999px; top: 0; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; z-index: 10; }
-.skip:focus { left: 8px; top: 8px; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
-header.top { border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 5; }
-header.top .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
-.brand { display: flex; align-items: center; color: var(--ink); text-decoration: none; }
-.brand svg { display: block; height: 24px; width: auto; }
-.logo .ink { stroke: var(--ink); } .logo .seat { fill: var(--accent); }
-nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
-nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
-nav a:hover { color: var(--ink); }
-@media (max-width: 640px) {
-  header.top { position: static; }
-  header.top .wrap { height: auto; flex-wrap: wrap; gap: 4px 16px; padding-top: 12px; padding-bottom: 12px; }
-  nav { margin-left: 0; gap: 4px 16px; }
-}
-[id] { scroll-margin-top: 72px; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-section { padding: 64px 0; }
-section + section { border-top: 1px solid var(--line); }
-h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.1; letter-spacing: -.02em; margin: 0 0 16px; }
-h2 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.2; letter-spacing: -.015em; margin: 0 0 12px; }
-h3 { font-size: 18px; margin: 0 0 6px; }
-p { margin: 0 0 14px; }
-.lede { font-size: 19px; color: var(--muted); max-width: 46em; }
-.muted { color: var(--muted); }
-.small { font-size: 14px; }
-.btn { display: inline-block; padding: 11px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; cursor: pointer; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.btn:hover { filter: brightness(.96); }
-.hero .wrap { display: grid; gap: 40px; grid-template-columns: 1fr; }
-@media (min-width: 900px) { .hero .wrap { grid-template-columns: 1.05fr 1fr; align-items: center; } }
-.hero .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
-.shot { border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); width: 100%; height: auto; display: block; background: var(--panel); }
-.grid { display: grid; gap: 16px; }
-.grid.four { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
-.grid.three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
-.card p:last-child { margin-bottom: 0; }
-pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
-pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0; }
-code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
-pre code { background: none; padding: 0; }
-ol.steps { padding-left: 20px; } ol.steps li { margin-bottom: 8px; }
-.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 8px 0 22px; }
-.toggle label { padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; background: var(--panel); color: var(--muted); }
-.toggle input { position: absolute; opacity: 0; }
-.toggle input:checked + span { color: var(--accent-ink); background: var(--accent); }
-.toggle label span { display: block; margin: -8px -16px; padding: 8px 16px; }
-.toggle input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: -3px; }
-.plans { display: grid; gap: 0 16px; grid-template-columns: 1fr; }
-@media (min-width: 600px) { .plans { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1020px) { .plans { grid-template-columns: repeat(4, 1fr); } }
-.plan { display: grid; grid-row: span 6; grid-template-rows: subgrid; margin-bottom: 16px; }
-.plan h3 { margin: 0 0 4px; }
-.plan .price { font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin: 4px 0 8px; }
-.plan .price small { display: block; font-size: 14px; font-weight: 500; line-height: 1.4; color: var(--muted); letter-spacing: 0; margin-top: 4px; }
-.plan .tag { color: var(--muted); font-size: 14px; margin: 0 0 4px; }
-.plan ul { padding-left: 18px; margin: 12px 0; font-size: 14.5px; }
-.plan ul li { margin-bottom: 5px; }
-.plan .foot { display: flex; flex-direction: column; }
-.plan .foot p { margin: 0 0 8px; }
-.plan .planned { font-size: 13px; color: var(--warn); }
-.plan .foot .btn { margin-top: auto; text-align: center; }
-.limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0 4px; text-align: center; }
-.limits div { background: var(--code); border-radius: 6px; padding: 6px 4px; font-size: 12px; color: var(--muted); }
-.limits b { display: block; font-size: 18px; line-height: 1.3; color: var(--ink); }
-.calc { display: grid; gap: 22px; grid-template-columns: 1fr; }
-@media (min-width: 860px) { .calc { grid-template-columns: 1fr 1fr; } }
-.field { margin-bottom: 14px; }
-.field label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-.field input[type=number], .field select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; }
-.field .hint { font-size: 13px; color: var(--muted); margin-top: 3px; }
-.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
-.result { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
-.result .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
-.result .row:last-of-type { border-bottom: 0; }
-.result .total { font-size: 22px; font-weight: 700; }
-.result .who { font-size: 13px; color: var(--muted); }
-details { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); margin-bottom: 10px; }
-summary { padding: 14px 16px; cursor: pointer; font-weight: 600; }
-details p { padding: 0 16px; }
-details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
-.notice { border-left: 4px solid var(--warn); background: var(--code); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14.5px; }
-</style>
 </head>
 <body>
+<!-- generated:chrome-header:start (scripts/site-chrome.mjs; do not edit between the markers) -->
 <a class="skip" href="#main">Skip to the content</a>
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="#top" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-    <nav aria-label="Sections">
-      <a href="#how">How it works</a>
-      <a href="#try">Try it</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#calculator">Calculator</a>
-      <a href="#security">Security</a>
-      <a href="#faq">FAQ</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="./" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav class="nav-main" aria-label="Main">
+      <a href="#product">Product</a>
+      <a href="pricing/">Pricing</a>
+      <a href="docs/">Docs</a>
+      <a href="security/">Security</a>
     </nav>
+    <div class="bar-actions">
+      <a class="signin" href="#" data-app hidden>Sign in</a>
+      <a class="btn btn-primary" href="#try">Try the demo</a>
+      <details class="menu">
+        <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
+        <div class="menu-panel">
+          <nav aria-label="Menu">
+            <a href="#product">Product</a>
+            <a href="pricing/">Pricing</a>
+            <a href="docs/">Docs</a>
+            <a href="security/">Security</a>
+            <a href="#" data-app hidden>Sign in</a>
+          </nav>
+        </div>
+      </details>
+    </div>
   </div>
 </header>
+<!-- generated:chrome-header:end -->
 
-<main id="main">
+<main id="main" tabindex="-1">
+
 <section class="hero" id="top">
   <div class="wrap">
-    <div>
-      <h1>A team of AI agents, run like an organization.</h1>
-      <p class="lede">Curule runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
-      <div class="cta">
-        <a class="btn primary" href="#try">Try it in a minute, no API key</a>
-        <a class="btn" href="#pricing">See pricing</a>
+    <p class="eyebrow">A runtime for persistent AI organizations</p>
+    <h1>A team of AI agents, run like an organization.</h1>
+    <p class="lede">Curule runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
+      <a class="btn btn-lg" href="pricing/">See pricing</a>
+    </div>
+    <p class="small muted mt-s">The demo runs a scripted team on the real runtime: no API key, no account.</p>
+
+    <ul class="facts" aria-label="What is true of it">
+      <li><strong>Self-hosted</strong><span>One container per team, on your infrastructure and with your model credentials.</span></li>
+      <li><strong>Nothing phones home</strong><span>No telemetry, no analytics, no update check, no licence server.</span></li>
+      <li><strong>Free to start</strong><span>The Community plan: one open project, up to eight agents, no licence key.</span></li>
+      <li><strong>Source-available</strong><span>Business Source License 1.1. Each version becomes Apache 2.0 four years after it is published.</span></li>
+    </ul>
+
+    <fieldset class="showcase">
+      <legend class="sr">Product view</legend>
+      <input class="tab-input" type="radio" name="view" id="view-overview" checked>
+      <input class="tab-input" type="radio" name="view" id="view-events">
+      <input class="tab-input" type="radio" name="view" id="view-designer">
+      <div class="tabs">
+        <label for="view-overview">Overview</label>
+        <label for="view-events">Events</label>
+        <label for="view-designer">Designer</label>
       </div>
-      <p class="muted small" style="margin-top:18px">Self-hosted. Nothing phones home. Free to start: one open project, eight agents, no licence needed.</p>
-    </div>
-    <img class="shot" src="assets/overview.jpg" width="1440" height="900" alt="The Curule dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the goal is met and every acceptance criterion has evidence.">
+      <div class="frame">
+        <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:7420</span></div>
+        <figure class="pane">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-overview-dark.jpg">
+            <img src="assets/shots/shot-overview-light.jpg" width="1440" height="900" fetchpriority="high" alt="The Curule dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the goal is met and every acceptance criterion has evidence.">
+          </picture>
+          <figcaption><b>Overview.</b> The demo after its mission: seven acceptance criteria, each with the evidence that satisfied it.</figcaption>
+        </figure>
+        <figure class="pane">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-events-dark.jpg">
+            <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission: the append-only log, newest first, with filters for alerts and activity, one red line for something the runtime refused, and a row for each criterion the product manager approved.">
+          </picture>
+          <figcaption><b>Events.</b> The append-only log as it streams, newest first. The red line is something the runtime refused, with the reason it gives.</figcaption>
+        </figure>
+        <figure class="pane">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-designer-dark.jpg">
+            <img src="assets/shots/shot-designer-light.jpg" width="1440" height="900" loading="lazy" alt="The Designer view: the seven agents of the demo team drawn as a graph of seats with arrows for who may contact whom, a valid badge from the live validation, and a bar for saving the configuration.">
+          </picture>
+          <figcaption><b>Designer.</b> The same team as seats and who may contact whom, validated by the engine behind <code>curule validate</code>.</figcaption>
+        </figure>
+      </div>
+    </fieldset>
+    <p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls.</p>
   </div>
 </section>
 
-<section id="how">
+<section class="section band" id="why">
   <div class="wrap">
-    <h2>What makes it different from agents in a group chat</h2>
-    <p class="lede">A single agent writes code. A team of them needs rules: who may approve a design, merge a change, block a release, spend the budget. Curule makes those rules part of the system, not part of a prompt.</p>
-    <div class="grid four" style="margin-top:28px">
-      <div class="card"><h3>Enforced, not asked</h3><p>An approval, merge or block an agent is not allowed to make is refused by the runtime before it becomes an event. A prompt can be argued with; the kernel cannot.</p></div>
+    <div class="section-head">
+      <p class="eyebrow">Why it is not a group chat</p>
+      <h2 class="title">A team needs rules, not a longer prompt.</h2>
+      <p class="lede">A single agent writes code. A team of them has to know who may approve a design, merge a change, block a release or spend the budget. Curule makes those rules part of the system instead of part of a prompt.</p>
+    </div>
+    <div class="grid grid-4">
+      <div class="card"><h3>Enforced, not asked</h3><p>An approval, merge or block that an agent is not allowed to make is refused by the runtime before it becomes an event. A prompt can be argued with; the kernel cannot.</p></div>
       <div class="card"><h3>Recorded and replayable</h3><p>Every action is an event in an append-only log, and every screen is a view of it. Any run can be replayed to any moment and audited afterwards.</p></div>
-      <div class="card"><h3>Bounded cost</h3><p>Budgets per agent, thread and mission, and a host-wide spend ceiling that counts every token class. Usage reports show what each project, agent and model consumed.</p></div>
-      <div class="card"><h3>Yours</h3><p>One container per team on your infrastructure, with your own model credentials. No telemetry, no licence server, no markup on the model.</p></div>
+      <div class="card"><h3>Bounded</h3><p>Budgets per agent, thread and mission, and a host-wide spend ceiling that counts every token class. Usage reports (Team plan and above) show what each project, agent and model consumed.</p></div>
+      <div class="card"><h3>Yours</h3><p>One container per team, on your infrastructure, with your own model credentials. No telemetry, no licence server, no markup on the model.</p></div>
     </div>
-    <h2 style="margin-top:56px">How a mission goes</h2>
-    <div class="grid three" style="margin-top:20px">
-      <div class="card"><h3>1. Describe the team and the goal</h3><p>Roles, what each may do, who may talk to whom, the gates a change must pass, and what "done" means as acceptance criteria. Or start from a shipped example.</p></div>
-      <div class="card"><h3>2. The agents work through contracts</h3><p>They wake on events they care about, exchange typed messages and versioned artifacts, review each other's work, and escalate when they disagree or run out of budget.</p></div>
-      <div class="card"><h3>3. You steer and you audit</h3><p>The human is a seat in the team with the final say. Pause, approve, redirect, reopen. A mission is done when every criterion has evidence, not when an agent says so.</p></div>
-    </div>
-    <img class="shot" style="margin-top:28px" src="assets/graph.jpg" width="1440" height="900" loading="lazy" alt="The Graph view of the same mission: who talked to whom among the seven agents (product manager, architect, tech lead, developer, QA, security and explorer). Thicker links are more messages, and colours show whether a message asked for help, approved, blocked, escalated or updated.">
   </div>
 </section>
 
-<section id="try">
+<section class="section" id="how">
   <div class="wrap">
-    <h2>Try it in a minute, with no API key</h2>
-    <p class="lede">The demo runs a scripted team on the real runtime, so it needs no model and no credentials. It exists so you can see the whole flow before you decide anything.</p>
-    <pre><code>docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
-  -e MESH_API_TOKEN="$(openssl rand -hex 32)" \
-  ghcr.io/salitaba/curule:latest demo</code></pre>
+    <div class="section-head">
+      <p class="eyebrow">How a mission goes</p>
+      <h2 class="title">Three steps, and a person at the end.</h2>
+    </div>
     <ol class="steps">
-      <li>Open <code>http://127.0.0.1:7420</code> and sign in with the token you passed.</li>
-      <li>Open the <b>demo-stub</b> project and press <b>Start mission</b>.</li>
-      <li>Watch seven agents take a payment-API mission from requirements to a merged, reviewed, verified result. QA blocks it once so you can see conflict handling.</li>
+      <li><h3>Describe the team and the goal</h3><p>Roles, what each may do, who may talk to whom, the gates a change must pass, and what &ldquo;done&rdquo; means as acceptance criteria. Or start from a shipped example.</p></li>
+      <li><h3>The agents work through contracts</h3><p>They wake on events they care about, exchange typed messages and versioned artifacts, review each other&rsquo;s work, and escalate when they disagree or run out of budget.</p></li>
+      <li><h3>You steer and you audit</h3><p>The human is a seat in the team with the final say. Pause, approve, redirect, reopen. A mission is done when every criterion has evidence, not when an agent says so.</p></li>
     </ol>
-    <p class="muted small">With your own credentials the same seats are real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry credentials), then <code>curule init</code> a project.</p>
+    <figure class="frame mt-xl">
+      <img src="assets/shots/shot-graph.jpg" width="1100" height="560" loading="lazy" alt="The Graph view of the same mission: who talked to whom among the seven agents (product manager, architect, tech lead, developer, QA, security and explorer). Thicker links are more messages, and colours show whether a message asked for help, approved, blocked, escalated or updated.">
+      <figcaption><b>Graph.</b> Who talked to whom. Thicker links are more messages; the colour says whether a message asked for help, approved, blocked, escalated or updated.</figcaption>
+    </figure>
   </div>
 </section>
 
-<section id="pricing">
+<section class="section band" id="product">
   <div class="wrap">
-    <h2>Pricing</h2>
-    <p class="lede">You pay for the runtime. Model usage is separate and goes to your own provider, at your own rates.</p>
-    <div class="toggle" role="radiogroup" aria-label="Billing period">
-      <label><input type="radio" name="billing" value="annual" checked><span>Annual</span></label>
-      <label><input type="radio" name="billing" value="monthly"><span>Monthly</span></label>
+    <div class="section-head">
+      <p class="eyebrow">The console</p>
+      <h2 class="title">What you see while it runs.</h2>
+      <p class="lede">The console is a set of views of one event log. These are captures of the scripted demo, not mockups.</p>
     </div>
-    <div class="plans" id="plans" aria-live="polite"></div>
-    <p class="muted small" id="usage-note" style="margin-top:20px"></p>
-    <p class="notice" style="margin-top:14px"><b>Planned, not included:</b> single sign-on, per-operator identity and roles, and audit-log export with operator identity are on the roadmap. Today there is one shared operator credential: put the instance behind your VPN or an authenticating proxy.</p>
+    <ul class="tiles">
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Goal met banner and the Mission delivered card, with the first four of seven acceptance criteria marked done and the evidence attached to each."></figure>
+        <h3>Mission control</h3>
+        <p>Progress against the acceptance criteria, each with the evidence that satisfied it, and the artifacts the team produced.</p>
+      </li>
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-events.jpg" width="720" height="450" loading="lazy" alt="Live events: the event log newest first with a search box, filter chips for alerts, activity and routine events, a red blocked line, and approvals recorded against each criterion."></figure>
+        <h3>Live events</h3>
+        <p>Everything the mesh does, newest first, streamed from the append-only log. Filter down to alerts, and open a line to see what caused it.</p>
+      </li>
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-steps.jpg" width="720" height="450" loading="lazy" alt="The per-turn ledger: one row for each agent turn, showing who ran, what it produced or that it wrote nothing, a refused decision in red, and the time and tokens each turn took."></figure>
+        <h3>Per-turn ledger</h3>
+        <p>One row per agent turn: who ran, how long it took, what it produced or refused, and the tokens it used.</p>
+      </li>
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-designer.jpg" width="720" height="450" loading="lazy" alt="The team designer: seven agents as circles on a ring with arrows for who may contact whom, the product manager at the top and the developer and QA at the bottom."></figure>
+        <h3>Team designer</h3>
+        <p>Seats, authority, who may contact whom, gates and budgets, drawn as a graph and validated as you edit.</p>
+      </li>
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-cost.jpg" width="720" height="450" loading="lazy" alt="Cost and budgets: tokens spent against the mission budget, the biggest spender, and a bar for each agent showing its turns and tokens."></figure>
+        <h3>Cost and budgets</h3>
+        <p>Tokens against the mission budget, by agent and by model. A host-wide spend ceiling parks every open project when its estimate is reached.</p>
+      </li>
+      <li class="tile">
+        <figure class="frame"><img src="assets/shots/shot-tile-approvals.jpg" width="720" height="450" loading="lazy" alt="The approvals drawer: a form to approve or refuse something, say what it is about and why, with the recent files listed and a button to record the decision in the log."></figure>
+        <h3>Approvals</h3>
+        <p>You are a seat in the team. Record a yes or a no and any gate that listens for it can move: for example, a release that needs your approval.</p>
+      </li>
+    </ul>
   </div>
 </section>
 
-<section id="calculator">
+<section class="section" id="try">
+  <div class="wrap cols">
+    <div>
+      <div class="section-head">
+        <p class="eyebrow">Try it</p>
+        <h2 class="title">Run the demo on your own machine, with no API key.</h2>
+        <p class="lede">The demo runs a scripted team on the real runtime, so it needs no model and no credentials. It exists so that you can see the whole flow before you decide anything.</p>
+      </div>
+      <p class="muted">You need Docker and git. The first command uses <code>openssl</code>; any random string of 32 or more characters will do as the token.</p>
+      <p data-image-off class="small muted">There is no published container image yet, so the second step builds it from the source. Tagged releases will publish one.</p>
+      <p class="mt-m"><a class="arrow-link" href="docs/" data-doc="commercial/deployment.md">Deploying: Docker Compose, Helm and TLS</a></p>
+    </div>
+    <ol class="try">
+      <li>
+        <h3>Make a token, and keep it</h3>
+        <p>The container refuses to start without one. You will paste it into the sign-in page.</p>
+        <div class="code"><pre tabindex="0"><code>export MESH_API_TOKEN="$(openssl rand -hex 32)"
+echo "$MESH_API_TOKEN"</code></pre></div>
+      </li>
+      <li>
+        <h3>Build the image from the source</h3>
+        <div class="code"><pre tabindex="0"><code>git clone https://github.com/salitaba/agent-mesh.git curule
+cd curule
+docker build -t curule .</code></pre></div>
+      </li>
+      <li>
+        <h3>Start the demo</h3>
+        <div class="code"><pre tabindex="0"><code>docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
+  -e MESH_API_TOKEN="$MESH_API_TOKEN" \
+  curule demo</code></pre></div>
+        <div data-image-slot></div>
+      </li>
+      <li>
+        <h3>Open it and press Start mission</h3>
+        <p>Go to <code>http://127.0.0.1:7420</code> and sign in with the token. Open the <b>demo-stub</b> project and press <b>Start mission</b>. Seven agents take a payment-API mission from requirements to a merged, reviewed, verified result, and QA blocks it once so you can see conflict handling.</p>
+        <p>With your own credentials the same seats are real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry credentials), then <code>curule init</code> a project.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section band" id="security">
   <div class="wrap">
-    <h2>Which plan, and roughly what will it cost?</h2>
-    <p class="lede">An estimate, not a quote. The model figure comes from one measured mission and your own will differ.</p>
-    <div class="calc" style="margin-top:22px">
-      <form id="calc" autocomplete="off">
-        <div class="field"><label for="c-projects">Projects open at the same time</label><input id="c-projects" type="number" min="1" max="1000" value="1" inputmode="numeric"><div class="hint">A project is one team's mesh. Registering more is free; the limit is how many are open at once.</div></div>
-        <div class="field"><label for="c-seats">Agents in your biggest team</label><input id="c-seats" type="number" min="1" max="1000" value="7" inputmode="numeric"></div>
-        <div class="field"><label for="c-missions">Missions a month, across all projects</label><input id="c-missions" type="number" min="0" max="100000" value="25" inputmode="numeric"><div class="hint">A mission like the one we measured: a small library built by five agents.</div></div>
-        <div class="field"><label for="c-model">Model your agents run on</label><select id="c-model"></select></div>
-        <div class="field check"><input id="c-reports" type="checkbox"><label for="c-reports" style="font-weight:400">I need usage reports and Prometheus metrics</label></div>
-      </form>
-      <div class="result" id="result" aria-live="polite"></div>
+    <div class="section-head">
+      <p class="eyebrow">Security</p>
+      <h2 class="title">Security, stated plainly.</h2>
+      <p class="lede">What it protects, what leaves your environment, and what it does not do. The agents run commands, so this is the part to read before you promise anything to anyone.</p>
+    </div>
+    <div class="grid grid-3">
+      <div class="card"><h3>What it does</h3><p>Refuses to listen on a network address without a strong token. Guards against cross-site and rebinding attacks. Sandboxes agent-written pages. Keeps the operator&rsquo;s secrets out of the agents&rsquo; environment. Runs unprivileged with a read-only root, and ships a network policy for Kubernetes. Every control is pinned by a test.</p></div>
+      <div class="card"><h3>What leaves your environment</h3><p>Only the agents&rsquo; calls to the model provider you chose, with your credentials. Nothing goes to us: no telemetry, no analytics, no update check, no licence server.</p></div>
+      <div class="card"><h3>What it does not do</h3><p>One shared operator token: single sign-on and per-operator identity are planned, not included. No third-party audit, penetration test or SOC 2. The container is the boundary: narrow its network, and give each instance its own provider key with a spend limit.</p></div>
+    </div>
+    <p class="mt-l"><a class="arrow-link" href="security/">Read the whole of it</a></p>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Pricing</p>
+      <h2 class="title">You pay for the runtime.</h2>
+      <p class="lede">Model usage is separate and goes to your own provider, at your own rates. Prices are in US dollars and exclude taxes.</p>
+    </div>
+<!-- generated:plan-teaser:start (scripts/export-pricing.mjs; do not edit between the markers) -->
+<ul class="teaser" aria-label="The plans">
+    <li><h3>Community</h3><p class="amount">Free</p><p class="per">no licence key, no expiry</p><p class="limits">1 project open, 8 agents per mesh, 4 concurrent turns</p></li>
+    <li><h3>Team</h3><p class="amount">$149</p><p class="per">per month, or $124 billed annually</p><p class="limits">5 projects open, 12 agents per mesh, 8 concurrent turns</p></li>
+    <li><h3>Business</h3><p class="amount">$599</p><p class="per">per month, or $499 billed annually</p><p class="limits">25 projects open, 30 agents per mesh, 24 concurrent turns</p></li>
+    <li><h3>Enterprise</h3><p class="amount">Let&rsquo;s talk</p><p class="per">quoted for your terms</p><p class="limits">No limit on projects, agents or concurrent turns</p></li>
+</ul>
+<!-- generated:plan-teaser:end -->
+    <p class="btn-row mt-l"><a class="btn btn-primary" href="pricing/">Compare the plans</a><a class="btn" href="pricing/#licences">How licences work</a></p>
+    <p class="small muted mt-s">There is no checkout and no account: a paid plan starts with an email, and the licence key is issued by hand.</p>
+  </div>
+</section>
+
+<section class="section band" id="faq">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Questions</p>
+      <h2 class="title">Questions, answered plainly.</h2>
+    </div>
+    <div class="faq">
+      <details><summary>Do I need an Anthropic account?</summary><div class="answer"><p>You need credentials for a model provider that you own: an Anthropic API key, or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry. The agents use them and your provider bills you. We never see them and we do not resell model usage.</p></div></details>
+      <details><summary>Does it send my code to you?</summary><div class="answer"><p>No. It runs on your infrastructure and sends nothing to us. Your code goes to your model provider, because the agents cannot work without it, under your agreement with them.</p></div></details>
+      <details><summary>What is the free plan?</summary><div class="answer"><p>Community: one open project of up to eight agents, with the full runtime, dashboard, designer and command line. It needs no licence and never expires.</p></div></details>
+      <details><summary>Is it open source?</summary><div class="answer"><p>No, it is source-available. The code is public under the Business Source License 1.1: you can read, build, modify and run it, and real work on the free plan is free. Running more than the free plan allows, or offering it to others as a hosted service or inside your own product, needs a commercial licence. Each version becomes Apache 2.0 four years after it is published.</p></div></details>
+      <details><summary>How do I buy a paid plan?</summary><div class="answer"><p>There is no checkout and no account. Write to us with the plan you want and the name the licence should carry; we agree the terms with you and issue a licence key by hand. You install it with <code>curule license install &lt;key&gt;</code>, and it is checked on your machine.</p></div></details>
+      <details><summary>What happens when a licence expires?</summary><div class="answer"><p>Nothing stops and nothing is lost. The plan&rsquo;s limits stay in force for a grace period (14 days by default); after it the instance is on the free plan. We cannot disable anything remotely, and your data is yours.</p></div></details>
+      <details><summary>Can it run without internet access?</summary><div class="answer"><p>Yes. A licence is verified on your machine. The agents need a route to your model provider, which can be a private endpoint.</p></div></details>
+      <details><summary>Can you host it for us?</summary><div class="answer"><p>Not today. It is software you run, one instance per team; the repository has a Compose file, a Helm chart and a provisioning script for that.</p></div></details>
+      <details><summary>Does it work with models other than Claude?</summary><div class="answer"><p>The runtime runs Claude through the Agent SDK, on Anthropic, Bedrock, Vertex or Foundry. A generic HTTP adapter exists for other backends; we have not measured its quality and do not sell it as equivalent.</p></div></details>
+      <details><summary>How reliable are the results?</summary><div class="answer"><p>We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate, and a mesh may do worse than a single agent on some work. Try it on your own task in a pilot.</p></div></details>
     </div>
   </div>
 </section>
 
-<section id="security">
+<section class="section cta">
   <div class="wrap">
-    <h2>Security, stated plainly</h2>
-    <div class="grid three" style="margin-top:20px">
-      <div class="card"><h3>What it does</h3><p>Refuses to listen on a network address without a strong token. Guards against cross-site and rebinding attacks. Sandboxes agent-written pages. Keeps the operator's secrets out of the agents' environment. Runs unprivileged with a read-only root, and ships a network policy for Kubernetes. Every control is pinned by a test.</p></div>
-      <div class="card"><h3>What leaves your environment</h3><p>Only the agents' calls to the model provider you chose, with your credentials. Nothing goes to us: no telemetry, no analytics, no update check, no licence server.</p></div>
-      <div class="card"><h3>What it does not do</h3><p>No single sign-on or roles yet. No third-party audit or SOC 2 yet. The agents run commands, so the container is the boundary: narrow its network, and give each instance its own provider key with a spend limit.</p></div>
+    <h2>Run the demo, then bring your own credentials.</h2>
+    <p class="lede">The scripted team needs no API key. The same seats run on your own Anthropic, Bedrock, Vertex or Foundry credentials, on your infrastructure.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
+      <a class="btn btn-lg" href="contact/" data-contact data-subject="Curule">Talk to us</a>
     </div>
-    <p style="margin-top:18px"><a href="#" data-doc="commercial/security.md">Read the security document</a> and <a href="#" data-doc="commercial/security-questionnaire.md">the answers to the usual questionnaire</a>.</p>
   </div>
 </section>
 
-<section id="faq">
-  <div class="wrap">
-    <h2>Questions</h2>
-    <details><summary>Do I need an Anthropic account?</summary><p>You need credentials for a model provider that you own: an Anthropic API key, or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry. The agents use them and your provider bills you. We never see them and we do not resell model usage.</p></details>
-    <details><summary>Does it send my code to you?</summary><p>No. It runs on your infrastructure and sends nothing to us. Your code goes to your model provider, because the agents cannot work without it, under your agreement with them.</p></details>
-    <details><summary>What is the free plan?</summary><p>Community: one open project of up to eight agents, with the full runtime, dashboard, designer and command line. It needs no licence and never expires.</p></details>
-    <details><summary>Is it open source?</summary><p>No, it is source-available. The code is public under the Business Source License 1.1: you can read, build, modify and run it, and real work on the free plan is free. Running more than the free plan allows, or offering it to others as a hosted service or inside your own product, needs a commercial licence. Each version becomes Apache 2.0 four years after it is published.</p></details>
-    <details><summary>What happens when a licence expires?</summary><p>Nothing stops and nothing is lost. The plan's limits stay in force for a grace period (14 days by default); after it the instance is on the free plan. We cannot disable anything remotely, and your data is yours.</p></details>
-    <details><summary>Can it run without internet access?</summary><p>Yes. A licence is verified on your machine. The agents need a route to your model provider, which can be a private endpoint.</p></details>
-    <details><summary>Can you host it for us?</summary><p>Not today. It is software you run. We can help you run one instance per team, and we ship a script and a Helm chart for it.</p></details>
-    <details><summary>Does it work with models other than Claude?</summary><p>The runtime runs Claude through the Agent SDK, on Anthropic, Bedrock, Vertex or Foundry. A generic HTTP adapter exists for other backends; we have not measured its quality and do not sell it as equivalent.</p></details>
-    <details><summary>How reliable are the results?</summary><p>We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate, and a mesh may do worse than a single agent on some work. Try it on your own task in a pilot.</p></details>
-  </div>
-</section>
 </main>
 
-<footer>
+<!-- generated:chrome-footer:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<footer class="site-footer">
   <div class="wrap">
-    <p><b>Curule</b> &middot; <span id="contact">TODO(owner): company name, contact email</span></p>
-    <p class="small">Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic. Prices are in US dollars and exclude taxes.</p>
-    <p class="small"><a href="#" data-doc="commercial/pricing.md">Pricing details</a> &middot; <a href="#" data-doc="commercial/deployment.md">Deployment</a> &middot; <a href="#" data-doc="operations.md">Operations</a> &middot; <a href="#" data-doc="commercial/licensing.md">Licences</a> &middot; <a href="#" data-doc="../LICENSE">Source licence</a> &middot; <a href="#" data-doc="../SECURITY.md">Report a vulnerability</a></p>
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="./" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <p>A team of AI agents, run like an organization.</p>
+        <p class="foot-contact"><span id="contact">TODO(owner): company name, contact email</span></p>
+      </div>
+      <nav class="foot-col" aria-label="Product">
+        <h2>Product</h2>
+        <ul>
+          <li><a href="./" aria-current="page">Overview</a></li>
+          <li><a href="#product">What it shows</a></li>
+          <li><a href="#try">Try the demo</a></li>
+          <li><a href="pricing/">Pricing</a></li>
+          <li><a href="security/">Security</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Resources">
+        <h2>Resources</h2>
+        <ul>
+          <li><a href="docs/">Documentation</a></li>
+          <li><a href="docs/" data-doc="../README.md">Quickstart</a></li>
+          <li><a href="docs/" data-doc="commercial/deployment.md">Deploying</a></li>
+          <li><a href="docs/" data-doc="operations.md">Operating</a></li>
+          <li><a href="docs/" data-doc="../CHANGELOG.md">Changelog</a></li>
+          <li><a href="docs/" data-repo="">Source code</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Company">
+        <h2>Company</h2>
+        <ul>
+          <li><a href="contact/">Contact</a></li>
+          <li><a href="legal/#licence">Licence</a></li>
+          <li><a href="legal/#privacy">Privacy</a></li>
+          <li><a href="legal/#terms">Terms</a></li>
+          <li><a href="docs/" data-doc="../SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="foot-legal">
+      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
+    </div>
   </div>
 </footer>
-
-<!-- generated:plans-json:start (scripts/export-pricing.mjs; do not edit between the markers) -->
-<script type="application/json" id="plans-data">{"version":1,"generatedBy":"scripts/export-pricing.mjs, from packages/licensing/src/plans.ts, packages/protocol/src/pricing.ts and pricing/measured-runs.json. Do not edit by hand.","currency":"USD","modelUsageNote":"Plan prices are for the runtime. Model usage is separate: the agents run on your own Anthropic, Bedrock, Vertex or Foundry credentials, and your provider bills you for it.","plans":[{"id":"community","name":"Community","tagline":"Run a whole AI team on your own machine, free.","priceMonthlyUsd":0,"priceMonthlyAnnualUsd":0,"pricing":"free","limits":{"maxSeatsPerMesh":8,"maxProjects":1,"maxConcurrentTurns":4},"features":[],"support":"Community (issues and documentation)","includes":["The full runtime: event-sourced kernel, policy enforcement, scheduler, artifacts, replay","Dashboard, designer, CLI and the project host with its spend ceiling","Token-free demo and stub runtime","One open project, up to 8 seats, 4 concurrent turns"],"roadmap":[],"priceAnnualTotalUsd":0,"annualSavingsPercent":null},{"id":"team","name":"Team","tagline":"Several projects under one host, with usage reporting.","priceMonthlyUsd":149,"priceMonthlyAnnualUsd":124,"pricing":"listed","limits":{"maxSeatsPerMesh":12,"maxProjects":5,"maxConcurrentTurns":8},"features":["usage-export","prometheus-metrics"],"support":"Email, next business day","includes":["Everything in Community","Up to 5 projects open under one host, 12 seats per mesh, 8 concurrent turns","Usage export (JSON and CSV) and Prometheus metrics"],"roadmap":[],"priceAnnualTotalUsd":1488,"annualSavingsPercent":17},{"id":"business","name":"Business","tagline":"A fleet of projects, with priority support and a deployment you can hand to ops.","priceMonthlyUsd":599,"priceMonthlyAnnualUsd":499,"pricing":"listed","limits":{"maxSeatsPerMesh":30,"maxProjects":25,"maxConcurrentTurns":24},"features":["usage-export","prometheus-metrics"],"support":"Priority email, 4 business hours first response","includes":["Everything in Team","Up to 25 projects, 30 seats per mesh, 24 concurrent turns","Support for the container image and Helm chart deployment, with upgrade and backup runbooks","Security questionnaire support"],"roadmap":["Single sign-on (OIDC)","Per-operator identity and roles","Audit-log export with operator identity"],"priceAnnualTotalUsd":5988,"annualSavingsPercent":17},{"id":"enterprise","name":"Enterprise","tagline":"Unlimited scale, your terms, your environment.","priceMonthlyUsd":null,"priceMonthlyAnnualUsd":null,"pricing":"contact","limits":{"maxSeatsPerMesh":null,"maxProjects":null,"maxConcurrentTurns":null},"features":["usage-export","prometheus-metrics"],"support":"Named contact and a support agreement","includes":["Everything in Business","No seat, project or concurrency limits","Air-gapped and private-registry installs","Custom terms, security review and a support agreement"],"roadmap":["Single sign-on (OIDC)","Per-operator identity and roles","Audit-log export with operator identity"],"priceAnnualTotalUsd":null,"annualSavingsPercent":null}],"modelPrices":{"asOf":"2026-10-01","perMtokUsd":{"claude-haiku-4-5":{"input":1,"output":5,"cacheWrite":1.25,"cacheRead":0.1},"claude-sonnet-5-5":{"input":2,"output":10,"cacheWrite":2.5,"cacheRead":0.2},"claude-opus-5-5":{"input":4,"output":20,"cacheWrite":5,"cacheRead":0.2},"claude-fable-5-1":{"input":10,"output":50,"cacheWrite":12.5,"cacheRead":0.25}}},"measuredRuns":[{"id":"cronlite-run-7","date":"2026-10-01","source":"NOTES-live-run-20260930-haiku.md section 12 (the seventh run)","mission":"A dependency-free Node library and CLI for 5-field cron expressions, built from a written spec by five seats, then reopened once against an independent oracle's defect report, with a kill -9 of the host in the middle of the second round.","model":"claude-haiku-4-5","seats":5,"turns":80,"wallClockMinutes":31,"outcome":"Goal met twice (round 1 in 9 min 53 s; again 18 min 33 s after the reopen). The final product scored 99.6% of 3034 stratified checks on an oracle written from the spec before any output was read; its own suite passed 63 of 63.","tokens":{"input":3892,"output":218904,"cacheWrite":949926,"cacheRead":32299235},"costUsdByModel":{"claude-haiku-4-5":5.52,"claude-sonnet-5-5":11.03,"claude-opus-5-5":15.6,"claude-fable-5-1":30.93},"costUsd":5.52,"tokensBilled":1172722}]}</script>
-<!-- generated:plans-json:end -->
-<script>
-"use strict";
-// TODO(owner): where the documents are published. Until the commercial branch is merged to main these links 404.
-var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
-var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
-var MODEL_NAMES = { "claude-haiku-4-5": "Claude Haiku 4.5", "claude-sonnet-5-5": "Claude Sonnet 5.5", "claude-opus-5-5": "Claude Opus 5.5", "claude-fable-5-1": "Claude Fable 5.1" };
-
-var data = JSON.parse(document.getElementById("plans-data").textContent);
-var $ = function (id) { return document.getElementById(id); };
-var money = function (n) { return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 }); };
-var money2 = function (n) { return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-var lim = function (n) { return n === null ? '<span aria-hidden="true">&infin;</span><span class="sr">Unlimited</span>' : String(n); };
-var billing = function () { return document.querySelector("input[name=billing]:checked").value; };
-
-Array.prototype.forEach.call(document.querySelectorAll("[data-doc]"), function (a) {
-  a.href = DOCS_BASE + a.getAttribute("data-doc");
-  a.rel = "noopener";
-});
-
-function priceOf(p, period) {
-  if (p.pricing === "free") return { big: "Free", small: "no licence needed" };
-  if (p.pricing === "contact") return { big: "Let's talk", small: "quoted" };
-  var m = period === "annual" ? p.priceMonthlyAnnualUsd : p.priceMonthlyUsd;
-  return { big: money(m), small: "per month" + (period === "annual" ? ", billed annually (" + money(p.priceAnnualTotalUsd) + " a year)" : ", billed monthly") };
-}
-
-function renderPlans() {
-  var period = billing();
-  $("plans").innerHTML = data.plans.map(function (p) {
-    var pr = priceOf(p, period);
-    var cta = p.pricing === "free" ? '<a class="btn" href="#try">Start free</a>' : '<a class="btn primary" href="' + CONTACT_HREF + '">' + (p.pricing === "contact" ? "Talk to us" : "Get " + p.name) + "</a>";
-    return '<article class="card plan"><h3>' + p.name + '</h3><div class="price">' + pr.big + ' <small>' + pr.small + '</small></div>' +
-      '<p class="tag">' + p.tagline + '</p>' +
-      '<div class="limits"><div><b>' + lim(p.limits.maxProjects) + '</b>projects</div><div><b>' + lim(p.limits.maxSeatsPerMesh) + '</b>agents</div><div><b>' + lim(p.limits.maxConcurrentTurns) + '</b>at once</div></div>' +
-      '<ul>' + p.includes.map(function (i) { return "<li>" + i + "</li>"; }).join("") + '</ul>' +
-      '<div class="foot"><p class="small muted">Support: ' + p.support + '</p>' +
-      (p.roadmap.length ? '<p class="planned">Planned, not included: ' + p.roadmap.join("; ") + '</p>' : "") + cta + '</div></article>';
-  }).join("");
-  $("usage-note").textContent = data.modelUsageNote;
-}
-
-function fillModels() {
-  var run = data.measuredRuns[0];
-  $("c-model").innerHTML = Object.keys(data.modelPrices.perMtokUsd).map(function (m) {
-    return '<option value="' + m + '"' + (m === run.model ? " selected" : "") + ">" + (MODEL_NAMES[m] || m) + "</option>";
-  }).join("");
-}
-
-function calc() {
-  var projects = Math.max(1, +$("c-projects").value || 1);
-  var seats = Math.max(1, +$("c-seats").value || 1);
-  var missions = Math.max(0, +$("c-missions").value || 0);
-  var model = $("c-model").value;
-  var reports = $("c-reports").checked;
-  var run = data.measuredRuns[0];
-  var plan = data.plans.filter(function (p) {
-    if (reports && p.features.indexOf("usage-export") < 0) return false;
-    return (p.limits.maxProjects === null || projects <= p.limits.maxProjects) && (p.limits.maxSeatsPerMesh === null || seats <= p.limits.maxSeatsPerMesh);
-  })[0];
-  var period = billing();
-  var fee = plan.pricing === "listed" ? (period === "annual" ? plan.priceMonthlyAnnualUsd : plan.priceMonthlyUsd) : plan.pricing === "free" ? 0 : null;
-  var perMission = run.costUsdByModel[model];
-  var spend = missions * perMission;
-  var rows = '<div class="row"><span>Plan</span><b>' + plan.name + '</b></div>';
-  rows += '<div class="row"><span>Platform fee <span class="who">(to us)</span></span><b>' + (fee === null ? "quoted" : money(fee) + " / month") + '</b></div>';
-  rows += '<div class="row"><span>Model usage <span class="who">(to your provider)</span></span><b>about ' + money(spend) + " / month</b></div>";
-  rows += '<div class="row"><span class="total">Roughly</span><span class="total">' + (fee === null ? "" : money(fee + spend) + " / month") + "</span></div>";
-  var notes = '<p class="small muted" style="margin-top:12px">Model usage assumes ' + missions + " mission" + (missions === 1 ? "" : "s") + " like the one we measured (" + run.seats + " agents, " + run.turns + " turns, " + money2(run.costUsd) + " on " + (MODEL_NAMES[run.model] || run.model) + "), re-priced at " + (MODEL_NAMES[model] || model) + "'s published list price of " + data.modelPrices.asOf + ". A different model takes a different number of turns, so treat the spread across models as a range of prices, not a forecast. Your provider bills you directly; we never touch it.</p>";
-  if (plan.pricing === "free") notes += '<p class="small" style="margin-top:6px">The free plan has no licence and no expiry.</p>';
-  $("result").innerHTML = rows + notes;
-}
-
-renderPlans(); fillModels(); calc();
-Array.prototype.forEach.call(document.querySelectorAll("input[name=billing]"), function (r) { r.addEventListener("change", function () { renderPlans(); calc(); }); });
-Array.prototype.forEach.call(document.querySelectorAll("#calc input, #calc select"), function (e) { e.addEventListener("input", calc); e.addEventListener("change", calc); });
-</script>
+<!-- generated:chrome-footer:end -->
+<script src="assets/site.js" defer></script>
 </body>
 </html>

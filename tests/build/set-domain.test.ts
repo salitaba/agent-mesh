@@ -4,6 +4,7 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { walk } from "./site-pages";
 
 /**
  * `scripts/set-domain.mjs` applies the domain that was chosen to every place that carries it, so that they cannot disagree and
@@ -12,9 +13,10 @@ import * as path from "path";
  * sitemap.xml, security.txt). It must never touch LICENSE, never half-apply (every edit is computed before anything is
  * written), and be safe to run twice.
  *
- * The cases run against a small site written out below, in the state the repository ships it in before a domain is chosen.
+ * Most cases run against a small site written out below, in the state the repository ships it in before a domain is chosen.
  * Running them against the repository's own files would fail them on the day the owner applies the domain, because the markers
- * they look for would be gone.
+ * they look for would be gone. The repository's own files get one case of their own, which holds in whatever state they are
+ * in: a change to a page that the script cannot follow fails there, and not the owner on the day of the launch.
  */
 
 const ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -124,6 +126,17 @@ function templateRepo(): string {
   return dir;
 }
 
+/** The repository's own site (its pages and script), policy and licence, in whatever state they are in today. */
+function realRepo(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curule-domain-real-"));
+  for (const f of walk(path.join(ROOT, "site")).filter((x) => /\.(html|js)$/.test(x))) {
+    fs.mkdirSync(path.dirname(path.join(dir, "site", f)), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "site", f), path.join(dir, "site", f));
+  }
+  for (const file of ["SECURITY.md", "LICENSE"]) fs.copyFileSync(path.join(ROOT, file), path.join(dir, file));
+  return dir;
+}
+
 function run(root: string, args: string[]): { status: number | null; out: string; err: string } {
   const r = spawnSync(process.execPath, [SCRIPT, "--root", root, ...args], { encoding: "utf8", timeout: 30_000 });
   return { status: r.status, out: r.stdout, err: r.stderr };
@@ -213,6 +226,40 @@ test("a sales or support address of their own, and no sign-in link, are written 
   assert.match(contact, /<span data-company>TODO\(owner\): company name<\/span>/, "without --company the company line stays marked");
   assert.match(read(dir, "site/assets/site.js"), /^var APP_URL = ""; \/\/ No hosted dashboard: the "Sign in" link is removed$/m);
   assert.match(r.out, /marker\(s\) still say TODO\(owner\)/);
+});
+
+test("the repository's own site and policy take a domain cleanly, in whatever state they are in, and leave only the terms to counsel", () => {
+  // The cases around this one use a site written out above, so that they keep holding after the domain is applied. This is the
+  // one that follows the real files: a change to a page, to the script or to the policy that set-domain cannot follow fails here.
+  const dir = realRepo();
+  const r = run(dir, FULL);
+  assert.equal(r.status, 0, r.err);
+  const left: string[] = [];
+  for (const [rel, text] of Object.entries(snapshot(dir))) {
+    if (rel === "LICENSE") continue;
+    text.split("\n").forEach((line, i) => line.includes("TODO(owner)") && left.push(`${rel}:${i + 1}`));
+  }
+  assert.equal(left.length, 1, `only the terms are left to the owner and counsel: ${left.join(", ")}`);
+  assert.match(left[0]!, /^site[/\\]legal[/\\]index\.html:\d+$/);
+  const pages = Object.keys(snapshot(dir)).filter((f) => /^site[/\\](?:[^/\\]+[/\\])?index\.html$/.test(f));
+  assert.ok(pages.length >= 6, `every page of the site (${pages.length})`);
+  for (const rel of pages) {
+    const page = read(dir, rel);
+    assert.equal((page.match(/<link rel="canonical"/g) ?? []).length, 1, `${rel}: one canonical link`);
+    assert.equal((page.match(/<meta property="og:url"/g) ?? []).length, 1, `${rel}: one og:url`);
+    assert.match(page, /<meta property="og:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/, rel);
+    assert.match(page, /<span id="contact">Curule Labs &amp; Co &middot; <a href="mailto:hello@curule\.dev">/, rel);
+  }
+  assert.match(read(dir, "SECURITY.md"), /^- Email: security@curule\.dev$/m);
+  assert.match(read(dir, "site/contact/index.html"), /<a data-mail="security" href="mailto:security@curule\.dev">security@curule\.dev<\/a>/);
+  assert.match(read(dir, "site/404.html"), /<a href="mailto:hello@curule\.dev">/);
+  const first = snapshot(dir);
+  assert.equal(run(dir, FULL).status, 0);
+  assert.deepEqual(snapshot(dir), first, "and a second run changes nothing");
+  const checked = run(dir, ["--check"]);
+  assert.equal(checked.status, 1, "the publish gate still stops, for the terms");
+  assert.match(checked.out, /site\/legal\/index\.html:\d+: .*terms/);
+  assert.equal((checked.out.match(/^ {2}site\/|^ {2}SECURITY/gm) ?? []).length, 1, "and for nothing else");
 });
 
 test("a second run changes nothing, and a second domain replaces the first without leaving a trace of it", () => {

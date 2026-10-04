@@ -2,7 +2,7 @@
  * The header and the footer of the site's pages are written by scripts/site-chrome.mjs, so that seven copies of the navigation
  * cannot drift apart. The first cases hold the script to what it promises, on a small site written out here: it touches only what
  * is between its markers, keeps the footer's contact line the owner (or set-domain) wrote, writes the links the way each page's
- * depth needs, finds a page nobody listed, and writes nothing when one page is wrong.
+ * depth needs, finds a page nobody listed, and writes nothing when one page is wrong. The last ones hold the committed pages to it.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ROOT } from "./site-pages";
+import { ROOT, SITE, sitePages } from "./site-pages";
 
 const SCRIPT = path.join(ROOT, "scripts", "site-chrome.mjs");
 const run = (root: string, ...args: string[]) => {
@@ -130,4 +130,27 @@ test("a page without the markers is refused whole, and a page nobody listed is f
   assert.match(added, /<a href="\.\.\/pricing\/">Pricing<\/a>/);
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "curule-chrome-empty-"));
   assert.equal(run(empty).status, 2, "a folder that is not the repository has no pages to write");
+});
+
+// ---------------------------------------------------------------- the committed pages
+
+test("the committed pages carry the header and the footer the script writes", () => {
+  const r = run(ROOT, "--check");
+  assert.equal(r.status, 0, `${r.out}${r.err}`);
+  assert.match(r.out, /the header and footer of \d+ pages are up to date/);
+  assert.ok(sitePages().length >= 7);
+});
+
+test("on the committed pages the navigation goes where the page's depth needs, and each page marks itself", () => {
+  const pages = sitePages();
+  for (const p of pages) {
+    const nav = navOf(p.html);
+    const own = p.address === null || p.address === "" ? null : p.address.replace("/", "");
+    const prefix = p.rel === "404.html" ? "/" : p.rel.includes("/") ? "../" : "";
+    const expected = ["#product", "pricing/", "docs/", "security/"].map((h) => (h === "#product" && prefix === "" ? h : `${prefix}${h}`));
+    assert.deepEqual(hrefs(nav), expected, `${p.rel}: its navigation`);
+    const current = [...nav.matchAll(/aria-current="page">([^<]+)</g)].map((m) => m[1]!.toLowerCase());
+    assert.deepEqual(current, own && ["pricing", "docs", "security"].includes(own) ? [own] : [], `${p.rel}: the page it is on`);
+  }
+  assert.ok(fs.existsSync(path.join(SITE, "404.html")));
 });

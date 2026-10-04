@@ -35,14 +35,68 @@ test("pricing/plans.json is what the plan table, the list prices and the measure
   assert.equal(read("pricing", "plans.json"), generated, "out of date: run `node scripts/export-pricing.mjs` and commit the result");
 });
 
-test("the website carries the same data, inlined, and the page is what the generator makes of it", () => {
+test("the pricing page carries the same data, inlined, and the pages are what the generator makes of it", () => {
   const exported = buildPricingExport(measured());
-  const page = read("site", "index.html");
+  const page = read("site", "pricing", "index.html");
   assert.equal(page, replaceGeneratedBlock(page, "plans-json", renderSiteData(exported)), "out of date: run `node scripts/export-pricing.mjs` and commit the result");
   const m = /<script type="application\/json" id="plans-data">([\s\S]*?)<\/script>/.exec(page);
   assert.ok(m, "the data element is in the page");
   assert.deepEqual(JSON.parse(m![1]!), exported, "and parses back to the export");
   assert.ok(!m![1]!.includes("<"), "no raw < inside the data element");
+  assert.ok(!read("site", "index.html").includes('id="plans-data"'), "the data is in one place: the pricing page");
+  // The HTML the pages show of it (the plan cards, the comparison table, the measured mission at each model's price, the home
+  // page's line of plans) is written by the same script from the same export: it says so when any of it is out of date.
+  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts", "export-pricing.mjs"), "--check"], { encoding: "utf8" });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+});
+
+test("the plan cards, the table and the home page's plans show every price and every limit of the plan table, and nothing else", () => {
+  const exported = buildPricingExport(measured());
+  const pricing = read("site", "pricing", "index.html");
+  const cards = /<!-- generated:plan-cards:start[^>]*-->([\s\S]*?)<!-- generated:plan-cards:end -->/.exec(pricing)![1]!;
+  const table = /<!-- generated:plan-table:start[^>]*-->([\s\S]*?)<!-- generated:plan-table:end -->/.exec(pricing)![1]!;
+  const teaser = /<!-- generated:plan-teaser:start[^>]*-->([\s\S]*?)<!-- generated:plan-teaser:end -->/.exec(read("site", "index.html"))![1]!;
+  const text = (html: string): string => html.replace(/<[^>]+>/g, " ").replace(/&rsquo;/g, "'").replace(/&infin;/g, "unlimited").replace(/\s+/g, " ");
+  assert.equal((cards.match(/<article class="plan"/g) ?? []).length, PLAN_IDS.length, "one card for each plan");
+  for (const id of PLAN_IDS) {
+    const plan = PLANS[id];
+    const card = new RegExp(`<article class="plan" id="plan-${id}"[\\s\\S]*?</article>`).exec(cards)?.[0];
+    assert.ok(card, `${plan.name}: a card`);
+    const t = text(card!);
+    assert.ok(t.includes(plan.name) && t.includes(plan.tagline), `${plan.name}: name and tagline`);
+    assert.ok(t.includes(plan.support), `${plan.name}: support`);
+    for (const line of plan.includes) assert.ok(t.includes(line), `${plan.name}: "${line}"`);
+    if (plan.roadmap.length > 0) assert.ok(t.includes(`Planned, not included: ${plan.roadmap.join("; ")}`), `${plan.name}: its roadmap is introduced as planned`);
+    else assert.ok(!t.includes("Planned, not included"), `${plan.name}: nothing planned is shown that the table does not list`);
+    if (plan.pricing === "listed") {
+      const [annual, monthly] = [`$${plan.priceMonthlyAnnualUsd} per month, billed annually ($${plan.priceMonthlyAnnualUsd! * 12} a year)`, `$${plan.priceMonthlyUsd} per month, billed monthly`].map((s) => s.replace(/\$(\d{4,})/g, (_, n: string) => `$${Number(n).toLocaleString("en-US")}`));
+      assert.ok(t.includes(annual!) && t.includes(monthly!), `${plan.name}: both prices, so the page reads without the toggle`);
+    }
+    assert.equal(card!.includes('class="btn btn-primary"'), plan.pricing !== "free", `${plan.name}: a paid plan is bought by writing to us, the free one is started`);
+    const limits = [plan.limits.maxProjects, plan.limits.maxSeatsPerMesh, plan.limits.maxConcurrentTurns].map((n) => (n === null ? "unlimited" : String(n)));
+    const shown = [...card!.matchAll(/<dd>([\s\S]*?)<\/dd>/g)].map((m) => text(m[1]!.replace(/<span aria-hidden="true">[^<]*<\/span>/g, "")).trim().toLowerCase());
+    assert.deepEqual(shown, limits, `${plan.name}: the limits`);
+  }
+  const t = text(table);
+  for (const id of PLAN_IDS) assert.ok(t.includes(PLANS[id].name) && t.includes(PLANS[id].support), `${id} in the table`);
+  const rows = [...table.matchAll(/<th scope="row">([\s\S]*?)<\/th>/g)].map((m) => text(m[1]!).trim());
+  assert.deepEqual(rows, ["Per month, billed annually", "Per month, billed monthly", "Projects open at once", "Agents (seats) per mesh", "Concurrent agent turns", "Usage export and Prometheus metrics", "Support"]);
+  const yesNo = [...table.matchAll(/<td class="(yes|no)">/g)].map((m) => m[1]);
+  assert.deepEqual(yesNo, PLAN_IDS.map((id) => (PLANS[id].features.includes("usage-export") && PLANS[id].features.includes("prometheus-metrics") ? "yes" : "no")), "which plans have the reports");
+  for (const id of PLAN_IDS) {
+    const plan = PLANS[id];
+    const item = new RegExp(`<li><h3>${plan.name}</h3>[\\s\\S]*?</li>`).exec(teaser)?.[0];
+    assert.ok(item, `${plan.name} in the home page's line of plans`);
+    if (plan.priceMonthlyUsd) assert.ok(item!.includes(`$${plan.priceMonthlyUsd}`) && item!.includes(`$${plan.priceMonthlyAnnualUsd}`), `${plan.name}: both prices`);
+  }
+  assert.ok(exported.plans.length === PLAN_IDS.length);
+  // The measured mission, priced at every model's list price.
+  const runs = /<!-- generated:run-costs:start[^>]*-->([\s\S]*?)<!-- generated:run-costs:end -->/.exec(pricing)![1]!;
+  for (const [model, cost] of Object.entries(exported.measuredRuns[0]!.costUsdByModel)) {
+    const row = new RegExp(`<tr><th scope="row">[^<]*(?:Claude [A-Za-z]+ [\\d.]+|${model})[\\s\\S]*?</tr>`, "g");
+    assert.ok([...runs.matchAll(row)].some((m) => text(m[0]).includes(`$${cost.toFixed(2)}`)), `${model}: ${cost}`);
+  }
+  assert.ok(runs.includes(exported.modelPrices.asOf), "dated");
 });
 
 test("the export writes each block into the pages that fence it, is the same the second time, and refuses a pricing page that lacks one", () => {
