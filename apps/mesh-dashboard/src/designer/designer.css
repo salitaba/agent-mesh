@@ -7,7 +7,14 @@
  * and no negative margin on the bar itself can close it. This view supplies its own edge instead, and min-height keeps the bar pinned to the
  * bottom on short content too (see .ms-bar's auto top margin). */
 #view:has(> .ms) { padding-bottom: 0; display: flex; flex-direction: column; }
-.ms { display: flex; flex-direction: column; gap: var(--s3); flex: 1 1 auto; min-height: 0; }
+/* The save bar is pinned over the bottom of the page, so a control that is scrolled into view (a Tab, a validation jump) must come to rest above
+   it and not under it. scroll-margin does that for the control; scroll-padding on the page would lift the sticky bar by the same amount. */
+.ms-body :is(button, input, select, textarea, summary, a, [tabindex]), .ms-guide :is(button, input, select, textarea, summary, a, [tabindex]) {
+  scroll-margin-bottom: calc(var(--ms-bar-h, 64px) + var(--s3));
+}
+/* min-height stays `auto` here: on a narrow page the content (header, guide, seat list) is taller than the window and the page scrolls. With `min-height: 0` the
+   frame was squeezed to the window, its body to nothing, and the content spilled out of it, where the sticky save bar (which cannot leave the frame) lay on top of it. */
+.ms { display: flex; flex-direction: column; gap: var(--s3); flex: 1 1 auto; }
 .ms .page-head { position: relative; }
 .ms .page-head .view-title { align-items: center; margin-bottom: var(--s2); }
 .ms .view-sub { margin-top: 0; }
@@ -75,10 +82,11 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: curre
 .ms-close:hover { color: var(--text); border-color: var(--accent); }
 
 /* ---------- the workbench: the canvas and the inspector ---------- */
-.ms-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 400px); gap: var(--s3); align-items: start; flex: 1 1 auto; min-height: 0; }
+.ms-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 400px); gap: var(--s3); align-items: start; flex: 1 1 auto; }
 .ms-side { min-width: 0; }
 /* On a wide screen the inspector is as tall as the canvas beside it and scrolls inside itself, so the two read as one workbench. */
 @media (min-width: 1281px) {
+  .ms, .ms-body { min-height: 0; }
   .ms-body { align-items: stretch; }
   .ms-side { position: relative; min-height: 480px; }
   .ms-side > .ms-insp { position: absolute; inset: 0; max-height: none; }
