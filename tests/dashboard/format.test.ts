@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { dur, plainBlocker, plainEvent, snippetDiff, spanLabel } from "../../apps/mesh-dashboard/src/format";
+import { dur, hhmmss, localDateTime, localTime, plainBlocker, plainEvent, snippetDiff, spanLabel, zoneLabel } from "../../apps/mesh-dashboard/src/format";
 // Deep import for the same reason events.tsx uses one: catalog.ts carries only
 // the const tables, not the AJV-backed barrel.
 import { EVENT_TYPES } from "../../packages/protocol/src/catalog";
@@ -94,4 +94,30 @@ test("the budget gate's refusal names the budget and rounds its amounts", () => 
   );
   assert.equal(plainBlocker("budget agent:goal-1/pm exhausted (61200/50000)"), "pm's budget used up — 61.2k of 50.0k");
   assert.equal(plainBlocker("thread budget exhausted: thr-1"), "thread budget exhausted: thr-1", "anything else is left alone");
+});
+
+/**
+ * `hhmmss` was the UTC slice of the ISO string, unlabelled, on the Events console, the event pane, the step inspector and
+ * the drawers, while the Overview's mini-feed printed local time. One event, two times, on two screens. Everything is local
+ * now, and the zone is said once.
+ */
+test("a time of day is shown in the reader's zone, not sliced out of the UTC string", () => {
+  const iso = "2026-10-04T18:42:07.000Z";
+  assert.equal(localTime(iso, "UTC"), "18:42:07");
+  assert.equal(localTime(iso, "Asia/Tehran"), "22:12:07", "UTC+3:30");
+  assert.equal(localTime(iso, "America/New_York"), "14:42:07", "UTC-4 in October");
+  assert.equal(hhmmss(iso), localTime(iso), "the old name now means local time");
+});
+
+test("a timestamp that is not a date renders as nothing, not as 'Invalid Date'", () => {
+  for (const bad of ["", undefined, null, "not a date", "2026-13-45"]) {
+    assert.equal(localTime(bad), "");
+    assert.equal(localDateTime(bad), "");
+  }
+});
+
+test("a date and time, and the zone those times are in", () => {
+  assert.equal(localDateTime("2026-10-04T23:30:00.000Z", "Asia/Tehran"), "5 Oct, 03:00:00", "rolls over the day in the reader's zone");
+  assert.equal(zoneLabel("UTC"), "UTC");
+  assert.equal(zoneLabel("Asia/Tehran", new Date("2026-10-04T12:00:00Z")), "GMT+3:30");
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { ago, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
+import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSeverity, EventSummary } from "./events";
 import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
@@ -217,7 +217,7 @@ export function EventRow({ e, onOpen }: { e: TimelineEvent; onOpen: (seq: number
   const open = () => onOpen(e.seq);
   return (
     <div className={`ev sev-${evSeverity(e)}`} data-seq={e.seq} role="button" tabIndex={0} onClick={open} onKeyDown={rowKey(open)}>
-      <time title={e.timestamp}>{new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time>
+      <time title={e.timestamp}>{localTime(e.timestamp)}</time>
       <span className={`type ${evClass(e.type)}`}>{plainEvent(e.type)}</span>
       <span className="summary"><EventSummary e={e} /></span>
     </div>

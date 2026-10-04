@@ -9,7 +9,35 @@ export const fmt = (n: unknown): string => {
   return Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(Math.abs(v) >= 100000 ? 0 : 1)}k` : String(n ?? 0);
 };
 
-export const hhmmss = (iso: unknown): string => String(iso ?? "").slice(11, 19);
+/**
+ * A time of day, in the reader's own time zone: `19:02:07`.
+ *
+ * This used to be the UTC slice of the ISO string, shown with no label. The Overview's mini-feed printed local time
+ * (through toLocaleTimeString) while the Events console, the event pane, the step inspector and the drawers printed UTC, so
+ * one event carried two different times on two screens, and neither said which. Everything now goes through here, and a
+ * page that prints a run of them says the zone once (`zoneLabel`). `timeZone` exists so a test can pin one.
+ */
+export const localTime = (iso: unknown, timeZone?: string): string => {
+  const d = new Date(String(iso ?? ""));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone });
+};
+/** The same call sites kept their name: they show local time now. */
+export const hhmmss = localTime;
+
+/** `Oct 4, 19:02:07`: for the one place a timestamp may be from another day. */
+export const localDateTime = (iso: unknown, timeZone?: string): string => {
+  const d = new Date(String(iso ?? ""));
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.toLocaleDateString("en-GB", { month: "short", day: "numeric", timeZone })}, ${localTime(iso, timeZone)}`;
+};
+
+/** The zone local times are shown in: `UTC`, or `GMT+3:30`. Printed once above a run of times so no row repeats it. */
+export const zoneLabel = (timeZone?: string, at: Date = new Date()): string => {
+  const part = new Intl.DateTimeFormat("en-GB", { timeZoneName: "short", timeZone }).formatToParts(at).find((p) => p.type === "timeZoneName");
+  const name = part?.value ?? "";
+  return name === "GMT" ? "UTC" : name;
+};
 
 export const ago = (iso: unknown): string => {
   const s = (Date.now() - Date.parse(String(iso ?? ""))) / 1000;

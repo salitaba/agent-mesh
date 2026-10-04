@@ -8,7 +8,8 @@ import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "
 import { Banner, Button, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
 import { confirmResume, useGoLive, useReopenMission, useResetMission } from "./actions";
-import { describeMission, documentTitle, factsFromStatus, type MissionAction } from "./mission";
+import { documentTitle, type MissionAction } from "./mission";
+import { useMission } from "./useMission";
 import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
@@ -231,13 +232,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // disagreed about the same mission.
   const { done, total: critTotal } = mandatoryProgress(goal.acceptanceCriteria);
   const mission = (status?.budgets || []).find((b: any) => b.key.startsWith("mission:") && b.limitKind === "tokens");
-  const runningSteps = (steps || []).filter((s: any) => s.status === "running").length;
-  const hostCeilingTripped = projectsCtx?.hostSpend?.ceilingTripped === true;
-  const hasHistory = (steps?.length ?? 0) > 0 || (status?.eventCount ?? 0) > 15;
-  // One reading of the mission, shared by the bar, the Overview and the tab title (mission.ts): what state it is in and
-  // the one thing to do about it. The bar used to say PARKED beside a goal that read "done".
-  const facts = factsFromStatus(status, { serverDown, hostCeilingTripped, runningSteps, hasHistory });
-  const state = describeMission(facts);
+  // One reading of the mission, shared by the bar, the Overview and the tab title (mission.ts, useMission.ts): what state it
+  // is in and the one thing to do about it. The bar used to say PARKED beside a goal that read "done".
+  const { facts, state } = useMission();
   const parked = facts.parked;
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
