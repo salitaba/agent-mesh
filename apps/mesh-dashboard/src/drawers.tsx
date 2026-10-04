@@ -251,7 +251,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   // and says what broke; the reader decides when to leave.
   const failed = Boolean(json?.error);
   useEffect(() => {
-    if (failed) toast("agent", String(json.error) || "not found", "bad");
+    if (failed) toast("Could not open the agent", String(json.error) || "It was not found.", "bad");
   }, [failed, json?.error, toast]);
   if (!json) return <div className="muted">loading…</div>;
   if (failed) {

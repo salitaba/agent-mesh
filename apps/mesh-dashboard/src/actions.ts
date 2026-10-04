@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMesh } from "./store";
 import type { ConfirmFn } from "./components";
+import { goLiveNotice } from "./golive";
 import { resumeConfirmBody, startConfirmBody } from "./spend";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
@@ -50,12 +51,12 @@ export function useResetMission(): { busy: boolean; resetMission: () => Promise<
     try {
       const { status: code, json } = await client.post("/mission/reset", { confirm: true, confirmId: name });
       toast(
-        code === 200 ? "mission reset to zero" : "could not reset",
+        code === 200 ? "Mission reset to zero" : "Could not reset the mission",
         json?.note ?? json?.error ?? "",
         code === 200 ? "ok" : "bad",
       );
     } catch {
-      toast("could not reset", "the server did not answer", "bad");
+      toast("Could not reset the mission", "The server did not answer.", "bad");
     } finally {
       setBusy(false);
     }
@@ -91,12 +92,12 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
     try {
       const { status: code, json } = await client.post("/mission/reopen", { reason });
       toast(
-        code === 200 ? "mission reopened" : "could not reopen",
+        code === 200 ? "Mission reopened" : "Could not reopen the mission",
         json?.note ?? json?.reason ?? json?.error ?? "",
         code === 200 ? "ok" : "bad",
       );
     } catch {
-      toast("could not reopen", "the server did not answer", "bad");
+      toast("Could not reopen the mission", "The server did not answer.", "bad");
     } finally {
       setBusy(false);
     }
@@ -117,34 +118,11 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
     setBusy(true);
     try {
       const { status, json } = await client.post("/mission/start");
-      const already = json?.started === false;
-      // A 200 means the scheduler started, not that anyone is working. Reading
-      // "agents are running" off the status alone told the operator the mission
-      // was under way even when every startup seat was refused — while the
-      // boot's own note, rendered directly below it, said the opposite. Take
-      // the counts the route reports instead of asserting.
-      const started: string[] = Array.isArray(json?.activated) ? json.activated : [];
-      const blocked: unknown[] = Array.isArray(json?.refused) ? json.refused : [];
-      // `started.length === 0` is the operator's click achieving nothing, and it
-      // reads the same whether the seats were blocked or were never configured:
-      // the scheduler is running, the parked banner has cleared, and no agent
-      // will ever take a turn. The old split reported the un-configured case as
-      // a plain green "scheduler live" — technically true, and the exact toast
-      // behind "I clicked Continue and the mesh did not start". The server's
-      // `note` carries which of the two it was, so the title does not have to.
-      const title = status !== 200 ? "could not go live"
-        : already ? "already live"
-        : started.length === 0 ? "scheduler live, but no agent started"
-        : blocked.length > 0 ? `mission continuing — ${blocked.length} agent${blocked.length > 1 ? "s" : ""} blocked`
-        : "mission continuing — agents are running";
-      const kind = status !== 200 ? "bad"
-        : already ? "ok"
-        : started.length === 0 ? "bad"
-        : blocked.length > 0 ? "warn"
-        : "ok";
-      toast(title, json?.note ?? json?.error ?? "scheduler live", kind);
+      // What the notice says, and why it is read off the counts and never asserted, is golive.ts's.
+      const notice = goLiveNotice(status, json);
+      toast(notice.title, notice.msg, notice.kind);
     } catch {
-      toast("could not go live", "the server did not answer", "bad");
+      toast("Could not start the mission", "The server did not answer.", "bad");
     } finally {
       setBusy(false);
     }

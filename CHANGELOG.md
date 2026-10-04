@@ -110,6 +110,12 @@ sections 1 to 23) are described there, run by run.
   event stream for projects named by a registry, so on a server that runs one mesh it was a snapshot moved by the status poll. It
   now streams the mesh from the server's own `/events/stream`. Those servers also stopped showing the host's pages (Projects, Host
   settings) and asking for `/api/license`.
+- The notices in the corner say what happened in a sentence. They were the event's own fields in lower case ("escalation opened:
+  budget_exhausted (by explorer)", "budget exceeded: mission:goal-M44MV2BS003f3a104bda"); a decision now says what it holds (the mission,
+  or one seat), a budget running out is announced once by its decision, and Start says who is starting and never claims success when no
+  agent started.
+- Creating the demo from the welcome page no longer leaves 404s and 409s in the console: a host's views wait for the project they would
+  show while it starts.
 - The Product page no longer requests a `package.json` that is not there (a 404 in the console on every visit); the Steps page no
   longer calls turns that wrote nothing "wasted"; the details panel's file reader no longer repeats versions and React keys; the top
   bar no longer says "No goal" beside a chip that says Starting; the quiet note no longer reads as if a running mission had not

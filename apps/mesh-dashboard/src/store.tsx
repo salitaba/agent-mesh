@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
 import { VIEWS, hashFor, needsProjectRedirect, parseHash, type HashRoute, type View } from "./route";
 import { SINGLE_MESH, useProjectsOptional, type ProjectSink } from "./projects";
+import { eventToast } from "./toasttext";
 import { retainCap, trimRetained } from "./tabmodel";
 import { foldToolEvent, type ToolLive } from "./streams";
 import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
@@ -514,12 +515,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
     // news; an event older than a minute is not.
     const at = Date.parse(e.timestamp);
     if (!Number.isFinite(at) || Date.now() - at > TOAST_FRESH_MS) return;
-    if (e.type === "goal.completed") toast("goal completed", "all mandatory criteria evidenced", "ok");
-    if (e.type === "goal.escalated") toast("mission escalated", String(e.payload?.reason || ""), "bad");
-    if (e.type === "goal.failed") toast("mission failed", String(e.payload?.reason || ""), "bad");
-    if (e.type === "escalation.requested") toast("escalation opened", `${e.payload?.escalation?.reason} (by ${e.payload?.escalation?.raisedBy})`, "warn");
-    if (e.type === "agent.failed") toast("agent failed", `${e.payload?.agentId}: ${String(e.payload?.error || "").slice(0, 90)}`, "bad");
-    if (e.type === "budget.exceeded") toast("budget exceeded", `${e.payload?.key}`, "warn");
+    const notice = eventToast(e);
+    if (notice) toast(notice.title, notice.msg, notice.kind);
   }, [toast]);
 
   const ingestToken = useCallback((raw: any) => {
@@ -696,7 +693,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
       try {
         if (!holdMeshRef.current) await refreshStatus();
       } catch {
-        toast("mesh", "server unreachable — retrying…", "bad");
+        toast("The server is not answering", "The console keeps trying.", "bad");
       }
     })();
     const iv = setInterval(() => {
