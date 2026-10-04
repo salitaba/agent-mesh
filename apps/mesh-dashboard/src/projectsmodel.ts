@@ -212,6 +212,22 @@ export function groupProjects<T extends ProjectView>(
   return { groups, headings: groups.length > 1 && projects.length >= HEADINGS_FROM };
 }
 
+export type RegistryAnswer = "list" | "no-registry" | "down" | "refused";
+
+/**
+ * What an answer to `GET /api/projects` means for the page. Only a 2xx says what the registry holds. A 5xx is a proxy in
+ * front of a host that is not there (502, 503 and 504 are what nginx, an ingress and Vite's dev proxy answer), and reading
+ * it as "an empty registry" would swap twelve projects for a welcome that offers to make the first one. A refusal (401: the
+ * sign-in page's business; 429: a throttled address) says nothing about the registry at all, so the page keeps what it has.
+ * A 404 is a server with no registry route: `curule console`, one mesh and no host.
+ */
+export function readRegistryAnswer(res: { status: number; timeout?: boolean }): RegistryAnswer {
+  if (res.timeout || res.status === 0 || res.status >= 500) return "down";
+  if (res.status === 404) return "no-registry";
+  if (res.status >= 200 && res.status < 300) return "list";
+  return "refused";
+}
+
 /** The last segment of a folder path, for either separator, ignoring a trailing one. */
 export function folderName(root: string): string {
   const parts = root.split(/[\\/]+/).filter(Boolean);

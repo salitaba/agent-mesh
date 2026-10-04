@@ -14,6 +14,7 @@ import {
   landAfterClose,
   lastOpened,
   problemTitle,
+  readRegistryAnswer,
   tabLook,
   usd,
   type ProjectView,
@@ -220,6 +221,15 @@ test("the summary counts what is there and leaves spend unsaid when the host has
   assert.equal(unsaid.ceilingUsd, null);
   assert.equal(unsaid.runningTurns, 2, "the per-project figures are all there is");
   assert.equal(hostSummary([], null).total, 0);
+});
+
+test("only a 2xx says what is registered: a proxy's 5xx is a host that is not there, and a refusal says nothing", () => {
+  assert.equal(readRegistryAnswer({ status: 200 }), "list");
+  assert.equal(readRegistryAnswer({ status: 204 }), "list");
+  for (const status of [0, 500, 502, 503, 504]) assert.equal(readRegistryAnswer({ status }), "down", String(status));
+  assert.equal(readRegistryAnswer({ status: 200, timeout: true }), "down", "a timeout is down, whatever status was filled in");
+  assert.equal(readRegistryAnswer({ status: 404 }), "no-registry", "curule console has no registry route");
+  for (const status of [400, 401, 403, 429]) assert.equal(readRegistryAnswer({ status }), "refused", String(status));
 });
 
 test("a failure is shown in the host's words: the reason, then its detail", () => {

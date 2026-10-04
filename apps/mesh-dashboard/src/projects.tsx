@@ -21,6 +21,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { ReactNode } from "react";
 import { api, post } from "./api";
 import { parseHash, pickActiveProject, streamUrl } from "./route";
+import { readRegistryAnswer } from "./projectsmodel";
 
 const LAST_PROJECT_KEY = "mesh-last-project";
 
@@ -253,10 +254,13 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     }
     const { status, json, timeout } = res;
     if (deadRef.current) return [];
-    if (timeout || status === 0) {
+    const answer = readRegistryAnswer({ status, timeout });
+    if (answer === "down") {
       setHostDown(true);
       return [];
     }
+    // A refusal (the sign-in gate handles a 401; a throttled address answers 429) says nothing about what is registered.
+    if (answer === "refused") return projectsRef.current;
     setHostDown(false);
     // A 404 is not "a registry holding no projects" — it is a server with no
     // registry route. Only an actual answer settles the question; a transport
