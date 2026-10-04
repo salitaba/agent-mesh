@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { parse as parseYaml } from "yaml";
 import type { StagedMutation } from "@mesh/protocol";
-import { summarizeDiff } from "../model";
+import { summarizeDiff } from "../diff";
 import { confirmationFor, confirmationSatisfied, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";

@@ -20,7 +20,8 @@ import { AdvisoryList, CheckSection, HealthStrip, ImportCard, ReviewCard, SavedC
 import { CX, CY } from "./geom";
 import Inspector from "./Inspector";
 import { hueVar } from "./ui";
-import { baseName, clamp, deepCopy, densure, saveLandsOnRunning, sourceState, summarizeDiff, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
+import { summarizeDiff } from "./diff";
+import { baseName, clamp, deepCopy, densure, saveLandsOnRunning, sourceState, tabOfError, TEMPLATES, type SourceStateKind } from "./model";
 import { clearStored, commitDraft, getDraftSnapshot, loadLayout, readStored, ringLayout, saveLayout, storeDraft, useDraft, type DraftState } from "./storage";
 import Topology from "./Topology";
 import { Button, Input, useDismissable } from "../components";
