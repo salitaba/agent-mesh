@@ -10,9 +10,12 @@
  * sits and wrong anywhere else: copied into a container's data volume it would find no prompts. Scaffolding one
  * copies the role files it names into the project and points the config at them, so the result runs wherever it is put.
  */
-import * as fs from "fs";
 import * as path from "path";
-import { ConfigError, resolveConfig, writeDefaultMeshYaml } from "../../../packages/config/src/index";
+import { findShippedRoot as findRoot, listExamples, resolveConfig, scaffoldExample, writeDefaultMeshYaml } from "../../../packages/config/src/index";
+
+// The scaffolding lives in the config package, because the host scaffolds from the dashboard too and cannot import this
+// file (the CLI imports the host). Re-exported so this stays the one place a caller of `curule init` looks.
+export { listExamples, scaffoldExample };
 
 export const INIT_HELP = `usage:
   curule init [dir]                       scaffold mesh.yaml and roles/ (default team, Claude runtime)
@@ -32,54 +35,7 @@ const RUNTIMES = ["claude", "stub"] as const;
 
 /** The directory that holds `examples/` and `roles/`: the repository root, or `/app` in the image. */
 export function findShippedRoot(from: string = __dirname): string | undefined {
-  let dir = from;
-  for (let i = 0; i < 8; i++) {
-    if (fs.existsSync(path.join(dir, "examples")) && fs.existsSync(path.join(dir, "roles"))) return dir;
-    const up = path.dirname(dir);
-    if (up === dir) break;
-    dir = up;
-  }
-  return undefined;
-}
-
-export function listExamples(root: string): string[] {
-  const dir = path.join(root, "examples");
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "mesh.yaml")))
-    .map((e) => e.name)
-    .sort();
-}
-
-const ROLE_REF = /(\bprompt:\s*)\.\.\/\.\.\/roles\/([A-Za-z0-9_.-]+\.md)\b/g;
-
-/**
- * Copy one example into `targetDir` so that it needs nothing outside it: its `mesh.yaml` with the role prompts it
- * names pointed at a `roles/` beside it, and those files copied there. Refuses a directory that already has a
- * `mesh.yaml`, and an example whose config reaches outside itself in any way this cannot make self-contained.
- */
-export function scaffoldExample(root: string, example: string, targetDir: string): { configPath: string; roles: string[] } {
-  const source = path.join(root, "examples", example, "mesh.yaml");
-  const target = path.join(targetDir, "mesh.yaml");
-  if (fs.existsSync(target)) throw new ConfigError([`${target} already exists`]);
-  let text = fs.readFileSync(source, "utf8");
-  const roles = new Set<string>();
-  text = text.replace(ROLE_REF, (_all, lead: string, file: string) => {
-    roles.add(file);
-    return `${lead}./roles/${file}`;
-  });
-  const stray = text.split("\n").filter((line) => /(^|[\s"':])\.\.\//.test(line) && !line.trim().startsWith("#"));
-  if (stray.length > 0) {
-    throw new ConfigError([`example '${example}' refers outside itself, which a copy cannot carry: ${stray[0]!.trim()}`]);
-  }
-  for (const file of roles) {
-    if (!fs.existsSync(path.join(root, "roles", file))) throw new ConfigError([`example '${example}' names roles/${file}, which this install does not ship`]);
-  }
-  fs.mkdirSync(path.join(targetDir, "roles"), { recursive: true });
-  for (const file of roles) fs.copyFileSync(path.join(root, "roles", file), path.join(targetDir, "roles", file));
-  fs.writeFileSync(target, text, "utf8");
-  return { configPath: target, roles: [...roles].sort() };
+  return findRoot(from);
 }
 
 export function runInitCommand(positional: string[], flags: Record<string, string | boolean>, deps: InitDeps = {}): number {
@@ -120,7 +76,8 @@ export function runInitCommand(positional: string[], flags: Record<string, strin
       return 2;
     }
     const made = scaffoldExample(root, example, dir);
-    out(`wrote ${made.configPath} and ${made.roles.length} role prompt(s) under ${path.join(dir, "roles")}`);
+    const wrote = made.roles.length - made.kept.length;
+    out(`wrote ${made.configPath} and ${wrote} role prompt(s) under ${path.join(dir, "roles")}${made.kept.length ? `; kept the ${made.kept.length} you already had` : ""}`);
     // The result must load: say so now rather than at the first `curule project add`.
     resolveConfig(made.configPath);
     out(`next: curule project add ${dir}`);

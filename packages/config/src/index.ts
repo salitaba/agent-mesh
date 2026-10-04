@@ -2761,15 +2761,40 @@ export function writeDefaultMeshYaml(
   if (!isProjectId(projectId)) {
     throw new ConfigError([`project id '${projectId}' must match ${PROJECT_ID_PATTERN.source}`]);
   }
-  const template = `version: 1
+  const template = defaultMeshTemplate(meshId, projectId, defaultRuntime);
+  // `wx` fails if the file has appeared since the check above: a scaffold never writes over a mesh.yaml, even in a race.
+  fs.writeFileSync(target, template, { encoding: "utf8", flag: "wx" });
+  materializeRolePrompts(parseMeshSource(template), targetDir);
+  return target;
+}
+
+/** The mission token budget the default scaffold declares, so a screen can state it without writing the file first. */
+export const DEFAULT_SCAFFOLD_MISSION_TOKENS = 2_000_000;
+
+/**
+ * A name written into the scaffold: plain when that reads back as the same string, quoted when it would not. The names
+ * come from a folder, and a folder may be called `2024` (a number to YAML), `no` (a boolean to some readers) or
+ * `acme: payments` (a broken mapping); each used to write a mesh.yaml that failed to load. Ordinary names stay plain.
+ */
+export function yamlScalar(value: string): string {
+  const plain = /^[A-Za-z][A-Za-z0-9 ._-]*$/.test(value) && value === value.trim() && !/^(true|false|yes|no|on|off|null|y|n)$/i.test(value);
+  return plain ? value : JSON.stringify(value);
+}
+
+/**
+ * The text `writeDefaultMeshYaml` writes. A function of its own so that what a caller says about the default team (how
+ * many seats, what budget) is read from this text by `describeTemplates` and cannot drift from what the scaffold does.
+ */
+export function defaultMeshTemplate(meshId: string, projectId: string, defaultRuntime: string): string {
+  return `version: 1
 
 project:
-  id: ${projectId}
-  name: ${meshId}
+  id: ${yamlScalar(projectId)}
+  name: ${yamlScalar(meshId)}
 
 mesh:
-  id: ${meshId}
-  name: ${meshId}
+  id: ${yamlScalar(meshId)}
+  name: ${yamlScalar(meshId)}
   goal: |
     Describe the mission goal here.
   workspace:
@@ -2817,7 +2842,7 @@ policies:
 
 budgets:
   mission:
-    tokens: 2000000
+    tokens: ${DEFAULT_SCAFFOLD_MISSION_TOKENS}
     wall_clock_minutes: 240
     max_events: 10000
 
@@ -2897,7 +2922,144 @@ scheduling:
   concurrency:
     max_active_agents: 4
 `;
-  fs.writeFileSync(target, template, "utf8");
-  materializeRolePrompts(parseMeshSource(template), targetDir);
-  return target;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Starting points: what a new project can be made from.
+//
+// `curule init` and the host's `POST /api/projects` scaffold a project from one of two kinds of template: the default
+// team (`writeDefaultMeshYaml`) or an example the install ships under `examples/`. Both live here because the host cannot
+// import the CLI (the CLI imports the host), and two copies of "what is a shipped example" would drift.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** What the default team goes by in `describeTemplates` and in `POST /api/projects`. It is not a folder under `examples/`. */
+export const DEFAULT_TEMPLATE_ID = "default";
+
+/** The directory that holds `examples/` and `roles/`: the repository root, or `/app` in the image. */
+export function findShippedRoot(from: string = __dirname): string | undefined {
+  let dir = from;
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "examples")) && fs.existsSync(path.join(dir, "roles"))) return dir;
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return undefined;
+}
+
+/** The shipped examples, by folder name: every directory under `examples/` that holds a `mesh.yaml`. */
+export function listExamples(root: string): string[] {
+  const dir = path.join(root, "examples");
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "mesh.yaml")))
+    .map((e) => e.name)
+    .sort();
+}
+
+const ROLE_REF = /(\bprompt:\s*)\.\.\/\.\.\/roles\/([A-Za-z0-9_.-]+\.md)\b/g;
+
+/**
+ * Copy one example into `targetDir` so that it needs nothing outside it: its `mesh.yaml` with the role prompts it
+ * names pointed at a `roles/` beside it, and those files copied there. Refuses a directory that already has a
+ * `mesh.yaml`, and an example whose config reaches outside itself in any way this cannot make self-contained.
+ *
+ * `example` is looked up among the folders that exist, never joined onto a path as given, so whatever a caller passes
+ * (a request body, an argument) cannot name a location. A prompt file the folder already holds is kept, not replaced:
+ * it is the person's.
+ */
+export function scaffoldExample(root: string, example: string, targetDir: string): { configPath: string; roles: string[]; kept: string[] } {
+  if (!listExamples(root).includes(example)) throw new ConfigError([`no example '${example}' in this install`]);
+  const source = path.join(root, "examples", example, "mesh.yaml");
+  const target = path.join(targetDir, "mesh.yaml");
+  if (fs.existsSync(target)) throw new ConfigError([`${target} already exists`]);
+  let text = fs.readFileSync(source, "utf8");
+  const roles = new Set<string>();
+  text = text.replace(ROLE_REF, (_all, lead: string, file: string) => {
+    roles.add(file);
+    return `${lead}./roles/${file}`;
+  });
+  const stray = text.split("\n").filter((line) => /(^|[\s"':])\.\.\//.test(line) && !line.trim().startsWith("#"));
+  if (stray.length > 0) {
+    throw new ConfigError([`example '${example}' refers outside itself, which a copy cannot carry: ${stray[0]!.trim()}`]);
+  }
+  for (const file of roles) {
+    if (!fs.existsSync(path.join(root, "roles", file))) throw new ConfigError([`example '${example}' names roles/${file}, which this install does not ship`]);
+  }
+  fs.mkdirSync(path.join(targetDir, "roles"), { recursive: true });
+  const kept: string[] = [];
+  for (const file of roles) {
+    const dest = path.join(targetDir, "roles", file);
+    if (fs.existsSync(dest)) {
+      kept.push(file);
+      continue;
+    }
+    fs.copyFileSync(path.join(root, "roles", file), dest, fs.constants.COPYFILE_EXCL);
+  }
+  // The config goes last, and exclusively: if anything above failed there is no half project holding a mesh.yaml.
+  fs.writeFileSync(target, text, { encoding: "utf8", flag: "wx" });
+  return { configPath: target, roles: [...roles].sort(), kept: kept.sort() };
+}
+
+/** What a screen may say about a starting point before it writes anything, read from the template itself. */
+export interface TemplateInfo {
+  id: string;
+  kind: "default" | "example";
+  title: string;
+  /** The first line of the goal; null for the default team, whose goal is a placeholder the person writes. */
+  goal: string | null;
+  seats: number;
+  /** The runtime every seat uses, or "mixed". */
+  runtime: string;
+  /** Some seat runs on something other than the stub runtime, so the host needs a model credential. */
+  needsApiKey: boolean;
+  /** Prompt files written under `roles/` beside the `mesh.yaml`. */
+  rolePrompts: number;
+  /** The mission's token budget, when the template declares one. */
+  missionTokens: number | null;
+  /** The project id the template pins; null when it is derived from the name of the folder it is written to. */
+  projectId: string | null;
+}
+
+function factsOf(id: string, kind: TemplateInfo["kind"], raw: RawMeshFile, rolePrompts: number): TemplateInfo {
+  const fallback = raw.mesh.runtime?.default ?? "claude";
+  const runtimes = new Set(Object.values(raw.agents ?? {}).map((a) => a.runtime ?? fallback));
+  const goalLine = String(raw.mesh.goal ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? null;
+  return {
+    id,
+    kind,
+    title: raw.mesh.name ?? raw.mesh.id,
+    goal: goalLine ? (goalLine.length > 160 ? `${goalLine.slice(0, 157)}...` : goalLine) : null,
+    seats: Object.keys(raw.agents ?? {}).length,
+    runtime: runtimes.size === 1 ? [...runtimes][0]! : "mixed",
+    needsApiKey: [...runtimes].some((r) => r !== "stub"),
+    rolePrompts,
+    missionTokens: raw.budgets?.mission?.tokens ?? null,
+    projectId: raw.project?.id ?? null,
+  };
+}
+
+/**
+ * The starting points this install offers: the default team, then each shipped example. Facts come from the files, so a
+ * new example appears here with the right seat count and the right answer to "does it need an API key" without anyone
+ * editing a list. An example that does not parse is not offered.
+ */
+export function describeTemplates(root: string | undefined): TemplateInfo[] {
+  const out: TemplateInfo[] = [];
+  // The default team is read from the very text `writeDefaultMeshYaml` writes, with placeholder names.
+  const scaffold = parseMeshSource(defaultMeshTemplate("default", "default", "claude"));
+  const prompts = Object.values(scaffold.agents).filter((a) => a.prompt).length;
+  out.push({ ...factsOf(DEFAULT_TEMPLATE_ID, "default", scaffold, prompts), title: "Default team", goal: null, projectId: null });
+  if (!root) return out;
+  for (const name of listExamples(root)) {
+    try {
+      const text = fs.readFileSync(path.join(root, "examples", name, "mesh.yaml"), "utf8");
+      const prompts = new Set([...text.matchAll(ROLE_REF)].map((m) => m[2]!));
+      out.push(factsOf(name, "example", parseMeshSource(text), prompts.size));
+    } catch {
+      /* not offered: a template that does not load is not a starting point */
+    }
+  }
+  return out;
 }
