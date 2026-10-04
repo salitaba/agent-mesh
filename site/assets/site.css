@@ -57,7 +57,6 @@ b, strong { font-weight: 650; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .muted { color: var(--muted); }
 .small { font-size: .875rem; }
-.num { font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- layout */
 .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
@@ -151,8 +150,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .frame-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
 .frame-bar span { margin-left: 10px; color: var(--muted); font: 12px/1 var(--mono); }
 .frame img { display: block; width: 100%; height: auto; }
-.frame figcaption, .pane-caption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--bg); color: var(--muted); font-size: .875rem; line-height: 1.5; }
-.frame figcaption b, .pane-caption b { color: var(--ink); }
+.frame figcaption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--bg); color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.frame figcaption b { color: var(--ink); }
 .showcase { position: relative; }
 .tab-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; max-width: 100%; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
@@ -179,7 +178,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .card p { color: var(--muted); font-size: .9375rem; }
 .card p:last-child { margin-bottom: 0; }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-@media (min-width: 600px) { .grid-2, .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 600px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 900px) { .grid-3 { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 1040px) { .grid-4 { grid-template-columns: repeat(4, 1fr); } }
 
@@ -353,12 +352,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .result .total { font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; }
 .result .fine { margin-top: 12px; color: var(--muted); font-size: .875rem; }
 
-.stat-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--line); }
-.stat-row > div { padding: 20px 0; border-bottom: 1px solid var(--line); }
-.stat-row dt { color: var(--muted); font-size: .875rem; }
-.stat-row dd { margin: 4px 0 0; font-size: 1.125rem; font-weight: 600; }
-@media (min-width: 720px) { .stat-row { grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); } .stat-row > div { padding: 24px 24px 24px 0; border-bottom: 0; } .stat-row > div + div { padding-left: 24px; border-left: 1px solid var(--line); } }
-
 /* plan teaser on the home page */
 .teaser { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
 @media (min-width: 600px) { .teaser { grid-template-columns: repeat(2, 1fr); } }
@@ -422,6 +415,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
   .tile .frame { transition: border-color .15s; }
   .arrow-link::after, .faq summary::after { transition: transform .15s; }
   .menu-icon::before, .menu-icon::after { transition: transform .18s, top .18s, bottom .18s; }
+}
+/* A forced-colour mode (Windows high contrast) replaces the fill that marks the chosen tab or billing period: say it in system colours. */
+@media (forced-colors: active) {
+  .tab-input:nth-of-type(1):checked ~ .tabs label:nth-child(1),
+  .tab-input:nth-of-type(2):checked ~ .tabs label:nth-child(2),
+  .tab-input:nth-of-type(3):checked ~ .tabs label:nth-child(3),
+  .tab-input:nth-of-type(4):checked ~ .tabs label:nth-child(4),
+  .billing-input:nth-of-type(1):checked ~ .billing label:nth-child(1),
+  .billing-input:nth-of-type(2):checked ~ .billing label:nth-child(2) { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .site-footer .foot-grid { display: none; }
