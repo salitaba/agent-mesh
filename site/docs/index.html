@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Documentation - Curule</title>
+<meta name="description" content="Where the Curule documents are and what each one is for: quickstart, concepts, configuration, deployment, operations, security, licensing, the protocol and the runtime. Which are reference and which are short.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="../assets/site.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Documentation - Curule">
+<meta property="og:description" content="Where the Curule documents are, what each one is for, and which are reference and which are short.">
+<!-- TODO(owner): og:image and twitter:image must be absolute URLs once the domain is chosen, for example https://<your-domain>/assets/social-card.png -->
+<meta property="og:image" content="../assets/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="../assets/social-card.png">
+</head>
+<body>
+<!-- generated:chrome-header:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="../" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav class="nav-main" aria-label="Main">
+      <a href="../#product">Product</a>
+      <a href="../pricing/">Pricing</a>
+      <a href="../docs/" aria-current="page">Docs</a>
+      <a href="../security/">Security</a>
+    </nav>
+    <div class="bar-actions">
+      <a class="signin" href="#" data-app hidden>Sign in</a>
+      <a class="btn btn-primary" href="../#try">Try the demo</a>
+      <details class="menu">
+        <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
+        <div class="menu-panel">
+          <nav aria-label="Menu">
+            <a href="../#product">Product</a>
+            <a href="../pricing/">Pricing</a>
+            <a href="../docs/" aria-current="page">Docs</a>
+            <a href="../security/">Security</a>
+            <a href="#" data-app hidden>Sign in</a>
+          </nav>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+<!-- generated:chrome-header:end -->
+
+<main id="main" tabindex="-1">
+
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Documentation</p>
+    <h1>Read the documents.</h1>
+    <p class="lede">The documents live in the repository, next to the code they describe, and there is no separate documentation site yet. This page is the map: what each document is for, and how much of it there is.</p>
+  </div>
+</section>
+
+<section class="section" id="documents">
+  <div class="wrap">
+    <div class="cols legend-cols">
+      <div>
+        <h2 class="legend-title">How to read the labels</h2>
+        <p class="muted mt-s">A document is labelled by what it is, and each label is checked against the file: a document that grows past its label fails a test until the label is changed.</p>
+      </div>
+      <ul class="rows legend">
+        <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines; meant to be searched, not read from the top.</span></li>
+        <li><b><span class="tag">Guide</span> read in order</b><span>One job from start to end: deploying it, running it, licensing it.</span></li>
+        <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy; read it whole.</span></li>
+        <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
+      </ul>
+    </div>
+    <p class="notice neutral mt-l"><b>These links open the files on GitHub.</b> They are set by a script; without it each card still names the file, in the repository&rsquo;s <code>docs</code> folder unless the path says otherwise.</p>
+
+    <div class="doc-grid mt-xl">
+      <article class="doc-card" id="quickstart">
+        <h2>Quickstart</h2>
+        <p>Run it with no model and no API key, then run it for real.</p>
+        <ul class="doc-list">
+          <li data-kind="guide"><div class="head"><a href="#documents" data-doc="../README.md">README</a><span class="tag">Guide</span></div><span class="about">What it is, a first run, the commands you will use and the layout of the repository.</span><span class="path">README.md</span></li>
+          <li data-kind="guide"><div class="head"><a href="#documents" data-doc="commercial/deployment.md#try-it-in-a-minute-with-no-api-key">Try it in a minute</a><span class="tag">Guide</span></div><span class="about">The demo container, step by step, with a token you generate.</span><span class="path">docs/commercial/deployment.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="concepts">
+        <h2>Concepts</h2>
+        <p>How the pieces fit, and why a prompt is not the contract.</p>
+        <ul class="doc-list">
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="architecture.md">Architecture</a><span class="tag">Short</span></div><span class="about">The five planes, the four layers of enforcement, event sourcing and the single-writer rule.</span><span class="path">docs/architecture.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="configure">
+        <h2>Configure</h2>
+        <p>Describe a team and its rules in <code>mesh.yaml</code>.</p>
+        <ul class="doc-list">
+          <li data-kind="reference"><div class="head"><a href="#documents" data-doc="configuration.md">Configuration</a><span class="tag">Reference</span></div><span class="about">Every field of <code>mesh.yaml</code> and <code>host.yaml</code>: agents, policies, hard actions, budgets and the message bus.</span><span class="path">docs/configuration.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="deploy">
+        <h2>Deploy</h2>
+        <p>Put it where it will run: one server, a cluster, or one instance per tenant.</p>
+        <ul class="doc-list">
+          <li data-kind="guide"><div class="head"><a href="#documents" data-doc="commercial/deployment.md">Deploying Curule</a><span class="tag">Guide</span></div><span class="about">Docker Compose, TLS and a reverse proxy, Kubernetes with Helm, fleets, air-gapped installs and building the image yourself.</span><span class="path">docs/commercial/deployment.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="operate">
+        <h2>Operate</h2>
+        <p>Keep it running, and know what each refusal means.</p>
+        <ul class="doc-list">
+          <li data-kind="guide"><div class="head"><a href="#documents" data-doc="operations.md">Operating Curule</a><span class="tag">Guide</span></div><span class="about">Settings, upgrading, backup and restore, monitoring, rotating the token and what each refusal means.</span><span class="path">docs/operations.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="security-docs">
+        <h2>Security</h2>
+        <p>What it protects, what it does not, and how to report a problem.</p>
+        <ul class="doc-list">
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="commercial/security.md">Security</a><span class="tag">Short</span></div><span class="about">Every control, the test that pins it, and what it does not do.</span><span class="path">docs/commercial/security.md</span></li>
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="commercial/security-questionnaire.md">Security questionnaire</a><span class="tag">Short</span></div><span class="about">Answers to the questions a buyer&rsquo;s security team usually asks, including the ones whose answer is no.</span><span class="path">docs/commercial/security-questionnaire.md</span></li>
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="../SECURITY.md">Security policy</a><span class="tag">Short</span></div><span class="about">How to report a vulnerability privately, and what to expect.</span><span class="path">SECURITY.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="licensing-docs">
+        <h2>Licensing and pricing</h2>
+        <p>The source licence, licence keys and the plans.</p>
+        <ul class="doc-list">
+          <li data-kind="guide"><div class="head"><a href="#documents" data-doc="commercial/licensing.md">Licences and plan limits</a><span class="tag">Guide</span></div><span class="about">The source licence in plain words, what a licence key is, what a limit does and what happens at expiry.</span><span class="path">docs/commercial/licensing.md</span></li>
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="commercial/pricing.md">Pricing</a><span class="tag">Short</span></div><span class="about">The plans, the reasoning behind them and what the measured mission cost.</span><span class="path">docs/commercial/pricing.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="reference">
+        <h2>Reference</h2>
+        <p>The contracts underneath, for whoever writes an adapter or reads the log.</p>
+        <ul class="doc-list">
+          <li data-kind="reference"><div class="head"><a href="#documents" data-doc="protocol.md">Protocol</a><span class="tag">Reference</span></div><span class="about">The message and event envelopes, artifact addresses, the typed state machines and trust classes.</span><span class="path">docs/protocol.md</span></li>
+          <li data-kind="reference"><div class="head"><a href="#documents" data-doc="runtime.md">Runtime and adapters</a><span class="tag">Reference</span></div><span class="about">The supervisor, the adapter interface, recovery, termination, state and persistence, and the server.</span><span class="path">docs/runtime.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="changelog">
+        <h2>Changelog</h2>
+        <p>What changed between versions, written for whoever runs it.</p>
+        <ul class="doc-list">
+          <li data-kind="log"><div class="head"><a href="#documents" data-doc="../CHANGELOG.md">Changelog</a><span class="tag">Log</span></div><span class="about">Read the notes on upgrading before you upgrade a deployment: there is no supported downgrade.</span><span class="path">CHANGELOG.md</span></li>
+        </ul>
+      </article>
+      <article class="doc-card" id="brand">
+        <h2>Brand</h2>
+        <p>The name, the voice, the colours and the logo.</p>
+        <ul class="doc-list">
+          <li data-kind="short"><div class="head"><a href="#documents" data-doc="brand.md">Name, voice and look</a><span class="tag">Short</span></div><span class="about">How to say what Curule is, and how to use the name and the logo.</span><span class="path">docs/brand.md</span></li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section band">
+  <div class="wrap cols">
+    <div>
+      <h2 class="legend-title">Something missing?</h2>
+      <p class="muted mt-s">If a question is not answered in these, the contact page says where to ask. A question a document should have answered is a defect in the document, and we want to hear about it.</p>
+    </div>
+    <p class="btn-row"><a class="btn btn-primary" href="../contact/#support">Ask a question</a><a class="btn" href="../security/">Read the security page</a></p>
+  </div>
+</section>
+
+</main>
+
+<!-- generated:chrome-footer:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="../" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <p>A team of AI agents, run like an organization.</p>
+        <p class="foot-contact"><span id="contact">TODO(owner): company name, contact email</span></p>
+      </div>
+      <nav class="foot-col" aria-label="Product">
+        <h2>Product</h2>
+        <ul>
+          <li><a href="../">Overview</a></li>
+          <li><a href="../#product">What it shows</a></li>
+          <li><a href="../#try">Try the demo</a></li>
+          <li><a href="../pricing/">Pricing</a></li>
+          <li><a href="../security/">Security</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Resources">
+        <h2>Resources</h2>
+        <ul>
+          <li><a href="../docs/" aria-current="page">Documentation</a></li>
+          <li><a href="../docs/" data-doc="../README.md">Quickstart</a></li>
+          <li><a href="../docs/" data-doc="commercial/deployment.md">Deploying</a></li>
+          <li><a href="../docs/" data-doc="operations.md">Operating</a></li>
+          <li><a href="../docs/" data-doc="../CHANGELOG.md">Changelog</a></li>
+          <li><a href="../docs/" data-repo="">Source code</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Company">
+        <h2>Company</h2>
+        <ul>
+          <li><a href="../contact/">Contact</a></li>
+          <li><a href="../legal/#licence">Licence</a></li>
+          <li><a href="../legal/#privacy">Privacy</a></li>
+          <li><a href="../legal/#terms">Terms</a></li>
+          <li><a href="../docs/" data-doc="../SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="foot-legal">
+      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
+    </div>
+  </div>
+</footer>
+<!-- generated:chrome-footer:end -->
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
