@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<!--
+  The page a host shows for an address that does not exist. GitHub Pages, Netlify and Cloudflare Pages serve /404.html for any
+  missing path, at any depth, so this page can be shown at /a/b/c: a relative link would resolve against that address and miss.
+  That is why every address in this file starts at the root of the site (/assets/site.css, /pricing/) and is the only file
+  where that is allowed (tests/build/site.test.ts checks that each one names a file that exists). It assumes the site is served
+  from the root of its domain, which is what CNAME and `npm run site:domain` set up; under a sub-path (owner.github.io/repo/)
+  the root-relative addresses would need that prefix. A host that has no such setting (python3 -m http.server, S3 without an
+  error document) answers a missing path with its own page and never shows this one.
+-->
+<title>Page not found - Curule</title>
+<meta name="description" content="That address is not a page of the Curule site. The pricing, documentation, security and contact pages, and the home page, are linked below.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<!-- generated:chrome-header:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav class="nav-main" aria-label="Main">
+      <a href="/#product">Product</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="/docs/">Docs</a>
+      <a href="/security/">Security</a>
+    </nav>
+    <div class="bar-actions">
+      <a class="signin" href="#" data-app hidden>Sign in</a>
+      <a class="btn btn-primary" href="/#try">Try the demo</a>
+      <details class="menu">
+        <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
+        <div class="menu-panel">
+          <nav aria-label="Menu">
+            <a href="/#product">Product</a>
+            <a href="/pricing/">Pricing</a>
+            <a href="/docs/">Docs</a>
+            <a href="/security/">Security</a>
+            <a href="#" data-app hidden>Sign in</a>
+          </nav>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+<!-- generated:chrome-header:end -->
+
+<main id="main" tabindex="-1">
+  <section class="nf">
+    <div class="wrap">
+      <p class="eyebrow">404</p>
+      <h1>That page is not here.</h1>
+      <p class="lede">The address may have changed, or it may never have existed. These pages do exist.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="/">Home</a>
+        <a class="btn" href="/pricing/">Pricing</a>
+        <a class="btn" href="/docs/">Documentation</a>
+        <a class="btn" href="/security/">Security</a>
+        <a class="btn" href="/contact/">Contact</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- generated:chrome-footer:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <p>A team of AI agents, run like an organization.</p>
+        <p class="foot-contact"><span id="contact">TODO(owner): company name, contact email</span></p>
+      </div>
+      <nav class="foot-col" aria-label="Product">
+        <h2>Product</h2>
+        <ul>
+          <li><a href="/">Overview</a></li>
+          <li><a href="/#product">What it shows</a></li>
+          <li><a href="/#try">Try the demo</a></li>
+          <li><a href="/pricing/">Pricing</a></li>
+          <li><a href="/security/">Security</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Resources">
+        <h2>Resources</h2>
+        <ul>
+          <li><a href="/docs/">Documentation</a></li>
+          <li><a href="/docs/" data-doc="../README.md">Quickstart</a></li>
+          <li><a href="/docs/" data-doc="commercial/deployment.md">Deploying</a></li>
+          <li><a href="/docs/" data-doc="operations.md">Operating</a></li>
+          <li><a href="/docs/" data-doc="../CHANGELOG.md">Changelog</a></li>
+          <li><a href="/docs/" data-repo="">Source code</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Company">
+        <h2>Company</h2>
+        <ul>
+          <li><a href="/contact/">Contact</a></li>
+          <li><a href="/legal/#licence">Licence</a></li>
+          <li><a href="/legal/#privacy">Privacy</a></li>
+          <li><a href="/legal/#terms">Terms</a></li>
+          <li><a href="/docs/" data-doc="../SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="foot-legal">
+      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
+    </div>
+  </div>
+</footer>
+<!-- generated:chrome-footer:end -->
+<script src="/assets/site.js" defer></script>
+</body>
+</html>
