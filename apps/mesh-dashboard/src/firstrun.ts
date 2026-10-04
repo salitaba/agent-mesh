@@ -110,7 +110,8 @@ export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[]): {
 
 /** What it costs. A team that needs no key costs nothing; one that does spends tokens on the person's own account. */
 export function whatItCosts(o: TemplateOffer, ceilingUsd: number | null): string {
-  if (!o.needsApiKey) return "Nothing: no tokens are spent.";
+  // The console shows token counts for the demo too: they are the script's own, and said to be.
+  if (!o.needsApiKey) return "Nothing, and there is no bill. The token counts it shows are the script's own.";
   const cap = o.missionTokens ? ` The mission is capped at ${o.missionTokens.toLocaleString("en-US")} tokens.` : "";
   const ceiling = ceilingUsd !== null && ceilingUsd > 0 ? ` The host parks every open project once their estimated spend reaches ${usd(ceilingUsd)}.` : "";
   return `Spends tokens on your own provider account.${cap}${ceiling}`;

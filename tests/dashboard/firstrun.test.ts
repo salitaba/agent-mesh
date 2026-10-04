@@ -92,7 +92,7 @@ test("a team that needs no key says it needs nothing; one that does says what th
 });
 
 test("what it costs: nothing for the demo; tokens on the person's own account for the Claude team, with the caps that exist", () => {
-  assert.equal(whatItCosts(offer(), 50), "Nothing: no tokens are spent.");
+  assert.equal(whatItCosts(offer(), 50), "Nothing, and there is no bill. The token counts it shows are the script's own.");
   assert.equal(
     whatItCosts(claude({ missionTokens: 2_000_000 }), 50),
     "Spends tokens on your own provider account. The mission is capped at 2,000,000 tokens. The host parks every open project once their estimated spend reaches $50.00.",
