@@ -1,0 +1,154 @@
+/* ============ Overview: mission control ============
+   One hero that says what state the mission is in and what to do about it, an attention list for everything else that is
+   true, the result when there is one, and three cards under them. Tokens only; type from the ramp; breakpoints from the
+   ladder. A tinted surface uses --text and --text-dim, never --muted: --muted was calibrated against --panel and falls under
+   4.5:1 once a tint lifts the ground (the same reason .status-strip steps up to --text-dim). */
+
+.ov { display: flex; flex-direction: column; gap: var(--s3); }
+.ov .view-title { margin-bottom: 0; }
+
+/* ---------- panels: a headed section whose actions sit beside the heading, not inside it ---------- */
+.panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1-5) var(--s3); margin: 0 0 var(--s2-5); }
+.panel-head h3 { margin: 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.panel-meta { font: var(--tx-meta); color: var(--muted); }
+.panel-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-left: auto; }
+
+/* ---------- the hero ---------- */
+.ov-hero { display: grid; gap: var(--s3-5); padding: var(--s4) var(--s5); border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--panel); }
+.ov-hero.ok { background: color-mix(in srgb, var(--ok) 7%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); }
+.ov-hero.warn { background: color-mix(in srgb, var(--warn) 8%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); }
+.ov-hero.bad { background: color-mix(in srgb, var(--bad) 8%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 42%, var(--line)); }
+/* A chip tinted with its own hue is calibrated over an opaque surface (console-palette.test.ts). Over the hero's own tint, a
+   transparent wash would lift the ground towards the text and cost it contrast, so inside the hero the wash sits on --panel. */
+.ov-hero .mission-chip.ok { background: color-mix(in srgb, var(--ok) 14%, var(--panel)); }
+.ov-hero .mission-chip.warn { background: color-mix(in srgb, var(--warn) 14%, var(--panel)); }
+.ov-hero .mission-chip.bad { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); }
+.ov-hero .mission-chip.neutral { background: color-mix(in srgb, var(--text-dim) 12%, var(--panel)); }
+.ov-hero-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s3) var(--s4); }
+.ov-hero-lead { flex: 1 1 340px; min-width: 0; display: grid; gap: var(--s2); }
+.ov-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.ov-headline { margin: 0; font: var(--tx-title); }
+.ov-goal { margin: 0; max-width: 90ch; color: var(--text-dim); font-size: 15px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.ov-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+/* Said once, next to the chip: the figures below are the last the server reported. */
+.ov-stale { padding: 1px 10px; border-radius: 20px; font: 600 12px var(--sans); color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+
+.ov-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3-5) var(--s5); margin: 0; padding-top: var(--s3-5); border-top: 1px solid var(--line); }
+.ov-stat { display: grid; gap: var(--s1); align-content: start; min-width: 0; }
+.ov-stat dt { font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); }
+.ov-stat dd { display: grid; gap: var(--s1); margin: 0; min-width: 0; }
+.ov-stat .v { font: 600 16px/1.3 var(--mono); overflow-wrap: anywhere; }
+.ov-stat .v .of { font-weight: 400; color: var(--text-dim); }
+.ov-stat .v.bad { color: var(--bad); }
+.ov-sub { font: var(--tx-meta); color: var(--text-dim); }
+.ov-hero.stale .ov-stat .v { font-weight: 400; color: var(--text-dim); }
+
+.ov-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
+.ov-bar > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transform-origin: left center; transform: scaleX(var(--p, 0)); transition: transform .5s ease; }
+.ov-bar.ok > i { background: var(--ok); }
+.ov-bar.warn > i { background: var(--warn); }
+.ov-bar.bad > i { background: var(--bad); }
+
+/* The server's own sentence and the long wording behind it: quieter than the headline, one click away. */
+.ov-note { margin: 0; font-size: 14px; color: var(--text-dim); }
+.ov-note > summary { display: flex; align-items: flex-start; gap: var(--s2); cursor: pointer; list-style: none; min-height: 24px; border-radius: var(--r-sm); }
+.ov-note > summary::-webkit-details-marker { display: none; }
+.ov-note .chev { flex: none; margin-top: 3px; transition: transform .15s; }
+.ov-note[open] .chev { transform: rotate(90deg); }
+.ov-note-body { display: grid; gap: var(--s2); margin: var(--s2) 0 0 calc(14px + var(--s2)); max-width: 90ch; }
+.ov-note-body p { margin: 0; }
+.ov-server { margin: 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--line-strong); background: color-mix(in srgb, var(--text) 5%, transparent); border-radius: 0 var(--r-sm) var(--r-sm) 0; font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.ov-server b { display: block; margin-bottom: var(--s0); font: var(--tx-label); color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+
+.ov-skel { display: grid; gap: var(--s2-5); }
+.ov-skel i { display: block; height: 14px; border-radius: var(--r-sm); background: var(--sunken); }
+.ov-skel i.big { height: 22px; width: 52%; }
+.ov-skel i.mid { width: 70%; }
+.ov-skel i.short { width: 34%; }
+
+/* ---------- the attention list ---------- */
+.ov-attn { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); overflow: hidden; }
+.ov-attn-head { display: flex; align-items: baseline; gap: var(--s2); margin: 0; padding: var(--s2-5) var(--s4); border-bottom: 1px solid var(--line); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ov-attn-head .n { font: 600 12px var(--mono); letter-spacing: 0; }
+.ov-attn ul { list-style: none; margin: 0; padding: 0; }
+.ov-attn li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: start; padding: var(--s3) var(--s4); border-top: 1px solid var(--line); }
+.ov-attn li:first-child { border-top: 0; }
+.ov-ai { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); }
+.ov-ai.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.ov-ai.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.ov-ad > summary { display: flex; align-items: flex-start; gap: var(--s2); cursor: pointer; list-style: none; min-height: 28px; padding-top: var(--s0); border-radius: var(--r-sm); }
+.ov-ad > summary::-webkit-details-marker { display: none; }
+.ov-ad .chev { flex: none; margin-top: 4px; color: var(--muted); transition: transform .15s; }
+.ov-ad[open] .chev { transform: rotate(90deg); }
+.ov-ad-line { min-width: 0; font-size: 14px; }
+.ov-ad-line b { font-weight: 600; }
+.ov-ad-line .ctx { color: var(--text-dim); }
+.ov-ad-body { display: grid; gap: var(--s2); margin: var(--s1) 0 0 calc(14px + var(--s2)); max-width: 90ch; font-size: 14px; color: var(--text-dim); }
+.ov-ad-body p { margin: 0; }
+.ov-ad.plain { min-height: 28px; padding-top: var(--s1); font-size: 14px; }
+.ov-fix { align-self: start; margin-top: var(--s0); white-space: nowrap; }
+
+/* ---------- the result ---------- */
+.ov-shipped-sum { margin: 0 0 var(--s3); font-size: 14px; color: var(--text-dim); }
+.ov-shipped-sum b { color: var(--text); font-weight: 600; }
+.ov-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s2-5); margin: 0; padding: 0; list-style: none; }
+.ov-file { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); width: 100%; height: 100%; text-align: left; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); color: inherit; font: inherit; cursor: pointer; }
+.ov-file:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.ov-file b { min-width: 0; max-width: 100%; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.ov-file .meta { font: var(--tx-meta); color: var(--muted); }
+.ov-file .path { max-width: 100%; font: 12px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-more { margin: var(--s3) 0 0; font-size: 14px; color: var(--text-dim); }
+.ov-foot { margin: var(--s3) 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.ov-foot .mono { color: var(--text-dim); }
+
+/* ---------- the checks ---------- */
+.ov-goal-text { margin: 0 0 var(--s1-5); max-width: 70ch; white-space: pre-line; overflow-wrap: anywhere; }
+.ov-goal-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.ov-checks { list-style: none; margin: var(--s3) 0 0; padding: 0; }
+.ov-check { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--s2-5); padding: var(--s2-5) 0; border-top: 1px dashed var(--line); }
+.ov-check:first-child { border-top: 0; padding-top: var(--s1); }
+/* A 1.5px ring: optical, so the empty mark and the drawn ones carry the same weight. */
+.ck { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; box-sizing: border-box; }
+.ck.done { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.ck.claimed { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.ck.todo { border: 1.5px solid var(--line-control); }
+.ck.skipped { border: 1.5px dashed var(--line-control); }
+.ov-check .what { min-width: 0; font-size: 14px; }
+.ov-check .what b { font-weight: 600; overflow-wrap: anywhere; }
+.ov-check .word { color: var(--muted); }
+.ov-check .word.claimed { color: var(--warn); font-weight: 600; }
+.ov-check small { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.ov-ev { display: flex; flex-wrap: wrap; gap: var(--s1-5); margin-top: var(--s1); }
+.ov-ev .chip { margin: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.ov-ev span.chip { cursor: default; }
+.ov-ev button.chip:hover { color: var(--accent-2); border-color: var(--accent); }
+
+/* ---------- the grid under them ---------- */
+/* The goal card is as tall as it is and spans both rows. The second row takes whatever it adds, so the first row stays as tall as
+   the latest work and the two cards on the left sit one under the other with the same gap as everywhere else. */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "work goal" "events goal"; gap: var(--s3); align-items: start; }
+.ov-work { grid-area: work; }
+.ov-goalcard { grid-area: goal; }
+.ov-events { grid-area: events; }
+.ov-grid .card { margin: 0; }
+.ov-empty { margin: 0; font-size: 14px; color: var(--muted); }
+.ov-retry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 14px; color: var(--text-dim); }
+
+@media (max-width: 1100px) {
+  .ov-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "work" "goal" "events"; }
+}
+@media (max-width: 900px) {
+  .ov-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .ov-hero { padding: var(--s3-5) var(--s3-5); }
+  .ov-acts { width: 100%; }
+  .ov-acts > button.primary, .ov-acts > button.soft:not(.menu-btn) { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+  .ov-attn li { grid-template-columns: auto minmax(0, 1fr); }
+  .ov-fix { grid-column: 2; justify-self: start; margin-top: var(--s1); }
+  .ov-files { grid-template-columns: minmax(0, 1fr); }
+  /* A step row is an avatar, a sentence and a verdict. Three across leaves the sentence a third of a phone, so the verdict drops
+     under it. */
+  .ov-work .step-mini { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; row-gap: var(--s1-5); }
+  .ov-work .step-mini > :last-child { grid-column: 2; justify-self: start; }
+}
