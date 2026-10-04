@@ -14,6 +14,7 @@ import { holdsOf } from "./escalation-card";
 export type MissionPhase =
   | "loading"
   | "offline"
+  | "down"
   | "ceiling"
   | "needs-you"
   | "failed"
@@ -39,6 +40,11 @@ export interface MissionControl {
 export interface MissionFacts {
   hasStatus: boolean;
   serverDown: boolean;
+  /**
+   * The project's own state when its process is not running: crashed, locked, cannot open, closed. Null for an open or booting
+   * project. Any status the console holds for it is from before, so this outranks the mission.
+   */
+  projectDown: { label: string; hint: string; severe: boolean } | null;
   /** CREATED, ACTIVE, PAUSED, BLOCKED, CONVERGING, COMPLETED, FAILED or ESCALATED; empty when there is no goal. */
   goalStatus: string;
   /** The process is parked: it answers questions and runs nothing on its own. */
@@ -93,7 +99,7 @@ const REOPEN: MissionControl = {
 /** The reading of one `/status` payload (plus what only the console knows) that `describeMission` works from. */
 export function factsFromStatus(
   status: any,
-  extra: { serverDown?: boolean; hostCeilingTripped?: boolean; runningSteps?: number; hasHistory?: boolean } = {},
+  extra: { serverDown?: boolean; projectDown?: MissionFacts["projectDown"]; hostCeilingTripped?: boolean; runningSteps?: number; hasHistory?: boolean } = {},
 ): MissionFacts {
   const agents: any[] = (status?.agents ?? []).filter((a: any) => a.id !== "human");
   const decisions: any[] = status?.openEscalations ?? [];
@@ -101,6 +107,7 @@ export function factsFromStatus(
   return {
     hasStatus: Boolean(status),
     serverDown: extra.serverDown === true,
+    projectDown: extra.projectDown ?? null,
     goalStatus: String(status?.goal?.status ?? ""),
     parked: Boolean(status?.uiOnly) || status?.mode === "parked",
     blockingDecisions: blocking.length,
@@ -135,16 +142,18 @@ export function factsFromStatus(
  */
 export function describeMission(f: MissionFacts): MissionState {
   const base = { secondary: [] as MissionControl[], parked: f.parked, pulse: false };
-  if (!f.hasStatus) {
-    return f.serverDown
-      ? { ...base, phase: "offline", tone: "bad", label: "Offline", headline: "The server is not answering.", primary: null }
-      : { ...base, phase: "loading", tone: "neutral", label: "Connecting", headline: "Connecting to the mission.", primary: null };
-  }
   if (f.serverDown) {
-    return {
-      ...base, phase: "offline", tone: "bad", label: "Offline", primary: null,
-      headline: "The server is not answering. This is the last state it reported, and it may be stale.",
-    };
+    return f.hasStatus
+      ? { ...base, phase: "offline", tone: "bad", label: "Offline", primary: null, headline: "The server is not answering. This is the last state it reported, and it may be stale." }
+      : { ...base, phase: "offline", tone: "bad", label: "Offline", primary: null, headline: "The server is not answering." };
+  }
+  if (f.projectDown) {
+    // The host answers; the project's own process does not. Whatever status the console holds is from before it stopped.
+    const word = f.projectDown.label.charAt(0).toUpperCase() + f.projectDown.label.slice(1);
+    return { ...base, phase: "down", tone: f.projectDown.severe ? "bad" : "neutral", label: word, primary: null, headline: f.projectDown.hint };
+  }
+  if (!f.hasStatus) {
+    return { ...base, phase: "loading", tone: "neutral", label: "Connecting", headline: "Connecting to the mission.", primary: null };
   }
   if (!f.goalStatus) {
     // A mesh must declare a goal (mesh.yaml requires one), so a status without one is a child that has answered before it

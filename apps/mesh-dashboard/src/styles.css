@@ -274,8 +274,11 @@ button.ghost:hover { color: var(--text); border-color: var(--line-strong); }
 /* ---------- topbar ---------- */
 /* Left: where the mission stands (one word) and what it is for. Middle: two numbers. Right: the one thing to do about it,
    then the rest. Only the goal text shrinks; it truncates before anything else gives way. */
-#topbar { grid-area: top; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2-5) var(--s5); min-height: 60px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 80%, transparent); backdrop-filter: blur(6px); min-width: 0; }
+#topbar { grid-area: top; position: relative; z-index: var(--z-ctx); display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2-5) var(--s5); min-height: 60px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 80%, transparent); backdrop-filter: blur(6px); min-width: 0; }
 #btn-menu { display: none; }
+/* The host's own pages (a host with no project, the Projects page) have no mission to describe: the bar keeps only the menu opener
+   a phone needs and gives its height back everywhere else. */
+#topbar.bare { min-height: 0; padding: 0; border-bottom: 0; background: none; backdrop-filter: none; }
 /* An explicit basis, not `auto`. With `auto` the goal's hypothetical width in
    the wrap calculation is its full content width (~560px), so the header wrapped
    to two rows at 1280 AND 1440 -- with 400px of slack -- because the topbar's real
@@ -762,6 +765,8 @@ button.primary { display: inline-flex; align-items: center; justify-content: cen
    eight call sites and there is no .primary:disabled rule, so the old filter
    lit up dead buttons. */
 button.primary:hover:not(:disabled) { background: var(--accent-2); }
+button.primary:disabled, button.soft:disabled { opacity: .5; cursor: not-allowed; }
+button.small, button.ghost { gap: var(--s1-5); }
 /* 3px of vertical padding on a 12px line gave a 22px box — the most-used
    button in the console sat just under the 24px pointer floor. The floor is a
    min-height rather than more padding, so nothing already taller reflows. */
@@ -813,6 +818,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   #sidebar.open { transform: none; }
   #btn-menu { display: inline-flex; align-items: center; }
   #topbar { gap: var(--s2); padding: var(--s2) var(--s3); }
+  #topbar.bare { min-height: 52px; padding: var(--s2) var(--s3); }
   /* The menu opener, the status chip and the actions own row one; the goal wraps to row two as a unit. The 220px basis is
      what buys that split: wide enough that the goal cannot fit beside them on a phone, small enough that a tablet still
      resolves to a single row. */

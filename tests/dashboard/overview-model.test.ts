@@ -272,7 +272,7 @@ test("a parked mission says whether progress is loaded, and keeps the server's o
 
 /** What each phase's facts look like, for the rule below: the line under the headline adds to it and never repeats it. */
 const FACTS: MissionFacts = {
-  hasStatus: true, serverDown: false, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
+  hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
   hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory: true, startupSeats: 2,
 };
 const SENTENCES = (s: string): string[] => s.split(/(?<=\.)\s+/).map((x) => x.trim()).filter(Boolean);

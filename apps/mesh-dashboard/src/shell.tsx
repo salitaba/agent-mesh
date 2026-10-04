@@ -52,6 +52,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "Host",
     items: [
+      { view: "projects", icon: "folder", label: "Projects", title: "Every project on this host: open, close, restart or remove one." },
       { view: "hostsettings", icon: "sliders", label: "Host settings", title: "Limits that apply to every project on this host: the spend ceiling, the turn cap, prices." },
     ],
   },
@@ -236,6 +237,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // is in and the one thing to do about it. The bar used to say PARKED beside a goal that read "done".
   const { facts, state } = useMission();
   const parked = facts.parked;
+  // A host with no project, and the Projects page, belong to the host and not to a mission: no mission chip, goal, numbers or
+  // mission actions on them, and with no project at all no project views to go to. They used to show "Connecting", 0 working and
+  // 0/0 tokens around the welcome page, and a sidebar of views that led nowhere.
+  const hostLevel = noProjects || view === "projects";
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
   const toolRequests = useToolRequests(client, !serverDown && !noProjects && !registryPending);
@@ -248,8 +253,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const projectName = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId)?.name ?? null;
   // A mission waiting on you is the one thing worth a glance at a background tab, so the count leads the title.
   useEffect(() => {
-    document.title = documentTitle({ phaseLabel: status ? chipLabel : null, decisions: inbox, project: projectName });
-  }, [status, chipLabel, inbox, projectName]);
+    document.title = hostLevel
+      ? documentTitle({ phaseLabel: noProjects ? null : "Projects", decisions: 0, project: null })
+      : documentTitle({ phaseLabel: status ? chipLabel : null, decisions: inbox, project: projectName });
+  }, [hostLevel, noProjects, status, chipLabel, inbox, projectName]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const narrow = useNarrow();
@@ -327,7 +334,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // the Designer to open; it never touches Designer state from here.
   useEffect(() => {
     register("global", [
-      ...KEY_VIEWS.map((v, i) => {
+      ...KEY_VIEWS.filter((v) => !noProjects || v === "hostsettings" || v === "projects").map((v, i) => {
         const nav = NAV_ITEMS.find((n) => n.view === v);
         return {
           id: `go.${v}`,
@@ -350,7 +357,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         })),
     ]);
     return () => unregister("global");
-  }, [setView, openHelp, status]);
+  }, [setView, openHelp, status, noProjects]);
 
   // The authoritative key router. Registered once (empty deps) so it stays
   // ahead of the view-local handlers that mount later; it reads the latest
@@ -434,8 +441,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     if (ev.key === "?") return openHelp();
     if (ev.key === "t") toggleTheme();
     // Only when the mission is in a state where the key means something: it used to post a pause to a delivered mission.
-    if (ev.key === "p" && state.primary?.action === "pause") void missionActions.pause();
-    if (ev.key === "r" && state.primary?.action === "resume") void missionActions.resume(true);
+    if (ev.key === "p" && !hostLevel && state.primary?.action === "pause") void missionActions.pause();
+    if (ev.key === "r" && !hostLevel && state.primary?.action === "resume") void missionActions.resume(true);
     if (ev.key === "/") {
       ev.preventDefault();
       const s = document.getElementById("ev-search") || document.getElementById("step-search");
@@ -630,7 +637,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <Icon name="search" /><span>Search</span><kbd>⌘K</kbd>
         </button>
         <nav id="nav" aria-label="views">
-          {NAV.map((group) => (
+          {(noProjects ? NAV.filter((g) => g.section === "Host") : NAV).map((group) => (
             <div className="nav-group" role="group" aria-label={group.section} key={group.section}>
               <div className="nav-label" aria-hidden="true">{group.section}</div>
               {group.items.map((n) => {
@@ -656,49 +663,53 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         </div>
       </aside>
 
-      <header id="topbar">
+      <header id="topbar" className={hostLevel ? "bare" : undefined}>
         <Button id="btn-menu" variant="ghost" aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" size={18} /></Button>
-        <span className={`mission-chip ${chipTone}`} role="status" title={chipTitle}>
-          <i className={`dot${state.pulse && !reconnecting ? " pulse" : ""}`} aria-hidden="true" />{chipLabel}
-        </span>
-        <div id="goal-strip">
-          <div className="goal-text">
-            <strong id="top-goal" title={goal.description || undefined}>{goalTitle}</strong>
-            <span id="top-criteria" className="muted">
-              {goal.status ? `${done} of ${critTotal} checks done` : ""}{parked && state.phase !== "parked" && state.phase !== "ceiling" && state.phase !== "offline" && goal.status ? " · project is parked" : ""}
-            </span>
+        {hostLevel ? null : (
+          <>
+          <span className={`mission-chip ${chipTone}`} role="status" title={chipTitle}>
+            <i className={`dot${state.pulse && !reconnecting ? " pulse" : ""}`} aria-hidden="true" />{chipLabel}
+          </span>
+          <div id="goal-strip">
+            <div className="goal-text">
+              <strong id="top-goal" title={goal.description || undefined}>{goalTitle}</strong>
+              <span id="top-criteria" className="muted">
+                {goal.status ? `${done} of ${critTotal} checks done` : ""}{parked && state.phase !== "parked" && state.phase !== "ceiling" && state.phase !== "offline" && goal.status ? " · project is parked" : ""}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="bar-strip" role="group" aria-label="mission telemetry">
-          <div className="bar-strip-stat agents" title="Agents mid-turn right now"><b>{facts.working}</b><span>working</span></div>
-          <div className="bar-strip-stat spent" title="Tokens spent out of the mission budget">
-            <b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b>
-            <span>tokens</span>
-            <i className={`meter${spentRatio >= 0.95 ? " bad" : spentRatio >= 0.8 ? " warn" : ""}`} style={{ "--p": spentRatio } as React.CSSProperties} aria-hidden="true" />
+          <div className="bar-strip" role="group" aria-label="mission telemetry">
+            <div className="bar-strip-stat agents" title="Agents mid-turn right now"><b>{facts.working}</b><span>working</span></div>
+            <div className="bar-strip-stat spent" title="Tokens spent out of the mission budget">
+              <b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b>
+              <span>tokens</span>
+              <i className={`meter${spentRatio >= 0.95 ? " bad" : spentRatio >= 0.8 ? " warn" : ""}`} style={{ "--p": spentRatio } as React.CSSProperties} aria-hidden="true" />
+            </div>
           </div>
-        </div>
-        <div className="top-actions">
-          {/* The Overview's hero carries this same action, so the bar does not repeat it there. */}
-          {primary && view !== "overview" ? (
-            <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
-              {primary.label}
-            </Button>
-          ) : null}
-          {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
-              primary action is already "review" it is that button, so this one stands down. */}
-          {inbox > 0 && primary?.action !== "review" ? (
-            <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(inboxView)}>
-              <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
-            </Button>
-          ) : null}
-          {phone ? null : (
-            <Button id="btn-message" variant="soft" icon="message" title="Send a message as the human: highest priority" onClick={openMessage}>
-              <span className="act-lbl">Message</span>
-            </Button>
-          )}
-          {phone ? null : <ChatDockButton open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />}
-          <Menu id="btn-more" label={<Icon name="more" size={18} />} title="More actions" items={moreItems} />
-        </div>
+          <div className="top-actions">
+            {/* The Overview's hero carries this same action, so the bar does not repeat it there. */}
+            {primary && view !== "overview" ? (
+              <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
+                {primary.label}
+              </Button>
+            ) : null}
+            {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
+                primary action is already "review" it is that button, so this one stands down. */}
+            {inbox > 0 && primary?.action !== "review" ? (
+              <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(inboxView)}>
+                <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
+              </Button>
+            ) : null}
+            {phone ? null : (
+              <Button id="btn-message" variant="soft" icon="message" title="Send a message as the human: highest priority" onClick={openMessage}>
+                <span className="act-lbl">Message</span>
+              </Button>
+            )}
+            {phone ? null : <ChatDockButton open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />}
+            <Menu id="btn-more" label={<Icon name="more" size={18} />} title="More actions" items={moreItems} />
+          </div>
+          </>
+        )}
       </header>
 
       {/* Focus mode is shell-owned state; the view tree reads it through this seam. */}

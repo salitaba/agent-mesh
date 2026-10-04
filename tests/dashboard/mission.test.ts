@@ -12,6 +12,7 @@ import { describeMission, documentTitle, factsFromStatus, type MissionFacts } fr
 const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   hasStatus: true,
   serverDown: false,
+  projectDown: null,
   goalStatus: "ACTIVE",
   parked: false,
   blockingDecisions: 0,
@@ -122,6 +123,23 @@ test("no answer from the server outranks everything, with or without an earlier 
   assert.match(stale.headline, /may be stale/);
   assert.equal(stale.primary, null, "no control on a state that cannot be acted on");
   assert.equal(describeMission(facts({ hasStatus: false })).phase, "loading");
+});
+
+test("a project whose process is not running says so, in the tab's words, whatever status the console still holds", () => {
+  const crashed = describeMission(facts({ projectDown: { label: "crashed", hint: "Crashed: out of memory. Restarted 2x.", severe: true } }));
+  assert.equal(crashed.phase, "down");
+  assert.equal(crashed.tone, "bad");
+  assert.equal(crashed.label, "Crashed");
+  assert.equal(crashed.headline, "Crashed: out of memory. Restarted 2x.");
+  assert.equal(crashed.primary, null, "the restart lives in the notice under the tabs, with the reason");
+  const closed = describeMission(facts({ projectDown: { label: "closed", hint: "Closed: no process is running for this project.", severe: false } }));
+  assert.deepEqual([closed.phase, closed.tone, closed.label], ["down", "neutral", "Closed"], "a closed project is not an alarm");
+  // The stale status was ACTIVE and running; the crash outranks it. With no status at all it is still the project that is down.
+  assert.equal(describeMission(facts({ hasStatus: false, projectDown: { label: "locked", hint: "Locked.", severe: true } })).phase, "down");
+});
+
+test("the server not answering outranks a project being down: nothing about either can be trusted", () => {
+  assert.equal(describeMission(facts({ serverDown: true, projectDown: { label: "crashed", hint: "Crashed.", severe: true } })).phase, "offline");
 });
 
 test("a status with no goal yet is a project still starting, not a mesh with nothing to do", () => {
