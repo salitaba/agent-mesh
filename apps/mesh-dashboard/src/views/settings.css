@@ -1,0 +1,70 @@
+/* ============ Host settings: one form for the host's limits, and the plan the install runs under ============
+ *
+ * Groups of rows, one diff of what will change, one Save. Colours are tokens only; sizes are the type ramp; breakpoints come from the
+ * console's ladder. A row says what the setting does, how to leave it blank, and whether it is the built-in default, in that order and
+ * quietly: the default is information, not a warning, so it is a line of text and not a chip.
+ */
+
+.hs-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+.hs-stack > .banner { margin-bottom: 0; }
+.hs-legend { max-width: 78ch; margin: 0; font: var(--tx-value); color: var(--text-dim); }
+.hs-h { margin: 0 0 var(--s1); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.hs-h.lead { text-transform: none; letter-spacing: 0; font: 600 15px/1.35 var(--sans); color: var(--text); }
+.hs-h2 { margin: var(--s4) 0 var(--s1-5); font: var(--tx-label); color: var(--text-dim); }
+.hs-n { margin-left: var(--s1-5); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+.hs-skel { display: grid; gap: var(--s3); padding: var(--s3) 0; }
+.hs-skel i { display: block; height: 72px; border-radius: var(--r); background: var(--line); }
+
+/* ---------- rows ---------- */
+.hs-row { display: grid; grid-template-columns: minmax(0, 30rem) minmax(260px, 24rem); justify-content: start; gap: var(--s2) var(--s6); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.hs-h + .hs-row { border-top: 0; }
+/* A row that has been edited carries a bar in the card's margin, so the content does not move when it appears. */
+.hs-row.dirty { box-shadow: inset 3px 0 0 var(--accent); padding-left: var(--s3); margin-left: calc(var(--s3) * -1); }
+.hs-label { min-width: 0; }
+.hs-label label { font-weight: 600; }
+.hs-what { max-width: 62ch; margin: var(--s1) 0 0; font: var(--tx-meta); color: var(--text-dim); }
+.hs-tag { display: inline-flex; align-items: center; margin-left: var(--s2); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); font: var(--tx-label); vertical-align: 1px; }
+.hs-tag.restart { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 11%, transparent); }
+.hs-tag.edited { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.hs-control { min-width: 0; }
+.hs-input { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1-5) var(--s2); }
+.hs-input input { width: 8.5em; }
+.hs-pre, .hs-suf { font: var(--tx-meta); color: var(--text-dim); }
+.hs-pre { font: 14px var(--mono); }
+.hs-hint { margin: var(--s1-5) 0 0; font: var(--tx-meta); color: var(--muted); }
+.hs-link { background: none; border: 0; padding: var(--s1) 0; margin-left: var(--s1); font: var(--tx-meta); color: var(--accent-2); text-decoration: underline; cursor: pointer; }
+.hs-err { display: flex; align-items: flex-start; gap: var(--s1-5); margin: var(--s1-5) 0 0; font: var(--tx-meta); color: var(--bad); font-weight: 600; }
+.hs-err svg { flex: none; margin-top: 1px; }
+.hs-row.invalid input { border-color: var(--bad); }
+
+/* ---------- model prices, read only ---------- */
+.hs-prices { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; font: var(--tx-meta); }
+.hs-prices li { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); }
+.hs-prices code { color: var(--text); }
+.hs-note { max-width: 72ch; margin: var(--s2) 0 0; font: var(--tx-meta); color: var(--muted); }
+
+/* ---------- the diff and the save ---------- */
+.hs-changes { display: grid; gap: var(--s2); margin: var(--s2) 0 0; padding: 0; list-style: none; }
+.hs-changes li { display: grid; gap: var(--s0); }
+.hs-change { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s2); }
+.hs-change b { font-weight: 600; }
+.hs-from { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 1px; }
+.hs-to { font-weight: 600; }
+.hs-then { font: var(--tx-meta); color: var(--muted); }
+.hs-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-top: var(--s3); }
+/* There is no shared rule for a disabled primary or soft button, so a dead Save would look live. */
+.hs-acts button:disabled { opacity: .5; cursor: not-allowed; }
+.hs-status { font: var(--tx-meta); color: var(--text-dim); }
+.hs-status.ok { color: var(--ok); font-weight: 600; }
+
+/* ---------- restart ---------- */
+.hs-cmds { display: grid; gap: var(--s2); margin: var(--s2) 0 0; padding: 0; list-style: none; }
+.hs-cmds li { display: grid; grid-template-columns: minmax(7em, 9em) minmax(0, 1fr) auto; align-items: center; gap: var(--s2) var(--s3); }
+.hs-cmds span { font: var(--tx-meta); color: var(--text-dim); }
+.hs-cmds code { min-width: 0; overflow-wrap: anywhere; padding: var(--s1) var(--s2); background: var(--panel-2); border-radius: var(--r-sm); font: 13px var(--mono); }
+
+@media (max-width: 760px) {
+  .hs-row { grid-template-columns: minmax(0, 1fr); }
+  .hs-cmds li { grid-template-columns: minmax(0, 1fr); }
+}
