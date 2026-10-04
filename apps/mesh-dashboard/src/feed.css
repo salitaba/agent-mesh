@@ -1,0 +1,30 @@
+/* The live-feed controls: the status chip in a page header, and the bar that says a list is being held still. */
+
+.feed { display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+
+/* The same chip shape as the top bar's mission chip: tone says whether to look, the label says what is true. */
+.feed-chip {
+  display: inline-flex; align-items: center; gap: var(--s1-5); flex: none;
+  padding: var(--s1) var(--s3) var(--s1) var(--s2-5); border-radius: 999px; font: var(--tx-label);
+}
+.feed-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.feed-chip .dot.live { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); animation: pulse 2.2s infinite; }
+.feed-chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.feed-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.feed-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.feed-chip.neutral { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
+/* The age ticks every second; tabular figures keep the sentence from shuddering as the digits change. */
+.feed-meta { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* A held list: a quiet bar above it, not a banner. It is there for as long as something is waiting. */
+.feed-hold {
+  display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+  padding: var(--s1-5) var(--s2-5); margin-bottom: var(--s2);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--text); font-size: 13px;
+}
+.feed-hold.paused { border-color: var(--line-strong); background: var(--sunken); }
+.feed-hold .icon { flex: none; color: var(--accent-2); }
+.feed-hold.paused .icon { color: var(--text-dim); }
+.feed-hold-text { flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
+.feed-hold-text b { font-weight: 600; }

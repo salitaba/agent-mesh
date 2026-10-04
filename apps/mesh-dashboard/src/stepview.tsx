@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Button, rowKey } from "./components";
-import { hhmmss, plainEvent, snippetDiff, type SnippetLine } from "./format";
+import { Button, ZoneNote, rowKey } from "./components";
+import { hhmmss, plainEvent, snippetDiff, zoneLabel, type SnippetLine } from "./format";
 import { storageClips, type StorageClip } from "./ledger";
 import { renderMarkdown } from "./markdown";
 import { evClass, evSeverity } from "./events";
@@ -387,6 +387,8 @@ export function EventRows({ rows, sel, onSelect, t0, detail }: {
   const hidden = rows.length - shown.length;
   return (
     <div className="sv-evs">
+      {/* With a turn start the rows read as offsets ("+1.2s"); without one they are wall-clock times, and the zone is said here once. */}
+      {Number.isNaN(base) && shown.length ? <p className="zone-line"><ZoneNote /></p> : null}
       {shown.map((e) => {
         const on = sel?.kind === "event" && sel.seq === e.seq;
         const pick = (): void => onSelect(on && e.seq != null ? null : { kind: "event", seq: e.seq });
@@ -721,7 +723,7 @@ export function Inspector({ sel, toolCalls, opRows, timeline, onClose, onArtifac
     copy = e ? { seq: e.seq, type: e.type, at: e.at, actor: e.actor, payload: e.payload ?? {} } : null;
     body = e ? (
       <>
-        <div className="sv-insp-meta mono">#{e.seq} · {e.type} · {hhmmss(e.at)}{e.actor ? ` · ${e.actor}` : ""}</div>
+        <div className="sv-insp-meta mono">#{e.seq} · {e.type} · {hhmmss(e.at)} {zoneLabel()}{e.actor ? ` · ${e.actor}` : ""}</div>
         {e.summary ? <Prose dim>{e.summary}</Prose> : null}
         <h5>payload</h5>
         <JsonBlock value={e.payload ?? {}} />

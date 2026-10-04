@@ -62,6 +62,8 @@ const ICONS = {
   dot: (<circle cx="10" cy="10" r="5" {...SOLID} />),
   ring: (<circle cx="10" cy="10" r="5" />),
   "arrow-up": (<path d="M10 16V4.5M5 9.2l5-4.7 5 4.7" />),
+  // Live views
+  "arrow-down": (<path d="M10 4v12M5 11l5 5 5-5" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

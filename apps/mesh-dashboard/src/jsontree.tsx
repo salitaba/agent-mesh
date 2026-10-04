@@ -1,159 +1,129 @@
-import React, { useMemo, useState } from "react";
-import { CopyBtn } from "./stepdetail";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { CopyButton } from "./components";
+import { Icon } from "./icons";
+import { defaultOpen, isContainer, jsonString, morePage, navigate, scalarText, toggled, treeRows, type TreeRow } from "./jsonrows";
 
 /**
- * A payload viewer, not a JSON pretty-printer.
+ * A payload you can read and walk with the keyboard.
  *
- * What this replaces was `JSON.stringify(payload, null, 2).slice(0, 3000)`
- * inside a `<details>`. Three things were wrong with it and all three bit at
- * once on exactly the payloads worth reading: depth was invisible, so a nested
- * plan looked the same as a flat one; the 3000-char cut landed mid-token with
- * no indication that anything had been dropped; and copying gave you the
- * truncated text rather than the payload.
- *
- * So: containers collapse, long strings expand in place, and copy always copies
- * the whole value regardless of what is on screen.
+ * The rows come from jsonrows.ts (tested). This draws them as the WAI-ARIA tree pattern: one tab stop for the whole tree, Up and
+ * Down to walk, Right and Left to open and close or step in and out, Enter to open a long string or draw more of a long list.
+ * Before, every container was a tab stop of its own, so a payload with thirty branches was thirty presses of Tab.
  */
 
-type Json = unknown;
+type View = "tree" | "raw";
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isContainer = (v: unknown): boolean => Array.isArray(v) || isObj(v);
-
-/** A container this size or smaller opens on its own; bigger ones wait to be asked. */
-const AUTO_ROWS = 12;
-/** Below this depth containers auto-open; at or past it they start shut however small. */
-const AUTO_DEPTH = 2;
-/** Strings longer than this collapse to one line with a character count. */
-const LONG_STRING = 140;
-
-function entriesOf(v: Json): [string, Json][] {
-  if (Array.isArray(v)) return v.map((x, i) => [String(i), x] as [string, Json]);
-  if (isObj(v)) return Object.entries(v);
-  return [];
-}
-
-/* ------------------------------ scalars -------------------------------- */
-
-function StringValue({ s }: { s: string }): React.JSX.Element {
-  const long = s.length > LONG_STRING || s.includes("\n");
-  const [open, setOpen] = useState(false);
-  if (!long) return <span className="jt-str">{s}</span>;
-  if (!open) {
-    return (
-      <button type="button" className="jt-peek" onClick={() => setOpen(true)} title="Show the whole value">
-        <span className="jt-str">{s.slice(0, LONG_STRING).replace(/\s+/g, " ")}</span>
-        <span className="jt-count">… {s.length.toLocaleString()} chars</span>
-      </button>
-    );
-  }
+/** The row's own text, set apart from its key. A collapsed container reads as a summary; a long string says how long it is. */
+function Value({ r }: { r: TreeRow }): React.JSX.Element | null {
+  if (r.kind === "more") return <span className="jt-more">{r.text}</span>;
+  if (r.kind === "object" || r.kind === "array") return r.text ? <span className={`jt-val ${r.expandable ? "jt-count" : "jt-empty"}`}>{r.text}</span> : null;
   return (
-    <span className="jt-full">
-      {/* A pre, not a span: payload strings here are diffs, prompts and stack
-          traces, and collapsing their whitespace is what made them unreadable. */}
-      <pre className="jt-block">{s}</pre>
-      <button type="button" className="jt-peek" onClick={() => setOpen(false)}>show less</button>
-    </span>
+    <>
+      <span className={`jt-val jt-${r.kind}`}>{r.text}</span>
+      {r.kind === "string" && r.expandable && !r.expanded ? <span className="jt-count">{r.size.toLocaleString("en-US")} characters</span> : null}
+    </>
   );
 }
 
-function Scalar({ v }: { v: Json }): React.JSX.Element {
-  if (v === null) return <span className="jt-null">null</span>;
-  if (v === undefined) return <span className="jt-null">—</span>;
-  if (typeof v === "string") return <StringValue s={v} />;
-  if (typeof v === "number") return <span className="jt-num">{Number.isFinite(v) ? String(v) : "not a number"}</span>;
-  if (typeof v === "boolean") return <span className="jt-bool">{String(v)}</span>;
-  return <span className="jt-str">{String(v)}</span>;
-}
+export function JsonTree({ value, label = "Payload" }: { value: unknown; label?: string }): React.JSX.Element {
+  const [view, setView] = useState<View>("tree");
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => defaultOpen(value));
+  const [limits, setLimits] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [active, setActive] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
+  const focusAfter = useRef<string | null>(null);
 
-/* ----------------------------- containers ------------------------------ */
+  const rows = useMemo(() => treeRows(value, open, limits), [value, open, limits]);
+  // Stringified once, for the raw view and for copy: not per render of either.
+  const text = useMemo(() => jsonString(value), [value]);
+  const stop = active !== null && rows.some((r) => r.id === active) ? active : rows[0]?.id ?? null;
 
-/** What a shut container says about itself. Enough to decide whether to open it. */
-function preview(v: Json, kids: [string, Json][]): string {
-  if (Array.isArray(v)) return kids.length === 1 ? "1 item" : `${kids.length} items`;
-  const names = kids.slice(0, 3).map(([k]) => k).join(", ");
-  const more = kids.length > 3 ? `, +${kids.length - 3}` : "";
-  return `${names}${more}`;
-}
-
-function Node({ label, value, depth }: { label: string; value: Json; depth: number }): React.JSX.Element {
-  const kids = useMemo(() => entriesOf(value), [value]);
-  const container = isContainer(value);
-  const [open, setOpen] = useState(() => depth < AUTO_DEPTH && kids.length <= AUTO_ROWS);
-
-  if (!container) {
-    return (
-      <div className="jt-row" style={{ paddingLeft: depth * 12 }}>
-        <span className="jt-key">{label}</span>
-        <Scalar v={value} />
-      </div>
-    );
-  }
-
-  if (!kids.length) {
-    return (
-      <div className="jt-row" style={{ paddingLeft: depth * 12 }}>
-        <span className="jt-key">{label}</span>
-        <span className="jt-empty">{Array.isArray(value) ? "empty list" : "empty"}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="jt-node">
-      <button
-        type="button"
-        className="jt-row jt-toggle"
-        style={{ paddingLeft: depth * 12 }}
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="jt-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
-        <span className="jt-key">{label}</span>
-        {open ? null : <span className="jt-count">{preview(value, kids)}</span>}
-      </button>
-      {open ? kids.map(([k, v]) => <Node key={k} label={k} value={v} depth={depth + 1} />) : null}
-    </div>
-  );
-}
-
-/* ------------------------------- root ---------------------------------- */
-
-export function JsonTree({ value, label = "Payload" }: { value: Json; label?: string }): React.JSX.Element {
-  const [raw, setRaw] = useState(false);
-  // Stringified once for copy and for the raw pane, not per render of either.
-  // `catch` covers a payload with a cycle in it; the tree above renders those
-  // fine, so the raw toggle failing is not a reason to lose the whole section.
-  const text = useMemo(() => {
-    try {
-      return JSON.stringify(value, null, 2) ?? String(value);
-    } catch {
-      return "(this payload cannot be serialised — use the tree above)";
+  const focusRow = useCallback((id: string): void => {
+    const el = Array.from(root.current?.querySelectorAll<HTMLElement>("[data-tid]") ?? []).find((n) => n.dataset.tid === id);
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ block: "nearest" });
     }
-  }, [value]);
+  }, []);
+  // A row that was drawn by this very key press (a new page) cannot be focused until it exists.
+  useEffect(() => {
+    if (focusAfter.current) {
+      focusRow(focusAfter.current);
+      focusAfter.current = null;
+    }
+  });
 
-  const kids = entriesOf(value);
-  const empty = !isContainer(value) ? value === undefined || value === null : !kids.length;
+  const activate = (id: string): void => {
+    const r = rows.find((x) => x.id === id);
+    if (!r) return;
+    if (r.kind === "more") {
+      const i = rows.indexOf(r);
+      const next = morePage(rows, id, limits);
+      if (next) setLimits(next);
+      // The row before it is still there afterwards; the "show more" row may not be.
+      focusAfter.current = rows[i - 1]?.id ?? null;
+      return;
+    }
+    if (r.expandable) setOpen((o) => toggled(o, id));
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const current = (e.target as HTMLElement).closest<HTMLElement>("[data-tid]")?.dataset.tid ?? null;
+    const r = navigate(rows, current, e.key);
+    if (!r) return;
+    e.preventDefault();
+    if (r.focus) focusRow(r.focus);
+    if (r.expand) setOpen((o) => new Set(o).add(r.expand!));
+    if (r.collapse) setOpen((o) => toggled(o, r.collapse!));
+    if (r.activate) activate(r.activate);
+  };
+
+  const empty = isContainer(value) ? rows.length === 0 : value === undefined || value === null;
 
   return (
-    <section className="jt">
+    <section className="jt" aria-label={label}>
       <header className="jt-head">
         <h4>{label}</h4>
         <span className="jt-actions">
-          <button type="button" className="fchip" aria-pressed={raw} onClick={() => setRaw((r) => !r)}>
-            {raw ? "tree" : "raw"}
-          </button>
-          <CopyBtn text={text} />
+          <span className="seg" role="group" aria-label={`${label} view`}>
+            <button type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}>Tree</button>
+            <button type="button" aria-pressed={view === "raw"} onClick={() => setView("raw")}>Raw</button>
+          </span>
+          <CopyButton text={text} what={label.toLowerCase()} />
         </span>
       </header>
       {empty ? (
-        <div className="jt-empty jt-none">no payload</div>
-      ) : raw ? (
-        <pre className="jt-block jt-raw">{text}</pre>
-      ) : isContainer(value) ? (
-        <div className="jt-body">{kids.map(([k, v]) => <Node key={k} label={k} value={v} depth={0} />)}</div>
+        <p className="jt-none">No payload.</p>
+      ) : view === "raw" ? (
+        <pre className="jt-block jt-raw" tabIndex={0}>{text}</pre>
+      ) : !isContainer(value) ? (
+        <div className="jt-body"><div className="jt-row"><span className={`jt-val jt-${typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string"}`}>{scalarText(value)}</span></div></div>
       ) : (
-        <div className="jt-body"><div className="jt-row"><Scalar v={value} /></div></div>
+        <div className="jt-body" role="tree" aria-label={label} ref={root} onKeyDown={onKeyDown}>
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              role="treeitem"
+              aria-level={r.depth}
+              aria-posinset={r.posInSet}
+              aria-setsize={r.setSize}
+              aria-expanded={r.expandable ? r.expanded : undefined}
+              tabIndex={r.id === stop ? 0 : -1}
+              data-tid={r.id}
+              data-depth={Math.min(r.depth, 8)}
+              className={`jt-row${r.expandable || r.kind === "more" ? " can" : ""}`}
+              onFocus={() => setActive(r.id)}
+              onClick={() => activate(r.id)}
+            >
+              <span className="jt-caret" aria-hidden="true">{r.expandable ? <Icon name="chevron-right" size={12} className={r.expanded ? "caret turned" : "caret"} /> : null}</span>
+              {r.label ? <span className="jt-key">{r.label}</span> : null}
+              <Value r={r} />
+              {r.expanded && r.full !== undefined ? <pre className="jt-block">{r.full}</pre> : null}
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );

@@ -1,0 +1,69 @@
+/* ================================ agents ================================
+   A card says what the agent is doing, for how long, and whether it is stuck, and offers only the controls that make sense for
+   an agent in that state. The left rail repeats the group's tone; the words say the same thing, because colour alone is not a
+   cue. Prefixes: ag- (page), agent- (card). */
+
+.ag-group { margin-top: var(--s5); }
+.ag-group:first-of-type { margin-top: 0; }
+.ag-group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s0) var(--s3); margin: 0 var(--s0) var(--s2); }
+.ag-group-head h3 { margin: 0; font: var(--tx-section); color: var(--text-dim); }
+.ag-count { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ag-group-hint { font: var(--tx-meta); color: var(--muted); }
+
+.ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s3); }
+
+/* ---- the card ---- */
+
+.agent-card { display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; border-left: 3px solid transparent; min-width: 0; }
+.agent-card:hover { border-color: var(--line-strong); }
+.agent-card[data-group="help"] { border-left-color: var(--bad); }
+.agent-card[data-group="working"] { border-left-color: var(--ok); }
+.agent-card[data-group="paused"] { border-left-color: var(--line-control); }
+.agent-card[data-group="help"]:hover { border-left-color: var(--bad); }
+.agent-card[data-group="working"]:hover { border-left-color: var(--ok); }
+.agent-card[data-group="paused"]:hover { border-left-color: var(--line-control); }
+
+.agent-head { display: flex; align-items: center; gap: var(--s2); }
+.agent-who { flex: 1 1 auto; min-width: 0; }
+.agent-who b { font-size: 15px; }
+/* A real button so the card is reachable by keyboard without wrapping its controls in another control; styled down to the bare name. */
+.agent-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-open:focus-visible { outline-offset: 1px; border-radius: 4px; }
+.agent-who .role { font: var(--tx-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-head .pill { flex: none; }
+
+/* What it is doing: the state and how long on one line, then what it is up to. A tool call is a path or a command, so it is mono
+   and clipped; anything else wraps up to two lines and the tooltip has the rest. */
+.agent-state { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.agent-state b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.agent-detail {
+  font-size: 13px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.agent-detail.mono { font: 13px/1.4 var(--mono); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A turn that has gone quiet, in words. Body-colour text on a wash, the tone on the icon and the wash: it clears contrast in both themes. */
+.agent-worry {
+  display: flex; align-items: flex-start; gap: var(--s1-5); margin: 0; padding: var(--s1-5) var(--s2);
+  border-radius: var(--r-sm); font-size: 13px; line-height: 1.4; color: var(--text);
+}
+.agent-worry .icon { flex: none; margin-top: 2px; }
+.agent-worry.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.agent-worry.warn .icon { color: var(--warn); }
+.agent-worry.bad { background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.agent-worry.bad .icon { color: var(--bad); }
+
+.agent-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.agent-meta .chip { margin: 0; }
+.agent-left.warn { color: var(--warn); }
+
+.agent-controls { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
+.agent-hint { margin: 0; font: var(--tx-meta); color: var(--muted); }
+
+/* ---- loading ---- */
+
+.ag-skel { cursor: default; pointer-events: none; }
+.sk-ag-av { width: 30px; height: 30px; border-radius: 9px; }
+.sk-ag-name { width: 40%; height: 12px; }
+.sk-ag-l1 { width: 55%; height: 12px; }
+.sk-ag-l2 { width: 80%; height: 10px; }

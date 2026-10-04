@@ -1,33 +1,44 @@
 import { useEffect, useMemo, useState } from "react";
-import { ago, plainLifecycle, RUNNING } from "../format";
+import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
-import { Card, ErrorState, rowKey } from "../components";
+import { Card, EmptyState, ErrorState, PageHeader, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
+import { sinceText } from "../feed";
+import { middleClip } from "../text";
+import { capEdges, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, ringLayout, type NodeTone } from "../graph";
+import "./graph.css";
 
-const KINDS: Array<[string, string, string]> = [
-  ["REQUEST", "asked for help", "accent"],
-  ["APPROVE", "approved", "ok"],
-  ["BLOCK", "blocked", "bad"],
-  ["ESCALATE", "escalated", "warn"],
-  ["INFORM", "updated", "info"],
-];
-const KIND_VERB: Record<string, string> = { REQUEST: "asked", APPROVE: "approved", BLOCK: "blocked", ESCALATE: "escalated", INFORM: "updated", OTHER: "messaged" };
+/* Who talks to whom. Where the seats sit, which way their names point and which lines are drawn is decided in graph.ts, which
+   node:test covers; this file draws it and keeps the keyboard way in: every seat is a button, and every line is a button in the list
+   under the drawing. */
+
+const W = 900, H = 480;
+/** Lines drawn at most; the page says how many it left off. */
+const MAX_LINES = 12;
+/** A message among the newest events makes its line flow. */
+const RECENT_EVENTS = 40;
+
+const RING_WORD: Record<NodeTone, string> = {
+  working: "working", waiting: "waiting for mail", stopped: "crashed or blocked", paused: "paused", idle: "idle or finished",
+};
 
 export default function Graph(): React.JSX.Element {
   const { events, openDrawer, client } = useMesh();
   const [graph, setGraph] = useState<any>(null);
-  // A swallowed catch here left `graph` null forever, so a dead server was
-  // indistinguishable from a slow one: the view said "loading graph" until
-  // the tab was closed. Failure is now a state, and it is retryable.
+  // A swallowed catch here left `graph` null forever, so a dead server was indistinguishable from a slow one. Failure is a state.
   const [err, setErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  // When this drawing was made. The dashed "active right now" overlay is
-  // computed from the live event stream, so a frozen /graph fetch put two
-  // different moments in one picture: current activity drawn on stale edges.
+  // When this drawing was made. The flowing lines come from the live event stream, so a frozen /graph fetch put two moments in one
+  // picture: current activity drawn on stale lines. The page says how old the drawing is.
   const [at, setAt] = useState<string | null>(null);
-  // Edges are message counts and nodes are the roster, so those two event
-  // families are exactly what invalidates the drawing. Keying on the top seq
-  // refetches once per change rather than on a timer.
+  // A line in the list is picked out in the drawing while it is pointed at or focused, and stays picked out once pressed (a touch has
+  // no hover, and a press that un-picked what the pointer had just picked would read as nothing happening).
+  const [hover, setHover] = useState<string | null>(null);
+  const [pin, setPin] = useState<string | null>(null);
+  const hot = pin ?? hover;
+  const now = useNow(5000);
+  // Lines are message counts and seats are the roster, so those two event families are what invalidates the drawing. Keying on the
+  // top seq refetches once per change rather than on a timer.
   const graphSeq = useMemo(() => {
     let top = 0;
     for (const e of events) if ((e.type === "message.sent" || e.type.startsWith("agent.")) && e.seq > top) top = e.seq;
@@ -39,7 +50,7 @@ export default function Graph(): React.JSX.Element {
     client.api("GET", "/graph").then(({ json, timeout }) => {
       if (dead) return;
       if (timeout || !json || json.error) {
-        setErr(timeout ? "the request timed out — the server may be busy." : String(json?.error ?? "the mesh server did not answer."));
+        setErr(timeout ? "The request timed out. The server may be busy." : String(json?.error ?? "The mesh server did not answer."));
         return;
       }
       setGraph(json);
@@ -52,71 +63,134 @@ export default function Graph(): React.JSX.Element {
     };
   }, [attempt, graphSeq, client]);
 
-  if (err && !graph) return <ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} />;
-  if (!graph) return <div className="empty"><div className="big">…</div><div>loading graph</div></div>;
-  const recentFlows = new Set(
-    events.slice(-40).filter((e) => e.type === "message.sent").map((e) => `${e.payload?.message?.from}|${e.payload?.message?.to?.join(",")}`),
+  const flowing = useMemo(
+    () => flowingKeys(
+      events.slice(-RECENT_EVENTS).filter((e) => e.type === "message.sent").map((e) => ({ from: String(e.payload?.message?.from ?? ""), to: (e.payload?.message?.to ?? []) as string[] })),
+    ),
+    [events],
   );
-  const nodes = (graph.nodes || []).filter((n: any) => n.id !== "human");
-  // Zero agents used to render an empty 900x480 SVG: a blank rectangle that
-  // looks like a broken canvas rather than an empty mesh.
+  const nodes: { id: string; lifecycle: string }[] = useMemo(() => (graph?.nodes || []).filter((n: { id: string }) => n.id !== "human"), [graph]);
+  const seats = useMemo(() => ringLayout(nodes.length, W, H), [nodes.length]);
+  const pos = useMemo(() => new Map(nodes.map((n, i) => [n.id, seats[i]!])), [nodes, seats]);
+  // A line is drawn only between two seats on the ring. The operator ("human") is not a seat, so lines to and from it are counted, not drawn.
+  const lines = useMemo(() => {
+    const all: { from: string; to: string; kind: string; count: number }[] = graph?.edges || [];
+    const drawable = all.filter((e) => e.from !== e.to && pos.has(e.from) && pos.has(e.to));
+    return { ...capEdges(drawable, MAX_LINES), withYou: all.filter((e) => e.from === "human" || e.to === "human").length };
+  }, [graph, pos]);
+
+  const header = (status?: React.ReactNode): React.JSX.Element => (
+    <PageHeader
+      title="Graph"
+      status={status}
+      lede={`Who talks to whom. A thicker line is more messages. A dashed, moving line carried a message in the last ${RECENT_EVENTS} events.`}
+    />
+  );
+
+  if (err && !graph) return <>{header()}<ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} /></>;
+  if (!graph) return <>{header()}<div role="status"><EmptyState icon="graph" title="Loading the graph" /></div></>;
   if (!nodes.length) {
     return (
       <>
-        <div className="view-title"><h2>Graph</h2></div>
-        <div className="view-sub">Who talks to whom. Thicker = more messages. Dashed = active right now. Click an agent for details.</div>
-        <Card><div className="empty"><div className="big">◎</div><div>No agents in this mesh yet.</div><div className="muted">Hire a crew in the designer and the graph draws itself.</div></div></Card>
+        {header()}
+        <EmptyState icon="graph" title="No agents in this mesh yet">Add seats in the Designer and the graph draws itself.</EmptyState>
       </>
     );
   }
-  const W = 900, H = 480, cx = W / 2, cy = H / 2;
-  // Node labels stack vertically (lifecycle above, id below), so the ring is
-  // capped by the canvas *height* — a circle of radius min(W,H)/2 - 60 in this
-  // 900x480 viewBox left ~40% of the width empty. An ellipse claims that width
-  // without spending any of the vertical label budget.
-  const RX = W / 2 - 70, RY = H / 2 - 60;
-  const pos: Record<string, { x: number; y: number; nd: any }> = {};
-  const n = Math.max(nodes.length, 1);
-  nodes.forEach((nd: any, i: number) => {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    pos[nd.id] = { x: cx + RX * Math.cos(a), y: cy + RY * Math.sin(a), nd };
-  });
-  const edges = (graph.edges || []).slice().sort((a: any, b: any) => b.count - a.count).slice(0, 12);
 
+  const open = (id: string): void => openDrawer(<AgentDrawer id={id} />);
+  const tones = new Set(nodes.map((n) => nodeTone(n.lifecycle)));
+  const kinds = kindsPresent(lines.shown);
   return (
     <>
-      <div className="view-title"><h2>Graph</h2><span className="muted">{err ? "refresh failed — showing the last drawing" : at ? `as of ${ago(at)}` : ""}</span></div>
-      <div className="view-sub">Who talks to whom. Thicker = more messages. Dashed = active right now. Click an agent for details.</div>
+      {header(<span className="feed-meta">{err ? "Refresh failed. Showing the last drawing." : at ? `Drawn ${sinceText(now - Date.parse(at))}` : ""}</span>)}
       <Card variant="graph-wrap">
-        <svg id="graph-svg" role="img" aria-label="mesh graph" viewBox={`0 0 ${W} ${H}`}>
+        {/* A group, not an image: an img has presentational children, and the seats inside are buttons. */}
+        <svg className={`gr-svg${hot ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
           <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
-          {edges.map((e: any) => {
-            const p = pos[e.from], q = pos[e.to];
-            if (!p || !q) return null;
+          {lines.shown.map((e) => {
+            const p = pos.get(e.from)!, q = pos.get(e.to)!;
             const dx = q.x - p.x, dy = q.y - p.y, dist = Math.hypot(dx, dy) || 1;
             const sx = p.x + (dx / dist) * 26, sy = p.y + (dy / dist) * 26;
             const ex = q.x - (dx / dist) * 30, ey = q.y - (dy / dist) * 30;
             const mx = (sx + ex) / 2 + dy * 0.14, my = (sy + ey) / 2 - dx * 0.14;
-            const flow = [...recentFlows].some((f) => f.startsWith(`${e.from}|`) && f.includes(e.to));
-            return <path key={`${e.from}|${e.to}|${e.kind}`} className={`edge ${e.kind}${flow ? " flowing" : ""}`} d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`} markerEnd="url(#ar)" strokeWidth={Math.min(4, 1 + e.count * 0.4)}><title>{`${e.from} ${e.kind} ${e.to} ×${e.count}`}</title></path>;
-          })}
-          {Object.keys(pos).map((id) => {
-            const { x, y, nd } = pos[id];
-            const cls = RUNNING.has(nd.lifecycle) ? "active" : nd.lifecycle === "WAITING" ? "waiting" : "";
+            const key = edgeKey(e);
             return (
-              <g key={id} className="gn" data-id={id} style={{ cursor: "pointer" }} role="button" tabIndex={0} aria-label={`${id}, ${plainLifecycle(nd.lifecycle)} — open details`} onClick={() => openDrawer(<AgentDrawer id={id} />)} onKeyDown={rowKey(() => openDrawer(<AgentDrawer id={id} />))}>
-                <circle className={`node ${cls}`} cx={x} cy={y} r={18} />
-                <text x={x} y={y + 4} textAnchor="middle" style={{ font: "600 11px var(--mono)", fill: "var(--text)" }}>{id.slice(0, 2).toUpperCase()}</text>
-                <text x={x} y={y + 34} textAnchor="middle">{id}</text>
-                <text className="dim" x={x} y={y - 26} textAnchor="middle">{plainLifecycle(nd.lifecycle)}</text>
+              <path
+                key={key}
+                className={`edge ${kindOf(e.kind).id}${isFlowing(e, flowing) ? " flowing" : ""}${hot === key ? " hot" : ""}`}
+                d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`}
+                markerEnd="url(#ar)"
+                strokeWidth={edgeWidth(e.count)}
+              >
+                <title>{edgeText(e)}</title>
+              </path>
+            );
+          })}
+          {nodes.map((nd) => {
+            const s = pos.get(nd.id)!;
+            const spot = labelPlacement(s.angle);
+            const state = plainLifecycle(nd.lifecycle);
+            return (
+              <g
+                key={nd.id}
+                className={`gn ${nodeTone(nd.lifecycle)}`}
+                data-id={nd.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`${nd.id}, ${state}. Open details.`}
+                onClick={() => open(nd.id)}
+                onKeyDown={rowKey(() => open(nd.id))}
+              >
+                <title>{nd.id}</title>
+                <circle className="node" cx={s.x} cy={s.y} r={18} />
+                <text className="init" x={s.x} y={s.y + 4} textAnchor="middle">{nd.id.slice(0, 2).toUpperCase()}</text>
+                <text className="name" x={s.x + spot.name.dx} y={s.y + spot.name.dy} textAnchor={spot.anchor}>{middleClip(nd.id, 16)}</text>
+                <text className="dim" x={s.x + spot.state.dx} y={s.y + spot.state.dy} textAnchor={spot.anchor}>{state}</text>
               </g>
             );
           })}
         </svg>
-        <div className="legend" style={{ marginTop: 8 }}>{KINDS.map(([k, label, v]) => <span key={k}><b style={{ background: `var(--${v})` }} />{label}</span>)}</div>
+
+        {/* The legend says what the colours, the dashes and the rings mean, and lists only what is on the drawing. */}
+        <ul className="gr-legend" aria-label="Legend">
+          {kinds.map((k) => <li key={k.id}><i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}</li>)}
+          <li><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
+          {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
+            <li key={t}><i className={`gr-ring ${t}`} aria-hidden="true" />{RING_WORD[t]}</li>
+          ))}
+        </ul>
       </Card>
-      <Card title="Most active links" style={{ marginTop: 12 }}>
-        {edges.length ? edges.map((e: any, i: number) => <div key={i} className="row" style={{ justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--line)" }}><span><b>{(e.from)}</b> <span className="muted">{(KIND_VERB[e.kind] || "messaged")}</span> <b>{(e.to)}</b></span><span className="muted">×{e.count}</span></div>) : <div className="muted">No messages yet.</div>}
+
+      <Card title="Most active links">
+        {lines.shown.length ? (
+          <ul className="gr-links">
+            {lines.shown.map((e) => {
+              const key = edgeKey(e);
+              return (
+                <li key={key}>
+                  {/* A button, so a line can be reached and highlighted from the keyboard. */}
+                  <button
+                    type="button"
+                    className="gr-link"
+                    aria-pressed={pin === key}
+                    onClick={() => setPin(pin === key ? null : key)}
+                    onMouseEnter={() => setHover(key)}
+                    onMouseLeave={() => setHover((h) => (h === key ? null : h))}
+                    onFocus={() => setHover(key)}
+                    onBlur={() => setHover((h) => (h === key ? null : h))}
+                  >
+                    <i className={`gr-line ${kindOf(e.kind).id}`} aria-hidden="true" />
+                    <span><b>{e.from}</b> <span className="muted">{kindOf(e.kind).verb}</span> <b>{e.to}</b></span>
+                    <span className="muted gr-n">{e.count.toLocaleString("en-US")}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : <p className="muted">No messages between agents yet.</p>}
+        {lines.hidden ? <p className="gr-note muted">Showing the {lines.shown.length} busiest of {lines.shown.length + lines.hidden} links.</p> : null}
+        {lines.withYou ? <p className="gr-note muted">{lines.withYou} {lines.withYou === 1 ? "link" : "links"} to or from you {lines.withYou === 1 ? "is" : "are"} not drawn.</p> : null}
       </Card>
     </>
   );

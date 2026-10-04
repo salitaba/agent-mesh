@@ -348,9 +348,12 @@ export const firstDeadline = deadlineMemo();
 
 /* ----------------------------- advisories ----------------------------- */
 
-/** "⏱ warned at 20:03 — <text>". Delivery is marked by the view, not the line. */
+/**
+ * "Warned at 20:03: <text>". The time is local and the zone is said once above the list, not on each line. Delivery is marked by
+ * the view, not the line. (A stopwatch pictogram used to open it; the words say it.)
+ */
 export function advisoryLine(a: TurnAdvisory): string {
-  return `⏱ warned at ${clockHM(a.at)} — ${a.text}`;
+  return `Warned at ${clockHM(a.at)}: ${a.text}`;
 }
 
 /* ------------------------------- tokens ------------------------------- */
