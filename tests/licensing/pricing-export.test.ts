@@ -8,7 +8,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
+import { spawnSync } from "child_process";
 import {
   FEATURE_IDS,
   PLANS,
@@ -41,6 +43,35 @@ test("the website carries the same data, inlined, and the page is what the gener
   assert.ok(m, "the data element is in the page");
   assert.deepEqual(JSON.parse(m![1]!), exported, "and parses back to the export");
   assert.ok(!m![1]!.includes("<"), "no raw < inside the data element");
+});
+
+test("the export writes each block into the pages that fence it, is the same the second time, and refuses a pricing page that lacks one", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curule-pricing-"));
+  for (const file of ["pricing/measured-runs.json", "docs/commercial/pricing.md"]) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, file), path.join(dir, file));
+  }
+  const fence = (name: string): string => `<!-- generated:${name}:start (scripts/export-pricing.mjs; do not edit between the markers) -->\n<!-- generated:${name}:end -->\n`;
+  const pricingPage = ["plans-json", "plan-cards", "plan-table", "run-costs"].map(fence).join("");
+  fs.mkdirSync(path.join(dir, "site", "pricing"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "site", "pricing", "index.html"), pricingPage, "utf8");
+  fs.writeFileSync(path.join(dir, "site", "index.html"), `<p>home</p>\n${fence("plan-teaser")}`, "utf8");
+  const run = (...args: string[]) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "export-pricing.mjs"), "--root", dir, ...args], { encoding: "utf8" });
+  assert.equal(run("--check").status, 1, "a page that has not been written is out of date");
+  const wrote = run();
+  assert.equal(wrote.status, 0, wrote.stderr);
+  const first = fs.readFileSync(path.join(dir, "site", "pricing", "index.html"), "utf8");
+  assert.match(first, /<script type="application\/json" id="plans-data">/);
+  assert.match(first, /<article class="plan" id="plan-community"/);
+  assert.match(first, /<table class="compare">/);
+  assert.match(fs.readFileSync(path.join(dir, "site", "index.html"), "utf8"), /<ul class="teaser"/);
+  assert.equal(run("--check").status, 0, "and the second time nothing is out of date");
+  assert.equal(run().status, 0);
+  assert.equal(fs.readFileSync(path.join(dir, "site", "pricing", "index.html"), "utf8"), first, "a second write changes nothing");
+  fs.writeFileSync(path.join(dir, "site", "pricing", "index.html"), pricingPage.replace(/<!-- generated:run-costs:[^\n]*\n/g, ""), "utf8");
+  const refused = run();
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /does not fence the block 'run-costs'/);
 });
 
 test("docs/commercial/pricing.md carries the generated plan table and unit economics", () => {
