@@ -7,9 +7,9 @@ import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "
 // agree with every other dialog about what "focusable" means.
 import { Banner, Button, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
-import { confirmResume, useGoLive, useReopenMission, useResetMission } from "./actions";
 import { documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
+import { useMissionActions } from "./useMissionActions";
 import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
@@ -316,45 +316,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     <><Help /><CloseX extra="close-x-float" /></>,
   ), [openDrawer]);
 
-  /* The mission's controls. Every one is reachable from the bar, the Overview and the keyboard, and each goes through the
-   * same function, so the three cannot do different things under one label. Starting asks first (useGoLive: it names the
-   * agents about to spend); pausing does not, because it is safe, and says so with an Undo instead of a question. */
-  const { goLive } = useGoLive();
-  const { reopenMission } = useReopenMission();
-  const { resetMission } = useResetMission();
-  const resumeMission = useCallback(async (ask: boolean): Promise<void> => {
-    if (!goalId) return;
-    if (ask && !(await confirmResume(confirm, status, "Resume"))) return;
-    try {
-      await client.post(`/goals/${goalId}/resume`);
-      toast("Mission resumed", "Agents are running.", "ok");
-    } catch {
-      toast("Resume failed", "The server did not answer.", "bad");
-    }
-    void refreshStatus();
-  }, [goalId, confirm, status, client, toast, refreshStatus]);
-  const pauseMission = useCallback(async (): Promise<void> => {
-    if (!goalId) return;
-    try {
-      await client.post(`/goals/${goalId}/pause`);
-      toast("Mission paused", "Agents stopped. Nothing is lost.", "warn", { label: "Undo", run: () => void resumeMission(false) });
-    } catch {
-      toast("Pause failed", "The server did not answer.", "bad");
-    }
-    void refreshStatus();
-  }, [goalId, client, toast, refreshStatus, resumeMission]);
-  const runAction = (a: MissionAction): void => {
-    switch (a) {
-      case "start": void goLive(); break;
-      case "pause": void pauseMission(); break;
-      case "resume": void resumeMission(true); break;
-      case "reopen": void reopenMission(); break;
-      case "review": setView(decisions === 0 && toolRequests > 0 ? "gates" : "escalations"); break;
-      case "settings": setView("hostsettings"); break;
-      case "agents": setView("agents"); break;
-      case "designer": setView("designer"); break;
-    }
-  };
+  // The mission's controls (useMissionActions.ts): the bar, the Overview and the keyboard all go through the same functions.
+  const missionActions = useMissionActions();
+  const inboxView: View = decisions === 0 && toolRequests > 0 ? "gates" : "escalations";
+  const runAction = (a: MissionAction): void => missionActions.run(a, { inboxView });
   const ACTION_ICON: Record<MissionAction, IconName> = { start: "play", pause: "pause", resume: "play", reopen: "undo", review: "inbox", settings: "sliders", agents: "agents", designer: "designer" };
 
   // Global palette commands: every view, help, and one "jump to agent" per
@@ -469,8 +434,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     if (ev.key === "?") return openHelp();
     if (ev.key === "t") toggleTheme();
     // Only when the mission is in a state where the key means something: it used to post a pause to a delivered mission.
-    if (ev.key === "p" && state.primary?.action === "pause") void pauseMission();
-    if (ev.key === "r" && state.primary?.action === "resume") void resumeMission(true);
+    if (ev.key === "p" && state.primary?.action === "pause") void missionActions.pause();
+    if (ev.key === "r" && state.primary?.action === "resume") void missionActions.resume(true);
     if (ev.key === "/") {
       ev.preventDefault();
       const s = document.getElementById("ev-search") || document.getElementById("step-search");
@@ -629,7 +594,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   }
   if (phone) moreItems.push({ id: "mi-designer", icon: "spark", label: "Ask the designer", onClick: () => setChatOpen(true) });
   if (goalId) {
-    moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void resetMission() });
+    moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void missionActions.reset() });
   }
   const primary = state.primary;
   const spentRatio = mission?.limit ? Math.min(1, (mission.consumed ?? 0) / mission.limit) : 0;
@@ -721,7 +686,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
               primary action is already "review" it is that button, so this one stands down. */}
           {inbox > 0 && primary?.action !== "review" ? (
-            <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(decisions === 0 && toolRequests > 0 ? "gates" : "escalations")}>
+            <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(inboxView)}>
               <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
             </Button>
           ) : null}
