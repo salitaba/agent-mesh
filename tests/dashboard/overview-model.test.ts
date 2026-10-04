@@ -348,9 +348,12 @@ test("the spend ceiling explains why Continue cannot fix it and keeps every fact
   assert.ok(heroNote(note({ phase: "ceiling" }))!.detail.every((p) => p.length > 0), "no empty paragraph when the spend has not arrived");
 });
 
-test("an idle live mission explains itself with the cause, and a quiet one only says how to get going", () => {
+test("an idle live mission explains itself with the cause, and a quiet one says how agents wake and what to do if nothing is coming", () => {
   assert.equal(heroNote(note({ phase: "stalled", startupSeats: 0 }))!.summary, idleCause(0, null));
-  assert.match(heroNote(note({ phase: "quiet" }))!.summary, /^Wake one or send a message/);
+  const quiet = heroNote(note({ phase: "quiet" }))!.summary;
+  assert.match(quiet, /^Agents wake when something they care about happens\./);
+  assert.match(quiet, /If nothing is coming, wake one or send a message\.$/);
+  assert.doesNotMatch(quiet, /get going/, "a mission between two turns has already started");
 });
 
 test("paused and failed say what the log says when it phrased a verdict, and paused says a plain line when it did not", () => {
