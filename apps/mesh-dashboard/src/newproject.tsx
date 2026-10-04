@@ -527,13 +527,14 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }): React.JS
     <>
       <div className="pj-scrim" aria-hidden="true" onClick={onClose} />
       <div className="np-dialog" role="dialog" aria-modal="true" aria-labelledby="np-title" ref={ref}>
-        <header className="np-head">
+        {/* A div, not a header: a header outside a section is the page's banner landmark, and a dialog is not the page. */}
+        <div className="np-head">
           <div>
             <h2 id="np-title">New project</h2>
             <p className="muted">A project is a folder with a mesh.yaml. Choose how to start.</p>
           </div>
           <IconButton icon="x" label="Close" onClick={onClose} />
-        </header>
+        </div>
         <NewProject layout="stack" onDone={onClose} onPickerChange={(open) => { pickerOpen.current = open; }} />
         <div className="fr-aside">
           <RunWrites />
