@@ -10,7 +10,7 @@
  * the sheet), ./Topology and ./SeatList (the canvas and the phone's list), ./Inspector and ./panels (the forms).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
 import { fmt } from "../format";
 import { useMesh } from "../store";
 import { Banner, Button, ErrorState, PageHeader, useDismissable, type MenuItem, Menu } from "../components";
@@ -111,6 +111,18 @@ export default function Designer(): React.JSX.Element {
   const checksBtnRef = useRef<HTMLButtonElement | null>(null);
   const checksAnchor = useRef<HTMLDivElement | null>(null);
   const popRef = useDismissable<HTMLDivElement>(checksOpen, () => setChecksOpen(false));
+  // On a narrow page the checks hang from the full width, just under the button that opened them (designer.css). They are placed from where the button is,
+  // not from a positioned page header: a positioned header lay over the shell's own menus, which hang over it from the top bar.
+  useLayoutEffect(() => {
+    if (!checksOpen) return;
+    const place = (): void => {
+      const a = checksAnchor.current;
+      if (a) popRef.current?.style.setProperty("--ms-pop-top", `${Math.round(a.getBoundingClientRect().bottom + 8)}px`);
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [checksOpen, popRef]);
   const inspRef = useRef<HTMLDivElement | null>(null);
   const inspReturn = useRef<HTMLElement | null>(null);
   const inspWasOpen = useRef(false);

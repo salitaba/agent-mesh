@@ -15,7 +15,6 @@
 /* min-height stays `auto` here: on a narrow page the content (header, guide, seat list) is taller than the window and the page scrolls. With `min-height: 0` the
    frame was squeezed to the window, its body to nothing, and the content spilled out of it, where the sticky save bar (which cannot leave the frame) lay on top of it. */
 .ms { display: flex; flex-direction: column; gap: var(--s3); flex: 1 1 auto; }
-.ms .page-head { position: relative; }
 .ms .page-head .view-title { align-items: center; margin-bottom: var(--s2); }
 .ms .view-sub { margin-top: 0; }
 .ms .banner.has-icon { margin-bottom: 0; }
@@ -219,7 +218,7 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
   .ms-sheet { left: var(--s3); right: var(--s3); width: auto; }
   /* The checks popover is anchored to the whole header here: the header wraps, and the anchor can sit mid-row where a right-anchored panel resolves to a negative left offset no scroll reaches. */
   .ms-checks-anchor { position: static; }
-  .ms-pop { left: var(--s3); right: var(--s3); width: auto; }
+  .ms-pop.ms-checks { position: fixed; left: var(--s3); right: var(--s3); width: auto; top: var(--ms-pop-top, 9rem); }
 }
 @media (max-width: 760px) {
   /* The header's actions join the title row's own wrapping, so undo and redo sit beside the title and the rest fills the row below it. */

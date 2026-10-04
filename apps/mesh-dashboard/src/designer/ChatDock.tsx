@@ -83,11 +83,16 @@ export default function ChatDock({ open, onClose }: {
 
   if (!open) return null;
   return (
-    <div id="ms-dock" className="ms-dock" role="dialog" aria-label="designer assistant" ref={panelRef} tabIndex={-1}>
+    <div
+      id="ms-dock" className="ms-dock" role="dialog" aria-label="Designer assistant" ref={panelRef} tabIndex={-1}
+      // From inside the panel Esc closes it at once. The shell's own Esc handler first takes focus out of a text box and leaves the panel open, which
+      // made a keyboard user press it twice; the unsent message is kept (ChatPanel), so closing loses nothing.
+      onKeyDown={(e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); close(); } }}
+    >
       <div className="ms-dock-head">
         <b>Designer assistant</b>
-        <span className="muted">whole-config proposals · applied to the draft</span>
-        <button type="button" className="ms-slide-close" aria-label="close designer assistant" onClick={onClose}><Icon name="x" /></button>
+        <span className="muted">It proposes; you apply to your draft and save</span>
+        <button type="button" className="ms-slide-close" aria-label="Close the designer assistant" onClick={onClose}><Icon name="x" /></button>
       </div>
       <ChatPanel />
     </div>

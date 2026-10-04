@@ -91,7 +91,7 @@ export function ChecksPanel({ checking, valid, offline, errors, notes, seats, on
         ? `No errors. The server accepts this mesh.${notes.length ? ` ${notes.length} ${notes.length === 1 ? "note is" : "notes are"} worth a look.` : ""}`
         : `${errors.length} ${errors.length === 1 ? "error" : "errors"}. Fix ${errors.length === 1 ? "it" : "them"} to save.`;
   return (
-    <div className="ms-pop" role="dialog" aria-label="Checks" ref={rootRef} tabIndex={-1}>
+    <div className="ms-pop ms-checks" role="dialog" aria-label="Checks" ref={rootRef} tabIndex={-1}>
       <div className="ms-pop-head">
         <h3>Checks</h3>
         <CloseButton label="Close the checks" onClick={onClose} />
