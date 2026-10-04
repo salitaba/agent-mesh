@@ -3,6 +3,7 @@ import type { KeyboardEvent } from "react";
 import "./files.css";
 import { ago, artifactCls, localDateTime, localTime, plainArtifact } from "../format";
 import { useMesh } from "../store";
+import { useMedia, WIDE } from "../useMedia";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { Banner, Button, EmptyState, ErrorState, Input, PageHeader, Pill, Select, type PillTone } from "../components";
@@ -30,20 +31,6 @@ import {
  *
  * The list refreshes itself when an agent publishes or a status changes (it used to be read once, on arrival, and then go
  * stale for the whole run). If a refresh fails after a good load, the page keeps what it has and says so. */
-
-/** Whether the page is wide enough to hold the list and the reader side by side. 1100 is the console's two-column break. */
-function useSplit(): boolean {
-  const query = "(min-width: 1101px)";
-  const [on, setOn] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const m = window.matchMedia(query);
-    const sync = (): void => setOn(m.matches);
-    m.addEventListener("change", sync);
-    sync();
-    return () => m.removeEventListener("change", sync);
-  }, []);
-  return on;
-}
 
 function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
   a: Art;
@@ -94,7 +81,7 @@ export default function Artifacts(): React.JSX.Element {
   const { client, events, openDrawer } = useMesh();
   const { facts, state } = useMission();
   const actions = useMissionActions();
-  const split = useSplit();
+  const split = useMedia(WIDE);
 
   const [arts, setArts] = useState<Art[]>([]);
   const [loaded, setLoaded] = useState(false);

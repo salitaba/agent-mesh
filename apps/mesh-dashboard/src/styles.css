@@ -343,7 +343,7 @@ button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
 .menu-item.separated::before { content: ""; position: absolute; left: var(--s2); right: var(--s2); top: calc(var(--s1-5) / -2 - 1px); height: 1px; background: var(--line); }
 /* Tint rather than a plate: composites over whatever ground is beneath it, so
    it survives --panel and --bg-2 collapsing to the same white in light. Matches
-   .ptree-row:hover (7%) and .fv-code .fv-line:hover (6%) already in this file.
+   .ptree-row:hover (7%) and .fv-code .fv-line:hover (6%) in views/product.css and views/files.css.
    .menu-item.danger:hover below is (0,3,0) and keeps its red wash. */
 .menu-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent-2); }
 .menu-item:hover .icon { color: inherit; }
@@ -1414,29 +1414,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .deliver-foot .mono { color: var(--text-dim); font-size: 13px; word-break: break-all; }
 
 /* ---------------------------------------------------------------------- *
- * Product — delivered codebase: tree, preview, run console, playground.
- * ---------------------------------------------------------------------- */
-.run-log { font: 400 13px/1.55 var(--mono); background: var(--bg-2); border: 1px solid var(--line);
-  border-radius: var(--r); padding: var(--s2-5) var(--s3); max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.ptree { display: flex; flex-direction: column; margin-top: var(--s2); max-height: 340px; overflow: auto; }
-.ptree-row { display: flex; align-items: center; gap: var(--s2); text-align: left; width: 100%;
-  background: none; border: 0; border-bottom: 1px dashed var(--line); padding: var(--s1-5) var(--s1);
-  font: 14px var(--sans); color: var(--text); cursor: pointer; min-width: 0; }
-.ptree-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.ptree-row .icon { width: 14px; color: var(--muted); font-size: 12px; }
-.ptree-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.ptree-row .muted { font-size: 12px; }
-.crumb { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: var(--s0); }
-.crumb .chip { cursor: default; }
-/* --paper is #ffffff in BOTH themes. In dark the preview self-delimits against
-   the panel at ~18:1 and this border is decoration; in light it is white on a
-   white card, so the whole boundary falls to the border -- and --line is 1.25:1
-   there, i.e. invisible. --line-control is the only token that clears 3:1
-   against a white fill on both sides (light #7d8799 3.62:1, dark #5c6880
-   5.60:1); --line-strong looks like a fix but is 1.52:1 in light. */
-.playframe { width: 100%; height: 640px; border: 1px solid var(--line-control); border-radius: var(--r); background: var(--paper); }
-
-/* ---------------------------------------------------------------------- *
  * File rows. The file renderer, the reader and the Files page are in views/files.css. What stays here is what other views
  * share with them: the numbered line, the diff block with its add and remove tints (the step view draws its diffs with the
  * same rows), GFM tables (a turn's narration uses them too) and the version row the artifact drawer still draws.
@@ -1467,13 +1444,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .md-table .al-c { text-align: center; }
 .md-table .al-r { text-align: right; }
 
-/* version row (the artifact drawer), workspace search and change marks (the Product page) */
+/* version row: the artifact drawer still draws it */
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
-.fv-search { display: flex; align-items: center; gap: var(--s1-5); margin-bottom: var(--s1-5); }
-.fv-search input { flex: 1; min-width: 0; }
-.ptree-row .hit-text { font: 400 12px var(--mono); opacity: .75; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
-.ch-m, .ch-mm { color: var(--warn); } .ch-a, .ch-, .ch-\?\? { color: var(--ok); } .ch-d { color: var(--bad); }
 
 /* ---------- project tabs ---------- */
 /* Host-level chrome: one row above everything, spanning both grid columns, so
