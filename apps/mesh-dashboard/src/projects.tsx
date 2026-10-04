@@ -33,6 +33,8 @@ export interface ProjectSummary {
   addedAt: string;
   lastOpenedAt?: string;
   status: "closed" | "booting" | "open" | "crashed" | "locked" | "error" | "unknown";
+  /** The scheduler mode its process last reported (carried on the registry entry). Only meaningful while it is open. */
+  lastMode?: "parked" | "live";
   pid?: number;
   health?: { rss: number; lastHeartbeat: string; restarts: number };
   error?: { reason: string; detail?: string };
@@ -73,24 +75,61 @@ const LIVE_FRAME_TYPES = ["turn.token", "turn.tool"] as const;
 
 type SseState = "connecting" | "open" | "reconnecting";
 
+/**
+ * Something the host refused that the person should be told, and keep being told until they dismiss it. It lives here, above
+ * every project's console, because the console switches when a project is opened and anything held below it goes with it.
+ */
+export interface HostNotice {
+  id: number;
+  title: string;
+  text: string;
+}
+
+/** What opening, closing or restarting came to. `status` is 0 when the host did not answer at all. */
+export type Lifecycle = { ok: true; project: ProjectSummary } | { ok: false; status: number; reason: string };
+
+/** What adding a project came to. `status` is 0 when the host did not answer at all. */
+export interface AddResult {
+  ok: boolean;
+  status: number;
+  /** The host's own refusal, and the one sentence it wrote for a person to read (`reason`). */
+  error?: string;
+  reason?: string;
+  code?: string;
+  project?: ProjectSummary;
+  scaffolded?: boolean;
+  /** The folder holds no mesh.yaml: the picker uses this to offer an explicit "create one here" instead of writing unasked. */
+  missing?: boolean;
+}
+
 interface ProjectsState {
   projects: ProjectSummary[];
   activeId: string | null;
   setActive: (id: string) => void;
   refreshProjects: () => Promise<ProjectSummary[]>;
   /**
-   * `opts.init` asks the host to scaffold a mesh.yaml when the folder has none.
+   * `opts.init` asks the host to scaffold the default team when the folder has no mesh.yaml.
    * Without it a mesh-less folder still fails with `missing`, which the picker
    * uses to offer an explicit "create mesh here" instead of writing unasked.
+   * `opts.template` makes the project from a starting point the host offers (`GET /api/templates`): the host writes
+   * it into `root` and refuses a folder that already holds a mesh.yaml.
    */
-  addProject: (
-    root: string,
-    opts?: { init?: boolean },
-  ) => Promise<{ ok: boolean; error?: string; project?: ProjectSummary; scaffolded?: boolean; missing?: boolean }>;
-  openProject: (id: string) => Promise<ProjectSummary | null>;
-  closeProject: (id: string) => Promise<ProjectSummary | null>;
-  restartProject: (id: string) => Promise<ProjectSummary | null>;
+  addProject: (root: string, opts?: { init?: boolean; template?: string }) => Promise<AddResult>;
+  /**
+   * Each answers with the project as the host now reports it, or with why the host refused (the plan allows one open
+   * project at a time, the host did not answer). A project that fails to come up is NOT a refusal: the request worked and
+   * the project's `status` is the outcome.
+   */
+  openProject: (id: string) => Promise<Lifecycle>;
+  closeProject: (id: string) => Promise<Lifecycle>;
+  restartProject: (id: string) => Promise<Lifecycle>;
+  /** Forget a project. Its files are untouched. When it was the one in front, another takes its place. */
   removeProject: (id: string) => Promise<boolean>;
+  /** When the last registry answer landed (ms since the epoch); null before the first. A list older than a poll or two is stale. */
+  lastSyncAt: number | null;
+  /** The last thing the host refused (a plan that allows one open project, a host that did not answer). Cleared by the next success. */
+  notice: HostNotice | null;
+  dismissNotice: () => void;
   /** Registers a project's frame sink. Returns an unsubscribe. */
   subscribe: (projectId: string, sink: ProjectSink) => () => void;
   sseState: SseState;
@@ -155,7 +194,7 @@ const asSummary = (json: any): ProjectSummary | null =>
 function sameProject(a: ProjectSummary, b: ProjectSummary): boolean {
   return (
     a.id === b.id && a.name === b.name && a.root === b.root && a.configPath === b.configPath &&
-    a.addedAt === b.addedAt && a.lastOpenedAt === b.lastOpenedAt && a.status === b.status &&
+    a.addedAt === b.addedAt && a.lastOpenedAt === b.lastOpenedAt && a.status === b.status && a.lastMode === b.lastMode &&
     a.pid === b.pid && a.tripped === b.tripped && a.restartInMs === b.restartInMs &&
     a.health?.rss === b.health?.rss && a.health?.lastHeartbeat === b.health?.lastHeartbeat && a.health?.restarts === b.health?.restarts &&
     a.error?.reason === b.error?.reason && a.error?.detail === b.error?.detail &&
@@ -177,6 +216,15 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   // it away is worse than letting it arrive a beat late in host mode.
   const [hasRegistry, setHasRegistry] = useState<boolean | null>(null);
   const [hostSpend, setHostSpend] = useState<HostSpend | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [notice, setNotice] = useState<HostNotice | null>(null);
+  const noticeSeq = useRef(0);
+  const dismissNotice = useCallback(() => setNotice(null), []);
+  // The latest list and the project in front, for handlers that outlive a render (the hash listener, a removal).
+  const projectsRef = useRef<ProjectSummary[]>([]);
+  const activeRef = useRef<string | null>(null);
+  projectsRef.current = projects;
+  activeRef.current = activeId;
   // Read from inside the 5s poll, which must not be rebuilt when the verdict
   // lands. `curule console` has no /api/projects route and never grows one, so
   // once it has 404ed the poll was asking a question already answered — twelve
@@ -222,6 +270,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     // console showed a parked mesh and no reason for it.
     setHostSpend((json?.spend as HostSpend | undefined) ?? null);
     setLoaded(true);
+    setLastSyncAt(Date.now());
     return list;
   }, []);
 
@@ -368,16 +417,27 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     });
   }, []);
 
-  const addProject = useCallback(async (root: string, opts?: { init?: boolean }) => {
-    const { status, json } = await post("/api/projects", opts?.init ? { root, init: true } : { root });
+  const addProject = useCallback(async (root: string, opts?: { init?: boolean; template?: string }): Promise<AddResult> => {
+    const body = opts?.template ? { root, template: opts.template } : opts?.init ? { root, init: true } : { root };
+    let res: Awaited<ReturnType<typeof post>>;
+    try {
+      res = await post("/api/projects", body);
+    } catch {
+      // The request never got an answer; the caller says so, in words, rather than handling a rejected promise.
+      return { ok: false, status: 0 };
+    }
+    const { status, json } = res;
     if (status === 201) {
       const summary = asSummary(json);
       applySummary(summary);
-      return { ok: true, project: summary ?? undefined, scaffolded: json?.scaffolded === true };
+      return { ok: true, status, project: summary ?? undefined, scaffolded: json?.scaffolded === true };
     }
     return {
       ok: false,
-      error: String(json?.error ?? `add failed (${status})`),
+      status,
+      error: typeof json?.error === "string" ? json.error : `add failed (${status})`,
+      reason: typeof json?.reason === "string" ? json.reason : undefined,
+      code: typeof json?.code === "string" ? json.code : undefined,
       missing: json?.code === "missing",
     };
   }, [applySummary]);
@@ -385,32 +445,73 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   // open/close/restart answer 200 even when the child failed to come up: the
   // request succeeded and the status is the outcome. Reading `status` rather
   // than the HTTP code is what lets a crashed project render as a crashed tab.
-  const lifecycle = useCallback(async (id: string, action: "open" | "close" | "restart") => {
+  const runLifecycle = useCallback(async (id: string, action: "open" | "close" | "restart"): Promise<Lifecycle> => {
+    const name = projectsRef.current.find((p) => p.id === id)?.name ?? id;
+    const refuse = (status: number, reason: string): Lifecycle => {
+      setNotice({ id: ++noticeSeq.current, title: `Could not ${action} ${name}.`, text: reason });
+      return { ok: false, status, reason };
+    };
+    let res: Awaited<ReturnType<typeof post>>;
     try {
-      const { status, json } = await post(`/api/projects/${encodeURIComponent(id)}/${action}`);
-      if (status !== 200) return null;
-      const summary = asSummary(json);
-      applySummary(summary);
-      return summary;
+      res = await post(`/api/projects/${encodeURIComponent(id)}/${action}`);
     } catch {
-      return null;
+      return refuse(0, "The host did not answer. Check that it is still running, then try again.");
     }
+    const { status, json } = res;
+    const summary = status === 200 ? asSummary(json) : null;
+    if (summary) {
+      applySummary(summary);
+      setNotice(null);
+      return { ok: true, project: summary };
+    }
+    // The host's own words: a plan that allows one open project says so, and what to do about it.
+    const said = typeof json?.reason === "string" ? json.reason : typeof json?.error === "string" ? json.error : "";
+    return refuse(status, said ? (/[.!?]$/.test(said) ? said : `${said}.`) : `The host answered ${status}. Try again.`);
   }, [applySummary]);
+
+  // One request per project and action at a time: a click and the address changing under it, or a double click, would
+  // otherwise ask the host twice for the same process.
+  const inflight = useRef(new Map<string, Promise<Lifecycle>>());
+  const lifecycle = useCallback((id: string, action: "open" | "close" | "restart"): Promise<Lifecycle> => {
+    const key = `${action}:${id}`;
+    const running = inflight.current.get(key);
+    if (running) return running;
+    const started = runLifecycle(id, action).finally(() => inflight.current.delete(key));
+    inflight.current.set(key, started);
+    return started;
+  }, [runLifecycle]);
 
   const openProject = useCallback((id: string) => lifecycle(id, "open"), [lifecycle]);
   const closeProject = useCallback((id: string) => lifecycle(id, "close"), [lifecycle]);
   const restartProject = useCallback((id: string) => lifecycle(id, "restart"), [lifecycle]);
 
   const removeProject = useCallback(async (id: string) => {
-    let status: number;
-    try {
-      ({ status } = await api("DELETE", `/api/projects/${encodeURIComponent(id)}`));
-    } catch {
+    const name = projectsRef.current.find((p) => p.id === id)?.name ?? id;
+    const refuse = (reason: string): false => {
+      setNotice({ id: ++noticeSeq.current, title: `Could not remove ${name}.`, text: reason });
       return false;
+    };
+    let status: number;
+    let json: any;
+    try {
+      ({ status, json } = await api("DELETE", `/api/projects/${encodeURIComponent(id)}`));
+    } catch {
+      return refuse("The host did not answer. Check that it is still running, then try again.");
     }
-    if (status !== 200) return false;
-    setProjects((prev) => prev.filter((p) => p.id !== id));
-    setActiveId((cur) => (cur === id ? null : cur));
+    if (status !== 200) return refuse(typeof json?.reason === "string" ? json.reason : typeof json?.error === "string" ? json.error : `The host answered ${status}. Try again.`);
+    setNotice(null);
+    // The project in front may be the one that just went. Leaving `activeId` on it (or on nothing, while others exist) would
+    // mount a console for a project the host no longer knows, so another takes its place, chosen the way a fresh window
+    // chooses: an open one first.
+    const remaining = projectsRef.current.filter((p) => p.id !== id);
+    setProjects(remaining);
+    if (activeRef.current === id) {
+      const next = pickActiveProject({
+        open: remaining.filter((p) => p.status === "open").map((p) => p.id),
+        known: remaining.map((p) => p.id),
+      });
+      setActiveId(next);
+    }
     return true;
   }, []);
 
@@ -422,6 +523,23 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
       /* private mode: remembering is a convenience, not a requirement */
     }
   }, []);
+
+  // The address can name a project other than the one in front: the Back button, a link, an edit, a tab. Following it keeps
+  // the address and the console saying the same thing. A project the registry does not know is left alone. A closed one is
+  // opened on arrival, as it is when the page loads on its link; a broken one is not, because starting a crashed process
+  // again is a decision the notice under the strip offers and a page change must not make.
+  useEffect(() => {
+    const onHash = () => {
+      const id = parseHash(window.location.hash).projectId;
+      if (!id || id === activeRef.current) return;
+      const ref = projectsRef.current.find((p) => p.id === id);
+      if (!ref) return;
+      setActive(id);
+      if (ref.status === "closed") void openProject(id);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [setActive, openProject]);
 
   useEffect(() => {
     deadRef.current = false;
@@ -476,9 +594,9 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
   const value = useMemo<ProjectsState>(
     () => ({
       projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject,
-      restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend,
+      restartProject, removeProject, lastSyncAt, notice, dismissNotice, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend,
     }),
-    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend],
+    [projects, activeId, setActive, refreshProjects, addProject, openProject, closeProject, restartProject, removeProject, lastSyncAt, notice, dismissNotice, subscribe, sseState, loaded, hostDown, hasRegistry, hostSpend],
   );
 
   return <Ctx.Provider value={value}>{children(activeId)}</Ctx.Provider>;

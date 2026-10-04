@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <!-- The sign-in page answers to anyone who can reach the host. It is not something to find through a search. -->
+  <meta name="robots" content="noindex" />
   <title>Curule</title>
   <script>
     // Theme bootstrap (UIR-07). Runs before first paint so a returning
@@ -21,6 +24,7 @@
 </head>
 <body>
   <div id="root"></div>
+  <noscript><p style="font: 16px/1.5 system-ui, sans-serif; padding: 24px; max-width: 60ch">The Curule console is a web application and needs JavaScript. Turn it on for this address and reload the page.</p></noscript>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

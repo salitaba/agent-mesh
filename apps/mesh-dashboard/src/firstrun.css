@@ -1,0 +1,110 @@
+/* First run: sign-in, the welcome, and the three ways of starting a project.
+   Tokens only (tests/build/console-palette.test.ts sweeps this file for a colour literal); sizes from the ramp. */
+
+/* ---------------------------------------------------------------------------------------------------- sign-in
+   Shown instead of the console when the server holds a token and this browser has no session. A column, not a
+   form floating in a field: the name of the product, what this page is for, the one field, and where the token is. */
+.si { min-height: 100vh; display: grid; place-items: center; padding: var(--s6) var(--s4); }
+.si-wrap { width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--s4); }
+.si-logo { color: var(--text); }
+.si-card { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s6); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.si-card h1 { margin: 0; font: var(--tx-title); color: var(--text); }
+.si-lede { margin: calc(var(--s2) * -1) 0 0; font-size: 15px; line-height: 1.55; color: var(--text-dim); }
+.si-form { display: flex; flex-direction: column; gap: var(--s2); }
+.si-form label { font: 600 13px/1.35 var(--sans); color: var(--text-dim); }
+.si-field { position: relative; display: flex; }
+.si-field input { flex: 1 1 auto; min-width: 0; min-height: 40px; padding-right: 44px; font-size: 15px; }
+.si-eye { position: absolute; top: var(--s0); right: var(--s0); bottom: var(--s0); width: 38px; display: grid; place-items: center; padding: 0; background: none; border: 0; border-radius: var(--r-sm); color: var(--text-dim); cursor: pointer; }
+.si-eye:hover { color: var(--text); background: var(--sunken); }
+.si-eye[aria-pressed="true"] { color: var(--accent-2); }
+.si-form .si-submit { width: 100%; min-height: 40px; margin-top: var(--s2); font-size: 15px; }
+.si-form .si-submit:disabled { opacity: .55; cursor: not-allowed; }
+.si-hint { margin: 0; display: flex; align-items: flex-start; gap: var(--s1-5); font-size: 13px; line-height: 1.5; color: var(--bad); }
+.si-hint .icon { flex: none; margin-top: var(--s0); }
+.si-card .banner { margin: 0; }
+.si-help { border-top: 1px solid var(--line); padding-top: var(--s3); }
+.si-help summary { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; list-style: none; cursor: pointer; color: var(--accent-2); font-size: 14px; }
+.si-help summary::-webkit-details-marker { display: none; }
+.si-help summary .icon { transition: transform .12s; }
+.si-help[open] summary .icon { transform: rotate(90deg); }
+.si-sources { list-style: none; margin: var(--s3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s3-5); }
+.si-sources b { display: block; font: 600 14px/1.4 var(--sans); color: var(--text); }
+.si-sources p { margin: var(--s1) 0 var(--s1-5); font-size: 14px; line-height: 1.55; color: var(--text-dim); }
+.si-sources code { font-size: 13px; }
+/* A name or a flag is read whole: it moves to the next line as one piece rather than breaking in the middle. */
+.si-sources p code { white-space: nowrap; }
+.si-sources .si-cmd { display: block; padding: var(--s2) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 13px/1.5 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.si-foot { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.si-foot b { color: var(--text-dim); font-weight: 600; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+/* The states that are not the form: asking the host, and the host not answering. */
+.si-state { display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; }
+.si-state h1 { margin: 0; font: var(--tx-title); color: var(--text); }
+.si-state p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-dim); }
+@media (max-width: 560px) {
+  .si { place-items: start center; padding: var(--s5) var(--s4); }
+  .si-card { padding: var(--s5) var(--s4); }
+}
+
+/* ---------------------------------------------------------------------------------------------------- welcome
+   The first thing a fresh host shows. Not a hero: three ways to start, side by side, each saying what it needs, what it
+   costs and which files it writes where. */
+.fr-welcome { max-width: 1180px; }
+.fr-welcome .view-sub { margin: 0 var(--s0) var(--s5); max-width: 68ch; font-size: 15px; line-height: 1.55; color: var(--text-dim); }
+.fr-aside { margin: var(--s5) var(--s0) 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+.fr-aside p { margin: 0 0 var(--s1-5); max-width: 96ch; }
+.fr-aside code { font-size: 13px; }
+
+.fr-paths { display: grid; gap: var(--s4); }
+.fr-paths.row { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+@media (max-width: 1100px) { .fr-paths.row { grid-template-columns: minmax(0, 1fr); } }
+.fr-card { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.fr-card-head { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; min-height: 44px; }
+.fr-card-icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-2); }
+.fr-card-title { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s0); min-width: 0; }
+.fr-card-head h3 { margin: 0; min-width: 0; font: 600 16px/1.3 var(--sans); color: var(--text); text-transform: none; letter-spacing: 0; }
+.fr-tag { flex: none; padding: var(--s0) var(--s2); border-radius: 999px; font: 600 11px/1.5 var(--sans); letter-spacing: .04em; color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 10%, transparent); }
+.fr-tag.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.fr-tag.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.fr-lead { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text); }
+.fr-quiet { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+.fr-quiet p { margin: 0 0 var(--s2); }
+/* The label runs into its sentence: a column of labels would give each fact a third of a narrow card's width. */
+.fr-facts { display: flex; flex-direction: column; gap: var(--s2); margin: 0; padding: var(--s3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.fr-fact { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+.fr-fact dt { display: inline; margin-right: var(--s1-5); font: var(--tx-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fr-fact dd { display: inline; margin: 0; }
+.fr-fact .fr-warn-mark { color: var(--warn); vertical-align: -2px; margin-right: var(--s1-5); }
+.fr-caption { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+.fr-path-row { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.fr-path-row button, .fr-folder-row button { flex: none; white-space: nowrap; }
+.fr-path { flex: 1 1 auto; min-width: 0; padding: var(--s1-5) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 13px; color: var(--text); }
+.fr-card-acts { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: var(--s2); padding-top: var(--s2); }
+.fr-card-acts .fr-go { width: 100%; min-height: 40px; font-size: 15px; }
+.fr-card-acts .fr-go:disabled { opacity: .55; cursor: not-allowed; }
+.fr-after { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
+.fr-error { margin: 0; display: flex; gap: var(--s1-5); align-items: flex-start; font-size: 14px; line-height: 1.45; color: var(--bad); }
+.fr-error .icon { flex: none; margin-top: var(--s0); }
+.fr-offer { padding: var(--s3); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
+.fr-offer p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+
+/* The folder field: a path you can type, a way to browse, and one line saying what this host found there. */
+.fr-folder { display: flex; flex-direction: column; gap: var(--s1-5); }
+.fr-folder > label { font: 600 13px/1.35 var(--sans); color: var(--text-dim); }
+.fr-folder-row { display: flex; gap: var(--s2); }
+.fr-folder-row input { flex: 1 1 auto; min-width: 0; }
+.fr-verdict { margin: 0; min-height: 20px; display: flex; align-items: flex-start; gap: var(--s1-5); font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.fr-verdict .icon { flex: none; margin-top: var(--s0); }
+.fr-verdict.ok { color: var(--ok); }
+.fr-verdict.warn { color: var(--warn); }
+.fr-verdict.bad { color: var(--bad); }
+
+/* ------------------------------------------------------------------------------------------ New project dialog */
+.np-dialog { position: fixed; z-index: var(--z-picker); top: 6vh; left: 50%; transform: translateX(-50%); width: min(780px, 94vw); max-height: 88vh; overflow: auto; padding: var(--s5); background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.np-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s4); }
+.np-head h2 { margin: 0; font: var(--tx-title); color: var(--text); }
+.np-head p { margin: var(--s1) 0 0; font-size: 14px; }
+.np-head .icon-btn { flex: none; min-width: 36px; }
+@media (max-width: 560px) {
+  /* A dialog at 6vh leaves a phone's keyboard nowhere to go: dock it to the bottom, where the thumb is. */
+  .np-dialog { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0; padding: var(--s4); }
+}

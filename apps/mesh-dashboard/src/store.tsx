@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
-import { VIEWS, hashFor, parseHash, type HashRoute, type View } from "./route";
+import { VIEWS, hashFor, needsProjectRedirect, parseHash, type HashRoute, type View } from "./route";
 import { useProjectsOptional, type ProjectSink } from "./projects";
 import { retainCap, trimRetained } from "./tabmodel";
 import { foldToolEvent, type ToolLive } from "./streams";
@@ -391,8 +391,9 @@ export function MeshProvider({ children, projectId = null, background = false }:
     const onHash = () => {
       const r = currentRoute();
       // A bare `#/steps` is a pre-projects link: rewrite it onto this project
-      // rather than letting the hash and the mounted store disagree.
-      if (r.projectId === null && projectIdRef.current) {
+      // rather than letting the hash and the mounted store disagree. A host
+      // page (`#/projects`) names no project on purpose and is left alone.
+      if (needsProjectRedirect(r) && projectIdRef.current) {
         window.location.replace(hashFor(projectIdRef.current, r.view, r.detail));
         return;
       }

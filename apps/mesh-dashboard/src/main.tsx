@@ -14,6 +14,7 @@ import Cost from "./views/Cost";
 import Escalations from "./views/Escalations";
 import Gates from "./views/Gates";
 import HostSettings from "./views/HostSettings";
+import ProjectsView from "./views/Projects";
 
 const Graph = lazy(() => import("./views/Graph"));
 const Product = lazy(() => import("./views/Product"));
@@ -48,6 +49,8 @@ function ViewSwitch(): React.JSX.Element {
       return <Designer />;
     case "hostsettings":
       return <HostSettings />;
+    case "projects":
+      return <ProjectsView />;
     default:
       return <div className="empty">unknown view</div>;
   }

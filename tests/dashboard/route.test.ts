@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   DEFAULT_VIEW,
+  HOST_VIEWS,
+  VIEWS,
   formatCursors,
   hashFor,
+  isHostView,
   needsProjectRedirect,
   parseHash,
   pickActiveProject,
@@ -104,4 +107,32 @@ test("projectPath prefixes only when a project is named", () => {
   assert.equal(projectPath(undefined, "/status"), "/status");
   // Query strings ride along untouched — the child parses them, not us.
   assert.equal(projectPath("acme", "/steps?limit=60"), "/api/p/acme/steps?limit=60");
+});
+
+test("the Projects page is a host page: its address never names a project, and it is not a legacy link to redirect", () => {
+  assert.ok(VIEWS.includes("projects"));
+  assert.deepEqual([...HOST_VIEWS], ["projects"]);
+  assert.equal(isHostView("projects"), true);
+  assert.equal(isHostView("overview"), false);
+
+  const r = parseHash("#/projects");
+  assert.equal(r.projectId, null);
+  assert.equal(r.view, "projects");
+  // Every other bare link names no project because it predates them, and is rewritten onto the active one. This is not one.
+  assert.equal(needsProjectRedirect(r), false);
+  assert.equal(needsProjectRedirect(parseHash("#/overview")), true);
+
+  // Whichever project is in front, the page is the same address.
+  assert.equal(hashFor("acme", "projects"), "#/projects");
+  assert.equal(hashFor(null, "projects"), "#/projects");
+  assert.equal(hashFor("acme", "projects", { kind: "step", id: "x" }), "#/projects", "a host page has no detail");
+  assert.deepEqual(parseHash(hashFor("acme", "projects")), { projectId: null, view: "projects" });
+});
+
+test("a host page ignores a detail written after it, and a project link to it still reads as the page", () => {
+  assert.deepEqual(parseHash("#/projects/step/turn-1"), { projectId: null, view: "projects" });
+  const inProject = parseHash("#/p/acme/projects");
+  assert.equal(inProject.view, "projects");
+  assert.equal(inProject.projectId, "acme");
+  assert.equal(needsProjectRedirect(inProject), false);
 });
