@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { HOST_SECTION, isHostView, serverKind, showsSection } from "../../apps/mesh-dashboard/src/navmodel";
+import { HOST_SECTION, holdsForProject, isHostView, serverKind, showsSection } from "../../apps/mesh-dashboard/src/navmodel";
 
 /**
  * The README's quick start serves one mesh with no registry. The sidebar offered it "Projects" and "Host settings", pages that
@@ -36,4 +36,21 @@ test("the two host-only pages are named, so an address that reaches one on a sin
   assert.equal(isHostView("projects"), true);
   assert.equal(isHostView("hostsettings"), true);
   for (const v of ["overview", "events", "designer", "cost"]) assert.equal(isHostView(v), false, v);
+});
+
+test("a host's view area waits while its project is starting, so no view asks for a mission that is not there and is told 409", () => {
+  assert.equal(holdsForProject("host", "overview", { chosen: true, status: "booting" }), true, "the project's process is still starting");
+  assert.equal(holdsForProject("host", "events", { chosen: false, status: null }), true, "a beat after the first project is made, before it is the one in front");
+  assert.equal(holdsForProject("host", "overview", { chosen: true, status: "open" }), false);
+  for (const status of ["closed", "crashed", "locked", "error"]) {
+    assert.equal(holdsForProject("host", "overview", { chosen: true, status }), false, `${status}: the page says so itself, in its own words`);
+  }
+});
+
+test("the host's own pages and a single mesh are never held", () => {
+  assert.equal(holdsForProject("host", "projects", { chosen: false, status: "booting" }), false, "the Projects page lists the registry and needs no project");
+  assert.equal(holdsForProject("host", "hostsettings", { chosen: true, status: "booting" }), false);
+  assert.equal(holdsForProject("single", "overview", { chosen: false, status: null }), false, "one mesh, always there to ask");
+  assert.equal(holdsForProject("pending", "overview", { chosen: false, status: null }), false, "the registry's own pending state holds the content already");
+  assert.equal(holdsForProject("empty-host", "overview", { chosen: false, status: null }), false, "first run shows the welcome instead");
 });

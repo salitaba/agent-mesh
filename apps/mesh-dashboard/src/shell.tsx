@@ -5,7 +5,7 @@ import { useMesh, type View } from "./store";
 import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Banner, Button, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Banner, Button, EmptyState, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
 import { documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
@@ -14,7 +14,7 @@ import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
-import { isHostView, serverKind, showsSection } from "./navmodel";
+import { holdsForProject, isHostView, serverKind, showsSection } from "./navmodel";
 import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
@@ -140,6 +140,17 @@ function Help(): React.JSX.Element {
   );
 }
 
+/** What the view area says while the project it would show is still starting: the views wait, so none asks for a mission that is not there yet. */
+function ProjectStarting({ name }: { name: string | null }): React.JSX.Element {
+  return (
+    <div role="status" aria-busy="true">
+      <EmptyState icon="spark" title={name ? `Starting ${name}` : "Starting the project"}>
+        The project&rsquo;s process is starting. Its mission appears as soon as it has read its log.
+      </EmptyState>
+    </div>
+  );
+}
+
 /** ⌘K/Ctrl+K palette. Lists whatever `commands.ts` holds right now, so the
  *  Designer's commands appear only while it is mounted. The input keeps the
  *  focus (Tab is trapped) and the shell owns Escape for everything that routes
@@ -219,6 +230,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const projectsCtx = useProjectsOptional();
   const hasProjects = projectsCtx?.hasRegistry === true;
   const kind = serverKind(projectsCtx ? { hasRegistry: projectsCtx.hasRegistry, loaded: projectsCtx.loaded, projectCount: projectsCtx.projects.length } : null);
+  const activeProject = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId) ?? null;
+  const projectName = activeProject?.name ?? null;
+  // The view area waits while the project it would show is starting (navmodel.ts), and so does everything that asks the project something.
+  const holdView = holdsForProject(kind, view, { chosen: mesh.projectId !== null, status: activeProject?.status ?? null });
   const auth = useAuthOptional();
   // A registry that has answered and holds nothing is first-run, not "a mission
   // reading zero". Every mesh-scoped request 409s in that state, so rendering
@@ -245,14 +260,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const hostLevel = noProjects || view === "projects";
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
-  const toolRequests = useToolRequests(client, !serverDown && !noProjects && !registryPending);
+  const toolRequests = useToolRequests(client, !serverDown && !noProjects && !registryPending && !holdView);
   const inbox = decisions + toolRequests;
   // The connection is a separate fact from the mission. A mission that is running over a dropped connection is not "running".
   const reconnecting = !serverDown && sseState === "reconnecting";
   const chipTone = reconnecting ? "warn" : state.tone;
   const chipLabel = reconnecting ? "Reconnecting" : state.label;
   const chipTitle = reconnecting ? "Connection lost: reconnecting. What you see may be stale." : state.headline;
-  const projectName = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId)?.name ?? null;
+
   // A mission waiting on you is the one thing worth a glance at a background tab, so the count leads the title.
   useEffect(() => {
     document.title = hostLevel
@@ -737,7 +752,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               operator with no project open is exactly who should be able to set
               a spend ceiling *before* opening one. Every other view really does
               need a project, so they still get the empty state. */}
-          {registryPending ? null : noProjects && view !== "hostsettings" ? <HostEmptyState /> : viewNode}
+          {registryPending ? null : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
         </main>
       </FocusCtx.Provider>
 

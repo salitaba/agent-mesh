@@ -308,13 +308,16 @@ export function MeshProvider({ children, projectId = null, background = false }:
    *   - registry answered 404        → `curule console`, one mesh, ready
    *   - registry answered with rows  → host with a project open, ready
    *   - registry unknown or empty    → hold
+   *   - this project is still booting → hold: its process is not listening yet
+   *   - a host, and no project chosen → hold: a beat after the first project is made there is nothing to ask
    * Every mesh-scoped route answers 409 ("no project is open") in the hold
    * state, and firing them anyway is how the dashboard used to paint a full
    * Overview of zeros out of five failed requests.
    */
+  const booting = projectId !== null && projectsCtx?.projects.find((p) => p.id === projectId)?.status === "booting";
   const meshReady = !projectsCtx
     ? true
-    : projectsCtx.hasRegistry === false || (projectsCtx.loaded && projectsCtx.projects.length > 0);
+    : projectsCtx.hasRegistry === false || (projectsCtx.loaded && projectsCtx.projects.length > 0 && projectId !== null && !booting);
   // A ref because the 4s poll reads it from inside a long-lived interval that
   // must not be rebuilt every time the project list changes.
   const holdMeshRef = useRef(!meshReady);

@@ -48,3 +48,14 @@ export const HOST_VIEWS: readonly string[] = ["projects", "hostsettings"];
 export function isHostView(view: string): boolean {
   return HOST_VIEWS.includes(view);
 }
+
+/**
+ * Whether the view area waits for a project instead of drawing a view. A host that has not chosen a project yet (a beat after the first
+ * one is made), or whose project is still booting, has no mission to read, and every view that mounted would ask for one and be told
+ * 409: a page of zeros under a console full of red. The host's own pages do not need a project and are never held.
+ */
+export function holdsForProject(kind: ServerKind, view: string, project: { chosen: boolean; status: string | null }): boolean {
+  if (kind !== "host") return false;
+  if (isHostView(view)) return false;
+  return !project.chosen || project.status === "booting";
+}
