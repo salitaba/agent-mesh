@@ -13,6 +13,7 @@ import * as http from "http";
 import * as os from "os";
 import * as path from "path";
 import { isScriptedDemo, startCleanIfScriptedDemo, SCRIPTED_DEMO_MESH_ID } from "../../apps/mesh-server/src/demo";
+import { acquireStateLock, StateLockError } from "../../packages/persistence/src/index";
 import { startHostServer } from "../../apps/mesh-server/src/host";
 import { findShippedRoot, scaffoldExample } from "../../apps/mesh-cli/src/init";
 import { resolveConfig } from "../../packages/config/src/index";
@@ -59,6 +60,25 @@ test("starting clean wipes the demo's state and nobody else's", () => {
   assert.equal(realCfg.meshId, SCRIPTED_DEMO_MESH_ID, "it keeps the example's id");
   assert.equal(startCleanIfScriptedDemo(realCfg), false);
   assert.equal(fs.readFileSync(log, "utf8"), '{"id":"customer-data"}\n', "a real project's log survives a restart whatever it is called");
+});
+
+test("starting clean never wipes a mesh that is running on the folder: the state lock is taken first", () => {
+  const demo = demoProject();
+  const cfg = resolveConfig(demo.configPath);
+  fs.mkdirSync(path.join(cfg.stateDir, "logs"), { recursive: true });
+  const log = path.join(cfg.stateDir, "logs", "events.jsonl");
+  fs.writeFileSync(log, '{"id":"running"}\n');
+  const running = acquireStateLock(cfg.stateDir, { projectId: cfg.meshId });
+  try {
+    assert.throws(() => startCleanIfScriptedDemo(cfg), StateLockError, "a second start over a running mesh is refused, as the server would refuse it");
+    assert.equal(fs.readFileSync(log, "utf8"), '{"id":"running"}\n', "the running mesh's log is exactly as it was");
+    assert.ok(fs.existsSync(running.file), "and so is its lock");
+  } finally {
+    running.release();
+  }
+  // Once nothing holds it, the same call wipes: the guard is the lock, not a flag.
+  assert.equal(startCleanIfScriptedDemo(cfg), true);
+  assert.equal(fs.existsSync(cfg.stateDir), false);
 });
 
 function get(url: string): Promise<{ status: number; json: any }> {
