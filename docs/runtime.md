@@ -1044,6 +1044,10 @@ makes no model call (the shipped demo); a server that does not send the field is
 - `curule bench` runs the mesh-vs-single comparison across the A–F corpus.
 - `curule mcp` is the internal stdio↔HTTP bridge, spawned by the Claude adapter
   (`runtime-claude` registers it as the `mesh` MCP server) to reach `/api`.
-- The dashboard (`apps/mesh-dashboard`) renders five views from the same event
-  projections: mesh graph, goal progress, artifact timeline, cost, live event
-  stream (SSE) — the UI holds no separate state.
+- The dashboard (`apps/mesh-dashboard`) renders thirteen views from the same event
+  projections, kept live by the event stream (SSE): overview, needs you, agents,
+  steps, events, files, product, cost, graph, designer, tool gates, and on a host
+  projects and host settings. A host streams every project through one multiplexed
+  connection; a server that runs one mesh (`run`, `console`, `serve`) streams it from
+  its own `/events/stream`. The UI holds no state of its own beyond what a view is
+  showing. How it is built and checked is in [design-spec.md](design-spec.md).

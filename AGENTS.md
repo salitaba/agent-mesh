@@ -24,6 +24,7 @@ npm run curule -- <cmd> # node dist/apps/mesh-cli/src/index.js
 npm run dev           # curule console (port 7421) + vite dev, concurrently
 npm run dev:ui        # vite dev only
 npm run clean         # rm -rf dist
+npm run qa:console -- --base <url> --token <t>   # visual pass over every view (needs playwright-core, axe-core, Chrome)
 ```
 
 Single test (tests run from compiled output, so build first):

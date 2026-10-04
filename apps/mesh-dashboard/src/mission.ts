@@ -129,13 +129,17 @@ export function factsFromStatus(
  * The precedence is the point. The first rule that holds wins:
  *
  * 1. The server is not answering: everything below is the last known state, so say that and nothing else.
- * 2. The host's spend ceiling parked the project: Continue cannot fix it (the host re-parks on the next heartbeat), so the
+ * 2. The host answers but the project's own process does not (crashed, locked, closed): what the console holds about its mission
+ *    is from before it stopped.
+ * 3. No status yet, or a status with no goal (a project still starting): there is nothing to say about a mission, and no control.
+ * 4. The host's spend ceiling parked the project: Continue cannot fix it (the host re-parks on the next heartbeat), so the
  *    one action is to raise the ceiling.
- * 3. A decision holds the mission, or the goal is ESCALATED: the operator is the blocker.
- * 4. The goal is over (failed, delivered): a parked process is irrelevant to a finished mission, so "parked" never
+ * 5. A decision holds the mission, or the goal is ESCALATED: the operator is the blocker. A decision that holds only one seat
+ *    is still a call on the operator, but says what it holds and does not claim the mission has stopped.
+ * 6. The goal is over (failed, delivered): a parked process is irrelevant to a finished mission, so "parked" never
  *    outranks "delivered".
- * 5. Paused, then parked: two ways of not running, and the action for each is different.
- * 6. Running: nobody working and nobody waiting is a fault worth naming; waiting without working is quiet; otherwise it is
+ * 7. Paused, then parked: two ways of not running, and the action for each is different.
+ * 8. Running: nobody working and nobody waiting is a fault worth naming; waiting without working is quiet; otherwise it is
  *    simply running.
  *
  * Open decisions that are only notices do not change the phase: they hold nothing, and they are counted by the caller.
@@ -213,7 +217,7 @@ export function describeMission(f: MissionFacts): MissionState {
   if (f.goalStatus === "PAUSED") {
     return {
       ...base, phase: "paused", tone: "warn", label: "Paused", headline: "Paused. Nothing is running.",
-      primary: { action: "resume", label: "Resume", hint: "Wake the agents and resume spend against the mission budget" },
+      primary: { action: "resume", label: "Resume", hint: "Wake the agents and carry on against the mission budget" },
     };
   }
   if (f.parked) {
@@ -225,7 +229,7 @@ export function describeMission(f: MissionFacts): MissionState {
       primary: {
         action: "start",
         label: f.hasHistory ? "Continue" : "Start mission",
-        hint: "Start the scheduler: agents run and spend tokens until you pause or park the mission again",
+        hint: "Start the scheduler: agents run until you pause or park the mission again",
       },
     };
   }

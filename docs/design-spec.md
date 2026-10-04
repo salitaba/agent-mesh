@@ -1,30 +1,44 @@
-# Console design spec (proposal)
+# Console design spec
 
 The bar for "the UI is good". Every claim in a review should be checkable against
 one of the numbered rules below. If a rule is wrong, change the rule — not the UI
 in isolation, or the two drift apart again.
 
-Status: **proposal**, written from the code (tokens, `styles.css`,
-`designer/designer.css`, the 12 views). It has **not** been checked against a
-rendered screen — that is Phase 0's remaining job. Treat every "current" claim as
-unverified until the visual baseline exists.
+Status: **in force**. It was written from the code and then checked against
+rendered screens: every view, in both themes, at 1440 and 390 pixels wide, with
+axe-core and a capture of console errors (§7, `npm run qa:console`). The numbers in
+§2 to §4 are pinned by tests (`tests/build/console-palette.test.ts`,
+`tests/build/icons.test.ts`); the rest is convention and review.
 
 ---
 
 ## 0. What this product is
 
-A dense, dark-first **operations console** for a running multi-agent organisation:
-one operator watching 12 views of an event-sourced mission (overview, events,
-steps, agents, escalations, gates, graph, artifacts, product, cost, designer,
-host settings). Optimise for **scanability under load and trust**, not for
-delight. Two consequences that decide most arguments:
+A dense **operations console** for a running multi-agent organisation: one operator
+watching 13 views of an event-sourced mission (overview, needs you, agents, steps,
+events, files, product, cost, graph, designer, tool gates, and, on a host,
+projects and host settings). Optimise for **scanability under load and trust**,
+not for delight. Four consequences decide most arguments:
 
 - **Density is a feature.** Do not "breathe" a working console into a marketing
   page. Whitespace must earn its place.
-- **Two themes are a contract, not a skin.** Both are first-class; neither is a
-  filter over the other.
+- **Two themes are a contract, not a skin.** Both are first-class and neither is a
+  filter over the other. The console follows the system setting until the person
+  chooses one.
+- **One reading of the mission.** The top bar, the Overview and the browser tab
+  say the same thing about the mission, because they read it from one function
+  (`mission.ts`, §6a). A page that works out its own answer will, sooner or later,
+  disagree with the bar.
+- **The product speaks plainly.** Sentences say what is true and what to do next;
+  the voice rules are in [brand.md](brand.md). A word that accuses ("wasted"),
+  flatters or alarms without a fact behind it is a defect.
 
----
+There are two kinds of server behind the same page. A **host** (`curule host`) holds
+a registry of projects and has pages of its own (Projects, Host settings). A
+**single-mesh server** (`curule run`, `console`, `serve`) runs one mesh, has no
+registry and answers none of the host's routes, so it shows neither page, streams
+its one mesh from its own `/events/stream`, and explains an address that names a
+host page (`navmodel.ts`).
 
 ## 1. Definition of done (the checklist)
 
@@ -45,6 +59,13 @@ A view is "best" only when **all** hold, in both themes and at 390 / 768 / 1280:
    truncation or virtualisation, never by a horizontal page scrollbar.
 7. **Honesty** — a number that is stale, partial, or estimated is labelled as
    such. The console reports the system; it must not flatter it.
+8. **Live** — what is on screen moves when the mission moves. A page that reads once
+   when it opens is a snapshot: it said "No files are recorded" at the moment a
+   mission was delivered. Each view names the signal that makes it read again.
+9. **Failure stays local** — a view that throws loses that view, not the console:
+   the shell, the other views and the mission carry on, and the error can be copied
+   (`ViewBoundary`). A view whose file is gone after a host update says the console
+   was updated and offers Reload.
 
 ---
 
@@ -151,40 +172,84 @@ this list. `860` is the one remaining stray.
 
 ## 6. Components
 
-Shared primitives in `components.tsx` (`Card`, `Pill`, `Input`, `ErrorState`, …)
-are the **only** source of those shapes. A view that re-implements a Pill with
-inline styles is a bug against this spec (§1.5).
+Shared primitives in `components.tsx` are the **only** source of these shapes. A
+view that re-implements one with inline styles is a bug against this spec (§1.5).
+
+| Primitive | For |
+|---|---|
+| `Button`, `IconButton`, `Menu` | Every control. `Button` has the variants `primary`, `soft`, `small`, `ghost`, `linklike` and `banner-act`; an `icon` is decoration and the label names the control. `IconButton` is 36 px square and needs a `label`. |
+| `PageHeader` | The row every view opens with: the title, a status chip, the page's actions, and one line saying what the page is for. |
+| `Banner` | One notice in one shape: an icon, a sentence in bold, optional detail, the actions that answer it. `bad` is announced at once (`role="alert"`), the rest politely. |
+| `EmptyState`, `ErrorState` | What is missing and the next move; what could not be loaded and a retry. Never an empty box, never an error that reads as an empty list. |
+| `CopyButton`, `IdChip` | Copying says what happened ("Copied", or "Can't copy"), through a route that works on an http origin; a long id keeps both ends. |
+| `Pill`, `Chip`, `Input`, `Select`, `TextArea`, `Tabs`, `ZoneNote` | The rest of the vocabulary, each owning its focus ring. |
+| `ViewBoundary`, `ViewLoading` | Around the view area: a crash stays in the view (`crash.ts` words it and builds the report); a lazy view shows the shape of a page, invisible for the first 150 ms so a fast load does not flash. |
+| `.sk` | The skeleton shimmer a view draws while its first read is in flight. |
+
+Icons are one registry (`icons.tsx`): every icon is used, every one draws from
+`currentColor` on a 20-unit grid, and nothing outside the registry names an icon
+that is not in it (`tests/build/icons.test.ts`).
 
 Every primitive documents its states (§1.1) and owns its focus ring (§1.2).
-Inline `style={{}}` is reserved for one-off, non-repeatable geometry — the
-current ~150 sites are debt, not a pattern.
+Inline `style={{}}` is reserved for one-off, non-repeatable geometry.
+
+---
+
+## 6a. Where the logic lives
+
+Anything a view decides is in a `.ts` module with no DOM in it and a test in
+`tests/dashboard/`, so the wording and the precedence are checked, not eyeballed.
+A view is then drawing.
+
+| Module | Decides |
+|---|---|
+| `mission.ts` | The mission's phase, tone, headline and the one thing to do (`describeMission`). Phases, strongest first: `offline`, `down`, `loading`, `ceiling`, `needs-you`, `failed`, `done`, `paused`, `parked`, `stalled`, `quiet`, `running`. A decision that holds only one seat says so and does not claim the mission has stopped. |
+| `overview-model.ts`, `inbox-model.ts`, `escalation-card.ts` | What the Overview and the decision cards say, and which decisions hold the mission or a seat. |
+| `spend.ts` | What a confirmation says about cost: a scripted (stub) team spends nothing and the dialog says so; an unknown runtime is read as spending. |
+| `navmodel.ts` | Which pages a server has (host or single mesh). |
+| `route.ts` | The hash router and the stream URLs, host (`/api/events/stream`) and single mesh (`/events/stream`). |
+| `crash.ts` | What a crashed view says, whether the tab is stale, and the report that is copied. |
+| `feed.ts`, `eventmodel.ts`, `steps.ts`, `agents.ts`, `graph.ts`, `files.ts`, `product.ts`, `cost.ts`, `hostsettings.ts`, `license-facts.ts`, `firstrun.ts`, `signin.ts`, `projectsmodel.ts`, `designer/*` | The same, per view. |
+
+Mutation-check a new rule the way these were: break the code, see the test fail,
+put it back.
 
 ---
 
 ## 7. Visual QA protocol
 
-Until this exists, "best" is unfalsifiable. Capture, per theme, at 390 / 768 /
-1280:
+Run it before a change to the console ships, against a console whose demo has been
+run to *Delivered* (every page then has real data):
 
-1. Shell + nav + topbar (both themes, all three widths).
-2. Each of the 12 views with **real** data (not empty).
-3. Each view's `empty` and `error` state.
-4. One **long-content** case (deep event list / large artifact / long agent name).
-5. Drawer open; command palette open; one modal/confirm.
-6. A keyboard-only pass: Tab through the primary flow, screenshot the focus ring.
+```bash
+npm install --no-save playwright-core axe-core        # not repo dependencies on purpose
+npm run qa:console -- --base http://127.0.0.1:7420 --token <operator token> --chrome /path/to/chrome
+```
 
-Store under `docs/assets/` and treat a change to any of them as a review trigger.
+For every view, at 1440 and 390 pixels, in both themes, it takes a screenshot, runs
+axe-core, and records a horizontal page scroll, a failed request and a console
+error; it exits 1 if it found any. The last pass of the redesign was 13 views by
+2 widths by 2 themes: 52 screenshots, 52 axe runs, nothing found.
+
+What a script cannot see still needs a person, per theme:
+
+1. Each view's `empty` and `error` state, and one **long-content** case (a deep
+   event list, a large file, a long agent name).
+2. A drawer open, the command palette open, a confirm.
+3. A keyboard-only pass through the primary flow, with the focus ring in view.
+4. A mission watched from Start to Delivered: every page that shows it must move
+   with it (§1.8). This is how the stale "No files are recorded" was found, and no
+   screenshot of a finished mission shows it.
+5. Both kinds of server (§0): the host, and `curule console` serving the
+   production build (`npm run build`), not the dev server.
 
 ---
 
-## 8. Phases
+## 8. Status
 
-| Phase | Scope | Needs the browser? |
+| Phase | Scope | State |
 |---|---|---|
-| **0 Foundation** | This spec · preview · **visual baseline (todo)** | baseline: yes |
-| **1 Polish & harden** | States, focus, reduced-motion, contrast, overflow; kill the remaining raw `px`/inline-style debt; responsive at 3 widths | yes (verify) |
-| **2 Redesign** | The genuinely weak surfaces — `Escalations` density first, then `Overview` rhythm, then any view the baseline condemns | yes |
-| **3 Guardrails** | Stylelint (ban raw hex + off-ramp px), visual-regression baseline wired to the QA protocol | partly |
-
-Phase 1 is code-verifiable and lowest-risk. Phase 2 is where taste lives and is
-illegitimate to do blind.
+| **0 Foundation** | This spec, the visual baseline | Done: the spec is checked against rendered screens, and `npm run qa:console` is the baseline. |
+| **1 Polish & harden** | States, focus, reduced motion, contrast, overflow; the raw `px` and inline-style debt; three widths | Done for the views and the shell. Contrast and the colour literals are pinned by tests. |
+| **2 Redesign** | Shell, Overview, Needs you, and every view's flow | Done (mission-first Overview and bar, one reading of the mission, the Designer rebuilt, first-run and sign-in, the Projects page). |
+| **3 Guardrails** | Stylelint banning raw hex and off-ramp `px`; screenshot diffs against a stored baseline | Open. The palette and icon tests catch the worst drift; a stylelint rule and image diffs are not in place. |

@@ -81,12 +81,39 @@ sections 1 to 23) are described there, run by run.
 - **Documents.** The operations runbook ([docs/operations.md](docs/operations.md)), deployment, pricing (its tables generated
   from the plan table), licensing, security and a security questionnaire under [docs/commercial/](docs/commercial/README.md),
   [SECURITY.md](SECURITY.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) generated from the lockfile.
-- **A landing and pricing page** in [site/](site/README.md), with a plan-and-cost calculator whose numbers are generated.
+- **A public site** in [site/](site/README.md): a landing page, pricing (with a plan-and-cost calculator whose numbers are
+  generated), a docs hub, security, contact, the legal pages and a 404. Static files with no build step, a strict
+  content-security policy, light and dark, and thirteen pictures of the real console under stable names. Selling is by email
+  and a hand-signed licence key; there is no sign-up or checkout, and nothing on the site pretends otherwise.
+- **A redesigned console.** The shell is a sidebar of four groups (Mission, Results, Team, Host) with a top bar that carries the
+  mission's one state and the one thing to do about it. The Overview, the bar and the browser tab title read the mission from
+  one function (`mission.ts`: offline, down, loading, spend ceiling, needs you, failed, delivered, paused, parked, stalled,
+  quiet, running), so they cannot disagree; a decision that holds one seat says so and does not claim the mission has stopped.
+  Every view was rebuilt on shared primitives (page header, banner, empty and error states, copy buttons, one icon set) with a
+  warm light and dark palette, and a type and spacing ramp the tests pin. There is a first-run welcome with three ways to start
+  and a Projects page; a sign-in that says where the token is; a Designer with a seat list, a setup guide and a save bar that says
+  what a restart does; a file reader with versions and comparisons. A view that crashes stays one view's failure (with a
+  copyable report), and a tab left open across a host update is told to reload. The rules are in
+  [docs/design-spec.md](docs/design-spec.md), and `npm run qa:console` runs the visual pass (every view, both themes, two widths,
+  axe-core, console errors).
+- **`runtimes` in `GET /status`**: the runtimes the seats run on. The console words "Start the mission?" by it, so the shipped
+  scripted demo no longer tells a visitor that agents "spend tokens".
 - **`mesh_artifact_read` says where the artifact stands.** The result carries `status`, `version` and `owner` beside `canSettle`,
   on every page, so a seat reading a report to cite it learns that it is a draft, and whom to ask, from the read.
 
 ### Fixed
 
+- A mission delivered in front of the person left **What shipped** saying "No files are recorded for this goal" until a reload: the
+  Overview read the file list once, when it opened. It reads it again when an artifact event arrives, and the message count while
+  the mission runs and once more when it stops.
+- **`curule run`, `console` and `serve` (the README's quick start) had no live stream in the dashboard.** The page only opened an
+  event stream for projects named by a registry, so on a server that runs one mesh it was a snapshot moved by the status poll. It
+  now streams the mesh from the server's own `/events/stream`. Those servers also stopped showing the host's pages (Projects, Host
+  settings) and asking for `/api/license`.
+- The Product page no longer requests a `package.json` that is not there (a 404 in the console on every visit); the Steps page no
+  longer calls turns that wrote nothing "wasted"; the details panel's file reader no longer repeats versions and React keys; the top
+  bar no longer says "No goal" beside a chip that says Starting; the quiet note no longer reads as if a running mission had not
+  started.
 - A seat that is about to end a turn without having called a single mesh tool is told, once and in the same turn, that the mesh is
   running and which tool reports what. After a `kill -9` and a restart the seventeenth run's QA and developer resumed sessions that
   carried the CLI's record that the mesh server had failed ("mesh bus unreachable: fetch failed"), did their work with their own
