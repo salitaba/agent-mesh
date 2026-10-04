@@ -3007,7 +3007,7 @@ export interface TemplateInfo {
   id: string;
   kind: "default" | "example";
   title: string;
-  /** The first line of the goal; null for the default team, whose goal is a placeholder the person writes. */
+  /** The first paragraph of the goal, on one line; null for the default team, whose goal is a placeholder the person writes. */
   goal: string | null;
   seats: number;
   /** The runtime every seat uses, or "mixed". */
@@ -3022,15 +3022,22 @@ export interface TemplateInfo {
   projectId: string | null;
 }
 
+/** The first paragraph of a goal on one line, cut at a word if it is long: a block scalar's first line stops mid-sentence. */
+function goalSummary(goal: unknown): string | null {
+  const paragraph = String(goal ?? "").trim().split(/\n\s*\n/)[0]!.split("\n").map((l) => l.trim()).filter(Boolean).join(" ");
+  if (!paragraph) return null;
+  if (paragraph.length <= 160) return paragraph;
+  return `${paragraph.slice(0, 157).replace(/\s+\S*$/, "")}...`;
+}
+
 function factsOf(id: string, kind: TemplateInfo["kind"], raw: RawMeshFile, rolePrompts: number): TemplateInfo {
   const fallback = raw.mesh.runtime?.default ?? "claude";
   const runtimes = new Set(Object.values(raw.agents ?? {}).map((a) => a.runtime ?? fallback));
-  const goalLine = String(raw.mesh.goal ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? null;
   return {
     id,
     kind,
     title: raw.mesh.name ?? raw.mesh.id,
-    goal: goalLine ? (goalLine.length > 160 ? `${goalLine.slice(0, 157)}...` : goalLine) : null,
+    goal: goalSummary(raw.mesh.goal),
     seats: Object.keys(raw.agents ?? {}).length,
     runtime: runtimes.size === 1 ? [...runtimes][0]! : "mixed",
     needsApiKey: [...runtimes].some((r) => r !== "stub"),

@@ -77,7 +77,10 @@ test("an example that does not parse is not offered; one that does is, with the 
   assert.equal(tiny.seats, 2);
   assert.equal(tiny.runtime, "mixed");
   assert.equal(tiny.needsApiKey, true, "one seat on the Claude runtime is enough");
-  assert.equal(tiny.goal, "Say hello.", "the first line that says anything");
+  assert.equal(tiny.goal, "Say hello. And then stop.", "the first paragraph, on one line, not a first line that stops mid-sentence");
+  const long = describeTemplates(ROOT).filter((t) => t.goal);
+  assert.ok(long.every((t) => t.goal!.length <= 160), "a long goal is cut");
+  assert.ok(long.every((t) => !/[:\s]$/.test(t.goal!) || /\.\.\.$/.test(t.goal!)), "and not at a colon or a space");
 });
 
 test("scaffolding takes an example from a closed set: a name that is not one is refused and writes nothing", () => {

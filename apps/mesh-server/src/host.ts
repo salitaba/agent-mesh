@@ -43,7 +43,7 @@ import {
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
 import { findShippedRoot, writeDefaultMeshYaml } from "../../../packages/config/src/index";
-import { createFromTemplate, expandHome, projectErrorReason, templatesView } from "./new-project";
+import { createFromTemplate, expandHome, outsideRootsReason, projectErrorReason, templatesView } from "./new-project";
 import type { GitMode } from "../../../packages/protocol/src/index";
 import {
   MultiplexHub,
@@ -862,9 +862,10 @@ export function createHostServer(deps: {
       // walks them.
       if (parts[0] === "api" && parts[1] === "browse" && parts.length === 2 && req.method === "GET") {
         const roots = projectRoots();
-        const asked = u.searchParams.get("path");
+        // `~` is the host user's home here as it is where a folder is added: the field that asks accepts both.
+        const asked = u.searchParams.get("path") === null ? null : expandHome(u.searchParams.get("path")!.trim());
         if (roots.length > 0 && asked && asked.trim() && !insideRoots(realLocation(asked.trim()), roots)) {
-          return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root" });
+          return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root", reason: outsideRootsReason(roots) });
         }
         return json(200, browseDir(asked, roots));
       }
@@ -1004,11 +1005,7 @@ export function createHostServer(deps: {
           // link inside the directory that points out of it does not count as inside.
           const roots = projectRoots();
           if (roots.length > 0 && !insideRoots(realLocation(root), roots)) {
-            return json(403, {
-              error: outsideRootsMessage(roots),
-              code: "outside_projects_root",
-              reason: `This host only works under ${roots.join(", ")}. Choose a folder there, or change MESH_PROJECTS_ROOT.`,
-            });
+            return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root", reason: outsideRootsReason(roots) });
           }
           // Scaffolding is opt-in. A plain add to a mesh-less folder still 400s
           // ("missing"), because writing files into a directory the operator

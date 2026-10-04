@@ -306,6 +306,12 @@ test("a confined server makes projects only under its projects directory, and a 
     assert.equal(dotdot.status, 403);
     assert.equal(fs.existsSync(path.join(l.outside, "up")), false);
 
+    // The folder picker is refused outside it too, with the same sentence.
+    const browse = await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent(l.outside)}`);
+    assert.equal(browse.status, 403);
+    assert.equal(browse.json.code, "outside_projects_root");
+    assert.equal(browse.json.reason, out.json.reason, "one sentence for every route that judges a folder");
+
     // No folder named: the suggestion is under the projects directory, so it is allowed.
     const suggested = await post(l, { template: "demo-stub" });
     assert.equal(suggested.status, 201, JSON.stringify(suggested.json));
@@ -355,6 +361,31 @@ test("the older ways of adding a folder still work, and their refusals now carry
     assert.equal(out.json.code, "outside_projects_root");
     assert.match(out.json.reason, /Choose a folder there/);
   }, { confined: true });
+});
+
+test("the picker tells a folder that is not there from a file from one it cannot read, in the words the dashboard looks for", { timeout: 30_000 }, async () => {
+  // The dashboard reads these codes out of the error text to say "does not exist yet" or "that is a file": hold them to the
+  // real server, not to a copy of what it was thought to say.
+  await withHost(async (l) => {
+    const missing = await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent(path.join(l.outside, "not-yet"))}`);
+    assert.equal(missing.status, 200);
+    assert.match(missing.json.error, /ENOENT/);
+    const file = path.join(l.outside, "a-file");
+    fs.writeFileSync(file, "x");
+    const onFile = await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent(file)}`);
+    assert.match(onFile.json.error, /ENOTDIR/);
+    const folder = await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent(l.outside)}`);
+    assert.equal(folder.json.error, undefined);
+    assert.equal(folder.json.hasMesh, false);
+    fs.mkdirSync(path.join(l.outside, "has-mesh"));
+    fs.writeFileSync(path.join(l.outside, "has-mesh", "mesh.yaml"), "x");
+    assert.equal((await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent(path.join(l.outside, "has-mesh"))}`)).json.hasMesh, true);
+    // `~` means the same here as where a folder is added.
+    assert.equal((await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent("~")}`)).json.path, l.home);
+    const sub = path.join(l.home, "work");
+    fs.mkdirSync(sub);
+    assert.equal((await call(l.host.url, "GET", `/api/browse?path=${encodeURIComponent("~/work")}`)).json.path, sub);
+  });
 });
 
 test("the routes are behind the operator token like every other /api route", { timeout: 30_000 }, async () => {

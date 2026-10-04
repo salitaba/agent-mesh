@@ -133,6 +133,10 @@ export function templatesView(deps: NewProjectDeps): TemplatesView {
   };
 }
 
+/** The refusal for a folder outside `MESH_PROJECTS_ROOT`, as one sentence a person can act on. Said the same on every route that judges a folder. */
+export const outsideRootsReason = (roots: readonly string[]): string =>
+  `This host only works under ${roots.join(", ")}. Choose a folder there, or change MESH_PROJECTS_ROOT.`;
+
 const sentence = (s: string): string => {
   const t = s.trim();
   return t ? `${t[0]!.toUpperCase()}${t.slice(1)}${/[.!?]$/.test(t) ? "" : "."}` : "";
@@ -179,7 +183,7 @@ export async function createFromTemplate(input: { template: unknown; root: unkno
 
   const roots = projectRoots(env);
   if (roots.length > 0 && !insideRoots(realLocation(target), roots)) {
-    return refuse(403, "outside_projects_root", `This host only works under ${roots.join(", ")}. Choose a folder there, or change MESH_PROJECTS_ROOT.`);
+    return refuse(403, "outside_projects_root", outsideRootsReason(roots));
   }
 
   if (fs.existsSync(path.join(target, MESH_CONFIG_FILENAME))) {
