@@ -333,7 +333,7 @@ export function StepSkeleton({ close }: { close?: React.ReactNode }): React.JSX.
           <span className="sk" style={{ height: 140 }} />
           <span className="sk" style={{ height: 180 }} />
         </div>
-        <aside className="sv-side"><span className="sk" style={{ height: 150 }} /></aside>
+        <div className="sv-side"><span className="sk" style={{ height: 150 }} /></div>
       </div>
     </div>
   );

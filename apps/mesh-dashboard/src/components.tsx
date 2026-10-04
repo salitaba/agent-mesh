@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
+import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, zoneLabel, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSeverity, EventSummary } from "./events";
 import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
@@ -734,4 +734,13 @@ export function IdChip({ value, label, max = 24 }: { value: string; label: strin
       <CopyButton text={value} what={label} compact />
     </span>
   );
+}
+
+/**
+ * "Times in CEST": the zone, said once above a run of local times so no row has to repeat it. Put it beside the heading of the
+ * list, not inside a row.
+ */
+export function ZoneNote(): React.JSX.Element {
+  // The leading space keeps the heading and the note two words for a screen reader; the margin is only for the eye.
+  return <span className="zone-note"> Times in {zoneLabel()}</span>;
 }

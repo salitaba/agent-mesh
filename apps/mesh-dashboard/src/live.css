@@ -64,6 +64,18 @@ i.sev-mark { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
 i.sev-mark.notice { background: var(--accent); }
 i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 
+/* A tool call in flight: a dot in the row's mark column (the step drawer's live tool list). */
+.lw-mark { display: inline-flex; align-items: center; justify-content: center; }
+.lw-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+/* ---------- the zone, said once above a run of times ---------- */
+
+/* It sits beside a heading that may be capitalised and spaced out (the drawers' h4), so it resets both. */
+.zone-note { margin-left: var(--s1); font: var(--tx-meta); letter-spacing: 0; text-transform: none; color: var(--muted); }
+/* On a line of its own, above rows. */
+.zone-line { margin: 0 0 var(--s1-5); }
+.zone-line .zone-note { margin-left: 0; }
+
 /* ---------- loading placeholder ---------- */
 
 .sk { display: block; border-radius: 4px; background: color-mix(in srgb, var(--line) 80%, transparent); animation: shimmer 1.4s ease-in-out infinite; }

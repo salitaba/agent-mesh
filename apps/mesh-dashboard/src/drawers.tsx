@@ -4,7 +4,7 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, producedCount, p
 import { buildLedger, ledgerTally, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, Tabs, TextArea, agentColor } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor } from "./components";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
@@ -333,7 +333,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
       />
 
       {tab === "now" ? (
-        <>
+        <TabPanel idPrefix="agent" id="now">
           {json.currentTurnId && vitals ? (
             <>
               <VitalsStrip v={vitals} model={current?.model ?? d.model} attempt={current?.attempt} />
@@ -355,7 +355,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{(json.activeTask.status)}</Chip></div> : null}
           {signalCount || leases.length ? (
             <>
-              <h4>Signals</h4>
+              <h3>Signals</h3>
               {escalations.length ? <div className="sig bad">{escalations.length} escalation{escalations.length > 1 ? "s" : ""} — latest [{(escalations[0].reason)}] {(escalations[0].status)}</div> : null}
               {pending.length ? <div className="sig warn">{pending.length} open request{pending.length > 1 ? "s" : ""} waiting on an answer</div> : null}
               {approvals.length ? <div className="sig">{approvals.length} approvals — latest {(approvals[0].kind)} {(approvals[0].subject)}</div> : null}
@@ -365,7 +365,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           ) : null}
           {evs.length ? (
             <>
-              <h4>Just happened</h4>
+              <h3>Just happened<ZoneNote /></h3>
               <div className="ev-list">{evs.slice(0, 6).map((e: any) => (
                 <div className="ev" key={e.seq} data-seq={e.seq} role="button" tabIndex={0} onClick={() => seeEvent(e.seq)} onKeyDown={rowKey(() => seeEvent(e.seq))}>
                   <time>{hhmmss(e.at)}</time><span className="type">{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
@@ -373,21 +373,21 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
               ))}</div>
             </>
           ) : null}
-        </>
+        </TabPanel>
       ) : null}
 
       {tab === "work" ? (
-        <>
-          <h4>Recent steps {steps.length ? `(${steps.length})` : ""}</h4>
+        <TabPanel idPrefix="agent" id="work">
+          <h3>Recent steps {steps.length ? `(${steps.length})` : ""}</h3>
           {steps.length ? (
             <div className="steps-mini">{steps.slice(0, 12).map((st: any) => <StepMini key={st.turnId} s={st} onOpen={openStep} />)}</div>
           ) : <div className="muted">No steps yet — wake it to run once.</div>}
           {plan && plan.steps?.length ? (
             <>
-              <h4>
+              <h3>
                 Its plan {planLabel(plan)}
                 {planStale(plan, json.activeTask?.id) ? <> <Chip warn>stale</Chip></> : null}
-              </h4>
+              </h3>
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
                 Private to this agent — other agents cannot see or claim these steps.
               </div>
@@ -402,22 +402,22 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           ) : null}
           {tasks.length || json.activeTask ? (
             <>
-              <h4>Tasks {tasks.length ? `(${tasks.length})` : ""}</h4>
+              <h3>Tasks {tasks.length ? `(${tasks.length})` : ""}</h3>
               <div>{tasks.slice(0, 12).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }}><span className="mono muted">{(String(t.id).slice(0, 8))}</span> {(String(t.title ?? "").slice(0, 70))} <Chip>{(t.status)}</Chip></div>)}</div>
             </>
           ) : null}
           {arts.length ? (
             <>
-              <h4>Files {`(${arts.length})`}</h4>
+              <h3>Files {`(${arts.length})`}</h3>
               <div>{arts.slice(0, 12).map((a: any) => <div key={a.id} className="ev" role="button" tabIndex={0} onClick={() => openDrawer(<ArtifactDrawer id={a.id} />)} onKeyDown={rowKey(() => openDrawer(<ArtifactDrawer id={a.id} />))}><time>v{a.version}</time><span className="type">{(plainArtifact(a.status))}</span><span className="summary">{(a.name)} · {(a.type)}</span></div>)}</div>
             </>
           ) : <div className="muted">It has not produced any files.</div>}
-        </>
+        </TabPanel>
       ) : null}
 
       {tab === "comms" ? (
-        <>
-          <h4>Inbox {unreadCount ? `(${unreadCount} unread)` : ""}</h4>
+        <TabPanel idPrefix="agent" id="comms">
+          <h3>Inbox {unreadCount ? `(${unreadCount} unread)` : ""}<ZoneNote /></h3>
           {unreadFull.length ? (
             <div className="ev-list">{unreadFull.slice(0, 12).map((m: any) => (
               <div className="ev" key={m.id}>
@@ -430,7 +430,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           {unreadCount > unreadFull.length ? <div className="muted" style={{ fontSize: 12 }}>+{unreadCount - unreadFull.length} more unread</div> : null}
           {recentMsgs.length ? (
             <>
-              <h4>Recent messages</h4>
+              <h3>Recent messages<ZoneNote /></h3>
               <div className="ev-list">{recentMsgs.slice(0, 12).map((m: any) => (
                 <div className="ev" key={m.id}>
                   <time>{hhmmss(m.timestamp)}</time>
@@ -442,28 +442,28 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           ) : null}
           {threads.length ? (
             <>
-              <h4>Threads {`(${threads.length})`}</h4>
+              <h3>Threads {`(${threads.length})`}</h3>
               <div>{threads.slice(0, 10).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }}>“{(String(t.subject ?? "").slice(0, 60))}” <span className="muted">· {t.messageCount} msgs · {((t.participants || []).join(", "))}</span></div>)}</div>
             </>
           ) : null}
-        </>
+        </TabPanel>
       ) : null}
 
       {tab === "memory" ? (
-        <>
-          <h4>Memory {mem.length ? `(${mem.length})` : ""}</h4>
+        <TabPanel idPrefix="agent" id="memory">
+          <h3>Memory {mem.length ? `(${mem.length})` : ""}</h3>
           {mem.length
             ? <div>{mem.map((n: any) => <div key={n.key} className="mem-row"><span className="mono">{(n.key)}</span> <span className="muted">— {(String(n.value ?? "").slice(0, 400))}</span></div>)}</div>
             : <div className="muted">No notes yet. Agents write here when they use the remember op.</div>}
-        </>
+        </TabPanel>
       ) : null}
 
       {tab === "config" ? (
-        <>
-          <h4>What it does</h4>
+        <TabPanel idPrefix="agent" id="config">
+          <h3>What it does</h3>
           <div>{(d.capabilities || []).length ? (d.capabilities || []).map((c: string) => <Chip key={c}>{(c)}</Chip>) : <span className="muted">—</span>}</div>
           {(d.authority || []).length ? <div style={{ marginTop: 6 }}><span className="muted" style={{ fontSize: 12 }}>Can decide:</span> {(d.authority || []).map((c: string) => <Chip key={c} hot>{(c)}</Chip>)}</div> : null}
-          <h4>Setup</h4>
+          <h3>Setup</h3>
           <table className="tbl"><tbody>
             <tr><td>runtime</td><td className="mono">{(d.runtime)}{d.model ? ` · ${(d.model)}` : ""}</td></tr>
             {/* Off is the default everywhere, so it is the common case and worth
@@ -483,7 +483,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             {json.session ? <tr><td>session</td><td className="mono">{(json.session.sessionId)} ({(json.session.runtime)})</td></tr> : null}
             {json.stats ? <tr><td>totals</td><td className="mono" style={{ fontSize: 12 }}>{json.stats.messagesSent} sent · {json.stats.messagesReceived} received · {json.stats.artifactsCreated} files</td></tr> : null}
           </tbody></table>
-        </>
+        </TabPanel>
       ) : null}
     </>
   );
@@ -702,10 +702,10 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
       };
       return (
         <div className={shell} aria-busy={pending || undefined}>
-          <header className="sv-head">
+          <div className="sv-head">
             <div className="sv-topbar">{walker}<CloseX /></div>
             <div className="sv-ident"><div className="sv-who"><b id="drawer-title">Step not found</b><span className="sv-id mono" title={vid}>turn-{shortTurn(vid)}</span></div></div>
-          </header>
+          </div>
           <div className="step-empty sv-gone">
             <b>No step with this id is in the log.</b>
             <span>A mission reset may have cleared it, or the link is mistyped.</span>
@@ -719,7 +719,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
     }
     return (
       <div className={shell} aria-busy={pending || undefined}>
-        <header className="sv-head">
+        <div className="sv-head">
           <div className="sv-topbar">{walker}<CloseX /></div>
           <div className="sv-ident">
             <AgentAvatar id={listStep.agentId || "?"} color={agentColor(listStep.agentId || "?")} />
@@ -734,7 +734,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
             {listStep.durationMs != null ? <span>{dur(listStep.durationMs)}</span> : null}
             {listStep.tokens != null ? <span>{fmt(listStep.tokens)} tok</span> : null}
           </div>
-        </header>
+        </div>
         <div className="step-empty sv-gone">
           <b>Only this step's summary is left.</b>
           <span>The full record has aged out of the server's recent-turn window, or the server did not answer — reasoning, actions and events are no longer available here.</span>
@@ -995,7 +995,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
 
   return (
     <div className={shell} aria-busy={pending || undefined}>
-      <header className={`sv-head${stuck ? " stuck" : ""}`} ref={measureHead}>
+      <div className={`sv-head${stuck ? " stuck" : ""}`} ref={measureHead}>
         <div className="sv-topbar">
           {walker}
           <CloseX />
@@ -1049,7 +1049,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
           {stale ? <span className="part" role="status" title="the last poll for this live turn failed; showing the last record received, retrying every 4s">connection lost — retrying</span> : null}
         </div>
         <StepJump key={vid} sections={sections} scroller={scroller} />
-      </header>
+      </div>
 
       <div className="sv-body">
         <div className="sv-main">
@@ -1183,11 +1183,11 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
           </section>
         </div>
 
-        <aside className="sv-side">
+        <div className="sv-side">
           <PhaseRail phases={phases} running={isRunning} />
           {sel && !narrow ? null : ctx}
           {!narrow || orphan ? inspector : null}
-        </aside>
+        </div>
       </div>
     </div>
   );

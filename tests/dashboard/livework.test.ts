@@ -190,7 +190,8 @@ test("tokens so far replace the dash while running, and never invent a zero", ()
 test("an advisory reads as a local-time warning", () => {
   const at = new Date(2026, 8, 26, 20, 3, 40).getTime();
   assert.equal(clockHM(at), "20:03");
-  assert.equal(advisoryLine({ at, text: "about 2 minutes left — commit what you have", delivered: true }), "⏱ warned at 20:03 — about 2 minutes left — commit what you have");
+  assert.equal(advisoryLine({ at, text: "about 2 minutes left — commit what you have", delivered: true }), "Warned at 20:03: about 2 minutes left — commit what you have");
+  assert.doesNotMatch(advisoryLine({ at, text: "x", delivered: true }), /⏱/, "no stopwatch pictogram: the words say it");
 });
 
 /* ------------------------------ record shape ---------------------------- */

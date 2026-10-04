@@ -619,7 +619,7 @@ input.search { min-width: 220px; }
 .drawer-back { margin-bottom: var(--s2-5); }
 #scrim { position: fixed; inset: 0; background: var(--scrim); z-index: var(--z-scrim); }
 .drawer h2 { margin: 0 0 var(--s1); font-size: 18px; display: flex; align-items: center; gap: var(--s2-5); }
-.drawer h4 { margin: var(--s5) 0 var(--s1-5); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.drawer h3, .drawer h4 { margin: var(--s5) 0 var(--s1-5); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .drawer pre { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); font: 13px var(--mono); overflow: auto; max-height: 340px; }
 .drawer pre.token-stream { white-space: pre-wrap; word-break: break-word; max-height: 420px; line-height: 1.6; }
 

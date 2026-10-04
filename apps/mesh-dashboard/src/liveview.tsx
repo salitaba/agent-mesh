@@ -15,7 +15,8 @@ import { useState } from "react";
 import { dur } from "./format";
 import { useTick } from "./observability";
 import { CopyBtn } from "./stepdetail";
-import { Button } from "./components";
+import { Button, ZoneNote } from "./components";
+import { Icon, type IconName } from "./icons";
 import {
   advisoryLine, ageText, bareToolName, currentToolOf, deadlineOf, deadlineText, firstDeadline, hardStopText, nowParts,
   type CurrentTool, type DeadlineInput, type LiveToolCall, type LiveWork, type TurnAdvisory, type TurnCheckpoint,
@@ -81,20 +82,24 @@ export function DeadlineBar({ turnId, phases }: { turnId: string; phases?: Deadl
 export function AdvisoryList({ items }: { items?: TurnAdvisory[] }): React.JSX.Element | null {
   if (!items?.length) return null;
   return (
-    <ul className="lw-adv" aria-label="notes the mesh sent the seat during this turn">
-      {items.map((a, i) => (
-        <li key={i} className={a.delivered ? undefined : "undelivered"}>
-          <span>{advisoryLine(a)}</span>
-          {!a.delivered ? (
-            <span className="lw-adv-x" title="the runtime could not queue this note, so the seat never saw it">not delivered</span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="zone-line"><ZoneNote /></p>
+      <ul className="lw-adv" aria-label="notes the mesh sent the seat during this turn">
+        {items.map((a, i) => (
+          <li key={i} className={a.delivered ? undefined : "undelivered"}>
+            <span>{advisoryLine(a)}</span>
+            {!a.delivered ? (
+              <span className="lw-adv-x" title="the runtime could not queue this note, so the seat never saw it">not delivered</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
-const MARK: Record<LiveToolCall["status"], string> = { running: "●", completed: "✓", failed: "✕" };
+/** A tick and a cross are icons; a call in flight is a dot, drawn in CSS, that pulses. */
+const MARK: Record<LiveToolCall["status"], IconName | null> = { running: null, completed: "check", failed: "x" };
 /** Rows shown before the fold; the record keeps at most 60. */
 const LIVE_ROWS = 12;
 
@@ -120,7 +125,9 @@ export function LiveToolList({ tools, total }: { tools: LiveToolCall[]; total?: 
         const took = t.status === "running" ? `running ${ageText(now - t.startedAt)}` : t.endedAt !== undefined ? dur(t.endedAt - t.startedAt) || "0ms" : "";
         return (
           <div key={t.id} className={`lw-tool lw-${t.status}`}>
-            <span className="lw-mark" role="img" aria-label={t.status} title={t.status}>{MARK[t.status]}</span>
+            <span className="lw-mark" role="img" aria-label={t.status} title={t.status}>
+              {MARK[t.status] ? <Icon name={MARK[t.status] as IconName} size={12} /> : <i className="lw-dot" />}
+            </span>
             <span className="lw-tool-n mono" title={t.name}>{bareToolName(t.name)}</span>
             <span className="lw-tool-a mono" title={t.target || undefined}>{t.target || "—"}</span>
             <span className="lw-tool-w mono">{took}</span>
