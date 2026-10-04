@@ -340,32 +340,6 @@ export function shortRef(ref: unknown): string {
 
 export const usd = (n: number): string => `$${n.toFixed(2)}`;
 
-export interface HeadlineInput {
-  phase: MissionPhase;
-  goalStatus: string;
-  /** Every open decision that is not a notice. */
-  blocking: number;
-  /** The seats those decisions hold, when each holds a seat and not the mission. Empty when any of them holds the mission. */
-  seatsHeld: string[];
-}
-
-/**
- * The hero's headline. It is `state.headline` in every case but one: mission.ts words a waiting decision as "The mission is
- * paused until it is answered", which is true of a decision that halts the mission and false of a seat's own budget card,
- * which parks that seat and leaves every other seat working. The hero must not say the mission is paused when it is not, so
- * for a mission whose only open decisions hold a seat it says what is held. An escalated goal is halted whatever the cards
- * say, and keeps the shared wording.
- *
- * mission.ts is the better home for this (it should count the decisions that hold the mission apart from the ones that hold
- * a seat), and this function can be deleted when it does.
- */
-export function heroHeadline(headline: string, i: HeadlineInput): string {
-  if (i.phase !== "needs-you" || i.goalStatus === "ESCALATED" || i.blocking === 0 || i.seatsHeld.length !== i.blocking) return headline;
-  const seats = [...new Set(i.seatsHeld)];
-  const n = i.blocking;
-  return `${plural(n, "decision")} waiting on you. ${n === 1 ? "It holds" : "They hold"} ${list(seats)} only, and the rest of the mesh keeps working.`;
-}
-
 export interface HeroNote {
   /** One quiet line under the figures. */
   summary: string;

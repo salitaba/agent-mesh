@@ -74,7 +74,7 @@ function Note({ note }: { note: HeroNote }): React.JSX.Element {
 
 export interface HeroProps {
   state: MissionState;
-  /** `state.headline`, unless the Overview has a truer one (see `heroHeadline`). */
+  /** `state.headline`. */
   headline: string;
   goalText: string;
   note: HeroNote | null;

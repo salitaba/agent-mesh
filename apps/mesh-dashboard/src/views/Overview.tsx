@@ -11,7 +11,7 @@ import { useToolApprovals } from "../useToolApprovals";
 import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { MissionAction } from "../mission";
-import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroHeadline, heroNote, standingBlocks, type FixTarget } from "../overview-model";
+import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, standingBlocks, type FixTarget } from "../overview-model";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
 import { GoalChecks } from "./GoalChecks";
@@ -174,7 +174,7 @@ export default function Overview(): React.JSX.Element {
       <PageHeader title="Overview" />
       <MissionHero
         state={state}
-        headline={heroHeadline(state.headline, { phase: state.phase, goalStatus: facts.goalStatus, blocking: holding.length, seatsHeld: seatHolds.length === holding.length ? seatHolds : [] })}
+        headline={state.headline}
         goalText={String(goal.description || "").replace(/\s*\n+\s*/g, " ").trim()}
         note={note}
         checks={checks}

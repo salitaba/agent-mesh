@@ -12,7 +12,6 @@ import {
   evidenceChips,
   filesByStatus,
   goalNeedsItsCard,
-  heroHeadline,
   heroNote,
   idleCause,
   missionClock,
@@ -273,7 +272,7 @@ test("a parked mission says whether progress is loaded, and keeps the server's o
 
 /** What each phase's facts look like, for the rule below: the line under the headline adds to it and never repeats it. */
 const FACTS: MissionFacts = {
-  hasStatus: true, serverDown: false, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, advisoryDecisions: 0,
+  hasStatus: true, serverDown: false, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
   hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory: true, startupSeats: 2,
 };
 const SENTENCES = (s: string): string[] => s.split(/(?<=\.)\s+/).map((x) => x.trim()).filter(Boolean);
@@ -301,19 +300,6 @@ test("the line under the headline never repeats a sentence of it, in any phase",
     if (!n) continue;
     for (const s of SENTENCES(st.headline)) assert.ok(!n.summary.includes(s), `${name}: the note repeats "${s}"`);
   }
-});
-
-test("a decision that holds only a seat does not say the mission is paused: the hero names what is held", () => {
-  const shared = "1 decision waiting on you. The mission is paused until it is answered.";
-  const h = (over: Partial<Parameters<typeof heroHeadline>[1]> = {}) => heroHeadline(shared, { phase: "needs-you", goalStatus: "ACTIVE", blocking: 1, seatsHeld: ["developer"], ...over });
-  assert.equal(h(), "1 decision waiting on you. It holds developer only, and the rest of the mesh keeps working.");
-  assert.equal(h({ blocking: 2, seatsHeld: ["developer", "qa"] }), "2 decisions waiting on you. They hold developer and qa only, and the rest of the mesh keeps working.");
-  assert.equal(h({ blocking: 2, seatsHeld: ["developer", "developer"] }), "2 decisions waiting on you. They hold developer only, and the rest of the mesh keeps working.", "one seat named once");
-  assert.equal(h({ blocking: 2, seatsHeld: ["developer"] }), shared, "one of the two holds the mission: the shared wording is true");
-  assert.equal(h({ seatsHeld: [] }), shared, "no seat holds: the mission does");
-  assert.equal(h({ goalStatus: "ESCALATED" }), shared, "an escalated goal is halted whatever the cards say");
-  assert.equal(h({ phase: "running" }), shared, "only the needs-you phase has this claim to correct");
-  assert.equal(h({ blocking: 0, seatsHeld: [] }), shared);
 });
 
 test("a failed mission with no phrased verdict has no second line: it would only say the headline again", () => {

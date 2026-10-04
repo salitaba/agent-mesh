@@ -9,11 +9,11 @@
  * DOM-free and React-free so tests/dashboard can pin the precedence, which is the part that carries the claim.
  */
 import { RUNNING } from "./format";
+import { holdsOf } from "./escalation-card";
 
 export type MissionPhase =
   | "loading"
   | "offline"
-  | "no-goal"
   | "ceiling"
   | "needs-you"
   | "failed"
@@ -43,8 +43,10 @@ export interface MissionFacts {
   goalStatus: string;
   /** The process is parked: it answers questions and runs nothing on its own. */
   parked: boolean;
-  /** Open decisions that hold the mission. */
+  /** Open decisions that are not notices. Each holds the whole mission or, for a seat's own budget card, one seat. */
   blockingDecisions: number;
+  /** Of those, the seat each single-seat card holds (one entry per card): the rest of the mesh keeps working. */
+  seatHeldDecisions: string[];
   /** Open decisions that are notices: the mission carries on whether or not anyone answers them. */
   advisoryDecisions: number;
   /** The host parked every project because aggregate spend crossed its ceiling. */
@@ -78,6 +80,8 @@ export interface MissionState {
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+/** "a", "a and b", "a, b and c". */
+const listOf = (items: string[]): string => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 const PAUSE: MissionControl = { action: "pause", label: "Pause", hint: "Pause the mission: agents stop, nothing is lost" };
 const REOPEN: MissionControl = {
@@ -93,12 +97,17 @@ export function factsFromStatus(
 ): MissionFacts {
   const agents: any[] = (status?.agents ?? []).filter((a: any) => a.id !== "human");
   const decisions: any[] = status?.openEscalations ?? [];
+  const blocking = decisions.filter((e) => e?.advisory !== true);
   return {
     hasStatus: Boolean(status),
     serverDown: extra.serverDown === true,
     goalStatus: String(status?.goal?.status ?? ""),
     parked: Boolean(status?.uiOnly) || status?.mode === "parked",
-    blockingDecisions: decisions.filter((e) => e?.advisory !== true).length,
+    blockingDecisions: blocking.length,
+    seatHeldDecisions: blocking.flatMap((e) => {
+      const held = holdsOf(e);
+      return held.scope === "seat" ? [held.seat] : [];
+    }),
     advisoryDecisions: decisions.filter((e) => e?.advisory === true).length,
     hostCeilingTripped: extra.hostCeilingTripped === true,
     working: agents.filter((a) => RUNNING.has(a.lifecycle)).length,
@@ -138,9 +147,11 @@ export function describeMission(f: MissionFacts): MissionState {
     };
   }
   if (!f.goalStatus) {
+    // A mesh must declare a goal (mesh.yaml requires one), so a status without one is a child that has answered before it
+    // finished reading its log. It is a project still starting, and "this mesh has no goal" would be false.
     return {
-      ...base, phase: "no-goal", tone: "neutral", label: "No goal", primary: { action: "designer", label: "Open the designer", hint: "Describe the goal and the team that works on it" },
-      headline: "This mesh has no goal yet.",
+      ...base, phase: "loading", tone: "neutral", label: "Starting", primary: null,
+      headline: "The project is starting. The mission appears once its log has been read.",
     };
   }
   if (f.parked && f.hostCeilingTripped && f.goalStatus !== "COMPLETED" && f.goalStatus !== "FAILED") {
@@ -150,12 +161,31 @@ export function describeMission(f: MissionFacts): MissionState {
       primary: { action: "settings", label: "Raise the ceiling", hint: "The ceiling is host-wide: raise it in Host settings and it applies on the next heartbeat" },
     };
   }
-  if (f.goalStatus === "ESCALATED" || (f.blockingDecisions > 0 && f.goalStatus !== "COMPLETED" && f.goalStatus !== "FAILED")) {
+  const holdsMission = f.blockingDecisions - f.seatHeldDecisions.length;
+  const over = f.goalStatus === "COMPLETED" || f.goalStatus === "FAILED";
+  if (f.goalStatus === "ESCALATED" || (holdsMission > 0 && !over)) {
     const n = Math.max(f.blockingDecisions, 1);
+    // All of them hold the mission: it is paused until they are answered. Some hold only a seat: the mission is paused
+    // until the ones that hold it are, and saying "until they are answered" would overstate what the seat cards do. An
+    // ESCALATED goal is halted whatever the cards say (the list may lag the goal), so it keeps the plain wording.
+    const until = f.seatHeldDecisions.length === 0 || holdsMission <= 0
+      ? `${n === 1 ? "it is" : "they are"} answered`
+      : `the ${holdsMission === 1 ? "one that holds it is" : `${holdsMission} that hold it are`} answered`;
     return {
       ...base, phase: "needs-you", tone: "bad", label: "Needs you",
-      headline: `${plural(n, "decision")} waiting on you. The mission is paused until ${n === 1 ? "it is" : "they are"} answered.`,
-      primary: { action: "review", label: "Review decisions", hint: "Open the inbox: the mission stays paused until each decision is answered" },
+      headline: `${plural(n, "decision")} waiting on you. The mission is paused until ${until}.`,
+      primary: { action: "review", label: "Review decisions", hint: "Open the inbox: the mission stays paused until each decision that holds it is answered" },
+    };
+  }
+  if (f.seatHeldDecisions.length > 0 && !over) {
+    // A seat's own budget card parks that seat and nothing else, so the mission is not paused: the person is needed, and
+    // the headline says what is held instead of claiming a halt.
+    const n = f.seatHeldDecisions.length;
+    const seats = [...new Set(f.seatHeldDecisions)];
+    return {
+      ...base, phase: "needs-you", tone: "warn", label: "Needs you",
+      headline: `${plural(n, "decision")} waiting on you. ${n === 1 ? "It holds" : "They hold"} ${listOf(seats)} only, and the rest of the mesh keeps working.`,
+      primary: { action: "review", label: "Review decisions", hint: "Open the inbox: the mission keeps running without these seats until each decision is answered" },
     };
   }
   if (f.goalStatus === "FAILED") {

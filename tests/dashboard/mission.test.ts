@@ -15,6 +15,7 @@ const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   goalStatus: "ACTIVE",
   parked: false,
   blockingDecisions: 0,
+  seatHeldDecisions: [],
   advisoryDecisions: 0,
   hostCeilingTripped: false,
   working: 2,
@@ -123,10 +124,48 @@ test("no answer from the server outranks everything, with or without an earlier 
   assert.equal(describeMission(facts({ hasStatus: false })).phase, "loading");
 });
 
-test("a status with no goal asks for one rather than reading as running", () => {
+test("a status with no goal yet is a project still starting, not a mesh with nothing to do", () => {
+  // A mesh must declare a goal, so a status without one is a child that answered before it finished reading its log.
   const s = describeMission(facts({ goalStatus: "" }));
-  assert.equal(s.phase, "no-goal");
-  assert.equal(s.primary?.action, "designer");
+  assert.equal(s.phase, "loading");
+  assert.equal(s.label, "Starting");
+  assert.equal(s.primary, null, "nothing to press while it starts");
+  assert.doesNotMatch(s.headline, /no goal/i, "saying the mesh has no goal would be false");
+});
+
+test("a decision that holds only a seat does not say the mission is paused: it names what is held", () => {
+  const one = describeMission(facts({ blockingDecisions: 1, seatHeldDecisions: ["developer"] }));
+  assert.equal(one.phase, "needs-you");
+  assert.equal(one.tone, "warn", "the person is needed, but nothing has stopped");
+  assert.equal(one.headline, "1 decision waiting on you. It holds developer only, and the rest of the mesh keeps working.");
+  assert.equal(one.primary?.action, "review");
+  assert.equal(
+    describeMission(facts({ blockingDecisions: 2, seatHeldDecisions: ["developer", "qa"] })).headline,
+    "2 decisions waiting on you. They hold developer and qa only, and the rest of the mesh keeps working.",
+  );
+  assert.equal(
+    describeMission(facts({ blockingDecisions: 2, seatHeldDecisions: ["developer", "developer"] })).headline,
+    "2 decisions waiting on you. They hold developer only, and the rest of the mesh keeps working.",
+    "one seat is named once",
+  );
+});
+
+test("when some decisions hold the mission and some hold a seat, the pause is tied to the ones that hold the mission", () => {
+  const mixed = describeMission(facts({ blockingDecisions: 2, seatHeldDecisions: ["qa"] }));
+  assert.equal(mixed.tone, "bad");
+  assert.equal(mixed.headline, "2 decisions waiting on you. The mission is paused until the one that holds it is answered.");
+  const more = describeMission(facts({ blockingDecisions: 4, seatHeldDecisions: ["qa"] }));
+  assert.equal(more.headline, "4 decisions waiting on you. The mission is paused until the 3 that hold it are answered.");
+});
+
+test("an ESCALATED goal is halted whatever the cards say, so seat cards do not soften it", () => {
+  const s = describeMission(facts({ goalStatus: "ESCALATED", blockingDecisions: 1, seatHeldDecisions: ["developer"] }));
+  assert.equal(s.tone, "bad");
+  assert.equal(s.headline, "1 decision waiting on you. The mission is paused until it is answered.");
+});
+
+test("a finished mission is not reopened by a seat card that is still open", () => {
+  assert.equal(describeMission(facts({ goalStatus: "COMPLETED", blockingDecisions: 1, seatHeldDecisions: ["developer"], working: 0 })).phase, "done");
 });
 
 test("factsFromStatus reads the payload: human excluded, blocking and advisory decisions split, parked from either field", () => {
@@ -140,14 +179,14 @@ test("factsFromStatus reads the payload: human excluded, blocking and advisory d
         { id: "qa", lifecycle: "WAITING" },
         { id: "pm", lifecycle: "IDLE" },
       ],
-      openEscalations: [{ id: "a" }, { id: "b", advisory: true }],
+      openEscalations: [{ id: "a" }, { id: "b", advisory: true }, { id: "c", conflictKey: "budget:agent:goal-1/developer", goalId: "goal-1" }],
       startupActivateCount: 0,
     },
     { runningSteps: 2, hasHistory: true },
   );
   assert.deepEqual(
-    { w: f.working, q: f.waiting, b: f.blockingDecisions, a: f.advisoryDecisions, p: f.parked, s: f.startupSeats, r: f.runningSteps },
-    { w: 1, q: 1, b: 1, a: 1, p: true, s: 0, r: 2 },
+    { w: f.working, q: f.waiting, b: f.blockingDecisions, held: f.seatHeldDecisions, a: f.advisoryDecisions, p: f.parked, s: f.startupSeats, r: f.runningSteps },
+    { w: 1, q: 1, b: 2, held: ["developer"], a: 1, p: true, s: 0, r: 2 },
   );
   assert.equal(factsFromStatus({ goal: { status: "ACTIVE" }, uiOnly: true }).parked, true);
   assert.equal(factsFromStatus(null).hasStatus, false);

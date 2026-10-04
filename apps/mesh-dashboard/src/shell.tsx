@@ -678,7 +678,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           </div>
         </div>
         <div className="top-actions">
-          {primary ? (
+          {/* The Overview's hero carries this same action, so the bar does not repeat it there. */}
+          {primary && view !== "overview" ? (
             <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
               {primary.label}
             </Button>
