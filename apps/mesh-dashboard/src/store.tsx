@@ -415,13 +415,20 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const drawer = drawerStack.length ? drawerStack[drawerStack.length - 1] : null;
   const drawerDepth = drawerStack.length;
 
+  /** The goal this store has been following. A different one, in the same project, means the mission was reset. */
+  const followedGoalRef = useRef<string | null>(null);
+  const restartEventsRef = useRef<() => void>(() => {});
+
   const refreshStatus = useCallback(async () => {
     if (statusInflight.current) return statusInflight.current;
     statusInflight.current = (async () => {
       const { json } = await clientRef.current.api("GET", "/status");
       if (!json) return;
+      const gid: string | null = json.goal?.id ?? null;
+      if (followedGoalRef.current && gid && gid !== followedGoalRef.current) restartEventsRef.current();
+      if (gid) followedGoalRef.current = gid;
       setStatus(json);
-      setGoalId(json.goal?.id ?? null);
+      setGoalId(gid);
     })()
       // A status poll must never reject: it is fired from keyboard handlers,
       // the interval and livePatch, none of which can present a failure.
@@ -472,7 +479,9 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const ingestEvent = useCallback((raw: any) => {
     const e = normEvent(raw);
     if (!e || !e.type) return;
-    const key = e.seq || e.id;
+    // The id first, the seq only for a frame that has none. A mission reset starts its log over, so seq numbers repeat from 1 and
+    // keying on seq alone dropped every new event whose number the old log had used: the console stayed on the old mission.
+    const key = e.id || e.seq;
     if (key && seqSeen.current.has(key)) return;
     if (key) seqSeen.current.add(key);
     if (e.seq && e.seq > lastSeqRef.current) {
@@ -557,6 +566,21 @@ export function MeshProvider({ children, projectId = null, background = false }:
       return next;
     });
   }, []);
+
+  // A reset starts the log over: seq numbers repeat from 1, so the old buffer, its dedupe sets and the cursor the stream resumes
+  // from all describe a mission that is gone. Start them over and read the new log's tail, as a resync does.
+  useEffect(() => {
+    restartEventsRef.current = () => {
+      seqSeen.current.clear();
+      eventById.current.clear();
+      lastSeqRef.current = 0;
+      setLastSeq(0);
+      setEvents([]);
+      clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
+        if (Array.isArray(json)) for (const raw of json) ingestEvent(raw);
+      }).catch(() => undefined);
+    };
+  }, [ingestEvent]);
 
   const primeEvents = useCallback((list: unknown[]) => {
     // History load uses the same path as live events (normEvent handles both

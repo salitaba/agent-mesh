@@ -14,6 +14,8 @@ import Cost from "./views/Cost";
 import Escalations from "./views/Escalations";
 import Gates from "./views/Gates";
 import HostSettings from "./views/HostSettings";
+// The const table only, not the barrel: the barrel carries the AJV validators, which the console has no use for.
+import { EVENT_TYPES } from "../../../packages/protocol/src/catalog";
 import ProjectsView from "./views/Projects";
 
 const Graph = lazy(() => import("./views/Graph"));
@@ -94,7 +96,9 @@ function App(): React.JSX.Element {
   return (
     // Outermost: nothing below may fetch until the server has said this browser may.
     <AuthGate>
-      <ProjectsProvider>
+      {/* A browser only receives the named events it listens for. The provider's own fallback lists 29 of the catalog's 80, so the
+          rest never arrived live and the views had to work around it with refetches. */}
+      <ProjectsProvider eventTypes={EVENT_TYPES}>
         {(activeId) => <Projects activeId={activeId} />}
       </ProjectsProvider>
     </AuthGate>
