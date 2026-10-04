@@ -1,45 +1,65 @@
 import { useEffect } from "react";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { fmt, mandatoryProgress, RUNNING } from "./format";
+import { fmt, mandatoryProgress } from "./format";
 import { useMesh, type View } from "./store";
 import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Button, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
-import { confirmResume } from "./actions";
+import { Banner, Button, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Icon, type IconName } from "./icons";
+import { confirmResume, useGoLive, useReopenMission, useResetMission } from "./actions";
+import { describeMission, documentTitle, factsFromStatus, type MissionAction } from "./mission";
+import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
-import ChatDock from "./designer/ChatDock";
+import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
 
-// Single source of truth for nav order, sidebar kbd hints, and the 1-9 key
-// map — the badge and the keydown handler can never drift apart again.
-const NAV: Array<{ section?: string; view?: View; icon?: string; label?: string; title?: string }> = [
-  { section: "Run" },
-  { view: "overview", icon: "◧", label: "Overview", title: "Is the mission healthy? What needs you right now?" },
-  { view: "events", icon: "≋", label: "Events", title: "The live console. Everything the mesh is doing, as it happens — watch here while a run is going." },
-  { view: "steps", icon: "▶", label: "Steps", title: "Every agent turn, newest first. The rollup: what each turn did, rather than each event it emitted." },
-  { view: "agents", icon: "◉", label: "Agents", title: "Who is working, stuck, or idle. Wake, suspend, or inspect one." },
-  { view: "escalations", icon: "⚑", label: "Needs you", title: "Only when the mesh is paused and needs your decision." },
-  { view: "gates", icon: "⊘", label: "Tool gates", title: "Seats holding a capability they may not use until you unlock the tool." },
-  { section: "Inspect" },
-  { view: "graph", icon: "◈", label: "Graph", title: "Who talks to whom." },
-  { view: "artifacts", icon: "▤", label: "Files", title: "Files and documents agents produced, with versions." },
-  { view: "product", icon: "◫", label: "Product", title: "The delivered codebase — browse files, build, test, run scenarios, open the playground." },
-  { view: "cost", icon: "¤", label: "Cost", title: "Token spend and budgets." },
-  { section: "Build" },
-  { view: "designer", icon: "⚒", label: "Designer", title: "Create or edit a mesh, then run it." },
-  { section: "Host" },
-  { view: "hostsettings", icon: "⚙", label: "Host settings", title: "Limits that apply to every project on this host — the spend ceiling, the turn cap, prices." },
+// Single source of truth for nav order, sidebar key hints and the 1-9 key map: the badge and the keydown handler are
+// both derived from this list, so they cannot drift apart. Four groups, in the order a person asks the questions: how is
+// it going and what does it need from me; what did it make; who is on the team; what is this host.
+interface NavItem { view: View; icon: IconName; label: string; title: string }
+const NAV: Array<{ section: string; items: NavItem[] }> = [
+  {
+    section: "Mission",
+    items: [
+      { view: "overview", icon: "overview", label: "Overview", title: "Is the mission healthy? What needs you right now?" },
+      { view: "escalations", icon: "inbox", label: "Needs you", title: "Decisions the mesh is waiting on, and what each one holds up." },
+      { view: "agents", icon: "agents", label: "Agents", title: "Who is working, stuck, or idle. Wake, suspend, or inspect one." },
+      { view: "steps", icon: "steps", label: "Steps", title: "Every agent turn, newest first: what each turn did, rather than each event it emitted." },
+      { view: "events", icon: "events", label: "Events", title: "The live console: everything the mesh is doing, as it happens. Watch here while a run is going." },
+    ],
+  },
+  {
+    section: "Results",
+    items: [
+      { view: "artifacts", icon: "files", label: "Files", title: "Files and documents agents produced, with versions." },
+      { view: "product", icon: "product", label: "Product", title: "The delivered codebase: browse files, build, test, run scenarios, open the playground." },
+      { view: "cost", icon: "cost", label: "Cost", title: "Token spend and budgets." },
+    ],
+  },
+  {
+    section: "Team",
+    items: [
+      { view: "graph", icon: "graph", label: "Graph", title: "Who talks to whom." },
+      { view: "designer", icon: "designer", label: "Designer", title: "Create or edit a mesh, then run it." },
+      { view: "gates", icon: "lock", label: "Tool gates", title: "Seats holding a capability they may not use until you unlock the tool." },
+    ],
+  },
+  {
+    section: "Host",
+    items: [
+      { view: "hostsettings", icon: "sliders", label: "Host settings", title: "Limits that apply to every project on this host: the spend ceiling, the turn cap, prices." },
+    ],
+  },
 ];
+const NAV_ITEMS: NavItem[] = NAV.flatMap((g) => g.items);
 
-// Order matters twice over: it is the digit each view answers to, and the digit
-// is printed next to the view in the sidebar. It must therefore track NAV's
-// order exactly — Events moving up to 2 costs some muscle memory, but a sidebar
-// numbered 1, 5, 2, 3, 4 costs more.
-const KEY_VIEWS: View[] = ["overview", "events", "steps", "agents", "escalations", "gates", "graph", "artifacts", "product", "cost", "designer", "hostsettings"];
+// Order matters twice over: it is the digit each view answers to, and the digit is shown beside the view in the sidebar.
+// Derived from NAV, so a sidebar numbered 1, 5, 2, 3, 4 cannot happen.
+const KEY_VIEWS: View[] = NAV_ITEMS.map((n) => n.view);
 /**
  * Only the first nine positions have a key an operator can actually press: the
  * keydown handler matches a single `ev.key`, so position ten would have to be
@@ -94,25 +114,25 @@ function Help(): React.JSX.Element {
   return (
     <div className="help">
       <h2>How to read this console</h2>
-      <p className="muted"><b>Overview</b> → is it healthy? <b>Steps</b> → what did each agent do? <b>Agents</b> → who needs help? <b>Needs you</b> → only when paused and waiting on you. Everything else is detail.</p>
+      <p className="muted"><b>Overview</b> → is it healthy? <b>Needs you</b> → the decisions only you can make. <b>Steps</b> → what did each agent do? <b>Agents</b> → who needs help? Everything else is detail.</p>
       <h2>Keyboard</h2>
       <table>
         <tbody>
-          <tr><td><kbd>1</kbd>…<kbd>9</kbd></td><td>switch view</td></tr>
-          <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl K</kbd></td><td>command palette (commands + agents)</td></tr>
+          <tr><td><kbd>1</kbd>…<kbd>9</kbd></td><td>switch view (the digit shows when you hover a view)</td></tr>
+          <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl K</kbd></td><td>search views, agents and actions</td></tr>
           <tr><td><kbd>/</kbd></td><td>focus search (events / steps)</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>back one level / close panel</td></tr>
           <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>older / newer step (in a step)</td></tr>
-          <tr><td><kbd>p</kbd> / <kbd>r</kbd></td><td>pause / resume mission</td></tr>
+          <tr><td><kbd>p</kbd> / <kbd>r</kbd></td><td>pause / resume the mission (a pause can be undone from its notice)</td></tr>
           <tr><td><kbd>t</kbd></td><td>toggle theme</td></tr>
           <tr><td><kbd>?</kbd></td><td>this help</td></tr>
         </tbody>
       </table>
       <h2>About</h2>
       <p className="muted">Every screen is a projection of the append-only event log.
-        The ✉ / ✓ controls act as the <code>human</code> seat; the designer validates
+        Message and Approve act as the <code>human</code> seat; the designer validates
         configs server-side with the same engine as <code>curule validate</code>.
-        Tip: <code>curule console &lt;file&gt;</code> opens this console parked (nothing runs on its own — wake to step, ▶ to go live).</p>
+        Tip: <code>curule console &lt;file&gt;</code> opens this console parked: nothing runs on its own until you press Continue.</p>
     </div>
   );
 }
@@ -210,31 +230,29 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // to score every criterion including optional ones, so the two screens
   // disagreed about the same mission.
   const { done, total: critTotal } = mandatoryProgress(goal.acceptanceCriteria);
-  const statusWord =
-    ({ ACTIVE: "running", PAUSED: "paused", ESCALATED: "needs you", COMPLETED: "done", FAILED: "failed" } as Record<string, string>)[goal.status] ||
-    (goal.status || "").toLowerCase();
   const mission = (status?.budgets || []).find((b: any) => b.key.startsWith("mission:") && b.limitKind === "tokens");
-  const active = (status?.agents || []).filter((a: any) => RUNNING.has(a.lifecycle)).length;
-  const escOpen = (status?.openEscalations || []).length;
-  const decisionHint = escOpen ? `${escOpen} open decision${escOpen === 1 ? "" : "s"} — review in Needs you` : "No decisions waiting on you";
-  const paused = goal.status === "PAUSED" || ["COMPLETED", "FAILED"].includes(goal.status);
-  const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
-  // Parked with an ACTIVE goal: the one state that reads as a running mission —
-  // the goal is ACTIVE, the checks are unmet, the status word below says
-  // "running" — and runs nothing at all. Every surface agrees it is fine and it
-  // is not, so it gets a line of its own. The wording is the server's
-  // (`/status.parkedNotice`, the same string `POST /goals/:id/resume` returns),
-  // never a copy kept here: two accounts of one state is how this stayed hidden.
-  const parkedNotice = parked && goal.status === "ACTIVE" && typeof status?.parkedNotice === "string" ? status.parkedNotice : null;
-  // The console's own connection to the truth: live, parked, reconnecting, or dead.
-  const liveState = serverDown ? "offline" : sseState === "reconnecting" ? "reconnecting" : parked ? "parked" : sseState === "open" ? "live" : "connecting";
-  const liveTitle: Record<string, string> = {
-    live: "Live — events are streaming",
-    parked: "Parked — nothing runs on its own by design",
-    connecting: "Connecting to the event stream…",
-    reconnecting: "Connection lost — reconnecting…",
-    offline: "Server not responding — showing the last known state, which may be stale",
-  };
+  const runningSteps = (steps || []).filter((s: any) => s.status === "running").length;
+  const hostCeilingTripped = projectsCtx?.hostSpend?.ceilingTripped === true;
+  const hasHistory = (steps?.length ?? 0) > 0 || (status?.eventCount ?? 0) > 15;
+  // One reading of the mission, shared by the bar, the Overview and the tab title (mission.ts): what state it is in and
+  // the one thing to do about it. The bar used to say PARKED beside a goal that read "done".
+  const facts = factsFromStatus(status, { serverDown, hostCeilingTripped, runningSteps, hasHistory });
+  const state = describeMission(facts);
+  const parked = facts.parked;
+  const decisions = facts.blockingDecisions + facts.advisoryDecisions;
+  // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
+  const toolRequests = useToolRequests(client, !serverDown && !noProjects && !registryPending);
+  const inbox = decisions + toolRequests;
+  // The connection is a separate fact from the mission. A mission that is running over a dropped connection is not "running".
+  const reconnecting = !serverDown && sseState === "reconnecting";
+  const chipTone = reconnecting ? "warn" : state.tone;
+  const chipLabel = reconnecting ? "Reconnecting" : state.label;
+  const chipTitle = reconnecting ? "Connection lost: reconnecting. What you see may be stale." : state.headline;
+  const projectName = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId)?.name ?? null;
+  // A mission waiting on you is the one thing worth a glance at a background tab, so the count leads the title.
+  useEffect(() => {
+    document.title = documentTitle({ phaseLabel: status ? chipLabel : null, decisions: inbox, project: projectName });
+  }, [status, chipLabel, inbox, projectName]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const narrow = useNarrow();
@@ -301,22 +319,46 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     <><Help /><CloseX extra="close-x-float" /></>,
   ), [openDrawer]);
 
-  /* One click out of a parked mission. The endpoint already says what it did —
-   * which seats it activated, which it refused and why — so the toast carries
-   * its `note` verbatim rather than a summary invented here. */
-  const startMission = useCallback(() => void (async () => {
+  /* The mission's controls. Every one is reachable from the bar, the Overview and the keyboard, and each goes through the
+   * same function, so the three cannot do different things under one label. Starting asks first (useGoLive: it names the
+   * agents about to spend); pausing does not, because it is safe, and says so with an Undo instead of a question. */
+  const { goLive } = useGoLive();
+  const { reopenMission } = useReopenMission();
+  const { resetMission } = useResetMission();
+  const resumeMission = useCallback(async (ask: boolean): Promise<void> => {
+    if (!goalId) return;
+    if (ask && !(await confirmResume(confirm, status, "Resume"))) return;
     try {
-      const res = await client.post("/mission/start");
-      if (res.status !== 200) {
-        toast("start failed", String(res.json?.error ?? `the server answered ${res.status}`), "bad");
-      } else {
-        toast(res.json?.started === false ? "mission already live" : "mission live", String(res.json?.note ?? "scheduler started"), "ok");
-      }
+      await client.post(`/goals/${goalId}/resume`);
+      toast("Mission resumed", "Agents are running.", "ok");
     } catch {
-      toast("start failed", "the server did not answer", "bad");
+      toast("Resume failed", "The server did not answer.", "bad");
     }
     void refreshStatus();
-  })(), [client, toast, refreshStatus]);
+  }, [goalId, confirm, status, client, toast, refreshStatus]);
+  const pauseMission = useCallback(async (): Promise<void> => {
+    if (!goalId) return;
+    try {
+      await client.post(`/goals/${goalId}/pause`);
+      toast("Mission paused", "Agents stopped. Nothing is lost.", "warn", { label: "Undo", run: () => void resumeMission(false) });
+    } catch {
+      toast("Pause failed", "The server did not answer.", "bad");
+    }
+    void refreshStatus();
+  }, [goalId, client, toast, refreshStatus, resumeMission]);
+  const runAction = (a: MissionAction): void => {
+    switch (a) {
+      case "start": void goLive(); break;
+      case "pause": void pauseMission(); break;
+      case "resume": void resumeMission(true); break;
+      case "reopen": void reopenMission(); break;
+      case "review": setView(decisions === 0 && toolRequests > 0 ? "gates" : "escalations"); break;
+      case "settings": setView("hostsettings"); break;
+      case "agents": setView("agents"); break;
+      case "designer": setView("designer"); break;
+    }
+  };
+  const ACTION_ICON: Record<MissionAction, IconName> = { start: "play", pause: "pause", resume: "play", reopen: "undo", review: "inbox", settings: "sliders", agents: "agents", designer: "designer" };
 
   // Global palette commands: every view, help, and one "jump to agent" per
   // agent. Picking an agent only leaves a pending id in commands.ts and asks
@@ -324,7 +366,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   useEffect(() => {
     register("global", [
       ...KEY_VIEWS.map((v, i) => {
-        const nav = NAV.find((n) => n.view === v);
+        const nav = NAV_ITEMS.find((n) => n.view === v);
         return {
           id: `go.${v}`,
           label: `Go to ${nav?.label ?? v}`,
@@ -429,25 +471,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     }
     if (ev.key === "?") return openHelp();
     if (ev.key === "t") toggleTheme();
-    if (ev.key === "p" && goalId) {
-      void client.post(`/goals/${goalId}/pause`)
-        .then(() => { toast("mission paused", "agents stopped — nothing lost", "warn"); refreshStatus(); })
-        .catch(() => toast("pause failed", "the server did not answer", "bad"));
-    }
-    if (ev.key === "r" && goalId) {
-      // The guard is a real dialog now, so the shortcut has to wait for it;
-      // the rest of the key router must not.
-      void (async () => {
-        if (!(await confirmResume(confirm, status, "Resume"))) return;
-        try {
-          await client.post(`/goals/${goalId}/resume`);
-          toast("mission resumed", "agents are running", "ok");
-          refreshStatus();
-        } catch {
-          toast("resume failed", "the server did not answer", "bad");
-        }
-      })();
-    }
+    // Only when the mission is in a state where the key means something: it used to post a pause to a delivered mission.
+    if (ev.key === "p" && state.primary?.action === "pause") void pauseMission();
+    if (ev.key === "r" && state.primary?.action === "resume") void resumeMission(true);
     if (ev.key === "/") {
       ev.preventDefault();
       const s = document.getElementById("ev-search") || document.getElementById("step-search");
@@ -595,51 +621,28 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
   const closeMenu = () => setMenuOpen(false);
 
-  /* One definition per action, rendered either as a button in the bar or as a
-     row in the ⋯ menu. Written out here rather than inline so the two places
-     cannot drift into doing different things under the same label. */
-  const secondaryActions: Array<{ id: string; glyph: string; short: string; title: string; onClick: () => void }> = [];
-  if (!paused) {
-    secondaryActions.push({
-      id: "btn-pause", glyph: "❚❚", short: "pause",
-      title: "Pause the mission — agents stop, nothing is lost",
-      onClick: () => void (async () => {
-        if (!goalId) return;
-        try {
-          await client.post(`/goals/${goalId}/pause`);
-          toast("mission paused", "agents stopped — nothing lost", "warn");
-        } catch {
-          toast("pause failed", "the server did not answer", "bad");
-        }
-        void refreshStatus();
-      })(),
-    });
-  } else if (goal.status === "PAUSED") {
-    secondaryActions.push({
-      id: "btn-resume", glyph: "▶", short: "resume", title: "Resume the mission",
-      onClick: () => void (async () => {
-        if (!goalId) return;
-        if (!(await confirmResume(confirm, status, "Resume"))) return;
-        try {
-          await client.post(`/goals/${goalId}/resume`);
-          toast("mission resumed", "agents are running", "ok");
-        } catch {
-          toast("resume failed", "the server did not answer", "bad");
-        }
-        void refreshStatus();
-      })(),
-    });
+  /* The overflow menu: what is not worth a permanent button. A phone gets the actions that no longer fit the bar; every
+   * screen gets the rare and the dangerous ones, with the destructive one set apart at the end. */
+  const openMessage = (): void => openDrawer(<MessageDrawer />);
+  const moreItems: MenuItem[] = [];
+  if (phone) moreItems.push({ id: "mi-message", icon: "message", label: "Message an agent", title: "Send a message as the human: highest priority", onClick: openMessage });
+  moreItems.push({ id: "btn-approval", icon: "approve", label: "Approve or reject…", title: "Approve or reject something (release, design, quality…)", onClick: () => openDrawer(<ApprovalDrawer />) });
+  for (const c of state.secondary) {
+    moreItems.push({ id: `mi-${c.action}`, icon: ACTION_ICON[c.action], label: c.label, title: c.hint, onClick: () => runAction(c.action) });
   }
-  secondaryActions.push(
-    { id: "btn-message", glyph: "✉", short: "message", title: "Send a message as the human — highest priority", onClick: () => openDrawer(<MessageDrawer />) },
-    { id: "btn-approval", glyph: "✓", short: "approvals", title: "Approve or reject something (release, design, quality…)", onClick: () => openDrawer(<ApprovalDrawer />) },
-  );
+  if (phone) moreItems.push({ id: "mi-designer", icon: "spark", label: "Ask the designer", onClick: () => setChatOpen(true) });
+  if (goalId) {
+    moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void resetMission() });
+  }
+  const primary = state.primary;
+  const spentRatio = mission?.limit ? Math.min(1, (mission.consumed ?? 0) / mission.limit) : 0;
+  const goalTitle = status ? (goal.description || "No goal").split("\n")[0].slice(0, 90) : "Connecting…";
 
   return (
     <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
-      {/* WCAG 2.4.1. Roughly 20 chrome tab stops -- the project strip, 10 nav
-          buttons, 3 sidebar footer buttons, the topbar -- sit ahead of the
-          content on every single view, with no way past them.
+      {/* WCAG 2.4.1. Roughly 20 chrome tab stops -- the project strip, the nav
+          buttons, the sidebar footer, the topbar -- sit ahead of the content on
+          every single view, with no way past them.
 
           A fragment href is NOT usable here: #view is not a route, and
           parseHash() would read it as { projectId: null, view: "overview" },
@@ -656,65 +659,82 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} /> : null}
       <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
         <div className="brand">
-          <div><Wordmark height={22} /><span id="mesh-id" className="sub">{goal.id ? `goal ${goal.id.slice(0, 14)}` : ""}</span></div>
+          <Wordmark height={22} />
+          <span id="mesh-id" className="sub">{goal.id ? `goal ${goal.id.slice(0, 14)}` : ""}</span>
         </div>
+        {/* The palette was chord-only: the fastest route to every view, agent and action in the product, discoverable
+            solely by already knowing it existed. */}
+        <button id="btn-palette" type="button" className="side-search" title="Search views, agents and actions (⌘K / Ctrl K)" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>
+          <Icon name="search" /><span>Search</span><kbd>⌘K</kbd>
+        </button>
         <nav id="nav" aria-label="views">
-          {NAV.map((n, i) =>
-            n.section ? (
-              <div className="nav-label" key={`s${i}`}>{n.section}</div>
-            ) : (
-              <button key={n.view} data-view={n.view} className={`tab${view === n.view ? " active" : ""}`} aria-current={view === n.view ? "page" : undefined} title={n.title} onClick={() => { setView(n.view as View); closeMenu(); }}>
-                <i>{n.icon}</i>{n.label}
-                {n.view === "escalations" && escOpen ? <em className="kbd esc-kbd" id="esc-badge" title={`${escOpen} open decisions`}>{escOpen}</em> : null}
-                {viewKey(n.view as View) ? <em className="kbd">{viewKey(n.view as View)}</em> : null}
-              </button>
-            ),
-          )}
+          {NAV.map((group) => (
+            <div className="nav-group" role="group" aria-label={group.section} key={group.section}>
+              <div className="nav-label" aria-hidden="true">{group.section}</div>
+              {group.items.map((n) => {
+                const badge = n.view === "escalations" ? decisions : n.view === "gates" ? toolRequests : 0;
+                const key = viewKey(n.view);
+                return (
+                  <button key={n.view} data-view={n.view} className={`tab${view === n.view ? " active" : ""}`} aria-current={view === n.view ? "page" : undefined}
+                    title={key ? `${n.title} (key ${key})` : n.title} onClick={() => { setView(n.view); closeMenu(); }}>
+                    <Icon name={n.icon} size={18} />
+                    <span className="tab-label">{n.label}</span>
+                    {badge > 0 ? <em className="nav-badge" id={n.view === "escalations" ? "esc-badge" : undefined} title={`${badge} waiting on you`}>{badge}</em> : null}
+                    {key ? <kbd className="tab-key" aria-hidden="true">{key}</kbd> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <div className="side-foot">
-          {/* The palette was ⌘K-only: the fastest route to every view, agent and
-              action in the product, discoverable solely by already knowing it
-              existed. It lives beside help because that is the persistent
-              chrome — the topbar is already at its width budget. */}
-          <Button id="btn-palette" variant="ghost" title="Search views, agents and actions (⌘K / Ctrl K)" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>⌕ commands<em className="kbd">⌘K</em></Button>
-          <Button id="btn-theme" variant="ghost" title="toggle theme" aria-pressed={isLight} onClick={toggleTheme}>◐ theme</Button>
-          <Button id="btn-help" variant="ghost" title="keyboard shortcuts" onClick={openHelp}>? help</Button>
-          {auth?.required ? <Button id="btn-signout" variant="ghost" title="End this browser's session on the server" onClick={auth.signOut}>⎋ sign out</Button> : null}
+          <IconButton id="btn-theme" icon={isLight ? "moon" : "sun"} label={isLight ? "Switch to the dark theme" : "Switch to the light theme"} onClick={toggleTheme} />
+          <IconButton id="btn-help" icon="help" label="Keyboard shortcuts and help" title="Keyboard shortcuts and help (?)" onClick={openHelp} />
+          {auth?.required ? <IconButton id="btn-signout" icon="sign-out" label="Sign out" title="End this browser's session on the server" onClick={auth.signOut} /> : null}
         </div>
       </aside>
 
       <header id="topbar">
-        <Button id="btn-menu" variant="ghost" aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}>☰</Button>
+        <Button id="btn-menu" variant="ghost" aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" size={18} /></Button>
+        <span className={`mission-chip ${chipTone}`} role="status" title={chipTitle}>
+          <i className={`dot${state.pulse && !reconnecting ? " pulse" : ""}`} aria-hidden="true" />{chipLabel}
+        </span>
         <div id="goal-strip">
-          <span className={`pulse-dot${liveState === "live" ? " on" : liveState === "offline" ? " off" : ` ${liveState}`}`} id="live-dot" title={liveTitle[liveState]} aria-hidden="true" />
-          <span className={`live-label live-${liveState}`} role="status">{liveState === "connecting" ? "connecting…" : liveState === "reconnecting" ? "reconnecting…" : liveState}</span>
           <div className="goal-text">
-            <strong id="top-goal">{status ? (goal.description || "no goal").split("\n")[0].slice(0, 70) : "connecting…"}</strong>
-            <span id="top-criteria" className="muted">{goal.status ? `${done}/${critTotal} checks done` : ""}</span>
+            <strong id="top-goal" title={goal.description || undefined}>{goalTitle}</strong>
+            <span id="top-criteria" className="muted">
+              {goal.status ? `${done} of ${critTotal} checks done` : ""}{parked && state.phase !== "parked" && state.phase !== "ceiling" && state.phase !== "offline" && goal.status ? " · project is parked" : ""}
+            </span>
           </div>
         </div>
         <div className="bar-strip" role="group" aria-label="mission telemetry">
-          <div className="bar-strip-stat" title="Mission status"><b>{goal.status ? statusWord : "—"}</b><span>status</span></div>
-          <div className="bar-strip-stat agents" title="Agents currently working"><b>{active}</b><span>agents</span></div>
-          <button type="button" className={`bar-strip-stat decisions${escOpen ? " hot" : ""}`} aria-label={decisionHint} title={decisionHint} onClick={() => setView("escalations")}>
-            <b>{escOpen}</b><span>decisions</span>
-          </button>
-          <div className="bar-strip-stat secondary" title="Tokens spent out of mission budget"><b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b><span>spent</span></div>
+          <div className="bar-strip-stat agents" title="Agents mid-turn right now"><b>{facts.working}</b><span>working</span></div>
+          <div className="bar-strip-stat spent" title="Tokens spent out of the mission budget">
+            <b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b>
+            <span>tokens</span>
+            <i className={`meter${spentRatio >= 0.95 ? " bad" : spentRatio >= 0.8 ? " warn" : ""}`} style={{ "--p": spentRatio } as React.CSSProperties} aria-hidden="true" />
+          </div>
         </div>
         <div className="top-actions">
-          {/* Inline on anything wider than a phone; the same three actions,
-              same ids and same handlers, move into the ⋯ menu below 620 where
-              they no longer fit. Decisions never collapses — it is the one
-              asking for something, and its count is the reason to look here. */}
-          {phone ? null : secondaryActions.map((a) => (
-            <Button key={a.id} id={a.id} variant="soft" title={a.title} onClick={a.onClick}>
-              {a.glyph} <span className="act-lbl">{a.short}</span>
+          {primary ? (
+            <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
+              {primary.label}
             </Button>
-          ))}
-          <Button id="btn-decisions" variant={escOpen ? "primary" : "ghost"} aria-label={`Review decisions — ${escOpen} open`} title="Open the Needs you view" onClick={() => setView("escalations")}><span className="dec-lbl">Review decisions · </span>{escOpen}</Button>
-          {phone && secondaryActions.length > 0 ? (
-            <Menu id="btn-more" label="⋯" title="More mission actions" items={secondaryActions.map((a): MenuItem => ({ id: a.id, title: a.title, label: `${a.glyph}  ${a.short}`, onClick: a.onClick }))} />
           ) : null}
+          {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
+              primary action is already "review" it is that button, so this one stands down. */}
+          {inbox > 0 && primary?.action !== "review" ? (
+            <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(decisions === 0 && toolRequests > 0 ? "gates" : "escalations")}>
+              <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
+            </Button>
+          ) : null}
+          {phone ? null : (
+            <Button id="btn-message" variant="soft" icon="message" title="Send a message as the human: highest priority" onClick={openMessage}>
+              <span className="act-lbl">Message</span>
+            </Button>
+          )}
+          {phone ? null : <ChatDockButton open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />}
+          <Menu id="btn-more" label={<Icon name="more" size={18} />} title="More actions" items={moreItems} />
         </div>
       </header>
 
@@ -728,18 +748,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               without adding chrome nobody asked for. */}
           <h1 className="sr-only">Curule console</h1>
           {serverDown ? (
-            <div className="banner bad server-banner" role="alert">
-              <b>Server not responding.</b> <span className="muted">Showing the last known state — it may be stale. Is the mesh process still running?</span>
-              <Button variant="banner-act" onClick={() => void refreshStatus()}>Retry now</Button>
-            </div>
+            <Banner tone="bad" className="server-banner" title="Server not responding."
+              actions={<Button variant="banner-act" icon="refresh" onClick={() => void refreshStatus()}>Retry now</Button>}>
+              Showing the last known state, which may be stale. Is the mesh process still running?
+            </Banner>
           ) : null}
           <LicenseBanner onOpen={() => setView("hostsettings")} />
-          {parkedNotice ? (
-            <div className="banner warn server-banner" role="status" id="parked-banner">
-              <b>Mission parked.</b> <span className="muted">{parkedNotice}</span>
-              <Button id="btn-mission-start" variant="banner-act" title="Start the mission — the scheduler begins running work" onClick={startMission}>▶ Start mission</Button>
-            </div>
-          ) : null}
           {/* Host settings is the one view that outranks the empty state: its
               keys are host-wide, they already have values nobody chose, and an
               operator with no project open is exactly who should be able to set
@@ -752,7 +766,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {panel !== null && (
         <>
           <div id="drawer" className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-label="Details panel" tabIndex={-1} ref={drawerRef}>
-            {panelDepth > 1 ? <Button variant="ghost" extra="drawer-back" onClick={popPanel} title="Back to the previous panel (Esc)">← back</Button> : null}
+            {panelDepth > 1 ? <Button variant="ghost" icon="chevron-right" extra="drawer-back" onClick={popPanel} title="Back to the previous panel (Esc)">Back</Button> : null}
             <div id="drawer-body">{panel}</div>
           </div>
           <div id="scrim" aria-hidden="true" onClick={popPanel} />
@@ -764,7 +778,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <CommandPalette onClose={closePalette} />
         </>
       )}
-      <ChatDock open={chatOpen} onOpen={() => setChatOpen(true)} onClose={() => setChatOpen(false)} />
+      <ChatDock open={chatOpen} onClose={() => setChatOpen(false)} />
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>

@@ -1,0 +1,225 @@
+/**
+ * What state the mission is in, and the one thing to do about it.
+ *
+ * The console used to answer that in three places from three readings of `/status`: the top bar said PARKED beside a goal
+ * that read "done", the Overview stacked a "Parked. Continue" strip over a "Goal met" strip, and a letter key paused a
+ * mission without asking. A state that reads two ways is a state the operator has to work out for themselves. This is the
+ * one reading. The top bar, the Overview and the window title all take it from here, so they cannot disagree.
+ *
+ * DOM-free and React-free so tests/dashboard can pin the precedence, which is the part that carries the claim.
+ */
+import { RUNNING } from "./format";
+
+export type MissionPhase =
+  | "loading"
+  | "offline"
+  | "no-goal"
+  | "ceiling"
+  | "needs-you"
+  | "failed"
+  | "done"
+  | "paused"
+  | "parked"
+  | "stalled"
+  | "quiet"
+  | "running";
+
+export type MissionTone = "ok" | "warn" | "bad" | "neutral";
+
+/** The things a person can do to a mission from the bar or the Overview. The caller maps each to a handler. */
+export type MissionAction = "start" | "pause" | "resume" | "reopen" | "review" | "settings" | "agents" | "designer";
+
+export interface MissionControl {
+  action: MissionAction;
+  label: string;
+  /** The tooltip: what the click does, including what it costs. */
+  hint: string;
+}
+
+export interface MissionFacts {
+  hasStatus: boolean;
+  serverDown: boolean;
+  /** CREATED, ACTIVE, PAUSED, BLOCKED, CONVERGING, COMPLETED, FAILED or ESCALATED; empty when there is no goal. */
+  goalStatus: string;
+  /** The process is parked: it answers questions and runs nothing on its own. */
+  parked: boolean;
+  /** Open decisions that hold the mission. */
+  blockingDecisions: number;
+  /** Open decisions that are notices: the mission carries on whether or not anyone answers them. */
+  advisoryDecisions: number;
+  /** The host parked every project because aggregate spend crossed its ceiling. */
+  hostCeilingTripped: boolean;
+  /** Agents in the middle of a turn. */
+  working: number;
+  /** Agents waiting for something to do. */
+  waiting: number;
+  runningSteps: number;
+  /** Anything has happened in this project before. Decides "Start" against "Continue". */
+  hasHistory: boolean;
+  /** How many seats boot was told to start; null when the server predates the field. */
+  startupSeats: number | null;
+}
+
+export interface MissionState {
+  phase: MissionPhase;
+  tone: MissionTone;
+  /** One or two words for a chip. */
+  label: string;
+  /** What is true, as a sentence. */
+  headline: string;
+  /** The one thing to do about it, or null when there is nothing to do. */
+  primary: MissionControl | null;
+  /** Everything else the operator may want, for an overflow menu, in order. */
+  secondary: MissionControl[];
+  /** The process is parked. Reported separately because a finished mission can be parked, and that is not a problem. */
+  parked: boolean;
+  /** The one phase that moves: a mission with agents mid-turn. */
+  pulse: boolean;
+}
+
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+const PAUSE: MissionControl = { action: "pause", label: "Pause", hint: "Pause the mission: agents stop, nothing is lost" };
+const REOPEN: MissionControl = {
+  action: "reopen",
+  label: "Not good enough, reopen",
+  hint: "Reject the result and put the agents back to work. Nothing is deleted.",
+};
+
+/** The reading of one `/status` payload (plus what only the console knows) that `describeMission` works from. */
+export function factsFromStatus(
+  status: any,
+  extra: { serverDown?: boolean; hostCeilingTripped?: boolean; runningSteps?: number; hasHistory?: boolean } = {},
+): MissionFacts {
+  const agents: any[] = (status?.agents ?? []).filter((a: any) => a.id !== "human");
+  const decisions: any[] = status?.openEscalations ?? [];
+  return {
+    hasStatus: Boolean(status),
+    serverDown: extra.serverDown === true,
+    goalStatus: String(status?.goal?.status ?? ""),
+    parked: Boolean(status?.uiOnly) || status?.mode === "parked",
+    blockingDecisions: decisions.filter((e) => e?.advisory !== true).length,
+    advisoryDecisions: decisions.filter((e) => e?.advisory === true).length,
+    hostCeilingTripped: extra.hostCeilingTripped === true,
+    working: agents.filter((a) => RUNNING.has(a.lifecycle)).length,
+    waiting: agents.filter((a) => a.lifecycle === "WAITING").length,
+    runningSteps: extra.runningSteps ?? 0,
+    hasHistory: extra.hasHistory === true,
+    startupSeats: typeof status?.startupActivateCount === "number" ? status.startupActivateCount : null,
+  };
+}
+
+/**
+ * The precedence is the point. The first rule that holds wins:
+ *
+ * 1. The server is not answering: everything below is the last known state, so say that and nothing else.
+ * 2. The host's spend ceiling parked the project: Continue cannot fix it (the host re-parks on the next heartbeat), so the
+ *    one action is to raise the ceiling.
+ * 3. A decision holds the mission, or the goal is ESCALATED: the operator is the blocker.
+ * 4. The goal is over (failed, delivered): a parked process is irrelevant to a finished mission, so "parked" never
+ *    outranks "delivered".
+ * 5. Paused, then parked: two ways of not running, and the action for each is different.
+ * 6. Running: nobody working and nobody waiting is a fault worth naming; waiting without working is quiet; otherwise it is
+ *    simply running.
+ *
+ * Open decisions that are only notices do not change the phase: they hold nothing, and they are counted by the caller.
+ */
+export function describeMission(f: MissionFacts): MissionState {
+  const base = { secondary: [] as MissionControl[], parked: f.parked, pulse: false };
+  if (!f.hasStatus) {
+    return f.serverDown
+      ? { ...base, phase: "offline", tone: "bad", label: "Offline", headline: "The server is not answering.", primary: null }
+      : { ...base, phase: "loading", tone: "neutral", label: "Connecting", headline: "Connecting to the mission.", primary: null };
+  }
+  if (f.serverDown) {
+    return {
+      ...base, phase: "offline", tone: "bad", label: "Offline", primary: null,
+      headline: "The server is not answering. This is the last state it reported, and it may be stale.",
+    };
+  }
+  if (!f.goalStatus) {
+    return {
+      ...base, phase: "no-goal", tone: "neutral", label: "No goal", primary: { action: "designer", label: "Open the designer", hint: "Describe the goal and the team that works on it" },
+      headline: "This mesh has no goal yet.",
+    };
+  }
+  if (f.parked && f.hostCeilingTripped && f.goalStatus !== "COMPLETED" && f.goalStatus !== "FAILED") {
+    return {
+      ...base, phase: "ceiling", tone: "bad", label: "Spend ceiling",
+      headline: "The host reached its spend ceiling, so this project is parked.",
+      primary: { action: "settings", label: "Raise the ceiling", hint: "The ceiling is host-wide: raise it in Host settings and it applies on the next heartbeat" },
+    };
+  }
+  if (f.goalStatus === "ESCALATED" || (f.blockingDecisions > 0 && f.goalStatus !== "COMPLETED" && f.goalStatus !== "FAILED")) {
+    const n = Math.max(f.blockingDecisions, 1);
+    return {
+      ...base, phase: "needs-you", tone: "bad", label: "Needs you",
+      headline: `${plural(n, "decision")} waiting on you. The mission is paused until ${n === 1 ? "it is" : "they are"} answered.`,
+      primary: { action: "review", label: "Review decisions", hint: "Open the inbox: the mission stays paused until each decision is answered" },
+    };
+  }
+  if (f.goalStatus === "FAILED") {
+    return {
+      ...base, phase: "failed", tone: "bad", label: "Failed", headline: "The mission failed.",
+      primary: { action: "reopen", label: "Reopen", hint: "Withdraw the verdict and put the agents back to work. Nothing is deleted." },
+    };
+  }
+  if (f.goalStatus === "COMPLETED") {
+    return {
+      ...base, phase: "done", tone: "ok", label: "Delivered", primary: null,
+      headline: "Delivered. Every mandatory check is evidenced.",
+      secondary: [REOPEN],
+    };
+  }
+  if (f.goalStatus === "PAUSED") {
+    return {
+      ...base, phase: "paused", tone: "warn", label: "Paused", headline: "Paused. Nothing is running.",
+      primary: { action: "resume", label: "Resume", hint: "Wake the agents and resume spend against the mission budget" },
+    };
+  }
+  if (f.parked) {
+    return {
+      ...base, phase: "parked", tone: "warn", label: "Parked",
+      headline: f.hasHistory
+        ? "Parked. Progress is loaded and nothing runs until you continue."
+        : "Parked. Nothing runs on its own until you start the mission.",
+      primary: {
+        action: "start",
+        label: f.hasHistory ? "Continue" : "Start mission",
+        hint: "Start the scheduler: agents run and spend tokens until you pause or park the mission again",
+      },
+    };
+  }
+  if (f.working === 0 && f.runningSteps === 0) {
+    if (f.waiting === 0) {
+      return {
+        ...base, phase: "stalled", tone: "warn", label: "Idle",
+        headline: "Live, but no agent is working.",
+        primary: f.startupSeats === 0
+          ? { action: "designer", label: "Set startup agents", hint: "No seat starts on its own: choose which agents begin in the designer" }
+          : { action: "agents", label: "Wake an agent", hint: "Open Agents and wake one to get going" },
+        secondary: [PAUSE],
+      };
+    }
+    return {
+      ...base, phase: "quiet", tone: "neutral", label: "Running",
+      headline: `Running. ${plural(f.waiting, "agent")} waiting, none working right now.`,
+      primary: PAUSE,
+    };
+  }
+  return {
+    ...base, phase: "running", tone: "ok", label: "Running", pulse: true,
+    headline: f.working > 0 ? `${plural(f.working, "agent")} working.` : "A turn is in flight.",
+    primary: PAUSE,
+  };
+}
+
+/**
+ * The browser tab's title. A mission waiting on you is the one thing worth a glance at a background tab, so the count leads
+ * and the tab says what is true of the mission, not only what the product is called.
+ */
+export function documentTitle(opts: { phaseLabel: string | null; decisions: number; project: string | null }): string {
+  const lead = opts.decisions > 0 ? `(${opts.decisions}) ` : "";
+  const bits = [opts.phaseLabel, opts.project].filter((s): s is string => Boolean(s));
+  return `${lead}${bits.length ? `${bits.join(" · ")} — ` : ""}Curule`;
+}

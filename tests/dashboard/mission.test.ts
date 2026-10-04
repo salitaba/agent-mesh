@@ -1,0 +1,162 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { describeMission, documentTitle, factsFromStatus, type MissionFacts } from "../../apps/mesh-dashboard/src/mission";
+
+/**
+ * The console used to say three different things about one mission: the top bar read PARKED beside a goal that said "done",
+ * the Overview stacked "Parked. Continue" over "Goal met", and a keyboard shortcut paused a live mission without asking.
+ * `describeMission` is the one reading; these pin its precedence, which is the claim.
+ */
+
+const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
+  hasStatus: true,
+  serverDown: false,
+  goalStatus: "ACTIVE",
+  parked: false,
+  blockingDecisions: 0,
+  advisoryDecisions: 0,
+  hostCeilingTripped: false,
+  working: 2,
+  waiting: 1,
+  runningSteps: 0,
+  hasHistory: true,
+  startupSeats: 2,
+  ...over,
+});
+
+test("a live mission with agents working is running, and the one control is Pause", () => {
+  const s = describeMission(facts());
+  assert.equal(s.phase, "running");
+  assert.equal(s.tone, "ok");
+  assert.equal(s.pulse, true);
+  assert.equal(s.primary?.action, "pause");
+  assert.equal(s.headline, "2 agents working.");
+});
+
+test("a finished mission that is parked is delivered, not parked: no Continue, and reopening is a secondary action", () => {
+  const s = describeMission(facts({ goalStatus: "COMPLETED", parked: true, working: 0, waiting: 7 }));
+  assert.equal(s.phase, "done");
+  assert.equal(s.label, "Delivered");
+  assert.equal(s.primary, null, "nothing to start on a finished mission");
+  assert.deepEqual(s.secondary.map((c) => c.action), ["reopen"]);
+  assert.equal(s.parked, true, "the fact is still reported, for a quiet note");
+});
+
+test("parked with unfinished work offers Continue when there is history and Start when there is none", () => {
+  const resumed = describeMission(facts({ parked: true, working: 0 }));
+  assert.equal(resumed.phase, "parked");
+  assert.deepEqual([resumed.primary?.action, resumed.primary?.label], ["start", "Continue"]);
+  const fresh = describeMission(facts({ parked: true, working: 0, hasHistory: false }));
+  assert.deepEqual([fresh.primary?.action, fresh.primary?.label], ["start", "Start mission"]);
+});
+
+test("a blocking decision outranks parked and paused: the operator is the blocker", () => {
+  const s = describeMission(facts({ goalStatus: "PAUSED", parked: true, blockingDecisions: 2 }));
+  assert.equal(s.phase, "needs-you");
+  assert.equal(s.primary?.action, "review");
+  assert.match(s.headline, /^2 decisions waiting on you\./);
+});
+
+test("an ESCALATED goal needs the operator even when the escalation list has not arrived yet", () => {
+  const s = describeMission(facts({ goalStatus: "ESCALATED", blockingDecisions: 0 }));
+  assert.equal(s.phase, "needs-you");
+  assert.match(s.headline, /^1 decision waiting on you\./);
+});
+
+test("an advisory notice holds nothing: the mission is still running and the caller counts the notice", () => {
+  const s = describeMission(facts({ advisoryDecisions: 1 }));
+  assert.equal(s.phase, "running");
+  assert.equal(s.primary?.action, "pause");
+});
+
+test("a host spend ceiling parks the project and the only action is to raise it; Continue would be re-parked", () => {
+  const s = describeMission(facts({ parked: true, hostCeilingTripped: true, working: 0 }));
+  assert.equal(s.phase, "ceiling");
+  assert.equal(s.primary?.action, "settings");
+  assert.equal(s.secondary.length, 0);
+});
+
+test("a ceiling that did not park this project, or a mission already over, is not the headline", () => {
+  assert.equal(describeMission(facts({ hostCeilingTripped: true })).phase, "running", "this project is live");
+  assert.equal(describeMission(facts({ parked: true, hostCeilingTripped: true, goalStatus: "COMPLETED" })).phase, "done");
+});
+
+test("paused offers Resume", () => {
+  const s = describeMission(facts({ goalStatus: "PAUSED", working: 0 }));
+  assert.equal(s.phase, "paused");
+  assert.equal(s.primary?.action, "resume");
+});
+
+test("failed offers Reopen as the primary action", () => {
+  const s = describeMission(facts({ goalStatus: "FAILED", working: 0 }));
+  assert.equal(s.phase, "failed");
+  assert.equal(s.tone, "bad");
+  assert.equal(s.primary?.action, "reopen");
+});
+
+test("live with nobody working and nobody waiting is a fault, and the action depends on whether any seat was meant to start", () => {
+  const configured = describeMission(facts({ working: 0, waiting: 0 }));
+  assert.equal(configured.phase, "stalled");
+  assert.deepEqual([configured.primary?.action, configured.secondary.map((c) => c.action)], ["agents", ["pause"]]);
+  const none = describeMission(facts({ working: 0, waiting: 0, startupSeats: 0 }));
+  assert.equal(none.primary?.action, "designer");
+});
+
+test("live with agents waiting but none working is quiet, not stalled", () => {
+  const s = describeMission(facts({ working: 0, waiting: 3 }));
+  assert.equal(s.phase, "quiet");
+  assert.equal(s.tone, "neutral");
+  assert.equal(s.headline, "Running. 3 agents waiting, none working right now.");
+});
+
+test("a turn in flight counts as running even when the roster has not caught up", () => {
+  assert.equal(describeMission(facts({ working: 0, waiting: 0, runningSteps: 1 })).phase, "running");
+});
+
+test("no answer from the server outranks everything, with or without an earlier status", () => {
+  assert.equal(describeMission(facts({ hasStatus: false, serverDown: true })).phase, "offline");
+  const stale = describeMission(facts({ serverDown: true, goalStatus: "COMPLETED" }));
+  assert.equal(stale.phase, "offline");
+  assert.match(stale.headline, /may be stale/);
+  assert.equal(stale.primary, null, "no control on a state that cannot be acted on");
+  assert.equal(describeMission(facts({ hasStatus: false })).phase, "loading");
+});
+
+test("a status with no goal asks for one rather than reading as running", () => {
+  const s = describeMission(facts({ goalStatus: "" }));
+  assert.equal(s.phase, "no-goal");
+  assert.equal(s.primary?.action, "designer");
+});
+
+test("factsFromStatus reads the payload: human excluded, blocking and advisory decisions split, parked from either field", () => {
+  const f = factsFromStatus(
+    {
+      goal: { status: "ACTIVE" },
+      mode: "parked",
+      agents: [
+        { id: "human", lifecycle: "WORKING" },
+        { id: "dev", lifecycle: "WORKING" },
+        { id: "qa", lifecycle: "WAITING" },
+        { id: "pm", lifecycle: "IDLE" },
+      ],
+      openEscalations: [{ id: "a" }, { id: "b", advisory: true }],
+      startupActivateCount: 0,
+    },
+    { runningSteps: 2, hasHistory: true },
+  );
+  assert.deepEqual(
+    { w: f.working, q: f.waiting, b: f.blockingDecisions, a: f.advisoryDecisions, p: f.parked, s: f.startupSeats, r: f.runningSteps },
+    { w: 1, q: 1, b: 1, a: 1, p: true, s: 0, r: 2 },
+  );
+  assert.equal(factsFromStatus({ goal: { status: "ACTIVE" }, uiOnly: true }).parked, true);
+  assert.equal(factsFromStatus(null).hasStatus, false);
+  assert.equal(factsFromStatus({ goal: {} }).startupSeats, null, "a server that predates the field");
+});
+
+test("the tab title leads with the count of decisions and says what is true of the mission", () => {
+  assert.equal(documentTitle({ phaseLabel: "Needs you", decisions: 2, project: "Payments" }), "(2) Needs you · Payments — Curule");
+  assert.equal(documentTitle({ phaseLabel: "Running", decisions: 0, project: "Payments" }), "Running · Payments — Curule");
+  assert.equal(documentTitle({ phaseLabel: null, decisions: 0, project: null }), "Curule");
+  assert.equal(documentTitle({ phaseLabel: null, decisions: 1, project: null }), "(1) Curule");
+});

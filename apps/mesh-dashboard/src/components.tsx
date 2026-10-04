@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { ago, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSeverity, EventSummary } from "./events";
+import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
 
 /**
@@ -258,14 +259,32 @@ export function AgentAvatar({ id, color, size }: { id: string; color?: string; s
  *  · button.ghost (103) · .banner-act (469) · linklike (designer.css:189).
  *  `danger` only has rules paired with soft/small (131, 453), so the type
  *  forbids it elsewhere rather than silently rendering an inert class. */
-type BtnBase = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">;
+type BtnBase = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & { icon?: IconName };
 type BtnProps =
   | (BtnBase & { variant: "soft" | "small"; danger?: boolean; extra?: string })
   | (BtnBase & { variant: "primary" | "ghost" | "linklike" | "banner-act"; danger?: never; extra?: string });
 
-export function Button({ variant, danger, extra, type, ...rest }: BtnProps): React.JSX.Element {
+/** `icon` draws a leading glyph from the console's icon set; the label still carries the name, so the icon is decoration. */
+export function Button({ variant, danger, extra, type, icon, children, ...rest }: BtnProps): React.JSX.Element {
   const cls = `${variant}${danger ? " danger" : ""}${extra ? ` ${extra}` : ""}`;
-  return <button type={type ?? "button"} className={cls} {...rest} />;
+  return (
+    <button type={type ?? "button"} className={cls} {...rest}>
+      {icon ? <Icon name={icon} size={variant === "small" || variant === "banner-act" ? 14 : 16} /> : null}
+      {children}
+    </button>
+  );
+}
+
+/** A square, icon-only button. The icon is decoration and `label` is the name, so the control is announced for what it
+ *  does. `pressed` is for a toggle (theme). 36px square: a full pointer target where a labelled button would not fit. */
+export function IconButton({ icon, label, pressed, onClick, id, title }: {
+  icon: IconName; label: string; pressed?: boolean; onClick: () => void; id?: string; title?: string;
+}): React.JSX.Element {
+  return (
+    <button type="button" id={id} className="icon-btn" aria-label={label} title={title ?? label} aria-pressed={pressed} onClick={onClick}>
+      <Icon name={icon} size={18} />
+    </button>
+  );
 }
 
 /** Menu button, for a bar that has run out of width. The topbar carries four
@@ -278,10 +297,19 @@ export function Button({ variant, danger, extra, type, ...rest }: BtnProps): Rea
  *  data rather than children on purpose: that is what keeps role="menuitem",
  *  the arrow keys and the focus return correct no matter who calls it.
  *  Follows the ARIA menu-button pattern (styles.css .menu-wrap). */
-export type MenuItem = { id?: string; label: ReactNode; title?: string; danger?: boolean; onClick: () => void };
+export type MenuItem = {
+  id?: string; label: ReactNode; title?: string; danger?: boolean; onClick: () => void;
+  /** A leading glyph. The label still names the action. */
+  icon?: IconName;
+  /** Draw a divider above this row: a destructive action is set apart from the ordinary ones. */
+  separated?: boolean;
+};
 
-export function Menu({ id, label, title, items, align = "right" }: {
+export function Menu({ id, label, title, items, align = "right", placement = "bottom", extra }: {
   id?: string; label: ReactNode; title?: string; items: MenuItem[]; align?: "left" | "right";
+  /** Which side of the trigger the panel opens on. A trigger at the foot of the screen opens upward. */
+  placement?: "bottom" | "top";
+  extra?: string;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -330,16 +358,19 @@ export function Menu({ id, label, title, items, align = "right" }: {
 
   return (
     <div className="menu-wrap" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
-      <button ref={btn} id={id} type="button" className="soft menu-btn" title={title} aria-label={title}
+      <button ref={btn} id={id} type="button" className={`soft menu-btn${extra ? ` ${extra}` : ""}`} title={title} aria-label={title}
         aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>{label}</button>
       {open ? (
-        <div className={`menu-panel ${align}`} role="menu">
+        <div className={`menu-panel ${align} ${placement}`} role="menu">
           {items.map((it, i) => (
             /* Focus goes back to the trigger before the action runs, so a item
                that opens a drawer records the trigger as its return target. */
             <button key={it.id ?? i} id={it.id} type="button" role="menuitem"
-              className={`menu-item${it.danger ? " danger" : ""}`} title={it.title}
-              onClick={() => { close(true); it.onClick(); }}>{it.label}</button>
+              className={`menu-item${it.danger ? " danger" : ""}${it.separated ? " separated" : ""}`} title={it.title}
+              onClick={() => { close(true); it.onClick(); }}>
+              {it.icon ? <Icon name={it.icon} /> : null}
+              {it.label}
+            </button>
           ))}
         </div>
       ) : null}
@@ -469,11 +500,65 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
  *  mesh from a dead one. `.empty` (styles.css:221) is the shared shell. */
 export function ErrorState({ what, detail, onRetry }: { what: string; detail?: string; onRetry?: () => void }): React.JSX.Element {
   return (
-    <div className="empty" role="alert">
-      <div className="big">⚠</div>
-      <div>could not load {what}</div>
-      <div className="muted">{detail ?? "the mesh server did not answer — it may be restarting."}</div>
-      {onRetry ? <Button variant="small" onClick={onRetry}>try again</Button> : null}
+    <div className="empty bad" role="alert">
+      <span className="empty-icon"><Icon name="alert" size={22} /></span>
+      <b className="empty-title">Could not load {what}</b>
+      <p className="empty-body">{detail ?? "The mesh server did not answer. It may be restarting."}</p>
+      {onRetry ? <Button variant="small" icon="refresh" onClick={onRetry}>Try again</Button> : null}
+    </div>
+  );
+}
+
+/**
+ * The one empty state. It names what is missing and, when there is one, offers the next move, instead of announcing absence.
+ * `tone="bad"` is for a state that is a fault (ErrorState), not for a list that is simply empty.
+ */
+export function EmptyState({ icon, title, children, action, tone }: {
+  icon?: IconName; title: ReactNode; children?: ReactNode; action?: ReactNode; tone?: "bad";
+}): React.JSX.Element {
+  return (
+    <div className={`empty${tone ? ` ${tone}` : ""}`}>
+      {icon ? <span className="empty-icon"><Icon name={icon} size={22} /></span> : null}
+      <b className="empty-title">{title}</b>
+      {children ? <p className="empty-body">{children}</p> : null}
+      {action ? <div className="empty-acts">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * The title row every view opens with: the name of the page, an optional status chip beside it, the page's actions at the
+ * end, and one line under it saying what the page is for. A page that explains itself in a paragraph has the wrong title.
+ */
+export function PageHeader({ title, status, lede, actions }: { title: ReactNode; status?: ReactNode; lede?: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return (
+    <header className="page-head">
+      <div className="view-title">
+        <h2>{title}</h2>
+        {status}
+        {actions ? <div className="page-actions">{actions}</div> : null}
+      </div>
+      {lede ? <p className="view-sub">{lede}</p> : null}
+    </header>
+  );
+}
+
+export type BannerTone = "ok" | "warn" | "bad" | "info";
+const BANNER_ICON: Record<BannerTone, IconName> = { ok: "check", warn: "alert", bad: "alert", info: "info" };
+
+/**
+ * One notice, in one shape: an icon, a sentence in bold that says what is true, optional detail in the same colour as body
+ * text, and the actions that answer it at the end. Tone is the only decision a caller makes; `bad` is announced to
+ * assistive technology at once (role="alert"), the rest politely (role="status").
+ */
+export function Banner({ tone = "info", icon, title, children, actions, id, className }: {
+  tone?: BannerTone; icon?: IconName; title: ReactNode; children?: ReactNode; actions?: ReactNode; id?: string; className?: string;
+}): React.JSX.Element {
+  return (
+    <div className={`banner has-icon ${tone}${className ? ` ${className}` : ""}`} role={tone === "bad" ? "alert" : "status"} id={id}>
+      <span className="banner-icon"><Icon name={icon ?? BANNER_ICON[tone]} /></span>
+      <div className="banner-body"><b>{title}</b>{children ? <span className="banner-text"> {children}</span> : null}</div>
+      {actions ? <div className="banner-acts">{actions}</div> : null}
     </div>
   );
 }

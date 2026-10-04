@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, useDismissable } from "./components";
+import { Icon } from "./icons";
 import { useProjects, type ProjectSummary } from "./projects";
 import { api, post } from "./api";
 import { hashFor } from "./route";
@@ -151,14 +152,14 @@ function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
         {dir?.parent ? (
           <li>
             <button type="button" className="proj-picker-row" onClick={() => void browse(dir.parent)}>
-              <span className="proj-picker-ico">↰</span>..
+              <span className="proj-picker-ico"><Icon name="undo" /></span>..
             </button>
           </li>
         ) : null}
         {(dir?.entries ?? []).map((e) => (
           <li key={e.path}>
             <button type="button" className={`proj-picker-row${e.hasMesh ? " has-mesh" : ""}`} onClick={() => void browse(e.path)}>
-              <span className="proj-picker-ico">{e.hasMesh ? "◧" : "▸"}</span>
+              <span className="proj-picker-ico"><Icon name={e.hasMesh ? "overview" : "folder"} /></span>
               {e.name}
               {e.hasMesh ? <em>mesh.yaml</em> : null}
             </button>
@@ -271,7 +272,7 @@ function Tab({ project, active, parked, onPick, onClose, onDragStart, onDrop, on
           {rss ? <span className="ptab-rss">{rss}</span> : null}
         </span>
       </button>
-      <button type="button" className="ptab-x" aria-label={`Close ${project.name}`} title="Close this project (its files are untouched)" onClick={onClose}>×</button>
+      <button type="button" className="ptab-x" aria-label={`Close ${project.name}`} title="Close this project (its files are untouched)" onClick={onClose}><Icon name="x" size={14} /></button>
     </div>
   );
 }
@@ -396,7 +397,7 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
             onMove={(delta) => commit(moveTab(orderedIds, p.id, delta))}
           />
         ))}
-        <button type="button" className="ptab-add" title="Add a project folder" aria-label="Add a project" onClick={() => setAdding(true)}>+</button>
+        <button type="button" className="ptab-add" title="Add a project folder" aria-label="Add a project" onClick={() => setAdding(true)}><Icon name="plus" size={16} /></button>
         {!ordered.length ? <span className="muted ptabs-empty">No projects yet — add the folder that holds a mesh.yaml.</span> : null}
       </nav>
       {adding ? (

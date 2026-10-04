@@ -1,27 +1,53 @@
-/* Global designer-assistant entry point: a floating button on every view that
+/* Global designer-assistant entry point: a button in the top bar on every view that
  * opens a non-modal slide-over. Shell owns `open` so the command palette can
  * open it too; the transcript lives in chatStore, so closing the panel or
- * switching views never loses the conversation. */
+ * switching views never loses the conversation.
+ *
+ * It used to be a floating button over the bottom-right corner of every page, where it covered the last row of whatever
+ * was underneath and fought the toasts and the Designer's save bar for the same 150 pixels. In the bar it is where
+ * the other actions are. */
 
 import { useCallback, useEffect, useRef } from "react";
 import ChatPanel from "./panels/ChatPanel";
 import { markSeen, useChatSelector } from "./chatStore";
+import { Icon } from "../icons";
 // Imported here rather than in the lazy Designer view: ChatDock is eager (it
 // renders on every shell view), so the shared ms-* styles must ride the eager
-// chunk or the floating button is unstyled until Designer first loads.
+// chunk or the button and panel are unstyled until Designer first loads.
 import "./designer.css";
 
-export default function ChatDock({ open, onOpen, onClose }: {
-  open: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-}): React.JSX.Element {
+/** The id the panel hands focus back to when it closes. */
+export const DOCK_BUTTON_ID = "btn-designer";
+
+export function ChatDockButton({ open, onToggle }: { open: boolean; onToggle: () => void }): React.JSX.Element {
   const busy = useChatSelector((s) => s.busy);
   const entryCount = useChatSelector((s) => s.entries.length);
   const seen = useChatSelector((s) => s.seen);
   const lastRole = useChatSelector((s) => s.entries[s.entries.length - 1]?.role);
+  const unread = !open && !busy && entryCount > seen && lastRole === "assistant";
+  return (
+    <button
+      id={DOCK_BUTTON_ID}
+      type="button"
+      className={`soft ms-dock-btn${busy ? " busy" : ""}`}
+      aria-expanded={open}
+      aria-controls="ms-dock"
+      aria-label={open ? "Close the designer assistant" : busy ? "Ask the designer (it is thinking)" : "Ask the designer"}
+      title={busy ? "The designer is thinking…" : "Ask the designer: describe a mesh or a change"}
+      onClick={onToggle}
+    >
+      <span className="ms-dock-spark"><Icon name="spark" /></span>
+      <span className="act-lbl">{busy ? "Thinking…" : "Ask designer"}</span>
+      {unread ? <span className="ms-dock-unread" role="status" aria-label="new reply from the designer" /> : null}
+    </button>
+  );
+}
+
+export default function ChatDock({ open, onClose }: {
+  open: boolean;
+  onClose: () => void;
+}): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const fabRef = useRef<HTMLButtonElement | null>(null);
   const wasOpen = useRef(false);
 
   useEffect(() => {
@@ -29,7 +55,8 @@ export default function ChatDock({ open, onOpen, onClose }: {
       markSeen();
       panelRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
     } else if (wasOpen.current) {
-      fabRef.current?.focus();
+      // On a phone the button lives in the overflow menu, so its trigger takes the focus instead.
+      (document.getElementById(DOCK_BUTTON_ID) ?? document.getElementById("btn-more"))?.focus();
     }
     wasOpen.current = open;
   }, [open]);
@@ -54,34 +81,15 @@ export default function ChatDock({ open, onOpen, onClose }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
-  const unread = !open && !busy && entryCount > seen && lastRole === "assistant";
-
+  if (!open) return null;
   return (
-    <>
-      <button
-        ref={fabRef}
-        type="button"
-        className={`ms-dock-fab${busy ? " busy" : ""}`}
-        aria-expanded={open}
-        aria-controls="ms-dock"
-        aria-label={open ? "close the designer assistant" : "ask the designer"}
-        title={busy ? "The designer is thinking…" : "Ask the designer — describe a mesh or a change"}
-        onClick={() => (open ? onClose() : onOpen())}
-      >
-        <span className="ms-dock-spark" aria-hidden="true">✦</span>
-        {busy ? "thinking…" : "ask designer"}
-        {unread ? <span className="ms-dock-unread" role="status" aria-label="new reply from the designer" /> : null}
-      </button>
-      {open ? (
-        <div id="ms-dock" className="ms-dock" role="dialog" aria-label="designer assistant" ref={panelRef} tabIndex={-1}>
-          <div className="ms-dock-head">
-            <b>Designer assistant</b>
-            <span className="muted">whole-config proposals · applied to the draft</span>
-            <button type="button" className="ms-slide-close" aria-label="close designer assistant" onClick={onClose}>×</button>
-          </div>
-          <ChatPanel />
-        </div>
-      ) : null}
-    </>
+    <div id="ms-dock" className="ms-dock" role="dialog" aria-label="designer assistant" ref={panelRef} tabIndex={-1}>
+      <div className="ms-dock-head">
+        <b>Designer assistant</b>
+        <span className="muted">whole-config proposals · applied to the draft</span>
+        <button type="button" className="ms-slide-close" aria-label="close designer assistant" onClick={onClose}><Icon name="x" /></button>
+      </div>
+      <ChatPanel />
+    </div>
   );
 }

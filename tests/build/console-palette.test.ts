@@ -127,10 +127,20 @@ test("the console shares its neutrals with the brand: paper, panel, ink and line
   assert.ok(contrast(colour(light, "--accent"), toRgb(brand.light["--curule-blue"]!)) < 1.3, "close to the brand blue");
 });
 
+/** Every stylesheet under the console's source, so a new one is covered the day it is added. */
+function stylesheets(dir: string): string[] {
+  return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+    const rel = `${dir}/${e.name}`;
+    return e.isDirectory() ? stylesheets(rel) : e.name.endsWith(".css") ? [rel] : [];
+  });
+}
+
 test("no colour literal appears in the console's stylesheets outside the two token blocks", () => {
-  for (const file of ["apps/mesh-dashboard/src/styles.css", "apps/mesh-dashboard/src/designer/designer.css"]) {
+  const files = stylesheets("apps/mesh-dashboard/src");
+  assert.ok(files.includes("apps/mesh-dashboard/src/styles.css") && files.length >= 2, "the sweep finds the stylesheets");
+  for (const file of files) {
     let text = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
-    if (file.endsWith("styles.css")) {
+    if (file.endsWith("/src/styles.css")) {
       for (const selector of [":root", '[data-theme="light"]']) text = text.replace(block(text, selector), "");
     }
     const literals = text.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
