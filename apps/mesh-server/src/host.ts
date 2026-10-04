@@ -42,7 +42,8 @@ import {
   type ProjectSupervisor,
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
-import { writeDefaultMeshYaml } from "../../../packages/config/src/index";
+import { findShippedRoot, writeDefaultMeshYaml } from "../../../packages/config/src/index";
+import { createFromTemplate, expandHome, outsideRootsReason, projectErrorReason, templatesView } from "./new-project";
 import type { GitMode } from "../../../packages/protocol/src/index";
 import {
   MultiplexHub,
@@ -156,6 +157,11 @@ function hostAuditTrail(line: string): void {
 export interface HostOptions {
   /** Where the licence comes from; defaults to the environment and `<home>/license.key`. Tests inject one. */
   licenses?: LicenseProvider;
+  /**
+   * The directory holding `examples/` and `roles/`, which the dashboard's welcome makes projects from. Found the way
+   * `curule init` finds it when omitted; `null` says this install ships none (a test, a stripped image).
+   */
+  shippedRoot?: string | null;
   /** Registry home; defaults to `MESH_HOME` or `~/.curule`. */
   home?: string;
   port?: number;
@@ -316,9 +322,12 @@ export function createHostServer(deps: {
   home?: string;
   /** Where the licence comes from. Defaults to the environment and `<home>/license.key`. Tests inject one. */
   licenses?: LicenseProvider;
+  /** See `HostOptions.shippedRoot`. */
+  shippedRoot?: string | null;
 }): HostServer {
   const { registry, tree, supervisor, projects } = deps;
   const startedAt = deps.startedAt ?? Date.now();
+  const shippedRoot = deps.shippedRoot === null ? undefined : deps.shippedRoot ?? findShippedRoot();
   // `let`, because `PUT /api/host/config` rebinds it. Every limit check reads
   // through this binding at call time rather than capturing the numbers, so a
   // rebind is seen by the very next heartbeat with no restart involved.
@@ -853,9 +862,10 @@ export function createHostServer(deps: {
       // walks them.
       if (parts[0] === "api" && parts[1] === "browse" && parts.length === 2 && req.method === "GET") {
         const roots = projectRoots();
-        const asked = u.searchParams.get("path");
+        // `~` is the host user's home here as it is where a folder is added: the field that asks accepts both.
+        const asked = u.searchParams.get("path") === null ? null : expandHome(u.searchParams.get("path")!.trim());
         if (roots.length > 0 && asked && asked.trim() && !insideRoots(realLocation(asked.trim()), roots)) {
-          return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root" });
+          return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root", reason: outsideRootsReason(roots) });
         }
         return json(200, browseDir(asked, roots));
       }
@@ -960,6 +970,13 @@ export function createHostServer(deps: {
         return json(405, { error: `no route: ${req.method} ${u.pathname}` });
       }
 
+      // What a new project can be made from, for the dashboard's welcome: the default team and the shipped examples,
+      // each with what it needs and the folder it would be written to (new-project.ts).
+      if (parts[0] === "api" && parts[1] === "templates" && parts.length === 2 && req.method === "GET") {
+        registry.reload();
+        return json(200, templatesView({ registry, shippedRoot }));
+      }
+
       // ------------------------------------------------------ registry routes
       if (parts[0] === "api" && parts[1] === "projects") {
         if (parts.length === 2 && req.method === "GET") {
@@ -972,14 +989,23 @@ export function createHostServer(deps: {
         }
         if (parts.length === 2 && req.method === "POST") {
           const b = await body();
-          const root = typeof b.root === "string" ? b.root.trim() : "";
-          if (!root) return json(400, { error: "body must carry { root }" });
+          // A starting point, not a folder that is already a project: the shipped demo, or the default team, written to
+          // the folder the person named. Same safety as the add below; see new-project.ts for the rules.
+          if (b.template !== undefined) {
+            registry.reload();
+            const made = await createFromTemplate({ template: b.template, root: b.root }, { registry, shippedRoot });
+            if (!made.ok) return json(made.status, { error: made.reason, code: made.code, reason: made.reason });
+            return json(201, { ...summarize(made.ref), scaffolded: true, template: made.template });
+          }
+          // `~` and `~/x` mean the host user's home, which is what anyone typing a path into the dashboard means by them.
+          const root = typeof b.root === "string" ? expandHome(b.root.trim()) : "";
+          if (!root) return json(400, { error: "body must carry { root }", code: "no_root", reason: "Give the folder to add." });
           // On a server, projects live under one directory and nothing else is the host's to open,
           // scaffold into, or read a parse error from. Judged by where the folder REALLY is, so a
           // link inside the directory that points out of it does not count as inside.
           const roots = projectRoots();
           if (roots.length > 0 && !insideRoots(realLocation(root), roots)) {
-            return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root" });
+            return json(403, { error: outsideRootsMessage(roots), code: "outside_projects_root", reason: outsideRootsReason(roots) });
           }
           // Scaffolding is opt-in. A plain add to a mesh-less folder still 400s
           // ("missing"), because writing files into a directory the operator
@@ -1100,7 +1126,7 @@ export function createHostServer(deps: {
       if (err instanceof PayloadTooLargeError) return respondTooLarge(res, err);
       if (err instanceof ProjectError) {
         const code = err.code === "duplicate_id" ? 409 : err.code === "unknown_project" ? 404 : 400;
-        return json(code, { error: err.message, code: err.code, detail: err.detail });
+        return json(code, { error: err.message, code: err.code, detail: err.detail, reason: projectErrorReason(err.message, err.detail) });
       }
       if (res.headersSent) {
         res.destroy();
@@ -1537,6 +1563,7 @@ export async function startHostServer(options: HostOptions = {}): Promise<HostHa
   // Only when set: `saveHostConfig` falls back to `meshHome()`, and passing an
   // explicit `undefined` would defeat that default.
   if (options.home) hostDeps.home = options.home;
+  if (options.shippedRoot !== undefined) hostDeps.shippedRoot = options.shippedRoot;
   const server = createHostServer(hostDeps);
   hosted = server;
   const port = options.port ?? 7420;

@@ -7,10 +7,18 @@
  * this file is pulled in through tsconfig `files` rather than `include`.
  */
 
-export const VIEWS = ["overview", "steps", "agents", "graph", "events", "artifacts", "cost", "product", "escalations", "gates", "designer", "hostsettings"] as const;
+export const VIEWS = ["overview", "steps", "agents", "graph", "events", "artifacts", "cost", "product", "escalations", "gates", "designer", "hostsettings", "projects"] as const;
 export type View = (typeof VIEWS)[number];
 
 export const DEFAULT_VIEW: View = "overview";
+
+/**
+ * Pages that belong to the host, not to a project: every project at once. Their address never names one
+ * (`#/projects`), so a link to one is the same link whichever project happens to be in front, and it is not
+ * a "legacy bare link" that has to be rewritten onto the active project.
+ */
+export const HOST_VIEWS: readonly View[] = ["projects"];
+export const isHostView = (view: View): boolean => HOST_VIEWS.includes(view);
 
 export interface RouteDetail {
   /**
@@ -43,6 +51,8 @@ const isView = (v: string | undefined): v is View => !!v && (VIEWS as readonly s
 function parseTail(segments: string[]): { view: View; detail?: RouteDetail } {
   const [v, kind, ...rest] = segments;
   const view = isView(v) ? v : DEFAULT_VIEW;
+  // A host page has nothing to open on top of it.
+  if (isHostView(view)) return { view };
   const id = rest.join("/");
   if ((kind === "step" || kind === "agent" || kind === "event") && id) {
     return { view, detail: { kind, id: safeDecode(id) } };
@@ -71,6 +81,8 @@ export function parseHash(hash: string): HashRoute {
 }
 
 export function hashFor(projectId: string | null | undefined, view: View, detail?: RouteDetail): string {
+  // A host page has no project and no detail: asking for one with a project in hand still gives `#/projects`.
+  if (isHostView(view)) return `#/${view}`;
   const tail = detail ? `${view}/${detail.kind}/${encodeURIComponent(detail.id)}` : view;
   return projectId ? `#/p/${encodeURIComponent(projectId)}/${tail}` : `#/${tail}`;
 }
@@ -78,10 +90,11 @@ export function hashFor(projectId: string | null | undefined, view: View, detail
 /**
  * True when the hash names no project and therefore has to be rewritten onto
  * the active one. Returning the already-parsed route keeps the caller from
- * parsing twice just to decide.
+ * parsing twice just to decide. A host page names none on purpose, so it is
+ * left as it is.
  */
 export function needsProjectRedirect(route: HashRoute): boolean {
-  return route.projectId === null;
+  return route.projectId === null && !isHostView(route.view);
 }
 
 /**

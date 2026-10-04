@@ -56,6 +56,12 @@ const ICONS = {
   // Status
   alert: (<><path d="M10 3.2l7.3 12.7H2.7z" /><path d="M10 8.4v3.4" /><circle cx="10" cy="14" r=".7" {...SOLID} /></>),
   info: (<><circle cx="10" cy="10" r="7.2" /><path d="M10 9.2v4.6" /><circle cx="10" cy="6.4" r=".7" {...SOLID} /></>),
+  // Sign-in, the project strip and the folder picker. A solid dot runs and a ring is closed: shape says it, not only colour.
+  eye: (<><path d="M2.4 10S5.2 4.8 10 4.8 17.6 10 17.6 10 14.8 15.2 10 15.2 2.4 10 2.4 10z" /><circle cx="10" cy="10" r="2.3" /></>),
+  "eye-off": (<><path d="M7.6 5.2A7.4 7.4 0 0 1 10 4.8c4.8 0 7.6 5.2 7.6 5.2a12.6 12.6 0 0 1-2.3 3M5.1 7C3.4 8.3 2.4 10 2.4 10s2.8 5.2 7.6 5.2c1.1 0 2.1-.3 3-.7" /><path d="M8.4 8.4a2.3 2.3 0 0 0 3.2 3.2" /><path d="M3.8 3.8l12.4 12.4" /></>),
+  dot: (<circle cx="10" cy="10" r="5" {...SOLID} />),
+  ring: (<circle cx="10" cy="10" r="5" />),
+  "arrow-up": (<path d="M10 16V4.5M5 9.2l5-4.7 5 4.7" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

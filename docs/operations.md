@@ -288,6 +288,8 @@ A project appears by its id: edit those in the text before pasting if they are s
 | **421** `host_not_allowed` | the `Host` header is not one the server answers to | add the name to `MESH_ALLOWED_HOSTS` |
 | **403** `cross_origin` | a state-changing request from a page that is not the server's own | add that origin to `MESH_ALLOWED_ORIGINS` if it is yours |
 | **403** `outside_projects_root` | a folder outside `MESH_PROJECTS_ROOT` | put the project under it |
+| **409** `exists` | a new project was asked for in a folder that already holds a `mesh.yaml`; nothing was written | register the folder as it is: *Add an existing folder*, or `curule project add` |
+| **409** `duplicate_id` | a registered project already has this id (the folder's name, or `project.id` in its `mesh.yaml`) | choose a folder with a different name |
 | **403** `license_limit` / `license_feature` | `enforce` and the plan lacks it | the message names the plan that has it |
 | **401** | no token, a wrong one, or an ended session | sign in again; repeated wrong tokens are slowed down |
 | **413** | a request body over `MESH_MAX_BODY_BYTES` | send less, or raise it |

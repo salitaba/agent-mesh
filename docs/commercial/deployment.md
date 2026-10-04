@@ -25,7 +25,7 @@ docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
 ```
 
 Open <http://127.0.0.1:7420>, paste the token (it is the `MESH_API_TOKEN` you passed; print it first if you let the
-shell generate it), open the **demo-stub** project and press **Start mission**. A scripted team of seven agents (a
+shell generate it), open the **demo-stub** project, press **Start mission** and confirm. A scripted team of seven agents (a
 product manager, architect, tech lead, developer, QA, security and an explorer) takes a payment-API mission from
 requirements to a merged, reviewed, verified result in a few seconds, and QA blocks it once so you can watch the
 conflict handling. It makes no model calls and needs no credentials; it exists so you can see the whole flow.
@@ -45,8 +45,11 @@ docker compose up -d
 no extra capabilities and `no-new-privileges`, keeps everything that must survive a restart on one volume
 (`/data`), and gives the host 60 seconds to drain its projects when it stops.
 
-**Your first project.** From the dashboard, *Add a project folder* browses `/data/projects` (the only place the
-server will register projects from) and can scaffold a new one. From a shell:
+**Your first project.** On a host with no project the dashboard opens on a welcome page with three ways to start (the
+same three are behind *New project* in the project strip afterwards): *Try the demo*, *Create a new mesh* (the default
+team, in a folder you choose) and *Add an existing folder*. Each says what it needs, what it costs and which files it
+writes. The folder field and the folder picker only accept paths under `/data/projects`, the one place the server will
+register projects from. From a shell:
 
 ```bash
 docker compose exec mesh curule init /data/projects/hello                     # the default team, on the Claude runtime

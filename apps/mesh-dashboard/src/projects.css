@@ -1,0 +1,162 @@
+/* Projects: the strip across the top, the folder picker, and the Projects page.
+   Tokens only (tests/build/console-palette.test.ts sweeps this file for a colour literal); sizes from the ramp. */
+
+/* A folder's path is read from its end: the name is what tells two projects apart, and the start is the part every
+   path shares. The container is right-to-left only so the ellipsis lands on the left; the <bdi> inside keeps the text
+   itself reading left to right. Always paired with a title that holds the whole path. */
+.path-start { display: block; direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path-start > bdi { direction: ltr; unicode-bidi: isolate; }
+
+/* The scrim behind a dialog. The second one sits above the first, for a picker opened from inside the New project dialog. */
+.pj-scrim { position: fixed; inset: 0; z-index: calc(var(--z-picker) - 1); background: var(--scrim); }
+.pj-scrim-top { z-index: var(--z-picker); }
+
+/* ---------------------------------------------------------------------------------------------- the project strip
+   Host-level chrome: one row above everything, spanning both grid columns, so it survives every project switch and never
+   looks like part of the mission it happens to be showing. The row only exists when a registry does (`#app.with-tabs`), so
+   single-mesh `curule serve` keeps its 2-row layout. It is `auto` tall: 38px of tabs, and under them a notice when the
+   active project is broken or the host is not answering, which pushes the console down instead of covering it. */
+#app.with-tabs { grid-template-rows: auto auto 1fr; grid-template-areas: "tabs tabs" "side top" "side main"; }
+#ptabs-bar { grid-area: tabs; display: flex; flex-direction: column; min-width: 0; background: var(--bg-2); box-shadow: inset 0 -1px 0 var(--line); }
+.ptabs-nav { display: flex; align-items: stretch; height: 38px; min-width: 0; }
+
+/* The way to every project at once. It carries the count of the ones that need a person, so a crash in a tab you are not
+   looking at still shows from any page. */
+.pj-home { flex: none; display: inline-flex; align-items: center; gap: var(--s1-5); margin: 0; padding: 0 var(--s3); background: none; border: 0; border-right: 1px solid var(--line); color: var(--text-dim); font: 500 14px var(--sans); cursor: pointer; }
+.pj-home:hover { color: var(--text); background: var(--sunken); }
+.pj-home[aria-current="page"] { color: var(--text); background: var(--bg); box-shadow: inset 0 -2px 0 var(--accent); }
+.pj-home:focus-visible { outline-offset: -2px; }
+.pj-count { min-width: 18px; padding: 0 var(--s1-5); border-radius: 9px; background: var(--bad); color: var(--text-on-hot); font: 700 11px/18px var(--sans); text-align: center; }
+
+/* Tabs scroll sideways when there are more than fit; the edges fade where there is more to see. The scrollbar is hidden
+   (it would take a third of a 38px strip): the fades say so, the wheel and Tab move it, and the Projects page lists them all. */
+.ptabs-scroll { position: relative; flex: 0 1 auto; min-width: 0; display: flex; }
+.ptabs-scroll::before, .ptabs-scroll::after { content: ""; position: absolute; top: 0; bottom: 0; width: 28px; z-index: var(--z-raise); pointer-events: none; opacity: 0; transition: opacity .12s; }
+.ptabs-scroll::before { left: 0; background: linear-gradient(to right, var(--bg-2), transparent); }
+.ptabs-scroll::after { right: 0; background: linear-gradient(to left, var(--bg-2), transparent); }
+.ptabs-scroll[data-fade-start="true"]::before, .ptabs-scroll[data-fade-end="true"]::after { opacity: 1; }
+.ptabs { flex: 0 1 auto; display: flex; align-items: stretch; gap: var(--s0); margin: 0; padding: 0 var(--s2); list-style: none; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptabs-empty { align-self: center; padding-left: var(--s1-5); font-size: 13px; white-space: nowrap; }
+
+/* scroll-margin: a tab brought into view stops short of the fade at the edge, not under it. */
+.ptab { flex: none; display: flex; align-items: center; min-width: 0; max-width: 240px; border-radius: var(--r-sm) var(--r-sm) 0 0; border: 1px solid transparent; border-bottom: 0; position: relative; scroll-margin-inline: 32px; }
+.ptab.on { background: var(--bg); border-color: var(--line); }
+/* The active tab reads as the page it opens: the seam under it is erased. */
+.ptab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--bg); }
+.ptab.drop { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ptab-main { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; height: 100%; padding: 0 var(--s1) 0 var(--s2-5); background: none; border: 0; color: var(--text-dim); font: 14px var(--sans); cursor: pointer; }
+.ptab.on .ptab-main { color: var(--text); }
+/* The ring is drawn inside: this strip is overflow-y: hidden, which would clip an outline drawn around it. */
+.ptab-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.ptab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Shape, then word, then colour: a solid dot runs, a ring is closed, a triangle is broken, a padlock is locked, a pair of
+   bars is parked, so the state is readable without telling hues apart. The word goes first at narrow widths; the shape stays. */
+.ptab-ico { flex: none; display: inline-grid; place-items: center; color: var(--muted); }
+.ptab[data-tone="ok"] .ptab-ico { color: var(--ok); }
+.ptab[data-tone="warn"] .ptab-ico { color: var(--warn); }
+.ptab[data-tone="bad"] .ptab-ico { color: var(--bad); }
+.ptab[data-state="starting"] .ptab-ico .icon { animation: pj-spin 1.1s linear infinite; }
+@keyframes pj-spin { to { transform: rotate(360deg); } }
+.ptab-meta { display: flex; align-items: baseline; gap: var(--s1-5); flex: none; }
+.ptab-state { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ptab[data-tone="bad"] .ptab-state { color: var(--bad); }
+.ptab[data-tone="warn"] .ptab-state { color: var(--warn); }
+.ptab-rss { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ptab-x { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 26px; padding: var(--s0) var(--s1-5); background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
+.ptab-x:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.ptab-add { flex: none; align-self: center; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; min-height: 26px; margin: 0 var(--s1-5); padding: 0 var(--s2); background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
+.ptab-add:hover { color: var(--accent-2); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* A notice under the strip: the active project crashed, or the host is not answering. In the flow, so it moves the console
+   down rather than lying over its top bar. */
+.ptabs-notice { margin: 0; border-radius: 0; border-width: 1px 0 0; }
+.ptabs-notice .banner-body { flex-basis: 320px; }
+/* The host's words behind a disclosure. The text is shown whole once opened: a box that scrolls inside a card is a second
+   place to get lost in, and it would need a tab stop of its own. */
+.pj-why { font-size: 13px; }
+.pj-why summary { display: inline-flex; align-items: center; min-height: 24px; cursor: pointer; color: var(--accent-2); }
+.pj-why pre { margin: var(--s1-5) 0 0; padding: var(--s2) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 12px/1.5 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 800px) {
+  /* The strip stays, the words go: a shape and a name is what a narrow screen can carry without a second row. */
+  #app.with-tabs { grid-template-columns: 0 1fr; }
+  .ptab { max-width: 168px; }
+  .ptab-rss { display: none; }
+  .ptab-state { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
+@media (max-width: 620px) {
+  .pj-home .pj-home-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .pj-home { padding: 0 var(--s2-5); }
+}
+
+/* ---------------------------------------------------------------------------------------------- the folder picker */
+.proj-picker { position: fixed; z-index: calc(var(--z-picker) + 1); top: 12vh; left: 50%; transform: translateX(-50%); width: min(560px, 92vw); display: flex; flex-direction: column; max-height: 76vh; background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow); }
+.proj-picker-head { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3-5) var(--s4) var(--s2); }
+.proj-picker-head h2 { margin: 0; font: 600 16px/1.3 var(--sans); color: var(--text); }
+.proj-picker-head p { margin: 0; font-size: 13px; line-height: 1.5; }
+.proj-picker-path { display: flex; gap: var(--s2); padding: 0 var(--s4) var(--s2-5); }
+.proj-picker-path input { flex: 1; min-width: 0; }
+.proj-picker-hint { margin: 0; padding: 0 var(--s4) var(--s2); font-size: 13px; color: var(--text-dim); }
+.proj-picker-list { list-style: none; margin: 0; padding: var(--s1) var(--s2); overflow: auto; flex: 1 1 auto; min-height: 96px; border-top: 1px solid var(--line); }
+.proj-picker-row { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 36px; text-align: left; background: none; border: 0; color: var(--text); font: 14px var(--sans); padding: var(--s1-5) var(--s2); border-radius: var(--r-sm); cursor: pointer; }
+.proj-picker-row .icon { flex: none; color: var(--text-dim); }
+.proj-picker-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.proj-picker-row:focus-visible { outline-offset: -2px; }
+.proj-picker-row.up { color: var(--text-dim); }
+.proj-picker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-picker-row em { flex: none; margin-left: auto; padding: 1px var(--s2); border-radius: 999px; font: 600 11px var(--sans); font-style: normal; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.proj-picker-empty { padding: var(--s2); font-size: 14px; }
+.proj-picker-err { padding: var(--s1-5) var(--s4); font-size: 14px; color: var(--bad); }
+.proj-picker-foot { display: flex; align-items: center; gap: var(--s3); padding: var(--s2-5) var(--s4); border-top: 1px solid var(--line); }
+.proj-picker-here { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--s2); }
+.proj-picker-here .path-start { min-width: 0; font-size: 13px; color: var(--text-dim); }
+.proj-picker-here em { flex: none; padding: 1px var(--s2); border-radius: 999px; font: 600 11px var(--sans); font-style: normal; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.proj-picker-acts { display: flex; gap: var(--s2); flex: none; }
+@media (max-width: 560px) {
+  .proj-picker { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 88vh; border-radius: var(--r) var(--r) 0 0; border-bottom: 0; }
+  .proj-picker-foot { flex-direction: column; align-items: stretch; }
+  .proj-picker-acts { justify-content: flex-end; }
+}
+
+/* ---------------------------------------------------------------------------------------------- the Projects page */
+.pj-page { max-width: 1280px; }
+.pj-summary { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s6); margin: 0 0 var(--s4); padding: var(--s3) var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.pj-stat { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.pj-stat dt { order: 2; font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.pj-stat dd { order: 1; margin: 0; font: 600 18px/1.3 var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+.pj-stat dd small { font: 13px var(--sans); color: var(--muted); font-weight: 400; }
+.pj-stat.attn dd { color: var(--bad); }
+.pj-note { margin: 0 0 var(--s3); }
+.pj-group + .pj-group { margin-top: var(--s5); }
+.pj-group .group-h { margin: 0 var(--s0) var(--s2-5); }
+.pj-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: var(--s3); }
+.pj-card { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.pj-card[data-group="attention"] { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.pj-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2-5); min-width: 0; }
+.pj-name { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/1.35 var(--sans); color: var(--text); }
+.pj-chip { flex: none; display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s0) var(--s2-5) var(--s0) var(--s2); border-radius: 999px; font: 600 12px/1.5 var(--sans); color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 10%, transparent); }
+.pj-chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.pj-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.pj-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.pj-chip[data-state="starting"] .icon { animation: pj-spin 1.1s linear infinite; }
+.pj-path { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; color: var(--text-dim); }
+.pj-path .icon { flex: none; }
+.pj-path .path-start { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.pj-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s3); margin: 0; font-size: 14px; }
+.pj-facts dt { color: var(--muted); }
+.pj-facts dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.pj-facts dd small { color: var(--muted); font-size: 13px; }
+.pj-problem { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+/* Two groups: the actions that bring a project up or down, and the one that forgets it. On a card too narrow for both on one
+   line the second goes under the first, at the start of its line, not stranded at the far edge. */
+.pj-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: auto; padding-top: var(--s2); }
+.pj-acts-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.pj-skel { min-height: 168px; background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 88%, var(--bg))); }
+.pj-skel i { display: block; height: 12px; margin-bottom: var(--s2-5); border-radius: var(--r-sm); background: var(--sunken); }
+.pj-skel i:nth-child(1) { width: 45%; height: 16px; }
+.pj-skel i:nth-child(2) { width: 80%; }
+.pj-skel i:nth-child(3) { width: 60%; }
+@media (max-width: 560px) {
+  .pj-summary { gap: var(--s2-5) var(--s5); padding: var(--s3); }
+}

@@ -1447,108 +1447,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
 .ch-m, .ch-mm { color: var(--warn); } .ch-a, .ch-, .ch-\?\? { color: var(--ok); } .ch-d { color: var(--bad); }
 
-/* ---------- project tabs ---------- */
-/* Host-level chrome: one row above everything, spanning both grid columns, so
-   the strip survives every project switch and never looks like part of the
-   mission it happens to be showing. The row only exists when a registry does
-   (`#app.with-tabs`), so single-mesh `curule serve` keeps its 2-row layout. */
-#app.with-tabs {
-  /* `auto` for the header row for the same reason as the 2-row template above:
-     a fixed track pins #topbar's height regardless of what it holds, so a
-     wrapped header paints its second row over #view. The tab strip stays fixed
-     — it is a single row of 38px chrome that never wraps. */
-  grid-template-rows: 38px auto 1fr;
-  grid-template-areas: "tabs tabs" "side top" "side main";
-}
-#ptabs-bar { grid-area: tabs; display: flex; align-items: stretch; min-width: 0;
-  background: var(--bg-2); box-shadow: inset 0 -1px 0 var(--line); }
-/* overflow-x: auto alone computes overflow-y to auto, and the active tab's 1px
-   seam below its box was enough to grow a vertical scrollbar inside the 38px
-   strip (right next to the "+"). Pin the cross axis shut; it never scrolls. */
-.ptabs { display: flex; align-items: stretch; gap: var(--s0); padding: 0 var(--s2); min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
-.ptabs-empty { align-self: center; font-size: 13px; padding-left: var(--s1-5); white-space: nowrap; }
-.ptab { display: flex; align-items: center; min-width: 0; max-width: 260px; border-radius: var(--r-sm) var(--r-sm) 0 0;
-  border: 1px solid transparent; border-bottom: 0; position: relative; }
-.ptab.on { background: var(--bg); border-color: var(--line); }
-/* The active tab reads as the page it opens: the seam under it is erased. */
-.ptab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--bg); }
-.ptab.drop { outline: 2px solid var(--accent); outline-offset: -2px; }
-.ptab-main { display: flex; align-items: center; gap: 6px; min-width: 0; background: none; border: 0;
-  color: var(--text-dim); font: inherit; font-size: 14px; padding: 0 var(--s1) 0 var(--s2-5); cursor: pointer; height: 100%; }
-.ptab.on .ptab-main { color: var(--text); }
-.ptab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ptab-meta { display: flex; align-items: baseline; gap: var(--s1-5); flex: none; }
-.ptab-state { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.ptab-rss { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.ptab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
-/* One tone vocabulary, matching the topbar's live dot: green runs, amber
-   waits, red needs you. */
-.ptab-dot.running { background: var(--ok); }
-.ptab-dot.parked, .ptab-dot.booting { background: var(--warn); }
-.ptab-dot.booting { animation: blink 1.1s infinite; }
-.ptab-dot.crashed, .ptab-dot.error { background: var(--bad); }
-.ptab-dot.locked { background: var(--warn); }
-.ptab-dot.closed, .ptab-dot.unknown { background: var(--muted); }
-.ptab.tone-crashed .ptab-state, .ptab.tone-error .ptab-state { color: var(--bad); }
-.ptab.tone-locked .ptab-state { color: var(--warn); }
-/* Same borderless-glyph defect as .ptab-add below, missed on this one: it
-   measured 23x19, under the 24px WCAG 2.5.8 floor on BOTH axes. The strip is
-   38px tall, so the same 26px box fits here too, and +1px of width costs the
-   truncated project name nothing. */
-.ptab-x { background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer;
-  padding: 2px 6px; border-radius: var(--r-sm); flex: none;
-  min-width: 24px; min-height: 26px; display: inline-flex; align-items: center; justify-content: center; }
-.ptab-x:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
-/* A borderless glyph is as small as its glyph: this measured 30x17, under the
-   24px WCAG 2.5.8 floor on the short axis. The strip is 38px tall, so a 26px
-   box fits without touching the tabs beside it. */
-.ptab-add { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
-  padding: 0 var(--s2-5); align-self: center; border-radius: var(--r-sm);
-  min-height: 26px; display: inline-flex; align-items: center; justify-content: center; }
-.ptab-add:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-/* The baseline ring is outline-offset: 2px, i.e. 4px of clearance outside the
-   border box -- and .ptab-main is full-height inside .ptabs, which is pinned
-   overflow-y: hidden (see the note above it). Outlines paint outside the border
-   box and are clipped by an ancestor's overflow, so the ring's top and bottom
-   edges were cut and focus read as two disconnected vertical bars. Inset it,
-   the same way .tab-btn and .palette-input already do. */
-.ptab-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm) var(--r-sm) 0 0; }
-/* Fixed, not absolute: #app is a static grid container, so an absolute banner
-   would anchor to the viewport anyway — say so rather than rely on it. */
-.proj-crash { position: fixed; top: 38px; left: 0; right: 0; z-index: var(--z-overlay); margin: 0; border-radius: 0;
-  display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; }
-.proj-crash-detail { font: 12px var(--mono); color: var(--text-dim); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* folder picker */
-.proj-picker { position: fixed; z-index: var(--z-picker); top: 12vh; left: 50%; transform: translateX(-50%);
-  width: min(560px, 92vw); background: var(--bg-2); border: 1px solid var(--line-strong);
-  border-radius: var(--r); box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 70vh; }
-.proj-picker-head { padding: var(--s3-5) 16px 8px; display: flex; flex-direction: column; gap: 3px; }
-.proj-picker-head .muted { font-size: 13px; }
-.proj-picker-path { display: flex; gap: var(--s1-5); padding: 0 var(--s4) var(--s2-5); }
-.proj-picker-path input { flex: 1; min-width: 0; }
-.proj-picker-list { list-style: none; margin: 0; padding: 0 var(--s2); overflow: auto; flex: 1; border-top: 1px solid var(--line); }
-.proj-picker-row { display: flex; align-items: center; gap: var(--s2); width: 100%; text-align: left; background: none;
-  border: 0; color: var(--text-dim); font: inherit; font-size: 14px; padding: var(--s1-5) var(--s2); border-radius: var(--r-sm); cursor: pointer; }
-.proj-picker-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text); }
-.proj-picker-row.has-mesh { color: var(--text); }
-.proj-picker-row em { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em;
-  color: var(--ok); font-style: normal; margin-left: auto; }
-.proj-picker-ico { width: 14px; flex: none; opacity: .8; }
-.proj-picker-empty { padding: var(--s2); font-size: 13px; }
-.proj-picker-err { padding: var(--s1-5) var(--s4); color: var(--bad); font-size: 13px; }
-.proj-picker-foot { display: flex; align-items: center; gap: var(--s2-5); padding: var(--s2-5) var(--s4); border-top: 1px solid var(--line); }
-.proj-picker-foot .mono { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.proj-picker-acts { display: flex; gap: var(--s2); margin-left: auto; flex: none; }
-
-@media (max-width: 800px) {
-  /* The strip stays, the metadata goes: a name and a status dot is what a
-     narrow screen can carry without pushing the topbar to a third row. */
-  #app.with-tabs { grid-template-columns: 0 1fr; }
-  .ptab-meta { display: none; }
-  .ptab { max-width: 160px; }
-}
-
 /* ── Confirm dialog ───────────────────────────────────────────────────────
    Replaces window.confirm/prompt. Above every other layer on purpose: a
    confirmation can be raised from inside a drawer, the palette or the project
@@ -1582,18 +1480,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .confirm-acts { flex-direction: column-reverse; }
   .confirm-acts button { width: 100%; min-height: 38px; }
 }
-
-/* ── Host first-run ───────────────────────────────────────────────────────
-   Shown instead of the views when the registry is empty. Deliberately narrow
-   and left-aligned rather than a centred hero: it is an instruction to follow,
-   not a marketing panel, and a measure of ~58ch keeps it readable. */
-.host-empty { max-width: 58ch; padding: var(--s6) 0 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); }
-.host-empty h2 { margin: 0; font: 600 18px var(--sans); color: var(--text); }
-.host-empty p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-dim); }
-.host-empty code { font: 500 14px var(--mono); padding: 1px 6px; border-radius: var(--r-sm);
-  background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
-.host-empty .host-empty-alt { font-size: 14px; }
-
 
 /* ---------- step view: wide, single-scroll, inspector ----------
    Replaces the five-tab step drawer. The reader's four jobs — follow the
@@ -2108,13 +1994,3 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .evd-tr .type { grid-column: 1 / -1; }
   .evc-facets.evc-right { margin-left: 0; }
 }
-
-/* Sign-in: shown instead of the console when the server holds a token and this browser has no session. */
-.signin { min-height: 100vh; display: grid; place-items: center; padding: var(--s4); background: var(--bg); }
-.signin form { width: min(420px, 100%); }
-.signin .signin-logo { margin: 0 0 var(--s3-5); color: var(--text); }
-.signin p { margin: 0 0 var(--s2); line-height: 1.5; }
-.signin label { display: block; font-size: 13px; color: var(--muted); margin: var(--s3) 0 var(--s1); }
-.signin input { width: 100%; box-sizing: border-box; }
-.signin .signin-error { margin-top: var(--s2-5); color: var(--bad); font-size: 14px; }
-.signin .signin-actions { margin-top: var(--s3-5); display: flex; justify-content: flex-end; }

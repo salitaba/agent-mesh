@@ -1,24 +1,33 @@
 /**
- * The project tab strip.
+ * The project strip.
  *
- * Markup only: every decision it makes — tone, order, RSS, which tab takes
- * focus when one closes — lives in `tabmodel.ts`, which is DOM-free and
- * therefore actually tested. This file reads `useProjects()` directly and puts
- * nothing into `MeshState`: a project map inside the per-project store is the
- * one shape the spec rules out.
+ * Markup only: every decision it makes (tone, shape, word, order, which tab takes focus when one closes, what a person
+ * reads) lives in `tabmodel.ts` and `projectsmodel.ts`, which are DOM-free and therefore actually tested. This file reads
+ * `useProjects()` directly and puts nothing into `MeshState`: a project map inside the per-project store is the one shape
+ * the spec rules out.
+ *
+ * Left to right: a button to the Projects page (carrying the count of projects that need a person), the tabs (which scroll
+ * sideways when there are too many, fading where there is more), and the New project button, which stays put. Under the
+ * strip, in the flow so the console moves down rather than being covered: why the project in front is broken, that the host
+ * is not answering, or that the host refused something.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Button, useDismissable } from "./components";
+import "./projects.css";
+import { Banner, Button } from "./components";
 import { Icon } from "./icons";
 import { useProjects, type ProjectSummary } from "./projects";
-import { api, post } from "./api";
-import { hashFor } from "./route";
-import { formatRss, moveTab, nextActive, orderTabs, reorderTabs, tabStatus } from "./tabmodel";
+import { useMesh } from "./store";
+import { hashFor, isHostView, parseHash } from "./route";
+import { formatRss, moveTab, orderTabs, reorderTabs, tabStatus } from "./tabmodel";
+import { attentionCount, cardActions, cardState, displayNames, failureDetail, landAfterClose, problemTitle, tabLook } from "./projectsmodel";
+import { NewProjectDialog, Welcome } from "./newproject";
+import { register, unregister } from "./commands";
 
 const ORDER_KEY = "mesh-tab-order";
 
-const readOrder = (): string[] => {
+/** The order the person arranged the tabs in (and so the Projects page lists them in, inside each group). */
+export const readOrder = (): string[] => {
   try {
     const raw = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
     return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
@@ -35,229 +44,130 @@ const writeOrder = (order: string[]): void => {
   }
 };
 
-interface BrowseEntry {
-  name: string;
-  path: string;
-  hasMesh: boolean;
-}
-
 /**
- * Folder picker.
- *
- * A browser `<input type=file webkitdirectory>` hands back a sandboxed name,
- * never the real path the registry has to stat — so the *host* lists
- * directories and this walks them. Typing a path stays available because an
- * operator who knows where the project is should not have to click there.
+ * The host's own account of why a project is broken. It is long (a parse error carries the file and the offending line, a
+ * lock carries the holder and two paths) and useful to one reader in ten, so it is there to open and not in the way of the
+ * sentence above it.
  */
-function AddProject({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const { addProject, openProject, setActive } = useProjects();
-  const [dir, setDir] = useState<{ path: string; parent: string | null; hasMesh: boolean; entries: BrowseEntry[]; error?: string } | null>(null);
-  const [typed, setTyped] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  /** Set when an add failed purely because the folder holds no mesh.yaml. */
-  const [offerInit, setOfferInit] = useState("");
-  const deadRef = useRef(false);
-  // A dialog that does not take focus, hold it, or give it back is a dialog
-  // only to a sighted mouse user: Tab used to walk straight out of the picker
-  // into the tab strip behind the scrim, Esc did nothing, and closing dropped
-  // focus on <body> so the next Tab restarted from the top of the page.
-  const dialogRef = useDismissable<HTMLDivElement>(true, onClose);
-
-  const browse = useCallback(async (path?: string | null) => {
-    const q = path ? `?path=${encodeURIComponent(path)}` : "";
-    const { json } = await api("GET", `/api/browse${q}`);
-    // The picker can be dismissed while this is in flight; a setState after
-    // that is the same leak class that has bitten every step of this spec.
-    if (deadRef.current || !json || typeof json.path !== "string") return;
-    setDir({
-      path: json.path,
-      parent: json.parent ?? null,
-      hasMesh: json.hasMesh === true,
-      entries: Array.isArray(json.entries) ? json.entries : [],
-      error: json.error,
-    });
-    setTyped(json.path);
-    setOfferInit("");
-  }, []);
-
-  useEffect(() => {
-    deadRef.current = false;
-    void browse(null);
-    return () => {
-      deadRef.current = true;
-    };
-  }, [browse]);
-
-  const add = useCallback(async (root: string, init = false) => {
-    setBusy(true);
-    setError("");
-    setOfferInit("");
-    try {
-      const res = await addProject(root, init ? { init: true } : undefined);
-      if (deadRef.current) return;
-      setBusy(false);
-      if (!res.ok) {
-        setError(res.error ?? "could not add that folder");
-        // The listing said nothing about this path (the operator typed it), so
-        // the host is the first to know it has no mesh. Offer the scaffold as a
-        // second, explicit click rather than writing files behind their back.
-        if (res.missing) setOfferInit(root);
-        return;
-      }
-      // Adding without opening leaves a tab that does nothing, which reads as a
-      // failure. The operator picked this folder to work in it.
-      if (res.project) {
-        setActive(res.project.id);
-        void openProject(res.project.id);
-        // A freshly scaffolded mesh is a placeholder goal and one agent: the
-        // Designer is the only view where that is worth looking at.
-        if (res.scaffolded) window.location.hash = hashFor(res.project.id, "designer");
-      }
-      onClose();
-    } catch {
-      if (deadRef.current) return;
-      setBusy(false);
-      setError("the host did not answer — is the mesh process running?");
-    }
-  }, [addProject, onClose, openProject, setActive]);
-
-  // The typed path drifts from the listed one as soon as the operator edits the
-  // input without pressing "go", and a stale answer here would scaffold into the
-  // wrong folder. Null means "unknown", which stays on the safe non-init path.
-  const listedHasMesh: boolean | null = dir && dir.path === typed ? dir.hasMesh : null;
-  const confirmLabel = listedHasMesh === false ? "create mesh here" : "add this folder";
-
+export function WhatTheHostSaid({ text }: { text: string }): React.JSX.Element {
   return (
-    <div className="proj-picker" role="dialog" aria-modal="true" aria-label="Add a project" ref={dialogRef}>
-      <div className="proj-picker-head">
-        <b>Add a project</b>
-        <span className="muted">Pick the folder that holds its <code>mesh.yaml</code>.</span>
-      </div>
-      <div className="proj-picker-path">
-        <input
-          className="txt mono"
-          aria-label="Project folder path"
-          value={typed}
-          spellCheck={false}
-          onChange={(e) => setTyped(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void browse(typed); }
-          }}
-        />
-        <Button variant="ghost" title="List this folder" onClick={() => void browse(typed)}>go</Button>
-      </div>
-      {dir?.error ? <div className="proj-picker-err">{dir.error}</div> : null}
-      <ul className="proj-picker-list">
-        {dir?.parent ? (
-          <li>
-            <button type="button" className="proj-picker-row" onClick={() => void browse(dir.parent)}>
-              <span className="proj-picker-ico"><Icon name="undo" /></span>..
-            </button>
-          </li>
-        ) : null}
-        {(dir?.entries ?? []).map((e) => (
-          <li key={e.path}>
-            <button type="button" className={`proj-picker-row${e.hasMesh ? " has-mesh" : ""}`} onClick={() => void browse(e.path)}>
-              <span className="proj-picker-ico"><Icon name={e.hasMesh ? "overview" : "folder"} /></span>
-              {e.name}
-              {e.hasMesh ? <em>mesh.yaml</em> : null}
-            </button>
-          </li>
-        ))}
-        {dir && !dir.entries.length && !dir.error ? <li className="muted proj-picker-empty">No sub-folders here.</li> : null}
-      </ul>
-      {error ? <div className="proj-picker-err" role="alert">{error}</div> : null}
-      <div className="proj-picker-foot">
-        <span className="muted mono">{dir?.path ?? "…"}</span>
-        <div className="proj-picker-acts">
-          <Button variant="ghost" onClick={onClose}>cancel</Button>
-          {offerInit ? (
-            <Button variant="primary" disabled={busy} onClick={() => void add(offerInit, true)}>
-              {busy ? "creating…" : "create mesh here"}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={busy || !typed}
-              onClick={() => void add(typed, listedHasMesh === false)}
-            >
-              {busy ? (listedHasMesh === false ? "creating…" : "adding…") : confirmLabel}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+    <details className="pj-why">
+      <summary>What the host said</summary>
+      <pre>{text}</pre>
+    </details>
   );
 }
 
-/** The crash panel: what killed it, and the one button that brings it back. */
-function CrashBanner({ project }: { project: ProjectSummary }): React.JSX.Element {
+/** The notice for the project in front when it is broken: what killed it, in the host's words, and the one button that brings it back. */
+function CrashBanner({ project, name }: { project: ProjectSummary; name: string }): React.JSX.Element {
   const { restartProject } = useProjects();
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const st = tabStatus(project);
+  const card = cardState(project);
+  const detail = failureDetail(project);
   return (
-    <div className="banner bad proj-crash" role="alert">
-      <b>{project.name} {st.label}.</b>
-      <span className="muted">{st.hint}</span>
-      {project.error?.detail ? <code className="proj-crash-detail">{project.error.detail}</code> : null}
-      {err ? <code className="proj-crash-detail">{err}</code> : null}
-      <Button
-        variant="banner-act"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setErr("");
-          try {
-            await restartProject(project.id);
-          } catch {
-            setErr("restart request failed — is the host still running?");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {busy ? "restarting…" : "Restart project"}
-      </Button>
-    </div>
+    <Banner
+      tone="bad"
+      className="ptabs-notice"
+      title={problemTitle(name, card.key)}
+      actions={
+        <Button
+          variant="banner-act"
+          icon="refresh"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              // A refusal is posted to the notice under the strip by the provider; nothing more to say here.
+              await restartProject(project.id);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Restarting…" : "Restart project"}
+        </Button>
+      }
+    >
+      {card.sentence}
+      {detail ? <WhatTheHostSaid text={detail} /> : null}
+    </Banner>
+  );
+}
+
+/** Said when the registry cannot be reached: without it a cold page with no host behind it is simply blank. */
+function HostDownBanner({ loaded }: { loaded: boolean }): React.JSX.Element {
+  const { refreshProjects } = useProjects();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Banner
+      tone="bad"
+      className="ptabs-notice"
+      title="The host is not answering."
+      actions={
+        <Button
+          variant="banner-act"
+          icon="refresh"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await refreshProjects();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Asking…" : "Retry now"}
+        </Button>
+      }
+    >
+      {loaded ? "Showing the last list it sent, which may be out of date." : "Nothing can be shown until it answers."} This page asks again every 5 seconds.
+    </Banner>
   );
 }
 
 /**
- * One tab. Middle-click and the × close it; drag reorders; ⌘/Ctrl+arrows move
- * it without a mouse, because a reorder a keyboard user cannot perform is a
- * feature only half the operators have.
+ * One tab. Middle-click and the close button close it; drag reorders; Ctrl/Cmd+arrows move it without a mouse, because a
+ * reorder a keyboard user cannot perform is a feature only half the operators have.
  */
-function Tab({ project, active, parked, onPick, onClose, onDragStart, onDrop, onMove }: {
+function Tab({ project, label, active, missionParked, onPick, onClose, onDragStart, onDrop, onMove }: {
   project: ProjectSummary;
+  label: string;
   active: boolean;
-  parked: boolean;
+  missionParked: boolean;
   onPick: () => void;
   onClose: () => void;
   onDragStart: () => void;
   onDrop: () => void;
   onMove: (delta: number) => void;
 }): React.JSX.Element {
-  const st = tabStatus(project, parked);
+  // The word, the shape, the tone and the sentence in the tooltip all come from the same model as the project's card, so a tab
+  // and its card cannot say different things.
+  const card = cardState(project, { missionParked });
+  const look = tabLook(card);
   const rss = formatRss(project.health?.rss);
   const [over, setOver] = useState(false);
+  // The same rule as the project's card: only a project with a process has one to close. A broken one is restarted (the
+  // notice under the strip, or its card) or forgotten (its card), and a closed one is already closed.
+  const canClose = cardActions(card.key).close;
   return (
-    <div
-      className={`ptab tone-${st.tone}${active ? " on" : ""}${over ? " drop" : ""}`}
+    <li
+      className={`ptab${active ? " on" : ""}${over ? " drop" : ""}`}
+      data-tone={look.tone}
+      data-state={card.key}
       draggable
       onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(); }}
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); onDrop(); }}
       onDragEnd={() => setOver(false)}
-      onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(); } }}
+      onAuxClick={(e) => { if (e.button === 1 && canClose) { e.preventDefault(); onClose(); } }}
     >
       <button
         type="button"
         className="ptab-main"
         aria-current={active ? "page" : undefined}
-        title={`${project.name} — ${st.hint}${rss ? ` (${rss})` : ""}`}
+        title={`${label}: ${card.sentence}${rss ? ` Memory ${rss}.` : ""} Ctrl+Left and Ctrl+Right move this tab.`}
         onClick={onPick}
         onKeyDown={(e) => {
           if (!(e.metaKey || e.ctrlKey)) return;
@@ -265,65 +175,47 @@ function Tab({ project, active, parked, onPick, onClose, onDragStart, onDrop, on
           else if (e.key === "ArrowRight") { e.preventDefault(); onMove(1); }
         }}
       >
-        <span className={`ptab-dot ${st.tone}`} aria-hidden="true" />
-        <span className="ptab-name">{project.name}</span>
+        <span className="ptab-ico"><Icon name={look.icon} size={14} /></span>
+        <span className="ptab-name">{label}</span>
         <span className="ptab-meta">
-          <span className="ptab-state">{st.label}</span>
+          <span className="ptab-state">{look.word}</span>
           {rss ? <span className="ptab-rss">{rss}</span> : null}
         </span>
       </button>
-      <button type="button" className="ptab-x" aria-label={`Close ${project.name}`} title="Close this project (its files are untouched)" onClick={onClose}><Icon name="x" size={14} /></button>
-    </div>
+      {/* The tab itself stays when its project is closed: it is closed, not removed (see Projects). */}
+      {canClose ? (
+        <button type="button" className="ptab-x" aria-label={`Close ${label}`} title="Close this project: its process stops. The tab and its files stay." onClick={onClose}>
+          <Icon name="x" size={14} />
+        </button>
+      ) : null}
+    </li>
   );
 }
 
 /**
- * The strip itself.
- *
- * `parkedId`/`parked` come from the mounted store rather than the registry:
- * whether a mesh is parked is mission state behind the child's `/status`, and
- * only the active project has a store to read it from. Every other tab shows
- * the registry's view, which is all the host can honestly say about it.
- */
-/**
- * `curule host` with an empty registry used to render the whole Overview against
- * a server answering 409 "no project is open": GOAL PROGRESS 0%, "0 of 0 checks
- * done", "SPENT 0/0". Every figure looked like a measurement and none of them
- * meant anything — the worst kind of empty state, one indistinguishable from a
- * healthy idle mission. An empty registry is a first-run state, so say that and
- * offer the single action that leaves it.
+ * A fresh host used to render the whole Overview against a server answering 409 "no project is open": GOAL PROGRESS 0%,
+ * "0 of 0 checks done", "SPENT 0/0". Every figure looked like a measurement and none of them meant anything, the worst
+ * kind of empty state, one indistinguishable from a healthy idle mission. An empty registry is a first run, and the first
+ * run is a welcome: three ways to start, each saying what it needs, what it costs and which files it writes where.
  */
 export function HostEmptyState(): React.JSX.Element {
-  const [adding, setAdding] = useState(false);
-  return (
-    <div className="host-empty">
-      <h2>No project open</h2>
-      <p>
-        A project is a folder containing a <code>mesh.yaml</code>. The host supervises one process
-        per open project, and this dashboard follows whichever project is in front.
-      </p>
-      <Button variant="primary" onClick={() => setAdding(true)}>Add a project folder</Button>
-      <p className="muted host-empty-alt">
-        Or from a shell: <code>curule project add &lt;dir&gt;</code>
-      </p>
-      {adding ? (
-        <>
-          <div id="palette-scrim" aria-hidden="true" onClick={() => setAdding(false)} />
-          <AddProject onClose={() => setAdding(false)} />
-        </>
-      ) : null}
-    </div>
-  );
+  return <Welcome />;
 }
 
 export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?: string | null }): React.JSX.Element | null {
-  const { projects, activeId, setActive, openProject, closeProject, loaded, hostDown } = useProjects();
+  const { projects, activeId, setActive, openProject, closeProject, loaded, hostDown, notice, dismissNotice } = useProjects();
+  const { view } = useMesh();
   const [order, setOrder] = useState<string[]>(readOrder);
   const [adding, setAdding] = useState(false);
   const dragRef = useRef<string | null>(null);
+  const scrollRef = useRef<HTMLUListElement | null>(null);
+  const fadeRef = useRef<HTMLDivElement | null>(null);
 
   const ordered = orderTabs(projects, order);
   const orderedIds = ordered.map((p) => p.id);
+  const names = displayNames(ordered);
+  const onProjectsPage = view === "projects";
+  const attention = attentionCount(projects);
 
   // The remembered order is only ever the ids that still exist, so a project
   // removed on another machine does not accumulate in localStorage forever.
@@ -344,23 +236,77 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
     writeOrder(next);
   }, []);
 
+  // Too many tabs to fit scroll sideways; the edges fade where there is more. The fades are driven from the scroll position
+  // and the width, written straight to the wrapper so scrolling does not re-render the strip.
+  const updateFades = useCallback(() => {
+    const el = scrollRef.current;
+    const wrap = fadeRef.current;
+    if (!el || !wrap) return;
+    wrap.dataset.fadeStart = String(el.scrollLeft > 1);
+    wrap.dataset.fadeEnd = String(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateFades();
+    el.addEventListener("scroll", updateFades, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateFades);
+    ro?.observe(el);
+    // A mouse wheel moves a row of tabs the way it moves a browser's: sideways, only when there is somewhere to go.
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("scroll", updateFades);
+      el.removeEventListener("wheel", onWheel);
+      ro?.disconnect();
+    };
+  }, [updateFades, ordered.length]);
+  // Switching to a tab that is scrolled out of sight brings it into view: the whole tab, with its close button, not only its
+  // name. A tab grows when its state words arrive, so it is brought into view again when the active project's state changes.
+  const activeProject = ordered.find((p) => p.id === activeId);
+  const activeLook = activeProject ? `${activeProject.status}/${activeProject.lastMode ?? ""}/${activeProject.health ? "h" : ""}` : "";
+  useEffect(() => {
+    scrollRef.current?.querySelector(".ptab.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId, onProjectsPage, activeLook]);
+
+  // Keyboard routes to the Projects page and the New project dialog, from the command palette.
+  useEffect(() => {
+    register("host", [
+      { id: "go.projects", label: "Go to Projects", keywords: "projects folders host manage open close remove", scope: "host", run: () => { window.location.hash = hashFor(activeId, "projects"); } },
+      { id: "projects.new", label: "New project", keywords: "add create demo folder mesh start", scope: "host", run: () => setAdding(true) },
+    ]);
+    return () => unregister("host");
+  }, [activeId]);
+
   const pick = useCallback((id: string) => {
-    setActive(id);
     const ref = projects.find((p) => p.id === id);
-    // Switching to a closed tab is a request to work in it. A tripped breaker
-    // is the exception: reopening on click would restart the crash loop the
-    // breaker exists to stop.
-    if (ref && ref.status !== "open" && ref.status !== "booting" && !ref.tripped) void openProject(id);
+    setActive(id);
+    // The address follows the tab, so a link copied now opens this project; a host page has no project, and a project tab
+    // from there opens its Overview. The page is read from the address by whoever arrives (ProjectsProvider).
+    const current = parseHash(window.location.hash).view;
+    window.location.hash = hashFor(id, isHostView(current) ? "overview" : current);
+    // Picking a closed project is asking to work in it, also when it is already the one in front. A broken one is not
+    // started again by a click: the notice under the strip offers that. (One request at a time per project: the
+    // address changing under this click does not ask twice.)
+    if (ref?.status === "closed") void openProject(id);
   }, [openProject, projects, setActive]);
 
   const close = useCallback(async (id: string) => {
-    const next = nextActive(orderedIds, id, activeId);
-    // Move the active tab *before* the close lands: the closing project's
-    // store unsubscribes on unmount, and leaving it mounted over a dead child
-    // means one more in-flight fetch with nothing to answer it.
-    if (next !== activeId && next) setActive(next);
-    await closeProject(id);
-  }, [activeId, closeProject, orderedIds, setActive]);
+    const landing = landAfterClose(ordered, id, activeId);
+    // Move before the close lands: the closing project's store unsubscribes on unmount, and leaving it mounted over a dead
+    // child means one more in-flight fetch with nothing to answer it.
+    if (landing.kind === "project") {
+      setActive(landing.id);
+      const current = parseHash(window.location.hash).view;
+      window.location.hash = hashFor(landing.id, isHostView(current) ? "overview" : current);
+    }
+    const result = await closeProject(id);
+    if (result.ok && landing.kind === "projects") window.location.hash = hashFor(null, "projects");
+  }, [activeId, closeProject, ordered, setActive]);
 
   const crashed = activeId ? ordered.find((p) => p.id === activeId && tabStatus(p).restartable) : undefined;
 
@@ -368,50 +314,65 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
 
   return (
     <div id="ptabs-bar">
-      {/* Not a tablist. role="tablist" promises the APG tabs contract -- bare
-          Left/Right moves selection, one strip-level tab stop, an owned
-          tabpanel -- and none of that exists here: the only arrow handler
-          requires Ctrl/Meta and REORDERS, each project owns two tab stops
-          (name + close), and #view is not a tabpanel. Worse, wiring selection
-          to a bare arrow would call pick(), which boots a child process for any
-          project that is not already open -- one supervised process per
-          keypress. A nav landmark with aria-current="page" is the honest
-          semantic for "a list of places you can go", and it matches the
-          sidebar. Ctrl/Meta+Arrow reorder stays; it no longer collides with a
-          binding the role was advertising. */}
-      <nav className="ptabs" aria-label="Open projects">
-        {ordered.map((p) => (
-          <Tab
-            key={p.id}
-            project={p}
-            active={p.id === activeId}
-            parked={Boolean(parked) && p.id === parkedId}
-            onPick={() => pick(p.id)}
-            onClose={() => void close(p.id)}
-            onDragStart={() => { dragRef.current = p.id; }}
-            onDrop={() => {
-              const from = dragRef.current;
-              dragRef.current = null;
-              if (from) commit(reorderTabs(orderedIds, from, p.id));
-            }}
-            onMove={(delta) => commit(moveTab(orderedIds, p.id, delta))}
-          />
-        ))}
-        <button type="button" className="ptab-add" title="Add a project folder" aria-label="Add a project" onClick={() => setAdding(true)}><Icon name="plus" size={16} /></button>
-        {!ordered.length ? <span className="muted ptabs-empty">No projects yet — add the folder that holds a mesh.yaml.</span> : null}
+      {/* A nav landmark: "a list of places you can go", the same semantic as the sidebar. Not a tablist: role="tablist"
+          promises the APG tabs contract (bare Left/Right moves selection, one tab stop for the strip, an owned tabpanel),
+          and none of that exists here. The only arrow handler needs Ctrl/Meta and REORDERS, each project has two tab stops,
+          and wiring selection to a bare arrow would boot a child process per keypress. */}
+      <nav className="ptabs-nav" aria-label="Projects">
+        <button
+          type="button"
+          className="pj-home"
+          aria-current={onProjectsPage ? "page" : undefined}
+          title="Every project on this host: open, close or remove them"
+          onClick={() => { window.location.hash = hashFor(activeId, "projects"); }}
+        >
+          <Icon name="folder" size={16} />
+          <span className="pj-home-label">Projects</span>
+          {attention > 0 ? (
+            <span className="pj-count" title={`${attention} ${attention === 1 ? "project needs" : "projects need"} attention`}>
+              <span aria-hidden="true">{attention}</span>
+              <span className="sr-only"> {attention === 1 ? "project needs" : "projects need"} attention</span>
+            </span>
+          ) : null}
+        </button>
+        <div className="ptabs-scroll" ref={fadeRef}>
+          <ul className="ptabs" role="list" ref={scrollRef}>
+            {ordered.map((p) => {
+              const isParked = p.id === parkedId ? Boolean(parked) : p.lastMode === "parked";
+              return (
+                <Tab
+                  key={p.id}
+                  project={p}
+                  label={names.get(p.id) ?? p.name}
+                  active={p.id === activeId && !onProjectsPage}
+                  missionParked={isParked}
+                  onPick={() => pick(p.id)}
+                  onClose={() => void close(p.id)}
+                  onDragStart={() => { dragRef.current = p.id; }}
+                  onDrop={() => {
+                    const from = dragRef.current;
+                    dragRef.current = null;
+                    if (from) commit(reorderTabs(orderedIds, from, p.id));
+                  }}
+                  onMove={(delta) => commit(moveTab(orderedIds, p.id, delta))}
+                />
+              );
+            })}
+          </ul>
+          {!ordered.length ? <span className="muted ptabs-empty">No projects yet.</span> : null}
+        </div>
+        <button type="button" className="ptab-add" title="New project: try the demo, create a mesh or add a folder" aria-label="New project" onClick={() => setAdding(true)}>
+          <Icon name="plus" size={16} />
+        </button>
       </nav>
-      {adding ? (
-        <>
-          <div id="palette-scrim" aria-hidden="true" onClick={() => setAdding(false)} />
-          <AddProject onClose={() => setAdding(false)} />
-        </>
+      {hostDown ? <HostDownBanner loaded={loaded} /> : null}
+      {!hostDown && crashed ? <CrashBanner project={crashed} name={names.get(crashed.id) ?? crashed.name} /> : null}
+      {notice ? (
+        <Banner tone="warn" className="ptabs-notice" title={notice.title} actions={<Button variant="banner-act" onClick={dismissNotice}>Dismiss</Button>}>
+          {notice.text}
+        </Banner>
       ) : null}
-      {crashed ? <CrashBanner project={crashed} /> : null}
+      {adding ? <NewProjectDialog onClose={() => setAdding(false)} /> : null}
     </div>
   );
 }
-
-/** Removes a project from the registry. Exposed for the tab context menu; the
- *  registry call is host-level, so it is deliberately a bare path. */
-export const forgetProject = (id: string): Promise<{ status: number; json: any }> =>
-  post(`/api/projects/${encodeURIComponent(id)}/close`).then(() => api("DELETE", `/api/projects/${encodeURIComponent(id)}`));
