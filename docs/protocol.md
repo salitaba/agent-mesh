@@ -215,8 +215,21 @@ what the mesh then accepts cannot differ:
   stock developer listens for `review.rejected` but not `review.approved`, so an
   approval used to reach nobody who could act on it (a patch sat approved for
   two and a half minutes while another seat asked a third, four times, to
-  "transition it"). The wake names the verdict and the rung the owner owns next,
-  and is skipped when the owner's own interests already wake it for that event.
+  "transition it"). The wake names the verdict and the rung the artifact needs
+  next. For a patch that rung is a move and not a verdict, and the note says so:
+  when the policy lets the owner make it, the note names the call
+  (`mesh_artifact_transition` with the artifact id and the rung) and says that no
+  other seat's verdict is needed for it; when the policy does not, the note gives
+  the policy's reason, and names the seats that may only when the reason is a
+  missing capability (a configured gate or a standing block binds every seat
+  alike). It used to say "and only you can move it there", which was never so (a
+  seat with `test.execute`, `security.review` or `implementation.approve` may take
+  the VERIFIED rung) and which the seventeenth cronlite run's developer read as a
+  verdict to wait for: it tried two `mesh_approve` passes on its own patch, asked
+  for a review of a patch that had just been approved and waited for a QA nobody
+  had asked, and the patch took 5 min 50 s to climb where the round before had
+  taken 30 s. The wake is skipped when the owner's own interests already wake it
+  for that event.
 
 **A submission asks nobody.** Moving an artifact to `READY_FOR_REVIEW` records that its owner is done; it sends no
 request and wakes no one, and neither does announcing it (`mesh_announce` obliges nobody and "wakes no one"). A seat

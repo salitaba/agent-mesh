@@ -6269,11 +6269,37 @@ export class Supervisor {
     const what = `${now.type} "${now.name}" v${now.version}`;
     const note = rejected
       ? `${actorId} rejected your ${what}: read the verdict in your mailbox and publish a new version of the same artifact (asVersionOf) that answers it.`
-      : `${actorId} approved your ${what}: it is now ${now.status}.` +
-        (rung
-          ? ` It needs ${rung} next${rung === "MERGED" ? ", which a seat holding git.merge does with the merge op" : ", and only you can move it there"}; nothing advances it automatically.`
-          : " Carry on from there.");
+      : `${actorId} approved your ${what}: it is now ${now.status}.` + (rung ? ` ${this.nextRungNote(now, rung)}` : " Carry on from there.");
     await this.activateAgent(owner, { kind: "interest_event", eventId, eventType, note }).catch(() => undefined);
+  }
+
+  /**
+   * What the owner of a patch that has just been approved is told it needs next, and who moves it.
+   *
+   * "Needs VERIFIED next, and only you can move it there" was all it said, and neither half held in the seventeenth cronlite run.
+   * "Only you" was never so: a seat with `test.execute`, `security.review` or `implementation.approve` may take the VERIFIED rung,
+   * and in that run QA did, 5 min 50 s after the approval. And "VERIFIED" read as a verdict to wait for. The developer, a rotated
+   * session, tried two `mesh_approve` passes on its own patch (refused: it holds no such authority), asked for a review of a patch
+   * that had just been approved (the tech lead was woken for a second approval, 12.7k tokens), and waited for a QA that nobody had
+   * asked; the same note had been acted on in 30 s the round before. The rung is a move and not a verdict, so the note names the
+   * call, when the policy lets the owner make it, and says that nothing else is needed; when it does not, it says why.
+   */
+  private nextRungNote(a: Artifact, rung: ArtifactStatus): string {
+    if (rung === "MERGED") return "It needs MERGED next, which a seat holding git.merge does with the merge op; nothing advances it automatically.";
+    const decision = this.deps.policy.evaluateTransition(a, rung, a.owner, this.policyContext());
+    if (decision.decision === "ALLOW") {
+      return (
+        `It needs ${rung} next, and you can move it: \`mesh_artifact_transition\` with artifactId "${a.id}" and to "${rung}". ` +
+        "That step takes no verdict from anyone else; nothing advances it automatically."
+      );
+    }
+    // Seats are named only for the denial they could lift: a standing block or an unmet gate binds every seat alike.
+    const who = decision.ruleId === "verified-actor" ? this.seatsForRung(rung) : [];
+    return (
+      `It needs ${rung} next, and you cannot move it yourself: ${decision.reason}.` +
+      (who.length > 0 ? ` ${who.join(" or ")} can, with \`mesh_artifact_transition\`: tell ${who.length === 1 ? "that seat" : "one of them"} it is ready.` : "") +
+      " Nothing advances it automatically."
+    );
   }
 
   private async settleReviewAsks(actorId: string, artifact: Artifact | undefined, eventId: string): Promise<void> {
@@ -14256,27 +14282,32 @@ export class Supervisor {
       if (a.status !== "APPROVED" && a.status !== "VERIFIED" && a.status !== "MERGEABLE") continue;
       const next = (CODE_ARTIFACT_TRANSITIONS[a.status] ?? [])[0];
       if (!next) continue;
-      // Who the transition rules would actually accept for the next rung. Derived
-      // from capabilities rather than hardcoded so it cannot drift from the gate.
-      const who = [...this.state.agents.values()]
-        .map((r) => r.definition)
-        .filter((d) => {
-          if (d.id === HUMAN_AGENT_ID) return false;
-          if (next === "MERGED") return d.capabilities.includes("git.merge");
-          if (next === "VERIFIED") {
-            return (
-              d.capabilities.includes("test.execute") ||
-              d.capabilities.includes("security.review") ||
-              holdsAuthority(d.authority, "implementation", "approve")
-            );
-          }
-          // MERGEABLE has no actor rule of its own: anyone who can transition may.
-          return true;
-        })
-        .map((d) => d.id);
-      out.push({ artifact: a, next, who });
+      out.push({ artifact: a, next, who: this.seatsForRung(next) });
     }
     return out;
+  }
+
+  /**
+   * Who the transition rules would actually accept for moving a patch to `next`. Derived from capabilities rather than hardcoded
+   * so it cannot drift from the gate.
+   */
+  private seatsForRung(next: ArtifactStatus): string[] {
+    return [...this.state.agents.values()]
+      .map((r) => r.definition)
+      .filter((d) => {
+        if (d.id === HUMAN_AGENT_ID) return false;
+        if (next === "MERGED") return d.capabilities.includes("git.merge");
+        if (next === "VERIFIED") {
+          return (
+            d.capabilities.includes("test.execute") ||
+            d.capabilities.includes("security.review") ||
+            holdsAuthority(d.authority, "implementation", "approve")
+          );
+        }
+        // MERGEABLE has no actor rule of its own: anyone who can transition may.
+        return true;
+      })
+      .map((d) => d.id);
   }
 
   /** True when at least one mandatory criterion still lacks evidence. */
