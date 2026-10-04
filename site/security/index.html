@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Security - Curule</title>
+<meta name="description" content="What Curule protects, what leaves your environment, and what it does not do: one shared operator token, agents that run commands inside a container you must narrow, and no independent audit. How to report a vulnerability.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="../assets/site.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Security, stated plainly - Curule">
+<meta property="og:description" content="What Curule protects, what leaves your environment, and what it does not do.">
+<!-- TODO(owner): og:image and twitter:image must be absolute URLs once the domain is chosen, for example https://<your-domain>/assets/social-card.png -->
+<meta property="og:image" content="../assets/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="../assets/social-card.png">
+</head>
+<body>
+<!-- generated:chrome-header:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="../" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav class="nav-main" aria-label="Main">
+      <a href="../#product">Product</a>
+      <a href="../pricing/">Pricing</a>
+      <a href="../docs/">Docs</a>
+      <a href="../security/" aria-current="page">Security</a>
+    </nav>
+    <div class="bar-actions">
+      <a class="signin" href="#" data-app hidden>Sign in</a>
+      <a class="btn btn-primary" href="../#try">Try the demo</a>
+      <details class="menu">
+        <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
+        <div class="menu-panel">
+          <nav aria-label="Menu">
+            <a href="../#product">Product</a>
+            <a href="../pricing/">Pricing</a>
+            <a href="../docs/">Docs</a>
+            <a href="../security/" aria-current="page">Security</a>
+            <a href="#" data-app hidden>Sign in</a>
+          </nav>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+<!-- generated:chrome-header:end -->
+
+<main id="main" tabindex="-1">
+
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Security</p>
+    <h1>Security, stated plainly.</h1>
+    <p class="lede">Curule runs agents that execute shell commands and write code. That is the product, and it sets the posture: the agents are not trusted to stay inside a box that the software merely asks them to stay in. The box is the container, and the unit of isolation is one instance per team. This page says what is built around that, and where it ends.</p>
+    <ul class="toc" aria-label="On this page">
+      <li><a href="#protects">What it protects</a></li>
+      <li><a href="#leaves">What leaves your environment</a></li>
+      <li><a href="#not">What it does not do</a></li>
+      <li><a href="#checklist">What to do about it</a></li>
+      <li><a href="#assurance">Assurance</a></li>
+      <li><a href="#report">Reporting a problem</a></li>
+    </ul>
+  </div>
+</section>
+
+<div class="wrap">
+
+<section class="split" id="protects">
+  <header>
+    <h2>What it protects</h2>
+    <p>Every control below has a test in the repository, and <code>npm test</code> runs them. The security document names the test beside each control.</p>
+    <p><a class="arrow-link" href="../docs/" data-doc="commercial/security.md">The security document</a></p>
+  </header>
+  <div>
+    <h3 class="group">Reaching the server</h3>
+    <ul class="rows">
+      <li><b>It fails closed on the network.</b><span>Listening on anything but loopback requires an operator token of 32 or more characters. A missing, blank or short token is a refusal at start, not a warning.</span></li>
+      <li><b>Sign-in is a session.</b><span>The dashboard trades the token for a cookie that is <code>HttpOnly</code> and <code>SameSite=Strict</code>, and <code>Secure</code> over HTTPS. The token is never accepted in a URL, where logs and history would keep it.</span></li>
+      <li><b>Pages cannot drive it from another site.</b><span>A state-changing request from a page must be same-origin or from an origin you list, and the <code>Host</code> header must be one the server answers to, which stops DNS rebinding. No response carries a CORS header.</span></li>
+      <li><b>Guessing is slowed, and bounded.</b><span>Wrong credentials are counted per client address and answered with 429. A random token of 32 or more characters is the real defence. Request bodies, event-stream subscribers and the designer&rsquo;s model calls are capped.</span></li>
+    </ul>
+
+    <h3 class="group">The agents, and what they write</h3>
+    <ul class="rows">
+      <li><b>Agents never hold the operator&rsquo;s credentials.</b><span>The operator token, the licence and the other <code>MESH_*</code> secrets are removed from the environment the agents&rsquo; commands run in. An agent reaches the mesh with a credential minted in memory for each turn.</span></li>
+      <li><b>A page an agent wrote is sandboxed.</b><span>It is served in a sandboxed frame on an opaque origin, through a signed link that expires, with no cookie and no route back to the API.</span></li>
+      <li><b>Files stay where they belong.</b><span>Paths are resolved through their real locations, so a link in a workspace cannot point out of it, and in the image the project registry is confined to one folder.</span></li>
+      <li><b>Only the human changes the mission.</b><span>The tools that change the mission itself (its goal, criteria, seats and budgets) answer only to the human operator, not to an agent that is asked to call them.</span></li>
+      <li><b>Cost has a ceiling.</b><span>Budgets per agent, thread and mission, and a host-wide spend ceiling that prices all four token classes. It is a backstop; the control is a spend limit at your provider.</span></li>
+    </ul>
+
+    <h3 class="group">Records and recovery</h3>
+    <ul class="rows">
+      <li><b>Everything is an event.</b><span>Every change is an appended event and every view is a projection, so any past moment can be replayed and nothing is edited in place.</span></li>
+      <li><b>There is an audit trail, without identity.</b><span>Every state-changing request that was let through is logged with how it was authorised and the client address. With one shared credential it cannot say who.</span></li>
+      <li><b>One writer.</b><span>Each state directory has a lock with a heartbeat, and a process that loses it exits rather than interleave two writers.</span></li>
+    </ul>
+
+    <h3 class="group">The container</h3>
+    <ul class="rows">
+      <li><b>The image is restricted.</b><span>An unprivileged user, a read-only root file system, every capability dropped and <code>no-new-privileges</code>. It holds no credentials; they are supplied at run time.</span></li>
+      <li><b>The chart is restricted too.</b><span>One replica, a restricted pod with no service-account token, and a network policy on by default that allows egress only to DNS and public HTTPS, with private ranges and the cloud metadata address excluded.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="split" id="leaves">
+  <header>
+    <h2>What leaves your environment</h2>
+    <p>Less than most people expect, and one thing that cannot be avoided.</p>
+  </header>
+  <div>
+    <ul class="rows">
+      <li><b>Calls to your model provider.</b><span>The agents make them, with your credentials. Prompts, files and tool output go to that provider under your agreement with it. This is inherent to running the agents.</span></li>
+      <li><b>Nothing else from the product.</b><span>No telemetry, no analytics, no update check and no licence server. A licence is verified on the machine.</span></li>
+      <li><b>The Claude Code binary is Anthropic&rsquo;s.</b><span>Left alone it reports telemetry and errors and checks for updates, so the image sets <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code>. Setting it to an empty value turns that off.</span></li>
+      <li><b>Whatever the agents themselves fetch.</b><span>Package registries, git hosts, the web: wherever your network lets them reach.</span></li>
+    </ul>
+    <p class="mt-m">This website holds itself to the same rule. It makes no request to any other site and sets no cookie; see the <a href="../legal/#privacy">privacy section</a>.</p>
+  </div>
+</section>
+
+<section class="split" id="not">
+  <header>
+    <h2>What it does not do</h2>
+    <p>Read this section before you promise anything to your own customers.</p>
+  </header>
+  <div>
+    <ul class="rows">
+      <li><b>No single sign-on and no per-operator identity.</b><span>There is one operator token: no user accounts, no roles. The audit trail says how a request was authorised and from where, never who. Single sign-on (OIDC), per-operator identity and roles, and audit-log export with identity are planned, not included. Until then, restrict the network path and put an authenticating proxy in front if you need to know who reached the sign-in page.</span></li>
+      <li><b>The agents can use what the container can reach.</b><span>An agent&rsquo;s shell runs as an unprivileged user inside the container, with the provider credential in its environment, because it needs it. A misbehaving or prompt-injected agent can read the workspace and that credential, and send things anywhere your network allows. The container is the boundary: narrow its egress, give each instance its own provider key with a spend limit set at the provider, and keep out of the workspace any secret you would not give an engineer.</span></li>
+      <li><b>No isolation between projects in one instance.</b><span>Projects share the container, its user and its volume. Anyone who must not see another&rsquo;s work gets their own instance.</span></li>
+      <li><b>TLS and encryption at rest are yours.</b><span>The server speaks plain HTTP and expects TLS in front of it. It does not encrypt its own files: use an encrypted volume and encrypted backups.</span></li>
+      <li><b>The event log holds everything the agents saw and said.</b><span>That includes any secret that passed through a prompt or a command&rsquo;s output. There is no redaction, so treat the volume and every backup of it as sensitive as the most sensitive thing an agent may read.</span></li>
+      <li><b>It has not been independently assessed.</b><span>No third-party penetration test, no SOC 2, no ISO 27001. The controls are tested by the repository&rsquo;s own suite and were exercised in a real browser. That is not an audit.</span></li>
+      <li><b>The licence check is not tamper-proof.</b><span>The runtime is JavaScript, and anyone who can edit it can remove the check. A licence is how an honest customer shows what was bought; the licence terms are what bind.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="split" id="checklist">
+  <header>
+    <h2>What to do about it</h2>
+    <p>A hardening checklist for whoever deploys it. The Helm chart sets the host, proxy and cookie settings in the first item and ships the network policy in the fourth.</p>
+  </header>
+  <div>
+    <ol class="plain">
+      <li><b>Put TLS in front</b> and set the cookie, proxy and host settings that say so.</li>
+      <li><b>Use a strong token from a secret store</b>, rotate it on a schedule and when anyone who knew it leaves.</li>
+      <li><b>Do not put it on the open internet.</b> Reach it over a VPN or a private ingress.</li>
+      <li><b>Narrow the egress</b> to the model provider, your git host and your package mirror, and keep the network policy on.</li>
+      <li><b>Give each instance its own provider key</b>, with a budget and alerts at the provider.</li>
+      <li><b>Encrypt the volume and its backups</b>, and restrict who can read them.</li>
+      <li><b>Ship the audit trail</b> to a log store you retain.</li>
+      <li><b>Pin the image by digest</b> and verify its signature once releases are published.</li>
+      <li><b>Watch the metrics</b>: crashed projects, spend against the ceiling, escalations waiting for a person.</li>
+      <li><b>Plan for the agents being wrong.</b> Review what they merge before it ships. A gate somebody configured is the control; the agents&rsquo; good behaviour is not.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="split" id="assurance">
+  <header>
+    <h2>Assurance</h2>
+    <p>What stands behind these statements, and what does not.</p>
+  </header>
+  <div>
+    <ul class="rows">
+      <li><b>Tests, run on every change.</b><span>The continuous integration runs the type checker, the linter and the whole test suite, and a weekly job runs a production-dependency audit and a code scan.</span></li>
+      <li><b>Defects are kept, not hidden.</b><span>A budget key named <code>__proto__</code> once polluted every object in the process. It was found, fixed, and is pinned by a test.</span></li>
+      <li><b>No outside assessment.</b><span>Nobody independent has tested it, and this site shows no certificate, award or customer logo because there is none.</span></li>
+      <li><b>Nothing is published yet.</b><span>There is no release tag and no container image in a registry. The release workflow is written to publish a signed image with an SBOM and build provenance, and it has not run.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="split" id="report">
+  <header>
+    <h2>Reporting a problem</h2>
+    <p>Privately, please.</p>
+  </header>
+  <div>
+    <p class="measure"><b>Please do not open a public issue for a security problem.</b> Report it through GitHub&rsquo;s private vulnerability reporting, or by email to the security address on the <a href="../contact/#security">contact page</a>. Say what you found, how to reproduce it, what an attacker gains, and whether you have told anyone else.</p>
+    <ul class="rows mt-m">
+      <li><b>We acknowledge your report within 3 business days.</b><span>And tell you within 10 business days whether we think it is a vulnerability and how serious.</span></li>
+      <li><b>A fix, or a mitigation and a date, within 30 days</b><span>for a high or critical issue. Public disclosure follows a fix, coordinated with you, and we credit you unless you prefer not.</span></li>
+      <li><b>Good-faith research is welcome.</b><span>Test only instances you own or have permission to test, and avoid reading or changing anyone else&rsquo;s data. The policy sets out the rest.</span></li>
+    </ul>
+    <p class="btn-row mt-m"><a class="btn btn-primary" href="../contact/#security">Where to write</a><a class="btn" href="../docs/" data-doc="../SECURITY.md">Read the security policy</a></p>
+  </div>
+</section>
+
+</div>
+
+</main>
+
+<!-- generated:chrome-footer:start (scripts/site-chrome.mjs; do not edit between the markers) -->
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="../" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <p>A team of AI agents, run like an organization.</p>
+        <p class="foot-contact"><span id="contact">TODO(owner): company name, contact email</span></p>
+      </div>
+      <nav class="foot-col" aria-label="Product">
+        <h2>Product</h2>
+        <ul>
+          <li><a href="../">Overview</a></li>
+          <li><a href="../#product">What it shows</a></li>
+          <li><a href="../#try">Try the demo</a></li>
+          <li><a href="../pricing/">Pricing</a></li>
+          <li><a href="../security/" aria-current="page">Security</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Resources">
+        <h2>Resources</h2>
+        <ul>
+          <li><a href="../docs/">Documentation</a></li>
+          <li><a href="../docs/" data-doc="../README.md">Quickstart</a></li>
+          <li><a href="../docs/" data-doc="commercial/deployment.md">Deploying</a></li>
+          <li><a href="../docs/" data-doc="operations.md">Operating</a></li>
+          <li><a href="../docs/" data-doc="../CHANGELOG.md">Changelog</a></li>
+          <li><a href="../docs/" data-repo="">Source code</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-label="Company">
+        <h2>Company</h2>
+        <ul>
+          <li><a href="../contact/">Contact</a></li>
+          <li><a href="../legal/#licence">Licence</a></li>
+          <li><a href="../legal/#privacy">Privacy</a></li>
+          <li><a href="../legal/#terms">Terms</a></li>
+          <li><a href="../docs/" data-doc="../SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="foot-legal">
+      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
+    </div>
+  </div>
+</footer>
+<!-- generated:chrome-footer:end -->
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
