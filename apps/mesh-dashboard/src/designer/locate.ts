@@ -67,10 +67,17 @@ export function locateIssue(text: string, seats: string[]): Where {
   const t = text.trim();
   const isSeat = (id: string | undefined): id is string => !!id && seats.includes(id);
 
+  // The Designer's own note about a goal nobody has written yet.
+  if (/^The goal is still the placeholder\b/.test(t)) return { tab: "mesh", section: "goal", field: "goal", editable: true };
+
+  // A schema path names the object, and for a key that is missing says which one in the sentence: `/agents/qa: must have required property 'role'`.
+  const required = /required property '([^']+)'/.exec(t)?.[1];
+
   // /agents/<id>/<field>: ...   (schema path)
   let m = /^\/agents\/([^/:\s]+)(?:\/([^/:\s]+))?/.exec(t);
   if (m) {
-    const [, id, field] = m;
+    const [, id] = m;
+    const field = m[2] ?? required;
     return { tab: "crew", seat: isSeat(id) ? id : undefined, section: SEAT_SECTION[field ?? ""] ?? "general", field, editable: true };
   }
   if (/^\/agents\b/.test(t)) return { tab: "crew", section: "general", editable: true };
@@ -78,7 +85,7 @@ export function locateIssue(text: string, seats: string[]): Where {
   // /mesh/<field>: ...
   m = /^\/mesh(?:\/([^/:\s]+))?/.exec(t);
   if (m) {
-    const field = m[1];
+    const field = m[1] ?? required;
     return { tab: "mesh", section: field ? MESH_SECTION[field] ?? "identity" : "identity", field, editable: true };
   }
   m = /^\/([a-z_]+)/.exec(t);

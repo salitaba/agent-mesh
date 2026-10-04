@@ -54,6 +54,21 @@ test("a warning about a seat opens that seat in the section it is about", () => 
   assert.deepEqual([prompt.seat, prompt.section], ["qa", "behavior"]);
 });
 
+test("a key the file lacks is named in the sentence, not the path, and the jump goes to its control", () => {
+  // what the server really says when a seat's role is emptied (the Designer drops the empty key)
+  const role = locateIssue("/agents/qa: must have required property 'role'", SEATS);
+  assert.deepEqual(role, { tab: "crew", seat: "qa", section: "general", field: "role", editable: true });
+  assert.equal(whereLabel(role), "Open qa: General");
+  const goal = locateIssue("/mesh: must have required property 'goal'", SEATS);
+  assert.deepEqual([goal.tab, goal.section, goal.field], ["mesh", "goal", "goal"]);
+});
+
+test("the Designer's own note about a goal nobody has written opens the goal", () => {
+  const w = locateIssue("The goal is still the placeholder. Write what the team should deliver: every seat reads it on every turn.", SEATS);
+  assert.deepEqual(w, { tab: "mesh", section: "goal", field: "goal", editable: true });
+  assert.equal(whereLabel(w), "Open Mesh: Goal");
+});
+
 test("the Designer's own note about a seat that still has its placeholder role opens that seat at the role", () => {
   const w = locateIssue("Seat 'qa' still has the placeholder role 'role-4'. Say what it is for: a gate or a policy rule can name a role.", SEATS);
   assert.deepEqual(w, { tab: "crew", seat: "qa", section: "general", field: "role", editable: true });
