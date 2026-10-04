@@ -1,135 +1,256 @@
-import { useEffect, useMemo, useState } from "react";
-import { ago, plainArtifact, artifactCls } from "../format";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
+import "./files.css";
+import { ago, artifactCls, localDateTime, localTime, plainArtifact } from "../format";
 import { useMesh } from "../store";
-import { Button, Card, Chip, ErrorState, Input, rowKey } from "../components";
-import { ArtifactDrawer } from "../drawers";
+import { useMedia, WIDE } from "../useMedia";
+import { useMission } from "../useMission";
+import { useMissionActions } from "../useMissionActions";
+import { Banner, Button, EmptyState, ErrorState, Input, PageHeader, Pill, Select, type PillTone } from "../components";
+import { Icon } from "../icons";
+import { ArtifactReader } from "../artifactreader";
+import {
+  FILE_GROUPS,
+  NO_FILTER,
+  countLabel,
+  emptyCopy,
+  filterFiles,
+  groupCounts,
+  groupFiles,
+  latestArtifactSeq,
+  nextIndex,
+  repoPathOf,
+  typeCounts,
+  type Art,
+  type FileFilter,
+} from "../files";
 
-/* Files an agent produced. The table used to be an unfiltered dump: on a real
- * mesh it grows past a screen within minutes and there was no way to answer
- * "which docs exist" or "what is waiting on me". Search + facets fix that,
- * and grouping by name collapses the version chain into one row so v1..v9 of
- * the same file stop drowning out everything else. */
+/* What the team made. A list grouped by where each file stands (approved and merged first, then what is in review, then what
+ * went back, then drafts), and beside it, on a wide screen, the reader: the file, its versions, what changed, its path.
+ * On a narrow screen the list is the page and a file opens in the details panel, because two columns do not fit.
+ *
+ * The list refreshes itself when an agent publishes or a status changes (it used to be read once, on arrival, and then go
+ * stale for the whole run). If a refresh fails after a good load, the page keeps what it has and says so. */
 
-interface Art {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-  owner: string;
-  version: number;
-  createdAt: string;
-  metadata?: Record<string, unknown>;
+function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
+  a: Art;
+  current: boolean;
+  tabbable: boolean;
+  onOpen: () => void;
+  onKey: (e: KeyboardEvent<HTMLButtonElement>) => void;
+  hold: (el: HTMLButtonElement | null) => void;
+}): React.JSX.Element {
+  const path = repoPathOf(a);
+  return (
+    <li>
+      <button
+        type="button"
+        ref={hold}
+        className="file-row"
+        data-art={a.id}
+        tabIndex={tabbable ? 0 : -1}
+        aria-current={current ? "true" : undefined}
+        onClick={onOpen}
+        onKeyDown={onKey}
+      >
+        <span className="file-ic"><Icon name="files" size={18} /></span>
+        <span className="file-name" title={a.name}>{a.name}</span>
+        <span className="file-state"><Pill tone={artifactCls(a.status) as PillTone}>{plainArtifact(a.status)}</Pill></span>
+        <span className="file-sub">
+          <span>{a.type}</span>
+          <span>v{a.version}</span>
+          <span>{a.owner}</span>
+          <span title={localDateTime(a.createdAt)}>{ago(a.createdAt)}</span>
+        </span>
+        {path ? <span className="file-path mono" title={path}><bdi>{path}</bdi></span> : null}
+      </button>
+    </li>
+  );
 }
 
-const REVIEW_STATES = ["READY_FOR_REVIEW", "UNDER_REVIEW"];
+function ListSkeleton(): React.JSX.Element {
+  return (
+    <div className="file-rows skel" role="status">
+      <span className="sr-only">Loading files</span>
+      {[0, 1, 2, 3, 4].map((i) => <div className="file-skel" key={i} aria-hidden="true"><i /><i /></div>)}
+    </div>
+  );
+}
 
 export default function Artifacts(): React.JSX.Element {
-  const { openDrawer, client } = useMesh();
+  const { client, events, openDrawer } = useMesh();
+  const { facts, state } = useMission();
+  const actions = useMissionActions();
+  const split = useMedia(WIDE);
+
   const [arts, setArts] = useState<Art[]>([]);
-  const [q, setQ] = useState("");
-  const [type, setType] = useState("");
-  const [group, setGroup] = useState(true);
-  const [onlyReview, setOnlyReview] = useState(false);
-  // "No files yet." was printed before the fetch landed and again when it
-  // failed, so a dead server and an empty mesh looked identical.
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A refresh that failed after a good load: the list is kept, and the page says how old it is.
+  const [stale, setStale] = useState<{ at: string; why: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
+  const [selected, setSelected] = useState<string | null>(null);
+  const loadedOnce = useRef(false);
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+
+  const seq = useMemo(() => latestArtifactSeq(events), [events]);
 
   useEffect(() => {
     let dead = false;
-    setErr(null);
-    client.api("GET", "/artifacts").then(({ json, timeout }) => {
-      if (dead) return;
-      if (timeout) {
-        setErr("the request timed out — the server may be busy.");
-        return;
-      }
-      if (json && json.error) {
-        setErr(String(json.error));
-        return;
-      }
-      if (Array.isArray(json)) {
-        setArts(json.slice().reverse() as Art[]);
+    const fail = (why: string): void => {
+      if (loadedOnce.current) setStale({ at: new Date().toISOString(), why });
+      else setErr(why);
+    };
+    const run = async (): Promise<void> => {
+      try {
+        const { json, timeout } = await client.api("GET", "/artifacts");
+        if (dead) return;
+        const list: unknown = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : null;
+        if (timeout || !Array.isArray(list)) {
+          fail(timeout ? "The request timed out. The server may be busy." : typeof json?.error === "string" ? json.error : "The server sent something this page could not read.");
+          return;
+        }
+        loadedOnce.current = true;
+        setArts(list as Art[]);
         setLoaded(true);
-      } else {
-        setErr("the server sent something this view could not read.");
+        setErr(null);
+        setStale(null);
+      } catch (e: unknown) {
+        if (!dead) fail(e instanceof Error ? e.message : String(e));
       }
-    }).catch((e: unknown) => {
-      if (!dead) setErr(e instanceof Error ? e.message : String(e));
-    });
+    };
+    // The first read is immediate; one prompted by an event waits a beat, so a burst of publishes is one read.
+    const t = setTimeout(() => void run(), loadedOnce.current ? 350 : 0);
     return () => {
       dead = true;
+      clearTimeout(t);
     };
-  }, [attempt, client]);
+  }, [attempt, client, seq]);
 
-  const types = useMemo(() => [...new Set(arts.map((a) => a.type))].sort(), [arts]);
-  const needsReview = arts.filter((a) => REVIEW_STATES.includes(a.status));
+  const visible = useMemo(() => filterFiles(arts, filter), [arts, filter]);
+  const groups = useMemo(() => groupFiles(visible), [visible]);
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const types = useMemo(() => typeCounts(arts), [arts]);
+  const counts = useMemo(() => groupCounts(filterFiles(arts, { ...filter, group: "" })), [arts, filter]);
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    let list = arts.filter((a) => {
-      if (type && a.type !== type) return false;
-      if (onlyReview && !REVIEW_STATES.includes(a.status)) return false;
-      if (!needle) return true;
-      return [a.name, a.type, a.owner, a.status, String(a.metadata?.path ?? "")]
-        .some((f) => String(f).toLowerCase().includes(needle));
-    });
-    if (group) {
-      // Keep only the newest record per logical file; the drawer still shows
-      // the full version chain, so nothing is hidden — just not repeated.
-      const best = new Map<string, Art>();
-      for (const a of list) {
-        const key = `${a.type}/${a.name}`;
-        const prev = best.get(key);
-        if (!prev || a.version > prev.version) best.set(key, a);
-      }
-      list = [...best.values()].sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt)));
-    }
-    return list;
-  }, [arts, q, type, group, onlyReview]);
+  // The reader follows the person's choice while that file is still in the list; when it is not, or nothing is chosen,
+  // it shows the first file, so the right half of the page is never an empty box.
+  const active = split && flat.length ? (selected && flat.some((a) => a.id === selected) ? selected : flat[0]!.id) : null;
+  const activeArt = active ? flat.find((a) => a.id === active) : undefined;
+  const activeIndex = Math.max(0, flat.findIndex((a) => a.id === (selected ?? active)));
 
-  const open = (id: string): void => openDrawer(<ArtifactDrawer id={id} />);
+  const open = (a: Art): void => {
+    setSelected(a.id);
+    if (!split) openDrawer(<ArtifactReader id={a.id} as="drawer" />);
+  };
 
+  const onKey = (e: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    if (!["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const to = nextIndex(e.key, index, flat.length);
+    const target = to >= 0 ? flat[to] : undefined;
+    if (target) rows.current.get(target.id)?.focus();
+  };
+
+  const filtering = filter.query.trim() !== "" || filter.type !== "" || filter.group !== "";
+  const copy = emptyCopy(state.phase, facts.hasHistory);
+  const startable = copy.start && state.primary && (state.primary.action === "start" || state.primary.action === "resume");
+
+  let index = -1;
   return (
     <>
-      <div className="view-title"><h2>Files</h2><span className="muted" style={{ fontSize: 12 }}>{rows.length} of {arts.length}</span></div>
-      <div className="view-sub">What agents produced. Click one to read it, compare versions, or download it. Versions are never overwritten.</div>
-      {needsReview.length ? <div className="status-strip warn" style={{ marginBottom: 12 }}><div><b>{needsReview.length} waiting for review.</b> <span className="muted">Someone asked for feedback and is blocked until it lands.</span> <Button variant="banner-act" onClick={() => needsReview[0] && open(needsReview[0].id)}>Review now</Button></div></div> : null}
-      <Card style={{ marginBottom: 10 }}>
-        <div className="fv-filters">
-          <Input search mono aria-label="Search files" placeholder="search name, owner, type, path…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="chips">
-            <Chip hot={!type} onClick={() => setType("")}>all types</Chip>
-            {types.map((t) => <Chip key={t} hot={type === t} onClick={() => setType(type === t ? "" : t)}>{t}</Chip>)}
+      <PageHeader
+        title="Files"
+        status={loaded ? <span className="count-note" role="status">{countLabel(visible.length, arts.length)}</span> : null}
+        lede="What the team made. Read a file, compare its versions, copy its path."
+      />
+
+      {stale ? (
+        <Banner tone="warn" title="This list may be out of date." actions={<Button variant="banner-act" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>Refresh now</Button>}>
+          The last refresh failed at {localTime(stale.at)} ({stale.why.replace(/\.$/, "")}). It shows what the server last sent.
+        </Banner>
+      ) : null}
+
+      {err && !loaded ? (
+        <ErrorState what="the file list" detail={err} onRetry={() => { setErr(null); setAttempt((n) => n + 1); }} />
+      ) : !loaded ? (
+        <ListSkeleton />
+      ) : arts.length === 0 ? (
+        <EmptyState
+          icon="files"
+          title={copy.title}
+          action={startable && state.primary ? <Button variant="primary" onClick={() => actions.run(state.primary!.action)}>{state.primary.label}</Button> : null}
+        >
+          {copy.body}
+        </EmptyState>
+      ) : (
+        <>
+          <div className="files-bar" role="search">
+            <Input
+              search
+              aria-label="Search files"
+              placeholder="Search by name, owner, type or path"
+              value={filter.query}
+              onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+            />
+            <Select aria-label="Type" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
+              <option value="">All types</option>
+              {types.map((t) => <option key={t.type} value={t.type}>{t.type} ({t.n})</option>)}
+            </Select>
+            <Select aria-label="Status" value={filter.group} onChange={(e) => setFilter({ ...filter, group: e.target.value as FileFilter["group"] })}>
+              <option value="">Any status</option>
+              {FILE_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label} ({counts[g.id]})</option>)}
+            </Select>
+            <label className="files-check" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
+              <input type="checkbox" checked={filter.latestOnly} onChange={(e) => setFilter({ ...filter, latestOnly: e.target.checked })} />
+              Latest of each name
+            </label>
           </div>
-          <div className="chips">
-            <Chip hot={onlyReview} onClick={() => setOnlyReview(!onlyReview)}>needs review</Chip>
-            <Chip hot={group} onClick={() => setGroup(!group)}>latest only</Chip>
+
+          <div className={`files-layout${split ? " split" : ""}`}>
+            <div className="files-list">
+              {visible.length === 0 ? (
+                <EmptyState
+                  icon="search"
+                  title="No file matches"
+                  action={<Button variant="small" onClick={() => setFilter({ ...NO_FILTER, latestOnly: filter.latestOnly })}>Clear the filters</Button>}
+                >
+                  {filtering ? `${arts.length} ${arts.length === 1 ? "file is" : "files are"} hidden by the search and filters above.` : "Every file is hidden."}
+                </EmptyState>
+              ) : (
+                groups.map((g) => (
+                  <section className="files-group" key={g.id} aria-labelledby={`fg-${g.id}`}>
+                    <h3 className="files-group-h" id={`fg-${g.id}`}>{g.label}<span className="files-group-n">{g.items.length}</span></h3>
+                    <ul className="file-rows">
+                      {g.items.map((a) => {
+                        index += 1;
+                        const i = index;
+                        return (
+                          <FileRow
+                            key={a.id}
+                            a={a}
+                            current={split && a.id === active}
+                            tabbable={i === activeIndex}
+                            onOpen={() => open(a)}
+                            onKey={(e) => onKey(e, i)}
+                            hold={(el) => { if (el) rows.current.set(a.id, el); else rows.current.delete(a.id); }}
+                          />
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))
+              )}
+            </div>
+            {split ? (
+              <aside className="files-reader" aria-label="File reader">
+                {active ? <ArtifactReader key={active} id={active} as="pane" stamp={activeArt ? `${activeArt.version}:${activeArt.status}` : undefined} /> : <p className="fv-empty">Select a file to read it.</p>}
+              </aside>
+            ) : null}
           </div>
-        </div>
-      </Card>
-      <Card style={{ padding: "6px 0" }}><table className="tbl"><thead><tr><th>file</th><th>what&apos;s next</th><th>by</th><th>when</th></tr></thead><tbody>
-        {rows.length ? rows.map((a) => (
-          <tr key={a.id} className="clickable" data-art={a.id} tabIndex={0} onClick={() => open(a.id)} onKeyDown={rowKey(() => open(a.id))}>
-            <td>
-              <b>{a.name}</b>
-              <div className="muted" style={{ fontSize: 11 }}>
-                v{a.version} · {a.type}
-                {a.metadata?.path ? <> · <span className="mono">{String(a.metadata.path)}</span></> : null}
-              </div>
-            </td>
-            <td><span className={`pill ${artifactCls(a.status)}`}>{plainArtifact(a.status)}</span></td>
-            <td className="mono">{a.owner}</td><td className="muted">{ago(a.createdAt)}</td>
-          </tr>
-        )) : (
-          <tr><td colSpan={4}>
-            {err && !loaded ? <ErrorState what="the file list" detail={err} onRetry={() => setAttempt((n) => n + 1)} />
-            : !loaded ? <div className="empty"><div className="big">…</div><div>loading files</div></div>
-            : <div className="empty"><div className="big">▤</div><div>{arts.length ? "Nothing matches that filter." : "No files yet."}</div><div className="muted">{arts.length ? "Clear the search to see everything." : "They appear here when an agent publishes something."}</div></div>}
-          </td></tr>
-        )}
-      </tbody></table></Card>
+        </>
+      )}
     </>
   );
 }

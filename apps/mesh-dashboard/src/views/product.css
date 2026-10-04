@@ -1,0 +1,117 @@
+/* ============ Product: the delivered codebase ============
+ *
+ * The checkout, the scripts the host will run in it, the output of the one that is running, the playground, and a file browser.
+ * Colours are tokens only; sizes are the type ramp; breakpoints come from the console's ladder. The file renderer is in files.css.
+ */
+
+/* minmax(0, 1fr), not the implicit auto column: a path that will not wrap would make the column as wide as the path. */
+.prod-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+.prod-h { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin: 0 0 var(--s3); }
+.prod-h h3 { margin: 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.prod-h h3 code { font: 13px var(--mono); text-transform: none; letter-spacing: 0; color: var(--text); }
+.prod-h .grow { flex: 1 1 0; }
+.prod-count { margin-left: var(--s1-5); font: var(--tx-meta); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.prod-note { margin: 0 0 var(--s3); font: var(--tx-value); color: var(--muted); }
+.prod-note:last-child { margin-bottom: 0; }
+.prod-none b { font: 600 15px var(--sans); }
+.prod-none p { margin: var(--s1) 0 0; max-width: 64ch; color: var(--muted); }
+.prod-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding-top: var(--s2); font: var(--tx-meta); color: var(--muted); }
+.prod-skel { display: grid; gap: var(--s2); }
+.prod-skel i { display: block; height: 14px; border-radius: var(--r-sm); background: var(--line); }
+.prod-skel i:first-child { width: 40%; }
+.prod-skel i:nth-child(2) { width: 70%; }
+.prod-skel i:nth-child(3) { width: 55%; }
+
+/* ---------- the checkout ---------- */
+.prod-facts { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s6); margin: 0; }
+.prod-facts > div { min-width: 0; }
+.prod-facts dt { font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.prod-facts dd { margin: var(--s0) 0 0; font: 600 16px var(--mono); overflow-wrap: anywhere; }
+.prod-facts dd.warn { color: var(--warn); }
+.prod-where { display: flex; align-items: center; gap: var(--s2); min-width: 0; margin-top: var(--s3); }
+.prod-where-l { flex: none; font: var(--tx-label); color: var(--muted); }
+.prod-commits { margin-top: var(--s2-5); font: var(--tx-meta); color: var(--text-dim); }
+.prod-commits summary { min-height: 24px; cursor: pointer; color: var(--muted); }
+.prod-commits ol { margin: var(--s1-5) 0 0; padding: 0; list-style: none; display: grid; gap: var(--s1); }
+.prod-commits li { display: flex; gap: var(--s3); min-width: 0; }
+.prod-commits li .mono { flex: none; color: var(--text-dim); }
+.prod-commits li span:last-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- the scripts ---------- */
+.run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--s2); }
+.run-btn { display: grid; align-content: start; gap: var(--s0); min-width: 0; padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r); color: var(--text); text-align: left; cursor: pointer; }
+.run-btn:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.run-btn:disabled { opacity: .5; cursor: not-allowed; }
+.run-grid + .prod-note { margin-top: var(--s3); }
+.run-name { display: inline-flex; align-items: center; gap: var(--s1-5); font: 600 14px var(--sans); }
+.run-name .icon { color: var(--accent-2); }
+.run-cmd { font-size: 12px; color: var(--text-dim); }
+.run-body { font: 12px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-note { font: var(--tx-meta); color: var(--muted); }
+
+/* ---------- what a run printed ---------- */
+.prod-out:focus { outline: none; }
+.run-chip { display: inline-flex; align-items: center; gap: var(--s1-5); padding: var(--s1) var(--s3) var(--s1) var(--s2-5); border-radius: 999px; font: 600 13px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
+.run-chip.ok, .run-chip.live { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.run-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.run-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.run-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 2.2s infinite; }
+.run-fails { margin: 0 0 var(--s3); overflow: hidden; background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 42%, var(--line)); border-radius: var(--r); }
+.run-fails-h { padding: var(--s2) var(--s3); font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--bad); }
+.run-fails-h span { margin-left: var(--s1-5); letter-spacing: 0; text-transform: none; color: var(--text-dim); font-weight: 400; }
+.run-fails ol { margin: 0; padding: 0; list-style: none; }
+.run-fails li, .run-tail > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: var(--s2); padding: var(--s1) var(--s3); border-top: 1px solid color-mix(in srgb, var(--bad) 22%, var(--line)); }
+.run-ln { font: 12px var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.run-fails code, .run-tail code { padding: 0; background: none; border: 0; font: 13px/1.5 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-fails-more { padding: var(--s1-5) var(--s3) var(--s2); border-top: 1px solid color-mix(in srgb, var(--bad) 22%, var(--line)); font: var(--tx-meta); color: var(--text-dim); }
+.run-tail { margin: 0 0 var(--s3); overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); }
+.run-tail > div { border-top-color: var(--line); }
+.run-tail > .run-tail-h { display: block; padding: var(--s2) var(--s3); border-top: 0; font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.run-tail > .run-tail-h + div { border-top: 0; }
+.run-full-h { margin: 0 0 var(--s1-5); font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.run-full-h span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.run-log { margin: 0; padding: var(--s2-5) var(--s3); max-height: 320px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.run-log:focus-visible { outline-offset: -2px; }
+
+/* ---------- the playground ---------- */
+/* --paper is #ffffff in BOTH themes. In dark the preview self-delimits against the panel and this border is decoration; in
+   light it is white on a white card, so the whole boundary falls to the border, and only --line-control clears 3:1 there. */
+.playframe { display: block; width: 100%; height: 640px; margin-top: var(--s2); border: 1px solid var(--line-control); border-radius: var(--r); background: var(--paper); }
+
+/* ---------- uncommitted changes ---------- */
+.chg-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s0) var(--s3); }
+.chg-row { display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 28px; min-width: 0; padding: var(--s0) var(--s1); background: none; border: 0; border-radius: var(--r-sm); color: var(--text); text-align: left; cursor: pointer; }
+.chg-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.chg-mark { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-sm); font: 600 12px var(--mono); }
+.chg-mark.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.chg-mark.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.chg-mark.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.chg-mark.neutral { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 10%, transparent); }
+.chg-path { flex: 1 1 0; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.chg-path > bdi { direction: ltr; unicode-bidi: isolate; }
+
+/* ---------- the file browser ---------- */
+.prod-split { display: grid; grid-template-columns: minmax(280px, 4fr) minmax(0, 7fr); gap: var(--s3); align-items: start; }
+.prod-split > .card { min-width: 0; }
+@media (max-width: 1100px) { .prod-split { grid-template-columns: minmax(0, 1fr); } }
+.fv-search { display: flex; align-items: center; gap: var(--s1-5); margin-bottom: var(--s2); }
+.fv-search input { flex: 1; min-width: 0; min-height: 32px; }
+.crumb ol { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin: 0; padding: 0; list-style: none; font: 13px var(--mono); }
+.crumb li { display: inline-flex; align-items: center; gap: var(--s1); color: var(--text); }
+.crumb li .icon { color: var(--muted); }
+.crumb-btn { min-height: 24px; padding: var(--s0) var(--s1); background: none; border: 0; color: var(--accent-2); font: inherit; text-decoration: underline; cursor: pointer; }
+.ptree { display: flex; flex-direction: column; margin-top: var(--s2); max-height: 420px; overflow: auto; }
+.ptree-count { margin: 0; padding: var(--s1-5) var(--s1); }
+.ptree-row { display: flex; align-items: center; gap: var(--s2); width: 100%; min-width: 0; min-height: 32px; padding: var(--s1); background: none; border: 0; border-bottom: 1px dashed var(--line); color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer; }
+.ptree-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.ptree-row .icon { flex: none; color: var(--muted); }
+.ptree-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+/* A hit is found by its path, and the end of a path is the file: cut it at the front. */
+.ptree-row.hit .ptree-name { flex: 0 1 auto; max-width: 60%; direction: rtl; text-align: left; }
+.ptree-row.hit .ptree-name > bdi { direction: ltr; unicode-bidi: isolate; }
+.ptree-row .muted { flex: none; font-size: 12px; }
+.hit-text { flex: 1 1 0; min-width: 0; font: 400 12px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 620px) {
+  .run-grid { grid-template-columns: 1fr; }
+  .prod-facts { gap: var(--s2) var(--s4); }
+}

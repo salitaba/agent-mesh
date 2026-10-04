@@ -1,0 +1,108 @@
+/* ============ Cost: what the mission has spent against what it may spend ============
+ *
+ * The mission budget and the host's estimate on top, then who spent it and on which model, then every budget the host keeps.
+ * Colours are tokens only; sizes are the type ramp; breakpoints come from the console's ladder. The tone of a meter (amber from
+ * 80%, red from 95% or when spent) is decided in cost.ts, the same rule as the top bar's meter.
+ *
+ * styles.css still holds .bar-row and .track: the collaboration card (collabcard.tsx) draws with them. This page no longer does.
+ */
+
+.cost-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+.cost-stack > .banner { margin-bottom: 0; }
+.cost-h { margin: 0 0 var(--s2); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.cost-n { margin-left: var(--s1-5); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+.cost-skel { display: grid; gap: var(--s2-5); padding: var(--s3) 0; }
+.cost-skel i { display: block; height: 16px; border-radius: var(--r-sm); background: var(--line); }
+.cost-skel i:first-child { width: 36%; height: 28px; }
+.cost-skel i:nth-child(2) { width: 100%; height: 12px; }
+.cost-skel i:nth-child(3) { width: 60%; }
+
+/* ---------- the two totals ---------- */
+.cost-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+.cost-top.two { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+@media (max-width: 900px) { .cost-top.two { grid-template-columns: minmax(0, 1fr); } }
+.cost-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s3); margin: 0 0 var(--s3); }
+.cost-big b { font: 600 30px/1.1 var(--mono); letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.cost-big span { font: var(--tx-value); color: var(--text-dim); }
+.cost-big em { margin-left: auto; font: 600 18px var(--mono); font-style: normal; font-variant-numeric: tabular-nums; }
+.cost-big em.warn { color: var(--warn); }
+.cost-big em.bad { color: var(--bad); }
+.cost-meter { height: 12px; overflow: hidden; background: var(--line); border-radius: var(--r-sm); }
+.cost-meter > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); background: var(--accent); }
+.cost-meter.warn > i { background: var(--warn); }
+.cost-meter.bad > i { background: var(--bad); }
+.cost-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); margin: var(--s2-5) 0 0; font: var(--tx-value); color: var(--text-dim); }
+.cost-flag { display: inline-flex; align-items: center; gap: var(--s1); font-weight: 600; }
+.cost-flag.warn { color: var(--warn); }
+.cost-flag.bad { color: var(--bad); }
+.cost-fine { max-width: 72ch; margin: var(--s3) 0 0; font: var(--tx-meta); color: var(--muted); }
+.cost-default { display: flex; align-items: flex-start; gap: var(--s1-5); margin-top: var(--s2); color: var(--text-dim); }
+.cost-default svg { flex: none; margin-top: 2px; }
+.cost-how { margin-top: var(--s2); font: var(--tx-meta); color: var(--text-dim); }
+.cost-how summary { min-height: 24px; cursor: pointer; color: var(--muted); }
+.cost-how p { max-width: 72ch; margin: var(--s1-5) 0 0; }
+
+/* ---------- who and which ---------- */
+.cost-sec-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s4); margin-bottom: var(--s3); }
+.cost-sec-h .cost-h { margin: 0; }
+.cost-cap { font: var(--tx-meta); color: var(--muted); }
+.cost-cols, .cost-row {
+  display: grid; grid-template-columns: minmax(140px, 1.3fr) minmax(100px, 3fr) 64px 76px minmax(150px, 1.4fr);
+  gap: var(--s3); align-items: center;
+}
+.cost-cols { padding: 0 var(--s1) var(--s1-5); border-bottom: 1px solid var(--line); font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.cost-cols .r { text-align: right; }
+.cost-rows { margin: 0; padding: 0; list-style: none; }
+.cost-row { padding: var(--s2) var(--s1); border-bottom: 1px solid var(--line); }
+.cost-row:last-child { border-bottom: 0; }
+.cost-name { display: grid; min-width: 0; }
+.cost-trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.cost-meta { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
+.cost-bar { height: 10px; overflow: hidden; background: var(--line); border-radius: var(--r-sm); }
+.cost-bar > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); min-width: 3px; background: var(--accent); border-radius: var(--r-sm); }
+.cost-bar.zero > i { display: none; }
+.cost-num, .cost-share { text-align: right; font: 14px var(--mono); font-variant-numeric: tabular-nums; }
+.cost-share { color: var(--text-dim); white-space: nowrap; }
+.cost-own { display: grid; gap: var(--s1); justify-items: start; min-width: 0; font: var(--tx-meta); }
+.cost-basis { display: inline-flex; align-items: center; gap: var(--s1); color: var(--muted); }
+.cost-basis.default { color: var(--warn); font-weight: 600; }
+.cost-own-b { display: inline-flex; align-items: center; gap: var(--s2); color: var(--text-dim); }
+.cost-own-b.warn { color: var(--warn); }
+.cost-own-b.bad { color: var(--bad); }
+.cost-mini { flex: none; width: 56px; height: 6px; overflow: hidden; background: var(--line); border-radius: 3px; }
+.cost-mini > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); background: var(--accent); }
+.cost-own-b.warn .cost-mini > i { background: var(--warn); }
+.cost-own-b.bad .cost-mini > i { background: var(--bad); }
+@media (max-width: 900px) {
+  .cost-cols { display: none; }
+  .cost-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name num share" "bar bar bar" "own own own"; gap: var(--s1-5) var(--s3); }
+  .cost-name { grid-area: name; }
+  .cost-bar { grid-area: bar; }
+  .cost-num { grid-area: num; }
+  .cost-share { grid-area: share; min-width: 44px; }
+  .cost-own { grid-area: own; }
+}
+
+/* ---------- every budget ---------- */
+.cost-details > summary { min-height: 24px; cursor: pointer; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.cost-rules { display: grid; gap: var(--s2-5); margin: var(--s3) 0 0; font: var(--tx-meta); color: var(--text-dim); }
+.cost-rules dt { font-weight: 600; color: var(--text); }
+.cost-rules dd { max-width: 72ch; margin: var(--s0) 0 0; }
+.cost-table-wrap { margin-top: var(--s3); }
+.cost-table { width: 100%; border-collapse: collapse; table-layout: fixed; font: var(--tx-value); }
+.cost-table th, .cost-table td { padding: var(--s1-5) var(--s2-5); border-bottom: 1px solid var(--line); text-align: left; vertical-align: baseline; }
+.cost-table thead th { font: var(--tx-label); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cost-table thead th:first-child, .cost-table tbody th[scope="row"] { width: 38%; }
+.cost-table th.r, .cost-table td.r { text-align: right; }
+.cost-table tbody th[scope="row"] { font-weight: 400; }
+.cost-table tbody th[scope="row"] .cost-trunc { display: block; font-weight: 400; font-size: 13px; }
+.cost-table td { overflow-wrap: anywhere; }
+.cost-grp { background: var(--panel-2); font: var(--tx-label); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cost-state { display: inline-flex; align-items: center; gap: var(--s1); font-weight: 600; }
+.cost-state.warn { color: var(--warn); }
+.cost-state.bad { color: var(--bad); }
+@media (max-width: 620px) {
+  .cost-table th, .cost-table td { padding-left: var(--s1-5); padding-right: var(--s1-5); font-size: 13px; }
+  .cost-table thead th:first-child, .cost-table tbody th[scope="row"] { width: 34%; }
+}

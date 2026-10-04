@@ -69,6 +69,9 @@ const ICONS = {
   "arrow-right": (<path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" />),
   arrange: (<><rect x="3.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="3.5" y="11.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="11.5" width="5" height="5" rx="1.3" /></>),
   expand: (<path d="M3.5 8V4.5a1 1 0 0 1 1-1H8M12 3.5h3.5a1 1 0 0 1 1 1V8M16.5 12v3.5a1 1 0 0 1-1 1H12M8 16.5H4.5a1 1 0 0 1-1-1V12" />),
+  // Added with the Files, Product, Cost and Host settings pages
+  download: (<path d="M10 3.5v9M6.2 9.2L10 13l3.8-3.8M4 16.5h12" />),
+  stop: (<rect x="5" y="5" width="10" height="10" rx="1.8" {...SOLID} />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

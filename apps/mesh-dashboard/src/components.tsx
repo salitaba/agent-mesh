@@ -686,6 +686,7 @@ export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResol
 // Imports sit with the code they serve so the shared primitives above stay as other work packages left them.
 import "./live.css";
 import { copyText } from "./clipboard";
+export { copyText };
 import { middleClip } from "./text";
 
 /**
@@ -696,7 +697,7 @@ import { middleClip } from "./text";
  * It copies through `copyText`, which falls back to the selection route on an http origin that has no clipboard API, so the
  * button works on a self-hosted console and not only on localhost.
  */
-export function CopyButton({ text, label = "Copy", what, compact }: { text: string; label?: string; what?: string; compact?: boolean }): React.JSX.Element {
+export function CopyButton({ text, label = "Copy", what, compact, title }: { text: string; label?: string; what?: string; compact?: boolean; title?: string }): React.JSX.Element {
   const [state, setState] = useState<"idle" | "done" | "fail">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -716,7 +717,7 @@ export function CopyButton({ text, label = "Copy", what, compact }: { text: stri
         className={compact ? "copy-btn compact" : "small copy-btn"}
         onClick={() => void go()}
         aria-label={state === "idle" && (compact || what) ? name : undefined}
-        title={state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : compact ? name : undefined}
+        title={state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : title ?? (compact ? name : undefined)}
       >
         <Icon name={icon} size={14} />
         {compact ? null : <span>{shown}</span>}
