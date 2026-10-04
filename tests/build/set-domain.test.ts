@@ -4,24 +4,27 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { walk } from "./site-pages";
 
 /**
  * `scripts/set-domain.mjs` applies the domain that was chosen to every place that carries it, so that they cannot disagree and
- * none is forgotten: the page's absolute social-image addresses, canonical link, contact and footer, SECURITY.md's address, and
- * the files a host and a crawler read (CNAME, robots.txt, sitemap.xml, security.txt). It must never touch LICENSE, never
- * half-apply (every edit is computed before anything is written), and be safe to run twice.
+ * none is forgotten: every page's absolute social-image addresses, canonical link, og:url and footer, the contact page's
+ * addresses, the shared script's settings, SECURITY.md's address, and the files a host and a crawler read (CNAME, robots.txt,
+ * sitemap.xml, security.txt). It must never touch LICENSE, never half-apply (every edit is computed before anything is
+ * written), and be safe to run twice.
  *
- * Most cases run against a page and a policy written out below, in the state the repository ships them in before a domain is
- * chosen. Running them against the repository's own files would fail them on the day the owner applies the domain, because the
- * markers they look for would be gone. The repository's own files get one case of their own, which holds in whatever state
- * they are in: a change to the page that the script cannot follow fails there, and not the owner on the day of the launch.
+ * Most cases run against a small site written out below, in the state the repository ships it in before a domain is chosen.
+ * Running them against the repository's own files would fail them on the day the owner applies the domain, because the markers
+ * they look for would be gone. The repository's own files get one case of their own, which holds in whatever state they are
+ * in: a change to a page that the script cannot follow fails there, and not the owner on the day of the launch.
  */
 
 const ROOT = path.resolve(__dirname, "..", "..", "..");
 const SCRIPT = path.join(ROOT, "scripts", "set-domain.mjs");
 
-/** The shapes the script finds its places in: the head's social images, the footer's contact, the page script's two variables. */
-const TEMPLATE_PAGE = `<!doctype html>
+/** The shapes the script finds its places in: the head's social images, the footer's contact, and on the contact page the addresses. */
+function templatePage(body = ""): string {
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -36,21 +39,44 @@ const TEMPLATE_PAGE = `<!doctype html>
 <link rel="icon" href="assets/favicon.svg">
 </head>
 <body>
-<main><a href="#plans">Plans</a></main>
+<main><a href="#plans">Plans</a>${body}</main>
 <footer>
   <div class="wrap">
     <p><b>Curule</b> &middot; <span id="contact">TODO(owner): company name, contact email</span></p>
     <p class="small"><a href="#" data-doc="operations.md">Operations</a></p>
   </div>
 </footer>
-<script>
-"use strict";
-// TODO(owner): where the documents are published. Until the commercial branch is merged to main these links 404.
-var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
-var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
-</script>
 </body>
 </html>
+`;
+}
+
+const CONTACT_BODY = `
+<p><a data-mail="sales" href="#sales">TODO(owner): sales address</a></p>
+<p><a data-mail="support" href="#support">TODO(owner): support address</a></p>
+<p><a data-mail="security" href="#security">TODO(owner): security address</a></p>
+<p>Published by <span data-company>TODO(owner): company name</span>.</p>`;
+
+const NOT_FOUND = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Page not found</title>
+<meta name="robots" content="noindex">
+</head>
+<body>
+<main><h1>Not here</h1></main>
+<footer><p><span id="contact">TODO(owner): company name, contact email</span></p></footer>
+</body>
+</html>
+`;
+
+const TEMPLATE_SCRIPT = `"use strict";
+// TODO(owner): where the documents are published. Until the commercial branch is merged to main these links 404.
+var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
+var APP_URL = "#"; // TODO(owner): where "Sign in" goes, for example https://mesh.<your-domain>/ (your own dashboard); "" removes the link
+var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
+var IMAGE_RELEASED = false;
 `;
 
 const TEMPLATE_POLICY = `# Security policy
@@ -83,20 +109,31 @@ For a licence beyond these terms, please contact the Licensor through https://gi
 opening an issue.
 `;
 
+function write(dir: string, rel: string, text: string): void {
+  fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel), text, "utf8");
+}
+
 function templateRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curule-domain-"));
-  fs.mkdirSync(path.join(dir, "site"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "site", "index.html"), TEMPLATE_PAGE, "utf8");
-  fs.writeFileSync(path.join(dir, "SECURITY.md"), TEMPLATE_POLICY, "utf8");
-  fs.writeFileSync(path.join(dir, "LICENSE"), TEMPLATE_LICENCE, "utf8");
+  write(dir, "site/index.html", templatePage());
+  write(dir, "site/pricing/index.html", templatePage());
+  write(dir, "site/contact/index.html", templatePage(CONTACT_BODY));
+  write(dir, "site/404.html", NOT_FOUND);
+  write(dir, "site/assets/site.js", TEMPLATE_SCRIPT);
+  write(dir, "SECURITY.md", TEMPLATE_POLICY);
+  write(dir, "LICENSE", TEMPLATE_LICENCE);
   return dir;
 }
 
-/** The repository's own page, policy and licence, in whatever state they are in today. */
+/** The repository's own site (its pages and script), policy and licence, in whatever state they are in today. */
 function realRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curule-domain-real-"));
-  fs.mkdirSync(path.join(dir, "site"), { recursive: true });
-  for (const file of ["site/index.html", "SECURITY.md", "LICENSE"]) fs.copyFileSync(path.join(ROOT, file), path.join(dir, file));
+  for (const f of walk(path.join(ROOT, "site")).filter((x) => /\.(html|js)$/.test(x))) {
+    fs.mkdirSync(path.dirname(path.join(dir, "site", f)), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "site", f), path.join(dir, "site", f));
+  }
+  for (const file of ["SECURITY.md", "LICENSE"]) fs.copyFileSync(path.join(ROOT, file), path.join(dir, file));
   return dir;
 }
 
@@ -116,66 +153,113 @@ function snapshot(dir: string, rel = ""): Record<string, string> {
   return out;
 }
 
-const FULL = ["curule.dev", "--contact", "hello@curule.dev", "--security", "security@curule.dev", "--company", "Curule Labs & Co", "--docs-base", "github", "--today", "2026-10-03"];
+const read = (dir: string, rel: string): string => fs.readFileSync(path.join(dir, rel), "utf8");
+const FULL = ["curule.dev", "--contact", "hello@curule.dev", "--security", "security@curule.dev", "--company", "Curule Labs & Co", "--docs-base", "github", "--app-url", "https://mesh.curule.dev/", "--today", "2026-10-03"];
 
-test("a domain with its addresses fills every marker and writes the files a host and a crawler read", () => {
+test("a domain with its addresses fills every marker, on every page, and writes the files a host and a crawler read", () => {
   const dir = templateRepo();
-  const licence = fs.readFileSync(path.join(dir, "LICENSE"), "utf8");
+  const licence = read(dir, "LICENSE");
   const r = run(dir, FULL);
   assert.equal(r.status, 0, r.err);
-  const page = fs.readFileSync(path.join(dir, "site", "index.html"), "utf8");
-  assert.ok(!page.includes("TODO(owner)"), "nothing on the page is left to fill");
-  assert.match(page, /<link rel="canonical" href="https:\/\/curule\.dev\/">\n<meta property="og:url" content="https:\/\/curule\.dev\/">/);
-  assert.match(page, /<meta property="og:type" content="website">\n<link rel="canonical"/, "after og:type, which is kept");
-  assert.match(page, /<meta property="og:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/);
-  assert.match(page, /<meta name="twitter:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/);
-  assert.match(page, /var CONTACT_HREF = "mailto:hello@curule\.dev";/);
-  assert.match(page, /<span id="contact">Curule Labs &amp; Co &middot; <a href="mailto:hello@curule\.dev">hello@curule\.dev<\/a><\/span>/);
-  assert.match(page, /var DOCS_BASE = "https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/";/, "the documents stay where the page's test pins them");
-  const policy = fs.readFileSync(path.join(dir, "SECURITY.md"), "utf8");
+  for (const [rel, text] of Object.entries(snapshot(dir))) assert.ok(!text.includes("TODO(owner)"), `${rel}: nothing is left to fill`);
+
+  for (const [rel, address] of [["site/index.html", "https://curule.dev/"], ["site/pricing/index.html", "https://curule.dev/pricing/"], ["site/contact/index.html", "https://curule.dev/contact/"]] as const) {
+    const page = read(dir, rel);
+    assert.ok(page.includes(`<meta property="og:type" content="website">\n<link rel="canonical" href="${address}">\n<meta property="og:url" content="${address}">\n`), `${rel}: the canonical link and og:url name the page's own address, after og:type, which is kept`);
+    assert.match(page, /<meta property="og:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/, rel);
+    assert.match(page, /<meta name="twitter:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/, rel);
+    assert.match(page, /<span id="contact">Curule Labs &amp; Co &middot; <a href="mailto:hello@curule\.dev">hello@curule\.dev<\/a><\/span>/, `${rel}: the footer`);
+    // What the markup tests allow: nothing fetched from another host. The canonical link names the page itself.
+    const markup = page.replace(/<link rel="canonical" href="[^"]*">/g, "");
+    assert.deepEqual([...markup.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]!).filter((x) => /^(https?:)?\/\//.test(x)), [], `${rel}: the script added no reference to another host`);
+  }
+  const contact = read(dir, "site/contact/index.html");
+  assert.match(contact, /<a data-mail="sales" href="mailto:hello@curule\.dev">hello@curule\.dev<\/a>/, "sales and support default to the contact address");
+  assert.match(contact, /<a data-mail="support" href="mailto:hello@curule\.dev">hello@curule\.dev<\/a>/);
+  assert.match(contact, /<a data-mail="security" href="mailto:security@curule\.dev">security@curule\.dev<\/a>/);
+  assert.match(contact, /<span data-company>Curule Labs &amp; Co<\/span>/);
+  const notFound = read(dir, "site/404.html");
+  assert.match(notFound, /<span id="contact">Curule Labs &amp; Co &middot; <a href="mailto:hello@curule\.dev">/, "the page that is not found has the footer too");
+  assert.ok(!/canonical|og:url|og:image/.test(notFound), "and no address of its own");
+
+  const script = read(dir, "site/assets/site.js");
+  assert.match(script, /^var CONTACT_HREF = "mailto:hello@curule\.dev"; \/\/ "Talk to us" and the paid plans$/m);
+  assert.match(script, /^var APP_URL = "https:\/\/mesh\.curule\.dev\/"; \/\/ Where "Sign in" goes: your own dashboard$/m);
+  assert.match(script, /^var DOCS_BASE = "https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/";$/m, "the documents stay where the site's test pins them");
+  assert.match(script, /^\/\/ Where the documents are published: the repository, until a documentation site exists\.$/m);
+  assert.match(script, /^var IMAGE_RELEASED = false;$/m, "and what is not the owner's to set about a domain is left alone");
+
+  const policy = read(dir, "SECURITY.md");
   assert.ok(!policy.includes("TODO(owner)"));
   assert.match(policy, /^- Email: security@curule\.dev$/m);
   assert.match(policy, /GitHub's private vulnerability reporting: <https:\/\/github\.com\/salitaba\/agent-mesh\/security\/advisories\/new>/, "the other way to report is kept");
   assert.match(policy, /Include what you found, how to reproduce it/, "and the paragraph after the address");
   assert.match(policy, /## What to expect[\s\S]*## Supported versions/, "and every section after it");
-  // What the page's own test allows: nothing fetched from another host. The canonical link names the page itself.
-  const markup = page.replace(/<script[\s\S]*?<\/script>/g, "");
-  const refs = [...markup.replace(/<link rel="canonical" href="[^"]*">/g, "").matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1]!);
-  assert.deepEqual(refs.filter((r) => /^(https?:)?\/\//.test(r)), [], "the script added no reference to another host");
-  assert.equal(fs.readFileSync(path.join(dir, "site", "CNAME"), "utf8"), "curule.dev\n");
-  assert.equal(fs.readFileSync(path.join(dir, "site", "robots.txt"), "utf8"), "User-agent: *\nAllow: /\n\nSitemap: https://curule.dev/sitemap.xml\n");
+
+  assert.equal(read(dir, "site/CNAME"), "curule.dev\n");
+  assert.equal(read(dir, "site/robots.txt"), "User-agent: *\nAllow: /\n\nSitemap: https://curule.dev/sitemap.xml\n");
   assert.equal(
-    fs.readFileSync(path.join(dir, "site", "sitemap.xml"), "utf8"),
-    '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://curule.dev/</loc><lastmod>2026-10-03</lastmod></url>\n</urlset>\n',
+    read(dir, "site/sitemap.xml"),
+    '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      "  <url><loc>https://curule.dev/</loc><lastmod>2026-10-03</lastmod></url>\n" +
+      "  <url><loc>https://curule.dev/contact/</loc><lastmod>2026-10-03</lastmod></url>\n" +
+      "  <url><loc>https://curule.dev/pricing/</loc><lastmod>2026-10-03</lastmod></url>\n" +
+      "</urlset>\n",
+    "the sitemap lists every page, the home page first, and not the page that is not found",
   );
-  const txt = fs.readFileSync(path.join(dir, "site", "security.txt"), "utf8");
+  const txt = read(dir, "site/security.txt");
   assert.equal(
     txt,
     "Contact: mailto:security@curule.dev\nContact: https://github.com/salitaba/agent-mesh/security/advisories/new\nExpires: 2027-10-02T00:00:00.000Z\nPreferred-Languages: en\nCanonical: https://curule.dev/.well-known/security.txt\n",
   );
-  assert.equal(fs.readFileSync(path.join(dir, "site", ".well-known", "security.txt"), "utf8"), txt, "the same file at the path the RFC prefers");
-  assert.equal(fs.readFileSync(path.join(dir, "LICENSE"), "utf8"), licence, "the licence is the Licensor's, and is not touched");
+  assert.equal(read(dir, "site/.well-known/security.txt"), txt, "the same file at the path the RFC prefers");
+  assert.equal(read(dir, "LICENSE"), licence, "the licence is the Licensor's, and is not touched");
 });
 
-test("the repository's own page and policy take a domain cleanly, in whatever state they are in", () => {
-  // The cases around this one use a page written out above, so that they keep holding after the domain is applied. This is the
-  // one that follows the real files: a change to the page or the policy that the script cannot follow fails here.
+test("a sales or support address of their own, and no sign-in link, are written where they belong", () => {
+  const dir = templateRepo();
+  const r = run(dir, ["curule.dev", "--contact", "hello@curule.dev", "--sales", "sales@curule.dev", "--support", "help@curule.dev", "--security", "security@curule.dev", "--app-url", "none", "--today", "2026-10-03"]);
+  assert.equal(r.status, 0, r.err);
+  const contact = read(dir, "site/contact/index.html");
+  assert.match(contact, /<a data-mail="sales" href="mailto:sales@curule\.dev">sales@curule\.dev<\/a>/);
+  assert.match(contact, /<a data-mail="support" href="mailto:help@curule\.dev">help@curule\.dev<\/a>/);
+  assert.match(contact, /<span data-company>TODO\(owner\): company name<\/span>/, "without --company the company line stays marked");
+  assert.match(read(dir, "site/assets/site.js"), /^var APP_URL = ""; \/\/ No hosted dashboard: the "Sign in" link is removed$/m);
+  assert.match(r.out, /marker\(s\) still say TODO\(owner\)/);
+});
+
+test("the repository's own site and policy take a domain cleanly, in whatever state they are in, and leave only the terms to counsel", () => {
+  // The cases around this one use a site written out above, so that they keep holding after the domain is applied. This is the
+  // one that follows the real files: a change to a page, to the script or to the policy that set-domain cannot follow fails here.
   const dir = realRepo();
   const r = run(dir, FULL);
   assert.equal(r.status, 0, r.err);
-  const page = fs.readFileSync(path.join(dir, "site", "index.html"), "utf8");
-  const policy = fs.readFileSync(path.join(dir, "SECURITY.md"), "utf8");
-  assert.ok(!page.includes("TODO(owner)"), "nothing on the page is left to fill");
-  assert.ok(!policy.includes("TODO(owner)"), "nor in the policy");
-  assert.equal((page.match(/<link rel="canonical"/g) ?? []).length, 1, "one canonical link");
-  assert.equal((page.match(/<meta property="og:url"/g) ?? []).length, 1, "one og:url");
-  assert.match(page, /<meta property="og:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/);
-  assert.match(policy, /^- Email: security@curule\.dev$/m);
+  const left: string[] = [];
+  for (const [rel, text] of Object.entries(snapshot(dir))) {
+    if (rel === "LICENSE") continue;
+    text.split("\n").forEach((line, i) => line.includes("TODO(owner)") && left.push(`${rel}:${i + 1}`));
+  }
+  assert.equal(left.length, 1, `only the terms are left to the owner and counsel: ${left.join(", ")}`);
+  assert.match(left[0]!, /^site[/\\]legal[/\\]index\.html:\d+$/);
+  const pages = Object.keys(snapshot(dir)).filter((f) => /^site[/\\](?:[^/\\]+[/\\])?index\.html$/.test(f));
+  assert.ok(pages.length >= 6, `every page of the site (${pages.length})`);
+  for (const rel of pages) {
+    const page = read(dir, rel);
+    assert.equal((page.match(/<link rel="canonical"/g) ?? []).length, 1, `${rel}: one canonical link`);
+    assert.equal((page.match(/<meta property="og:url"/g) ?? []).length, 1, `${rel}: one og:url`);
+    assert.match(page, /<meta property="og:image" content="https:\/\/curule\.dev\/assets\/social-card\.png">/, rel);
+    assert.match(page, /<span id="contact">Curule Labs &amp; Co &middot; <a href="mailto:hello@curule\.dev">/, rel);
+  }
+  assert.match(read(dir, "SECURITY.md"), /^- Email: security@curule\.dev$/m);
+  assert.match(read(dir, "site/contact/index.html"), /<a data-mail="security" href="mailto:security@curule\.dev">security@curule\.dev<\/a>/);
+  assert.match(read(dir, "site/404.html"), /<a href="mailto:hello@curule\.dev">/);
   const first = snapshot(dir);
   assert.equal(run(dir, FULL).status, 0);
   assert.deepEqual(snapshot(dir), first, "and a second run changes nothing");
   const checked = run(dir, ["--check"]);
-  assert.equal(checked.status, 0, checked.out);
+  assert.equal(checked.status, 1, "the publish gate still stops, for the terms");
+  assert.match(checked.out, /site\/legal\/index\.html:\d+: .*terms/);
+  assert.equal((checked.out.match(/^ {2}site\/|^ {2}SECURITY/gm) ?? []).length, 1, "and for nothing else");
 });
 
 test("a second run changes nothing, and a second domain replaces the first without leaving a trace of it", () => {
@@ -188,16 +272,27 @@ test("a second run changes nothing, and a second domain replaces the first witho
   assert.ok(!/\b(changed|created|would write)\b/.test(again.out), `nothing is reported as written: ${again.out}`);
   assert.match(again.out, /0 file\(s\) written/);
 
-  const moved = run(dir, ["getcurule.com", "--contact", "hi@getcurule.com", "--security", "security@getcurule.com", "--company", "Curule Labs & Co", "--docs-base", "github", "--today", "2026-10-03"]);
+  const moved = run(dir, ["getcurule.com", "--contact", "hi@getcurule.com", "--security", "security@getcurule.com", "--company", "Curule Labs & Co", "--docs-base", "github", "--app-url", "https://mesh.getcurule.com/", "--today", "2026-10-03"]);
   assert.equal(moved.status, 0, moved.err);
   for (const [file, text] of Object.entries(snapshot(dir))) {
     if (file === "LICENSE") continue;
     assert.ok(!text.includes("curule.dev"), `${file} still says the first domain`);
   }
-  const page = fs.readFileSync(path.join(dir, "site", "index.html"), "utf8");
-  assert.equal((page.match(/<link rel="canonical"/g) ?? []).length, 1, "one canonical link");
-  assert.equal((page.match(/<meta property="og:url"/g) ?? []).length, 1, "one og:url");
-  assert.equal(fs.readFileSync(path.join(dir, "site", "CNAME"), "utf8"), "getcurule.com\n");
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/contact/index.html"]) {
+    const page = read(dir, rel);
+    assert.equal((page.match(/<link rel="canonical"/g) ?? []).length, 1, `${rel}: one canonical link`);
+    assert.equal((page.match(/<meta property="og:url"/g) ?? []).length, 1, `${rel}: one og:url`);
+  }
+  assert.equal(read(dir, "site/CNAME"), "getcurule.com\n");
+});
+
+test("a page added later is found, given its own address and listed in the sitemap, without a change to the script", () => {
+  const dir = templateRepo();
+  write(dir, "site/legal/index.html", templatePage());
+  assert.equal(run(dir, FULL).status, 0);
+  assert.match(read(dir, "site/legal/index.html"), /<link rel="canonical" href="https:\/\/curule\.dev\/legal\/">/);
+  assert.match(read(dir, "site/sitemap.xml"), /<loc>https:\/\/curule\.dev\/legal\/<\/loc>/);
+  assert.ok(!read(dir, "site/legal/index.html").includes("TODO(owner)"));
 });
 
 test("moving to a new domain without repeating --security keeps security.txt on the domain it is served from", () => {
@@ -205,21 +300,23 @@ test("moving to a new domain without repeating --security keeps security.txt on 
   assert.equal(run(dir, FULL).status, 0);
   const r = run(dir, ["getcurule.com", "--contact", "hi@getcurule.com", "--today", "2026-10-03"]);
   assert.equal(r.status, 0, r.err);
-  const txt = fs.readFileSync(path.join(dir, "site", "security.txt"), "utf8");
+  const txt = read(dir, "site/security.txt");
   assert.match(txt, /^Contact: mailto:security@curule\.dev$/m, "the address SECURITY.md already names");
   assert.match(txt, /^Canonical: https:\/\/getcurule\.com\/\.well-known\/security\.txt$/m, "at the new domain's address");
 });
 
-test("without --security SECURITY.md and security.txt are left alone; without --contact the footer is too", () => {
+test("without --security SECURITY.md and security.txt are left alone; without --contact the footers are too", () => {
   const dir = templateRepo();
-  const policy = fs.readFileSync(path.join(dir, "SECURITY.md"), "utf8");
+  const policy = read(dir, "SECURITY.md");
   const r = run(dir, ["curule.dev", "--today", "2026-10-03"]);
   assert.equal(r.status, 0, r.err);
-  assert.equal(fs.readFileSync(path.join(dir, "SECURITY.md"), "utf8"), policy);
+  assert.equal(read(dir, "SECURITY.md"), policy);
   assert.ok(!fs.existsSync(path.join(dir, "site", "security.txt")), "no address to publish yet");
-  const page = fs.readFileSync(path.join(dir, "site", "index.html"), "utf8");
-  assert.match(page, /<span id="contact">TODO\(owner\): company name, contact email<\/span>/);
-  assert.match(page, /var CONTACT_HREF = "#"; \/\/ TODO\(owner\)/);
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) {
+    assert.match(read(dir, rel), /<span id="contact">TODO\(owner\): company name, contact email<\/span>/, rel);
+  }
+  assert.match(read(dir, "site/assets/site.js"), /var CONTACT_HREF = "#"; \/\/ TODO\(owner\)/);
+  assert.match(read(dir, "site/assets/site.js"), /var APP_URL = "#"; \/\/ TODO\(owner\)/, "and the sign-in address, which is the owner's too");
   assert.match(r.out, /marker\(s\) still say TODO\(owner\)/, "and it says some are left");
 });
 
@@ -229,8 +326,9 @@ test("--dry-run says what would change and writes nothing", () => {
   const r = run(dir, [...FULL, "--dry-run"]);
   assert.equal(r.status, 0, r.err);
   assert.deepEqual(snapshot(dir), before);
-  assert.match(r.out, /would write\s+site\/index\.html/);
-  assert.match(r.out, /would write\s+site\/CNAME/);
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/contact/index.html", "site/404.html", "site/assets/site.js", "site/CNAME", "site/sitemap.xml", "SECURITY.md"]) {
+    assert.match(r.out, new RegExp(`would write\\s+${rel.replace(/[./]/g, "\\$&")}`), rel);
+  }
   assert.match(r.out, /dry run: /);
 });
 
@@ -255,6 +353,12 @@ test("input that is not a domain or an address is refused with nothing written",
     ["curule.dev", "--contact", 'x"@curule.dev'],
     ["curule.dev", "--contact", "a b@curule.dev"],
     ["curule.dev", "--security", "not-an-address"],
+    ["curule.dev", "--sales", "not-an-address"],
+    ["curule.dev", "--support", "a@b"],
+    ["curule.dev", "--app-url", "http://mesh.curule.dev/"],
+    ["curule.dev", "--app-url", "mesh.curule.dev"],
+    ["curule.dev", "--app-url", 'https://mesh.curule.dev/"onerror='],
+    ["curule.dev", "--app-url", "https://mesh.curule.dev/a b"],
     ["curule.dev", "--contact", "hello@curule.dev", "--company", "Two\nLines"],
     ["curule.dev", "--contact", "hello@curule.dev", "--company", "   "],
     ["curule.dev", "--contact", "hello@curule.dev", "--company", "x".repeat(121)],
@@ -276,8 +380,11 @@ test("a name is lower-cased, and a company name with replacement syntax in it is
   const dir = templateRepo();
   const r = run(dir, ["Curule.DEV", "--contact", "hello@curule.dev", "--company", "A$&B $1 <b>", "--today", "2026-10-03"]);
   assert.equal(r.status, 0, r.err);
-  assert.equal(fs.readFileSync(path.join(dir, "site", "CNAME"), "utf8"), "curule.dev\n");
-  assert.match(fs.readFileSync(path.join(dir, "site", "index.html"), "utf8"), /<span id="contact">A\$&amp;B \$1 &lt;b&gt; &middot; <a href="mailto:hello@curule\.dev">/);
+  assert.equal(read(dir, "site/CNAME"), "curule.dev\n");
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) {
+    assert.match(read(dir, rel), /<span id="contact">A\$&amp;B \$1 &lt;b&gt; &middot; <a href="mailto:hello@curule\.dev">/, rel);
+  }
+  assert.match(read(dir, "site/contact/index.html"), /<span data-company>A\$&amp;B \$1 &lt;b&gt;<\/span>/);
 });
 
 test("a company name of 120 characters is the longest the footer takes", () => {
@@ -302,23 +409,33 @@ test("a directory that is not the repository is refused, and nothing is created 
   const noPolicy = run(dir, FULL);
   assert.equal(noPolicy.status, 2, noPolicy.out + noPolicy.err);
   assert.match(noPolicy.err, /SECURITY\.md is missing under/);
-  assert.deepEqual(snapshot(dir), before, "the page was not changed either");
+  assert.deepEqual(snapshot(dir), before, "the pages were not changed either");
+
+  const noScript = templateRepo();
+  fs.rmSync(path.join(noScript, "site", "assets", "site.js"));
+  const withoutScript = run(noScript, FULL);
+  assert.equal(withoutScript.status, 2, withoutScript.out + withoutScript.err);
+  assert.match(withoutScript.err, /site\/assets\/site\.js is missing under/);
 });
 
-test("a page that is not the shape the script expects is refused whole: no file is written, the message says which text is missing", () => {
-  for (const [what, from, to] of [
-    ["CONTACT_HREF", /var CONTACT_HREF = "[^"]*";[^\n]*\n/, ""],
-    ["og:image", /<meta property="og:image" content="[^"]*">\n/, ""],
-    ["footer contact", /<span id="contact">[\s\S]*?<\/span>/, ""],
+test("a site that is not the shape the script expects is refused whole: no file is written, the message says which text is missing", () => {
+  for (const [what, file, from, to] of [
+    ["CONTACT_HREF", "site/assets/site.js", /var CONTACT_HREF = "[^"]*";[^\n]*\n/, ""],
+    ["APP_URL", "site/assets/site.js", /var APP_URL = "[^"]*";[^\n]*\n/, ""],
+    ["og:image", "site/pricing/index.html", /<meta property="og:image" content="[^"]*">\n/, ""],
+    ["twitter:image", "site/contact/index.html", /<meta name="twitter:image" content="[^"]*">\n/, ""],
+    ["og:type", "site/index.html", /<meta property="og:type" content="website">\n/, ""],
+    ["footer contact", "site/pricing/index.html", /<span id="contact">[\s\S]*?<\/span>/, ""],
+    ["footer contact", "site/404.html", /<span id="contact">[\s\S]*?<\/span>/, ""],
   ] as const) {
     const dir = templateRepo();
-    const file = path.join(dir, "site", "index.html");
-    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(from, to), "utf8");
+    const abs = path.join(dir, file);
+    fs.writeFileSync(abs, fs.readFileSync(abs, "utf8").replace(from, to), "utf8");
     const before = snapshot(dir);
     const r = run(dir, FULL);
-    assert.equal(r.status, 2, `${what}: ${r.out}${r.err}`);
-    assert.match(r.err, new RegExp(`site/index\\.html .*${what.split(" ")[0]}`), what);
-    assert.deepEqual(snapshot(dir), before, `${what}: half-applied`);
+    assert.equal(r.status, 2, `${what} in ${file}: ${r.out}${r.err}`);
+    assert.match(r.err, new RegExp(`${file.replace(/[./]/g, "\\$&")} .*${what.split(" ")[0]}`), `${what} in ${file}`);
+    assert.deepEqual(snapshot(dir), before, `${what} in ${file}: half-applied`);
   }
   const dir = templateRepo();
   const policy = path.join(dir, "SECURITY.md");
@@ -327,17 +444,25 @@ test("a page that is not the shape the script expects is refused whole: no file 
   const r = run(dir, FULL);
   assert.equal(r.status, 2, r.err);
   assert.match(r.err, /SECURITY\.md reporting address/);
-  assert.deepEqual(snapshot(dir), before, "the page was not changed either: SECURITY.md's edit failed before any write");
+  assert.deepEqual(snapshot(dir), before, "the pages were not changed either: SECURITY.md's edit failed before any write");
 });
 
-test("--check lists what is still marked and what is not written, exits 1, and exits 0 once a domain is applied", () => {
+test("--check lists what is still marked, on every page, and what is not written, exits 1, and exits 0 once a domain is applied", () => {
   const dir = templateRepo();
   const before = run(dir, ["--check"]);
   assert.equal(before.status, 1);
-  assert.match(before.out, /site\/index\.html:\d+: .*og:image/);
-  assert.match(before.out, /site\/index\.html:\d+: .*company name, contact email/);
-  assert.match(before.out, /site\/index\.html:\d+: .*CONTACT_HREF/);
-  assert.match(before.out, /site\/index\.html:\d+: .*where the documents are published/);
+  for (const page of ["index.html", "pricing/index.html", "contact/index.html"]) {
+    assert.match(before.out, new RegExp(`site/${page.replace(/[./]/g, "\\$&")}:\\d+: .*og:image`), `${page}: its social image`);
+    assert.match(before.out, new RegExp(`site/${page.replace(/[./]/g, "\\$&")}:\\d+: .*company name, contact email`), `${page}: its footer`);
+  }
+  assert.match(before.out, /site\/404\.html:\d+: .*company name, contact email/, "and the page that is not found");
+  assert.match(before.out, /site\/contact\/index\.html:\d+: .*sales address/);
+  assert.match(before.out, /site\/contact\/index\.html:\d+: .*support address/);
+  assert.match(before.out, /site\/contact\/index\.html:\d+: .*security address/);
+  assert.match(before.out, /site\/contact\/index\.html:\d+: .*company name/);
+  assert.match(before.out, /site\/assets\/site\.js:\d+: .*CONTACT_HREF/);
+  assert.match(before.out, /site\/assets\/site\.js:\d+: .*APP_URL/);
+  assert.match(before.out, /site\/assets\/site\.js:\d+: .*where the documents are published/);
   assert.match(before.out, /SECURITY\.md:\d+: .*security@<your domain>/);
   for (const file of ["site/CNAME", "site/robots.txt", "site/sitemap.xml"]) assert.match(before.out, new RegExp(`${file.replace(".", "\\.")}: not written yet`), file);
   assert.match(before.out, /LICENSE's contact line still points at the repository\. It is the Licensor's to change/);
@@ -355,11 +480,18 @@ test("--check lists what is still marked and what is not written, exits 1, and e
     assert.equal(missing.status, 1, `${file}: ${missing.out}`);
     assert.match(missing.out, new RegExp(`${file.replace(".", "\\.")}: not written yet`), file);
   }
-  // And a marker put back into the policy is found there, not only on the page.
+  // And a marker put back is found wherever it is: in the policy, on a page added later, in the script.
   assert.equal(run(dir, FULL).status, 0);
   const policy = path.join(dir, "SECURITY.md");
-  fs.writeFileSync(policy, `${fs.readFileSync(policy, "utf8")}\nTODO(owner): a line left behind\n`, "utf8");
+  fs.writeFileSync(policy, `${read(dir, "SECURITY.md")}\nTODO(owner): a line left behind\n`, "utf8");
   const marked = run(dir, ["--check"]);
   assert.equal(marked.status, 1, marked.out);
   assert.match(marked.out, /SECURITY\.md:\d+: TODO\(owner\): a line left behind/);
+  fs.writeFileSync(policy, read(dir, "SECURITY.md").replace(/\nTODO\(owner\): a line left behind\n/, "\n"), "utf8");
+  write(dir, "site/legal/index.html", `${templatePage()}<!-- TODO(owner): the terms -->\n`);
+  assert.match(run(dir, ["--check"]).out, /site\/legal\/index\.html:\d+: .*the terms/);
+  // The site's own README talks about the marker and is not a place that carries one.
+  write(dir, "site/README.md", "Everything marked TODO(owner) is the owner's.\n");
+  fs.rmSync(path.join(dir, "site", "legal"), { recursive: true });
+  assert.equal(run(dir, ["--check"]).status, 0, "a README that mentions the marker is not a marker");
 });

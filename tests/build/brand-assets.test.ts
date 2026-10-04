@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import { spawnSync } from "child_process";
+import { shareable, sitePages } from "./site-pages";
 
 const ROOT = path.resolve(__dirname, "..", "..", "..");
 const read = (file: string): string => fs.readFileSync(path.join(ROOT, file), "utf8");
@@ -58,9 +59,12 @@ test("the PNGs are the sizes the pages promise", () => {
   assert.deepEqual(pngSize("brand/apple-touch-icon.png"), [180, 180]);
   assert.deepEqual(pngSize("brand/icon-512.png"), [512, 512]);
   assert.deepEqual(pngSize("brand/social-card.png"), [1200, 630]);
-  const site = read("site/index.html");
-  assert.match(site, /<meta property="og:image:width" content="1200">/, "the site says the card is 1200 wide");
-  assert.match(site, /<meta property="og:image:height" content="630">/, "and 630 tall");
+  const cards = shareable(sitePages());
+  assert.ok(cards.length >= 6, "every page with an address of its own names the card");
+  for (const p of cards) {
+    assert.match(p.html, /<meta property="og:image:width" content="1200">/, `${p.rel}: the site says the card is 1200 wide`);
+    assert.match(p.html, /<meta property="og:image:height" content="630">/, `${p.rel}: and 630 tall`);
+  }
   assert.ok(bytes("brand/social-card.png").length < 200_000, "a link preview should be light");
 });
 
@@ -75,12 +79,16 @@ test("the copies of the logo are the kit's: the site's files, its inline logo, t
   const seat = /<circle class="seat" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/.exec(logo)!.slice(1);
   const box = /viewBox="([\d. ]+)"/.exec(logo)![1]!;
 
-  const site = read("site/index.html");
-  for (const d of paths) assert.ok(site.includes(`d="${d}"`), "the site draws the same letters");
-  assert.ok(site.includes(`<svg class="logo" viewBox="${box}"`), "in the same box");
-  assert.ok(site.includes(`<circle class="seat" cx="${seat[0]}" cy="${seat[1]}" r="${seat[2]}"`), "with the seat in the same place");
-  assert.match(site, /<link rel="icon" href="assets\/favicon\.svg" type="image\/svg\+xml">/);
-  assert.match(site, /<link rel="apple-touch-icon" href="assets\/apple-touch-icon\.png">/);
+  // Every page draws the logo in its header and its footer, and carries the icons, with the address that works from where it is:
+  // as they are on the home page, one folder up from the other pages, and from the root on the page shown for a missing address.
+  for (const p of sitePages()) {
+    const prefix = p.rel === "404.html" ? "/" : p.rel.includes("/") ? "../" : "";
+    for (const d of paths) assert.equal(p.html.split(`d="${d}"`).length - 1, 2, `${p.rel}: the header and the footer draw the same letters`);
+    assert.equal(p.html.split(`<svg class="logo" viewBox="${box}"`).length - 1, 2, `${p.rel}: in the same box`);
+    assert.equal(p.html.split(`<circle class="seat" cx="${seat[0]}" cy="${seat[1]}" r="${seat[2]}"`).length - 1, 2, `${p.rel}: with the seat in the same place`);
+    assert.ok(p.html.includes(`<link rel="icon" href="${prefix}assets/favicon.svg" type="image/svg+xml">`), `${p.rel}: the favicon`);
+    assert.ok(p.html.includes(`<link rel="apple-touch-icon" href="${prefix}assets/apple-touch-icon.png">`), `${p.rel}: the touch icon`);
+  }
 
   const component = read("apps/mesh-dashboard/src/components.tsx");
   for (const d of paths) assert.ok(component.includes(`d="${d}"`), "the dashboard component draws the same letters");
@@ -125,7 +133,7 @@ test("the colours are the site's colours, and every text pair clears WCAG AA", (
   assert.deepEqual(Object.keys(dark), Object.keys(light));
 
   // The site's own custom properties are these values under other names.
-  const site = read("site/index.html");
+  const site = read("site/assets/site.css");
   const siteLight = vars(/:root \{([\s\S]*?)\n\}/.exec(site)![1]!);
   const siteDark = vars(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([\s\S]*?)\}\s*\}/.exec(site)![1]!);
   const names = { paper: "--bg", panel: "--panel", ink: "--ink", muted: "--muted", line: "--line", blue: "--accent", "on-blue": "--accent-ink" } as const;
