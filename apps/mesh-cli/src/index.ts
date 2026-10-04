@@ -351,7 +351,7 @@ usage:
     satisfy.
     parked: dashboard+designer, nothing runs on its own.
     send with "wake after send" (or wake buttons) steps single turns;
-    ▶ start mission (POST /mission/start) flips parked -> live.
+    Start mission (POST /mission/start) flips parked -> live.
     flags: --live forces live, --parked / --ui-only forces parked.
   curule status [--bus url]                  mission/agent/budget overview
   curule graph [--bus url]                   live collaboration graph
@@ -511,7 +511,7 @@ async function launchMesh(opts: {
       attachDemoTeam(handle.instance);
       console.log(
         opts.mode === "parked"
-          ? "demo team installed (parked): wake single agents for manual steps, or press ▶ start mission to run the whole flow."
+          ? "demo team installed (parked): wake single agents for manual steps, or press Start mission to run the whole flow."
           : "demo team attached: scripted roles will now run the payment flow (QA blocks once — watch conflict handling).",
       );
     } catch (err) {

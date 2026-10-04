@@ -27,7 +27,8 @@ const OUT = resolve(root, opt("out", "docs/assets/demo-stub.gif"));
 const MP4 = flag("mp4") ? OUT.replace(/\.gif$/i, ".mp4") : null;
 const KEEP_FRAMES = flag("keep-frames");
 const W = 1280, H = 720;
-const T_START = 2500, T_EVENTS = 4600, T_GRAPH = 8200, T_END = 12800;
+// The scripted run takes about fifteen seconds from Start to Delivered: Overview while it works, Events, the Graph, then the Overview again, delivered.
+const T_START = 2500, T_EVENTS = 6500, T_GRAPH = 9500, T_RESULT = 13000, T_END = 18500;
 const FRAMES_DIR = join(tmpdir(), "curule-demo-capture");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,17 +117,6 @@ for (let i = 0; i < 60; i++) { ready = await evalJs(`!!document.querySelector('n
 if (!ready) die("dashboard nav never rendered");
 await sleep(1200);
 
-const banner = await evalJs(`(() => {
-  const t = [...document.querySelectorAll('*')].find((e) => e.children.length === 0 && /No projects yet/.test(e.textContent));
-  if (!t) return "none";
-  let n = t, best = null;
-  for (let i = 0; i < 5 && n; i++) { const r = n.getBoundingClientRect(); if (r.width > 900 && r.height < 90) { best = n; break; } n = n.parentElement; }
-  if (!best) return "none";
-  best.style.display = "none";
-  return "hidden";
-})()`);
-console.log(`host banner: ${banner}`);
-
 const scrollMain = (dy, ms) => evalJs(`(() => {
   const els = [...document.querySelectorAll('div, main, section, ul, ol')].filter((d) => {
     const oy = getComputedStyle(d).overflowY;
@@ -149,9 +139,10 @@ console.log("recording...");
 const steps = [
   [T_START, async () => { const s = await evalJs(`fetch('/mission/start',{method:'POST'}).then(r=>r.status).catch(e=>String(e))`); console.log(`mission/start -> ${s}`); }],
   [T_EVENTS, () => evalJs(`location.hash='#/events'`)],
-  [6000, () => scrollMain(150, 1700)],
+  [T_EVENTS + 1400, () => scrollMain(150, 1700)],
   [T_GRAPH, () => evalJs(`location.hash='#/graph'`)],
-  [10200, () => scrollMain(240, 1800)],
+  [T_RESULT, () => evalJs(`location.hash='#/overview'`)],
+  [T_RESULT + 2800, () => scrollMain(300, 1800)],
 ];
 for (const [at, fn] of steps) {
   const waitMs = t0 + at - Date.now();
@@ -182,7 +173,7 @@ run("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", j
 console.log("encoding gif...");
 mkdirSync(dirname(OUT), { recursive: true });
 run("ffmpeg", ["-y", "-loglevel", "error", "-i", mp4Tmp,
-  "-vf", `fps=18,scale=1120:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle`, "-loop", "0", OUT]);
+  "-vf", `fps=12,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, "-loop", "0", OUT]);
 if (MP4) run("ffmpeg", ["-y", "-loglevel", "error", "-i", mp4Tmp, "-c", "copy", MP4]);
 
 if (!KEEP_FRAMES) rmSync(FRAMES_DIR, { recursive: true, force: true });

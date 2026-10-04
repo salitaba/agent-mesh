@@ -129,7 +129,7 @@ npm run curule -- console examples/payment-api/mesh.yaml --port 7430
 # parked semantics: startup/interest/timer cascades are all off — nothing runs
 # on its own. BUT operator buttons stay live: "wake" runs exactly one manual
 # turn (step through the mesh agent by agent), "send + wake after send" delivers
-# mail and steps recipients in one action, and the ▶ Start mission button flips
+# mail and steps recipients in one action, and the Start mission button flips
 # the console live in place (scheduler on, cascades resume) without restarting.
 
 # design first, run later:
