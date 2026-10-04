@@ -42,7 +42,7 @@ export interface CardState {
   sentence: string;
   /** For a running process: whether its mission is live or parked. Null when it is not running, or has not said. */
   mode: "live" | "parked" | null;
-  /** A process is open and has turns in flight: work is being done now, not only possible. */
+  /** A process is open and has turns in flight: work is being done now, not only possible. A parked mission can still have turns finishing. */
   working: boolean;
 }
 
@@ -78,7 +78,7 @@ export function cardState(p: ProjectView, opts: { parkedByHost?: boolean; missio
         return { key: "host-parked", tone: "warn", label: "Parked by host", icon: "pause", mode, working: false, sentence: "The host parked it to stay inside its spend ceiling or turn cap. Nothing runs until you continue it." };
       }
       return {
-        key: "open", tone: "ok", label: "Open", icon: "dot", mode, working: !parked && (p.spend?.runningTurns ?? 0) > 0,
+        key: "open", tone: "ok", label: "Open", icon: "dot", mode, working: (p.spend?.runningTurns ?? 0) > 0,
         sentence: mode === "parked" ? "Its process is running and its mission is parked: nothing runs on its own until it is started." : "Its process is running.",
       };
     }

@@ -95,6 +95,8 @@ test("a tab says whether an open project has turns in flight or is parked, and u
   assert.deepEqual(look("open", { lastMode: "live", ...turns(0) }), { word: "open", icon: "dot", tone: "ok" }, "a live mission with nothing in flight is not claimed to be running");
   assert.deepEqual(look("open", { lastMode: "live" }), { word: "open", icon: "dot", tone: "ok" }, "no goal yet, or the host has not said: open");
   assert.deepEqual(look("open", { lastMode: "parked", ...turns(3) }), { word: "parked", icon: "pause", tone: "warn" }, "parked outranks turns that are finishing");
+  assert.equal(cardState(p("a", "open", { lastMode: "parked", ...turns(3) })).working, true, "the turns are in flight all the same: they are finishing");
+  assert.equal(cardState(p("a", "closed", { ...turns(3) })).working, false, "a closed project has no turns, whatever it last reported");
   assert.deepEqual(look("open"), { word: "open", icon: "dot", tone: "ok" }, "no report yet: it says only that it is open");
   assert.deepEqual(look("open", { lastMode: "live" }, { missionParked: true }), { word: "parked", icon: "pause", tone: "warn" }, "the project in front knows better");
   assert.equal(look("open", {}, { parkedByHost: true }).word, "parked");
