@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmt, fmtBudget } from "../format";
 import { isParkedStatus, useGoLive } from "../actions";
-import { answerToast, budgetInfoOf, capTarget, holdsOf, type BudgetInfo, type EscalationLike, type Holds } from "../escalation-card";
+import { answerToast, budgetInfoOf, capTarget, compact, holdsOf, type BudgetInfo, type EscalationLike, type Holds } from "../escalation-card";
 import type { LoadState } from "../inbox-model";
 import { useProjectsOptional } from "../projects";
 import { useMesh } from "../store";
@@ -342,7 +342,7 @@ export function useDecisions() {
       } catch {
         yamlNote = " mesh.yaml was left unchanged.";
       }
-      const label = kind === "events" ? `event cap to ${fmt(target)}` : `time limit to ${target} minutes`;
+      const label = kind === "events" ? `event cap to ${compact(target)}` : `time limit to ${target} ${target === 1 ? "minute" : "minutes"}`;
       const r2 = await client.post(`/escalations/${encodeURIComponent(id)}/respond`, { response: `raised ${label}; resuming` });
       if (r2.status !== 200) {
         toast("Cap raised, but the response was not recorded", `The card is still open: answer it to clear it.${yamlNote}`, "warn");

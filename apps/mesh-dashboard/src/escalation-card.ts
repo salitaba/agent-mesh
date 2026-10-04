@@ -483,8 +483,10 @@ export function capTarget(kind: "events" | "time", budget: BudgetInfo | undefine
     const current = (typeof live === "number" ? live : undefined) ?? budget?.limit ?? 8000;
     return roundNice(current * 2);
   }
-  const live = status?.goal?.budget?.wallClockMinutes;
-  return ((typeof live === "number" ? live : undefined) ?? 240) * 2;
+  const live = (typeof status?.goal?.budget?.wallClockMinutes === "number" ? status.goal.budget.wallClockMinutes : undefined) ?? 240;
+  // The server keeps whole minutes (it floors what it is given and refuses anything not above the current limit), so a limit
+  // under a minute is raised to one, and half a minute more than a fractional limit would be floored back onto it.
+  return Math.max(Math.ceil(live * 2), Math.floor(live) + 1);
 }
 
 export type PrimaryId = "send-answer" | "respond" | "acknowledge" | "answer-all" | "raise" | "raise-cap" | "open-settings";
@@ -577,7 +579,7 @@ export function answerPlan(i: AnswerInput): AnswerPlan {
     case "cap": {
       const events = i.budget?.configCap === "events";
       const target = i.capTarget ?? 0;
-      const what = events ? `Raise the event cap to ${compact(target)}` : `Raise the time limit to ${target} minutes`;
+      const what = events ? `Raise the event cap to ${compact(target)}` : `Raise the time limit to ${target} ${target === 1 ? "minute" : "minutes"}`;
       return {
         ...base,
         primary: { id: "raise-cap", label: i.parked ? what : `${what} and resume` },
@@ -649,7 +651,8 @@ export interface Outcome {
  * parked says so until the operator starts it.
  */
 export function answerOutcome(i: OutcomeInput): Outcome {
-  const plural = (n: number): string => `${n} more decision${n === 1 ? " still holds" : "s still hold"} the mission.`;
+  // Whatever else is open may hold a seat or nothing at all, so this says only that it is waiting, which is true of every kind.
+  const plural = (n: number): string => `${n} more decision${n === 1 ? " is" : "s are"} waiting on you.`;
   const held = i.holds ?? { scope: "mission" as const };
   // A notice is acknowledged, not answered: it asked for nothing.
   const lead = held.scope === "nothing" ? "Acknowledged." : "Answered.";

@@ -177,6 +177,10 @@ test("the event cap and the time limit are raised to double, and a thread withou
   assert.equal(capTarget("events", events, { goal: { budget: { maxEvents: 10_000 } } }), 20_000);
   assert.equal(capTarget("time", undefined, { goal: { budget: { wallClockMinutes: 60 } } }), 120);
   assert.equal(capTarget("time", undefined, {}), 480, "no live figure: double the default");
+  assert.equal(capTarget("time", undefined, { goal: { budget: { wallClockMinutes: 0.05 } } }), 1, "the server keeps whole minutes: a limit under one is raised to one, not to 0.1 (which it would floor to nothing)");
+  assert.equal(capTarget("time", undefined, { goal: { budget: { wallClockMinutes: 1.5 } } }), 3);
+  assert.equal(capTarget("time", undefined, { goal: { budget: { wallClockMinutes: 1 } } }), 2, "always above the current limit, as the server insists");
+  assert.equal(answerPlan({ kind: "cap", parked: false, holds: { scope: "mission" }, budget: { configCap: "time" } as AnswerInput["budget"], capTarget: 1, placeholder: "" }).primary.label, "Raise the time limit to 1 minute and resume");
   const thread = budgetInfoOf(esc({ reason: "thread_budget_exhausted", detail: {} }), {}, verdictText);
   assert.equal(thread.raisable, false);
 });
@@ -355,9 +359,10 @@ test("after an answer the card says whether the mission moved, from the same sta
   const say = (phase: string, blockingDecisions = 0, primaryLabel: string | null = "Continue") => answerOutcome({ phase, blockingDecisions, primaryLabel });
   assert.deepEqual(say("running", 0, "Pause"), { tone: "ok", text: "Answered. The mission is running again.", action: false });
   assert.deepEqual(say("parked"), { tone: "warn", text: "Answered. The project is parked, so nothing is running yet.", action: true });
-  assert.equal(say("needs-you", 2).text, "Answered. 2 more decisions still hold the mission.");
-  assert.equal(say("needs-you", 1).text, "Answered. 1 more decision still holds the mission.");
-  assert.equal(say("needs-you", 0).text, "Answered. 1 more decision still holds the mission.", "an escalated goal with its list not yet arrived still holds one");
+  assert.equal(say("needs-you", 2).text, "Answered. 2 more decisions are waiting on you.");
+  assert.equal(say("needs-you", 1).text, "Answered. 1 more decision is waiting on you.");
+  assert.equal(say("needs-you", 0).text, "Answered. 1 more decision is waiting on you.", "an escalated goal with its list not yet arrived still has one");
+  assert.doesNotMatch(say("needs-you", 2).text, /hold/, "what is left may hold a seat or nothing: only 'waiting' is true of every kind");
   assert.equal(say("paused").text, "Answered. The mission is paused.");
   assert.equal(say("ceiling").tone, "bad");
   assert.equal(say("done").action, false, "nothing to start on a delivered mission");
@@ -392,7 +397,7 @@ test("a notice is acknowledged, not answered, and the mission it never held is n
   assert.equal(say("running"), "Acknowledged. The mission carried on.");
   assert.equal(say("quiet"), "Acknowledged. The mission is running; no agent is working right now.");
   assert.equal(say("parked"), "Acknowledged. The project is parked, so nothing is running yet.", "the state is still the state");
-  assert.equal(say("needs-you"), "Acknowledged. 1 more decision still holds the mission.");
+  assert.equal(say("needs-you"), "Acknowledged. 1 more decision is waiting on you.");
   assert.equal(say("offline"), "Acknowledged, but the server stopped answering, so the mission's state is not known.");
   for (const phase of ["running", "quiet", "stalled", "needs-you", "parked", "paused", "ceiling", "done", "failed", "offline", "loading"]) assert.doesNotMatch(say(phase), /^Answered/, phase);
 });
