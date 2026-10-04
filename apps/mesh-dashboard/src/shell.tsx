@@ -14,6 +14,7 @@ import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
+import { isHostView, serverKind, showsSection } from "./navmodel";
 import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
@@ -217,6 +218,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // show the strip only once it confirms a registry exists.
   const projectsCtx = useProjectsOptional();
   const hasProjects = projectsCtx?.hasRegistry === true;
+  const kind = serverKind(projectsCtx ? { hasRegistry: projectsCtx.hasRegistry, loaded: projectsCtx.loaded, projectCount: projectsCtx.projects.length } : null);
   const auth = useAuthOptional();
   // A registry that has answered and holds nothing is first-run, not "a mission
   // reading zero". Every mesh-scoped request 409s in that state, so rendering
@@ -334,7 +336,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // the Designer to open; it never touches Designer state from here.
   useEffect(() => {
     register("global", [
-      ...KEY_VIEWS.filter((v) => !noProjects || v === "hostsettings" || v === "projects").map((v, i) => {
+      ...KEY_VIEWS.filter((v) => (isHostView(v) ? kind === "host" || kind === "empty-host" : kind !== "empty-host")).map((v, i) => {
         const nav = NAV_ITEMS.find((n) => n.view === v);
         return {
           id: `go.${v}`,
@@ -357,7 +359,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         })),
     ]);
     return () => unregister("global");
-  }, [setView, openHelp, status, noProjects]);
+  }, [setView, openHelp, status, kind]);
 
   // The authoritative key router. Registered once (empty deps) so it stays
   // ahead of the view-local handlers that mount later; it reads the latest
@@ -639,7 +641,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <Icon name="search" /><span>Search</span><kbd>⌘K</kbd>
         </button>
         <nav id="nav" aria-label="views">
-          {(noProjects ? NAV.filter((g) => g.section === "Host") : NAV).map((group) => (
+          {NAV.filter((g) => showsSection(kind, g.section)).map((group) => (
             <div className="nav-group" role="group" aria-label={group.section} key={group.section}>
               <div className="nav-label" aria-hidden="true">{group.section}</div>
               {group.items.map((n) => {
@@ -729,7 +731,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               Showing the last known state, which may be stale. Is the mesh process still running?
             </Banner>
           ) : null}
-          <LicenseBanner onOpen={() => setView("hostsettings")} />
+          {hasProjects ? <LicenseBanner onOpen={() => setView("hostsettings")} /> : null}
           {/* Host settings is the one view that outranks the empty state: its
               keys are host-wide, they already have values nobody chose, and an
               operator with no project open is exactly who should be able to set

@@ -142,6 +142,14 @@ export function streamUrl(projects: readonly string[], cursors: Iterable<[string
   return params.length ? `/api/events/stream?${params.join("&")}` : "/api/events/stream";
 }
 
+/**
+ * A single-mesh server (`curule console`, `run`, `serve`) has no registry and no project ids: it streams its one mesh itself, on
+ * the unprefixed route, and resumes from `sinceSeq`. A host multiplexes (`streamUrl`); this is not that.
+ */
+export function singleStreamUrl(cursor: number): string {
+  return cursor > 0 ? `/events/stream?sinceSeq=${Math.floor(cursor)}` : "/events/stream";
+}
+
 /** `/api/p/:id/<path>`; the bare path when no project is named (registry calls). */
 export function projectPath(projectId: string | null | undefined, path: string): string {
   if (!projectId) return path;

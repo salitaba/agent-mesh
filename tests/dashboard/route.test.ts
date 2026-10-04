@@ -12,6 +12,7 @@ import {
   parseHash,
   pickActiveProject,
   projectPath,
+  singleStreamUrl,
   streamUrl,
 } from "../../apps/mesh-dashboard/src/route";
 
@@ -98,6 +99,15 @@ test("streamUrl carries the full project set and every cursor", () => {
   // No projects means "all currently open" to the host.
   assert.equal(streamUrl([], []), "/api/events/stream");
   assert.equal(streamUrl(["my mesh"], []), "/api/events/stream?projects=my%20mesh");
+});
+
+test("a server with no registry is streamed on its own route, resumed by sinceSeq, never multiplexed", () => {
+  assert.equal(singleStreamUrl(0), "/events/stream", "no position: the server starts at the recent end of the log");
+  assert.equal(singleStreamUrl(412), "/events/stream?sinceSeq=412");
+  assert.equal(singleStreamUrl(12.9), "/events/stream?sinceSeq=12", "a cursor is a whole sequence number");
+  assert.equal(singleStreamUrl(-3), "/events/stream", "a negative cursor claims no position");
+  assert.equal(singleStreamUrl(Number.NaN), "/events/stream");
+  assert.ok(!singleStreamUrl(5).includes("/api/"), "a single-mesh server has no /api/events/stream");
 });
 
 test("projectPath prefixes only when a project is named", () => {

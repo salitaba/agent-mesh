@@ -2,10 +2,11 @@ import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { MeshProvider, useMesh } from "./store";
-import { ProjectsProvider, useProjects } from "./projects";
+import { ProjectsProvider, useProjects, useProjectsOptional } from "./projects";
 import { Shell } from "./shell";
 import { AuthGate } from "./auth";
-import { EmptyState } from "./components";
+import { Button, EmptyState } from "./components";
+import { isHostView } from "./navmodel";
 import { ViewBoundary, ViewLoading } from "./viewboundary";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
@@ -62,7 +63,22 @@ function CurrentView({ view }: { view: string }): React.JSX.Element {
  * is still arriving shows the shape of a page rather than the word "loading".
  */
 function ViewSwitch(): React.JSX.Element {
-  const { view } = useMesh();
+  const { view, setView } = useMesh();
+  const registry = useProjectsOptional()?.hasRegistry;
+  // A server that runs one mesh has no registry and none of the host's routes. Its sidebar does not offer these two pages, but an
+  // address or a bookmark can still name one, and what it reaches would be a page of failed requests.
+  if (registry === false && isHostView(view)) {
+    return (
+      <EmptyState
+        icon="folder"
+        title="This server runs one mesh"
+        action={<Button variant="primary" onClick={() => setView("overview")}>Back to the overview</Button>}
+      >
+        Projects and host settings belong to a host, which runs several meshes. This one was started with run, console or serve, so
+        it has the one mesh and nothing to add to it.
+      </EmptyState>
+    );
+  }
   return (
     <ViewBoundary resetKey={view}>
       <Suspense fallback={<ViewLoading />}>

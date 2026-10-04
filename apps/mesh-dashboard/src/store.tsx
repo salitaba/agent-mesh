@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { ReactNode } from "react";
 import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
 import { VIEWS, hashFor, needsProjectRedirect, parseHash, type HashRoute, type View } from "./route";
-import { useProjectsOptional, type ProjectSink } from "./projects";
+import { SINGLE_MESH, useProjectsOptional, type ProjectSink } from "./projects";
 import { retainCap, trimRetained } from "./tabmodel";
 import { foldToolEvent, type ToolLive } from "./streams";
 import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
@@ -614,8 +614,12 @@ export function MeshProvider({ children, projectId = null, background = false }:
   // than a socket of this store's own. Registering is what puts this project in
   // the stream's project set; unregistering on unmount is what stops a switched
   // -away project from streaming forever.
+  // A server with no registry has no project id to register under: it streams its one mesh unwrapped, and its sink is registered
+  // under SINGLE_MESH. Without this a `curule run` or `console` page was a snapshot that only the status poll moved: a mission
+  // delivered in front of the person left Latest work and What shipped empty until a reload.
+  const singleMesh = !projectId && projectsCtx?.hasRegistry === false;
   useEffect(() => {
-    if (!subscribe || !projectId) return;
+    if (!subscribe || (!projectId && !singleMesh)) return;
     const sink: ProjectSink = {
       event: (raw) => {
         if (livePausedRef.current) return;
@@ -639,8 +643,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
       },
       cursor: () => lastSeqRef.current,
     };
-    return subscribe(projectId, sink);
-  }, [subscribe, projectId, ingestEvent, ingestToken, ingestToolEvent, livePatch, refreshStatus, refreshSteps]);
+    return subscribe(projectId ?? SINGLE_MESH, sink);
+  }, [subscribe, projectId, singleMesh, ingestEvent, ingestToken, ingestToolEvent, livePatch, refreshStatus, refreshSteps]);
 
   // Coming back into focus: the buffer was capped while backgrounded, so
   // whatever fell off has to come from `/events` rather than be assumed

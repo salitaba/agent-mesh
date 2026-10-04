@@ -20,7 +20,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api, post } from "./api";
-import { parseHash, pickActiveProject, streamUrl } from "./route";
+import { parseHash, pickActiveProject, singleStreamUrl, streamUrl } from "./route";
 import { readRegistryAnswer } from "./projectsmodel";
 
 const LAST_PROJECT_KEY = "mesh-last-project";
@@ -73,6 +73,12 @@ export interface ProjectSink {
  * `es.onmessage` never sees them because each arrives under its own event name.
  */
 const LIVE_FRAME_TYPES = ["turn.token", "turn.tool"] as const;
+
+/**
+ * The key a single-mesh server's one sink is registered under. It has no project id (it has no registry), and its frames arrive
+ * unwrapped, so the stream is opened on its own route and its frames go to this sink without a `projectId` to look up.
+ */
+export const SINGLE_MESH = "";
 
 type SseState = "connecting" | "open" | "reconnecting";
 
@@ -131,7 +137,7 @@ interface ProjectsState {
   /** The last thing the host refused (a plan that allows one open project, a host that did not answer). Cleared by the next success. */
   notice: HostNotice | null;
   dismissNotice: () => void;
-  /** Registers a project's frame sink. Returns an unsubscribe. */
+  /** Registers a project's frame sink. Returns an unsubscribe. `SINGLE_MESH` is the one sink of a server with no registry. */
   subscribe: (projectId: string, sink: ProjectSink) => () => void;
   sseState: SseState;
   /** False until the first `/api/projects` response lands. */
@@ -305,13 +311,19 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
       return;
     }
     const cursors: Array<[string, number]> = ids.map((id) => [id, sinks.current.get(id)?.cursor() ?? 0]);
-    const es = new EventSource(streamUrl(ids, cursors));
+    // A server with no registry streams its one mesh on its own route, unwrapped; everything else is multiplexed by project id.
+    const single = ids.length === 1 && ids[0] === SINGLE_MESH;
+    const es = new EventSource(single ? singleStreamUrl(cursors[0]![1]) : streamUrl(ids, cursors));
     esRef.current = es;
     setSseState("connecting");
 
     const route = (m: MessageEvent) => {
       try {
         const frame = JSON.parse(m.data);
+        if (single) {
+          sinks.current.get(SINGLE_MESH)?.event(frame);
+          return;
+        }
         const pid = frame?.projectId;
         if (typeof pid !== "string") return;
         const sink = sinks.current.get(pid);
@@ -341,7 +353,7 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
         es.addEventListener(type, ((m: MessageEvent) => {
           try {
             const data = JSON.parse(m.data);
-            const sink = typeof data?.projectId === "string" ? sinks.current.get(data.projectId) : undefined;
+            const sink = single ? sinks.current.get(SINGLE_MESH) : typeof data?.projectId === "string" ? sinks.current.get(data.projectId) : undefined;
             sink?.stream(type, data);
           } catch {
             /* ignore */
