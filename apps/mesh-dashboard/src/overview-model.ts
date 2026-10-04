@@ -596,7 +596,9 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     });
   }
 
-  if (!i.parked && !over && i.triagedAway > 0) {
+  // Only for a live mission with nobody working: that is the state a dropped event explains ("an agent that looks idle may simply
+  // never have been told"). While agents are working, a count of events a rule dropped on purpose is not a condition to act on.
+  if (!i.parked && (i.phase === "stalled" || i.phase === "quiet") && i.triagedAway > 0) {
     const n = i.triagedAway;
     out.push({
       kind: "triage", tone: "info",

@@ -400,7 +400,7 @@ test("a refusal that only restates the headline is not listed: the policy denyin
 test("a finished mission lists no scheduler conditions: nothing is expected to run, so nothing is stuck", () => {
   const live = { blocks: [block("qa", true)], capacity: [{ agentId: "dev", running: 4, limit: 4 }], triagedAway: 9, toolRequests: [{ agentId: "dev", tools: ["Edit"] }] };
   for (const phase of ["done", "failed"] as const) assert.deepEqual(buildAttention(attn({ phase, ...live })), [], phase);
-  assert.equal(buildAttention(attn({ phase: "running", ...live })).length, 4, "the same facts on a running mission are all listed");
+  assert.equal(buildAttention(attn({ phase: "stalled", ...live })).length, 4, "the same facts on an idle live mission are all listed");
   const kept = buildAttention(attn({ phase: "done", notices: [{ title: "A conversation ran long" }], ...live }));
   assert.deepEqual(kept.map((x) => x.kind), ["notices"], "a notice that is still open is still the operator's");
 });
@@ -463,9 +463,16 @@ test("a queue that clears itself is information, with the ceiling that binds nam
   assert.match(bare.detail[1]!, /the concurrency limits/);
 });
 
+test("dropped events are listed only when nobody is working, which is the state they explain", () => {
+  for (const phase of ["running", "paused", "needs-you", "parked", "done", "failed", "ceiling"] as const) {
+    assert.deepEqual(buildAttention(attn({ phase, parked: phase === "parked" || phase === "ceiling", triagedAway: 12 })).map((i) => i.kind), [], phase);
+  }
+  for (const phase of ["stalled", "quiet"] as const) assert.deepEqual(buildAttention(attn({ phase, triagedAway: 12 })).map((i) => i.kind), ["triage"], phase);
+});
+
 test("dropped events are information, said once, with the rule to loosen", () => {
-  assert.equal(buildAttention(attn({ triagedAway: 1 }))[0]!.title, "1 event was triaged away. No agent saw it.");
-  const many = buildAttention(attn({ triagedAway: 40 }))[0]!;
+  assert.equal(buildAttention(attn({ phase: "stalled", triagedAway: 1 }))[0]!.title, "1 event was triaged away. No agent saw it.");
+  const many = buildAttention(attn({ phase: "stalled", triagedAway: 40 }))[0]!;
   assert.equal(many.title, "40 events were triaged away. No agent saw them.");
   assert.match(many.detail[0]!, /will not be retried/);
   assert.equal(many.tone, "info");
@@ -502,7 +509,7 @@ test("the host's ceiling is listed only when it is true of a live project that i
 
 test("the list is ordered by what it asks of the operator: act, then look, then know", () => {
   const items = buildAttention(attn({
-    triagedAway: 2, capacity: [{ agentId: "a" }], notices: [{ title: "n" }],
+    phase: "stalled", triagedAway: 2, capacity: [{ agentId: "a" }], notices: [{ title: "n" }],
     toolRequests: [{ agentId: "dev", tools: ["Edit"] }], blocks: [block("qa", false)],
     blockingDecisions: 1, spend: { usd: 1, ceilingUsd: 1, parked: [], tripped: true },
   }));
