@@ -11810,12 +11810,18 @@ export class Supervisor {
    * and 9.6k tokens, and the second began a chain of status mail: the architect's question, the developer's answer and the architect's
    * unrequested review, 47k in all); runs 8 to 13 and 15 woke it once or twice each for a project that has no dependency at all. With `previous` (the diff of the version being replaced), only the file sections this
    * commit added or changed are read: a section that is the same in both is not news.
+   *
+   * And a `package.json` created with no dependency in it is not a dependency change: it names nothing for the seat that watches
+   * dependencies to look at. The seventeenth run's architect was woken once more for exactly that (7.2k tokens, and nothing came of
+   * it), the first manifest of a project that has none. Only the dependency kind skips it; the other kinds still read the section.
    */
   private changeEventsFromDiff(diff: string, previous?: string): EventType[] {
     const out: EventType[] = [];
     const seen = new Set(previous === undefined ? [] : diffSections(previous));
-    const lower = diffSections(diff).filter((section) => !seen.has(section)).join("\n").toLowerCase();
-    if (/(package\.json|pom\.xml|build\.gradle|requirements\.txt|go\.mod|cargo\.toml)/.test(lower)) out.push("dependency.changed");
+    const fresh = diffSections(diff).filter((section) => !seen.has(section));
+    const lower = fresh.join("\n").toLowerCase();
+    const manifests = fresh.filter((section) => !newDependencyFreeManifest(section)).join("\n").toLowerCase();
+    if (/(package\.json|pom\.xml|build\.gradle|requirements\.txt|go\.mod|cargo\.toml)/.test(manifests)) out.push("dependency.changed");
     if (/(oauth|jwt|authenticat|session|login|password)/.test(lower)) out.push("authentication.changed");
     if (/(rbac|permission|authoriz|role|acl|policy)/.test(lower)) out.push("authorization.changed");
     return out;
@@ -14595,6 +14601,38 @@ export class Supervisor {
 /** A unified diff cut into its per-file sections (`diff --git` onward); a text with no such header is one section. */
 function diffSections(diff: string): string[] {
   return diff.split(/^(?=diff --git )/m).filter((section) => section.length > 0);
+}
+
+/** The `package.json` fields that name something the project depends on, or builds from other packages. */
+const MANIFEST_DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "bundleDependencies", "bundledDependencies", "overrides", "workspaces"];
+
+/**
+ * Whether a file section is a `package.json` that this diff creates and that names no dependency.
+ *
+ * A created file is whole in its section (every line of it is an added line), so it can be read. A changed one is a few hunks of a
+ * file the section does not show, and is never judged here. Anything that is not plainly dependency-free (text that is not JSON, a
+ * field with an entry in it) is left to announce, as it always was.
+ */
+function newDependencyFreeManifest(section: string): boolean {
+  const header = /^diff --git a\/(\S+) b\//.exec(section);
+  if (!header || !/(^|\/)package\.json$/.test(header[1]) || !/^--- \/dev\/null$/m.test(section)) return false;
+  const hunk = section.search(/^@@ /m);
+  if (hunk < 0) return false;
+  const text = section
+    .slice(hunk)
+    .split("\n")
+    .filter((line) => line.startsWith("+"))
+    .map((line) => line.slice(1))
+    .join("\n");
+  try {
+    const manifest = JSON.parse(text) as Record<string, unknown>;
+    return MANIFEST_DEPENDENCY_FIELDS.every((field) => {
+      const value = manifest[field];
+      return value === undefined || (typeof value === "object" && value !== null && Object.keys(value).length === 0);
+    });
+  } catch {
+    return false;
+  }
 }
 
 export class RuntimeFailure extends Error {

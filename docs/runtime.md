@@ -415,7 +415,13 @@ commits for the same `package.json` hunk (7.1k and 9.6k tokens, and the second b
 13 woke it once or twice each for a project that has no dependency. The commit now reads only the file sections the version it
 replaces did not already have: a section that is the same in both diffs is not news, one that changed (a dependency added to the
 manifest) or is new is, and a previous version that cannot be read (or is prose, not a diff) hides nothing. What the classification
-looks for inside a section is unchanged, and so is its crudeness: a manifest created with no dependency in it is still announced once.
+looks for inside a section is unchanged, and so is its crudeness, with one exception: a `package.json` that the diff creates and that
+names no dependency (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`, `bundleDependencies`,
+`bundledDependencies`, `overrides` or `workspaces`, an empty one counting as none) is not a dependency change. A created file is whole
+in its section, so it can be read; the seventeenth cronlite run's architect was woken once more for exactly such a manifest (7.2k
+tokens, and nothing came of it), as it had been in runs 8 to 13 and 15. A changed manifest (its section is a few hunks of a file it does
+not show), text that is not JSON, any other manifest kind and a dependency-free manifest's other readings (`authentication.changed`,
+`authorization.changed`) are classified as before.
 
 ### When a mail wake is paid for
 
