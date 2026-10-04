@@ -77,7 +77,10 @@ test("demo scaffolds the shipped demo, registers it, and serves it, with no API 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-entry-demo-"));
   const port = await freePort();
   const token = "t".repeat(40);
-  const env = { PATH: process.env.PATH, MESH_BIND: "127.0.0.1", MESH_PORT: String(port), MESH_HOME: path.join(home, "home"), MESH_PROJECTS_ROOT: path.join(home, "projects"), MESH_API_TOKEN: token, HOME: home };
+  // MESH_HOST_URL pins the registry call to the port this test's own host is about to take. `project add` talks to a live host
+  // when one answers at its address, and without this the address was the default one: a host already running on the
+  // machine (a developer's own, on 7420) answered 401 and the demo never came up. Nothing listens here yet, so it registers offline.
+  const env = { PATH: process.env.PATH, MESH_BIND: "127.0.0.1", MESH_PORT: String(port), MESH_HOST_URL: `http://127.0.0.1:${port}`, MESH_HOME: path.join(home, "home"), MESH_PROJECTS_ROOT: path.join(home, "projects"), MESH_API_TOKEN: token, HOME: home };
   const child = spawn("sh", [entrypoint(), "demo", "--no-git"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   child.stdout.on("data", (d: Buffer) => (log += d));
@@ -110,7 +113,8 @@ test("a second demo start finds its project already there and changes nothing", 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-entry-demo2-"));
   const projects = path.join(home, "projects");
   const meshHome = path.join(home, "home");
-  const env = { MESH_BIND: "127.0.0.1", MESH_PORT: "99999", MESH_HOME: meshHome, MESH_PROJECTS_ROOT: projects, MESH_API_TOKEN: "t".repeat(40), HOME: home };
+  // MESH_HOST_URL names a port nothing listens on, for the reason in the test above: a host already on 7420 must not answer.
+  const env = { MESH_BIND: "127.0.0.1", MESH_PORT: "99999", MESH_HOST_URL: "http://127.0.0.1:1", MESH_HOME: meshHome, MESH_PROJECTS_ROOT: projects, MESH_API_TOKEN: "t".repeat(40), HOME: home };
   // Run only the setup half: 99999 is not a port, so the host refuses to listen right after scaffolding and registering.
   // (Not port 1: as root that would bind, and the test would wait out its timeout for a host that never stops.)
   const first = run(["demo"], env);
