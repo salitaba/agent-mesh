@@ -19,17 +19,8 @@
 .ev-facets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); margin-bottom: var(--s3); }
 .ev-facet-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); }
 
-/* A filter chip. The severity ones carry their own mark, so the row of chips doubles as the legend for the marks in the list
-   under it. Text is always a full token: a faded count on a tinted chip is what failed contrast. */
-.fchip {
-  display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2-5);
-  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel);
-  color: var(--text-dim); font: 500 13px var(--sans); cursor: pointer;
-}
-.fchip:hover { color: var(--text); border-color: var(--line-control); }
-.fchip-n { color: var(--muted); font-variant-numeric: tabular-nums; }
-.fchip.on { color: var(--accent-2); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, var(--panel)); }
-.fchip.on .fchip-n { color: inherit; }
+/* The filter chip itself is shared (live.css). The severity ones carry their own mark, so the row of chips doubles as the legend
+   for the marks in the list under it; these two are the tones that are not the accent. */
 .fchip.sev-alert.on { color: var(--bad); border-color: var(--bad); background: color-mix(in srgb, var(--bad) 11%, var(--panel)); }
 .fchip.sev-routine.on { color: var(--text); border-color: var(--line-control); background: var(--sunken); }
 

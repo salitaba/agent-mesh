@@ -14,12 +14,21 @@ export const PAGE_ROWS = 10;
  * The index to focus after `key`, or null when the key is not a list key (so the caller leaves it alone). `current` is -1 when
  * focus is not on a row yet. Movement stops at the ends: a list is not a ring, and wrapping from the oldest row to the newest
  * would hide that there are no more.
+ *
+ * `horizontal` is for a strip laid out along a time axis (the swimlanes): Right and Left then mean next and previous, as Down
+ * and Up do in a column.
  */
-export function rovingTarget(key: string, current: number, count: number, page = PAGE_ROWS): number | null {
+export function rovingTarget(key: string, current: number, count: number, page = PAGE_ROWS, horizontal = false): number | null {
   if (count <= 0) return null;
   const last = count - 1;
   const at = Math.min(Math.max(current, 0), last);
   switch (key) {
+    case "ArrowRight":
+      if (!horizontal) return null;
+      return current < 0 ? 0 : Math.min(current + 1, last);
+    case "ArrowLeft":
+      if (!horizontal) return null;
+      return current < 0 ? 0 : Math.max(current - 1, 0);
     case "ArrowDown":
     case "j":
       return current < 0 ? 0 : Math.min(current + 1, last);

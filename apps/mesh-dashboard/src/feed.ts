@@ -106,9 +106,13 @@ export const isHolding = (h: HoldReasons): boolean => h.paused || h.scrolled || 
 /**
  * What the hold remembers: the newest key on screen when it began, or null when nothing is held. Called once per render with
  * the current reasons; a hold that is already running keeps its original mark, so rows arriving during it never move it.
+ *
+ * An empty list is never held. A mouse left resting over the page while it loads counts as pointing at the list, and a mark taken
+ * then would be "nothing", so every row that arrived first was counted as new and the list stayed blank behind a "17 new turns"
+ * bar. With no rows there is nothing for a hold to keep still; it begins when the first rows are on screen.
  */
 export function holdMark(prev: number | null, holding: boolean, newest: number): number | null {
-  if (!holding) return null;
+  if (!holding || newest <= 0) return null;
   return prev ?? newest;
 }
 

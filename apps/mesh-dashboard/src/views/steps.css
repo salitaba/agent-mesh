@@ -1,0 +1,245 @@
+/* ============================== steps ledger ==============================
+   The page is a ledger: one console strip (who is working, what the run has cost, who was busy when), one sticky toolbar where
+   the outcome legend is the filter, then one spine of turns grouped by recency. Every colour is `--oc` from the `.o-*` palette
+   (styles.css), so a hue means the same thing in the strip, the mix bar, the lanes, the chips and the rows. The word is always
+   there beside it, because a colour alone is not a cue.
+
+   Geometry that comes from data arrives as a custom property set by the component and is placed here: --l and --w on a bar,
+   --at on a tick or a grid line, --g on a mix segment, --w on a cost bar. Prefix: st-. */
+
+.st-page { --st-rail: 3px; --st-lab: 112px; --st-sum: 60px; min-width: 0; }
+
+/* ---- console strip ---- */
+
+.st-console { margin-bottom: var(--s3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
+.st-console.hot { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.st-console-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3) var(--s5); padding: var(--s3) var(--s4); }
+.st-live { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2-5) var(--s3); min-width: 0; }
+.st-live-text { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.st-live-text b { font: 600 16px/1.25 var(--sans); }
+.st-live-text span { font-size: 13px; color: var(--muted); }
+
+.st-beacon { position: relative; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.st-beacon.on { background: var(--ok); }
+.st-beacon.on::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1.5px solid var(--ok); opacity: 0; animation: st-ring 2.2s ease-out infinite;
+}
+@keyframes st-ring { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
+
+/* Who is working: one chip per agent mid-turn, and the chip opens that turn. */
+.st-now {
+  display: inline-flex; align-items: center; gap: var(--s2); min-height: 28px; padding: var(--s0) var(--s3) var(--s0) var(--s1);
+  background: var(--bg-2); border: 1px solid color-mix(in srgb, var(--ok) 36%, var(--line)); border-radius: 999px;
+  color: var(--text); font: 14px var(--sans); cursor: pointer;
+}
+.st-now:hover { border-color: var(--ok); }
+.st-now-name { font-weight: 600; }
+.st-now-t { font: 12px var(--mono); color: var(--ok); font-variant-numeric: tabular-nums; }
+
+/* The figures read value first, label under it; the markup keeps the label first so a screen reader says "tokens 84k". */
+.st-stats { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: 0; }
+.st-stats > div { display: flex; flex-direction: column; align-items: flex-end; min-width: 56px; line-height: 1.2; }
+.st-stats dt { order: 2; font: var(--tx-meta); color: var(--muted); white-space: nowrap; }
+.st-stats dd { order: 1; margin: 0; font: 600 20px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
+.st-stats .warn dd { color: var(--warn); }
+
+/* The shape of the run in one line. It is a picture of the legend's counts, which carry the words and the numbers. */
+.st-mix { display: flex; gap: var(--s0); height: 6px; margin: 0 var(--s4); border-radius: 3px; overflow: hidden; }
+.st-mix-seg { flex: var(--g) 1 0%; min-width: 6px; background: var(--oc); }
+.st-mix-seg.dim { opacity: .18; }
+
+/* ---- who was busy, when ---- */
+
+.st-tl { margin-top: var(--s3); padding: var(--s3) var(--s4) var(--s3-5); border-top: 1px solid var(--line); }
+.st-tl-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin-bottom: var(--s2-5); }
+.st-tl-head .seg { margin-left: auto; }
+.st-tl-cap {
+  display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 24px; padding: 0;
+  background: none; border: 0; color: var(--text-dim); font: var(--tx-label); cursor: pointer;
+}
+.st-tl-cap:hover { color: var(--text); }
+.st-axis-note { font: var(--tx-meta); color: var(--muted); }
+
+.st-lanes { display: flex; flex-direction: column; gap: var(--s1-5); }
+.st-lane { display: grid; grid-template-columns: var(--st-lab) minmax(0, 1fr) var(--st-sum); gap: var(--s3); align-items: center; min-height: 32px; }
+.st-lane-label { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; font-size: 14px; }
+.st-lane-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-track { position: relative; height: 24px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--line) 55%, transparent); }
+.st-grid { position: absolute; top: 0; bottom: 0; left: var(--at); width: 1px; background: color-mix(in srgb, var(--line-strong) 60%, transparent); }
+
+/* A bar is a turn. The ledger below lists the same turns as full-size rows, so a bar narrower than a fingertip is a shortcut and
+   not the only way in. */
+.st-bar {
+  position: absolute; top: 4px; bottom: 4px; left: var(--l); width: var(--w); min-width: 3px; padding: 0;
+  border: 0; border-radius: 3px; background: var(--oc); cursor: pointer;
+}
+.st-bar:hover { box-shadow: 0 0 0 1px var(--oc); z-index: var(--z-raise); }
+.st-bar:focus-visible { z-index: var(--z-raise); }
+.st-bar.o-live { background: linear-gradient(90deg, var(--oc), color-mix(in srgb, var(--oc) 55%, transparent)); animation: st-breathe 1.6s ease-in-out infinite; }
+@keyframes st-breathe { 50% { opacity: .55; } }
+/* A filter is a lens on the timeline too, not only on the list below. */
+.st-bar.dim { opacity: .14; }
+/* A turn that began before the window starts gets a flat left edge, so a clipped bar never reads as "this is when it started". */
+.st-bar.clipped { border-radius: 0 3px 3px 0; }
+
+/* Nothing breathes while the server is silent: the pulse says "working now", and that is the one thing nobody can vouch for. */
+.st-page.offline .st-bar.o-live, .st-page.offline .st-row.o-live .st-mark, .st-page.offline .st-row.o-live .otag::before { animation: none; }
+
+.st-lane-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; white-space: nowrap; }
+.st-lane-sum b { font: 600 12px var(--mono); font-variant-numeric: tabular-nums; }
+.st-lane-sum span { font: 11px var(--mono); color: var(--muted); }
+
+/* The axis sits under the track column only (the label and the sums are the grid's other two), so a tick's percentage lands where
+   the bars' percentages do. */
+.st-axis { position: relative; height: 18px; margin: var(--s1-5) calc(var(--st-sum) + var(--s3)) 0 calc(var(--st-lab) + var(--s3)); }
+.st-tick { position: absolute; top: 0; left: var(--at); transform: translateX(-50%); font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+.st-tick.edge { transform: none; }
+.st-tick.now { transform: translateX(-100%); color: var(--text-dim); font-weight: 600; }
+
+/* ---- sticky toolbar: the legend is the filter ---- */
+
+/* Sticky offsets measure from inside the scroller's padding, so a bare `top: 0` left a band above the bar where rows scrolled past
+   in plain view. The offset cancels the page's top padding (styles.css `#view`) so the bar sits flush with the top of the page. */
+.st-toolbar {
+  position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-toolbar);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s2) var(--s4);
+  margin-bottom: var(--s3); padding: var(--s2) 0; background: var(--bg);
+}
+.st-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); }
+.st-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2-5) var(--s4); }
+.st-count { font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- ledger ---- */
+
+.st-ledger { display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
+.st-group-head { display: flex; align-items: baseline; gap: var(--s3); margin: 0 var(--s0) var(--s2); }
+.st-group-head h3 { margin: 0; font: var(--tx-section); color: var(--text-dim); }
+.st-group-head span { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.st-group-head::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }
+.st-list { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding: 0; list-style: none; }
+.st-item { min-width: 0; margin: 0; }
+
+/* A turn is one button: the whole row opens it. Rail, avatar, what happened, what it cost. */
+.st-row {
+  --row: var(--panel);
+  position: relative; display: grid; grid-template-columns: var(--st-rail) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3);
+  width: 100%; padding: var(--s2-5) var(--s3-5) var(--s2-5) 0; overflow: hidden;
+  background: var(--row); border: 1px solid var(--line); border-radius: var(--r);
+  color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
+}
+.st-row:hover { --row: var(--panel-2); border-color: color-mix(in srgb, var(--oc) 55%, var(--line)); }
+.st-mark { align-self: stretch; background: var(--oc); }
+/* A turn that wrote nothing steps back. Anything that did something, was stopped or is running keeps its full colour. */
+.st-row.o-quiet { --row: color-mix(in srgb, var(--panel) 70%, var(--bg)); }
+.st-row.o-quiet:hover { --row: var(--panel-2); }
+.st-row.o-quiet .st-mark { opacity: .45; }
+.st-row.o-quiet .st-agent { color: var(--text-dim); }
+.st-row.o-live { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.st-row.o-live .st-mark { animation: st-breathe 1.6s ease-in-out infinite; }
+.st-row.o-crash, .st-row.o-rej, .st-row.o-block { --row: color-mix(in srgb, var(--oc) 6%, var(--panel)); }
+.st-row.o-crash:hover, .st-row.o-rej:hover, .st-row.o-block:hover { --row: color-mix(in srgb, var(--oc) 11%, var(--panel)); }
+
+.st-main { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.st-l1 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); min-width: 0; font-size: 15px; line-height: 1.35; }
+.st-agent { font-weight: 600; overflow-wrap: anywhere; }
+.st-sum { color: var(--text-dim); font-size: 13px; }
+/* A live row's current tool is a path or a command: mono, and clipped rather than wrapping the row onto a third line. */
+.st-now-tool { max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--mono); }
+.st-now-tool.run { color: var(--text); }
+.st-retry { font: 12px var(--mono); color: var(--warn); }
+.st-l2 { display: flex; min-width: 0; font: var(--tx-meta); color: var(--muted); }
+.st-woke { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-note { color: var(--text-dim); }
+
+/* Two lines at most; the tooltip has the rest. */
+.st-err, .st-refusal {
+  margin-top: var(--s1-5); font: 13px/1.45 var(--mono); overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.st-err { color: var(--bad); }
+/* On a blocked row the error is the blocker ("mission budget used up"), not a crash. */
+.st-row.o-block .st-err { color: var(--oc); }
+/* Refusals are not crashes, so they never wear --bad: they are the refused orange on every row, whatever the row's own outcome. */
+.st-refusal { color: var(--rej); }
+.st-refusal b { font-weight: 600; margin-right: var(--s1); }
+
+.st-num { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s0); min-width: 84px; white-space: nowrap; font: 12px/1.35 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.st-num b { font: 600 15px/1.35 var(--mono); color: var(--text); }
+/* Cost against the costliest loaded turn: a hairline track under the figure with the share filled from the right edge. A bare short
+   dash read as a stray underline. */
+.st-cost { position: relative; padding-bottom: var(--s1); }
+.st-cost::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--line) 80%, transparent); }
+.st-cost-bar { position: absolute; z-index: var(--z-raise); right: 0; bottom: 0; width: var(--w); max-width: 100%; height: 2px; border-radius: 1px; background: var(--oc); }
+.st-left.warn { color: var(--warn); }
+
+/* ---- quiet runs, folded ---- */
+
+.st-fold { list-style: none; margin: 0; border: 1px dashed var(--line-strong); border-radius: var(--r); overflow: hidden; }
+.st-fold-head {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 40px; padding: var(--s2) var(--s3-5);
+  background: none; border: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
+}
+.st-fold-head:hover { background: var(--panel-2); }
+.st-fold-head:focus-visible { outline-offset: -2px; }
+.st-fold-head .icon { flex: none; color: var(--muted); }
+.st-fold-head b { flex: none; font-weight: 600; }
+.st-fold-who { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.st-fold-cost { flex: none; font: var(--tx-meta); font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.st-fold-body { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding: var(--s2-5); list-style: none; border-top: 1px dashed var(--line); }
+
+/* ---- more, and loading ---- */
+
+.st-more { display: flex; justify-content: center; padding: var(--s2) 0; }
+.st-skel { cursor: default; pointer-events: none; }
+.sk-av { width: 28px; height: 28px; border-radius: var(--r-sm); }
+.sk-l1 { width: 42%; height: 12px; margin-bottom: var(--s2); }
+.sk-l2 { width: 68%; height: 10px; }
+.sk-n { width: 44px; height: 12px; margin-bottom: var(--s1-5); }
+.sk-n2 { width: 60px; height: 9px; }
+
+/* ---- narrower ---- */
+
+@media (max-width: 1100px) {
+  /* With the sidebar open the track is a few hundred pixels wide and a long label ("-1h 30m") would touch its neighbour, so every
+     other label goes. The grid line stays. */
+  .st-tick:not(.major) { display: none; }
+}
+
+@media (max-width: 900px) {
+  .st-now-tool { max-width: 30ch; }
+}
+
+@media (max-width: 800px) {
+  .st-toolbar { top: calc(var(--s3) * -1); }
+}
+
+@media (max-width: 760px) {
+  .st-page { --st-lab: 80px; --st-sum: 52px; }
+  /* Seven chips wrap onto three lines on a phone; a bar that deep would cover a third of the screen while you scroll. */
+  .st-toolbar { position: static; }
+  .st-stats dd { font-size: 18px; }
+}
+
+@media (max-width: 620px) {
+  .st-console-top { padding: var(--s3); }
+  .st-stats { width: 100%; justify-content: space-between; }
+  .st-stats > div { align-items: flex-start; }
+  .st-mix { margin: 0 var(--s3); }
+  .st-tl { padding-left: var(--s3); padding-right: var(--s3); }
+  /* A lane is two lines: who and their totals, then a track the full width of the card. Eighty pixels for a name cut "developer"
+     to "devel…", and a lane you cannot name is not worth drawing. */
+  .st-lane { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label sum" "track track"; gap: var(--s1) var(--s3); min-height: 0; padding-bottom: var(--s1-5); }
+  .st-lane-label { grid-area: label; }
+  .st-lane-sum { grid-area: sum; flex-direction: row; align-items: baseline; gap: var(--s2); }
+  .st-track { grid-area: track; }
+  .st-axis { margin-left: 0; margin-right: 0; }
+  /* What it cost moves under what it did, so the words get the whole row. */
+  .st-row { grid-template-columns: var(--st-rail) auto minmax(0, 1fr); row-gap: var(--s1-5); padding-right: var(--s3); }
+  .st-row .st-mark { grid-row: 1 / span 2; }
+  .st-num { grid-column: 3; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: var(--s0) var(--s3); min-width: 0; }
+  .st-num b { font-size: 14px; }
+  .st-cost { padding-bottom: 0; }
+  .st-cost::after, .st-cost-bar { display: none; }
+  .st-now-tool { max-width: 100%; }
+}

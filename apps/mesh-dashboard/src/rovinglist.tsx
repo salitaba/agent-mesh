@@ -12,11 +12,12 @@ import { rovingTarget, tabStop } from "./roving";
  *
  * Where a key goes is decided in roving.ts, which node:test covers; this moves focus.
  */
-export function useRoving(keys: readonly string[]): {
+export function useRoving(keys: readonly string[], opts: { horizontal?: boolean } = {}): {
   stop: string | null;
   setLast: (key: string) => void;
   onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
 } {
+  const horizontal = opts.horizontal === true;
   const [last, setLast] = useState<string | null>(null);
   const stop = tabStop(keys, last);
   const onKeyDown = useCallback((e: ReactKeyboardEvent<HTMLElement>): void => {
@@ -27,11 +28,11 @@ export function useRoving(keys: readonly string[]): {
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("[data-rv]")).filter((el) => el.offsetParent !== null);
     if (!rows.length) return;
     const at = rows.indexOf(target.closest<HTMLElement>("[data-rv]") as HTMLElement);
-    const to = rovingTarget(e.key, at, rows.length);
+    const to = rovingTarget(e.key, at, rows.length, undefined, horizontal);
     if (to === null) return;
     e.preventDefault();
     rows[to]!.focus();
     rows[to]!.scrollIntoView({ block: "nearest" });
-  }, []);
+  }, [horizontal]);
   return { stop, setLast, onKeyDown };
 }

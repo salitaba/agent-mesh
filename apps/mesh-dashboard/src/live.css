@@ -38,6 +38,24 @@
 .seg button:hover { color: var(--text); }
 .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); font-weight: 600; }
 
+/* ---------- filter chip: a toggle that is also the legend for what it filters ----------
+   A chip that sets `--oc` (the outcome palette on Steps) tints itself with it when it is on; one that does not is the accent.
+   Text is always a full token: a faded count on a tinted chip is what failed contrast. */
+
+.fchip {
+  display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2-5);
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel);
+  color: var(--text-dim); font: 500 13px var(--sans); cursor: pointer;
+}
+.fchip:hover:not(:disabled) { color: var(--text); border-color: var(--line-control); }
+.fchip-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fchip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--oc); flex: none; }
+.fchip.on { color: var(--oc, var(--accent-2)); border-color: var(--oc, var(--accent)); background: color-mix(in srgb, var(--oc, var(--accent)) 11%, var(--panel)); }
+.fchip.on .fchip-n { color: inherit; }
+/* A filter with nothing behind it reads as empty without fading its text below contrast. */
+.fchip:disabled { color: var(--muted); border-style: dashed; cursor: default; }
+.fchip:disabled .fchip-dot { opacity: .5; }
+
 /* ---------- severity: a triangle, a dot, a ring. Colour is never the only cue. ---------- */
 
 .sev-mark { flex: none; }

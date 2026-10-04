@@ -403,15 +403,15 @@ button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
 /* Shared chip/pill base: the hairline and muted text are identical across the
    family, so they live here once; each variant keeps only what differs
    (display, radius, padding, font, fill). */
-.chip, .st-chip, .sbx-chip, .chip-toggle { border: 1px solid var(--line); color: var(--text-dim); }
+.chip, .sbx-chip, .chip-toggle { border: 1px solid var(--line); color: var(--text-dim); }
 /* WCAG 2.2 AA 2.5.8 wants 24x24 for a pointer target. .chip-toggle already had
    it; the other clickable chips and the row actions were 17-21px tall, so the
    smallest, densest controls were the hardest to hit. Padding is untouched —
    only the box floor changes, so nothing reflows on desktop. */
-button.chip, button.st-chip, .row-actions button {
+button.chip, .row-actions button {
   min-height: 24px; display: inline-flex; align-items: center;
 }
-.st-chip, .chip-toggle { background: var(--panel); }
+.chip-toggle { background: var(--panel); }
 /* 14% is the CEILING for a self-tinted chip, and both palettes are derived from
    it. The washes here had drifted across twelve values (8,9,10,11,12,13,14,15,
    16,18,20,22) for one idea; the four loudest put their own text below 4.5:1 in
@@ -600,257 +600,14 @@ input.search { min-width: 220px; }
 .o-block { --oc: var(--warn); }
 .o-crash { --oc: var(--bad); }
 
-/* ================================ steps ================================
-   The page is a ledger. One console strip (who is working, what it cost, who
-   was busy when), one sticky toolbar where the outcome legend IS the filter,
-   then one spine of turns grouped by recency. Every colour is `--oc` from the
-   .o-* palette above, so a hue means the same thing in the strip, the mix bar,
-   the lanes, the chips and the rows. Prefix: st-. */
-
-.st-page { --st-rail: 3px; --st-ease: cubic-bezier(.2,.8,.2,1); }
-.st-lede { font-size: 13px; color: var(--muted); }
-.st-page .view-title { flex-wrap: wrap; row-gap: var(--s1-5); }
-.st-page input.search { min-width: 200px; }
-
-/* ---- console strip ---- */
-.st-console {
-  position: relative; overflow: hidden; margin-bottom: var(--s3);
-  border: 1px solid var(--line); border-radius: var(--r-lg);
-  background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 90%, var(--bg)));
+/* The outcome label. A dot and a sentence-case word in the outcome's colour, on a wash of it: the same shape as `.pill`, so a turn's
+   outcome and an agent's state read as one family. Capitals and a hairline made it the loudest thing in every row. */
+.otag {
+  display: inline-flex; align-items: center; gap: var(--s1-5); padding: 1px 10px 1px 8px; border-radius: 20px;
+  font: 600 12px var(--sans); color: var(--oc); background: color-mix(in srgb, var(--oc) 13%, transparent); white-space: nowrap;
 }
-.st-console.hot { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
-.st-console.hot::before {
-  content: ""; position: absolute; inset: 0 auto auto 0; width: 100%; height: 88px; pointer-events: none;
-  background: radial-gradient(60% 100% at 8% 0%, color-mix(in srgb, var(--ok) 14%, transparent), transparent 70%);
-}
-.st-console-top {
-  position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
-  flex-wrap: wrap; padding: var(--s3) var(--s4);
-}
-.st-live { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; min-width: 0; }
-.st-live-text { display: flex; flex-direction: column; line-height: 1.2; }
-.st-live-text b { font: 600 16px var(--sans); letter-spacing: -.01em; color: var(--text); }
-.st-live-text span { font-size: 13px; color: var(--muted); }
-.st-beacon {
-  position: relative; width: 10px; height: 10px; border-radius: 50%; flex: none;
-  background: var(--muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 14%, transparent);
-}
-.st-beacon.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); }
-.st-beacon.on::after {
-  content: ""; position: absolute; inset: -3px; border-radius: 50%;
-  border: 1.5px solid var(--ok); opacity: 0; animation: st-ring 2.2s var(--st-ease) infinite;
-}
-@keyframes st-ring { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
-.st-now {
-  display: inline-flex; align-items: center; gap: var(--s2); cursor: pointer;
-  background: var(--bg-2); border: 1px solid color-mix(in srgb, var(--ok) 36%, var(--line));
-  border-radius: 999px; padding: 3px 12px 3px 4px; font: 14px var(--sans); color: var(--text);
-  transition: border-color .15s, transform .18s var(--st-ease), box-shadow .18s;
-}
-.st-now:hover { border-color: var(--ok); transform: translateY(-1px); box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--ok) 60%, transparent); }
-.st-now-name { font-weight: 600; }
-.st-now-t { font: 12px var(--mono); color: var(--ok); font-variant-numeric: tabular-nums; }
-
-.st-stats { display: flex; gap: var(--s5); margin: 0; }
-.st-stats > div { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; min-width: 56px; }
-.st-stats dt { order: 2; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; }
-.st-stats dd { order: 1; margin: 0; font: 600 20px var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
-.st-stats > div.warn dd { color: var(--warn); }
-
-/* ---- outcome mix bar: the run's shape in one line ---- */
-.st-mix { display: flex; gap: var(--s0); height: 6px; margin: 0 var(--s4); border-radius: 3px; overflow: hidden; }
-.st-mix-seg {
-  flex: 1 1 0; min-width: 6px; border: 0; padding: 0; cursor: pointer; background: var(--oc);
-  transition: opacity .18s, flex-grow .5s var(--st-ease), transform .18s;
-}
-.st-mix-seg.o-quiet { opacity: .5; }
-.st-mix-seg.dim { opacity: .15; }
-.st-mix-seg:hover { transform: scaleY(1.6); }
-.st-mix-seg:focus-visible { outline-offset: 3px; }
-
-/* ---- swimlanes ---- */
-.st-tl { padding: var(--s3) var(--s4) var(--s2); }
-.st-tl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s2); }
-.st-tl-cap { font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.st-win { display: inline-flex; gap: var(--s0); padding: var(--s0); border: 1px solid var(--line); border-radius: 999px; background: var(--bg-2); }
-.st-win button {
-  font: 12px var(--mono); border: 0; background: transparent; color: var(--text-dim);
-  padding: 2px 10px; border-radius: 999px; cursor: pointer; transition: background .15s, color .15s;
-}
-.st-win button:hover { color: var(--text); }
-.st-win button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-2); }
-.st-lanes { display: flex; flex-direction: column; gap: 6px; }
-.st-lane { display: grid; grid-template-columns: 112px 1fr 60px; gap: var(--s3); align-items: center; }
-.st-lane-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.st-lane-label span { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-track { position: relative; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--line) 55%, transparent); overflow: hidden; }
-.st-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--line-strong) 60%, transparent); }
-.st-bar {
-  position: absolute; top: 3px; height: 14px; min-width: 3px; padding: 0; cursor: pointer;
-  border: 0; border-radius: 3px; background: var(--oc); opacity: .85;
-  transition: opacity .15s, transform .15s var(--st-ease);
-}
-.st-bar:hover { opacity: 1; transform: scaleY(1.2); box-shadow: 0 0 0 1px var(--oc); z-index: var(--z-raise); }
-.st-bar.o-live { opacity: 1; background: linear-gradient(90deg, var(--oc), color-mix(in srgb, var(--oc) 55%, transparent)); animation: st-breathe 1.6s ease-in-out infinite; }
-@keyframes st-breathe { 50% { opacity: .55; } }
-.st-bar.o-quiet { opacity: .45; }
-/* a filter is a lens on the timeline too, not only on the list below */
-.st-bar.dim { opacity: .12; }
-/* a turn that began before the window starts gets a flat left edge, so a
-   clipped bar never reads as "this is when it started" */
-.st-bar.clipped { border-radius: 0 3px 3px 0; }
-.st-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.st-lane-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
-.st-lane-sum b { font: 600 12px var(--mono); font-variant-numeric: tabular-nums; }
-.st-lane-sum span { font: 11px var(--mono); color: var(--muted); }
-.st-axis { position: relative; height: 18px; margin: 6px 0 0 124px; }
-.st-tick { position: absolute; top: 0; transform: translateX(-50%); font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
-/* The edge ticks sit flush instead of centred, so neither hangs off the track. */
-.st-tick.edge { transform: none; }
-.st-tick.now { transform: translateX(-100%); color: var(--text-dim); font-weight: 600; }
-.st-axis-note { margin-right: auto; font: 12px var(--mono); color: var(--muted); }
-
-/* ---- sticky toolbar: the legend is the filter ---- */
-.st-toolbar {
-  position: sticky; top: 0; z-index: var(--z-toolbar);
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap;
-  margin: 0 -2px var(--s3); padding: var(--s2) 2px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-}
-.st-filters { display: flex; gap: var(--s1-5); flex-wrap: wrap; align-items: center; }
-.st-chip {
-  display: inline-flex; align-items: center; gap: var(--s1-5); font: 13px var(--sans); font-weight: 500;
-  border-radius: 999px; padding: 3px 10px 3px 10px;
-  cursor: pointer; transition: border-color .15s, color .15s, background .15s, transform .18s var(--st-ease);
-}
-.st-chip:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); transform: translateY(-1px); }
-.st-chip:disabled { opacity: .4; cursor: default; }
-.st-chip.on { color: var(--oc, var(--accent-2)); border-color: color-mix(in srgb, var(--oc, var(--accent)) 60%, var(--line)); background: color-mix(in srgb, var(--oc, var(--accent)) 12%, transparent); }
-.st-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--oc); flex: none; }
-.st-chip-n { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-chip.on .st-chip-n { color: inherit; opacity: .8; }
-.st-toolbar-right { display: flex; align-items: center; gap: var(--s4); }
-.st-count { font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-fold-toggle { display: inline-flex; align-items: center; gap: var(--s1-5); font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
-.st-fold-toggle.off { opacity: .5; cursor: default; }
-.st-fold-toggle input { accent-color: var(--accent); margin: 0; }
-
-/* ---- ledger ---- */
-.st-ledger { display: flex; flex-direction: column; gap: var(--s5); }
-.st-group-head { display: flex; align-items: baseline; gap: var(--s3); margin: 0 2px var(--s2); }
-.st-group-head h4 { margin: 0; font: 600 13px var(--sans); color: var(--text-dim); letter-spacing: -.005em; }
-.st-group-head span { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-group-head::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }
-.st-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1-5); }
-
-.st-row {
-  position: relative; display: grid; grid-template-columns: var(--st-rail) auto 1fr auto auto; gap: var(--s3);
-  align-items: center; padding: 10px var(--s3-5) 10px 0; cursor: pointer; overflow: hidden;
-  border: 1px solid var(--line); border-radius: var(--r);
-  background: var(--panel);
-  transition: border-color .15s, transform .18s var(--st-ease), box-shadow .18s var(--st-ease), background .15s;
-  animation: st-in .32s var(--st-ease) both;
-}
-@keyframes st-in { from { opacity: 0; transform: translateY(4px); } }
-.st-row:hover { border-color: color-mix(in srgb, var(--oc) 55%, var(--line)); transform: translateY(-1px); box-shadow: 0 6px 18px -10px rgba(0,0,0,.6); }
-[data-theme="light"] .st-row:hover { box-shadow: 0 6px 18px -10px rgba(30,40,70,.35); }
-.st-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.st-mark { align-self: stretch; background: var(--oc); opacity: .85; }
-.st-row.o-quiet { background: color-mix(in srgb, var(--panel) 70%, var(--bg)); }
-.st-row.o-quiet .st-mark { opacity: .35; }
-.st-row.o-quiet .st-agent { color: var(--text-dim); }
-.st-row.o-live { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.st-row.o-live .st-mark { animation: st-breathe 1.6s ease-in-out infinite; }
-.st-row.o-crash, .st-row.o-rej, .st-row.o-block { background: linear-gradient(90deg, color-mix(in srgb, var(--oc) 6%, var(--panel)), var(--panel) 40%); }
-.st-main { min-width: 0; }
-.st-l1 { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: 15px; line-height: 1.3; }
-.st-agent { color: var(--text); letter-spacing: -.005em; }
-.st-verb { color: var(--text-dim); }
-/* A live row's current tool: a path or command, so mono and clipped rather
-   than wrapping the row onto a third line. */
-.st-now-tool { font: 13px var(--mono); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-now-tool.run { color: var(--text); }
-.st-num span.st-left.warn { color: var(--warn); }
-.st-retry { font: 12px var(--mono); color: var(--warn); }
-.st-l2 { display: flex; gap: var(--s1-5); font-size: 13px; margin-top: var(--s0); color: var(--muted); overflow: hidden; white-space: nowrap; }
-.st-woke { flex: none; display: inline-flex; align-items: center; gap: 6px; }
-.st-woke svg { flex: none; opacity: .8; }
-.st-note { overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
-.st-note::before { content: "—"; margin-right: var(--s1-5); color: var(--muted); }
-/* Two lines at most; the tooltip has the rest. */
-.st-err, .st-refusal {
-  margin-top: 6px; font: 13px/1.45 var(--mono); overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
-.st-err { color: var(--bad); }
-/* On a blocked row the error is the blocker ("mission budget used up"), not a crash. */
-.st-row.o-block .st-err { color: var(--oc); }
-/* Refusals are not crashes, so they must not wear --bad — and they are the
-   refused orange on every row. Taking the row's outcome colour printed a live
-   row's refusal in accent blue and a producing row's in success green. */
-.st-refusal { color: var(--rej); }
-.st-refusal b { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; margin-right: var(--s1); }
-.otag { border-radius: 20px; padding: 1px 10px; font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .05em;
-        color: var(--oc); background: color-mix(in srgb, var(--oc) 13%, transparent); border: 1px solid color-mix(in srgb, var(--oc) 32%, transparent); white-space: nowrap; }
-
-.st-ops { display: flex; gap: var(--s1); }
-.st-op {
-  display: inline-flex; align-items: center; gap: var(--s1); padding: 2px 6px 2px 6px; border-radius: 6px;
-  font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-dim);
-  background: color-mix(in srgb, var(--line) 50%, transparent);
-}
-.st-row.o-ship .st-op { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
-
-.st-num { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; line-height: 1.3; white-space: nowrap; min-width: 82px; }
-.st-num b { font: 600 15px var(--mono); font-variant-numeric: tabular-nums; }
-.st-num span { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-tok { position: relative; padding-left: var(--s1); }
-.st-tok i { position: absolute; right: 0; bottom: -1px; height: 2px; max-width: 100%; border-radius: 1px; background: color-mix(in srgb, var(--oc) 70%, transparent); }
-
-/* ---- folded quiet runs ---- */
-.st-fold { list-style: none; border: 1px dashed var(--line-strong); border-radius: var(--r); background: color-mix(in srgb, var(--panel) 45%, transparent); overflow: hidden; }
-.st-fold-head {
-  display: grid; grid-template-columns: var(--st-rail) auto auto 1fr auto; gap: var(--s3); align-items: center;
-  width: 100%; padding: 10px var(--s3-5) 10px 0; background: none; border: 0; cursor: pointer;
-  color: var(--text); font: 14px var(--sans); text-align: left; transition: color .15s;
-}
-.st-fold-head .st-mark { background: var(--muted); opacity: .35; }
-.st-fold-head:hover { color: var(--accent-2); }
-.st-fold-head b { font-weight: 600; }
-.st-caret { color: var(--muted); transition: transform .2s var(--st-ease); }
-.st-fold.open .st-caret { transform: rotate(90deg); }
-.st-fold-who { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-fold-cost { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-fold-body { list-style: none; margin: 0; padding: 0 var(--s2-5) var(--s2-5) var(--s2-5); display: flex; flex-direction: column; gap: var(--s1-5); border-top: 1px dashed var(--line); padding-top: var(--s2-5); }
-
-/* ---- states ---- */
-.st-more { display: flex; justify-content: center; padding: var(--s2) 0; }
-.st-empty {
-  display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center;
-  padding: 56px var(--s4); color: var(--muted);
-  border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
-}
-.st-empty b { color: var(--text); font: 600 15px var(--sans); margin-top: var(--s1); }
-.st-empty span { max-width: 44ch; font-size: 14px; line-height: 1.5; }
-.st-empty button { margin-top: var(--s2); }
-.st-skel { cursor: default; pointer-events: none; animation: st-in .4s var(--st-ease) both; }
-.sk { display: block; border-radius: 4px; background: color-mix(in srgb, var(--line) 80%, transparent); animation: st-shimmer 1.4s ease-in-out infinite; }
-@keyframes st-shimmer { 50% { opacity: .45; } }
-.sk-av { width: 30px; height: 30px; border-radius: 9px; }
-.sk-l1 { width: 42%; height: 12px; margin-bottom: var(--s2); }
-.sk-l2 { width: 68%; height: 10px; }
-.sk-n { width: 44px; height: 12px; margin-bottom: var(--s1-5); }
-.sk-n2 { width: 60px; height: 9px; }
-
-@media (max-width: 760px) {
-  .st-lane { grid-template-columns: 80px 1fr 52px; }
-  .st-axis { margin-left: 92px; }
-  .st-stats { gap: var(--s4); }
-  .st-stats dd { font-size: 18px; }
-  .st-row { grid-template-columns: var(--st-rail) auto 1fr auto; }
-  .st-ops { display: none; }
-  .st-num { min-width: 64px; }
-}
+.otag::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.otag.o-live::before, .st-row.o-live .otag::before { animation: blink 1.1s infinite; }
 
 /* ---------- drawer ---------- */
 .drawer {

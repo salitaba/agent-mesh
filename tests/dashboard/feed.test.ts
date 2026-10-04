@@ -96,6 +96,16 @@ test("a hold keeps the mark it began with, however many rows arrive; releasing c
   assert.equal(holdMark(null, false, 55), null);
 });
 
+test("an empty list is never held, so the first rows to arrive are shown rather than counted as new", () => {
+  // A mouse parked where the list will appear is "pointing at it" before there is a row to keep still.
+  assert.equal(holdMark(null, true, 0), null, "nothing on screen, nothing to freeze");
+  assert.equal(holdMark(null, true, 12), 12, "the hold begins once rows exist");
+  assert.equal(holdMark(12, true, 0), null, "a list that empties (another project) lets go");
+  const first = heldList(rows(12, 11, 10), key, holdMark(null, true, 0));
+  assert.deepEqual(first.shown.map(key), [12, 11, 10]);
+  assert.equal(first.fresh, 0);
+});
+
 test("not held: every row is drawn, none is counted as new, and the array is the one passed in", () => {
   const items = rows(5, 4, 3);
   const r = heldList(items, key, null);

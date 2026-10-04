@@ -34,13 +34,17 @@ export function FeedStatus(): React.JSX.Element {
   );
 }
 
-/** The control that freezes the list. Events keep arriving while it is held; they are counted, never dropped. */
+/**
+ * The control that freezes the list. Events keep arriving while it is held; they are counted, never dropped.
+ *
+ * The label changes with the state (Pause, then Resume), so it carries no aria-pressed: a button named "Resume" that also says it
+ * is pressed would be announced as the opposite of what it does.
+ */
 export function PauseButton({ paused, onToggle, noun }: { paused: boolean; onToggle: () => void; noun: "events" | "turns" }): React.JSX.Element {
   return (
     <Button
       variant="soft"
       icon={paused ? "play" : "pause"}
-      aria-pressed={paused}
       title={paused ? `Show ${noun} as they arrive again` : `Freeze the list so rows stop moving. New ${noun} keep arriving and are counted, not lost.`}
       onClick={onToggle}
     >
@@ -75,7 +79,7 @@ export interface FeedHold {
   mark: number | null;
   /** Spread on the element that scrolls, or the one that wraps the rows. */
   listProps: {
-    onPointerEnter: (e: ReactPointerEvent<HTMLElement>) => void;
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
     onPointerLeave: () => void;
     onFocus: () => void;
     onBlur: (e: ReactFocusEvent<HTMLElement>) => void;
@@ -111,8 +115,9 @@ export function useFeedHold(newest: number, opts: { scroll?: boolean } = {}): Fe
   }, []);
 
   const listProps: FeedHold["listProps"] = {
-    // A finger is not "pointing at" a list: only a mouse hovers.
-    onPointerEnter: (e) => { if (e.pointerType === "mouse") setPointer(true); },
+    // A finger is not "pointing at" a list: only a mouse hovers. And it has to move: a list that appears under a mouse left resting
+    // somewhere (opening the page with a key) gets a pointerenter from the browser without the reader having done anything.
+    onPointerMove: (e) => { if (e.pointerType === "mouse") setPointer(true); },
     onPointerLeave: () => setPointer(false),
     onFocus: () => setFocus(true),
     onBlur: (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocus(false); },
