@@ -173,15 +173,15 @@ file's real size is not the size its page says, when a file is under no page, an
 
 | File | View | Size, in pixels |
 |---|---|---|
-| `shot-overview-light.jpg`, `shot-overview-dark.jpg` | Overview of the finished demo mission: the "Mission delivered" card and the artifact cards | 1440 × 900, the whole window |
-| `shot-events-light.jpg`, `shot-events-dark.jpg` | Events, newest first, with a refused line in view | 1440 × 900, the whole window |
+| `shot-overview-light.jpg`, `shot-overview-dark.jpg` | Overview of the finished demo mission: the Delivered card and the What shipped cards | 1440 × 900, the whole window |
+| `shot-events-light.jpg`, `shot-events-dark.jpg` | Events with the Messages chip selected, newest first, with a refused line in view | 1440 × 900, the whole window |
 | `shot-designer-light.jpg`, `shot-designer-dark.jpg` | Designer, the demo team's graph and the save bar | 1440 × 900, the whole window |
-| `shot-tile-overview.jpg` | Overview: the "Goal met" banner and the first acceptance criteria | 720 × 450, the view's own content |
-| `shot-tile-events.jpg` | Events: the search box, the filter chips and the first rows | 720 × 450, the view's own content |
-| `shot-tile-steps.jpg` | Steps: rows of agent turns, with one that produced and one that was refused | 720 × 450, the view's own content |
+| `shot-tile-overview.jpg` | Overview: the Delivered card with its four figures | 720 × 450, the view's own content |
+| `shot-tile-events.jpg` | Events with the Messages chip selected: the search box, the filter chips and the first rows | 720 × 450, the view's own content |
+| `shot-tile-steps.jpg` | Steps with the timeline folded: rows of agent turns, with one that produced and one that was refused | 720 × 450, the view's own content |
 | `shot-tile-designer.jpg` | Designer: the seats and the arrows between them | 720 × 450, the graph |
-| `shot-tile-cost.jpg` | Cost: the budget card and the bars per agent | 720 × 450, the view's own content |
-| `shot-tile-approvals.jpg` | The approvals drawer | 720 × 450, the drawer and a little of the page behind it |
+| `shot-tile-cost.jpg` | Cost, scrolled to the By agent card: the bars, tokens, share and each seat's own budget | 720 × 450, the view's own content |
+| `shot-tile-approvals.jpg` | The Approve or reject panel (More actions, Approve or reject) | 720 × 450, the panel and a little of the page behind it |
 | `shot-graph.jpg` | Graph: who talked to whom, with its legend | 1100 × 560, the graph and the legend |
 
 A light picture and its dark twin must be the same size, so that the page does not move when the visitor's colour scheme changes.
@@ -189,7 +189,7 @@ They show the scripted demo, which makes no model calls, and the pages say so be
 
 To retake them without Docker: scaffold the demo project into a scratch folder (`curule init <dir> --example demo-stub`), register
 it under a scratch `MESH_HOME` (`curule project add <dir>`), start `curule host --home <scratch>`, open it in a browser window
-of the size above, start the mission, wait for *Mission delivered*, and capture each view in the light colour scheme and in the
+of the size above, start the mission, wait for *Delivered*, and capture each view in the light colour scheme and in the
 dark one (the dashboard's *theme* button). The 720 × 450 pictures are crops of the view's own content (a 960 pixel wide window
 shows all of it) taken without the sidebar. Save JPEGs at quality about 80. In the Designer, the path shown at the bottom is the
 scratch folder's: replace it with `/data/projects/demo-stub/mesh.yaml`, which is what the container the pages tell people to run
