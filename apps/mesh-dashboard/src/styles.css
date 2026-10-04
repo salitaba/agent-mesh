@@ -387,7 +387,6 @@ button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
 .grid { display: grid; gap: var(--s3); }
 .grid.kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .grid.two { grid-template-columns: 1.25fr 1fr; }
-.grid.agents { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 @media (max-width: 1100px) { .grid.two { grid-template-columns: 1fr; } }
 
 .card { background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 88%, var(--bg))); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s3-5) 16px; }
@@ -464,20 +463,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .empty-body { margin: 0; max-width: 52ch; color: var(--muted); font-size: 14px; }
 .empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); margin-top: var(--s1); }
 
-/* ---------- agent cards ---------- */
-.agent-card { display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; transition: border-color .15s, transform .15s; }
-.agent-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
-.agent-head { display: flex; align-items: center; gap: var(--s2); }
+/* ---------- agent avatar (the card itself is in views/agents.css) ---------- */
 .avatar { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font: 700 14px var(--mono); color: var(--text-on-accent); background: var(--accent); flex: none; }
 /* Tinted variant: identity colour passed as --tint, mixed here so callers
    never hand-append hex alpha (which breaks on var() references). */
 .avatar.tinted { background: color-mix(in srgb, var(--tint) 13%, transparent); color: var(--tint); border: 1px solid color-mix(in srgb, var(--tint) 33%, transparent); }
-.agent-head b { font-size: 15px; }
-/* A real button so the card is keyboard-reachable without wrapping the wake
-   button in another control. Styled back down to the bare name it replaced. */
-.agent-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-open:focus-visible { outline-offset: 1px; border-radius: 4px; }
-.agent-head .role { font-size: 12px; color: var(--muted); }
 .row-actions button { font: 12px var(--sans); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text-dim); cursor: pointer; }
 .row-actions button:hover { color: var(--text); border-color: var(--accent); }
 
@@ -1029,18 +1019,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .sig.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--text); }
 .mem-row { font-size: 14px; margin: var(--s1-5) 0; padding: var(--s1-5) var(--s2); background: var(--bg-2); border-radius: var(--r-sm); }
 
-/* Agent cards carry the same health tint as the vitals strip. */
-/* Health tint is for the Agents grid cards only; scoping keeps a future
-   .agent-card surface from inheriting a rail it never asked for. */
-.grid.agents .agent-card { border-left: 3px solid transparent; }
-.grid.agents .agent-card.v-ok { border-left-color: var(--ok); }
-.grid.agents .agent-card.v-warm { border-left-color: var(--info); }
-.grid.agents .agent-card.v-warn { border-left-color: var(--warn); }
-.grid.agents .agent-card.v-bad { border-left-color: var(--bad); }
-.agent-foot { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
-.agent-live { font-size: 13px; color: var(--text-dim); }
-.agent-now { margin-top: var(--s1-5); font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-now.run { color: var(--text); }
 
 /* ============ live work (liveview.tsx) ============
    What a running turn is doing while it does it. The tone classes carry one

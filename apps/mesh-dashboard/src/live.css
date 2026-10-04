@@ -68,6 +68,11 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 .lw-mark { display: inline-flex; align-items: center; justify-content: center; }
 .lw-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
+/* ---------- agent controls: the buttons an agent in this state can take, and one sentence on what they do ---------- */
+
+.ag-controls { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s2) 0 var(--s1); }
+.ag-hint { margin: 0 0 var(--s2); font: var(--tx-meta); color: var(--muted); max-width: 60ch; }
+
 /* ---------- the zone, said once above a run of times ---------- */
 
 /* It sits beside a heading that may be capitalised and spaced out (the drawers' h4), so it resets both. */

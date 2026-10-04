@@ -1,134 +1,215 @@
-import { useEffect, useMemo } from "react";
-import { dur, fmt, plainLifecycle, pillCls, RUNNING, HEALTH_CLS } from "../format";
+import { useCallback, useEffect, useMemo } from "react";
+import { localTime, plainLifecycle, pillCls, zoneLabel, RUNNING } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { agentColor, AgentAvatar, Card, ErrorState } from "../components";
-import { agentAction } from "../drawers";
-import { vitalsOf } from "../vitals";
-import { useTick } from "../observability";
+import { AgentAvatar, Button, EmptyState, ErrorState, PageHeader, agentColor, useNow } from "../components";
+import { Icon } from "../icons";
+import { agentAction, confirmPause } from "../drawers";
+import { vitalsOf, type Vitals } from "../vitals";
 import { planSummary, planSummaryStale } from "../plan";
-import { compactNow, nowLine } from "../livework";
+import { compactNow, nowLine, timeLeftText } from "../livework";
+import { FeedStatus } from "../feedstatus";
+import { controlsHint, controlsOf, groupAgents, stateText, totalsText, turnsByAgent, type Control, type GroupId } from "../agents";
+import "./agents.css";
 
-/**
- * A card that says what the agent is doing, not merely that it exists. The
- * old card showed the lifecycle word twice and nothing else — a stalled agent
- * and a happily streaming one were pixel-identical.
- */
-function AgentCard({ a, step, onWake, onOpen }: { a: any; step?: TurnStep; onWake: () => void; onOpen: () => void }): React.JSX.Element {
+/* A card says what the agent is doing, for how long, and whether it is stuck; its controls are the ones that make sense for an
+   agent in that state. What it decides lives in agents.ts, which node:test covers. */
+
+interface RosterAgent {
+  id: string;
+  role: string;
+  lifecycle: string;
+  mailbox?: number;
+  tokens?: number;
+  activations?: number;
+  taskId?: string | null;
+  planDone?: number | null;
+  planTotal?: number;
+  planTaskId?: string | null;
+}
+
+function AgentCard({ a, group, running, last, vitals, now, parked, loaded, onOpen, onControl }: {
+  a: RosterAgent;
+  group: GroupId;
+  running?: TurnStep;
+  last?: TurnStep;
+  vitals?: Vitals;
+  now: number;
+  parked: boolean;
+  loaded: boolean;
+  onOpen: () => void;
+  onControl: (a: RosterAgent, c: Control) => void;
+}): React.JSX.Element {
   const run = RUNNING.has(a.lifecycle);
-  useTick(1000, run);
-  // Every lifecycle the kernel can report needs a branch here. BLOCKED,
-  // COMPLETED and STARTING used to fall through to "idle", so the subtitle
-  // contradicted the pill directly beneath it — a blocked agent read as idle
-  // next to a red "blocked" badge.
-  const sub =
-    a.lifecycle === "FAILED" ? "crashed — needs you"
-    : a.lifecycle === "BLOCKED" ? "blocked — cannot continue"
-    : a.lifecycle === "WAITING" ? (a.mailbox ? `${a.mailbox} unread` : "waiting")
-    : run ? "working now"
-    : a.lifecycle === "SUSPENDED" ? "paused by you"
-    : a.lifecycle === "COMPLETED" ? "finished"
-    : a.lifecycle === "STARTING" ? "starting up"
-    : "idle";
-  const v = run && step ? vitalsOf({ phases: step.phases, clientChars: step.streamChars ?? 0, toolFrames: step.toolFrames ?? 0, toolCallCount: step.toolCallCount, running: true, startedAt: step.startedAt }) : null;
-  const elapsed = step && run ? Date.now() - Date.parse(step.startedAt) : null;
-  // The one line that says what it is doing this second — a seat writing
-  // files for seventeen minutes otherwise reads "working · 17m" and nothing more.
-  const doing = run && step?.currentTool ? step.currentTool : null;
-  // The list payload carries a scalar projection of the plan, not the steps —
-  // enough to say how far along it is, which is the one fact a card can act on.
+  const doing = run && running?.currentTool ? running.currentTool : null;
+  const text = stateText(a, { running: run ? running : undefined, doing: doing ? compactNow(doing, now) : null, last, now, parked, loaded });
+  const left = run && running && typeof running.deadlineAt === "number" ? timeLeftText(running.deadlineAt, now) : null;
+  const stalled = vitals?.health === "stalled";
+  // A quiet turn is the one failure that otherwise reads as "working", so it is said in words on the card, not only by a colour.
+  const worry = run && vitals && (vitals.health === "stalled" || vitals.health === "slow") ? vitals : null;
   const plan = planSummary(a);
   const stalePlan = planSummaryStale(plan, a.taskId);
+  const totals = totalsText(a);
+  const controls = controlsOf(a.lifecycle);
+  const at = (ms: number): string => localTime(new Date(ms).toISOString());
   return (
-    // The card used to be role="button" tabIndex={0} with a real <button> for
-    // wake inside it — nested interactive content, which is invalid HTML and
-    // leaves screen readers announcing one control that contains another. The
-    // card keeps its mouse affordance, but the keyboard entry point is now the
-    // agent name as a genuine button, a sibling of wake rather than its parent.
-    <div className={`card agent-card${v ? ` ${HEALTH_CLS[v.health]}` : ""}`} data-agent={a.id} onClick={onOpen}>
-      <div className="agent-head"><AgentAvatar id={a.id} color={agentColor(a.role)} />
-        <div style={{ minWidth: 0 }}>
-          <button type="button" className="agent-open" onClick={(e) => { e.stopPropagation(); onOpen(); }}><b>{(a.id)}</b></button>
-          <div className="role">{(a.role)} · {(sub)}</div>
+    // The card keeps its mouse affordance; the keyboard way in is the name, a real button, beside the controls rather than around them.
+    <div className="card agent-card" data-agent={a.id} data-group={group} onClick={onOpen}>
+      <div className="agent-head">
+        <AgentAvatar id={a.id} color={agentColor(a.role)} />
+        <div className="agent-who">
+          <button type="button" className="agent-open" onClick={(e) => { e.stopPropagation(); onOpen(); }}><b>{a.id}</b></button>
+          <div className="role">{a.role}</div>
         </div>
-        <span className="row-actions"><button data-act="wake" data-id={a.id} title="Run one step now" onClick={(e) => { e.stopPropagation(); onWake(); }}>wake</button></span></div>
-      <div className="agent-foot">
-        <span className={`pill ${pillCls(a.lifecycle)}${run ? " running-pulse" : ""}`}>{(plainLifecycle(a.lifecycle))}</span>
-        {v ? (
-          <span className="agent-live" title={v.detail}>
-            {v.label}
-            {elapsed !== null ? <span className="muted"> · {dur(elapsed)}</span> : null}
-            {v.chars ? <span className="muted"> · {fmt(v.chars)} chars</span> : null}
-          </span>
-        ) : null}
-        {plan ? (
-          <span
-            className={`chip plan-chip${stalePlan ? " warn" : ""}`}
-            title={stalePlan
-              ? "Its plan was written for a task it has since moved on from — the steps no longer describe what it is doing."
-              : "Its private plan for the task it is on. Other agents cannot see or claim these steps."}
-          >
-            {plan.done}/{plan.total}{plan.done === plan.total ? " ✓" : ""}{stalePlan ? " · stale" : ""}
-          </span>
-        ) : null}
+        {/* The kernel still says WORKING for a silent turn; the badge says what the vitals say, so it does not read as healthy. */}
+        <span className={`pill ${stalled ? "failed" : pillCls(a.lifecycle)}${run && !stalled ? " running-pulse" : ""}`}>{stalled ? "stalled" : plainLifecycle(a.lifecycle)}</span>
       </div>
-      {doing ? (
-        <div className={`agent-now mono${doing.status === "running" ? " run" : ""}`} title={nowLine(doing, Date.now())}>
-          {compactNow(doing, Date.now())}
+
+      <div className="agent-state">
+        <b>{text.headline}</b>
+        <span className={`agent-detail${doing ? " mono" : ""}`} title={doing ? nowLine(doing, now) : text.detail}>{text.detail}</span>
+      </div>
+
+      {worry ? (
+        <p className={`agent-worry ${stalled ? "bad" : "warn"}`} title={worry.detail}>
+          <Icon name="alert" size={14} />
+          <span>{stalled ? "No sign of life. " : "Quiet. "}{worry.detail}</span>
+        </p>
+      ) : null}
+
+      {plan || totals || left ? (
+        <div className="agent-meta">
+          {plan ? (
+            <span
+              className={`chip plan-chip${stalePlan ? " warn" : ""}`}
+              title={stalePlan
+                ? "Its plan was written for a task it has since moved on from, so the steps no longer describe what it is doing."
+                : "Its private plan for the task it is on. Other agents cannot see or claim these steps."}
+            >
+              plan {plan.done}/{plan.total}{plan.done === plan.total ? " done" : ""}{stalePlan ? " · stale" : ""}
+            </span>
+          ) : null}
+          {totals ? <span>{totals}</span> : null}
+          {left && running && typeof running.deadlineAt === "number" ? (
+            <span
+              className={running.deadlineAt - now < 60_000 ? "agent-left warn" : "agent-left"}
+              title={`This turn is stopped at ${at(running.deadlineAt)} ${zoneLabel()} unless it is extended.`}
+            >
+              {left === "overdue" ? "past its deadline" : `${left} before it is stopped`}
+            </span>
+          ) : null}
         </div>
       ) : null}
+
+      {controls.length ? (
+        <div className="agent-controls">
+          {controls.map((c) => (
+            <Button key={c.id} variant="small" data-act={c.id} data-id={a.id} title={c.title} onClick={(e) => { e.stopPropagation(); onControl(a, c); }}>
+              {c.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      {/* Where a person has to decide, one sentence on what each button will do. Everywhere else the tooltips carry it. */}
+      {group === "help" ? <p className="agent-hint">{controlsHint(a.lifecycle, stalled)}</p> : null}
+    </div>
+  );
+}
+
+function Skeleton(): React.JSX.Element {
+  return (
+    <div className="ag-grid" aria-busy="true" aria-label="Loading agents">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="card agent-card ag-skel">
+          <div className="agent-head"><span className="sk sk-ag-av" /><span className="sk sk-ag-name" /></div>
+          <span className="sk sk-ag-l1" /><span className="sk sk-ag-l2" />
+        </div>
+      ))}
     </div>
   );
 }
 
 export default function Agents(): React.JSX.Element {
-  const { status, toast, openDetail, refreshStatus, steps, refreshSteps, serverDown, client } = useMesh();
-  const st = status;
-  // Live turns are what make the cards say anything useful, and they only
-  // arrive with /steps — the agent list alone has no turn timing.
+  const { status, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm } = useMesh();
+  const now = useNow(1000);
+  // Live turns are what make a card say anything useful, and they arrive with /steps: the roster alone has no turn timing.
   useEffect(() => {
     void refreshSteps(true);
     const iv = setInterval(() => void refreshSteps(true), 3000);
     return () => clearInterval(iv);
   }, [refreshSteps]);
-  const runningByAgent = useMemo(() => {
-    const m = new Map<string, TurnStep>();
-    for (const s of steps || []) if (s.status === "running" && !m.has(s.agentId)) m.set(s.agentId, s);
-    return m;
-  }, [steps]);
-  const all = (st?.agents || []).filter((a: any) => a.id !== "human");
-  const attention = all.filter((a: any) => a.lifecycle === "FAILED" || a.lifecycle === "BLOCKED");
-  const working = all.filter((a: any) => RUNNING.has(a.lifecycle));
-  const idle = all.filter((a: any) => !RUNNING.has(a.lifecycle) && a.lifecycle !== "FAILED" && a.lifecycle !== "BLOCKED");
-  const wake = (id: string) => void agentAction(client, id, "wake", toast, () => void refreshStatus());
-  const group = (title: string, list: any[]) =>
-    list.length ? (
-      <>
-        <h3 className="group-h">{(title)} <span className="muted">· {list.length}</span></h3>
-        <div className="grid agents">{list.map((a: any) => <AgentCard key={a.id} a={a} step={runningByAgent.get(a.id)} onWake={() => wake(a.id)} onOpen={() => openDetail("agent", a.id)} />)}</div>
-      </>
-    ) : null;
 
-  // Three states, never conflated: the status poll has not answered yet, it
-  // answered and the mesh is genuinely quiet, or the server stopped answering.
-  // The old code showed "Everyone is idle" for all three — an all-clear the
-  // console had not verified.
-  if (!st) {
-    return serverDown
-      ? <ErrorState what="the agent list" detail="the mesh server stopped answering — it may be restarting." onRetry={() => void refreshStatus()} />
-      : <div className="empty"><div className="big">…</div><div>loading agents</div></div>;
+  const roster: RosterAgent[] = useMemo(() => (status?.agents || []).filter((a: RosterAgent) => a.id !== "human"), [status]);
+  const { running, last } = useMemo(() => turnsByAgent<TurnStep>(steps ?? []), [steps]);
+  const vitals = useMemo(() => {
+    const m = new Map<string, Vitals>();
+    for (const [id, s] of running) {
+      m.set(id, vitalsOf({ phases: s.phases, clientChars: s.streamChars ?? 0, toolFrames: s.toolFrames ?? 0, toolCallCount: s.toolCallCount, running: true, startedAt: s.startedAt, now }));
+    }
+    return m;
+  }, [running, now]);
+  const stalled = useMemo(() => new Set([...vitals].filter(([, v]) => v.health === "stalled").map(([id]) => id)), [vitals]);
+  const groups = useMemo(() => groupAgents(roster, stalled), [roster, stalled]);
+  const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
+
+  const control = useCallback(async (a: RosterAgent, c: Control): Promise<void> => {
+    if (c.id === "suspend" && c.asks && !(await confirmPause(confirm, a.id, true))) return;
+    await agentAction(client, a.id, c.id, toast, () => void refreshStatus());
+  }, [client, confirm, toast, refreshStatus]);
+
+  const header = (
+    <PageHeader
+      title="Agents"
+      status={<FeedStatus />}
+      lede="Who is working, who is stuck, who is waiting. Run one step wakes an agent for a single turn and it goes back to waiting. Pause stops its turn and keeps it asleep until you unpause it."
+    />
+  );
+
+  // Three states, never conflated: the status poll has not answered yet, it answered and the mesh has no agents, or the server stopped
+  // answering. The old page said "Everyone is idle" for all three, an all-clear the console had not verified.
+  if (!status) {
+    return (
+      <>
+        {header}
+        {serverDown
+          ? <ErrorState what="the agent list" detail="The mesh server stopped answering. It may be restarting." onRetry={() => void refreshStatus()} />
+          : <Skeleton />}
+      </>
+    );
   }
   return (
     <>
-      <div className="view-title"><h2>Agents</h2></div>
-      <div className="view-sub">Who is working, stuck, or idle. <b>Wake</b> runs one step. Click a card for details.</div>
-      {group("Needs you", attention)}
-      {/* "Everyone is idle" only makes sense when there is someone to be idle:
-          with zero agents it used to stack on top of "No agents yet." */}
-      {all.length && working.length === 0 && attention.length === 0
-        ? <Card><div className="empty"><div className="big">◉</div><div>Everyone is idle.</div><div className="muted">Wake someone or send a message to get going.</div></div></Card>
-        : group("Working now", working)}
-      {group("Idle & waiting", idle)}
-      {!all.length ? <Card><div className="empty"><div className="big">◉</div><div>No agents yet.</div><div className="muted">The mesh answered — this goal has no agents configured.</div></div></Card> : null}
+      {header}
+      {groups.map((g) => (
+        <section key={g.id} className="ag-group" aria-labelledby={`ag-g-${g.id}`}>
+          <div className="ag-group-head">
+            <h3 id={`ag-g-${g.id}`}>{g.title}</h3>
+            <span className="ag-count">{g.agents.length}</span>
+            <span className="ag-group-hint">{g.hint}</span>
+          </div>
+          <div className="ag-grid">
+            {g.agents.map((a) => (
+              <AgentCard
+                key={a.id}
+                a={a}
+                group={g.id}
+                running={running.get(a.id)}
+                last={last.get(a.id)}
+                vitals={vitals.get(a.id)}
+                now={now}
+                parked={parked}
+                loaded={stepsLoaded}
+                onOpen={() => openDetail("agent", a.id)}
+                onControl={(ag, c) => void control(ag, c)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+      {!roster.length ? (
+        <EmptyState icon="agents" title="No agents in this mesh">
+          The mesh answered, and this project has no agents configured. Add seats in the Designer.
+        </EmptyState>
+      ) : null}
     </>
   );
 }

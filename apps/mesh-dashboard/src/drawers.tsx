@@ -4,7 +4,9 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, producedCount, p
 import { buildLedger, ledgerTally, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import { Icon } from "./icons";
+import { actionNote, controlsHint, controlsOf, pauseWarning } from "./agents";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { FileView, type DiffPayload } from "./fileview";
 import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
@@ -29,20 +31,36 @@ export function CloseX({ extra }: { extra?: string } = {}): React.JSX.Element {
   };
   return (
     <button type="button" className={`close-x${extra ? ` ${extra}` : ""}`} aria-label="Close panel" title="Close (Esc)" onClick={close}>
-      <span aria-hidden="true">×</span>
+      <Icon name="x" size={16} />
     </button>
   );
 }
 
+/**
+ * Wake, suspend or resume an agent, and say what came of it. What the toast says is decided in agents.ts (`actionNote`): a wake
+ * runs one turn and lets go, a pause says whether it stopped a turn, a refusal keeps the server's own reason, and a request that
+ * got no answer says it is not known whether it took effect.
+ */
 export async function agentAction(client: ProjectClient, id: string, act: string, toast: (t: string, m: string, k?: string) => void, after?: () => void): Promise<void> {
+  let note;
   try {
     const { status, json } = await client.post(`/agents/${encodeURIComponent(id)}/${act}`);
-    if (status === 200) toast(act, `${id}: ok`, "ok");
-    else toast(`${act} blocked`, `${id}: ${json?.reason ?? "denied"}`, "warn");
+    note = actionNote(act, id, status, json);
   } catch {
-    toast(`${act} failed`, `${id}: the server did not answer`, "bad");
+    note = actionNote(act, id, null, null);
   }
+  toast(note.title, note.text, note.kind);
   if (after) setTimeout(after, 400);
+}
+
+/**
+ * Pausing an agent that is in a turn stops that turn, and what it has spent is billed, so that one asks first. Pausing an agent that
+ * is between turns costs nothing and does not ask. Resolves true when the pause should go ahead.
+ */
+export async function confirmPause(confirm: ConfirmFn, id: string, midTurn: boolean): Promise<boolean> {
+  if (!midTurn) return true;
+  const w = pauseWarning(id);
+  return (await confirm({ title: w.title, body: w.body, confirmLabel: w.confirmLabel, danger: true })) !== null;
 }
 
 export function MessageDrawer(): React.JSX.Element {
@@ -170,7 +188,7 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; hint: string }> = [
 ];
 
 export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
-  const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client } = useMesh();
+  const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client, confirm } = useMesh();
   const { streams } = useMeshStreams();
   // The events console is where an event can be read properly now, so this feed
   // hands off to it rather than stacking a third drawer on top of this one.
@@ -239,7 +257,13 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     );
   }
   const d = json.definition, s = json.state;
-  const act = (a: string) => void agentAction(client, id, a, toast);
+  // A pause that would stop a turn in progress asks first; every answer is worded in agents.ts.
+  const act = (a: string): void => {
+    void (async () => {
+      if (a === "suspend" && !(await confirmPause(confirm, id, RUNNING.has(s.lifecycle)))) return;
+      await agentAction(client, id, a, toast);
+    })();
+  };
   const unreadFull: any[] = Array.isArray(json.unreadMessages) ? json.unreadMessages : [];
   const unreadCount: number = Array.isArray(json.unread) ? json.unread.length : unreadFull.length;
   const steps: any[] = Array.isArray(json.recentSteps) ? json.recentSteps : [];
@@ -311,14 +335,14 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             err={steps.find((x: any) => x.status === "failed" && x.errorDetail)?.errorDetail}
             fallback={`Crashed: ${String(s.lastError).slice(0, 220)}`}
           />
-          <div className="esc-next"><b>Next:</b> <span className="muted">wake it once to retry, or open its last step for the failing call.</span> <Button variant="small" onClick={() => act("wake")}>wake to retry</Button></div>
+          <div className="esc-next"><b>Next:</b> <span className="muted">retry it once, or open its last step for the failing call.</span> <Button variant="small" onClick={() => act("wake")}>Retry one step</Button></div>
         </>
       ) : null}
-      <div className="row" style={{ margin: "8px 0 4px" }}>
-        <Button variant="small" onClick={() => act("wake")}>run one step</Button>
-        <Button variant="small" onClick={() => act("suspend")}>pause</Button>
-        <Button variant="small" onClick={() => act("resume")}>unpause</Button>
+      {/* Only what the kernel would accept for an agent in this state, and one sentence on what it does. */}
+      <div className="ag-controls">
+        {controlsOf(s.lifecycle).map((c) => <Button key={c.id} variant="small" title={c.title} onClick={() => act(c.id)}>{c.label}</Button>)}
       </div>
+      <p className="ag-hint">{controlsHint(s.lifecycle, vitals?.health === "stalled")}</p>
 
       <Tabs
         idPrefix="agent"
@@ -349,7 +373,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
                 ? "Woken and starting a turn — output will appear here."
                 : s.lifecycle === "WAITING"
                   ? "Parked on its mailbox with nothing to do. That is a healthy resting state, not a stall."
-                  : `Not running (${plainLifecycle(s.lifecycle)}). Use “run one step” to wake it.`}
+                  : `Not running (${plainLifecycle(s.lifecycle)}).`}
             </div>
           )}
           {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{(json.activeTask.status)}</Chip></div> : null}
