@@ -39,7 +39,8 @@
 .ptabs::-webkit-scrollbar { display: none; }
 .ptabs-empty { align-self: center; padding-left: var(--s1-5); font-size: 13px; white-space: nowrap; }
 
-.ptab { flex: none; display: flex; align-items: center; min-width: 0; max-width: 240px; border-radius: var(--r-sm) var(--r-sm) 0 0; border: 1px solid transparent; border-bottom: 0; position: relative; }
+/* scroll-margin: a tab brought into view stops short of the fade at the edge, not under it. */
+.ptab { flex: none; display: flex; align-items: center; min-width: 0; max-width: 240px; border-radius: var(--r-sm) var(--r-sm) 0 0; border: 1px solid transparent; border-bottom: 0; position: relative; scroll-margin-inline: 32px; }
 .ptab.on { background: var(--bg); border-color: var(--line); }
 /* The active tab reads as the page it opens: the seam under it is erased. */
 .ptab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--bg); }

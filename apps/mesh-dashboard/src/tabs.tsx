@@ -20,7 +20,7 @@ import { useProjects, type ProjectSummary } from "./projects";
 import { useMesh } from "./store";
 import { hashFor, isHostView, parseHash } from "./route";
 import { formatRss, moveTab, orderTabs, reorderTabs, tabStatus } from "./tabmodel";
-import { attentionCount, cardState, displayNames, failureDetail, landAfterClose, problemTitle, tabLook } from "./projectsmodel";
+import { attentionCount, cardActions, cardState, displayNames, failureDetail, landAfterClose, problemTitle, tabLook } from "./projectsmodel";
 import { NewProjectDialog, Welcome } from "./newproject";
 import { register, unregister } from "./commands";
 
@@ -147,7 +147,9 @@ function Tab({ project, label, active, missionParked, onPick, onClose, onDragSta
   const look = tabLook(card);
   const rss = formatRss(project.health?.rss);
   const [over, setOver] = useState(false);
-  const running = card.key !== "closed" && card.key !== "unknown";
+  // The same rule as the project's card: only a project with a process has one to close. A broken one is restarted (the
+  // notice under the strip, or its card) or forgotten (its card), and a closed one is already closed.
+  const canClose = cardActions(card.key).close;
   return (
     <li
       className={`ptab${active ? " on" : ""}${over ? " drop" : ""}`}
@@ -159,7 +161,7 @@ function Tab({ project, label, active, missionParked, onPick, onClose, onDragSta
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); onDrop(); }}
       onDragEnd={() => setOver(false)}
-      onAuxClick={(e) => { if (e.button === 1 && running) { e.preventDefault(); onClose(); } }}
+      onAuxClick={(e) => { if (e.button === 1 && canClose) { e.preventDefault(); onClose(); } }}
     >
       <button
         type="button"
@@ -180,8 +182,8 @@ function Tab({ project, label, active, missionParked, onPick, onClose, onDragSta
           {rss ? <span className="ptab-rss">{rss}</span> : null}
         </span>
       </button>
-      {/* Only a project with a process has one to close. The tab itself stays: it is closed, not removed (see Projects). */}
-      {running ? (
+      {/* The tab itself stays when its project is closed: it is closed, not removed (see Projects). */}
+      {canClose ? (
         <button type="button" className="ptab-x" aria-label={`Close ${label}`} title="Close this project: its process stops. The tab and its files stay." onClick={onClose}>
           <Icon name="x" size={14} />
         </button>
@@ -263,10 +265,13 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
       ro?.disconnect();
     };
   }, [updateFades, ordered.length]);
-  // Switching to a tab that is scrolled out of sight brings it into view.
+  // Switching to a tab that is scrolled out of sight brings it into view: the whole tab, with its close button, not only its
+  // name. A tab grows when its state words arrive, so it is brought into view again when the active project's state changes.
+  const activeProject = ordered.find((p) => p.id === activeId);
+  const activeLook = activeProject ? `${activeProject.status}/${activeProject.lastMode ?? ""}/${activeProject.health ? "h" : ""}` : "";
   useEffect(() => {
-    scrollRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeId, onProjectsPage]);
+    scrollRef.current?.querySelector(".ptab.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId, onProjectsPage, activeLook]);
 
   // Keyboard routes to the Projects page and the New project dialog, from the command palette.
   useEffect(() => {
