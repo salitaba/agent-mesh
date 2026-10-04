@@ -88,7 +88,8 @@ export default function Graph(): React.JSX.Element {
       <div className="view-title"><h2>Graph</h2><span className="muted">{err ? "refresh failed — showing the last drawing" : at ? `as of ${ago(at)}` : ""}</span></div>
       <div className="view-sub">Who talks to whom. Thicker = more messages. Dashed = active right now. Click an agent for details.</div>
       <Card variant="graph-wrap">
-        <svg id="graph-svg" role="img" aria-label="mesh graph" viewBox={`0 0 ${W} ${H}`}>
+        {/* A group, not an image: an img has presentational children, and the agents inside are buttons. */}
+        <svg id="graph-svg" role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
           <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
           {edges.map((e: any) => {
             const p = pos[e.from], q = pos[e.to];
