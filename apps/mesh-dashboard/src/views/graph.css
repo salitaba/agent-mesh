@@ -1,0 +1,79 @@
+/* ================================= graph =================================
+   Who talks to whom. A line's colour is the kind of message, its thickness is how many, and a dashed moving line carried one in the
+   last few events. A seat's ring says what it is doing, and the word beside it says the same. Names sit outside the ring, where no
+   line goes. Prefixes: gr- (page chrome), edge, gn (the drawing). */
+
+.graph-wrap { position: relative; }
+.graph-wrap + .card { margin-top: var(--s3); }
+
+.gr-svg { display: block; width: 100%; height: min(60vh, 520px); }
+.gr-svg text { fill: var(--text); font: 12px var(--sans); }
+.gr-svg text.name { font-weight: 500; }
+.gr-svg text.dim { fill: var(--muted); font: 11px var(--mono); }
+.gr-svg text.init { fill: var(--text); font: 600 11px var(--mono); }
+
+/* The drawing is a fixed 900x480 viewBox scaled to fit. On a phone that is a uniformly shrunk desktop drawing: 11px labels at about
+   4px and 36px seats at 13px. Below the width where the scale turns illegible it stops scaling and scrolls instead, so the text is
+   its authored size and a seat is a real tap target. */
+@media (max-width: 620px) {
+  .graph-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+  .gr-svg { min-width: 900px; height: 480px; }
+}
+
+/* ---- seats ---- */
+
+.gn { cursor: pointer; }
+.gn circle.node { fill: var(--panel); stroke: var(--line-control); stroke-width: 1.5; }
+.gn.working circle.node { stroke: var(--ok); stroke-width: 2.5; }
+.gn.waiting circle.node { stroke: var(--warn); stroke-width: 2; }
+.gn.stopped circle.node { stroke: var(--bad); stroke-width: 2.5; }
+.gn.paused circle.node { stroke: var(--text-dim); stroke-dasharray: 3 3; }
+.gn:hover circle.node { fill: var(--panel-2); }
+/* The group includes the names, so the ring of focus is around the whole seat. */
+.gn:focus { outline: none; }
+.gn:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+
+/* ---- lines ---- */
+
+.gr-svg path.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.gr-svg path.edge.REQUEST { stroke: var(--accent); }
+.gr-svg path.edge.APPROVE { stroke: var(--ok); }
+.gr-svg path.edge.BLOCK { stroke: var(--bad); }
+.gr-svg path.edge.ESCALATE { stroke: var(--warn); }
+.gr-svg path.edge.INFORM { stroke: var(--info); }
+.gr-svg path.edge.flowing { stroke-dasharray: 5 7; animation: dashflow 1.2s linear infinite; }
+@keyframes dashflow { to { stroke-dashoffset: -12; } }
+/* Pointing at a line in the list below picks it out and leaves the rest as context. */
+.gr-svg.focus path.edge:not(.hot) { opacity: .2; }
+.gr-svg path.edge.hot { stroke-width: 4px; }
+
+/* ---- legend ---- */
+
+.gr-legend { display: flex; flex-wrap: wrap; gap: var(--s1-5) var(--s4); margin: var(--s2) 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--text-dim); }
+.gr-legend li { display: inline-flex; align-items: center; gap: var(--s1-5); }
+.gr-line { display: inline-block; flex: none; width: 18px; height: 0; border-top: 3px solid var(--muted); border-radius: 2px; }
+.gr-line.REQUEST { border-top-color: var(--accent); }
+.gr-line.APPROVE { border-top-color: var(--ok); }
+.gr-line.BLOCK { border-top-color: var(--bad); }
+.gr-line.ESCALATE { border-top-color: var(--warn); }
+.gr-line.INFORM { border-top-color: var(--info); }
+.gr-line.dash { border-top: 3px dashed var(--text-dim); }
+.gr-ring { display: inline-block; flex: none; width: 12px; height: 12px; border: 2px solid var(--line-control); border-radius: 50%; box-sizing: border-box; }
+.gr-ring.working { border-color: var(--ok); }
+.gr-ring.waiting { border-color: var(--warn); }
+.gr-ring.stopped { border-color: var(--bad); }
+.gr-ring.paused { border: 2px dashed var(--text-dim); }
+
+/* ---- the list: every line, reachable by keyboard ---- */
+
+.gr-links { margin: 0; padding: 0; list-style: none; }
+.gr-link {
+  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 32px; padding: var(--s1) var(--s2);
+  background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
+}
+.gr-links li:last-child .gr-link { border-bottom: 0; }
+.gr-link:hover, .gr-link[aria-pressed="true"] { background: var(--panel-2); }
+.gr-link:focus-visible { outline-offset: -2px; }
+.gr-link > span:nth-of-type(1) { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.gr-n { flex: none; font-variant-numeric: tabular-nums; }
+.gr-note { margin: var(--s2) 0 0; font-size: 13px; }

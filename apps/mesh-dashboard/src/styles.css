@@ -225,12 +225,10 @@ body {
 .nav-badge ~ .tab-key { margin-left: 0; }
 /* Only the cases the baseline cannot express: the ring has to land on a child
    because the focusable element itself is not the visible shape. */
-#graph-svg .gn:focus-visible circle.node, .tbl tr.clickable:focus-visible td {
+.tbl tr.clickable:focus-visible td {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 .ev:focus-visible { outline-offset: -2px; }
-#graph-svg .gn:focus { outline: none; }
-#graph-svg .gn:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 .group-h { font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--s3-5) 2px 8px; }
 .group-h:first-of-type { margin-top: 0; }
 .view-sub { font-size: 13px; color: var(--muted); margin: -8px 2px var(--s3-5); max-width: 90ch; }
@@ -470,37 +468,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .avatar.tinted { background: color-mix(in srgb, var(--tint) 13%, transparent); color: var(--tint); border: 1px solid color-mix(in srgb, var(--tint) 33%, transparent); }
 .row-actions button { font: 12px var(--sans); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text-dim); cursor: pointer; }
 .row-actions button:hover { color: var(--text); border-color: var(--accent); }
-
-/* ---------- graph ---------- */
-.graph-wrap { position: relative; }
-#graph-svg { width: 100%; height: min(60vh, 520px); display: block; }
-#graph-svg text { fill: var(--text); font: 12px var(--sans); }
-#graph-svg text.dim { fill: var(--muted); font: 11px var(--mono); }
-/* The graph is a fixed 900x480 viewBox scaled to fit. On a phone that is a
-   uniformly shrunk desktop drawing: 11px labels render at ~4px and the 36px
-   node targets at ~13px. Below the width where the scale gets illegible, stop
-   scaling and scroll instead -- text returns to its authored size and the
-   nodes to a real tap target. 900x480 matches the viewBox, so nothing letterboxes. */
-@media (max-width: 620px) {
-  .graph-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
-  #graph-svg { min-width: 900px; height: 480px; }
-}
-#graph-svg circle.node { fill: var(--panel); stroke: var(--line-strong); stroke-width: 1.5; cursor: pointer; }
-#graph-svg circle.node.active { stroke: var(--ok); }
-#graph-svg circle.node.waiting { stroke: var(--warn); }
-#graph-svg circle.node.selected { stroke: var(--accent); stroke-width: 2.5; }
-#graph-svg path.edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; opacity: .75; }
-#graph-svg path.edge.REQUEST { stroke: var(--accent); }
-#graph-svg path.edge.APPROVE { stroke: var(--ok); }
-#graph-svg path.edge.BLOCK { stroke: var(--bad); }
-#graph-svg path.edge.ESCALATE { stroke: var(--warn); }
-/* The legend has always drawn an INFORM swatch in --info; the edge rule was
-   missing, so those edges rendered in the default grey and the key was wrong. */
-#graph-svg path.edge.INFORM { stroke: var(--info); }
-#graph-svg path.edge.flowing { stroke-dasharray: 5 7; animation: dashflow 1.2s linear infinite; }
-@keyframes dashflow { to { stroke-dashoffset: -12; } }
-.legend { display: flex; gap: var(--s4); flex-wrap: wrap; font-size: 13px; color: var(--text-dim); }
-.legend b { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 
 /* ---------- events ---------- */
 /* --line is a 1.17:1 hairline against --bg-2. That is fine for dividing two
