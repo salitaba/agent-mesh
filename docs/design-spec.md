@@ -239,7 +239,10 @@ What a script cannot see still needs a person, per theme:
 3. A keyboard-only pass through the primary flow, with the focus ring in view.
 4. A mission watched from Start to Delivered: every page that shows it must move
    with it (§1.8). This is how the stale "No files are recorded" was found, and no
-   screenshot of a finished mission shows it.
+   screenshot of a finished mission shows it. `npm run qa:walk` does this walk
+   (start, pause and undo, resume, delivered, reopen with a reason, an agent, a step,
+   an event search, a file, a message, Projects, the palette, help) against the
+   scripted demo, and reports each step, every failing request and every page error.
 5. Both kinds of server (§0): the host, and `curule console` serving the
    production build (`npm run build`), not the dev server.
 

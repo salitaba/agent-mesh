@@ -95,7 +95,7 @@ sections 1 to 23) are described there, run by run.
   what a restart does; a file reader with versions and comparisons. A view that crashes stays one view's failure (with a
   copyable report), and a tab left open across a host update is told to reload. The rules are in
   [docs/design-spec.md](docs/design-spec.md), and `npm run qa:console` runs the visual pass (every view, both themes, two widths,
-  axe-core, console errors).
+  axe-core, console errors) and `npm run qa:walk` walks a person's session on the scripted demo.
 - **`runtimes` in `GET /status`**: the runtimes the seats run on. The console words "Start the mission?" by it, so the shipped
   scripted demo no longer tells a visitor that agents "spend tokens".
 - **`mesh_artifact_read` says where the artifact stands.** The result carries `status`, `version` and `owner` beside `canSettle`,
