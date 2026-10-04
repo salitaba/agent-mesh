@@ -261,6 +261,15 @@ test("what is in use is what the host reports and the console sees, with a gap l
   assert.deepEqual(inUseOf({ ...COMMUNITY, usage: { open: 0, registered: 0 } }, null, 0), { open: 0, registered: 0, seats: null, turns: 0 }, "zero is a count, not a gap");
 });
 
+test("the seat count is the project's own, from its licence route, and not the status field that counts the seats boot woke", () => {
+  const server = read("apps", "mesh-server", "src", "index.ts");
+  assert.match(server, /parts\[0\] === "license" && parts\.length === 1 && req\.method === "GET"[\s\S]{0,200}seats: seatsInUse\(\)/, "a mesh reports its seats under /license");
+  assert.match(server, /startupActivateCount: config\.startupActivate\.length/, "and this status field counts the seats woken at start, which is not the same number");
+  const card = read("apps", "mesh-dashboard", "src", "license.tsx");
+  assert.match(card, /\.api\("GET", "\/license"\)/, "the card asks the project");
+  assert.ok(!/startupSeats|startupActivateCount/.test(card.replace(/\/\*[\s\S]*?\*\//g, "")), "and does not take the boot count for the seat count");
+});
+
 test("where the key is, or where Curule looks", () => {
   assert.deepEqual(whereFound(view(token(), "warn", { registered: 1, open: 1 }, "MESH_LICENSE")), { text: "Read from", code: "MESH_LICENSE" });
   assert.deepEqual(whereFound(view(token(), "warn", { registered: 1, open: 1 }, "/data/home/license.key")), { text: "Read from", code: "/data/home/license.key" });

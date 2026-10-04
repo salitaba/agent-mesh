@@ -19,7 +19,6 @@ import { api } from "./api";
 import { Banner, Button, CopyButton, useNow } from "./components";
 import { Icon } from "./icons";
 import { useMesh } from "./store";
-import { useMission } from "./useMission";
 import { useProjectsOptional } from "./projects";
 import {
   OFFLINE_NOTE,
@@ -144,6 +143,36 @@ const writeAck = (signature: string): void => {
   }
 };
 
+/**
+ * How many seats the project in view has, which is what the plan's per-mesh limit is checked against. The host's own `/api/license`
+ * cannot say (a host has many meshes), so this asks the project's server, whose `/license` reports `usage.seats`. It is not the
+ * status field `startupActivateCount`, which counts the seats boot woke, not the seats there are. Null when no project is open or
+ * the server will not say; the card then shows a gap, never a zero. `reread` changes when the licence is read again.
+ */
+function useSeats(reread: unknown): number | null {
+  const { client, projectId } = useMesh();
+  const [seats, setSeats] = useState<number | null>(null);
+  useEffect(() => {
+    let dead = false;
+    if (!projectId) {
+      setSeats(null);
+      return undefined;
+    }
+    client
+      .api("GET", "/license")
+      .then(({ json }) => {
+        if (!dead) setSeats(typeof json?.usage?.seats === "number" ? (json.usage.seats as number) : null);
+      })
+      .catch(() => {
+        if (!dead) setSeats(null);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [client, projectId, reread]);
+  return seats;
+}
+
 /** The number of projects open now, which is what the plan limits and what a refresh keys on. */
 function useOpenProjects(): number | null {
   const projects = useProjectsOptional();
@@ -190,8 +219,8 @@ const meter = (r: number): React.CSSProperties => ({ "--w": Math.min(1, Math.max
 /** What plan this install is on: its limits against what is in use, when it ends, and what to do next. */
 export function LicenseCard(): React.JSX.Element {
   const projects = useProjectsOptional();
-  const { facts } = useMission();
   const { license, status, reload } = useLicense(useOpenProjects());
+  const seats = useSeats(license);
   const now = new Date(useNow(60_000));
 
   const head = (
@@ -214,7 +243,7 @@ export function LicenseCard(): React.JSX.Element {
     );
   }
 
-  const use = inUseOf(license, facts.startupSeats, projects?.hostSpend?.runningTurns ?? null);
+  const use = inUseOf(license, seats, projects?.hostSpend?.runningTurns ?? null);
   const rows = limitRows(license, use);
   const over = isOver(rows);
   const st = stateOf(license, now, over);
