@@ -234,6 +234,46 @@ test("turn.token frames reach SSE subscribers out-of-band and never touch the lo
   }
 });
 
+test("a stream that claims no position starts at the newest events of a long log, and one that claims a position gets what it missed", async () => {
+  const m = await makeMesh({ agents: [{ id: "a", role: "dev", capabilities: [], interests: [] }], mayContact: { a: [] }, mode: "parked" });
+  for (let i = 0; i < 260; i++) await m.kernel.emit("memory.updated", { agentId: "a", note: { agentId: "a", key: `k${i}`, value: "v", updatedAt: "", eventId: `evt-fill-${i}` } }, { actorId: "a", id: `evt-fill-${i}` });
+  const newest = await m.store.read({ tail: 1 });
+  const last = newest[0]?.seq ?? 0;
+  assert.ok(last > 250, `a log longer than the catch-up cap (newest seq ${last})`);
+  const server = createHttpServer(m, { dashboardDir: undefined });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const seqsFrom = (query: string): Promise<number[]> =>
+    new Promise((resolve) => {
+      const seqs: number[] = [];
+      let buf = "";
+      const req = http.get(`http://127.0.0.1:${port}/events/stream${query}`, (res) => {
+        res.on("data", (c: Buffer) => {
+          buf += c.toString("utf8");
+          for (const block of buf.split("\n\n").slice(0, -1)) {
+            const id = /^id: (\d+)$/m.exec(block)?.[1];
+            if (id) seqs.push(Number(id));
+          }
+          const cut = buf.lastIndexOf("\n\n");
+          if (cut >= 0) buf = buf.slice(cut + 2);
+        });
+      });
+      setTimeout(() => { req.destroy(); resolve(seqs); }, 400);
+    });
+  try {
+    const fresh = await seqsFrom("");
+    assert.equal(fresh.length, 200, "the catch-up cap");
+    assert.equal(fresh[fresh.length - 1], last, "it ends at the newest event, so what streams next is contiguous with it");
+    assert.equal(fresh[0], last - 199, "and begins 200 back: not at the first event of the mission");
+    assert.deepEqual(fresh, [...fresh].sort((a, b) => a - b), "in order");
+    const resumed = await seqsFrom(`?sinceSeq=${last - 5}`);
+    assert.deepEqual(resumed, [last - 4, last - 3, last - 2, last - 1, last], "a client that claims a position is served exactly what it missed");
+  } finally {
+    await closeHttpServer(server).catch(() => undefined);
+    await m.cleanup();
+  }
+});
+
 test("collectAgentOutput forwards tool frames to onToolEvent, and a throwing observer cannot corrupt the fold", async () => {
   async function* frames(): AsyncGenerator<AgentEvent> {
     yield { kind: "tool_call", toolCallId: "tool-0", name: "read_file", args: { path: "a.ts" } };

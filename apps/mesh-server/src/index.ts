@@ -2257,8 +2257,14 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         try {
           const lastIdHeader = req.headers["last-event-id"];
           const sinceRaw = u.searchParams.get("sinceSeq") ?? (Array.isArray(lastIdHeader) ? lastIdHeader[0] : lastIdHeader);
-          const sinceSeq = sinceRaw !== null && sinceRaw !== undefined && String(sinceRaw) !== "" ? Number(String(sinceRaw)) : 0;
-          const catchUp = await store.read({ sinceSeq: Number.isFinite(sinceSeq) ? sinceSeq : 0, limit: 200 });
+          const claimed = sinceRaw !== null && sinceRaw !== undefined && String(sinceRaw) !== "";
+          const sinceSeq = claimed ? Number(String(sinceRaw)) : 0;
+          // A subscriber that claims no position (a tab that has just opened on a project that has been running a while) starts at
+          // the recent end of the log, which is contiguous with what streams next. It used to be served the OLDEST 200 events, so on
+          // any log longer than that the page began with the first events of the mission and a hole, of everything since, before
+          // the live ones. One that does claim a position is served what it missed, in order.
+          const resuming = Number.isFinite(sinceSeq) && sinceSeq > 0;
+          const catchUp = resuming ? await store.read({ sinceSeq, limit: 200 }) : await store.read({ tail: 200 });
           for (const e of catchUp) {
             if (sinceSeq && (e.seq ?? 0) <= sinceSeq) continue;
             hub.sendTo(res, e);
