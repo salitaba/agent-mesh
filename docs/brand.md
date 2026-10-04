@@ -107,8 +107,11 @@ Two surfaces, one blue. Light is the default; the visitor's dark setting switche
 | Text on blue | `#ffffff` | `#0e1220` | 5.6 : 1 and 7.4 : 1 |
 
 Every text pair clears WCAG AA (4.5 : 1). `tests/build/brand-assets.test.ts` recomputes the ratios, so a changed colour
-that stops clearing it fails there. The dashboard keeps its own, darker console palette; its logo uses the same drawing
-with the console's text and accent colours.
+that stops clearing it fails there. The dashboard shares these neutrals (paper, panel, ink, muted text, line, and the dark
+blue) and adds the surfaces and status colours a dense tool needs; `tests/build/console-palette.test.ts` pins the shared
+values and recomputes the console's own pairs. Its light accent is the brand blue taken down one notch (`#2655ca`),
+because the brand blue itself is 3.9 : 1 as text on its own tint. The console's logo uses the same drawing with the
+console's text and accent colours.
 
 ## Type
 

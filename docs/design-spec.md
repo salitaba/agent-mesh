@@ -51,7 +51,12 @@ A view is "best" only when **all** hold, in both themes and at 390 / 768 / 1280:
 ## 2. Colour
 
 Canonical tokens live in `:root` (`styles.css`) with a light override in
-`[data-theme="light"]`.
+`[data-theme="light"]`. The neutrals (paper, panel, ink, muted, line) and the dark
+accent are the brand's own (`brand/tokens.css`, [brand.md](brand.md)), so the site
+and the product read as one family; the console adds the surfaces and the
+semantic colours a dense tool needs. `tests/build/console-palette.test.ts`
+recomputes every contrast pair in this section for both themes and pins the
+shared neutrals, so a value nudged by eye fails there and not on a user's screen.
 
 | Group | Tokens |
 |---|---|
@@ -83,8 +88,12 @@ One ramp. **Every** `font-size` resolves to one of these nine steps — currentl
 true in `styles.css` and `designer/designer.css` after the normalization pass:
 
 ```
-10  11  12  13  14  16  18  20  30
+11  12  13  14  15  16  18  20  30
 ```
+
+The floor is 11 px (a micro-label in capitals) and body text is 15 px; metadata is
+12 px. The ramp used to start at 10 px, which was legible on a developer's monitor
+and not on a laptop across a desk, so every size from 10 to 14 moved up one step.
 
 Tier tokens (weight + size + line-height + family, so one rule = one tier):
 

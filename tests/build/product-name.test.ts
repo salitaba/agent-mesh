@@ -55,7 +55,8 @@ const ALLOWED_ON_A_LINE = [
  * `twoAgentMesh` is a test helper's name.
  */
 const OLD_NAME = /(?<![A-Za-z])Agent(?:[ _-]|&nbsp;)?Mesh(?![A-Za-z])|(?<![A-Za-z0-9])agent-mesh(?![A-Za-z0-9])|(?<![A-Za-z0-9])agent_mesh|AGENT_MESH/;
-const SKIP_DIRS = new Set(["node_modules", "dist", "dist-dev", ".git", "business", ".mesh-state", ".mesh-backups", "workspace"]);
+// `.claude` holds an editor agent's local worktrees: whole copies of this repository, never part of it (git excludes them).
+const SKIP_DIRS = new Set(["node_modules", "dist", "dist-dev", ".git", ".claude", "business", ".mesh-state", ".mesh-backups", "workspace"]);
 const TEXT = /\.(md|ts|tsx|mjs|cjs|js|json|yml|yaml|sh|html|css|txt|tpl|svg|toml|env|example)$|^(LICENSE|Dockerfile|\.dockerignore|\.gitignore)$/;
 
 function* files(dir: string): Generator<string> {

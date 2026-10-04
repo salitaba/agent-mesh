@@ -50,10 +50,10 @@
 .ms-head { display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; }
 .ms-head-name { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 320px; }
 .ms-head-name b { font: var(--tx-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-goal { color: var(--text-dim); max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.ms-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); white-space: nowrap; }
-.ms-state b { font: 700 14px var(--mono); color: var(--text); }
-.ms-src { display: inline-flex; align-items: center; gap: var(--s1); font-size: 12px; }
+.ms-goal { color: var(--text-dim); max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.ms-state { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-dim); white-space: nowrap; }
+.ms-state b { font: 700 15px var(--mono); color: var(--text); }
+.ms-src { display: inline-flex; align-items: center; gap: var(--s1); font-size: 13px; }
 /* WS7 type tiers for one-off sites that used to carry inline font sizes. */
 .tx-value { font: var(--tx-value); }
 .tx-value.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -65,7 +65,7 @@
 .ms-chip, .hstat { border: 1px solid var(--line); background: var(--panel); color: var(--text-dim); }
 .ms-chip {
   display: inline-flex; align-items: center; gap: var(--s1-5); white-space: nowrap;
-  border-radius: 999px; padding: 3px 12px; font: 600 12px var(--sans);
+  border-radius: 999px; padding: 3px 12px; font: 600 13px var(--sans);
 }
 button.ms-chip { cursor: pointer; transition: border-color .12s, color .12s; }
 button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(--line-strong); color: var(--text); }
@@ -99,15 +99,15 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 }
 .ms-menu button {
   display: flex; flex-direction: column; gap: 1px; background: none; border: 0;
-  color: var(--text); font: 13px var(--sans); text-align: left; padding: var(--s2) var(--s2-5);
+  color: var(--text); font: 14px var(--sans); text-align: left; padding: var(--s2) var(--s2-5);
   border-radius: var(--r-sm); cursor: pointer;
 }
 /* --panel === --bg-2 === #fff in light, so this painted the colour already
    underneath it. A tint composites over whatever ground is beneath. */
 .ms-menu button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .ms-menu button:disabled { opacity: .45; cursor: not-allowed; }
-.ms-menu button b { font-family: var(--mono); font-size: 13px; }
-.ms-menu button small { color: var(--muted); font-size: 11px; }
+.ms-menu button b { font-family: var(--mono); font-size: 14px; }
+.ms-menu button small { color: var(--muted); font-size: 12px; }
 .ms-menu button.danger { color: var(--bad); }
 .ms-menu-sep { height: 1px; background: var(--line); margin: var(--s1) var(--s0); }
 .ms-menu-label { font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: var(--s1-5) var(--s2-5) var(--s0); }
@@ -136,26 +136,26 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
   transition: border-color .12s, color .12s, transform .12s;
 }
 .hstat:hover { border-color: var(--line-strong); color: var(--text); transform: translateY(-1px); }
-.hstat small { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.hstat b { font: 700 13px var(--mono); color: var(--text); }
+.hstat small { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.hstat b { font: 700 14px var(--mono); color: var(--text); }
 .hstat.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--panel)); }
 .hstat.warn b { color: var(--warn); }
 .hstat.bad, .hstat.bad b { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); color: var(--bad); }
 .hstat.bad { background: color-mix(in srgb, var(--bad) 7%, var(--panel)); }
-.hstat.undo { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent-2); font-size: 12px; }
+.hstat.undo { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent-2); font-size: 13px; }
 .hstat.undo:hover { border-color: var(--accent); }
 .hstat.muted-read { opacity: .55; cursor: default; }
 
 /* ---------- advisory notes ---------- */
 .ms-advice { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 8px var(--s3-5); }
-.ms-advice summary { cursor: pointer; font-size: 13px; color: var(--text-dim); display: flex; align-items: center; gap: var(--s2); }
+.ms-advice summary { cursor: pointer; font-size: 14px; color: var(--text-dim); display: flex; align-items: center; gap: var(--s2); }
 .ms-advice summary:hover { color: var(--text); }
 .adv-ico {
   display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
-  background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); font: 700 10px var(--mono);
+  background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); font: 700 11px var(--mono);
 }
 .adv-ico.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
-.ms-advice .adv { padding: 3px 0 3px 24px; font-size: 13px; }
+.ms-advice .adv { padding: 3px 0 3px 24px; font-size: 14px; }
 .ms-advice .adv.info .linklike { color: var(--text-dim); }
 .ms-advice .adv.warn .linklike { color: var(--warn); }
 .ms-advice .adv.info .linklike:hover, .ms-advice .adv.warn .linklike:hover { text-decoration: underline; }
@@ -188,14 +188,14 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .ms-roster-toggle, .ms-roster-hire {
   flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center;
   border: 1px solid var(--line); border-radius: 9px; background: none; color: var(--text-dim);
-  font: 600 14px/1 var(--sans); cursor: pointer;
+  font: 600 15px/1 var(--sans); cursor: pointer;
 }
 .ms-roster-hire { border-style: dashed; }
 .ms-roster-toggle:hover, .ms-roster-hire:hover { color: var(--text); border-color: var(--line-strong); }
 .ms-roster-toggle:focus-visible, .ms-roster-hire:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ms-av {
   position: relative; flex: none; width: 30px; height: 30px; padding: 0; border-radius: 9px;
-  display: grid; place-items: center; cursor: pointer; font: 700 12px var(--mono);
+  display: grid; place-items: center; cursor: pointer; font: 700 13px var(--mono);
   background: color-mix(in srgb, var(--tint) 16%, var(--panel-2));
   border: 1px solid color-mix(in srgb, var(--tint) 45%, var(--line-strong));
   color: hsl(var(--h, 222) 85% 73%);
@@ -215,12 +215,12 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 }
 .ms-av-err {
   position: absolute; top: 1px; right: 1px; width: 11px; height: 11px; border-radius: 50%;
-  background: var(--bad); color: var(--text-on-hot); font: 700 10px/11px var(--sans);
+  background: var(--bad); color: var(--text-on-hot); font: 700 11px/12px var(--sans);
   text-align: center; box-shadow: 0 0 0 1.5px var(--bg-2);
 }
 .crew-av {
   flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
-  font: 700 12px var(--mono);
+  font: 700 13px var(--mono);
   background: color-mix(in srgb, var(--tint) 16%, var(--panel-2));
   border: 1px solid color-mix(in srgb, var(--tint) 45%, var(--line-strong));
   color: hsl(var(--h, 222) 85% 73%);
@@ -231,7 +231,7 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: var(-
 .ms-canvas { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2-5) var(--s3); min-width: 0; min-height: 0; }
 .ms-tools { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
 button.small.wire-on, button.small.focus-on { border-color: var(--accent); color: var(--accent-2); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.ms-tool-hint { font-size: 12px; margin-left: auto; text-align: right; color: var(--muted); }
+.ms-tool-hint { font-size: 13px; margin-left: auto; text-align: right; color: var(--muted); }
 .ms-svg {
   width: 100%; flex: 1 1 auto; min-height: 300px; display: block;
   background:
@@ -268,12 +268,12 @@ button.small.wire-on, button.small.focus-on { border-color: var(--accent); color
 .tnode circle.ring { fill: none; stroke: var(--info); stroke-dasharray: 4 5; stroke-width: 1.4; }
 .tnode text.av { fill: hsl(var(--h, 222) 85% 71%); font: 700 18px var(--mono); text-anchor: middle; pointer-events: none; }
 [data-theme="light"] .tnode text.av { fill: hsl(var(--h, 222) 85% 26%); }
-.tnode text.nm { fill: var(--text); font: 600 13px var(--mono); text-anchor: middle; pointer-events: none; }
-.tnode text.rl { fill: var(--muted); font: 11px var(--sans); text-anchor: middle; pointer-events: none; }
+.tnode text.nm { fill: var(--text); font: 600 14px var(--mono); text-anchor: middle; pointer-events: none; }
+.tnode text.rl { fill: var(--muted); font: 12px var(--sans); text-anchor: middle; pointer-events: none; }
 .tnode circle.bboot { fill: var(--bg-2); stroke: var(--line-strong); cursor: pointer; }
 .tnode circle.bboot.on { fill: var(--ok); stroke: var(--ok); }
 .tnode circle.err-mark { fill: var(--bad); stroke: var(--bg); stroke-width: 2; }
-.tnode text.errmark { fill: var(--text-on-hot); font: 700 10px var(--sans); text-anchor: middle; }
+.tnode text.errmark { fill: var(--text-on-hot); font: 700 11px var(--sans); text-anchor: middle; }
 
 /* edges */
 /* Mesh edges are the primary content of the topology canvas, not a separator
@@ -295,7 +295,7 @@ button.small.wire-on, button.small.focus-on { border-color: var(--accent); color
 .tedge .ecut:focus-visible { outline: none; }
 .tedge .ecut rect { fill: var(--bad); stroke: var(--bg); stroke-width: 1.5; }
 .tedge .ecut:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
-.tedge .ecut text { fill: var(--text-on-hot); font: 600 11px var(--sans); text-anchor: middle; pointer-events: none; }
+.tedge .ecut text { fill: var(--text-on-hot); font: 600 12px var(--sans); text-anchor: middle; pointer-events: none; }
 path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 6; pointer-events: none; }
 .ms-empty { padding: var(--s1) 0 var(--s2-5); display: flex; flex-direction: column; gap: var(--s2-5); }
 
@@ -307,7 +307,7 @@ path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dashar
 .insp-tabs { display: flex; border-bottom: 1px solid var(--line); }
 .insp-tabs button {
   flex: 1; background: none; border: 0; border-bottom: 2px solid transparent;
-  color: var(--text-dim); font: 600 12px var(--sans); padding: 12px 6px; cursor: pointer;
+  color: var(--text-dim); font: 600 13px var(--sans); padding: 12px 6px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
 }
 .insp-tabs button:hover { color: var(--text); background: var(--panel-2); }
@@ -316,11 +316,11 @@ path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dashar
 .ms-panel { display: flex; flex-direction: column; gap: var(--s3); }
 .ms-nosel { display: flex; flex-direction: column; gap: var(--s2-5); align-items: flex-start; padding: var(--s2) var(--s0); }
 .ms-span { grid-column: 1 / -1; }
-.ms-hint { font-size: 11px; color: var(--muted); }
+.ms-hint { font-size: 12px; color: var(--muted); }
 .ms-h { display: flex; align-items: center; gap: var(--s2-5); margin: var(--s2-5) 0 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .ms-h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .ms-adv { border-top: 1px dashed var(--line); padding-top: var(--s2); }
-.ms-adv summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.ms-adv summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .ms-adv summary:hover { color: var(--text); }
 .ms-group { border-top: 1px dashed var(--line); padding-top: var(--s2); }
 .ms-group > summary { cursor: pointer; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
@@ -330,9 +330,9 @@ path.guide { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dashar
 .ms-boot { margin: var(--s0) 0; }
 .ms-trule { display: flex; flex-direction: column; gap: var(--s1-5); border: 0; border-radius: var(--r-sm); background: var(--sunken); padding: var(--s2) var(--s2-5); margin: var(--s1-5) 0; }
 .gate-card { display: flex; flex-direction: column; gap: var(--s1-5); border: 0; border-radius: var(--r-sm); background: var(--sunken); padding: var(--s2-5) var(--s3); margin: var(--s1) 0; }
-.gate-grants { font: 12px var(--mono); color: var(--text-dim); display: flex; flex-direction: column; gap: 3px; }
+.gate-grants { font: 13px var(--mono); color: var(--text-dim); display: flex; flex-direction: column; gap: 3px; }
 .gate-grants .chip { display: inline-flex; gap: var(--s1); align-items: center; margin: 0; }
-.gate-who { margin: 0; font-size: 12px; }
+.gate-who { margin: 0; font-size: 13px; }
 .gate-grants .nobody { color: var(--bad); font-style: normal; }
 button.err-inline { margin: 0; color: var(--bad); }
 .chip-toggle.custom { border-style: dashed; }
@@ -344,11 +344,11 @@ button.err-inline { margin: 0; color: var(--bad); }
 .ms-chat-msg.user { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); }
 .ms-chat-msg.assistant { background: var(--sunken); border: 1px solid var(--line); color: var(--text-dim); }
 .ms-chat-who { display: block; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: var(--s1); }
-.ms-chat-problems { margin: var(--s1-5) 0 0; padding-left: 18px; color: var(--warn); font-size: 12px; }
+.ms-chat-problems { margin: var(--s1-5) 0 0; padding-left: 18px; color: var(--warn); font-size: 13px; }
 .ms-chat-review { display: flex; flex-direction: column; gap: var(--s1-5); margin-top: var(--s2); }
 .ms-chat-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s1-5); }
-.ms-chat-kbd { margin-left: auto; font-size: 11px; }
-.ms-chat-think { display: inline-flex; align-items: center; gap: var(--s1-5); font-size: 12px; color: var(--text-dim); cursor: pointer; user-select: none; }
+.ms-chat-kbd { margin-left: auto; font-size: 12px; }
+.ms-chat-think { display: inline-flex; align-items: center; gap: var(--s1-5); font-size: 13px; color: var(--text-dim); cursor: pointer; user-select: none; }
 .ms-chat-think input { margin: 0; accent-color: var(--accent); }
 .ms-chat-thinking {
   margin: var(--s1-5) 0 0; padding: var(--s0) 0 var(--s0) var(--s2-5);
@@ -357,7 +357,7 @@ button.err-inline { margin: 0; color: var(--bad); }
 .ms-chat-thinking summary { cursor: pointer; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .ms-chat-thinking pre {
   margin: var(--s1-5) 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
-  font: 12px/1.55 var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto;
+  font: 13px/1.55 var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto;
 }
 .ms-chat-thinking.live pre { color: var(--muted); }
 .ms-chat-compose { display: flex; flex-direction: column; gap: var(--s2); }
@@ -371,10 +371,10 @@ button.err-inline { margin: 0; color: var(--bad); }
   min-width: 148px;
   padding: 10px 15px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line-strong));
   border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, var(--drawer));
-  color: var(--text); font: 600 13px var(--sans); cursor: pointer;
+  color: var(--text); font: 600 14px var(--sans); cursor: pointer;
   box-shadow: var(--shadow); transition: transform .12s, border-color .12s, background .12s;
 }
-.ms-dock-fab .ms-dock-spark { color: var(--accent); font-size: 14px; line-height: 1; }
+.ms-dock-fab .ms-dock-spark { color: var(--accent); font-size: 15px; line-height: 1; }
 .ms-dock-fab:hover { transform: translateY(-2px); border-color: var(--accent); }
 .ms-dock-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ms-dock-fab.busy { border-color: var(--accent); }
@@ -395,8 +395,8 @@ button.err-inline { margin: 0; color: var(--bad); }
   display: flex; flex-direction: column; gap: var(--s0); padding: 0 34px 10px 0;
   border-bottom: 1px solid var(--line); margin-bottom: var(--s2-5);
 }
-.ms-dock-head b { font: 600 13px var(--sans); }
-.ms-dock-head .muted { font-size: 12px; }
+.ms-dock-head b { font: 600 14px var(--sans); }
+.ms-dock-head .muted { font-size: 13px; }
 .ms-dock .ms-chat { display: flex; flex-direction: column; gap: var(--s2); flex: 1 1 auto; min-height: 0; }
 .ms-dock .ms-chat-log { flex: 1 1 auto; max-height: none; }
 .ms-dock .ms-chat-compose { flex: none; }
@@ -407,21 +407,21 @@ button.err-inline { margin: 0; color: var(--bad); }
 /* ---------- transient output cards (review / saved / import) ---------- */
 .ms-out { display: flex; flex-direction: column; gap: var(--s3); }
 .ms-check-card, .ms-yaml-card { min-width: 0; }
-.live-note { font-size: 12px; }
+.live-note { font-size: 13px; }
 .ms-yaml-card .yaml-pane { max-height: min(46vh, 420px); }
 .wb-sec-head { display: flex; align-items: center; gap: var(--s2-5); margin-bottom: var(--s2-5); }
 .wb-sec-head h3 { margin: 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.sec-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; background: var(--bad); color: var(--text-on-hot); font: 700 11px var(--sans); padding: 0 6px; }
+.sec-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; background: var(--bad); color: var(--text-on-hot); font: 700 12px var(--sans); padding: 0 6px; }
 /* A 12px text button is a ~14px-tall target, under the 24px floor (WCAG 2.5.8).
    Some of these sit inside a sentence (.gate-who) where a min-height would
    misalign the line, so grow the HIT AREA instead: vertical padding pulled back
    by an equal negative margin. Same position, same baseline, 24px of target. */
-button.linklike { background: none; border: 0; padding: 6px 0; margin-top: calc(var(--s1) - 6px); margin-bottom: -6px; font-size: 12px; color: var(--accent-2); cursor: pointer; text-align: left; }
+button.linklike { background: none; border: 0; padding: 6px 0; margin-top: calc(var(--s1) - 6px); margin-bottom: -6px; font-size: 13px; color: var(--accent-2); cursor: pointer; text-align: left; }
 button.linklike:hover { text-decoration: underline; }
 
 /* ---------- review / saved / import ---------- */
 .save-review { margin-top: 0; padding: 12px var(--s3-5); border-radius: var(--r); background: var(--panel-2); display: flex; flex-direction: column; gap: var(--s1-5); }
-ul.diff-list { margin: var(--s1) 0; padding-left: 18px; font-size: 13px; color: var(--text-dim); max-height: 180px; overflow: auto; }
+ul.diff-list { margin: var(--s1) 0; padding-left: 18px; font-size: 14px; color: var(--text-dim); max-height: 180px; overflow: auto; }
 .save-done { padding: 12px var(--s3-5); border-radius: var(--r); background: color-mix(in srgb, var(--ok) 7%, var(--panel)); font: var(--tx-value); }
 button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 .replace-bar {
@@ -432,7 +432,7 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 .replace-bar b { margin-right: var(--s1); }
 
 /* ---------- YAML ---------- */
-.yaml-pane { font: 12px/1.6 var(--mono); background: var(--bg); color: var(--text-dim); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); overflow: auto; max-height: 70vh; white-space: pre; }
+.yaml-pane { font: 13px/1.6 var(--mono); background: var(--bg); color: var(--text-dim); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); overflow: auto; max-height: 70vh; white-space: pre; }
 
 /* ---------- sticky save bar ----------
  * Three zones, read left → right: what gets written (target), what state the
@@ -454,7 +454,7 @@ button.small.danger-solid { border-color: var(--bad); color: var(--bad); }
 .wb-bar-target { display: flex; align-items: center; gap: var(--s2); min-width: 0; flex: 1 1 300px; }
 .wb-bar-label { flex: none; color: var(--muted); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; }
 .wb-bar-path {
-  flex: 1 1 auto; min-width: 0; font-size: 12px;
+  flex: 1 1 auto; min-width: 0; font-size: 13px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* dir=rtl keeps the ellipsis on the LEFT: the filename matters, the home dir does not */
@@ -466,7 +466,7 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
 .wb-seg-opt { position: relative; display: inline-flex; }
 .wb-seg-opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .wb-seg-opt span {
-  padding: 3px 10px; border-radius: 4px; font: 12px var(--sans); color: var(--text-dim);
+  padding: 3px 10px; border-radius: 4px; font: 13px var(--sans); color: var(--text-dim);
   white-space: nowrap; transition: background .12s, color .12s;
   /* The radio is absolutely positioned over this span, so the span's box IS the
      hit target -- it measured 23px, one under the 24px floor (WCAG 2.5.8). */
@@ -487,7 +487,7 @@ input.wb-bar-path { flex: 0 1 320px; max-width: 320px; }
 .wb-bar-actions { display: flex; align-items: center; gap: var(--s2); margin-right: calc(var(--dock-slot) - 18px); margin-left: auto; }
 /* primary + its caveat stack, so the hint cannot push the button off the edge */
 .wb-bar-save { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s0); }
-.wb-bar-hint { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.wb-bar-hint { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .wb-bar-hint b { font-weight: 500; color: var(--text-dim); }
 
 
