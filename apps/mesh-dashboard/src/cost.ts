@@ -95,7 +95,12 @@ export interface BudgetsPayload {
 
 const num = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) ? x : 0);
 
-export interface OwnBudget { used: number; limit: number; ratio: number; tone: BudgetTone; exceeded: boolean }
+/**
+ * A budget the server has latched as `exceeded` is of two kinds the host tells apart (policy-engine, `evaluateActivation`): one
+ * that is spent, and one still below its limit that cannot cover the next turn's hold. "Exhausted (99706/180000)" reads as a
+ * bookkeeping error, so the page says which: `short` is exceeded with room left.
+ */
+export interface OwnBudget { used: number; limit: number; ratio: number; tone: BudgetTone; exceeded: boolean; short: boolean }
 
 export interface AgentRow {
   agentId: string;
@@ -132,6 +137,10 @@ export interface MissionBudget {
   ratio: number | null;
   remaining: number | null;
   tone: BudgetTone;
+  /** The server has latched it: nothing more runs on it until it is raised. */
+  exceeded: boolean;
+  /** Exceeded with room left, because the next turn's hold does not fit. */
+  short: boolean;
 }
 
 export interface DetailRow {
@@ -144,7 +153,10 @@ export interface DetailRow {
   used: string;
   limit: string;
   ratio: number | null;
+  /** "over": the server has latched it (or the count is past the limit); "near": 80% or more, not latched; otherwise "ok". */
   state: "over" | "near" | "ok";
+  /** Over with room left: the next turn's hold does not fit. See OwnBudget. */
+  short: boolean;
   key: string;
 }
 
@@ -201,6 +213,8 @@ export function describeBudget(e: BudgetEntry): DetailRow {
   const used = num(e.consumed);
   const ratio = limit === null || limit <= 0 ? null : used / limit;
   const tone = budgetTone(ratio, e.exceeded === true);
+  // "Over" is the server's latch, or a count past the limit; 95% used is nearly used, not over.
+  const over = e.exceeded === true || (ratio !== null && ratio > 1);
   return {
     group,
     label,
@@ -209,7 +223,8 @@ export function describeBudget(e: BudgetEntry): DetailRow {
     used: amount(used, kind),
     limit: limit === null ? "no limit" : amount(limit, kind),
     ratio,
-    state: tone === "bad" ? "over" : tone === "warn" ? "near" : "ok",
+    state: over ? "over" : tone === "ok" ? "ok" : "near",
+    short: over && limit !== null && used < limit,
     key: `${e.key}:${kind}`,
   };
 }
@@ -224,19 +239,23 @@ export function summarizeCost(p: BudgetsPayload | null | undefined, yours: reado
   const used = num(cost.missionTokens);
   const missionEntry = entries.find((e) => e.key.startsWith("mission:") && (e.limitKind ?? "tokens") === "tokens");
   const ratio = limit > 0 ? used / limit : null;
+  const missionExceeded = missionEntry?.exceeded === true || (ratio !== null && ratio > 1);
   const mission: MissionBudget = {
     used,
     limit,
     ratio,
     remaining: limit > 0 ? Math.max(0, limit - used) : null,
     tone: budgetTone(ratio, missionEntry?.exceeded === true),
+    exceeded: missionExceeded,
+    short: missionExceeded && limit > 0 && used < limit,
   };
 
   const own = new Map<string, OwnBudget>();
   for (const e of entries) {
     if (!e.key.startsWith("agent:") || (e.limitKind ?? "tokens") !== "tokens" || e.limit === null || num(e.limit) <= 0) continue;
     const r = num(e.consumed) / num(e.limit);
-    own.set(subject(e.key), { used: num(e.consumed), limit: num(e.limit), ratio: r, tone: budgetTone(r, e.exceeded === true), exceeded: e.exceeded === true });
+    const exceeded = e.exceeded === true || r > 1;
+    own.set(subject(e.key), { used: num(e.consumed), limit: num(e.limit), ratio: r, tone: budgetTone(r, e.exceeded === true), exceeded, short: exceeded && r < 1 });
   }
 
   const spent = rawAgents.reduce((n, a) => n + num(a.tokens), 0);
@@ -292,20 +311,22 @@ export function summarizeCost(p: BudgetsPayload | null | undefined, yours: reado
 const joinAnd = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 /**
- * "Used up: the mission budget and qa's own budget.": which budgets are spent, named, never as raw keys. It opens with a fixed
- * word so a seat's name is never the first word of a sentence, where capitalising it would misspell it ("Qa").
+ * Which budgets have stopped work, as sentences and never as raw keys: "The mission budget is spent." or "Agent qa's own budget
+ * has too little left for its next turn." (the host's own two cases: spent, and latched below the limit because the next turn's
+ * hold does not fit). Each opens with a fixed word, so a seat's id is never the first word of a sentence, where capitalising it
+ * would misspell it ("Qa").
  */
-export function overSentence(over: readonly DetailRow[], shown = 4): string {
+export function overSentence(over: readonly DetailRow[], shown = 3): string {
   const name = (d: DetailRow): string =>
-    d.group === "mission" ? (d.unit === "minutes" ? "the mission's time limit" : d.unit === "events" ? "the mission's event limit" : "the mission budget")
-    : d.group === "agent" ? `${d.who}'s own budget`
-    : d.group === "attention" ? `${d.who}'s budget for waking other agents`
-    : d.group === "thread" ? `the budget of ${d.who}`
-    : d.group === "task" ? `the budget of ${d.who}`
-    : d.who;
-  const names = over.slice(0, shown).map(name);
-  if (over.length > shown) names.push(`${over.length - shown} more`);
-  return `Used up: ${joinAnd(names)}.`;
+    d.group === "mission" ? (d.unit === "minutes" ? "The mission's time limit" : d.unit === "events" ? "The mission's event limit" : "The mission budget")
+    : d.group === "agent" ? `Agent ${d.who}'s own budget`
+    : d.group === "attention" ? `Agent ${d.who}'s budget for waking others`
+    : d.group === "thread" || d.group === "task" ? `The budget of ${d.who}`
+    : `The budget ${d.who}`;
+  const out = over.slice(0, shown).map((d) => `${name(d)} ${d.short ? "has too little left for its next turn" : "is spent"}.`);
+  const rest = over.length - shown;
+  if (rest > 0) out.push(`${rest} more ${rest === 1 ? "budget is" : "budgets are"} stopped too.`);
+  return out.join(" ");
 }
 
 /**

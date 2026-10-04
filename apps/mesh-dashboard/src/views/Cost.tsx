@@ -60,7 +60,7 @@ function OwnBudget({ own }: { own: NonNullable<ReturnType<typeof summarizeCost>[
   return (
     <span className={`cost-own-b ${own.tone}`}>
       <span className="cost-mini" aria-hidden="true"><i style={bar(own.ratio)} /></span>
-      <span>{fmt(own.used)} of {fmt(own.limit)}{own.exceeded ? " (over)" : own.tone === "warn" || own.tone === "bad" ? " (nearly used)" : ""}</span>
+      <span>{fmt(own.used)} of {fmt(own.limit)}{own.exceeded ? (own.short ? " (too little left)" : " (spent)") : own.tone === "warn" || own.tone === "bad" ? " (nearly used)" : ""}</span>
     </span>
   );
 }
@@ -84,7 +84,7 @@ function DetailTable({ rows }: { rows: DetailRow[] }): React.JSX.Element {
                 <th scope="row" className="mono" title={r.label}><span className="cost-trunc">{r.label}</span></th>
                 <td className="r mono">{r.used}</td>
                 <td className="r mono">{r.limit}</td>
-                <td>{r.state === "over" ? <span className="cost-state bad"><Icon name="alert" size={12} />over</span> : r.state === "near" ? <span className="cost-state warn"><Icon name="alert" size={12} />nearly used</span> : <span className="muted">ok</span>}</td>
+                <td>{r.state === "over" ? <span className="cost-state bad"><Icon name="alert" size={12} />{r.short ? "too little left" : "spent"}</span> : r.state === "near" ? <span className="cost-state warn"><Icon name="alert" size={12} />nearly used</span> : <span className="muted">ok</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -198,10 +198,10 @@ export default function Cost(): React.JSX.Element {
           {s.over.length ? (
             <Banner
               tone="bad"
-              title="Over budget."
+              title="Stopped for budget."
               actions={<Button variant="banner-act" onClick={() => setView("escalations")}>Open Needs you</Button>}
             >
-              {overSentence(s.over)} Nothing more runs on a spent budget until you raise it, and Needs you has that decision.
+              {overSentence(s.over)} Work that depends on a stopped budget waits until you raise it. Needs you has that decision.
             </Banner>
           ) : m.tone !== "ok" ? (
             <Banner tone="warn" title={m.tone === "bad" ? "The mission budget is almost gone." : "The mission budget is running low."}>
@@ -222,7 +222,7 @@ export default function Cost(): React.JSX.Element {
                 {m.remaining !== null ? `${fmt(m.remaining)} left` : "No token limit"}
                 {s.turns ? ` · ${s.turns} ${s.turns === 1 ? "turn" : "turns"}` : ""}
                 {s.agents.length ? ` · ${s.agents.length} ${s.agents.length === 1 ? "agent" : "agents"}` : ""}
-                {m.tone !== "ok" ? <span className={`cost-flag ${m.tone}`}><Icon name="alert" size={14} />{m.used >= m.limit ? "Spent" : FLAG[m.tone]}</span> : null}
+                {m.tone !== "ok" ? <span className={`cost-flag ${m.tone}`}><Icon name="alert" size={14} />{m.short ? "Too little left for a turn" : m.used >= m.limit ? "Spent" : FLAG[m.tone]}</span> : null}
               </p>
               {m.limit > 0 ? (
                 <p className="cost-fine">The mission budget is never raised on its own. When more is spent than it allows, the mission stops and Needs you asks whether to raise it.</p>

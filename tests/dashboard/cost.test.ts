@@ -92,6 +92,8 @@ test("the top bar and this page use the same thresholds", () => {
 test("a percentage never rounds a real spend down to nothing or a budget that is not spent up to a hundred", () => {
   assert.equal(pctLabel(0), "0%");
   assert.equal(pctLabel(0.0001), "under 1%");
+  assert.equal(pctLabel(0.005), "under 1%", "half a percent is not '1%'");
+  assert.equal(pctLabel(0.01), "1%");
   assert.equal(pctLabel(0.0255), "3%");
   assert.equal(pctLabel(0.804), "80%");
   assert.equal(pctLabel(0.996), "99%");
@@ -106,6 +108,7 @@ test("dollars read as an estimate does: cents under $100, whole dollars above, a
   assert.equal(fmtUsd(0.15315), "$0.15");
   assert.equal(fmtUsd(12.5), "$12.50");
   assert.equal(fmtUsd(99.994), "$99.99");
+  assert.equal(fmtUsd(250.4), "$250", "cents stop at a hundred dollars");
   assert.equal(fmtUsd(1234.5), "$1,235");
   assert.equal(fmtUsd(Number.NaN), "$0.00");
   assert.equal(fmtUsd(-3), "$0.00");
@@ -134,6 +137,27 @@ test("a seat's own budget is read off its own line, by its name", () => {
   assert.deepEqual(lead.own && { used: lead.own.used, limit: lead.own.limit, tone: lead.own.tone }, { used: 14400, limit: 200_000, tone: "ok" });
   const noBudget = summarizeCost({ ...REAL, entries: REAL.entries!.filter((e) => !e.key.startsWith("agent:")) });
   assert.ok(noBudget.agents.every((a) => a.own === null), "a seat with no line has no own budget, and the page does not invent one");
+  // A limit counted in something other than tokens is not the seat's token budget, whatever order the lines come in.
+  const mixed = summarizeCost({ ...REAL, entries: [...REAL.entries!, { ...entry(`agent:${GOAL}/qa`, 3, 10), limitKind: "events" }] });
+  assert.equal(mixed.agents.find((a) => a.agentId === "qa")!.own!.limit, 200_000);
+  const unlimited = summarizeCost({ ...REAL, entries: [entry(`agent:${GOAL}/qa`, 5, null), entry(`agent:${GOAL}/pm`, 5, 0)] });
+  assert.ok(unlimited.agents.every((a) => a.own === null), "no limit, or a limit of nothing, is not a budget to be measured against");
+});
+
+test("nothing spent yet: every share and bar is zero, never not-a-number, and the mission has no tone", () => {
+  const idle = summarizeCost({
+    entries: [entry(`mission:${GOAL}`, 0, 2_000_000)],
+    cost: {
+      perAgent: [{ agentId: "pm", tokens: 0, activations: 0, perTurn: 0 }, { agentId: "qa", tokens: 0, activations: 0, perTurn: 0 }],
+      missionTokens: 0,
+      missionBudget: 2_000_000,
+      models: [],
+    },
+  });
+  assert.deepEqual(idle.agents.map((a) => [a.share, a.bar]), [[0, 0], [0, 0]]);
+  assert.equal(idle.spent, 0);
+  assert.equal(idle.mission.tone, "ok");
+  assert.equal(pctLabel(idle.mission.ratio), "0%");
 });
 
 test("near the mission budget is amber, nearly gone is red, spent is red whatever the numbers say", () => {
@@ -189,15 +213,15 @@ test("each budget is named by what it limits and counted in its own unit", () =>
   const ev = d(`mission:${GOAL}`, "events", 2400, 10000);
   assert.deepEqual([ev.unit, ev.used, ev.limit], ["events", "2,400", "10,000"]);
   assert.equal(ev.label, "The whole mission (events)");
-  const turns = d(`agent:${GOAL}/qa`, "activations", 3, 10);
-  assert.deepEqual([turns.unit, turns.used, turns.limit, turns.label, turns.who], ["turns", "3", "10", "qa (turns)", "qa"]);
+  const turns = d(`agent:${GOAL}/qa`, "activations", 1500, 10_000);
+  assert.deepEqual([turns.unit, turns.used, turns.limit, turns.label, turns.who], ["turns", "1,500", "10,000", "qa (turns)", "qa"], "a count of turns is a count, not '1.5k'");
   assert.equal(d(`agent:${GOAL}/qa`, "tokens", 1, 2).label, "qa");
   assert.equal(d(`agent:${GOAL}/qa`, "tokens", 1, 2).group, "agent");
   assert.equal(d(`attention:${GOAL}/qa`, "tokens", 1, 2).group, "attention");
   assert.equal(d(`thread:${GOAL}/thread-ABC123`, "tokens", 1, 2).label, "thread-ABC123", "two threads are never both 'thread budget'");
   assert.equal(d(`task:${GOAL}/task-XYZ`, "tokens", 1, 2).group, "task");
   assert.equal(d("custom:thing", "tokens", 1, 2).group, "other");
-  assert.equal(d("custom:thing", "tokens", 1, 2).label, "custom:thing");
+  assert.equal(d("custom:g/thing", "tokens", 1, 2).label, "custom:g/thing", "a budget this page does not recognise is shown by its whole key");
   const none = d(`agent:${GOAL}/qa`, "tokens", 5, null);
   assert.deepEqual([none.limit, none.ratio, none.state], ["no limit", null, "ok"]);
   assert.equal(d(`agent:${GOAL}/qa`, "tokens", 90, 100).state, "near");
@@ -247,18 +271,68 @@ test("a payload with parts missing never throws and never invents a number", () 
   assert.equal(noText.agents[0]!.tokens, 0);
 });
 
-test("the spent budgets are named in a sentence, and never as raw keys or with a seat's name respelled", () => {
-  const over = (key: string, kind = "tokens"): ReturnType<typeof describeBudget> => describeBudget({ key, limitKind: kind, consumed: 2, limit: 1, exceeded: true });
-  assert.equal(overSentence([over(`mission:${GOAL}`)]), "Used up: the mission budget.");
-  assert.equal(overSentence([over(`mission:${GOAL}`, "wallclock_minutes")]), "Used up: the mission's time limit.");
-  assert.equal(overSentence([over(`mission:${GOAL}`, "events")]), "Used up: the mission's event limit.");
-  assert.equal(overSentence([over(`agent:${GOAL}/qa`, "events")]), "Used up: qa's own budget.", "the unit is not part of a seat's name");
-  assert.equal(overSentence([over(`mission:${GOAL}`), over(`agent:${GOAL}/qa`)]), "Used up: the mission budget and qa's own budget.");
-  assert.equal(overSentence([over(`agent:${GOAL}/qa`), over(`agent:${GOAL}/pm`), over(`attention:${GOAL}/dev`)]), "Used up: qa's own budget, pm's own budget and dev's budget for waking other agents.", "a seat's id keeps its case");
-  const many = ["a", "b", "c", "d", "e", "f"].map((n) => over(`agent:${GOAL}/${n}`));
-  assert.match(overSentence(many), /and 2 more\.$/);
+test("the stopped budgets are named in sentences, and never as raw keys or with a seat's name respelled", () => {
+  const over = (key: string, kind = "tokens", consumed = 2): ReturnType<typeof describeBudget> => describeBudget({ key, limitKind: kind, consumed, limit: 1, exceeded: true });
+  assert.equal(overSentence([over(`mission:${GOAL}`)]), "The mission budget is spent.");
+  assert.equal(overSentence([over(`mission:${GOAL}`, "wallclock_minutes")]), "The mission's time limit is spent.");
+  assert.equal(overSentence([over(`mission:${GOAL}`, "events")]), "The mission's event limit is spent.");
+  assert.equal(overSentence([over(`agent:${GOAL}/qa`, "events")]), "Agent qa's own budget is spent.", "the unit is not part of a seat's name");
+  assert.equal(overSentence([over(`mission:${GOAL}`), over(`agent:${GOAL}/qa`)]), "The mission budget is spent. Agent qa's own budget is spent.");
+  assert.equal(
+    overSentence([over(`agent:${GOAL}/qa`), over(`agent:${GOAL}/pm`), over(`attention:${GOAL}/dev`)]),
+    "Agent qa's own budget is spent. Agent pm's own budget is spent. Agent dev's budget for waking others is spent.",
+    "a seat's id keeps its case",
+  );
+  const many = ["a", "b", "c", "d", "e"].map((n) => over(`agent:${GOAL}/${n}`));
+  assert.equal(overSentence(many.slice(0, 3)), "Agent a's own budget is spent. Agent b's own budget is spent. Agent c's own budget is spent.", "exactly as many as are shown: nothing about more");
+  assert.equal(overSentence(many.slice(0, 4)), "Agent a's own budget is spent. Agent b's own budget is spent. Agent c's own budget is spent. 1 more budget is stopped too.");
+  assert.match(overSentence(many), /2 more budgets are stopped too\.$/);
   assert.ok(!overSentence([over(`thread:${GOAL}/thread-X1`)]).includes(GOAL), "the goal id is not shown");
-  assert.equal(overSentence([over(`thread:${GOAL}/thread-X1`)]), "Used up: the budget of thread-X1.");
+  assert.equal(overSentence([over(`thread:${GOAL}/thread-X1`)]), "The budget of thread-X1 is spent.");
+  assert.equal(overSentence([over("custom:g/thing")]), "The budget custom:g/thing is spent.");
+  // The host's second case: latched below the limit because the next turn does not fit. Said as that, not as "spent".
+  const short = describeBudget({ key: `mission:${GOAL}`, limitKind: "tokens", consumed: 27_650, limit: 30_000, exceeded: true });
+  assert.equal(overSentence([short]), "The mission budget has too little left for its next turn.");
+  assert.equal(overSentence([short, over(`agent:${GOAL}/qa`)]), "The mission budget has too little left for its next turn. Agent qa's own budget is spent.");
+});
+
+test("a budget is over when the server latched it or the count passed the limit, short when it is latched with room left, and nearly used is not over", () => {
+  const d = (consumed: number, limit: number | null, exceeded = false): ReturnType<typeof describeBudget> => describeBudget({ key: `agent:${GOAL}/qa`, limitKind: "tokens", consumed, limit, exceeded });
+  const states = (r: ReturnType<typeof describeBudget>): [string, boolean] => [r.state, r.short];
+  assert.deepEqual(states(d(100, 1000)), ["ok", false]);
+  assert.deepEqual(states(d(800, 1000)), ["near", false]);
+  assert.deepEqual(states(d(960, 1000)), ["near", false], "96% is nearly used, not over");
+  assert.deepEqual(states(d(1000, 1000)), ["near", false], "exactly the limit is not past it; the server's latch decides");
+  assert.deepEqual(states(d(1001, 1000)), ["over", false], "past the limit is over, flagged or not");
+  assert.deepEqual(states(d(990, 1000, true)), ["over", true], "latched with room left: cannot cover the next turn");
+  assert.deepEqual(states(d(1000, 1000, true)), ["over", false], "latched with nothing left is spent, not short");
+  assert.deepEqual(states(d(1200, 1000, true)), ["over", false], "latched and spent");
+  assert.deepEqual(states(d(5, null, true)), ["over", false], "no limit to have room under");
+  assert.deepEqual(states(d(5, null)), ["ok", false]);
+});
+
+test("the mission budget says whether it is spent or only has too little left, and a seat's own budget the same", () => {
+  const mission = (consumed: number, exceeded: boolean): ReturnType<typeof summarizeCost>["mission"] =>
+    summarizeCost({ entries: [entry(`mission:${GOAL}`, consumed, 30_000, { exceeded })], cost: { missionTokens: consumed, missionBudget: 30_000, perAgent: [], models: [] } }).mission;
+  assert.deepEqual([mission(27_650, true).exceeded, mission(27_650, true).short, mission(27_650, true).tone], [true, true, "bad"], "92% and latched: stopped, with room left");
+  assert.deepEqual([mission(30_500, true).exceeded, mission(30_500, true).short], [true, false]);
+  assert.deepEqual([mission(30_500, false).exceeded, mission(30_500, false).short], [true, false], "past the limit counts even when the latch has not been read yet");
+  assert.deepEqual([mission(24_500, false).exceeded, mission(24_500, false).short, mission(24_500, false).tone], [false, false, "warn"]);
+  assert.deepEqual([mission(30_000, false).exceeded, mission(30_000, false).short], [false, false], "the host stops the mission only when more is spent than the limit");
+  const seats = summarizeCost({
+    entries: [
+      entry(`agent:${GOAL}/qa`, 199_000, 200_000, { exceeded: true }),
+      entry(`agent:${GOAL}/pm`, 210_000, 200_000, { exceeded: true }),
+      entry(`agent:${GOAL}/ops`, 210_000, 200_000),
+      entry(`agent:${GOAL}/dev`, 1000, 200_000),
+    ],
+    cost: { perAgent: ["qa", "pm", "ops", "dev"].map((agentId) => ({ agentId, tokens: 1, activations: 1, perTurn: 1 })), missionTokens: 3, missionBudget: 2_000_000, models: [] },
+  });
+  const own = (id: string): [boolean, boolean] => { const o = seats.agents.find((a) => a.agentId === id)!.own!; return [o.exceeded, o.short]; };
+  assert.deepEqual(own("qa"), [true, true]);
+  assert.deepEqual(own("pm"), [true, false]);
+  assert.deepEqual(own("ops"), [true, false], "past its limit counts even when the latch has not been read yet");
+  assert.deepEqual(own("dev"), [false, false]);
 });
 
 test("model rows name the first three seats and count the rest", () => {
@@ -285,6 +359,7 @@ test("how old a reading is: just now, seconds, minutes", () => {
   assert.equal(readingAge(3999), "just now");
   assert.equal(readingAge(4000), "4s ago");
   assert.equal(readingAge(59_000), "59s ago");
+  assert.equal(readingAge(60_000), "1m ago", "a whole minute is a minute, not sixty seconds");
   assert.equal(readingAge(61_000), "1m ago");
   assert.equal(readingAge(600_000), "10m ago");
   assert.equal(readingAge(Number.NaN), "just now");
