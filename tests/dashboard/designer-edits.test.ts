@@ -4,7 +4,9 @@ import {
   addSeat,
   duplicateSeat,
   freeSeatId,
+  gateHolders,
   hasWire,
+  isPlaceholderRole,
   removeSeat,
   renameSeat,
   seatIdProblem,
@@ -225,6 +227,41 @@ test("free ids skip the taken ones", () => {
   m.agents["qa-1"] = { role: "x" };
   m.agents["qa-2"] = { role: "x" };
   assert.equal(freeSeatId(m, "qa"), "qa-3");
+});
+
+test("a new seat's role is a placeholder until someone writes one, and only that role is called a placeholder", () => {
+  const m = mesh();
+  const id = addSeat(m);
+  assert.equal(isPlaceholderRole(m.agents[id].role), true, m.agents[id].role);
+  assert.equal(isPlaceholderRole("role-12"), true);
+  assert.equal(isPlaceholderRole(" role-3 "), true, "the tidied and the untidied are the same role");
+  for (const real of ["qa", "role", "role-lead", "senior-role-2", "", undefined, null]) assert.equal(isPlaceholderRole(real), false, String(real));
+});
+
+/* -------------------------------------------------------------- gates */
+
+test("a gate requirement is satisfied by the seat whose id or role is the actor, not by one whose authority list spells the token", () => {
+  const m = mesh();
+  m.agents.dev.authority = ["implementation.approve"];
+  const [h] = gateHolders(m, "dev.approve");
+  assert.deepEqual([h!.actor, h!.seats], ["dev", ["dev"]], "matched by id");
+  const [byRole] = gateHolders(m, "developer.approve");
+  assert.deepEqual(byRole!.seats, ["dev"], "matched by role");
+  const [literal] = gateHolders(m, "implementation.approve");
+  assert.deepEqual(literal!.seats, [], "the authority token is not an actor, so nobody answers to it");
+});
+
+test("alternatives are listed one by one, and an actor nobody answers to has no seats", () => {
+  const m = mesh();
+  const hs = gateHolders(m, "qa.pass | ghost.approve");
+  assert.deepEqual(hs.map((h) => [h.alternative, h.seats]), [["qa.pass", ["qa"]], ["ghost.approve", []]]);
+  assert.deepEqual(gateHolders(m, ""), []);
+});
+
+test("an actor may itself contain a dot: only the last one separates the kind", () => {
+  const m = mesh();
+  m.agents["a.b"] = { role: "x" };
+  assert.deepEqual(gateHolders(m, "a.b.approve")[0]!.seats, ["a.b"]);
 });
 
 /* -------------------------------------------------------------- start */

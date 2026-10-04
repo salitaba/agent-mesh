@@ -136,6 +136,9 @@ export function blankSeat(m: Model): { role: string; capabilities: string[]; aut
   return { role: `role-${n}`, capabilities: [], authority: [], interests: [] };
 }
 
+/** Whether a role is still the one `blankSeat` made: valid for the schema, and says nothing about what the seat is for. */
+export const isPlaceholderRole = (role: unknown): boolean => /^role-\d+$/.test(String(role ?? "").trim());
+
 /** Add a seat (a blank one unless a preset is given) and return its id. */
 export function addSeat(m: Model, preset?: Model): string {
   const id = freeSeatId(m);
@@ -216,6 +219,32 @@ export function renameSeat(m: Model, old: string, next: string): boolean {
   }
   for (const r of m.scheduling?.triage?.rules ?? []) if (r.agent === old) r.agent = nn;
   return true;
+}
+
+export interface GateHolder {
+  /** One `|` alternative of the requirement, as written. */
+  alternative: string;
+  /** The part before the last dot: a seat id or a role. */
+  actor: string;
+  /** The seats that answer to that id or role. Empty means nobody can give this approval. */
+  seats: string[];
+}
+
+/**
+ * Who can stand for a gate requirement. A requirement is `<seat-id-or-role>.<kind>` (`tech-lead.approve`), and `a|b` means any one of
+ * them will do. The actor is matched against seat ids and roles, which is what the server checks too ("no agent has id or role ...").
+ * It is NOT matched against a seat's `authority` list: authority is `<domain>.<verb>` (`implementation.approve`), a different vocabulary,
+ * and reading one as the other showed "nobody grants it" in red on every gate that was wired correctly.
+ */
+export function gateHolders(m: Model, requirement: string): GateHolder[] {
+  return requirement.split("|").map((alt) => alternativeOf(m, alt.trim())).filter((h) => h.alternative !== "");
+}
+
+function alternativeOf(m: Model, alternative: string): GateHolder {
+  const dot = alternative.lastIndexOf(".");
+  const actor = dot > 0 ? alternative.slice(0, dot) : alternative;
+  const seats = seatIds(m).filter((id) => id === actor || m.agents[id]?.role === actor);
+  return { alternative, actor, seats };
 }
 
 /** Whether the seat starts with the mission. */

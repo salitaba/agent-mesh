@@ -46,6 +46,22 @@ const FILE_ONLY = new Set(["project", "bus", "sandbox", "audit", "extensions"]);
 
 const quoted = (s: string): string[] => [...s.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
 
+/** What a section is called on screen. */
+export const SECTION_LABEL: Record<Section, string> = {
+  general: "General", behavior: "Behavior", tools: "Tools", communication: "Communication", budget: "Budget", advanced: "Advanced",
+  identity: "Identity", goal: "Goal", criteria: "Done-when checks", runtime: "Runtime", defaults: "Seat defaults", concurrency: "Concurrency",
+  triage: "Triage", timeouts: "Timeouts", server: "Server", gates: "Gates", escalation: "Escalation", budgets: "Budgets", rules: "Policy rules",
+};
+
+const TAB_LABEL: Record<Tab, string> = { crew: "Seat", mesh: "Mesh", policy: "Policy" };
+
+/** The words on the button that goes there: "Open pm: Tools", "Open Policy: Gates", "Open Mesh". */
+export function whereLabel(w: Where): string {
+  const part = w.section ? `: ${SECTION_LABEL[w.section]}` : "";
+  if (w.seat) return `Open ${w.seat}${part}`;
+  return `Open ${TAB_LABEL[w.tab]}${part}`;
+}
+
 /** Read what a validation message is about. `seats` are the seat ids in the draft, so a name is only taken for a seat if it is one. */
 export function locateIssue(text: string, seats: string[]): Where {
   const t = text.trim();
@@ -67,6 +83,11 @@ export function locateIssue(text: string, seats: string[]): Where {
   }
   m = /^\/([a-z_]+)/.exec(t);
   if (m && FILE_ONLY.has(m[1]!)) return { tab: "mesh", editable: false };
+
+  // The Designer's own note about a seat that still has the role it was created with. It says "a policy rule can name a role", so it is read
+  // before the sentences below, which take any mention of a policy rule for a message about one.
+  m = /^Seat '([^']+)' still has the placeholder role\b/.exec(t);
+  if (m) return { tab: "crew", seat: isSeat(m[1]) ? m[1] : undefined, section: "general", field: "role", editable: true };
 
   // policies.communication.<id>.may_contact references unknown agent 'x'
   m = /^policies\.communication\.([^.\s]+)\.(may_contact|may_be_contacted_by)/.exec(t);

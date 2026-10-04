@@ -1,55 +1,79 @@
-/* Crew inspector: everything about one agent — identity, capabilities,
- * wake events, wiring, budgets, session/delegation. Mutates `ctx.m` in
- * place and calls `ctx.touch()` after each change. */
+/* Seat inspector: everything about one seat — who it is, what it may use and decide, who it may message, what wakes it, what it may spend.
+ * Mutates `ctx.m` in place and calls `ctx.touch()` after each change.
+ *
+ * What changed from the old crew panel, and why:
+ *  - Authority is a grid over the protocol's catalogue, not a text box that accepts a typo and grants nothing.
+ *  - "May be contacted by" is an additive grant (the runtime allows a contact when either side names the other), so it is a second chip
+ *    list with a sentence that says so, not a box whose hint ("blank = anyone wired to it") described a filter that does not exist.
+ *  - A seat's own time limit and event limit are accepted by the config and enforced by nothing (docs/configuration.md); they are shown
+ *    only when a file already sets them, with that said, instead of offered as controls.
+ *  - Typing a space in the role no longer deletes it (the old handler trimmed on every keystroke, so "tech lead" could not be typed). */
 
 import { useState } from "react";
-import { CAPS, fmtNum, groupCaps } from "../model";
-import { ChipPick, CommaAdder, CustomChips, Field, Num, hueVar } from "../ui";
-import { Button, ErrorState, Input, Pill, Select, TextArea } from "../../components";
+import { AUTHORITY, CAPS, fmtNum, groupCaps } from "../model";
+import { seatIdProblem, type IdProblem } from "../edits";
+import { AuthorityGrid, ChipPick, CommaAdder, CustomChips, Field, Num, Section } from "../ui";
+import { AgentAvatar, agentColor, Button, ErrorState, Input, Select, TextArea } from "../../components";
 import { useModelCatalogue, variantsFor } from "../modelCatalogue";
 import { useMesh } from "../../store";
 import type { DCtx } from "../types";
 
-/* Disclosure state lives at module scope so it survives tab switches, which
- * unmount the panel. Defaults: everything but Permissions/Advanced is open. */
-const GROUP_OPEN: Record<string, boolean> = {
-  general: true,
-  behavior: true,
-  permissions: false,
-  communication: true,
-  budget: true,
-  advanced: false,
+const ID_PROBLEM: Record<IdProblem, string> = {
+  empty: "A seat needs an id.",
+  taken: "Another seat already has that id.",
+  shape: "Use lowercase letters, digits and hyphens, starting with a letter or digit.",
 };
 
-function Group({ id, summary, children }: { id: string; summary: React.ReactNode; children: React.ReactNode }): React.JSX.Element {
-  const [open, setOpen] = useState(GROUP_OPEN[id] ?? true);
+/** The seat's id, editable. Renaming rewrites every place the old id is named, so it commits on Enter or when the field loses focus, not on each key. */
+function SeatIdField({ ctx, id }: { ctx: DCtx; id: string }): React.JSX.Element {
+  const [draft, setDraft] = useState(id);
+  const [problem, setProblem] = useState<IdProblem | null>(null);
+  const commit = (): void => {
+    const next = draft.trim();
+    if (next === id) { setProblem(null); setDraft(id); return; }
+    const p = seatIdProblem(ctx.m, id, next);
+    setProblem(p);
+    if (p) return;
+    ctx.renameSeat(id, next);
+  };
   return (
-    <details className="ms-group" open={open} onToggle={(e) => {
-      const next = e.currentTarget.open;
-      GROUP_OPEN[id] = next;
-      setOpen(next);
-    }}>
-      <summary>{summary}</summary>
-      <div className="ms-group-body">{children}</div>
-    </details>
+    <Field label="Seat id" name="id" hint="Gates, wires and budgets refer to this id. Renaming updates them." error={problem ? ID_PROBLEM[problem] : undefined}>
+      <Input
+        mono value={draft} spellCheck={false}
+        onChange={(e) => { setDraft(e.target.value); setProblem(null); }}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape" && draft !== id) { e.preventDefault(); setDraft(id); setProblem(null); } }}
+      />
+    </Field>
   );
 }
 
 export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
-  const { m, cur, ids, vocab, ints, touch, startupSet } = ctx;
+  const { m, cur, ids, ints, touch, starts, reveal, wires } = ctx;
   const { client } = useMesh();
   const [intFilter, setIntFilter] = useState("");
   const [bulkCaps, setBulkCaps] = useState(false);
   const [bulkInts, setBulkInts] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
-  const [newCap, setNewCap] = useState("");
   const { state: models, reload: reloadModels } = useModelCatalogue(client);
+
   if (!cur || !m.agents[cur]) {
     return (
       <div className="ms-nosel">
-        <p className="muted">Pick an agent on the canvas or the crew list to edit it — or hire a new one.</p>
-        <Button variant="small" onClick={() => ctx.addAgent()}>+ hire agent</Button>
+        <p className="ms-lead">{ids.length ? "Select a seat on the canvas to edit it, or pick one here." : "There are no seats yet."}</p>
+        {ids.length ? (
+          <ul className="ms-pick">
+            {ids.map((id) => (
+              <li key={id}>
+                <button type="button" onClick={() => ctx.openSeat(id)}>
+                  <AgentAvatar id={id} color={agentColor(String(m.agents[id]?.role || ""))} size="sm" />
+                  <span className="nm">{id}</span>
+                  <span className="muted">{m.agents[id]?.role || "no role"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <Button variant="small" icon="plus" onClick={() => ctx.addSeat()}>Add a seat</Button>
       </div>
     );
   }
@@ -59,6 +83,12 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
     else a[k] = v;
     touch();
   };
+  /** Text fields keep what is typed, spaces included, and tidy it when the field is left. */
+  const text = (k: string) => ({
+    value: a[k] || "",
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
+    onBlur: (e: React.FocusEvent<HTMLInputElement>) => { if (e.target.value !== e.target.value.trim()) set(k, e.target.value.trim()); },
+  });
   const setBudget = (k: string, v: number | null) => {
     a.budget ||= {};
     if (v === null || !Number.isFinite(v)) delete a.budget[k];
@@ -66,240 +96,260 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
     touch();
   };
   const toggleCap = (c: string) => {
-    const l = new Set(a.capabilities || []);
+    const l = new Set<string>(a.capabilities || []);
     if (l.has(c)) l.delete(c); else l.add(c);
     a.capabilities = [...l];
-    touch();
+    touch("Edited tools");
   };
-  const contacts = new Set<string>(((m.policies.communication[cur] || {}).may_contact || []) as string[]);
-  const incoming = ((m.policies.communication[cur] || {}).may_be_contacted_by || []) as string[];
+  const toggleAuthority = (t: string) => {
+    const l = new Set<string>(a.authority || []);
+    if (l.has(t)) l.delete(t); else l.add(t);
+    a.authority = [...l];
+    touch("Edited authority");
+  };
+  const csv = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+  const others = ids.filter((t) => t !== cur);
+  const contacts = (m.policies.communication[cur]?.may_contact || []) as string[];
+  const grants = (m.policies.communication[cur]?.may_be_contacted_by || []) as string[];
+  const incoming = wires.filter((w) => w.tgt === cur && w.declared).map((w) => w.src);
   const customCaps = (a.capabilities || []).filter((c: string) => !CAPS.includes(c));
   const capBuckets = groupCaps([...CAPS, ...customCaps]);
+
   const knownModels = new Set<string>(models.phase === "ready" ? models.catalogue.models : []);
   const saved = typeof a.model === "string" ? a.model.trim() : "";
   const modelOptions = saved && !knownModels.has(saved) ? [saved, ...knownModels] : [...knownModels];
   const modelHint = models.phase === "ready" && saved && !knownModels.has(saved)
-    ? "this model is not installed here — turns will fail until it is"
-    : "blank = mesh default";
+    ? "This model is not installed here. Turns will fail until it is."
+    : "Blank uses the mesh default.";
   const meshModel = typeof m.mesh.runtime?.model === "string" ? m.mesh.runtime.model.trim() : "";
   const meshVariant = typeof m.mesh.runtime?.variant === "string" ? m.mesh.runtime.variant.trim() : "";
   const savedVariant = typeof a.variant === "string" ? a.variant.trim() : "";
-  /* The variants on offer belong to the model this agent will actually run:
-   * its own, else the mesh default, else the backend default. */
+  // The variants on offer belong to the model this seat will run: its own, else the mesh default, else the backend default.
   const effectiveModel = saved || meshModel || (models.phase === "ready" ? models.catalogue.default ?? "" : "");
   const modelVariants = models.phase === "ready" ? variantsFor(models.catalogue, effectiveModel) : [];
   const variantOptions = savedVariant && !modelVariants.includes(savedVariant) ? [savedVariant, ...modelVariants] : modelVariants;
   const variantHint = models.phase === "ready" && effectiveModel && modelVariants.length === 0
-    ? "this model has no thinking variants"
-    : "blank = mesh default";
-  /* Mesh-wide defaults this agent inherits when its own key is absent. The
-   * chain is per-agent ?? mesh.defaults ?? the runtime's hardcoded fallback,
-   * so an absent key — not 0 or false — is what "inherit" looks like. */
+    ? "This model has no thinking variants."
+    : "Blank uses the mesh default.";
+  // Mesh-wide defaults this seat inherits when its own key is absent: per-seat, then mesh.defaults, then the runtime's fallback.
   const meshSession = m.mesh?.defaults?.session || {};
   const meshDelegation = m.mesh?.defaults?.delegation || {};
   const inheritedPersistent = meshSession.persistent ?? true;
   const inheritedAllow = meshDelegation.allow ?? false;
-  /* A number the mesh supplies is worth naming; otherwise the old hint, which
-   * describes what the runtime does with nothing set. */
   const numHint = (v: unknown, fallback: string) => (typeof v === "number" ? `mesh default (${v})` : fallback);
   const triValue = (v: unknown) => (v === undefined ? "" : v ? "yes" : "no");
-
-  const renameClean = renameValue.trim();
-  const renameOk = !!renameClean && renameClean !== cur && !m.agents[renameClean];
+  const inertSet = a.budget?.wall_clock_minutes !== undefined || a.budget?.max_events !== undefined;
+  const override = m.budgets?.agent?.[cur];
 
   return (
     <div className="ms-panel">
-      <div className="wb-insp-head">
-        <span className="crew-av" style={hueVar(cur)}>{(cur[0] || "?").toUpperCase()}</span>
-        <b className="mono">{cur}</b>
-        {startupSet.has(cur) ? <Pill tone="awakened">boots</Pill> : null}
-        {a.mode === "service" ? <Pill tone="completed">service</Pill> : null}
-        <span className="page-actions">
-          <Button variant="small" onClick={() => { setRenameValue(cur); setRenameOpen(!renameOpen); }}>rename…</Button>
-          <Button variant="small" onClick={() => ctx.duplicateAgent()}>duplicate</Button>
-          <Button variant="small" danger onClick={() => ctx.deleteAgent()}>delete</Button>
-        </span>
-      </div>
-      {renameOpen ? (
-        <div className="rename-box">
-          <Input value={renameValue} aria-label="new agent id" placeholder="new id…" onChange={(e) => setRenameValue(e.target.value)} autoFocus />
-          <div className="muted tx-meta">Rewires contacts, startup, budgets and triage rules to the new id.</div>
-          <div className="row">
-            <Button variant="small" disabled={!renameOk} onClick={() => { if (ctx.renameAgent(cur, renameClean)) setRenameOpen(false); }}>rename to “{renameClean || "…"}”</Button>
-            <Button variant="ghost" onClick={() => setRenameOpen(false)}>cancel</Button>
-          </div>
+      <div className="ms-seat-head">
+        <AgentAvatar id={cur} color={agentColor(String(a.role || ""))} />
+        <div className="ms-seat-id">
+          <b className="mono" title={cur}>{cur}</b>
+          <span className="muted" title={a.role || undefined}>{a.role || "no role"}</span>
         </div>
-      ) : null}
+        <div className="ms-seat-acts">
+          <Button variant="small" icon="copy" onClick={() => ctx.duplicateSeat()}>Duplicate</Button>
+          <Button variant="small" danger icon="trash" onClick={() => ctx.deleteSeat()}>Delete</Button>
+        </div>
+      </div>
 
-      <Group id="general" summary="General">
+      <Section id="general" title="General" reveal={reveal}>
+        <SeatIdField key={cur} ctx={ctx} id={cur} />
+        <Field label="Role" name="role" hint="What this seat is for. A gate or a policy rule can name a role instead of a seat.">
+          <Input {...text("role")} />
+        </Field>
+        <label className="chk ms-start">
+          <input type="checkbox" data-field="start" checked={starts.has(cur)} onChange={() => ctx.toggleStart(cur)} />
+          <span>Starts with the mission</span>
+        </label>
+        <Field label="Mode" name="mode">
+          <Select value={a.mode === "service" ? "service" : "peer"} onChange={(e) => set("mode", e.target.value === "service" ? "service" : "")}>
+            <option value="peer">Peer: wakes on events</option>
+            <option value="service">Service: answers requests</option>
+          </Select>
+        </Field>
         <div className="grid2">
-          <Field label="role"><Input id="d-role" value={a.role || ""} onChange={(e) => set("role", e.target.value.trim())} /></Field>
-          <Field label="model" hint={modelHint}>
+          <Field label="Runtime" name="runtime" hint="Blank uses the mesh default.">
+            <Input {...text("runtime")} placeholder={m.mesh.runtime?.default || "mesh default"} />
+          </Field>
+          <Field label="Model" name="model" hint={modelHint}>
             {models.phase === "error" ? (
               <ErrorState what="the model list" detail={models.detail} onRetry={reloadModels} />
             ) : (
-              <Select value={a.model || ""} disabled={models.phase === "loading"} aria-label="model" onChange={(e) => set("model", e.target.value)}>
-                <option value="">{models.phase === "loading" ? "loading models…" : `mesh default${models.catalogue.default ? ` (${models.catalogue.default})` : ""}`}</option>
-                {/* A model already saved in mesh.yaml but absent from this
-                  * installation's catalogue still belongs in the list — dropping it
-                  * would silently rewrite the config on the next save. */}
+              <Select value={a.model || ""} disabled={models.phase === "loading"} aria-label="Model" onChange={(e) => set("model", e.target.value)}>
+                <option value="">{models.phase === "loading" ? "Loading models…" : `Mesh default${models.catalogue.default ? ` (${models.catalogue.default})` : ""}`}</option>
+                {/* A model already saved in mesh.yaml but absent from this installation's catalogue still belongs in the list:
+                    dropping it would rewrite the config on the next save. */}
                 {modelOptions.map((id) => (
-                  <option key={id} value={id}>{id}{knownModels.has(id) ? "" : " — not installed here"}</option>
+                  <option key={id} value={id}>{id}{knownModels.has(id) ? "" : " (not installed here)"}</option>
                 ))}
               </Select>
             )}
           </Field>
           {variantOptions.length ? (
-            <Field label="thinking variant" hint={variantHint}>
-              <Select value={savedVariant} disabled={models.phase === "loading"} aria-label="thinking variant" onChange={(e) => set("variant", e.target.value)}>
-                <option value="">mesh default{meshVariant ? ` (${meshVariant})` : ""}</option>
+            <Field label="Thinking variant" name="variant" hint={variantHint}>
+              <Select value={savedVariant} disabled={models.phase === "loading"} aria-label="Thinking variant" onChange={(e) => set("variant", e.target.value)}>
+                <option value="">Mesh default{meshVariant ? ` (${meshVariant})` : ""}</option>
                 {variantOptions.map((v) => (
-                  <option key={v} value={v}>{v}{modelVariants.includes(v) ? "" : " — not available for this model"}</option>
+                  <option key={v} value={v}>{v}{modelVariants.includes(v) ? "" : " (not available for this model)"}</option>
                 ))}
               </Select>
             </Field>
           ) : null}
-          <Field label="runtime" hint="blank = mesh default"><Input value={a.runtime || ""} placeholder={m.mesh.runtime?.default || "opencode"} onChange={(e) => set("runtime", e.target.value.trim())} /></Field>
-          <Field label="mode">
-            <Select value={a.mode === "service" ? "service" : "peer"} onChange={(e) => set("mode", e.target.value === "service" ? "service" : "")}>
-              <option value="peer">peer — wakes on events</option>
-              <option value="service">service — always on</option>
-            </Select>
-          </Field>
         </div>
-      </Group>
+      </Section>
 
-      <Group id="behavior" summary="Behavior">
-        <Field label="prompt file" hint="blank = built-in role prompts"><Input value={a.prompt || ""} placeholder="../../roles/architect.md" onChange={(e) => set("prompt", e.target.value.trim())} /></Field>
-        <label className="chk ms-boot"><input type="checkbox" checked={startupSet.has(cur)} onChange={() => ctx.toggleStartup(cur)} /> boots at startup</label>
+      <Section id="tools" title="Tools and authority" meta={`${(a.capabilities || []).length} tools, ${(a.authority || []).length} authority`} reveal={reveal}>
         <div className="field">
-          <label>wakes up for ({(a.interests || []).length})</label>
-          <Input placeholder="filter the list…" style={{ marginBottom: 4 }} aria-label="Filter wake-up events" value={intFilter} onChange={(e) => setIntFilter(e.target.value)} />
-          <div style={{ maxHeight: 140, overflow: "auto" }}>
-            <ChipPick options={ints.filter((c: string) => c.toLowerCase().includes(intFilter.toLowerCase()))} values={a.interests || []} onToggle={(c) => {
-              const l = new Set(a.interests || []);
-              if (l.has(c)) l.delete(c); else l.add(c);
-              a.interests = [...l];
-              touch();
-            }} />
-          </div>
-          <Button variant="linklike" onClick={() => setBulkInts(!bulkInts)}>{bulkInts ? "hide bulk edit" : "bulk edit as text…"}</Button>
-          {bulkInts ? (
-            <TextArea rows={2} aria-label="interests bulk edit" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}-${(a.interests || []).join(",")}`} onBlur={(e) => { a.interests = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
+          <span className="ms-flabel" id="ms-tools-label">Tools: what this seat may do in the workspace</span>
+          {capBuckets.map(({ group, caps }) => {
+            const known = caps.filter((c) => CAPS.includes(c));
+            const custom = caps.filter((c) => !CAPS.includes(c));
+            return (
+              <div className="ms-cap-group" key={group}>
+                <span className="ms-cap-name">{group}</span>
+                {known.length ? <ChipPick options={known} values={a.capabilities || []} onToggle={toggleCap} label={group} /> : null}
+                {custom.length ? <CustomChips values={custom} onRemove={(c) => { a.capabilities = (a.capabilities || []).filter((x: string) => x !== c); touch("Edited tools"); }} /> : null}
+              </div>
+            );
+          })}
+          <CommaAdder placeholder="Add a custom tool, for example k8s.deploy" onAdd={(v) => { a.capabilities = [...new Set([...(a.capabilities || []), v])]; touch("Edited tools"); }} />
+          <Button variant="linklike" onClick={() => setBulkCaps(!bulkCaps)}>{bulkCaps ? "Hide the text editor" : "Edit as text"}</Button>
+          {bulkCaps ? (
+            <TextArea rows={2} aria-label="Tools, comma separated" defaultValue={(a.capabilities || []).join(", ")} key={`caps-${cur}-${(a.capabilities || []).join(",")}`} onBlur={(e) => { a.capabilities = csv(e.target.value); touch("Edited tools"); }} />
           ) : null}
         </div>
-      </Group>
-
-      <Group id="permissions" summary={`Permissions · ${(a.capabilities || []).length} enabled`}>
-        {capBuckets.map(({ group, caps }) => {
-          const known = caps.filter((c) => CAPS.includes(c));
-          const custom = caps.filter((c) => !CAPS.includes(c));
-          return (
-            <div className="field" key={group}>
-              <label>{group}</label>
-              {known.length ? <ChipPick options={known} values={a.capabilities || []} onToggle={toggleCap} /> : null}
-              {custom.length ? <CustomChips values={custom} onRemove={(c) => { a.capabilities = (a.capabilities || []).filter((x: string) => x !== c); touch(); }} /> : null}
-            </div>
-          );
-        })}
-        <CommaAdder placeholder="custom capability, e.g. k8s.deploy…" onAdd={(v) => { a.capabilities = [...new Set([...(a.capabilities || []), v])]; touch(); }} />
-        <Button variant="linklike" onClick={() => setBulkCaps(!bulkCaps)}>{bulkCaps ? "hide bulk edit" : "bulk edit as text…"}</Button>
-        {bulkCaps ? (
-          <TextArea rows={2} aria-label="capabilities bulk edit" defaultValue={(a.capabilities || []).join(", ")} key={`caps-${cur}-${(a.capabilities || []).join(",")}`} onBlur={(e) => { a.capabilities = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
-        ) : null}
-        <Field label="can decide alone" hint="e.g. architecture.approve unlocks a gate">
-          <Input defaultValue={(a.authority || []).join(", ")} key={`auth-${cur}-${(a.authority || []).join(",")}`} placeholder="architecture.approve, quality.block…"
-            onBlur={(e) => { a.authority = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); touch(); }} />
-        </Field>
-      </Group>
-
-      <Group id="communication" summary="Communication">
-        <div className="field">
-          <label>may message — who this agent can start threads with</label>
-          {ids.filter((t) => t !== cur).length ? (
-            <ChipPick options={ids.filter((t) => t !== cur)} values={[...contacts]} onToggle={(t) => ctx.toggleWire(cur, t)} />
-          ) : <span className="muted tx-meta">no other agents yet.</span>}
+        <div className="field" data-field="authority">
+          <span className="ms-flabel">Authority: what this seat may decide alone</span>
+          <span className="ms-hint">A gate that requires an approval waits for a seat that holds it. For example, a merge gate that requires <span className="mono">tech-lead.approve</span> waits for the seat that may approve implementation.</span>
+          <AuthorityGrid
+            values={a.authority || []} known={AUTHORITY.tokens} domains={AUTHORITY.domains} verbs={AUTHORITY.verbs}
+            onToggle={toggleAuthority}
+            onRemove={(t) => { a.authority = (a.authority || []).filter((x: string) => x !== t); touch("Edited authority"); }}
+          />
         </div>
-        <Field label="may be contacted by" hint="blank = anyone wired to it">
-          <Input defaultValue={incoming.join(", ")} key={`inb-${cur}-${incoming.join(",")}`} placeholder="blank, or comma-separated agent ids"
-            onBlur={(e) => {
-              m.policies.communication[cur] ||= {};
-              const l = e.target.value.split(",").map((x) => x.trim()).filter(Boolean);
-              if (l.length) m.policies.communication[cur].may_be_contacted_by = l;
-              else delete m.policies.communication[cur].may_be_contacted_by;
-              touch();
-            }} />
-        </Field>
-      </Group>
+      </Section>
 
-      <Group id="budget" summary="Budget">
+      <Section id="communication" title="Communication" meta={`may message ${contacts.filter((t) => ids.includes(t)).length}`} reveal={reveal}>
+        <div className="field" data-field="may_contact">
+          <span className="ms-flabel">May message</span>
+          <span className="ms-hint">Seats this one may start a thread with. Replies inside a thread are always allowed.</span>
+          {others.length ? <ChipPick options={others} values={contacts} onToggle={(t) => ctx.toggleContact(cur, t)} label="May message" /> : <span className="ms-hint">There are no other seats yet.</span>}
+        </div>
+        <div className="field" data-field="may_be_contacted_by">
+          <span className="ms-flabel">Also reachable by</span>
+          <span className="ms-hint">Seats listed here may start a thread with this one even if their own list does not name it. It adds senders; it never blocks one.</span>
+          {others.length ? <ChipPick options={others} values={grants} onToggle={(t) => ctx.toggleGrant(cur, t)} label="Also reachable by" /> : null}
+        </div>
+        <p className="ms-hint">
+          {incoming.length ? <>Seats that list this one in their own may-message: <b>{incoming.join(", ")}</b>.</> : "No seat lists this one in its own may-message list."}
+        </p>
+      </Section>
+
+      <Section id="behavior" title="Behavior" meta={`wakes for ${(a.interests || []).length}`} defaultOpen={false} reveal={reveal}>
+        <Field label="Prompt file" name="prompt" hint="Blank uses the built-in prompt for this role.">
+          <Input {...text("prompt")} placeholder="../../roles/architect.md" />
+        </Field>
+        <div className="field" data-field="interests">
+          <label htmlFor="ms-int-filter" className="ms-flabel">Wakes for these events ({(a.interests || []).length})</label>
+          <span className="ms-hint">A seat wakes when an event it is interested in happens. A pattern such as <span className="mono">architecture.*</span> covers every event under it.</span>
+          <Input id="ms-int-filter" search placeholder="Filter the list" value={intFilter} onChange={(e) => setIntFilter(e.target.value)} />
+          <div className="ms-scrollbox">
+            <ChipPick
+              options={ints.filter((c: string) => c.toLowerCase().includes(intFilter.toLowerCase()))} values={a.interests || []} label="Wake events"
+              onToggle={(c) => {
+                const l = new Set<string>(a.interests || []);
+                if (l.has(c)) l.delete(c); else l.add(c);
+                a.interests = [...l];
+                touch("Edited wake events");
+              }}
+            />
+          </div>
+          <Button variant="linklike" onClick={() => setBulkInts(!bulkInts)}>{bulkInts ? "Hide the text editor" : "Edit as text"}</Button>
+          {bulkInts ? (
+            <TextArea rows={2} aria-label="Wake events, comma separated" defaultValue={(a.interests || []).join(", ")} key={`ints-${cur}-${(a.interests || []).join(",")}`} onBlur={(e) => { a.interests = csv(e.target.value); touch("Edited wake events"); }} />
+          ) : null}
+        </div>
+      </Section>
+
+      <Section id="budget" title="Budget" meta={`${fmtNum(a.budget?.tokens ?? 200000)} tokens`} defaultOpen={false} reveal={reveal}>
         <div className="grid2">
-          <Field label="token budget">
+          <Field label="Token budget" name="tokens">
             <Input type="number" step={10000} value={a.budget?.tokens ?? 200000} onChange={(e) => setBudget("tokens", Number(e.target.value) || 0)} />
           </Field>
-          <Num label="team budget override (budgets.agent)" value={m.budgets?.agent?.[cur]} onSet={(v) => {
-            m.budgets.agent ||= {};
-            if (v === null) delete m.budgets.agent[cur];
-            else m.budgets.agent[cur] = v;
-            touch();
-          }} step={10000} hint="wins over the token budget left" />
-          <Num label="agent time limit (min)" value={a.budget?.wall_clock_minutes} onSet={(v) => setBudget("wall_clock_minutes", v)} hint="default: mission cap" />
-          <Num label="agent max events" value={a.budget?.max_events} onSet={(v) => setBudget("max_events", v)} hint="no limit" />
-          <Num label="agent max activations" value={a.budget?.max_activations} onSet={(v) => setBudget("max_activations", v)} hint="no limit" />
+          <Num
+            label="Cap in the mesh budgets" name="cap" value={override} step={10000} hint="Wins over the token budget"
+            onSet={(v) => {
+              m.budgets.agent ||= {};
+              if (v === null) delete m.budgets.agent[cur]; else m.budgets.agent[cur] = v;
+              touch();
+            }}
+          />
+          <Num label="Activation limit" name="max_activations" value={a.budget?.max_activations} onSet={(v) => setBudget("max_activations", v)} hint="No limit" />
         </div>
-        {m.budgets?.agent?.[cur] !== undefined && a.budget?.tokens !== undefined && m.budgets.agent[cur] !== a.budget.tokens ? (
-          <div className="verdict warn tx-value">both budgets are set — the override ({fmtNum(m.budgets.agent[cur])}) is what the runtime uses.</div>
+        {override !== undefined && a.budget?.tokens !== undefined && override !== a.budget.tokens ? (
+          <p className="ms-note warn">Both are set. The runtime uses the cap in the mesh budgets, {fmtNum(override)}.</p>
         ) : null}
-      </Group>
+        {inertSet ? (
+          <div className="grid2">
+            <Num label="Time limit (minutes)" name="wall_clock_minutes" value={a.budget?.wall_clock_minutes} onSet={(v) => setBudget("wall_clock_minutes", v)} hint="Not enforced" />
+            <Num label="Event limit" name="max_events" value={a.budget?.max_events} onSet={(v) => setBudget("max_events", v)} hint="Not enforced" />
+          </div>
+        ) : null}
+        {inertSet ? <p className="ms-note warn">A seat&rsquo;s time and event limits are accepted and then ignored. Use the mission budget on the Policy tab.</p> : null}
+      </Section>
 
-      <Group id="advanced" summary="Advanced">
+      <Section id="advanced" title="Advanced" defaultOpen={false} reveal={reveal}>
         <div className="grid2">
-          <Field label="remembers between turns">
+          <Field label="Remembers between turns" name="session">
             <Select value={triValue(a.session?.persistent)} onChange={(e) => {
               a.session ||= {};
               if (e.target.value === "") delete a.session.persistent;
               else a.session.persistent = e.target.value === "yes";
               touch();
             }}>
-              <option value="">inherit — {inheritedPersistent ? "yes" : "no"}</option>
-              <option value="yes">yes</option>
-              <option value="no">no</option>
+              <option value="">Inherit ({inheritedPersistent ? "yes" : "no"})</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
             </Select>
           </Field>
-          <Field label="may spawn helpers">
+          <Field label="May spawn helpers" name="delegation">
             <Select value={triValue(a.delegation?.allow)} onChange={(e) => {
               a.delegation ||= {};
               if (e.target.value === "") delete a.delegation.allow;
               else a.delegation.allow = e.target.value === "yes";
               touch();
             }}>
-              <option value="">inherit — {inheritedAllow ? "yes" : "no"}</option>
-              <option value="yes">yes</option>
-              <option value="no">no</option>
+              <option value="">Inherit ({inheritedAllow ? "yes" : "no"})</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
             </Select>
           </Field>
-          <Num label="session max context tokens" value={a.session?.max_context_tokens} onSet={(v) => {
+          <Num label="Session context tokens" value={a.session?.max_context_tokens} onSet={(v) => {
             a.session ||= {};
             if (v === null) delete a.session.max_context_tokens; else a.session.max_context_tokens = Math.round(v);
             touch();
-          }} step={1000} hint={numHint(meshSession.max_context_tokens, "not enforced yet")} />
-          <Num label="helper workers ≤" value={a.delegation?.max_workers} onSet={(v) => {
+          }} step={1000} hint={numHint(meshSession.max_context_tokens, "Not enforced yet")} />
+          <Num label="Helper workers, at most" value={a.delegation?.max_workers} onSet={(v) => {
             a.delegation ||= {};
             if (v === null) delete a.delegation.max_workers; else a.delegation.max_workers = Math.round(v);
             touch();
           }} hint={numHint(meshDelegation.max_workers, "0")} />
-          <Num label="helper depth ≤" value={a.delegation?.max_depth} onSet={(v) => {
+          <Num label="Helper depth, at most" value={a.delegation?.max_depth} onSet={(v) => {
             a.delegation ||= {};
             if (v === null) delete a.delegation.max_depth; else a.delegation.max_depth = Math.round(v);
             touch();
           }} hint={numHint(meshDelegation.max_depth, "0")} />
-          <Num label="helper budget tokens" value={a.delegation?.worker_budget_tokens} onSet={(v) => {
+          <Num label="Helper budget tokens" value={a.delegation?.worker_budget_tokens} onSet={(v) => {
             a.delegation ||= {};
             if (v === null) delete a.delegation.worker_budget_tokens; else a.delegation.worker_budget_tokens = Math.round(v);
             touch();
-          }} step={10000} hint={numHint(meshDelegation.worker_budget_tokens, "same as parent")} />
+          }} step={10000} hint={numHint(meshDelegation.worker_budget_tokens, "Same as the parent")} />
         </div>
-      </Group>
+      </Section>
     </div>
   );
 }

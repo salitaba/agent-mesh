@@ -13,8 +13,8 @@ import type { Pos } from "./types";
 export interface Size { w: number; h: number }
 
 /** A card, in CSS pixels. The compact one is for a crowded or a narrow stage. */
-export const CARD_REGULAR: Size = { w: 156, h: 56 };
-export const CARD_COMPACT: Size = { w: 132, h: 48 };
+export const CARD_REGULAR: Size = { w: 168, h: 56 };
+export const CARD_COMPACT: Size = { w: 140, h: 48 };
 /** The most seats that still read well as full cards on a stage of ordinary width. */
 export const REGULAR_UP_TO = 8;
 /** Below this stage width the cards go compact whatever the count. */
@@ -32,8 +32,11 @@ export const toUnits = (p: Pos, stage: Size): Pos => ({ x: (p.x * W) / stage.w, 
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(Math.max(n, lo), hi);
 
+/** The room kept between a card and the stage's edge: enough for the wiring handle that sits half outside the card's right edge. */
+export const STAGE_MARGIN = 14;
+
 /** Keep a card's centre where the whole card stays inside the stage. A stage smaller than a card centres it. */
-export function clampCenter(p: Pos, stage: Size, card: Size, margin = 6): Pos {
+export function clampCenter(p: Pos, stage: Size, card: Size, margin = STAGE_MARGIN): Pos {
   const mx = card.w / 2 + margin;
   const my = card.h / 2 + margin;
   return {

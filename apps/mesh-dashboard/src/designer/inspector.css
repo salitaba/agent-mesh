@@ -1,0 +1,83 @@
+/* ============ The inspector: tabs, sections, forms ============
+ * One card with three tabs. Each tab is a list of collapsible sections; each section is a short form. The jump from a validation message opens a
+ * section and puts focus in a control, so the controls carry `data-field` and the sections an id (`ins-sec-<name>`). */
+
+.ms-insp { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-width: 0; }
+.ms-insp .tabs { flex: none; margin: 0; padding: 0 var(--s2); }
+.ms-insp .tab-btn { flex: 1 1 0; justify-content: center; padding: var(--s3) var(--s2); }
+.ms-insp .tabpanel { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--s3) var(--s3-5) var(--s5); }
+.ms-panel { display: flex; flex-direction: column; gap: var(--s3); }
+
+/* ---------- a selected seat's header ---------- */
+.ms-seat-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.ms-seat-id { display: flex; flex-direction: column; min-width: 0; flex: 1 1 120px; line-height: 1.3; }
+.ms-seat-id b { font: 600 16px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-id .muted { font: var(--tx-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-acts { display: flex; gap: var(--s2); }
+
+/* ---------- nothing selected ---------- */
+.ms-nosel { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); padding: var(--s2) 0; }
+.ms-lead { margin: 0; font: var(--tx-value); color: var(--text-dim); }
+.ms-pick { display: flex; flex-direction: column; gap: var(--s1-5); width: 100%; margin: 0; padding: 0; list-style: none; }
+.ms-pick button {
+  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 36px; padding: var(--s1) var(--s2-5);
+  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r-sm); color: var(--text); font: var(--tx-value); text-align: left; cursor: pointer;
+}
+.ms-pick button:hover { border-color: var(--accent); }
+.ms-pick .nm { font: 600 13px var(--mono); }
+.ms-pick .muted { margin-left: auto; font: var(--tx-meta); }
+
+/* ---------- sections ---------- */
+.ms-sec { border-top: 1px solid var(--line); padding-top: var(--s2-5); }
+.ms-sec > summary {
+  display: flex; align-items: center; gap: var(--s2); min-height: 28px; cursor: pointer; list-style: none;
+  font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim);
+}
+.ms-sec > summary::-webkit-details-marker { display: none; }
+.ms-sec > summary::before {
+  content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); transition: transform .12s; margin: 0 var(--s1) 0 var(--s1);
+}
+.ms-sec[open] > summary::before { transform: rotate(45deg); }
+.ms-sec > summary:hover { color: var(--text); }
+.ms-sec-title { flex: 0 1 auto; }
+.ms-sec-meta { margin-left: auto; font: 500 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
+.ms-sec-body { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s2-5) 0 var(--s2); }
+
+/* ---------- fields ---------- */
+.ms-span { grid-column: 1 / -1; }
+.ms-hint { font: var(--tx-meta); color: var(--muted); }
+.ms-hint.bad { color: var(--bad); }
+.ms-flabel { font: 600 12px var(--sans); color: var(--text); }
+.ms .field label { font: 600 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--text); }
+.ms .field label.chk, .ms label.chk { font: 13px var(--sans); }
+.ms .field input[aria-invalid="true"] { border-color: var(--bad); }
+.ms-start { min-height: 24px; }
+.ms-adder { align-items: stretch; }
+.ms-adder .txt { flex: 1 1 auto; min-width: 0; }
+.ms-note.warn { margin: 0; }
+.ms-cap-group { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s1-5); }
+.ms-cap-name { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.chip-toggle.custom { border-style: dashed; }
+.ms-scrollbox { max-height: 168px; overflow: auto; padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
+
+/* ---------- authority: a grid of switches ---------- */
+.ms-auth { display: flex; flex-direction: column; gap: var(--s2); }
+.ms-auth table { width: 100%; border-collapse: collapse; font: 12px var(--sans); }
+.ms-auth th { padding: var(--s1) var(--s1); font-weight: 600; color: var(--muted); text-align: center; }
+.ms-auth thead th { font-size: 11px; text-transform: lowercase; }
+.ms-auth tbody th { text-align: left; color: var(--text-dim); white-space: nowrap; }
+.ms-auth td { text-align: center; padding: 0; }
+.ms-auth tbody tr + tr > * { border-top: 1px solid var(--line); }
+.ms-auth input[type="checkbox"] { width: 18px; height: 18px; margin: var(--s1-5) 0; accent-color: var(--accent); cursor: pointer; }
+.ms-auth-extra { display: flex; flex-direction: column; gap: var(--s1); }
+
+/* ---------- done-when checks, triage rules, gates ---------- */
+.ms-crit, .ms-trule, .ms-gate { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2-5) var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
+.ms-crit-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.ms-holders { display: flex; flex-direction: column; gap: var(--s1); margin: 0; padding: 0; list-style: none; font: 13px var(--mono); color: var(--text-dim); }
+.ms-holders li { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: baseline; }
+.ms-holders-who { display: inline-flex; flex-wrap: wrap; gap: var(--s1) var(--s2); font: 13px var(--sans); }
+.ms-who { margin: 0; padding: 0; font-size: 13px; }
+.ms-nobody { color: var(--bad); font-style: normal; }
+

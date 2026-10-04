@@ -3,15 +3,23 @@
  * from anywhere. What changed between two configs lives in ./diff, what a seat or
  * wire edit does in ./edits. */
 
-import { CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
+import { AUTHORITY_DOMAINS, AUTHORITY_TOKENS, AUTHORITY_VERBS, CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
 import { locateIssue } from "./locate";
-import type { SaveTarget, Tab } from "./types";
+import type { Tab } from "./types";
 
 /* Derived, not duplicated: this list was hand-maintained and drifted — it was
  * missing `request_review`, so the designer could not offer a token the runtime
  * accepts. Sourcing it from the runtime's own catalog makes that class of drift
  * impossible rather than merely fixed once. */
 export const CAPS: string[] = [...CAPABILITY_TOKENS];
+
+/** What a seat may hold as authority, from the same catalogue the runtime checks: a token outside it grants nothing. */
+export const AUTHORITY = {
+  domains: AUTHORITY_DOMAINS as readonly string[],
+  /** The verbs the grid offers. `*` is the wildcard the human seat holds; it is shown when a file has it, not offered as a switch. */
+  verbs: AUTHORITY_VERBS.filter((v) => v !== "*") as readonly string[],
+  tokens: AUTHORITY_TOKENS,
+};
 
 /* Capability → permissions group. Explicit for every known CAPS entry because
  * the name and the prefix don't always agree (`code.review` is Review, not
@@ -261,37 +269,6 @@ export const TEMPLATES: Template[] = [
   { key: "triad", name: "Triad", desc: "An architect, a developer and a tester, with a merge gate.", seats: 3, make: tplTriad },
   { key: "squad", name: "Full squad", desc: "Seven roles with review and release gates.", seats: 7, make: tplSquad },
 ];
-
-/* ---------------- source-of-truth state (draft vs running file vs process) ----------------
- * Superseded by save.ts `draftStatus`; kept until the save bar that reads it is replaced. */
-
-export type SourceStateKind = "NEW" | "MATCHES_RUNNING_FILE" | "DIFFERS" | "RESTORED_DRAFT" | "COPY_SAVED";
-
-export interface SourceState {
-  kind: SourceStateKind;
-  n: number;
-  dirty: boolean;
-  target: SaveTarget;
-  hasRunning: boolean;
-}
-
-export interface SourceStateInput {
-  dirty: boolean;
-  diff: string[];
-  runningRaw: any | null;
-  saveMode: SaveTarget;
-  restoredAt: number | null;
-}
-
-export function sourceState({ dirty, diff, runningRaw, saveMode, restoredAt }: SourceStateInput): SourceState {
-  const n = diff.length;
-  const base = { n, dirty, target: saveMode, hasRunning: runningRaw != null };
-  if (restoredAt !== null) return { ...base, kind: "RESTORED_DRAFT" };
-  if (!runningRaw) return { ...base, kind: "NEW" };
-  if (saveMode === "copy") return { ...base, kind: "COPY_SAVED" };
-  if (n > 0 || dirty) return { ...base, kind: "DIFFERS" };
-  return { ...base, kind: "MATCHES_RUNNING_FILE" };
-}
 
 /* ---------------- the goal a scaffold starts with ---------------- */
 

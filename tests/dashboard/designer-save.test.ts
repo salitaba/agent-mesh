@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyDrift, draftStatus, readApply, shortPath } from "../../apps/mesh-dashboard/src/designer/save";
+import { classifyDrift, draftStatus, isScriptedDemo, readApply, shortPath } from "../../apps/mesh-dashboard/src/designer/save";
 
 /* The three problems the server really returns (apps/mesh-server/src/config-drift.ts). */
 const SEAT_DIFFERS = "seat 'pm' differs from the running definition. No staged kind replaces a live seat's definition \u2014 boot does that, so restart the mesh to pick it up.";
@@ -98,4 +98,23 @@ test("a short or relative path is shown whole", () => {
   assert.equal(shortPath("mesh.yaml").text, "mesh.yaml");
   assert.equal(shortPath("examples/my-mesh/mesh.yaml").text, "examples/my-mesh/mesh.yaml");
   assert.equal(shortPath("C:\\work\\demo\\mesh.yaml").file, "mesh.yaml");
+});
+
+/* ------------------------------------------------ the one mesh a restart does not resume */
+
+test("the scripted demo is the demo-stub mesh with every seat on the stub runtime, by the seat's own runtime or the mesh default", () => {
+  assert.equal(isScriptedDemo({ mesh: { id: "demo-stub", runtime: { default: "stub" } }, agents: { pm: { role: "pm" }, qa: { role: "qa", runtime: "stub" } } }), true);
+  assert.equal(isScriptedDemo({ mesh: { id: "demo-stub" }, agents: { pm: { role: "pm", runtime: "stub" } } }), true);
+});
+
+test("a mesh that kept the demo's id but moved a seat to a real runtime is a real project, which a restart resumes", () => {
+  assert.equal(isScriptedDemo({ mesh: { id: "demo-stub", runtime: { default: "stub" } }, agents: { pm: { role: "pm" }, qa: { role: "qa", runtime: "claude" } } }), false);
+  assert.equal(isScriptedDemo({ mesh: { id: "demo-stub" }, agents: { pm: { role: "pm" } } }), false, "no runtime named anywhere is not the stub");
+});
+
+test("any other id, no seats, or no file is not the demo", () => {
+  assert.equal(isScriptedDemo({ mesh: { id: "payments", runtime: { default: "stub" } }, agents: { pm: { role: "pm" } } }), false);
+  assert.equal(isScriptedDemo({ mesh: { id: "demo-stub", runtime: { default: "stub" } }, agents: {} }), false);
+  assert.equal(isScriptedDemo(null), false);
+  assert.equal(isScriptedDemo(undefined), false);
 });

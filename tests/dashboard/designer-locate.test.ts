@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { locateIssue } from "../../apps/mesh-dashboard/src/designer/locate";
+import { locateIssue, whereLabel } from "../../apps/mesh-dashboard/src/designer/locate";
 
 /* Every string below is one the server really sends (probed against /config/validate and the config checks). */
 const SEATS = ["pm", "architect", "tech-lead", "qa"];
@@ -54,6 +54,12 @@ test("a warning about a seat opens that seat in the section it is about", () => 
   assert.deepEqual([prompt.seat, prompt.section], ["qa", "behavior"]);
 });
 
+test("the Designer's own note about a seat that still has its placeholder role opens that seat at the role", () => {
+  const w = locateIssue("Seat 'qa' still has the placeholder role 'role-4'. Say what it is for: a gate or a policy rule can name a role.", SEATS);
+  assert.deepEqual(w, { tab: "crew", seat: "qa", section: "general", field: "role", editable: true });
+  assert.equal(whereLabel(w), "Open qa: General");
+});
+
 test("a gate problem opens the policy tab at that gate", () => {
   const bad = locateIssue("transition gate 'patch.merge' requirement 'tech-lead.approve|' is malformed: each '|'-separated alternative must be '<agent-or-role>.<kind>'", SEATS);
   assert.deepEqual([bad.tab, bad.section, bad.field], ["policy", "gates", "patch.merge"]);
@@ -69,6 +75,14 @@ test("a policy rule problem opens the rules", () => {
 test("a message about a file-level key the Designer has no control for says so instead of offering a jump", () => {
   const w = locateIssue("mesh.yaml declares no project.id — using 'demo-stub' derived from the folder name. Add 'project: { id: demo-stub }' to pin it", SEATS);
   assert.equal(w.editable, false);
+});
+
+test("the button that goes there says where: the seat and the part of it, or the tab", () => {
+  assert.equal(whereLabel(locateIssue("/agents/pm/capabilities: must be array", SEATS)), "Open pm: Tools");
+  assert.equal(whereLabel(locateIssue("gate 'patch.merge' token 'ghost.approve': no agent has id or role 'ghost'", SEATS)), "Open Policy: Gates");
+  assert.equal(whereLabel(locateIssue("/mesh/goal: must NOT have fewer than 1 characters", SEATS)), "Open Mesh: Goal");
+  assert.equal(whereLabel(locateIssue("startup.activate references unknown agent 'ghost'", SEATS)), "Open Seat: Behavior", "no seat to open, so the tab is named");
+  assert.equal(whereLabel({ tab: "mesh", editable: true }), "Open Mesh");
 });
 
 test("an unknown shape falls back to the mesh tab and is still offered", () => {

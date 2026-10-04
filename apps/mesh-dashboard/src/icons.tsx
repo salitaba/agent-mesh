@@ -56,6 +56,11 @@ const ICONS = {
   // Status
   alert: (<><path d="M10 3.2l7.3 12.7H2.7z" /><path d="M10 8.4v3.4" /><circle cx="10" cy="14" r=".7" {...SOLID} /></>),
   info: (<><circle cx="10" cy="10" r="7.2" /><path d="M10 9.2v4.6" /><circle cx="10" cy="6.4" r=".7" {...SOLID} /></>),
+  // Designer
+  redo: (<><path d="M13 4.5l3.2 3.2L13 10.9" /><path d="M16 7.7H8.8a4.6 4.6 0 0 0 0 9.2h4.7" /></>),
+  "arrow-right": (<path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" />),
+  arrange: (<><rect x="3.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="3.5" width="5" height="5" rx="1.3" /><rect x="3.5" y="11.5" width="5" height="5" rx="1.3" /><rect x="11.5" y="11.5" width="5" height="5" rx="1.3" /></>),
+  expand: (<path d="M3.5 8V4.5a1 1 0 0 1 1-1H8M12 3.5h3.5a1 1 0 0 1 1 1V8M16.5 12v3.5a1 1 0 0 1-1 1H12M8 16.5H4.5a1 1 0 0 1-1-1V12" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CARD_COMPACT,
   CARD_REGULAR,
+  STAGE_MARGIN,
   cardFor,
   clampCenter,
   defaultLayout,
@@ -46,8 +47,8 @@ test("cards are full size up to eight seats on a stage of ordinary width, and co
 
 test("a card is held where all of it is on the stage", () => {
   const c = clampCenter({ x: -50, y: 9999 }, STAGE, CARD_REGULAR);
-  assert.equal(c.x, CARD_REGULAR.w / 2 + 6);
-  assert.equal(c.y, STAGE.h - CARD_REGULAR.h / 2 - 6);
+  assert.equal(c.x, CARD_REGULAR.w / 2 + STAGE_MARGIN);
+  assert.equal(c.y, STAGE.h - CARD_REGULAR.h / 2 - STAGE_MARGIN);
 });
 
 test("a stage smaller than a card centres it rather than throwing it off the edge", () => {
@@ -58,14 +59,14 @@ test("a stage smaller than a card centres it rather than throwing it off the edg
 test("a seat saved outside a smaller stage is drawn inside it, and the saved position is not touched", () => {
   const saved = { x: 990, y: 610 };
   const shown = displayPx(saved, { w: 500, h: stageHeight(500) }, CARD_REGULAR);
-  assert.ok(shown.x <= 500 - CARD_REGULAR.w / 2 - 6 + 1e-9);
+  assert.ok(shown.x <= 500 - CARD_REGULAR.w / 2 - STAGE_MARGIN + 1e-9);
   assert.deepEqual(saved, { x: 990, y: 610 });
 });
 
 test("a dropped card is stored in units, clamped, to one decimal", () => {
   const u = storedFromPx({ x: 375.04, y: 232 }, STAGE, CARD_REGULAR);
   assert.equal(u.x, 500.1);
-  assert.equal(storedFromPx({ x: -100, y: 0 }, STAGE, CARD_REGULAR).x, Math.round(((CARD_REGULAR.w / 2 + 6) * W) / STAGE.w * 10) / 10);
+  assert.equal(storedFromPx({ x: -100, y: 0 }, STAGE, CARD_REGULAR).x, Math.round(((CARD_REGULAR.w / 2 + STAGE_MARGIN) * W) / STAGE.w * 10) / 10);
 });
 
 /* ------------------------------------------------ the starting arrangement */

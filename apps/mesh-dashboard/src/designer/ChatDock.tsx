@@ -14,7 +14,7 @@ import { Icon } from "../icons";
 // Imported here rather than in the lazy Designer view: ChatDock is eager (it
 // renders on every shell view), so the shared ms-* styles must ride the eager
 // chunk or the button and panel are unstyled until Designer first loads.
-import "./designer.css";
+import "./assistant.css";
 
 /** The id the panel hands focus back to when it closes. */
 export const DOCK_BUTTON_ID = "btn-designer";

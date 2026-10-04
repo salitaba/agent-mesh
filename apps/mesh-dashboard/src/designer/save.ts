@@ -39,6 +39,17 @@ export function classifyDrift(drift: Drift | null | undefined): DriftReport {
 }
 
 /** A plain reading of one line of the apply route's report. */
+/**
+ * Whether a mesh file is the shipped scripted demo. The product clears that one mesh's state at every start (apps/mesh-server/src/demo.ts: the id
+ * `demo-stub` and every seat on the stub runtime), so restarting it is a new run and not a resumed one: the goal and the done-when checks are read
+ * from the file again and the progress so far is gone. Any other mesh resumes, and keeps the goal it has.
+ */
+export function isScriptedDemo(file: any): boolean {
+  const seats = Object.values<any>(file?.agents ?? {});
+  const fallback = file?.mesh?.runtime?.default;
+  return file?.mesh?.id === "demo-stub" && seats.length > 0 && seats.every((a) => (a?.runtime ?? fallback) === "stub");
+}
+
 export interface ApplyLine { kind: string; ok: boolean; detail: string }
 
 export interface ApplyOutcome {
