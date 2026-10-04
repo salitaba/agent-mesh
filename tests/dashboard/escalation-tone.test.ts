@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   applyAdvisoryTone,
+  applyParkedTone,
   ADVISORY_NEXT,
   NOTICE_CLAUSE,
+  PARKED_NEXT,
   PAUSED_CLAUSE,
   RESUMES,
   RESUMES_AND_WAKES,
@@ -86,5 +88,54 @@ test("advisory tone: no arm wording can leave a pause or resume claim standing",
     assert.ok(!all.includes("mission is paused"), `still claims a pause: ${all}`);
     assert.ok(!all.includes("resumes the mission"), `still promises a resume: ${all}`);
     assert.ok(out.next.includes(ADVISORY_NEXT), `lost the notice: ${out.next}`);
+  }
+});
+
+/**
+ * The second correction. A parked project has a stopped scheduler, so an answer is recorded and nothing runs until the
+ * mission is started; the arms all promise "resumes the mission and wakes the affected agents", and the card said the
+ * opposite in small print under the form. The claim under test is as narrow and as total as the advisory one: a parked card
+ * never promises that answering restarts anything, whichever arm produced it and whether or not it is also advisory.
+ */
+
+test("parked tone: a live project's card is passed through untouched", () => {
+  const base = card(`Something broke. ${PAUSED_CLAUSE}`, `Do the thing. ${RESUMES_AND_WAKES}`);
+  assert.deepEqual(applyParkedTone(base, false), base);
+});
+
+test("parked tone: the resume and wake promises become one honest sentence, and the arm's own advice is kept", () => {
+  const out = applyParkedTone(card("x", `Retry or skip. ${RESUMES_AND_WAKES}`), true);
+  assert.equal(out.next, `Retry or skip. ${PARKED_NEXT}`);
+  const bare = applyParkedTone(card("x", `Respond with the decision. ${RESUMES}`), true);
+  assert.equal(bare.next, `Respond with the decision. ${PARKED_NEXT}`);
+  assert.ok(!/\s{2,}/.test(bare.next) && !bare.next.endsWith(" "), "no seam left behind");
+});
+
+test("parked tone: the halt is still true, so the pause claim in `what` stays", () => {
+  const out = applyParkedTone(card(`dev crashed. ${PAUSED_CLAUSE}`, "Look at it."), true);
+  assert.equal(out.what, `dev crashed. ${PAUSED_CLAUSE}`);
+  assert.equal(out.next, "Look at it.", "an arm that promised nothing gets nothing added");
+});
+
+test("parked tone: an advisory card on a parked project promises neither a resume nor a wake", () => {
+  const out = applyParkedTone(applyAdvisoryTone(card("x", `Retry or skip. ${RESUMES_AND_WAKES}`), true), true);
+  assert.ok(out.next.startsWith(ADVISORY_NEXT), "the notice still leads");
+  assert.ok(out.next.includes(PARKED_NEXT));
+  assert.ok(!out.next.includes("wakes the affected agents") && !out.next.includes("resumes the mission"), out.next);
+});
+
+test("parked tone: no arm wording can leave a restart promise standing", () => {
+  const arms = [
+    card(`Mesh watchdog detected a runtime failure in dev. ${PAUSED_CLAUSE}`, `Retry or skip. ${RESUMES_AND_WAKES}`),
+    card(`Mesh watchdog needs you to decide. ${PAUSED_CLAUSE}`, `Read the context below. ${RESUMES}`),
+    card("alice and bob were still talking.", "Tell them the answer."),
+    card(`${PAUSED_CLAUSE}`, `${RESUMES}`),
+  ];
+  for (const arm of arms) {
+    for (const advisory of [false, true]) {
+      const out = applyParkedTone(applyAdvisoryTone(arm, advisory), true);
+      assert.ok(!out.next.includes("resumes the mission"), `still promises a resume: ${out.next}`);
+      assert.ok(!out.next.includes("wakes the affected agents"), `still promises a wake: ${out.next}`);
+    }
   }
 });

@@ -37,6 +37,14 @@ export const WAKES_ONLY = "Responding wakes the affected agents.";
 export const ADVISORY_NEXT =
   "Nothing is waiting on you here: answer it if you want to change course, otherwise the mesh carries on without you.";
 
+/**
+ * What answering does while the project is parked. Every arm promises that responding "resumes the mission" and "wakes the
+ * affected agents", which is true of a live project and false of a parked one: the scheduler is stopped, so the answer is
+ * recorded and nothing runs until the operator starts the mission. The card used to say the first and then, in small print
+ * under the form, the second.
+ */
+export const PARKED_NEXT = "Responding records your decision. The project is parked, so nothing runs until you start the mission.";
+
 /** The four strings every card arm produces. Generic below so a caller may
  *  carry extra fields (the budget block) through without this module having to
  *  know about them — importing that type would drag the view in. */
@@ -69,4 +77,26 @@ export function applyAdvisoryTone<T extends EscalationTone>(base: T, advisory: b
     what: base.what.split(PAUSED_CLAUSE).join(NOTICE_CLAUSE),
     next: next ? `${ADVISORY_NEXT} ${next}` : ADVISORY_NEXT,
   };
+}
+
+/**
+ * Withdraw the promise that answering restarts anything when the project is parked.
+ *
+ * The same shape as `applyAdvisoryTone` and for the same reason: the sentence is a shared constant, so the swap happens once
+ * on the way out instead of in every arm. Apply it after the advisory correction, which may already have narrowed the promise
+ * to `WAKES_ONLY`; all three promises become one honest sentence. `what` is left alone: a parked project still has a halted
+ * mission, and the decision still holds it.
+ */
+export function applyParkedTone<T extends EscalationTone>(base: T, parked: boolean): T {
+  if (!parked) return base;
+  const next = base.next
+    .split(RESUMES_AND_WAKES)
+    .join(PARKED_NEXT)
+    .split(WAKES_ONLY)
+    .join(PARKED_NEXT)
+    .split(RESUMES)
+    .join(PARKED_NEXT)
+    .replace(/\s+/g, " ")
+    .trim();
+  return { ...base, next };
 }
