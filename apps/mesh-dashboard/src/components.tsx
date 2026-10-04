@@ -101,6 +101,10 @@ export function useDismissable<T extends HTMLElement>(open: boolean, onClose: ()
       // restore for a close the user then drives from the keyboard.
       viaPointer.current = false;
       if (ev.key === "Escape") {
+        // Only the innermost layer closes. Every open dialog has its own listener on the document, and with one opened over
+        // another (a picker over a form) they all ran, so one Escape closed both and lost whatever the outer one held.
+        const top = ref.current;
+        if (top && !isTopTrap(top)) return;
         ev.stopPropagation();
         close.current();
         return;
