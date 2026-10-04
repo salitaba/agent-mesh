@@ -48,7 +48,7 @@
 .cost-sec-h .cost-h { margin: 0; }
 .cost-cap { font: var(--tx-meta); color: var(--muted); }
 .cost-cols, .cost-row {
-  display: grid; grid-template-columns: minmax(140px, 1.3fr) minmax(100px, 3fr) 64px 56px minmax(150px, 1.4fr);
+  display: grid; grid-template-columns: minmax(140px, 1.3fr) minmax(100px, 3fr) 64px 76px minmax(150px, 1.4fr);
   gap: var(--s3); align-items: center;
 }
 .cost-cols { padding: 0 var(--s1) var(--s1-5); border-bottom: 1px solid var(--line); font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
@@ -63,7 +63,7 @@
 .cost-bar > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); min-width: 3px; background: var(--accent); border-radius: var(--r-sm); }
 .cost-bar.zero > i { display: none; }
 .cost-num, .cost-share { text-align: right; font: 14px var(--mono); font-variant-numeric: tabular-nums; }
-.cost-share { color: var(--text-dim); }
+.cost-share { color: var(--text-dim); white-space: nowrap; }
 .cost-own { display: grid; gap: var(--s1); justify-items: start; min-width: 0; font: var(--tx-meta); }
 .cost-basis { display: inline-flex; align-items: center; gap: var(--s1); color: var(--muted); }
 .cost-basis.default { color: var(--warn); font-weight: 600; }
