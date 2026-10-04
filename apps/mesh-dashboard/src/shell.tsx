@@ -605,7 +605,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   }
   const primary = state.primary;
   const spentRatio = mission?.limit ? Math.min(1, (mission.consumed ?? 0) / mission.limit) : 0;
-  const goalTitle = status ? (goal.description || "No goal").split("\n")[0].slice(0, 90) : "Connecting…";
+  // A mesh must declare a goal, so a status that has none is a project that answered before it finished reading its log:
+  // "No goal" here said the mesh had nothing to do, beside a chip that said it was starting.
+  const goalTitle = !status ? "Connecting…" : goal.description ? goal.description.split("\n")[0].slice(0, 90) : "Loading the mission…";
 
   return (
     <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>

@@ -5,6 +5,8 @@ import { MeshProvider, useMesh } from "./store";
 import { ProjectsProvider, useProjects } from "./projects";
 import { Shell } from "./shell";
 import { AuthGate } from "./auth";
+import { EmptyState } from "./components";
+import { ViewBoundary, ViewLoading } from "./viewboundary";
 import Overview from "./views/Overview";
 import Steps from "./views/Steps";
 import Agents from "./views/Agents";
@@ -22,10 +24,7 @@ const Graph = lazy(() => import("./views/Graph"));
 const Product = lazy(() => import("./views/Product"));
 const Designer = lazy(() => import("./views/Designer"));
 
-const viewFallback = <div className="empty">loading…</div>;
-
-function ViewSwitch(): React.JSX.Element {
-  const { view } = useMesh();
+function CurrentView({ view }: { view: string }): React.JSX.Element {
   switch (view) {
     case "overview":
       return <Overview />;
@@ -54,8 +53,23 @@ function ViewSwitch(): React.JSX.Element {
     case "projects":
       return <ProjectsView />;
     default:
-      return <div className="empty">unknown view</div>;
+      return <EmptyState icon="alert" title="There is no such view">The address names a page this console does not have. Pick one from the sidebar.</EmptyState>;
   }
+}
+
+/**
+ * The view area. A failure in one view stays in it (the shell, the other views and the mission carry on), and a view whose file
+ * is still arriving shows the shape of a page rather than the word "loading".
+ */
+function ViewSwitch(): React.JSX.Element {
+  const { view } = useMesh();
+  return (
+    <ViewBoundary resetKey={view}>
+      <Suspense fallback={<ViewLoading />}>
+        <CurrentView view={view} />
+      </Suspense>
+    </ViewBoundary>
+  );
 }
 
 /**
@@ -78,14 +92,14 @@ function Projects({ activeId }: { activeId: string | null }): React.JSX.Element 
         // `key` is load-bearing: a project must never inherit another
         // mission's events, steps and drawers under a different name.
         <MeshProvider key={id} projectId={id} background={id !== activeId}>
-          {id === activeId ? <Shell viewNode={<Suspense fallback={viewFallback}><ViewSwitch /></Suspense>} /> : null}
+          {id === activeId ? <Shell viewNode={<ViewSwitch />} /> : null}
         </MeshProvider>
       ))}
       {/* No project at all: the shell still has to render, because the
           Designer is how an operator creates the first mesh. */}
       {!activeId ? (
         <MeshProvider key="none" projectId={null}>
-          <Shell viewNode={<Suspense fallback={viewFallback}><ViewSwitch /></Suspense>} />
+          <Shell viewNode={<ViewSwitch />} />
         </MeshProvider>
       ) : null}
     </>

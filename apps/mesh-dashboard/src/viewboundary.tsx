@@ -1,5 +1,6 @@
 import React from "react";
-import { Button, EmptyState } from "./components";
+import { Button, CopyButton, EmptyState } from "./components";
+import { crashHeadline, crashReport, isStaleBundle } from "./crash";
 
 /**
  * One view's failure stays one view's failure.
@@ -18,32 +19,49 @@ interface Props {
 }
 
 interface State {
-  error: Error | null;
+  error: unknown;
+  failed: boolean;
+  componentStack: string | null;
 }
 
-export class ViewBoundary extends React.Component<Props, State> {
-  override state: State = { error: null };
+const OK: State = { error: null, failed: false, componentStack: null };
 
-  static getDerivedStateFromError(error: unknown): State {
-    return { error: error instanceof Error ? error : new Error(String(error)) };
+export class ViewBoundary extends React.Component<Props, State> {
+  override state: State = OK;
+
+  // `failed` is its own flag because anything can be thrown, including a falsy value, and "was there an error" must not depend on it.
+  static getDerivedStateFromError(error: unknown): Partial<State> {
+    return { error, failed: true };
   }
 
   override componentDidCatch(error: unknown, info: React.ErrorInfo): void {
     // The console has nowhere to report to, and a swallowed error is the worst kind: leave the trail in the devtools.
     console.error("view crashed", error, info.componentStack);
+    this.setState({ componentStack: info.componentStack ?? null });
   }
 
   override componentDidUpdate(prev: Props): void {
-    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
-  }
-
-  private details(): string {
-    const { error } = this.state;
-    return [`Curule console, view: ${this.props.resetKey ?? "unknown"}`, `${error?.name ?? "Error"}: ${error?.message ?? ""}`, error?.stack ?? ""].join("\n");
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState(OK);
   }
 
   override render(): React.ReactNode {
-    if (!this.state.error) return this.props.children;
+    if (!this.state.failed) return this.props.children;
+    const { error, componentStack } = this.state;
+
+    // The page itself is old: the host was updated after this tab loaded and the view's file is gone. Retrying cannot help.
+    if (isStaleBundle(error)) {
+      return (
+        <EmptyState
+          icon="refresh"
+          title="The console was updated"
+          action={<Button variant="primary" icon="refresh" onClick={() => window.location.reload()}>Reload the console</Button>}
+        >
+          This page is from before the host was updated, and the part of it you asked for is no longer on the server. Reloading
+          fetches the new version and keeps you on the same project and view.
+        </EmptyState>
+      );
+    }
+
     return (
       <EmptyState
         tone="bad"
@@ -51,15 +69,34 @@ export class ViewBoundary extends React.Component<Props, State> {
         title="This view stopped drawing"
         action={
           <>
-            <Button variant="small" icon="refresh" onClick={() => this.setState({ error: null })}>Try again</Button>
-            <Button variant="small" icon="copy" onClick={() => void navigator.clipboard?.writeText(this.details()).catch(() => undefined)}>Copy error details</Button>
+            <Button variant="small" icon="refresh" onClick={() => this.setState(OK)}>Try again</Button>
+            <CopyButton label="Copy error details" text={crashReport({ view: this.props.resetKey ?? "", route: window.location.hash, error, componentStack })} />
           </>
         }
       >
         The rest of the console still works, and the mission is not affected: this is a fault in how the page was drawn, not in
         the mesh. Go to another view, or try again. If it keeps happening, copy the details into a bug report.
-        <span className="mono muted view-crash-msg">{this.state.error.message}</span>
+        <span className="mono muted view-crash-msg">{crashHeadline(error)}</span>
       </EmptyState>
     );
   }
+}
+
+/**
+ * What the view area shows while a lazily loaded view's file arrives. It stays invisible for the first moment, so a view that
+ * loads at once does not flash a grey frame, and has the shape of a page (a title, a line, three blocks) so what replaces it
+ * does not jump.
+ */
+export function ViewLoading(): React.JSX.Element {
+  return (
+    <div className="view-loading" role="status" aria-busy="true" aria-label="Loading view">
+      <span className="sk view-loading-title" />
+      <span className="sk view-loading-line" />
+      <div className="view-loading-blocks" aria-hidden="true">
+        <span className="sk" />
+        <span className="sk" />
+        <span className="sk" />
+      </div>
+    </div>
+  );
 }

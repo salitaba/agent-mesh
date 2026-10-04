@@ -456,6 +456,16 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .empty-title { color: var(--text); font: 600 15px var(--sans); }
 .empty-body { margin: 0; max-width: 52ch; color: var(--muted); font-size: 14px; }
 .empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); margin-top: var(--s1); }
+/* viewboundary.tsx: the error's own first line sits under the explanation, in the mono face, and may be long. */
+.view-crash-msg { display: block; margin-top: var(--s2); font-size: 12px; overflow-wrap: anywhere; }
+/* viewboundary.tsx ViewLoading: the shape of a page while a view's file arrives. It is invisible for the first 150ms so a view that loads at once does not flash. */
+.view-loading { display: grid; gap: var(--s3); padding: var(--s5) var(--s4); opacity: 0; animation: view-loading-in .2s ease 150ms forwards; }
+.view-loading-title { width: 220px; max-width: 60%; height: 22px; }
+.view-loading-line { width: 380px; max-width: 90%; height: 12px; }
+.view-loading-blocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); margin-top: var(--s2); }
+.view-loading-blocks .sk { height: 96px; border-radius: var(--r); }
+@keyframes view-loading-in { to { opacity: 1; } }
+@media (max-width: 620px) { .view-loading-blocks { grid-template-columns: 1fr; } }
 
 /* ---------- agent avatar (the card itself is in views/agents.css) ---------- */
 .avatar { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font: 700 14px var(--mono); color: var(--text-on-accent); background: var(--accent); flex: none; }
