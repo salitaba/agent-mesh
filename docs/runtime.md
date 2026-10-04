@@ -976,6 +976,10 @@ the mission's, and counted once). A line of the log the projections refuse is sk
 what it carried. Before this the command read the goal as `goal.created` first wrote it, and printed `[ACTIVE]` at 0% with no tokens
 line for a mission that was over, and about 2.4 times the tokens a seat had spent.
 
+The live `GET /status` adds `runtimes`: the runtimes the seats run on, sorted and without repeats (`["claude"]`, `["stub"]`). The console
+words its "Start the mission?" confirmation by it. Starting warns that agents "spend tokens" unless every runtime listed is `stub`, which
+makes no model call (the shipped demo); a server that does not send the field is read as spending.
+
 ## CLI / server / dashboard
 
 - `curule run mesh.yaml` boots the supervisor live (scheduler on, startup agents

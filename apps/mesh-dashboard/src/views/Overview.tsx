@@ -3,6 +3,7 @@ import { zoneLabel } from "../format";
 import { useMesh, type View } from "../store";
 import { Button, ErrorState, EventRow, PageHeader, Pill, StepMini } from "../components";
 import { ArtifactDrawer, StepDrawer } from "../drawers";
+import { latestArtifactSeq } from "../files";
 import { CollabCard } from "../collabcard";
 import { useProjectsOptional } from "../projects";
 import { useMission } from "../useMission";
@@ -48,35 +49,69 @@ export default function Overview(): React.JSX.Element {
   const [stepsErr, setStepsErr] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  // What the page read when it opened is the mission as it was then. A mission that is started while the person watches, and
+  // finishes in front of them, has to be read again: it said "No files are recorded for this goal" at the moment of delivery,
+  // the one time the answer matters, until a reload. The files are read again when an artifact event arrives (a beat later, so a
+  // burst of publishes is one read), and the message count while the mission runs and once more when it stops.
+  const artSeq = useMemo(() => latestArtifactSeq(events), [events]);
+  const goalStatus = String(status?.goal?.status ?? "");
+  const running = state.pulse;
+
   useEffect(() => {
     let dead = false;
-    setArtsState((s) => (s === "ready" ? s : "loading"));
-    (async () => {
-      const [m, st, ar] = await Promise.all([
-        client.api("GET", "/metrics").catch(() => null),
-        client.api("GET", "/steps?limit=6").catch(() => null),
-        client.api("GET", "/artifacts").catch(() => null),
-      ]);
+    client.api("GET", "/steps?limit=6").catch(() => null).then((st) => {
       if (dead) return;
-      setMetrics(m?.json?.metrics ?? null);
       if (Array.isArray(st?.json)) {
         setSteps(st.json);
         setStepsErr(false);
       } else {
         setStepsErr(true);
       }
-      if (Array.isArray(ar?.json)) {
-        setArts(ar.json);
-        setArtsState("ready");
-      } else {
-        setArtsState("error");
-      }
-    })().catch(() => undefined);
+    });
     return () => {
       dead = true;
     };
-    // goalId is a dependency so a reset or a reopen refetches the files instead of showing the previous mission's.
+    // goalId is a dependency so a reset or a reopen refetches instead of showing the previous mission's.
   }, [setSteps, client, goalId, attempt]);
+
+  const filesLoaded = useRef(false);
+  useEffect(() => {
+    let dead = false;
+    setArtsState((s) => (s === "ready" ? s : "loading"));
+    const t = setTimeout(() => {
+      client.api("GET", "/artifacts").catch(() => null).then((ar) => {
+        if (dead) return;
+        if (Array.isArray(ar?.json)) {
+          filesLoaded.current = true;
+          setArts(ar.json);
+          setArtsState("ready");
+        } else if (!filesLoaded.current) {
+          // A refresh that fails after a good read keeps the list it has; only a page that never had one reports the failure.
+          setArtsState("error");
+        }
+      });
+    }, filesLoaded.current ? 350 : 0);
+    return () => {
+      dead = true;
+      clearTimeout(t);
+    };
+  }, [client, goalId, attempt, artSeq]);
+
+  useEffect(() => {
+    let dead = false;
+    const read = (): void => {
+      client.api("GET", "/metrics").catch(() => null).then((m) => {
+        if (!dead && m?.json?.metrics) setMetrics(m.json.metrics);
+      });
+    };
+    read();
+    const every = running ? setInterval(read, 5000) : null;
+    return () => {
+      dead = true;
+      if (every) clearInterval(every);
+    };
+    // goalStatus: the figure is read once more when the mission stops, so the page ends on the final count and not the last one it polled.
+  }, [client, goalId, attempt, running, goalStatus]);
 
   // The page's buffer is what the stream's catch-up gave it, and for a long log that is the oldest 200 events, with a hole before
   // the live ones. The Overview reads the latest events, so it asks for them once when it finds the buffer behind the log, and reads

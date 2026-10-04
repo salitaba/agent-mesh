@@ -2388,6 +2388,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           parkedNotice: isParkedNoticeState(instance.mode, kernel.state.goals.get(kernel.state.activeGoalId ?? "")?.status)
             ? PARKED_MISSION_NOTICE
             : null,
+          // The runtimes the seats run on, sorted and without repeats. The console says that starting the mission "spends tokens"
+          // only when some seat can: the stub runtime makes no model call, so for the scripted demo that sentence is false.
+          runtimes: [...new Set(Object.values(config.agents).filter((a) => a.id !== "human").map((a) => a.runtime))].sort(),
           // How many seats boot was *asked* to activate. Lets the console tell
           // "nobody was ever configured to start" apart from "they were
           // configured and something stopped them".

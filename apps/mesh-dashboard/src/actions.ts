@@ -1,29 +1,21 @@
 import { useState } from "react";
 import { useMesh } from "./store";
 import type { ConfirmFn } from "./components";
+import { resumeConfirmBody, startConfirmBody } from "./spend";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
-
-export function agentsToWake(status: any): string[] {
-  return (status?.agents || []).filter((a: any) => a.id !== "human" && ["WAITING", "SUSPENDED", "IDLE"].includes(a.lifecycle)).map((a: any) => a.id).slice(0, 4);
-}
 
 /**
  * Naming the agents is the whole value of this prompt — "resumes spend" is
  * abstract until you see which four sessions are about to start billing. When
  * nothing is asleep there is nothing to warn about, so it resolves straight
- * through rather than asking a question with one sensible answer.
+ * through rather than asking a question with one sensible answer. What it says
+ * about cost is `spend.ts`'s: a scripted team spends nothing and the dialog says so.
  */
 export async function confirmResume(confirm: ConfirmFn, status: any, action = "resume"): Promise<boolean> {
-  const names = agentsToWake(status);
-  if (!names.length) return true;
-  return (
-    (await confirm({
-      title: `${action} the mission?`,
-      body: [`This wakes ${names.join(", ")} and resumes spend against the mission budget.`],
-      confirmLabel: action,
-    })) !== null
-  );
+  const body = resumeConfirmBody(status);
+  if (!body) return true;
+  return (await confirm({ title: `${action} the mission?`, body, confirmLabel: action })) !== null;
 }
 
 /**
@@ -121,10 +113,7 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
     // run and spend. Both call sites (the parked banner's Continue and the
     // auto-resume after an escalation answer) must ask first, or a stray click
     // starts the mission silently.
-    const names = agentsToWake(status);
-    const body = ["Agents run and spend tokens until you park the mission again."];
-    if (names.length) body.unshift(`${names.join(", ")} will be woken.`);
-    if ((await confirm({ title: "Start the mission?", body, confirmLabel: "Start the mission" })) === null) return;
+    if ((await confirm({ title: "Start the mission?", body: startConfirmBody(status), confirmLabel: "Start the mission" })) === null) return;
     setBusy(true);
     try {
       const { status, json } = await client.post("/mission/start");

@@ -51,6 +51,8 @@ test("parked → Continue: a configured startup seat goes live and actually runs
     assert.equal(before.body.mode, "parked", "starts parked");
     assert.equal(before.body.uiOnly, true);
     assert.equal(before.body.startupActivateCount, 1, "console can see a seat is configured to start");
+    // The console words "Start the mission?" by this: a stub-only mesh spends nothing and must not be told it does.
+    assert.deepEqual(before.body.runtimes, ["stub"], "the runtimes the seats run on, so the console can say whether starting costs anything");
     assert.equal(before.body.lastBoot, null, "nothing booted yet in this process");
 
     const start = await getJson(`${srv.base}/mission/start`, { method: "POST" });

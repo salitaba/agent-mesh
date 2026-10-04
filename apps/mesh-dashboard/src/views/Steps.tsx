@@ -102,7 +102,9 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
             className={spend.wastedPct >= 40 ? "warn" : ""}
             title={`Share of the ${fmt(spend.loaded)} tokens in the ${steps.length} loaded turns that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
           >
-            <dt>{spend.partial ? `wasted (${steps.length} turns loaded)` : "wasted"}</dt><dd>{loaded ? `${spend.wastedPct}%` : "–"}</dd>
+            {/* Not "wasted": a turn that decided nothing needed doing, or was refused by policy, is working as designed. The figure says what is
+                measured (tokens that produced no output) and leaves the verdict to the reader. */}
+            <dt>{spend.partial ? `no output (${steps.length} turns loaded)` : "no output"}</dt><dd>{loaded ? `${spend.wastedPct}%` : "–"}</dd>
           </div>
         </dl>
       </div>

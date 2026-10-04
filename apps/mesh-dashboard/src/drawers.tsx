@@ -8,7 +8,7 @@ import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, Ag
 import { Icon } from "./icons";
 import { actionNote, controlsHint, controlsOf, pauseWarning } from "./agents";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
-import { FileView, type DiffPayload } from "./fileview";
+import { ArtifactReader } from "./artifactreader";
 import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
 import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks } from "./observability";
 import { ClampedProse, EventRows, Inspector, JsonBlock, OpLedger, Prose, STEP_NARROW, StepJump, ToolRows, useStepMedia, type Section, type Sel } from "./stepview";
@@ -1290,125 +1290,12 @@ function StatusPillOf({ status, ops, landed }: { status: string; ops?: TurnStep[
   return <OutcomePill step={{ status, ops: resolved }} />;
 }
 
+/**
+ * The details panel's file reader. It is the component the Files page draws beside its list (artifactreader.tsx), so one file reads
+ * the same in both places. The panel used to have its own copy, which drew a version once per status change ("v2 v2 v2") and
+ * repeated React keys for it.
+ */
 export function ArtifactDrawer({ id }: { id: string }): React.JSX.Element {
-  const { client } = useMesh();
-  const [data, setData] = useState<any>(null);
-  // Which version the reader is looking at. null = the current one; picking an
-  // older version refetches that blob instead of showing the latest, which is
-  // the whole point of an append-only artifact history.
-  const [pick, setPick] = useState<number | null>(null);
-  const [body, setBody] = useState<{ version: number; content: string } | null>(null);
-  const [diff, setDiff] = useState<DiffPayload | null>(null);
-  // `missing` conflates "absent from the manifest" with "the fetch failed", so
-  // the not-found panel offers a retry; it has to refetch the METADATA, not the body.
-  const [metaAttempt, setMetaAttempt] = useState(0);
-
-  useEffect(() => {
-    let dead = false;
-    (async () => {
-      const { json: a } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}`);
-      if (!a || a.error) {
-        if (!dead) setData({ missing: true });
-        return;
-      }
-      const { json: versions } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}/versions`);
-      if (!dead) setData({ a, versions: Array.isArray(versions) ? versions : [] });
-    })().catch(() => {
-      if (!dead) setData({ missing: true });
-    });
-    return () => {
-      dead = true;
-    };
-  }, [id, client, metaAttempt]);
-
-  const current = data?.a?.version as number | undefined;
-  const shown = pick ?? current ?? null;
-
-  // No .catch here meant one rejected fetch pinned the panel on "loading
-  // contents…" for the life of the drawer, with no way to tell a slow blob
-  // from a dead one. Errors are a state now, and switching versions clears it.
-  const [bodyErr, setBodyErr] = useState<string | null>(null);
-  const [bodyAttempt, setBodyAttempt] = useState(0);
-  useEffect(() => {
-    if (shown == null) return;
-    let dead = false;
-    setBodyErr(null);
-    const q = `?version=${shown}`;
-    void (async () => {
-      const [content, { json: d }] = await Promise.all([
-        client.getText(`/artifacts/${encodeURIComponent(id)}/content${q}`),
-        client.api("GET", `/artifacts/${encodeURIComponent(id)}/diff?to=${shown}`),
-      ]);
-      if (dead) return;
-      if (content == null) {
-        // getText collapses every failure to null, so ask again through the
-        // JSON client. A 503 carries the server's reason for an unreadable
-        // blob — worth showing, since "unreadable" and "empty" look identical
-        // otherwise. A timeout (status 0) carries nothing worth showing.
-        const { status, json: err } = await client.api("GET", `/artifacts/${encodeURIComponent(id)}/content${q}`);
-        if (dead) return;
-        const reason = status === 503 && typeof err?.error === "string" ? err.error : null;
-        setBodyErr(reason ?? "the file body could not be fetched.");
-        return;
-      }
-      setBody({ version: shown, content });
-      setDiff(d && !d.error ? (d as DiffPayload) : null);
-    })().catch((e: unknown) => {
-      if (!dead) setBodyErr(e instanceof Error ? e.message : String(e));
-    });
-    return () => {
-      dead = true;
-    };
-  }, [id, shown, bodyAttempt, client]);
-
-  if (!data) return <div className="muted">loading…</div>;
-  if (data.missing) return (
-    <>
-      <h2 id="drawer-title">File <span className="mono muted">{(id)}</span><CloseX /></h2>
-      <p className="muted">this file is not in the manifest — it may have been removed, or the fetch failed.</p>
-      <Button variant="soft" onClick={() => { setData(null); setMetaAttempt((n) => n + 1); }}>try again</Button>
-    </>
-  );
-  const { a } = data;
-  const versions: any[] = data.versions.length ? data.versions : [a];
-  const done = ["MERGED", "ACCEPTED", "APPROVED", "FINAL", "VERIFIED", "MERGEABLE", "QA_VERIFIED", "SECURITY_VERIFIED"].includes(a.status);
-  const viewed = versions.find((v) => v.version === shown) ?? a;
-  const isMarkdown = /\.(md|markdown)$/i.test(String(a.name)) || a.type === "document";
-  const wsPath = String(a.metadata?.path ?? a.metadata?.file ?? "");
-
-  return (
-    <>
-      <h2 id="drawer-title">{(a.name)} <Pill tone={done ? "completed" : a.status === "REJECTED" ? "failed" : "idle"}>{(plainArtifact(a.status))}</Pill><CloseX /></h2>
-      <p className="muted" style={{ margin: "4px 0" }}>v{a.version} · {(a.type)} · by {(a.owner)} · {(ago(a.createdAt))}</p>
-      <div className="fv-versions">
-        <span className="muted" style={{ fontSize: 11 }}>versions</span>
-        {versions.map((v: any) => (
-          <Chip key={v.version} hot={v.version === shown} onClick={() => setPick(v.version)} title={`${plainArtifact(v.status)} · ${ago(v.createdAt)}`}>
-            v{v.version}
-          </Chip>
-        ))}
-        {shown !== current ? <Chip onClick={() => setPick(null)}>latest</Chip> : null}
-      </div>
-      <p className="muted" style={{ fontSize: 11, margin: "6px 0 10px" }}>
-        showing v{shown} · {plainArtifact(viewed.status)} · {ago(viewed.createdAt)}
-        {viewed.digest ? <> · <span className="mono">{String(viewed.digest).slice(0, 12)}</span></> : null}
-        {wsPath ? <> · repo path <span className="mono">{wsPath}</span></> : null}
-      </p>
-      {bodyErr ? (
-        <ErrorState what={`v${shown} of this file`} detail={bodyErr} onRetry={() => setBodyAttempt((n) => n + 1)} />
-      ) : body ? (
-        <FileView
-          path={`${a.name} (v${body.version})`}
-          content={body.content}
-          kind={isMarkdown ? "markdown" : "text"}
-          size={body.content.length}
-          diff={diff}
-          maxHeight={520}
-        />
-      ) : (
-        <div className="muted">loading contents…</div>
-      )}
-    </>
-  );
+  return <ArtifactReader id={id} as="drawer" />;
 }
 
