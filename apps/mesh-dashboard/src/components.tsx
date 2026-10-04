@@ -677,3 +677,60 @@ export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResol
     </>
   );
 }
+
+/**
+ * Put text on the clipboard. `navigator.clipboard` exists only on a secure origin, and a console reached over plain http
+ * by a host name (not localhost) is not one, so there it falls back to selecting a hidden field and asking the browser to
+ * copy. Resolves false when neither worked, so a caller can say "copy failed" instead of pretending.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* a denied permission falls through to the older route */
+  }
+  try {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.className = "sr-only";
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(field);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A button that copies `text` and says it did, in the label and to a screen reader. For a path, an id, a command: the things
+ * a person wants in a shell or a message. `label` names what is copied ("Copy path"), so two copy buttons on one page are not
+ * both announced as "Copy".
+ */
+export function CopyButton({ text, label = "Copy", copiedLabel = "Copied", title, extra }: {
+  text: string; label?: string; copiedLabel?: string; title?: string; extra?: string;
+}): React.JSX.Element {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const copy = async (): Promise<void> => {
+    const ok = await copyText(text);
+    setState(ok ? "copied" : "failed");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 1600);
+  };
+  const said = state === "copied" ? copiedLabel : state === "failed" ? "Copy failed" : "";
+  return (
+    <>
+      <Button variant="small" icon={state === "copied" ? "check" : "copy"} title={title} extra={extra} onClick={() => void copy()}>
+        {said || label}
+      </Button>
+      <span className="sr-only" role="status">{said}</span>
+    </>
+  );
+}

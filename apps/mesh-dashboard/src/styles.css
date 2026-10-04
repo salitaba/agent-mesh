@@ -1437,56 +1437,23 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .playframe { width: 100%; height: 640px; border: 1px solid var(--line-control); border-radius: var(--r); background: var(--paper); }
 
 /* ---------------------------------------------------------------------- *
- * FileView — the one file renderer (artifacts + workspace).
- * Line numbers, diffs, markdown and images share this block so a file looks
- * the same wherever the console shows it.
+ * File rows. The file renderer, the reader and the Files page are in views/files.css. What stays here is what other views
+ * share with them: the numbered line, the diff block with its add and remove tints (the step view draws its diffs with the
+ * same rows), GFM tables (a turn's narration uses them too) and the version row the artifact drawer still draws.
  * ---------------------------------------------------------------------- */
-.fv { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
-.fv-bar { display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; padding: var(--s1-5) var(--s2-5);
-  background: var(--panel-2, var(--panel)); border-bottom: 1px solid var(--line); }
-.fv-path { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
-.fv-meta { font-size: 12px; white-space: nowrap; }
-.fv-actions { margin-left: auto; display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; }
-.fv-body { overflow: auto; }
-.fv-code { font: 400 13px/1.55 var(--mono); padding: var(--s1-5) 0; }
 .fv-line { display: flex; align-items: flex-start; gap: 0; padding: 0 var(--s2); }
 .fv-num { flex: 0 0 auto; min-width: 38px; padding-right: var(--s2-5); text-align: right; color: var(--muted);
   opacity: .65; user-select: none; font: 400 12px/1.55 var(--mono); }
 .fv-text { white-space: pre; flex: 1; min-width: 0; }
-.fv-code.wrap .fv-text { white-space: pre-wrap; word-break: break-word; }
-.fv-code .fv-line:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.fv-image { padding: var(--s3-5); display: flex; justify-content: center; background:
-  repeating-conic-gradient(color-mix(in srgb, var(--line) 40%, transparent) 0% 25%, transparent 0% 50%) 50% / 18px 18px; }
-.fv-image img { max-width: 100%; max-height: 420px; border-radius: var(--r-sm); }
 
 /* diff */
 .fv-diff { font: 400 13px/1.55 var(--mono); padding: var(--s1) 0; }
-.fv-hunk + .fv-hunk { border-top: 1px solid var(--line); margin-top: var(--s1-5); padding-top: var(--s1-5); }
-.fv-hunk-head { color: var(--info); font-size: 12px; padding: var(--s0) var(--s2-5); opacity: .8; }
 .fv-diff .fv-sign { flex: 0 0 auto; width: 14px; text-align: center; user-select: none; color: var(--muted); }
 .fv-diff .fv-line.add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .fv-diff .fv-line.del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .fv-diff .fv-line.add .fv-sign { color: var(--ok); }
 .fv-diff .fv-line.del .fv-sign { color: var(--bad); }
-.fv-note { padding: var(--s2) var(--s2-5); font-size: 12px; }
 
-/* markdown */
-.fv-md { padding: var(--s3) var(--s4); font: 400 15px/1.65 var(--sans); color: var(--text); }
-.fv-md h1, .fv-md h2, .fv-md h3, .fv-md h4, .fv-md h5, .fv-md h6 { margin: var(--s4) 0 var(--s1-5); line-height: 1.3; }
-.fv-md h1 { font-size: 20px; } .fv-md h2 { font-size: 18px; } .fv-md h3 { font-size: 16px; }
-.fv-md h4, .fv-md h5, .fv-md h6 { font-size: 15px; color: var(--text-dim); }
-.fv-md p { margin: var(--s1-5) 0; }
-.fv-md ul { margin: 6px 0 6px 18px; padding: 0; }
-.fv-md li { margin: var(--s0) 0; }
-.fv-md a { color: var(--accent); }
-.fv-md code { font: 400 13px var(--mono); background: color-mix(in srgb, var(--line) 55%, transparent);
-  padding: 1px 4px; border-radius: 4px; }
-.fv-md blockquote { margin: var(--s2) 0; padding: var(--s1) var(--s3); border-left: 3px solid var(--line-strong); color: var(--text-dim); }
-.fv-md hr { border: 0; border-top: 1px solid var(--line); margin: var(--s3-5) 0; }
-.fv-md .md-code { font: 400 13px/1.55 var(--mono); background: var(--sunken); border: 1px solid var(--line);
-  border-radius: var(--r-sm); padding: var(--s2-5) var(--s3); overflow: auto; white-space: pre; margin: var(--s2) 0; }
-.fv-md ol { margin: 6px 0 6px 22px; padding: 0; }
-.fv-md li > ul, .fv-md li > ol { margin: 2px 0 2px 18px; }
 /* GFM tables, in a file and in a turn's narration alike. The wrapper scrolls
    sideways so a wide table never scrolls the drawer at 390px. */
 /* `word-break: normal` undoes the prose's break-word, which let a column
@@ -1500,10 +1467,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .md-table .al-c { text-align: center; }
 .md-table .al-r { text-align: right; }
 
-/* version picker, filters, workspace search */
+/* version row (the artifact drawer), workspace search and change marks (the Product page) */
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
-.fv-filters { display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; }
-.fv-filters input { min-width: 240px; }
 .fv-search { display: flex; align-items: center; gap: var(--s1-5); margin-bottom: var(--s1-5); }
 .fv-search input { flex: 1; min-width: 0; }
 .ptree-row .hit-text { font: 400 12px var(--mono); opacity: .75; overflow: hidden;

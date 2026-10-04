@@ -56,6 +56,8 @@ const ICONS = {
   // Status
   alert: (<><path d="M10 3.2l7.3 12.7H2.7z" /><path d="M10 8.4v3.4" /><circle cx="10" cy="14" r=".7" {...SOLID} /></>),
   info: (<><circle cx="10" cy="10" r="7.2" /><path d="M10 9.2v4.6" /><circle cx="10" cy="6.4" r=".7" {...SOLID} /></>),
+  // Added with the Files, Product, Cost and Host settings pages
+  download: (<path d="M10 3.5v9M6.2 9.2L10 13l3.8-3.8M4 16.5h12" />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
