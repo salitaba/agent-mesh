@@ -286,8 +286,8 @@ function secretsIn(dir: string): Saved {
   return made;
 }
 
-/** Print each message the outbox gains, so that a link in a mail can be followed from the terminal. */
-function watchOutbox(file: string, out: (line: string) => void): () => void {
+/** Print each message the outbox gains, so that a link in a mail can be followed from the terminal. Returns what stops it, after one last look. */
+export function watchOutbox(file: string, out: (line: string) => void): () => void {
   let offset = fs.existsSync(file) ? fs.statSync(file).size : 0;
   const look = (): void => {
     if (!fs.existsSync(file)) return;
