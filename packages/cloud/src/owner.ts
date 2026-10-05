@@ -158,10 +158,14 @@ export class OwnerWeb {
     const purpose = b.purpose;
     if (purpose !== "subscription" && purpose !== "topup") throw new ServiceError(400, "invalid_request", "purpose must be subscription or topup.");
     if (typeof b.amountMinor !== "number" || !Number.isInteger(b.amountMinor)) throw new ServiceError(400, "invalid_request", "amountMinor must be a whole number of minor units.");
+    // No plan means the plan the account has. A plan that is not text is refused rather than read as none: the payment would
+    // be put on a plan the operator did not write.
+    const plan = b.plan === undefined || b.plan === null ? "" : b.plan;
+    if (typeof plan !== "string") throw new ServiceError(400, "invalid_request", "plan must be the id of a plan.");
     const result = await this.o.plane.recordPayment({
       accountId: this.text(b.accountId, "accountId"),
       purpose,
-      ...(typeof b.plan === "string" && b.plan !== "" ? { plan: b.plan } : {}),
+      ...(plan ? { plan } : {}),
       amountMinor: b.amountMinor,
       currency: this.text(b.currency, "currency"),
       ref: this.text(b.ref, "ref"),

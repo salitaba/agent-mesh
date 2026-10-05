@@ -285,3 +285,148 @@ test("a person signs up, confirms and makes a workspace over HTTP, with the cook
     await srv.close();
   }
 });
+
+// ---- the whole list of pages, what each is served as, and the limits as they ship ----
+
+test("every page the product has is served at its own address from its own file, as what it is, with the headers a page and an asset each carry", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "curule-all-pages-"));
+  const dir = path.join(root, "pages");
+  fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
+  const routes: Array<[string, string]> = [
+    ["/", "index.html"],
+    ["/signup", "signup.html"],
+    ["/login", "login.html"],
+    ["/verify", "verify.html"],
+    ["/forgot", "forgot.html"],
+    ["/reset", "reset.html"],
+    ["/account", "account.html"],
+    ["/terms", "terms.html"],
+    ["/privacy", "privacy.html"],
+  ];
+  for (const [, file] of routes) fs.writeFileSync(path.join(dir, file), `<!doctype html><title>${file}</title>`);
+  const assets: Array<[string, string]> = [
+    ["a.js", "text/javascript; charset=utf-8"],
+    ["a.css", "text/css; charset=utf-8"],
+    ["a.svg", "image/svg+xml"],
+    ["a.png", "image/png"],
+    ["a.ico", "image/x-icon"],
+    ["a.woff2", "font/woff2"],
+    ["a.json", "application/json; charset=utf-8"],
+    ["a.txt", "application/octet-stream"],
+  ];
+  for (const [name] of assets) fs.writeFileSync(path.join(dir, "assets", name), `asset ${name}`);
+  const p = await plane();
+  const secure = await serve(p, { pagesDir: dir });
+  const plain = await serve(p, { pagesDir: dir }, { secureCookies: false });
+  const get = (port: number, pathname: string, method = "GET") => ask(port, { host: "app.example.com", path: pathname, method });
+  try {
+    for (const [route, file] of routes) {
+      for (const suffix of ["", "/"].filter((s) => route !== "/" || s === "")) {
+        const r = await get(secure.port, route + suffix);
+        assert.deepEqual([r.status, r.body, r.headers["content-type"]], [200, `<!doctype html><title>${file}</title>`, "text/html; charset=utf-8"], route + suffix);
+      }
+    }
+    for (const [name, type] of assets) {
+      const r = await get(secure.port, `/assets/${name}`);
+      assert.deepEqual([r.status, r.body, r.headers["content-type"], r.headers["cache-control"]], [200, `asset ${name}`, type, "public, max-age=300"], name);
+      assert.equal(r.headers["content-security-policy"], undefined, `${name} is not a page`);
+    }
+    // A page and an asset are told apart by what they are, whichever of the two a name looks like.
+    fs.writeFileSync(path.join(dir, "assets", "inner.html"), "<!doctype html><title>inner</title>");
+    assert.equal((await get(secure.port, "/assets/inner.html")).headers["x-frame-options"], "DENY", "a page that is an asset is still a page");
+    assert.equal((await get(secure.port, "/assets/a.js")).headers["x-frame-options"], undefined);
+
+    const hsts = "max-age=31536000; includeSubDomains";
+    for (const pathname of ["/", "/assets/a.js"]) {
+      assert.equal((await get(secure.port, pathname)).headers["strict-transport-security"], hsts, `${pathname} over TLS`);
+      assert.equal((await get(plain.port, pathname)).headers["strict-transport-security"], undefined, `${pathname} on plain HTTP, for trying it on one machine`);
+    }
+    const head = await get(secure.port, "/assets/a.js", "HEAD");
+    assert.deepEqual([head.status, head.body, head.headers["content-length"]], [200, "", String("asset a.js".length)], "a HEAD has the headers of the answer and none of the body");
+  } finally {
+    await secure.close();
+    await plain.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A JSON body of exactly `bytes` bytes that a login reads, padded with spaces inside it. */
+const loginBody = (bytes: number): string => {
+  const base = JSON.stringify({ email: "ada@example.com", password: "a wrong password", pad: "" });
+  return JSON.stringify({ email: "ada@example.com", password: "a wrong password", pad: " ".repeat(bytes - Buffer.byteLength(base)) });
+};
+
+test("the limit on what the API reads is 64 KiB: a body of exactly that is read, a byte more is refused, whether the length is said or not; a provider's message has 1 MiB", async () => {
+  const p = await plane();
+  const srv = await serve(p);
+  try {
+    const login = (body: string, said: boolean): Promise<{ status: number; code?: string }> =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: "127.0.0.1", port: srv.port, method: "POST", path: "/api/login", headers: { host: "app.example.com", "content-type": "application/json", origin: APP, ...(said ? { "content-length": String(Buffer.byteLength(body)) } : {}) }, agent: false }, (res) => {
+          let text = "";
+          res.on("data", (c: Buffer) => (text += c.toString("utf8")));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, ...(text.startsWith("{") ? { code: JSON.parse(text).error?.code } : {}) }));
+        });
+        req.on("error", reject);
+        if (said) req.end(body);
+        else {
+          req.write(body.slice(0, 1_000));
+          req.end(body.slice(1_000));
+        }
+      });
+    const max = 64 * 1024;
+    for (const said of [true, false]) {
+      assert.deepEqual(await login(loginBody(max), said), { status: 401, code: "invalid_credentials" }, `exactly 64 KiB, ${said ? "with" : "without"} its length`);
+      assert.deepEqual(await login(loginBody(max + 1), said), { status: 413, code: "request_too_large" }, `one byte more, ${said ? "with" : "without"} its length`);
+    }
+    const webhook = (bytes: number) => ask(srv.port, { host: "app.example.com", method: "POST", path: "/webhooks/billing", body: "x".repeat(bytes) });
+    const exact = await webhook(1024 * 1024);
+    assert.deepEqual([exact.status, exact.json.error.code], [400, "bad_message"], "exactly 1 MiB is read, and is not a message this provider sends");
+    const over = await webhook(1024 * 1024 + 1);
+    assert.deepEqual([over.status, over.json.error.code], [413, "request_too_large"]);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("a page that was served is not also asked of the API: it does not use up the caller's allowance for it", async () => {
+  const pages = pagesDir();
+  const p = await plane();
+  const srv = await serve(p, { pagesDir: pages.dir }, { limits: { apiIp: { max: 2, windowMs: 3_600_000 } } });
+  try {
+    for (let i = 0; i < 5; i++) assert.equal((await ask(srv.port, { host: "app.example.com", path: i % 2 === 0 ? "/" : "/assets/app.js" })).status, 200);
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/api/plans" })).status, 200, "five pages and then the API's first call");
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/api/plans" })).status, 200);
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/api/plans" })).status, 429, "and its third is over the limit of two");
+  } finally {
+    await srv.close();
+    pages.remove();
+  }
+});
+
+test("when something fails after an answer has begun, the connection is ended and the caller is not left waiting for the rest", async () => {
+  const p = await plane();
+  const s = site(p);
+  const broken = { handle: async (_req: http.IncomingMessage, res: http.ServerResponse) => {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.write("the first part of an answer");
+    throw new Error("the host went away");
+  } } as unknown as WorkspaceEdge;
+  const l = await listen(createPublicServer({ web: s.web, edge: broken, appHost: "app.example.com", workspaceDomain: "ws.example.com" }));
+  try {
+    const outcome = await new Promise<{ complete: boolean; body: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the caller was left waiting")), 3_000);
+      const req = http.request({ host: "127.0.0.1", port: l.port, path: "/", headers: { host: "x-000000.ws.example.com" }, agent: false }, (res) => {
+        let body = "";
+        res.on("data", (c: Buffer) => (body += c.toString("utf8")));
+        res.on("close", () => (clearTimeout(timer), resolve({ complete: res.complete, body })));
+        res.on("error", () => undefined);
+      });
+      req.on("error", () => undefined);
+      req.end();
+    });
+    assert.deepEqual(outcome, { complete: false, body: "the first part of an answer" });
+  } finally {
+    await l.close();
+  }
+});

@@ -98,3 +98,40 @@ test("a statement that is properly signed but says the wrong things is not read 
 test("a secret that is too short is refused", () => {
   assert.throws(() => new WorkspaceAccess({ secret: "short" }), /the service secret must be at least 32 characters/);
 });
+
+// ---- the numbers as they are written, at their edges ----
+
+test("a code that is as old as its time is swept when the next is issued, and one a moment younger is kept", () => {
+  const { a, clock } = access();
+  const old = a.issueCode(grant);
+  clock.now += 59_999;
+  a.issueCode(grant);
+  assert.equal(a.waiting, 2, "a millisecond short of a minute, and nothing is swept");
+  clock.now += 1;
+  a.issueCode(grant);
+  assert.equal(a.waiting, 2, "the first is a minute old and goes; the second is a millisecond younger and stays");
+  assert.equal(a.redeemCode(old), undefined);
+});
+
+test("up to 10,000 codes may be waiting, and the 10,001st makes room by dropping the oldest and no more", () => {
+  const { a } = access();
+  const first = a.issueCode(grant);
+  const second = a.issueCode(grant);
+  for (let i = 2; i < 10_000; i++) a.issueCode(grant);
+  assert.equal(a.waiting, 10_000, "all of them are waiting");
+  a.issueCode(grant);
+  assert.equal(a.waiting, 10_000, "one went for the one that came");
+  assert.equal(a.redeemCode(first), undefined, "the oldest is the one that went");
+  assert.deepEqual(a.redeemCode(second), grant, "and the next oldest is still good");
+});
+
+test("a cookie lasts twelve hours, counted in whole seconds from the moment it was made, down to a fraction of a second", () => {
+  const { a, clock } = access();
+  clock.now = Date.parse("2026-10-05T12:00:00.000Z") + 999;
+  const value = a.cookieValue(grant);
+  assert.equal(a.read(value)!.expiresAt, Date.parse("2026-10-06T00:00:00.000Z"), "12:00:00.999 plus twelve hours, to the second below");
+  clock.now = Date.parse("2026-10-06T00:00:00.000Z") - 1;
+  assert.ok(a.read(value));
+  clock.now += 1;
+  assert.equal(a.read(value), undefined);
+});

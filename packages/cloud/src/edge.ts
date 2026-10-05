@@ -53,13 +53,14 @@ const FROM_BROWSER = new Set(["cookie", "authorization", "x-mesh-token", "forwar
 
 export const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** What a page for a person says at the top, by the code the script would have been given. */
+/**
+ * What a page for a person says at the top, by the code the script would have been given. A page is for a GET that asks for
+ * one, so a refusal of a change (`bad_origin`) or of a method other than GET (`method_not_allowed`) is never one, and has no title.
+ */
 const TITLES: Record<string, string> = {
   not_found: "Nothing here",
   not_signed_in: "Open this workspace from your account",
   invalid_code: "That link did not work",
-  bad_origin: "That request was refused",
-  method_not_allowed: "That request was refused",
   request_too_large: "That upload is too large",
   workspace_not_running: "This workspace cannot answer",
   workspace_unreachable: "This workspace cannot answer",

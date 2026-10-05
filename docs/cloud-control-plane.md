@@ -521,7 +521,7 @@ against nobody. It returns no credential and no hash, and every change is an ent
 | `GET /owner/accounts?q=&limit=` | Accounts, oldest first, filtered by part of an email or an id; up to 200, the newest kept, with a note when the list was cut. |
 | `GET /owner/accounts/:id` | One account as its owner sees it, with its balance. |
 | `POST /owner/accounts/:id/disable` `{reason}`, `enable` | Stops an account (it cannot sign in, its sessions end, its running workspaces stop) or starts it again. Starting does not start what was stopped. |
-| `POST /owner/payments` `{accountId, purpose, plan?, amountMinor, currency, ref, note?}` | Records a payment that arrived some other way, applied as a provider's message is: once, by `ref`. |
+| `POST /owner/payments` `{accountId, purpose, plan?, amountMinor, currency, ref, note?}` | Records a payment that arrived some other way, applied as a provider's message is: once, by `ref`. With no `plan` (or null, or empty) a subscription payment goes to the plan the account has; a `plan` that is not text is refused. |
 | `GET /owner/unmatched` | Payments that were received and could not be placed, with how much and in what. |
 | `GET /owner/margin?from=&to=` | What came in, by currency and kind, beside what the models cost, for a period. |
 | `POST /owner/reconcile` | Runs the checks on workspaces now and says what they did. |

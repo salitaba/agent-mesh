@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OwnerWeb, createOwnerServer, type MailStats, type WebLog } from "../../packages/cloud/src/index";
+import { OwnerWeb, ServiceError, createOwnerServer, type MailStats, type WebLog } from "../../packages/cloud/src/index";
 import { chatBody, spends } from "../ai-gateway/support";
 import { ask, listen } from "./net-support";
 import { plane, running, type Plane } from "./support";
@@ -340,6 +340,175 @@ test("the owner's listener answers over a socket as the handler does, reads no h
     } finally {
       await sl.close();
     }
+  } finally {
+    await l.close();
+  }
+});
+
+// ---- what the owner API says, word for word, and where its numbers stop ----
+
+test("a body that is not a JSON object is refused with a 400 and the words for it, and no body at all is an empty object", async () => {
+  const p = await plane();
+  const o = owner(p);
+  const post = (raw: string) => o.call("POST", "/owner/payments", { raw });
+  assert.deepEqual(await post("{").then((r) => [r.status, r.json.error.code, r.json.error.message]), [400, "invalid_json", "The request body is not valid JSON."]);
+  assert.deepEqual(await post("not json at all").then((r) => [r.status, r.json.error.code, r.json.error.message]), [400, "invalid_json", "The request body is not valid JSON."]);
+  for (const raw of ["[]", "[1,2]", "null", '"text"', "42", "true"]) {
+    assert.deepEqual(await post(raw).then((r) => [r.status, r.json.error.code, r.json.error.message]), [400, "invalid_json", "The request body must be a JSON object."], raw);
+  }
+  assert.deepEqual(await post("").then((r) => [r.status, r.json.error.code, r.json.error.message]), [400, "invalid_request", "purpose must be subscription or topup."], "nothing at all is {}, which is missing what a payment needs");
+});
+
+test("what a payment needs is said by name, a note is kept to 200 characters, and what is written down says what was recorded", async () => {
+  const p = await plane();
+  const ada = await p.account("ada@example.com");
+  const o = owner(p);
+  const wire = { accountId: ada.accountId, purpose: "topup", amountMinor: 2_500, currency: "USD", ref: "wire-1" };
+  const refuse = async (json: Record<string, unknown>) => o.call("POST", "/owner/payments", { json }).then((r) => [r.status, r.json.error.code, r.json.error.message]);
+  assert.deepEqual(await refuse({ ...wire, purpose: "gift" }), [400, "invalid_request", "purpose must be subscription or topup."]);
+  assert.deepEqual(await refuse({ ...wire, amountMinor: 25.5 }), [400, "invalid_request", "amountMinor must be a whole number of minor units."]);
+  assert.deepEqual(await refuse({ ...wire, amountMinor: "2500" }), [400, "invalid_request", "amountMinor must be a whole number of minor units."]);
+  assert.deepEqual(await refuse({ ...wire, accountId: "  " }), [400, "invalid_request", "accountId is required."]);
+  assert.deepEqual(await refuse({ ...wire, currency: undefined }), [400, "invalid_request", "currency is required."]);
+  assert.deepEqual(await refuse({ ...wire, ref: 12 }), [400, "invalid_request", "ref is required."]);
+  const note = `${"n".repeat(200)}${"X".repeat(50)}`;
+  assert.equal((await o.call("POST", "/owner/payments", { json: { ...wire, note, plan: "" } })).status, 200);
+  const written = (p.store.entries.filter((e) => e.type === "owner.action") as Array<{ detail: string }>).at(-1)!.detail;
+  assert.equal(written, `topup 2500 USD for ${ada.accountId}, ref wire-1, ${"n".repeat(200)}`, "the note is cut at 200 characters");
+});
+
+test("a plan that is not text is refused, and with no plan, a null one or an empty one a payment goes to the plan the account has", async () => {
+  const p = await plane();
+  const ada = await p.account("ada@example.com");
+  const o = owner(p);
+  const pay = (json: Record<string, unknown>) => o.call("POST", "/owner/payments", { json });
+  const base = { accountId: ada.accountId, purpose: "subscription", amountMinor: 14_900, currency: "USD" };
+  for (const [i, plan] of [5, true, ["team"], { id: "team" }].entries()) {
+    const r = await pay({ ...base, plan, ref: `bad-${i}` });
+    assert.deepEqual([r.status, r.json.error.code, r.json.error.message], [400, "invalid_request", "plan must be the id of a plan."], JSON.stringify(plan));
+  }
+  assert.equal(p.store.entries.some((e) => e.type === "billing.applied"), false, "what was refused was not applied");
+  assert.deepEqual(await pay({ ...base, ref: "no-plan-yet" }).then((r) => [r.status, r.json]), [200, { applied: false, note: "plan" }], "an account with no plan and a payment that names none");
+  assert.deepEqual(await pay({ ...base, plan: "nonesuch", ref: "wrong-name" }).then((r) => r.json), { applied: false, note: "plan" }, "a name the catalogue does not have");
+  assert.deepEqual(await pay({ ...base, plan: "team", ref: "inv-1" }).then((r) => [r.status, r.json]), [200, { applied: true }]);
+  assert.equal(p.log.state.accounts.get(ada.accountId)!.subscription?.plan, "team");
+  for (const [i, left] of [{}, { plan: null }, { plan: "" }].entries()) {
+    assert.deepEqual(await pay({ ...base, ...left, ref: `inv-${i + 2}` }).then((r) => [r.status, r.json]), [200, { applied: true }], JSON.stringify(left));
+  }
+  const renewed = p.store.entries.filter((e) => e.type === "subscription.changed") as Array<{ plan: string }>;
+  assert.deepEqual(renewed.map((e) => e.plan), ["team", "team", "team", "team"], "every one of them was a payment for the plan she has");
+});
+
+test("the token may arrive as a header that was sent more than once, and the first is the one that counts", async () => {
+  const p = await plane();
+  const o = owner(p);
+  const ask = (authorization: string | string[]) => o.web.handle({ method: "GET", path: "/owner/health", query: new URLSearchParams(), headers: { authorization }, body: Buffer.alloc(0), ip: "192.0.2.10" });
+  assert.equal((await ask([`Bearer ${TOKEN}`, "Bearer another-token-xxxxxxxxxxxxxxxx"])).status, 200);
+  assert.equal((await ask(["Bearer another-token-xxxxxxxxxxxxxxxx", `Bearer ${TOKEN}`])).status, 401);
+});
+
+test("a wrong token is counted for ten minutes by address, the refusal says so in words, and the right token is let in again when the ten minutes are over", async () => {
+  const p = await plane();
+  const o = owner(p);
+  for (let i = 0; i < 20; i++) assert.equal((await o.call("GET", "/owner/health", { token: `guess-${i}-xxxxxxxxxxxxxxxxxxxx` })).status, 401);
+  const held = await o.call("GET", "/owner/health");
+  assert.deepEqual([held.status, held.json.error.code, held.json.error.message, held.headers["retry-after"]], [429, "rate_limited", "Too many requests with a wrong token.", "600"]);
+  p.clock.advance(10 * MINUTE - 1);
+  assert.equal((await o.call("GET", "/owner/health")).status, 429, "a millisecond short of ten minutes");
+  p.clock.advance(1);
+  assert.equal((await o.call("GET", "/owner/health")).status, 200, "ten minutes after the guesses");
+});
+
+test("accounts are listed fifty at a time unless the caller says otherwise, from one to two hundred, and the answer says whether the list was cut", async () => {
+  const p = await plane();
+  for (let i = 0; i < 51; i++) await p.log.append({ type: "account.created", accountId: `acct_${String(i).padStart(3, "0")}`, email: `person${String(i).padStart(3, "0")}@example.com`, passwordHash: "not a hash" });
+  const o = owner(p);
+  const all = await o.call("GET", "/owner/accounts");
+  assert.deepEqual([all.json.accounts.length, all.json.matched, all.json.truncated], [50, 51, true]);
+  assert.equal(all.json.accounts.at(-1).accountId, "acct_050", "the newest are the ones kept");
+  assert.deepEqual(await o.call("GET", "/owner/accounts?limit=51").then((r) => [r.json.accounts.length, r.json.truncated]), [51, false], "a limit that holds every one is not a cut");
+  assert.deepEqual(await o.call("GET", "/owner/accounts?limit=1").then((r) => [r.json.accounts.map((a: { accountId: string }) => a.accountId), r.json.truncated]), [["acct_050"], true]);
+  assert.equal((await o.call("GET", "/owner/accounts?limit=200")).status, 200);
+  for (const limit of ["0", "-1", "201", "2.5", "many", ""]) {
+    const r = await o.call("GET", `/owner/accounts?limit=${limit}`);
+    assert.deepEqual([r.status, r.json.error.code, r.json.error.message], [400, "invalid_request", "limit must be a whole number from 1 to 200."], `limit=${limit}`);
+  }
+  assert.deepEqual(await o.call("GET", "/owner/accounts/acct_nobody").then((r) => [r.status, r.json.error.code, r.json.error.message]), [404, "not_found", "There is no such account."]);
+});
+
+test("workspaces are listed up to two hundred, the newest, with how many matched", async () => {
+  const p = await plane();
+  for (let i = 0; i < 201; i++) await p.log.append({ type: "workspace.requested", workspaceId: `ws_${String(i).padStart(3, "0")}`, accountId: "acct_x", name: `W${i}`, slug: `w${i}-000000`, plan: "team" });
+  const o = owner(p);
+  const list = await o.call("GET", "/owner/workspaces");
+  assert.deepEqual([list.json.workspaces.length, list.json.matched], [200, 201]);
+  assert.equal(list.json.workspaces[0].workspaceId, "ws_001", "the oldest of them is the one left out");
+  assert.equal(list.json.workspaces.at(-1).workspaceId, "ws_200");
+});
+
+test("a bound that is not a date is said to be one, by name", async () => {
+  const p = await plane();
+  const o = owner(p);
+  for (const name of ["from", "to"]) {
+    const r = await o.call("GET", `/owner/margin?${name}=yesterday`);
+    assert.deepEqual([r.status, r.json.error.code, r.json.error.message], [400, "invalid_request", `${name} must be a date, for example 2026-10-05 or 2026-10-05T12:00:00Z.`]);
+  }
+  assert.equal((await o.call("GET", "/owner/margin?from=&to=")).status, 200, "an empty bound is not given");
+});
+
+test("a failure on our side is logged for the operator with its cause, and what the caller is told holds none of it; a refusal of the caller's own is not logged", async () => {
+  const p = await plane();
+  const o = owner(p);
+  Object.assign(p.plane, {
+    margin: async () => {
+      throw new ServiceError(502, "ledger_unavailable", "The ledger could not be read.", {}, { cause: new Error("connect ECONNREFUSED 10.0.0.5:8081") });
+    },
+  });
+  const r = await o.call("GET", "/owner/margin");
+  assert.deepEqual([r.status, r.json.error.code, r.json.error.message], [502, "ledger_unavailable", "The ledger could not be read."]);
+  assert.ok(!r.body.includes("10.0.0.5"));
+  assert.deepEqual(o.logs, [{ level: "error", msg: "a request could not be answered", code: "ledger_unavailable", error: "Error: connect ECONNREFUSED 10.0.0.5:8081" }]);
+  await o.call("GET", "/owner/accounts/acct_nobody");
+  await o.call("GET", "/owner/nothing-here");
+  assert.equal(o.logs.length, 1, "a 404 is the caller's, and is not an alarm");
+  // The line is drawn at 500, and a refusal with no cause behind it is logged as what it is.
+  o.logs.length = 0;
+  for (const status of [499, 500]) {
+    Object.assign(p.plane, {
+      margin: async () => {
+        throw new ServiceError(status, `refused_${status}`, "The words.");
+      },
+    });
+    assert.equal((await o.call("GET", "/owner/margin")).status, status);
+  }
+  assert.deepEqual(o.logs.map((l) => [l.level, l.msg, l.code, l.error]), [["error", "a request could not be answered", "refused_500", "ServiceError: The words."]]);
+});
+
+test("the owner's listener answers a request it cannot read, one that is too large and one that fails, in JSON with the security headers, and reads 64 KiB", async () => {
+  const p = await plane();
+  const o = owner(p);
+  const server = createOwnerServer({ owner: o.web });
+  const l = await listen(server);
+  try {
+    const headers = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
+    const bad = await ask(l.port, { path: "//", headers });
+    assert.deepEqual([bad.status, bad.headers["content-type"], bad.json], [400, "application/json; charset=utf-8", { error: { code: "bad_request", message: "That request could not be read." } }]);
+    assert.equal(bad.headers["strict-transport-security"], "max-age=31536000; includeSubDomains");
+    assert.equal(bad.headers["x-content-type-options"], "nosniff");
+
+    const body = (bytes: number): string => JSON.stringify({ reason: "x".repeat(bytes - JSON.stringify({ reason: "" }).length) });
+    const max = 64 * 1024;
+    const limit = (text: string) => ask(l.port, { method: "POST", path: "/owner/accounts/acct_nobody/disable", headers, body: text });
+    assert.equal((await limit(body(max))).status, 404, "exactly 64 KiB is read, and there is no such account");
+    const over = await limit(body(max + 1));
+    assert.deepEqual([over.status, over.headers["content-type"], over.json, over.headers.connection], [413, "application/json; charset=utf-8", { error: { code: "request_too_large", message: "That request is too large." } }, "close"]);
+    assert.equal(over.headers["strict-transport-security"], "max-age=31536000; includeSubDomains");
+
+    Object.assign(o.web, { handle: async () => { throw new Error("EACCES: /etc/curule/secret"); } });
+    const failed = await ask(l.port, { path: "/owner/health", headers });
+    assert.deepEqual([failed.status, failed.headers["content-type"], failed.json], [500, "application/json; charset=utf-8", { error: { code: "internal_error", message: "The request failed." } }]);
+    assert.equal(failed.headers["x-content-type-options"], "nosniff");
+    assert.ok(!failed.body.includes("EACCES"));
   } finally {
     await l.close();
   }
