@@ -65,6 +65,36 @@ sections 1 to 24) are described there, run by run.
   virtual keys, a price table the operator owns, an append-only ledger of credit and spend in whole millionths of a
   currency unit, tiers with failover, OpenAI-compatible chat completions in and any provider out, and an admin API. It has
   not been run against a real provider. See [docs/ai-gateway.md](docs/ai-gateway.md) and [docs/cloud.md](docs/cloud.md).
+- **The control plane of Curule Cloud.** `packages/cloud` and `npm run cloud -- control --config control.yaml`: accounts (email
+  and password, a confirmation link, sessions in an `HttpOnly` cookie), a plan catalogue the operator owns, a billing port
+  with a hosted-checkout adapter and a manual one, workspaces and their lifecycle (made, stopped for non-payment, deleted
+  after a retention period) behind a provisioner port with a container implementation and a local-process one, an
+  authenticating proxy that serves each workspace at an address of its own, and an operator's API on a separate listener
+  behind a token. State is an append-only log. The configuration is checked before anything listens: a workspace domain
+  under the app's own registrable domain, a licence key the build does not trust, the local provisioner in production, a
+  mail server that would be sent a password in the clear, and account pages that still carry a place marked
+  `TODO(owner)` are each refused, and every problem is reported at once. It has not been run against a real payment
+  provider, container engine or mail service. See [docs/cloud-control-plane.md](docs/cloud-control-plane.md).
+- **Account pages for Curule Cloud.** `apps/cloud-server/pages`: the front page, sign-up, sign-in, confirmation, password
+  reset, the account (plan, credit, usage, workspaces) and the terms and privacy notice, as static files under a
+  content policy that allows no inline script. The terms and the privacy notice are placeholders marked for the operator.
+- **`curule-cloud trial`.** The whole service on one machine, with a stand-in model, a payment page of its own and mail that
+  is printed, so that it can be tried and shown before anything is paid for. An end-to-end test walks a customer through
+  it with a real host process for each workspace; `npm run qa:cloud` does the same in a browser at three widths and in both
+  colour schemes, with an accessibility scan.
+- **A workspace host that is given its models.** With `CURULE_GATEWAY_URL` and `CURULE_GATEWAY_KEY` set, a team made on
+  the host runs on the service's gateway and the person brings no key.
+- **Mail for Curule Cloud.** `mail.smtp` in `control.yaml` delivers to any provider that offers SMTP, with TLS or STARTTLS and
+  a sign-in, using only Node's standard library; the certificate is verified and a password is never sent unencrypted.
+  A message is written to a spool folder first and delivered with retry and a wait that doubles, so a provider that is down,
+  a restart or a crash does not lose a confirmation link; `GET /owner/health` reports what is queued and goes not-ok when
+  mail is stuck. `npm run cloud -- mail-check --config control.yaml --to <address>` sends one message and says what the
+  server answered. See [docs/cloud-control-plane.md](docs/cloud-control-plane.md#mail).
+- **`curule-cloud preflight`.** Looks at what a control plane's configuration points at and says what would fail a customer: whether
+  the gateway answers, accepts the admin token and has the tiers the plans promise; whether the container engine runs, the image
+  is there and the workspace network is internal; whether the folders can be written, the names resolve (the wildcard record), the
+  listeners can be had and, given an address, a message goes through the mail server. Each answer is `ok`, `warning` or `problem`,
+  and the exit status is 1 on a problem.
 - **Licensing.** Offline Ed25519 licence keys (`AML1.…`) verified on the customer's machine with no call out; the plan table
   (Community, Team, Business, Enterprise) with its limits and entitlements; `curule license status|install|verify|remove`;
   a licence card and an expiry banner in the dashboard; `tools/license/mesh-license.mjs` to generate and sign keys.
