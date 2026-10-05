@@ -139,6 +139,20 @@ service that sends mail.
 Change the provider to its live mode (keys, webhook secret, price ids), make one payment with the operator's own card at the
 lowest price, look at it as in step 7, and refund it. Then the service can take customers.
 
+The marketing site does not offer the service until it is told where it is. Its pages ship saying that Curule is software you
+run, with no sign-in or sign-up link (a page must not point at something that is not there). Once the app is reachable, tell the
+site its address and publish the site again:
+
+```bash
+npm run site:domain -- curule.dev --contact hello@curule.dev --cloud-url https://app.curule.dev
+```
+
+Every page then has "Sign in" and "Get started" in its header, which lead to the app's sign-in and sign-up pages (the app sends a
+visitor who is signed in already on to the account), the home page says Curule is also run for you, and the sentences that said it
+is not give way. Prices are not copied into the site: the app's front page lists the plans from `/api/plans`, and "See the Curule
+Cloud plans" goes there. [The site's README](../site/README.md#the-way-into-curule-cloud) has what changes, page by page. Open the
+site in a browser with the service live, follow "Get started" to the end, and look at what the visitor sees.
+
 ## 10. Keeping it
 
 Watch `GET /owner/health` (`ok` is false when the log cannot be written or mail has been stuck for an hour),

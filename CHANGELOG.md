@@ -95,6 +95,13 @@ sections 1 to 24) are described there, run by run.
   is there and the workspace network is internal; whether the folders can be written, the names resolve (the wildcard record), the
   listeners can be had and, given an address, a message goes through the mail server. Each answer is `ok`, `warning` or `problem`,
   and the exit status is 1 on a problem.
+- **A way from the site into Curule Cloud.** With `CLOUD_URL` set in `site/assets/site.js` (`npm run site:domain -- <domain>
+  --cloud-url https://app.example.com`), every page of the marketing site has "Sign in" and "Get started" in its header, which lead to
+  the app's sign-in and sign-up pages; the home page leads with "Get started" and says Curule is also run for you; the pricing
+  page sends a visitor to the app's plans and says its own plans are licences for the software you run; and the sentences that
+  said Curule is not offered as a hosted service give way. It ships off, so until the app is live no page mentions it, and a
+  visitor without a script sees the pages as they ship. Prices of the hosted plans are not copied into the site. See
+  [site/README.md](site/README.md#the-way-into-curule-cloud).
 - **A guide to going live.** [docs/cloud-go-live.md](docs/cloud-go-live.md) gives the order in which the service is made ready for
   a first customer (the licence key, the build, the models, the configuration, mail, the machine, payments in the provider's test
   mode, a rehearsal as a customer, opening, and what to keep), with what each step proves. The steps that meet a real provider are
