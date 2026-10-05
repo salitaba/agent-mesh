@@ -22,6 +22,10 @@ export interface BusClientOptions {
   busUrl: string;
   agentId: string;
   token: string;
+  /** The full URL to post to, when it is not `<busUrl>/internal/mcp/<agentId>` (the designer's staging endpoint carries a query). */
+  endpoint?: string;
+  /** Headers sent in addition to the token's. */
+  headers?: Record<string, string>;
   fetch?: typeof fetch;
   /** Waits between attempts to list the tools while the bus is not up yet. Its length is the number of retries. */
   startupDelaysMs?: number[];
@@ -58,7 +62,7 @@ export class BusClient {
   }
 
   private url(): string {
-    return `${this.o.busUrl.replace(/\/+$/, "")}/internal/mcp/${encodeURIComponent(this.o.agentId)}`;
+    return this.o.endpoint ?? `${this.o.busUrl.replace(/\/+$/, "")}/internal/mcp/${encodeURIComponent(this.o.agentId)}`;
   }
 
   private async rpc(method: string, params: JsonObject, signal?: AbortSignal): Promise<JsonObject> {
@@ -68,7 +72,7 @@ export class BusClient {
     try {
       res = await this.doFetch(this.url(), {
         method: "POST",
-        headers: { "content-type": "application/json", "x-mesh-token": this.o.token },
+        headers: { "content-type": "application/json", "x-mesh-token": this.o.token, ...this.o.headers },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++this.id, method, params }),
         signal: combined,
       });
