@@ -1,0 +1,5 @@
+Contact: mailto:ali79taba@gmail.com
+Contact: https://github.com/salitaba/agent-mesh/security/advisories/new
+Expires: 2027-10-04T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://curule.dev/.well-known/security.txt

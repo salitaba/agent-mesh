@@ -3,12 +3,12 @@
 // billing toggle are plain CSS, the contact page carries the addresses as text). It makes no request of its own, and it keeps
 // nothing: no cookie, no stored choice. The links it sets are followed by the visitor, not fetched by the page.
 
-// TODO(owner): where the documents are published. Until the commercial branch is merged to main these links 404.
+// Where the documents are published: the repository, until a documentation site exists.
 var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
 // The repository the source is in: the "Source code" links, and the address the "Try it" commands clone.
 var REPO_URL = "https://github.com/salitaba/agent-mesh";
-var APP_URL = "#"; // TODO(owner): where "Sign in" goes, for example https://mesh.<your-domain>/ (your own dashboard); "" removes the link
-var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
+var APP_URL = ""; // No hosted dashboard: the "Sign in" link is removed
+var CONTACT_HREF = "mailto:ali79taba@gmail.com"; // "Talk to us" and the paid plans
 // Off until the first release tag has published the image to ghcr.io: a command that pulls it fails until then. Switch it to
 // true on the day of the release and the "Try it" steps also show the pull-and-run path.
 var IMAGE_RELEASED = false;

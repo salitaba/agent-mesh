@@ -7,8 +7,7 @@
 Report it privately, by either of:
 
 - GitHub's private vulnerability reporting: <https://github.com/salitaba/agent-mesh/security/advisories/new>
-- Email: `TODO(owner): security@<your domain>` (set this address up, and enable private vulnerability reporting
-  in the repository's settings, before the first customer)
+- Email: ali79taba@gmail.com
 
 Include what you found, how to reproduce it (a request, a config, a version), what an attacker gains, and
 whether you have told anyone else.
