@@ -77,6 +77,14 @@ test("a configuration names where the proxy listens, who may use it, the ports a
   });
 });
 
+test("the example configuration that ships is valid, and is for the network the other examples name", () => {
+  const c = loadEgressConfig(path.join(__dirname, "..", "..", "..", "examples", "cloud", "egress.yaml"));
+  assert.deepEqual(c.warnings, []);
+  assert.deepEqual([c.listen, c.allowFrom, c.ports], [{ host: "10.213.0.1", port: 3128 }, ["10.213.0.0/24"], [443]]);
+  for (const name of ["registry.npmjs.org", "github.com", "api.github.com", "raw.githubusercontent.com", "pypi.org", "static.crates.io"]) assert.ok(nameAllowed(name, c.hosts), `${name} is on the example's list`);
+  for (const name of ["example.com", "githubusercontent.com.evil.test", "169.254.169.254"]) assert.ok(!nameAllowed(name, c.hosts), `${name} is not`);
+});
+
 test("every problem in the configuration is reported at once, and a proxy that would be open to the wrong network is refused", () => {
   const m = refusal({ listen: { host: "proxy.local", port: 0 }, allow_from: ["10.0.0.0/8", "nonsense"], ports: [0, "x"], hosts: ["https://github.com", "github.com:443", "com", "*.com", "10.0.0.5", "a b"], limits: { per_source: 9, max_connections: 3, idle_seconds: 0 } });
   for (const part of [

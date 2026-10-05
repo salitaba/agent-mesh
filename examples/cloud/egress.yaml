@@ -1,0 +1,39 @@
+# An example configuration for the egress proxy (docs/cloud-control-plane.md, "The egress proxy"). Copy it, change it, check it:
+#
+#   npm run cloud -- egress --config examples/cloud/egress.yaml --check
+#
+# It is the one way out of the network workspaces' containers are on. A workspace is told to use it (HTTPS_PROXY), and it carries
+# HTTPS tunnels to the names listed here and to nothing else. Nothing secret is written here.
+
+# The address of the workspaces' network that the proxy is reached at: the bridge's own address (`--gateway` of the network), so that
+# the proxy is on that network and on no other. Every interface at once (0.0.0.0) is refused.
+listen: { host: 10.213.0.1, port: 3128 }
+
+# Where a connection may come from: the workspaces' network. A connection from anywhere else is dropped without an answer.
+allow_from: [10.213.0.0/24]
+
+# The ports a tunnel may be made to.
+ports: [443]
+
+# The names a workspace may reach. A name as written, or `*.name` for every name below it (and not the name itself). An address given
+# as digits is never allowed, and a name that resolves to an address that is not public is refused whatever is written here.
+hosts:
+  - registry.npmjs.org
+  - github.com
+  - "*.github.com"
+  - "*.githubusercontent.com"
+  - gitlab.com
+  - pypi.org
+  - files.pythonhosted.org
+  - crates.io
+  - index.crates.io
+  - static.crates.io
+  - proxy.golang.org
+  - sum.golang.org
+
+limits:
+  max_connections: 512      # tunnels open in all
+  per_source: 64            # tunnels open from one workspace
+  connect_seconds: 10       # to look the name up and to be connected
+  idle_seconds: 300         # a tunnel with no byte in this time is ended
+  life_seconds: 3600        # the longest a tunnel may last

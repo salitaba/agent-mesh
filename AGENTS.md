@@ -29,6 +29,7 @@ npm run qa:walk -- --base <url> --token <t> --project <id>   # a person's sessio
 npm run cloud -- trial [--port 7500] [--dir <folder>]   # the hosted service on this machine, with stand-ins for what costs money
 npm run cloud -- mail-check --config <control.yaml> --to <address>   # send one message through the configured SMTP server and say what it answered
 npm run cloud -- preflight --config <control.yaml> [--mail-to <address>]   # look at what the configuration points at: gateway, engine, network, folders, names, mail
+npm run cloud -- egress --config <egress.yaml> [--check]   # the way out of a workspace's network: HTTPS tunnels to the hosts listed, and nothing else
 npm run qa:cloud -- --base <url> --outbox <control/outbox.jsonl>   # a customer's session on a trial (needs playwright-core, axe-core, Chrome)
 ```
 

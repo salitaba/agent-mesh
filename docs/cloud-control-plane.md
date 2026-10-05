@@ -184,6 +184,29 @@ so what it asks the engine to do can be read and tested without an engine:
 workspace no route to the control plane, to other workspaces' containers, or to cloud metadata addresses, and no route out
 except through an egress proxy that allows the gateway, the package registries and the git hosts the operator lists. With
 `egressProxy` set, the provisioner sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the workspace and tells Node to use them.
+
+**A control plane that runs on the machine** and not in a container on the network cannot resolve a container's name: the engine's
+name server answers only on its own network. Set `provisioner.subnet` to the subnet the network was made with
+(`10.213.0.0/24`), and each workspace is run at a fixed address of it (`--ip`, the first free one from the tenth, which the
+engine keeps for a stopped container too and gives up when it is removed), and is reached there. Allocations are made one at a
+time, so two workspaces made together do not ask for the same address, and a container that was made and did not start is
+removed with its volume. `preflight` compares the subnet with the network's own.
+
+**The egress proxy** is `curule-cloud egress --config egress.yaml`. It carries HTTPS tunnels (`CONNECT`) and nothing else, to the
+names the operator lists (`registry.npmjs.org`, or a family such as `*.githubusercontent.com`, which is every name below it and
+not the name itself) on the ports listed (443 unless said otherwise). An address given as digits is never a name on the list,
+and neither is anything a resolver would read as one (`127.1`, `0x7f.1`). The proxy looks the name up itself and refuses it
+when any address it gets is not public (loopback, private, shared, link-local including the cloud metadata address, multicast,
+documentation and tunnelling ranges, and IPv4 addresses written as IPv6), and then connects to the address it checked, not to the
+name again. It answers only the networks named in `allow_from` and drops a connection from anywhere else without a word; it
+refuses to listen on every interface; it bounds the tunnels open in all and from one workspace, the time to connect, the time with
+no byte and the longest life of a tunnel; and it writes down who asked for which name and port, never what went through.
+`examples/cloud/egress.yaml` is a file to copy.
+
+What it cannot do: it sees the name a tunnel is made to and not what goes through it, so a listed host is a host a workspace can
+send anything to. And a workspace container on an internal network may still be able to resolve public names through the
+engine's own name server, which is a way to send a little data out that this does not close: whether it is open is for the
+operator to find out on their engine (`docker run --rm --network <workspace network> ... nslookup <a name>`).
 A workspace is told the one host it is served on (`MESH_ALLOWED_HOSTS`, `MESH_ALLOWED_ORIGINS`), that it sits behind the
 service's proxy, and to mark its cookies secure.
 
@@ -219,7 +242,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 | Key | Meaning |
 |---|---|
 | `app_url` | Where customers reach the app, as an address with no path: `https://app.example.com`. An `https` address means production: cookies are `Secure`, `Strict-Transport-Security` is sent, and the local provisioner is refused. An `http` address is a trial on one machine. |
-| `workspaces.domain` | Workspaces are served at `<slug>.<domain>`. See below for what it may not be. |
+| `workspaces.domain` | Workspaces are served at `<slug>.<domain>`. See below for what it may not be. `allow_same_site: true` beside it accepts, knowingly, a domain under the app's own. |
 | `public` | The listener a load balancer connects to: `host`, `port`, and `trust_proxy_hops`, how many proxies in front add to `X-Forwarded-For`. With 0 the header is not read, and behind a proxy every caller then looks like the proxy. |
 | `owner` | The operator's listener (`host`, `port`) and `token_env`, the environment variable that holds its token (24 characters or more). |
 | `pages` | A directory of account pages: the product's own are in `apps/cloud-server/pages` ([below](#the-account-pages)). Leave it out to serve the API alone. |
@@ -229,7 +252,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 | `secret_env` | The service's secret, 32 characters or more. Workspace cookies are signed with a key derived from it, and so is every workspace's operator token. Do not change it while workspaces exist: a workspace was given its operator token when it was made, the proxy presents the one derived from the current secret, and every existing workspace would refuse it. |
 | `gateway` | `admin_url` and `admin_token_env` for the [model gateway](ai-gateway.md)'s admin API, and `tenant_url`, the address a workspace is told to call for models. It ends in `/v1`. |
 | `licence` | `kid`, and `private_key_file` or `private_key_env`: the key workspace licences are signed with. |
-| `provisioner` | `kind: container` with `image`, `network`, an optional `egress_proxy`, `no_proxy` and `limits` (`cpus`, `memory_mb`, `pids`), or `kind: local` for a trial. |
+| `provisioner` | `kind: container` with `image`, `network`, an optional `subnet` (the network's own, to give each workspace an address of its own), `egress_proxy`, `no_proxy` and `limits` (`cpus`, `memory_mb`, `pids`), or `kind: local` for a trial. |
 | `billing` | `provider: manual` with `pay_url` (where a customer is sent to pay, with `{ref}` for the reference to pay under), or `provider: hosted-checkout` with `api_key_env` and `webhook_secret_env`. |
 | `reconcile_minutes` | How often unpaid and stuck workspaces are looked at, and workspaces the log calls running whose host is not. Default 15. |
 

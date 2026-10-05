@@ -219,7 +219,7 @@ apps/
   mesh-server     bootstrap + HTTP/SSE API + MCP bus + config-designer API + static UI
   mesh-dashboard  live UI + mesh designer (Vite + React + TS SPA in `src/`,
                   built to `dist/` and served by mesh-server on the same port)
-  cloud-server    the hosted service's processes and checks: `npm run cloud -- gateway|control|trial|mail-check|preflight`
+  cloud-server    the hosted service's processes and checks: `npm run cloud -- gateway|control|trial|mail-check|preflight|egress`
                   (see [docs/cloud.md](docs/cloud.md))
 deploy/           Helm chart, fleet provisioning script, container entrypoint
 site/             static landing and pricing page (its numbers are generated from the plan table)

@@ -95,6 +95,19 @@ sections 1 to 24) are described there, run by run.
   is there and the workspace network is internal; whether the folders can be written, the names resolve (the wildcard record), the
   listeners can be had and, given an address, a message goes through the mail server. Each answer is `ok`, `warning` or `problem`,
   and the exit status is 1 on a problem.
+- **`curule-cloud egress`, and a workspace at an address of its own.** The proxy a workspace's container is told to send what leaves
+  its network through (`HTTPS_PROXY`) was not shipped: the operator was left to find one that does what the control plane assumes.
+  `npm run cloud -- egress --config egress.yaml` carries HTTPS tunnels to the names the operator lists, on the ports listed, and to
+  nothing else: no plain http, no address given as digits, no name that resolves to an address that is not public (the address
+  that was checked is the one connected to), only from the networks named, with limits on tunnels, idle time and life. And
+  `provisioner.subnet` in `control.yaml` makes the container provisioner run each workspace at a fixed address of the workspace
+  network and reach it there, so that a control plane that runs on the machine, and not on the network, can find it (a container's
+  name is resolved only on its own network). `preflight` compares the subnet with the network's own. Neither has met a real
+  container engine. See [docs/cloud-control-plane.md](docs/cloud-control-plane.md#provisioners).
+- **`workspaces.allow_same_site`, and a placeholder price id that stops a start.** A workspace domain under the app's registrable
+  domain is still refused, and the refusal now names the way out: an operator with one domain can write `allow_same_site: true`, which
+  makes it a warning that is printed every time and says what stands in the way and what does not. With hosted checkout, a plan whose
+  `provider_price_id` still says `REPLACE` is refused in production, as a leftover `TODO(owner)` is.
 - **A way from the site into Curule Cloud.** With `CLOUD_URL` set in `site/assets/site.js` (`npm run site:domain -- <domain>
   --cloud-url https://app.example.com`), every page of the marketing site has "Sign in" and "Get started" in its header, which lead to
   the app's sign-in and sign-up pages; the home page leads with "Get started" and says Curule is also run for you; the pricing

@@ -91,7 +91,12 @@ when the provider is down.
 ## 6. The machine (first contact)
 
 The container engine, the internal network, the egress proxy, the names and the certificate are the operator's to build
-([provisioners](cloud-control-plane.md#provisioners)). Then:
+([provisioners](cloud-control-plane.md#provisioners)). The repository ships the egress proxy (`npm run cloud -- egress`) and, with
+`provisioner.subnet`, the way for a control plane that runs on the machine to reach each workspace at an address of its own. On a
+machine where the services are processes and the workspaces are containers, the services that workspaces call (the gateway's tenant
+port, the egress proxy) listen on the network's own address, and the host's firewall must let a workspace reach those two ports and
+no other: the engine adds no rule about traffic from a container to the machine itself, so without one a workspace can reach every
+service the machine has on any address. Then:
 
 ```bash
 npm run cloud -- preflight --config control.yaml --mail-to you@example.com
