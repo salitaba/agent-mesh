@@ -187,7 +187,10 @@ test("the header and the front page: a visitor is offered the way in, a customer
   assert.equal(v.text(nav), "Plans Sign in");
   assert.equal(v.doc.querySelector('[data-nav="home"]')!.getAttribute("aria-current"), "page");
   assert.equal(v.text(v.doc.querySelector("main .btn-row")!), "Create an account Sign in");
-  assert.equal(v.doc.querySelector("[data-contact]")!.hidden, true, "no contact address is invented: the link stays hidden until the owner gives one");
+  const contact = v.doc.querySelector("[data-contact]")!;
+  assert.deepEqual([contact.hidden, contact.getAttribute("href")], [false, "mailto:ali79taba@gmail.com"], "the footer's Contact link is the operator's own address");
+  const none = await visit("home", { routes: w.routes, script: (src) => src.replace(/const CONTACT = "[^"]*";/, 'const CONTACT = "";') });
+  assert.equal(none.doc.querySelector("[data-contact]")!.hidden, true, "and with no address the link stays hidden: none is made up");
 
   const cards = v.$("plans").querySelectorAll("article");
   assert.equal(cards.length, 2);

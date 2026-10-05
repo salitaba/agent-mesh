@@ -264,7 +264,7 @@ test("no page states a period or a count the service could change: those are fil
   for (const m of read(SCRIPT).matchAll(/"[^"\n]*"|`[^`\n]*`/g)) assert.doesNotMatch(m[0], /\b\d+\s*(?:days?|hours?)\b/i, `app.js says ${m[0]}`);
 });
 
-test("the legal pages are marked for the owner wherever a person has to decide, and the script's one setting that is the owner's is empty until they give it", () => {
+test("the legal pages are marked for the owner wherever a person has to decide, and the script's one setting that is the owner's holds the address they gave", () => {
   for (const name of ["terms", "privacy"]) {
     const { all } = pages().find((p) => p.name === name)!;
     const todos = all.filter((n) => n.className.split(/\s+/).includes("todo"));
@@ -278,5 +278,7 @@ test("the legal pages are marked for the owner wherever a person has to decide, 
   const contact = /const CONTACT = "([^"]*)";/.exec(read(SCRIPT));
   assert.ok(contact, "the contact address is one constant");
   assert.match(contact![1]!, /^(|mailto:[^\s"]+|https:\/\/[^\s"]+)$/, "empty, or a mailto: or an https: address");
-  assert.match(read(SCRIPT), /TODO\(owner\): where people write for help/, "and it is marked, so the deploy check finds it");
+  assert.equal(contact![1], "mailto:ali79taba@gmail.com", "the operator's own address, which they gave");
+  assert.doesNotMatch(read(SCRIPT), /TODO\(owner\)/, "and nothing in the script is left marked: the legal pages carry what is still the owner's to decide");
+  for (const name of ["terms", "privacy"]) assert.ok(read(path.join(PAGES_DIR, `${name}.html`)).includes("ali79taba@gmail.com"), `${name} says who to write to`);
 });

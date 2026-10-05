@@ -285,6 +285,8 @@ export interface VisitOptions {
   routes?: Routes;
   /** What the tab's session storage held when the page opened. */
   storage?: Record<string, string>;
+  /** Changes the script's source before it runs, to see what it does with a setting that is another value. */
+  script?: (source: string) => string;
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -352,7 +354,7 @@ export class Visit {
       URL,
       URLSearchParams,
     };
-    vm.runInNewContext(fs.readFileSync(SCRIPT, "utf8"), sandbox, { filename: "app.js" });
+    vm.runInNewContext(this.options.script?.(fs.readFileSync(SCRIPT, "utf8")) ?? fs.readFileSync(SCRIPT, "utf8"), sandbox, { filename: "app.js" });
     await this.idle();
     return this;
   }

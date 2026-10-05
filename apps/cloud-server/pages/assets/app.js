@@ -17,10 +17,10 @@
   const LOCALE = "en";
 
   /**
-   * TODO(owner): where people write for help, as a "mailto:" or an "https:" address. The footer's Contact link stays hidden
-   * while this is empty. The deploy check refuses to go live while a TODO(owner) is left in these pages.
+   * Where people write for help, as a "mailto:" or an "https:" address: the operator's own, given by them. The footer's
+   * Contact link stays hidden while this is empty.
    */
-  const CONTACT = "";
+  const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
     home: ["plans", "topups"],
