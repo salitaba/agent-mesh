@@ -42,29 +42,17 @@ import { PushQueue, collectAgentOutput } from "../../agent-runtime/src/index";
 // Ops arrive only as typed mesh_* MCP tool calls, executed on the live turn by
 // the supervisor; the reply text is prose and only yields the fallback summary.
 import { extractSummary, shortDigest } from "../../agent-runtime/src/index";
+// The gate, the landing gate and the two prompt texts are the mesh's rules rather than this backend's, so they live
+// with the runtime commons and are re-exported here for the callers that have always imported them from this package.
+import { NO_MESH_CALL_REMINDER, buildPermissionGate, withReadingDiscipline } from "../../agent-runtime/src/index";
+export { NO_MESH_CALL_REMINDER, buildPermissionGate, describeToolPermissions, withReadingDiscipline } from "../../agent-runtime/src/index";
+export type { ApprovalGate, ToolFamily, ToolPermission, ToolPermissionLevel, ToolPermissions } from "../../agent-runtime/src/index";
 // The output-voice rules belong to the prompt layer, not to any one adapter:
 // importing them from there is what keeps every runtime byte-identical on
 // the part of the prompt that must not vary by backend.
 import { withOutputVoice } from "../../core/src/context";
 import { reapOrphanSeats, seatEnv, type ReapResult } from "./orphans";
-import { landingDenial, productWriteDenial } from "./landing-gate";
 export { describeHostLeaks, describeIsolation, outerSessionEnvNames, withoutOuterSession } from "./host-isolation";
-
-/** Tools that write to the repository. Gated on a write-ish capability. */
-const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
-/** Tools that execute arbitrary commands. Gated on shell/test execution. */
-const EXEC_TOOLS = new Set(["Bash", "BashOutput", "KillShell"]);
-/** Tools that reach the network. Gated on network.request. */
-const NETWORK_TOOLS = new Set(["WebFetch", "WebSearch"]);
-/**
- * Read-only inspection, always allowed — mirrors `read: "allow"` in the
- * opencode permission block. An agent that cannot read its own workspace
- * cannot do useful work under any capability set.
- */
-const READ_TOOLS = new Set(["Read", "Glob", "Grep", "TodoWrite"]);
-
-/** Prefix of the MCP bridge back into the mesh bus. Never gated. */
-const MESH_MCP_PREFIX = "mcp__mesh";
 
 /**
  * Normalize a config-shaped model spec to the bare id the SDK expects.
@@ -548,24 +536,6 @@ function adviceHooks(turn: () => TurnState | undefined): SessionHooks {
 const MESH_TOOL_PREFIX = "mcp__mesh__";
 
 /**
- * What a seat is told, once, when it is about to end a turn having called no mesh tool.
- *
- * The seventeenth cronlite run lost turns this way: after a `kill -9` and a restart, the developer's and QA's resumed
- * sessions carried the CLI's record that the `mesh` server had failed ("mesh bus unreachable: fetch failed", written at the
- * moment the host died), believed it, did their work with their own tools and ended each turn with prose that said
- * what they would call ("Now I'll call the mesh operations:"). The mesh saw no ops and discarded the turn: QA's 41.5k
- * tokens of reproductions and the developer's four turns (169k) never reached anyone, and the developer's first mesh call
- * came 11 minutes after the reopen. A fresh session made its calls at once, so the tools were never gone.
- */
-export const NO_MESH_CALL_REMINDER =
-  "You are ending this turn without having called a single mesh tool, so nothing you did, found or wrote in it has reached anyone: " +
-  "text outside a mesh call goes nowhere, and work done in your own checkout counts for nothing until it is reported. " +
-  "The mesh is running and your mesh tools work: an earlier notice in this conversation that the mesh server failed or was unreachable " +
-  "(\"fetch failed\") described a restart that has ended. Report now, with the tool that fits: mesh_artifact_publish or mesh_commit " +
-  "(work you produced), mesh_send or mesh_reply (what you found, or an answer), mesh_approve or mesh_block (a verdict), mesh_task_complete " +
-  "(a task you finished). If there is truly nothing to report, call mesh_done.";
-
-/**
  * The hook that gives a seat one more chance when it stops without a mesh call.
  *
  * A `Stop` hook and not a user message, for the reason `adviceHooks` is a hook: a message pushed after the turn ends is a second
@@ -591,35 +561,6 @@ function endOfTurnHooks(turn: () => TurnState | undefined): SessionHooks {
       },
     ],
   };
-}
-
-/**
- * What a seat is told about reading, appended to the role prompt beside the
- * shared output-voice rules.
- *
- * The measured problem this answers is not any single tool result but their
- * accumulation: over the 2026-09-27 skill-panel run, growth in a turn's prompt
- * was spread over its calls — median +1,285 tokens per call, p90 +5,659, and
- * the top 5% of calls were only 30% of the total — so no bound on one result
- * can reach it. What does reach it is HOW the seat reads: the SDK's own `Read`
- * returned 2.79M characters across 114 calls in that run, an average of 24,485
- * characters per call, and every one of those characters was re-sent with each
- * of the ~20 calls that followed. A seat that reads a range instead of a file
- * pays ~8% of what it was paying.
- *
- * Five lines, and deliberately without numbers a seat cannot act on: it is
- * billed on every turn, and it rides in the cached system prefix, so it is
- * cheap only as long as it is short.
- */
-const READING_DISCIPLINE = `## Reading
-Your context is the prompt, and everything you read into it is re-sent with every later call of this turn and every later turn of this session — so read the range you need, not the file that contains it: \`grep -n <pattern> <file> | head -n 30\` to locate, then \`sed -n '<a>,<b>p' <file>\` for the lines.
-Never read a file you have already read this session; you still have it.
-Do not paste file contents into a message, an artifact or a report — cite the path and line range instead. The reader has the same repository you do.`;
-
-/** {@link READING_DISCIPLINE}, appended to a role prompt the way `withOutputVoice` appends the voice rules. */
-export function withReadingDiscipline(rolePrompt: string): string {
-  const role = rolePrompt.trim();
-  return role.length > 0 ? `${role}\n\n${READING_DISCIPLINE}` : READING_DISCIPLINE;
 }
 
 /**
@@ -1049,62 +990,6 @@ function lastCallPrompt(turn: TurnState): number {
 }
 
 /**
- * git subcommands a seat needs to stage and land a commit. Deliberately short:
- * anything outside it is reachable by granting `shell.execute`, which is the
- * capability that exists to say so. `push` and `merge` are absent because
- * `git.merge` is its own capability.
- */
-const COMMIT_SUBCOMMANDS = new Set(["add", "commit", "status", "diff", "log", "show", "rev-parse", "ls-files"]);
-
-/**
- * True when `command` is one git invocation carrying no shell control flow.
- *
- * Quoting is the whole difficulty. This repo writes conventional subjects
- * ("fix(designer): ..."), so a scan that rejected parentheses outright would
- * reject the exact command this capability exists to permit. So: track quote
- * state, reject only what can start a second command, and keep rejecting `$(`
- * and backticks inside double quotes, where they still substitute.
- */
-function isBareGitCommand(command: string): boolean {
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const c = command[i];
-    if (quote === "'") {
-      if (c === "'") quote = null;
-      continue;
-    }
-    if (quote === '"') {
-      if (c === "\\") { i++; continue; }
-      if (c === '"') { quote = null; continue; }
-      if (c === "`") return false;
-      if (c === "$" && command[i + 1] === "(") return false;
-      continue;
-    }
-    if (c === "\\") { i++; continue; }
-    if (c === "'" || c === '"') { quote = c; continue; }
-    if (c === "`" || c === ";" || c === "&" || c === "|" || c === "<" || c === ">" || c === "\n") return false;
-    if (c === "$" && command[i + 1] === "(") return false;
-  }
-  return quote === null;
-}
-
-/** Why a commit-only seat may not run this Bash call, or null if it may. */
-function commitScopeDenial(toolInput: Record<string, unknown>): string | null {
-  const raw = toolInput.command;
-  const command = typeof raw === "string" ? raw.trim() : "";
-  if (!command) return "a commit-only seat may run git commands, and this call carries no command string";
-  if (!isBareGitCommand(command)) {
-    return "a commit-only seat may run a single git command, with no chaining, redirection, or substitution";
-  }
-  const named = /^git\s+(?:-[^\s]+\s+)*([a-z][a-z-]*)/.exec(command);
-  if (!named) return "a commit-only seat may run git commands only";
-  if (!COMMIT_SUBCOMMANDS.has(named[1])) {
-    return `'git ${named[1]}' is outside the commit path — grant shell.execute if this seat needs it`;
-  }
-  return null;
-}
-
-/**
  * The text of a `tool_result` block, whichever of the wire's two shapes it came
  * in: a bare string, or an array of content blocks of which only the `text`
  * ones say anything a reader can use (an image block has no words to show).
@@ -1117,241 +1002,6 @@ export function toolResultText(content: unknown): string {
     .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
     .filter((t) => t.length > 0)
     .join("\n");
-}
-
-/**
- * The four tool families a seat's capabilities decide, named as an operator
- * reads them. Mesh MCP tools are not a family: they are never gated, and a seat
- * that could not reach them would not be a seat.
- */
-export type ToolFamily = "read" | "edit" | "shell" | "web";
-
-/**
- * - `allow`    — the seat may use every tool in the family.
- * - `deny`     — no capability it holds reaches the family.
- * - `approval` — it holds one, but `requires_approval` gates it: every call is
- *                refused until the operator unlocks that tool for the session.
- * - `scoped`   — commit-only shell: `git.commit` without `shell.execute`, so
- *                `Bash` runs only a bare git command on the commit path.
- */
-export type ToolPermissionLevel = "allow" | "deny" | "approval" | "scoped";
-
-export interface ToolPermission {
-  level: ToolPermissionLevel;
-  /** The capability that decided it, or what is missing ("needs repository.write"). */
-  via: string;
-}
-
-export type ToolPermissions = Record<ToolFamily, ToolPermission>;
-
-/**
- * Capability tokens that authorize each gated family, in the order a denial or
- * a hold names them. `edit` is EDIT_CAPABILITIES itself rather than a copy: the
- * supervisor gives a seat a worktree on the same list, and a seat with a
- * worktree and no write tool (or the reverse) is exactly the drift to avoid.
- */
-const FAMILY_TOKENS: Record<Exclude<ToolFamily, "read">, readonly string[]> = {
-  edit: EDIT_CAPABILITIES,
-  shell: ["shell.execute", "test.execute", "git.commit"],
-  web: ["network.request"],
-};
-
-/** Shell tokens that buy UNSCOPED exec; `git.commit` alone buys the commit path. */
-const FULL_EXEC_TOKENS = new Set(["shell.execute", "test.execute"]);
-
-/** Which family a tool belongs to; `mesh` for the bus, null for a tool nobody mapped. */
-function toolFamily(toolName: string): ToolFamily | "mesh" | null {
-  if (toolName.startsWith(MESH_MCP_PREFIX)) return "mesh";
-  if (READ_TOOLS.has(toolName)) return "read";
-  if (EDIT_TOOLS.has(toolName)) return "edit";
-  if (EXEC_TOOLS.has(toolName)) return "shell";
-  if (NETWORK_TOOLS.has(toolName)) return "web";
-  return null;
-}
-
-/**
- * One family's verdict for a seat BEFORE any operator grant — the single
- * decision both {@link buildPermissionGate} and {@link describeToolPermissions}
- * read, so what the operator is shown and what the seat is refused cannot drift.
- * The gate applies only what a static description cannot know: which tools the
- * operator has since unlocked, and the command a commit-only `Bash` carries.
- */
-interface FamilyVerdict extends ToolPermission {
-  /**
-   * The seat's own tokens in this family that `requires_approval` gates.
-   * Filtered against the seat's grants on purpose: `requires_approval` narrows a
-   * grant and must never widen one, so a token the seat does not hold can
-   * neither gate nor unlock anything.
-   */
-  gated: string[];
-  /** Shell only: the seat holds `git.commit` but no full-exec token. */
-  commitOnly: boolean;
-}
-
-function familyVerdict(family: ToolFamily, caps: ReadonlySet<string>, requires: ReadonlySet<string>): FamilyVerdict {
-  if (family === "read") return { level: "allow", via: "always allowed", gated: [], commitOnly: false };
-  const tokens = FAMILY_TOKENS[family];
-  const held = tokens.filter((t) => caps.has(t));
-  if (held.length === 0) {
-    const [first, ...rest] = family === "shell" ? tokens.filter((t) => FULL_EXEC_TOKENS.has(t)) : tokens;
-    return {
-      level: "deny",
-      via: `needs ${first}${rest.length ? ` (or ${rest.join(", ")})` : ""}`,
-      gated: [],
-      commitOnly: false,
-    };
-  }
-  // `git.commit` once bought blanket exec: opencode rendered it as bash:"ask",
-  // nothing on a mesh turn could answer that prompt, and a pending one would
-  // stall the slot to its timeout — so the seat got exec instead. That backend
-  // is gone and the widening outlived its reason: a seat granted git.commit and
-  // deliberately *not* granted shell.execute was still getting arbitrary bash.
-  // It now buys the commit path only.
-  const commitOnly = family === "shell" && !held.some((t) => FULL_EXEC_TOKENS.has(t));
-  const granting = family === "shell" && !commitOnly ? held.filter((t) => FULL_EXEC_TOKENS.has(t)) : held;
-  const gated = held.filter((t) => requires.has(t));
-  if (gated.length > 0) {
-    return {
-      level: "approval",
-      via: `${gated.join(", ")} (requires_approval)${commitOnly ? "; commit path only once granted" : ""}`,
-      gated,
-      commitOnly,
-    };
-  }
-  if (commitOnly) return { level: "scoped", via: "git.commit (commit path only)", gated, commitOnly };
-  return { level: "allow", via: granting.join(", "), gated, commitOnly };
-}
-
-function familyVerdicts(caps: ReadonlySet<string>, requires: ReadonlySet<string>): Record<ToolFamily, FamilyVerdict> {
-  return {
-    read: familyVerdict("read", caps, requires),
-    edit: familyVerdict("edit", caps, requires),
-    shell: familyVerdict("shell", caps, requires),
-    web: familyVerdict("web", caps, requires),
-  };
-}
-
-/**
- * What a seat may do with each tool family, as the permission gate would decide
- * it — for the operator surface, which until now could only show the raw
- * capability list and leave the reader to work out that `git.commit` does not
- * mean "has a shell".
- *
- * Pure, and built on the same verdict the gate uses. It describes the seat as
- * configured: an `approval` family stays `approval` here after the operator
- * unlocks one of its tools, because grants are per tool and per session, and
- * this is a statement about the seat, not about one session of it.
- */
-export function describeToolPermissions(capabilities: string[], requiresApproval: string[] = []): ToolPermissions {
-  const caps = new Set(capabilities.map(normalizeCapability));
-  const requires = new Set(requiresApproval.map(normalizeCapability));
-  const v = familyVerdicts(caps, requires);
-  const strip = ({ level, via }: FamilyVerdict): ToolPermission => ({ level, via });
-  return { read: strip(v.read), edit: strip(v.edit), shell: strip(v.shell), web: strip(v.web) };
-}
-
-/** Operator-approval half of {@link buildPermissionGate}. */
-export interface ApprovalGate {
-  /** Capability tokens whose tools need a grant. Normalized by the caller. */
-  requires: readonly string[];
-  /** Tool names the operator has unlocked for this session. */
-  granted: ReadonlySet<string>;
-  /**
-   * Record a tool refused for want of a grant. Called at most once per call.
-   *
-   * Optional: the denial already tells the model, and the operator surface
-   * lists gated seats from config. A caller that wants a live "blocked on"
-   * queue supplies this; nothing in the mesh requires one yet.
-   */
-  onRequest?(toolName: string): void;
-}
-
-/**
- * Capability-to-tool gate. The removed opencode adapter expressed this as a
- * static permission block in a generated config; the SDK offers a callback
- * instead, which is a closer fit — the decision is computed from the same
- * capability set, but an unknown or newly added tool fails closed here instead
- * of falling through whatever the config file happened not to mention.
- *
- * `approval` layers an operator gate over that: a capability the seat holds,
- * whose tools stay denied until the operator unlocks them.
- *
- * The denial IS the mechanism — this gate never blocks waiting for a human,
- * even though it could (the callback is async). `interruptSilentTurns` kills
- * any turn that goes quiet for `turnSilenceMs`, resolved to 60-120s, which is
- * well inside human response latency: a blocking hold would be destroyed by
- * the supervisor's own stall detector before most operators answered. So the
- * gate refuses, records the request, and lets the turn end WAITING; the
- * operator grants over HTTP and the agent is re-activated.
- *
- * That shape also settles what a grant can honestly mean. A refused call
- * cannot be replayed — the model re-decides on its next turn — so the operator
- * unlocks the TOOL for the rest of the session, never one invocation of it.
- */
-export function buildPermissionGate(capabilities: string[], approval?: ApprovalGate, shell?: { cwd: string; productPath?: string }): CanUseTool {
-  // Normalized here as well as at config load: capabilityGrants also arrive
-  // from direct AgentDefinition construction (tests, bench harnesses).
-  const caps = new Set(capabilities.map(normalizeCapability));
-  const requires = new Set((approval?.requires ?? []).map(normalizeCapability));
-  const granted = approval?.granted ?? new Set<string>();
-  // Decided once, from the same function `describeToolPermissions` reads: caps
-  // and `requires` are fixed for the gate's life. `granted` is NOT folded in —
-  // it is the caller's live set, refreshed per turn, and is read per call below.
-  const verdicts = familyVerdicts(caps, requires);
-
-  const deny = (message: string) => ({ behavior: "deny" as const, message });
-
-  /** Why a family with no authorizing capability refuses this tool. Wording is the gate's contract with the model. */
-  const refusal = (family: Exclude<ToolFamily, "read">, toolName: string): string =>
-    family === "edit"
-      ? `${toolName} denied: this seat holds no write capability (has: ${[...caps].join(", ") || "none"}).`
-      : family === "shell"
-        ? `${toolName} denied: this seat holds no shell.execute or test.execute capability.`
-        : `${toolName} denied: this seat holds no network.request capability.`;
-
-  return async (toolName, toolInput) => {
-    const family = toolFamily(toolName);
-    if (family === "mesh" || family === "read") return { behavior: "allow", updatedInput: toolInput };
-    // Fail closed. A tool nobody mapped is a tool nobody authorized.
-    if (family === null) return deny(`${toolName} is not available to curule agents under the claude runtime.`);
-    const v = verdicts[family];
-    if (v.level === "deny") return deny(refusal(family, toolName));
-    // Checked before the commit-scope narrowing below: an operator gate is
-    // about whether this seat may reach the tool at all, which is a question
-    // that comes before what it may pass to it.
-    if (v.level === "approval" && !granted.has(toolName)) {
-      approval?.onRequest?.(toolName);
-      return deny(
-        `${toolName} needs operator approval: this seat holds ${v.gated.join(", ")}, which requires_approval gates. ` +
-          "The request is recorded on the operator's gate surface — end your turn rather than retrying, " +
-          "since a grant cannot unlock a call already in flight.",
-      );
-    }
-    // BashOutput and KillShell address a shell this seat already opened; only
-    // Bash opens a new one, so only Bash needs its command scoped. `commitOnly`
-    // rather than `level === "scoped"`: an unlocked `approval` seat that holds
-    // only git.commit is still commit-only once through the operator gate.
-    if (v.commitOnly && toolName === "Bash") {
-      const why = commitScopeDenial(toolInput);
-      if (why) return deny(`Bash denied: ${why}.`);
-    }
-    // The file tools may not write into the product checkout either: a seat with a worktree edits
-    // there, and what lands in the product checkout lands through `merge`. See `productWriteDenial`.
-    if (family === "edit" && shell?.productPath) {
-      const target = typeof toolInput.file_path === "string" ? toolInput.file_path : typeof toolInput.notebook_path === "string" ? toolInput.notebook_path : "";
-      const why = productWriteDenial(target, { cwd: shell.cwd, productPath: shell.productPath });
-      if (why) return deny(`${toolName} denied: ${why}.`);
-    }
-    // Whatever else a shell may do, it may not land work on the product branch: that
-    // is the `merge` op's job, which checks git.merge and the merge gate and records
-    // what it landed. See landing-gate.ts.
-    if (toolName === "Bash" && shell?.productPath) {
-      const command = typeof toolInput.command === "string" ? toolInput.command : "";
-      const why = landingDenial(command, { cwd: shell.cwd, productPath: shell.productPath }, { mayPush: caps.has("git.merge") });
-      if (why) return deny(`Bash denied: ${why}.`);
-    }
-    return { behavior: "allow", updatedInput: toolInput };
-  };
 }
 
 /** Serializable half of a session — this is what the mesh persists. */

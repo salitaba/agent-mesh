@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { landingDenial } from "../../packages/runtime-claude/src/landing-gate";
+import { landingDenial } from "../../packages/agent-runtime/src/landing-gate";
 import { buildPermissionGate } from "../../packages/runtime-claude/src/index";
 import { makeMesh } from "../helpers";
 import { gitSkip } from "../support/git";

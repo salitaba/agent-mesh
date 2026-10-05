@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { productWriteDenial } from "../../packages/runtime-claude/src/landing-gate";
+import { productWriteDenial } from "../../packages/agent-runtime/src/landing-gate";
 import { buildPermissionGate } from "../../packages/runtime-claude/src/index";
 
 /**

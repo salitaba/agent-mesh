@@ -736,3 +736,8 @@ export function shortDigest(s: string): string {
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return `dgx-${(h >>> 0).toString(16)}`;
 }
+
+// The rules every runtime enforces on a seat's tools, and the prompt text no backend words differently.
+export * from "./tool-gate";
+export * from "./landing-gate";
+export * from "./prompt";
