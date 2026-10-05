@@ -372,6 +372,26 @@ test("a container provisioner needs an image and a network, takes docker or podm
   using(workdir((raw) => Object.assign(raw.provisioner, { limits: { cpus: 0.5, memory_mb: 512, pids: 64 } })), (w) => assert.deepEqual(load(w).provisioner.limits, { cpus: 0.5, memoryMb: 512, pids: 64 }));
 });
 
+test("a container provisioner may be told the network's subnet, so that each workspace is given an address of its own there, and a subnet that cannot be used is refused", () => {
+  using(workdir(), (w) => assert.equal("subnet" in load(w).provisioner, false, "without one, a workspace is reached by its container's name"));
+  using(workdir((raw) => (raw.provisioner.subnet = "10.213.0.0/24")), (w) => {
+    const p = load(w).provisioner;
+    assert.ok(p.kind === "container" && p.subnet === "10.213.0.0/24");
+    assert.match(describeControl(load(w)).join("\n"), /on the network curule-workspaces \(each at an address of its own in 10\.213\.0\.0\/24\), with 1 CPU/);
+  });
+  for (const [subnet, why] of [
+    ["10.213.0.1/24", /provisioner\.subnet: '10\.213\.0\.1\/24' is not the start of a \/24: did you mean 10\.213\.0\.0\/24\?/],
+    ["10.213.0.0/8", /provisioner\.subnet: '10\.213\.0\.0\/8' is not an IPv4 subnet from \/16 to \/29/],
+    ["curule-workspaces", /provisioner\.subnet: 'curule-workspaces' is not an IPv4 subnet/],
+    [24, /provisioner\.subnet must be the network's subnet, like 10\.213\.0\.0\/24/],
+  ] as const) {
+    using(workdir((raw) => (raw.provisioner.subnet = subnet)), (w) => assert.match(refusal(w), why, String(subnet)));
+  }
+  using(workdir((raw) => ((raw.provisioner = { kind: "local", base_dir: "./w", host_command: ["node"], subnet: "10.213.0.0/24" }), (raw.app_url = "http://localhost:7500"), (raw.workspaces = { domain: "localhost" }), delete raw.licence, (raw.billing = { provider: "manual", pay_url: "http://localhost/pay?ref={ref}" }))), (w) => {
+    assert.equal("subnet" in load(w).provisioner, false, "a local process has no address on a network: the key means nothing to it, and is not carried");
+  });
+});
+
 test("the local provisioner is refused in production, at deploy time, and not at the first customer", () => {
   using(workdir((raw) => (raw.provisioner = { kind: "local", base_dir: "./w", host_command: ["node"] })), (w) => {
     assert.match(refusal(w), /provisioner.kind local is for trying the service on one machine: an agent's shell runs as the same user as every other workspace/);

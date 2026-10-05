@@ -12,6 +12,7 @@ import {
   ProcessRunner,
   ProvisionError,
   waitUntilReady,
+  workspaceAddresses,
   type CommandResult,
   type CommandRunner,
   type WorkspaceSpec,
@@ -168,15 +169,17 @@ test("a container that will not start leaves no volume behind, and the engine's 
     () => container(runner).create(spec()),
     (err: Error) => err instanceof ProvisionError && err.message === `docker run failed (125): docker: Error response from daemon: ${"x".repeat(300 - "docker: Error response from daemon: ".length)}`,
   );
-  assert.deepEqual(runner.verbs, ["volume create", "run", "volume rm"]);
-  assert.deepEqual(runner.calls[2]!.args, ["volume", "rm", "--force", "curule-ws-ws_abc123"]);
+  assert.deepEqual(runner.verbs, ["volume create", "run", "rm", "volume rm"], "a container that was made and did not start is removed too: it would keep its name, and its address");
+  assert.deepEqual(runner.calls[2]!.args, ["rm", "--force", "curule-ws-ws_abc123"]);
+  assert.deepEqual(runner.calls[3]!.args, ["volume", "rm", "--force", "curule-ws-ws_abc123"]);
   const none = new FakeRunner();
   none.answers.push(fails("volume create", "", 1));
   await assert.rejects(() => container(none).create(spec()), /docker volume failed \(1\): no message/);
   assert.deepEqual(none.verbs, ["volume create"], "with no volume there is nothing to run or to clean up");
   const cleanup = new FakeRunner();
-  cleanup.answers.push(fails("run", "no space", 125), fails("volume rm", "also failed"));
+  cleanup.answers.push(fails("run", "no space", 125), fails("rm", "device busy"), fails("volume rm", "also failed"));
   await assert.rejects(() => container(cleanup).create(spec()), /docker run failed \(125\): no space/, "a clean-up that fails does not hide why it was needed");
+  assert.deepEqual(cleanup.verbs, ["volume create", "run", "rm", "volume rm"], "and each step of it is tried whatever the one before said");
 });
 
 test("a workspace is stopped, started and removed, and one that is already gone is not an error", async () => {
@@ -229,6 +232,146 @@ test("the state of a workspace is read from the engine: running, stopped, missin
   assert.equal(await state("", "Error: No such container: x", 1).c.status("x"), "missing");
   assert.equal(await state("", "Error: no such object: x", 1).c.status("x"), "missing");
   await assert.rejects(() => state("", "Cannot connect to the Docker daemon", 1).c.status("x"), /docker inspect failed: Cannot connect to the Docker daemon/);
+});
+
+// ---- a workspace at an address of its own ----
+
+/** An engine that keeps containers: it answers `ps` with their names and `inspect` with the address each was asked to have or has now. */
+class AddressedEngine extends FakeRunner {
+  /** Containers by name: the address they were made with, and whether they are running. */
+  readonly held = new Map<string, { address: string; running: boolean }>();
+  /** What `inspect` says about the network address of a running container, when a test wants it to differ from what was asked. */
+  override async run(command: string, args: string[], options?: { env?: Record<string, string> }): Promise<CommandResult> {
+    this.calls.push({ command, args, env: options?.env });
+    // What a test says the engine answers is what it answers; only what it does not say is done as an engine would.
+    for (const answer of this.answers) {
+      const said = answer(args);
+      if (said) return said;
+    }
+    const made: CommandResult = { code: 0, stdout: "", stderr: "" };
+    if (args[0] === "run") {
+      const name = args[args.indexOf("--name") + 1]!;
+      this.held.set(name, { address: args[args.indexOf("--ip") + 1]!, running: true });
+    } else if (args[0] === "ps") {
+      return { code: 0, stdout: [...this.held.keys()].map((n) => `${n}\n`).join(""), stderr: "" };
+    } else if (args[0] === "inspect" && args.includes("--format")) {
+      const format = args[args.indexOf("--format") + 1]!;
+      const names = args.slice(args.indexOf("--format") + 2);
+      const lines = names.map((n) => {
+        const c = this.held.get(n);
+        if (!c) return "";
+        return format.includes(".IPAMConfig") ? c.address : c.running ? c.address : "";
+      });
+      return { code: 0, stdout: lines.map((l) => `${l}\n`).join(""), stderr: "" };
+    } else if (args[0] === "start") this.held.get(args[1]!)!.running = true;
+    else if (args[0] === "stop") this.held.get(args[1]!)!.running = false;
+    else if (args[0] === "rm") this.held.delete(args[args.length - 1]!);
+    return made;
+  }
+}
+
+const addressed = (runner: FakeRunner, over: Partial<ConstructorParameters<typeof ContainerProvisioner>[0]> = {}) => container(runner, { addresses: { subnet: "10.213.0.0/24" }, ...over });
+
+test("the addresses a workspace may be given are the subnet's, from the tenth to the one before the last, unless the operator says otherwise", () => {
+  const all = workspaceAddresses({ subnet: "10.213.0.0/24" });
+  assert.equal(all.length, 245);
+  assert.deepEqual([all[0], all[1], all.at(-1)], ["10.213.0.10", "10.213.0.11", "10.213.0.254"], "the network's own address (.1) and the first few are not for workspaces, and neither is the broadcast address");
+  assert.deepEqual(workspaceAddresses({ subnet: "10.213.0.0/24", first: 100, last: 102 }), ["10.213.0.100", "10.213.0.101", "10.213.0.102"]);
+  assert.deepEqual(workspaceAddresses({ subnet: "10.213.4.0/29" }), ["10.213.4.6"], "a subnet of eight has one address that is neither the network's, the broadcast, nor one of the first nine: the last usable one");
+  assert.equal(workspaceAddresses({ subnet: "10.213.0.0/16" }).at(-1), "10.213.255.254");
+  assert.equal(workspaceAddresses({ subnet: "10.0.0.0/16", first: 2 })[0], "10.0.0.2");
+  for (const subnet of ["10.213.0.0", "10.213.0.0/8", "10.213.0.0/30", "10.213.0.0/33", "10.213.0.1/24", "10.213.0.256/24", "ten/24", "", "10.213.0.0/24 ", "10.213.0.0/024x"]) {
+    assert.throws(() => workspaceAddresses({ subnet }), (err: Error) => err instanceof ProvisionError && /(is not an IPv4 subnet from \/16 to \/29|is not the start of a)/.test(err.message), JSON.stringify(subnet));
+  }
+  assert.throws(() => workspaceAddresses({ subnet: "10.213.0.1/24" }), /did you mean 10\.213\.0\.0\/24\?/);
+  for (const range of [{ first: 1 }, { first: 5, last: 4 }, { last: 255 }, { first: 2.5 }, { first: Number.NaN }, { last: 0 }]) {
+    assert.throws(() => workspaceAddresses({ subnet: "10.213.0.0/24", ...range }), (err: Error) => err instanceof ProvisionError && /the workspaces' addresses must run from 2 to 254 in 10\.213\.0\.0\/24/.test(err.message), JSON.stringify(range));
+  }
+  assert.throws(() => new ContainerProvisioner({ runner: new FakeRunner(), image: "i", network: "has space", addresses: { subnet: "10.213.0.0/24" } }), /cannot be looked up by its addresses/, "a network name goes into the engine's template, so it must be a plain one");
+});
+
+test("a workspace is run at the first address that is free, and is reached there and not by name", async () => {
+  const runner = new AddressedEngine();
+  const c = addressed(runner);
+  const a = await c.create(spec({ workspaceId: "ws_a" }));
+  const b = await c.create(spec({ workspaceId: "ws_b" }));
+  assert.deepEqual(a, { handle: "curule-ws-ws_a", upstream: { host: "10.213.0.10", port: 7420 } });
+  assert.deepEqual(b, { handle: "curule-ws-ws_b", upstream: { host: "10.213.0.11", port: 7420 } });
+  const run = runner.calls.find((x) => x.args[0] === "run")!;
+  const at = run.args.indexOf("--network");
+  assert.deepEqual(run.args.slice(at, at + 4), ["--network", "curule-workspaces", "--ip", "10.213.0.10"], "the address follows the network it is on");
+  assert.ok(runner.calls.filter((x) => x.args[0] === "ps").every((x) => x.args.join(" ") === "ps --all --filter label=curule.workspace --format {{.Names}}"), "every container that is a workspace's is looked at, stopped ones too: they keep their address");
+  assert.ok(runner.calls.filter((x) => x.args[0] === "inspect").every((x) => x.args.includes('{{with index .NetworkSettings.Networks "curule-workspaces"}}{{with .IPAMConfig}}{{.IPv4Address}}{{end}}{{end}}')), "the address asked for, which a stopped container still has");
+});
+
+test("an address that a stopped workspace holds is not given to another, and one that was removed is given again", async () => {
+  const runner = new AddressedEngine();
+  const c = addressed(runner, { addresses: { subnet: "10.213.0.0/24", first: 10, last: 12 } });
+  await c.create(spec({ workspaceId: "ws_a" }));
+  await c.create(spec({ workspaceId: "ws_b" }));
+  await c.suspend("curule-ws-ws_a");
+  const third = await c.create(spec({ workspaceId: "ws_c" }));
+  assert.equal(third.upstream.host, "10.213.0.12", "ws_a is stopped and still has .10");
+  await assert.rejects(() => c.create(spec({ workspaceId: "ws_d" })), (err: Error) => err instanceof ProvisionError && err.message === "no address is left for a workspace: 3 are for workspaces in 10.213.0.0/24, and all are in use");
+  assert.deepEqual([...runner.held.keys()], ["curule-ws-ws_a", "curule-ws-ws_b", "curule-ws-ws_c"], "a refusal for want of an address leaves nothing behind, and tries to remove nothing it did not make");
+  assert.equal(runner.calls.filter((x) => x.args[0] === "rm").length, 0);
+  assert.deepEqual(runner.calls.filter((x) => x.args[0] === "volume" && x.args[1] === "rm").map((x) => x.args.at(-1)), ["curule-ws-ws_d"], "but the volume that was made for it is");
+  await c.destroy("curule-ws-ws_b");
+  assert.equal((await c.create(spec({ workspaceId: "ws_e" }))).upstream.host, "10.213.0.11", "a removed workspace's address is free again");
+});
+
+test("workspaces made at the same moment are not given the same address", async () => {
+  const runner = new AddressedEngine();
+  const c = addressed(runner);
+  const made = await Promise.all(["ws_1", "ws_2", "ws_3", "ws_4", "ws_5"].map((id) => c.create(spec({ workspaceId: id }))));
+  const addresses = made.map((m) => m.upstream.host);
+  assert.equal(new Set(addresses).size, 5, addresses.join(", "));
+  assert.deepEqual([...addresses].sort(), ["10.213.0.10", "10.213.0.11", "10.213.0.12", "10.213.0.13", "10.213.0.14"]);
+  // One that fails does not stop the ones asked for after it.
+  const failing = new AddressedEngine();
+  failing.answers.push((args) => (args[0] === "run" && args.includes("curule-ws-ws_bad") ? { code: 125, stdout: "", stderr: "Address already in use" } : undefined));
+  const f = addressed(failing);
+  const [bad, good] = await Promise.allSettled([f.create(spec({ workspaceId: "ws_bad" })), f.create(spec({ workspaceId: "ws_good" }))]);
+  assert.equal(bad.status, "rejected");
+  assert.equal(good.status, "fulfilled");
+  assert.equal(good.status === "fulfilled" && good.value.upstream.host, "10.213.0.10", "the failed one was cleaned up, and its address with it");
+});
+
+test("a workspace started again is found at the address it has, and a container with no address on the network is an error", async () => {
+  const runner = new AddressedEngine();
+  const c = addressed(runner);
+  const made = await c.create(spec({ workspaceId: "ws_a" }));
+  await c.suspend(made.handle);
+  assert.deepEqual(await c.resume(made.handle), made, "the address is the one it was made with: it is the same after a stop, a restart of the engine and a reboot");
+  const resumes = runner.calls.filter((x) => x.args[0] === "inspect" && x.args.at(-1) === "curule-ws-ws_a");
+  assert.equal(resumes.at(-1)!.args.join(" "), 'inspect --format {{with index .NetworkSettings.Networks "curule-workspaces"}}{{.IPAddress}}{{end}} curule-ws-ws_a');
+  // An engine that starts it and has no address to say for it: it is not on the network.
+  const lost = new AddressedEngine();
+  lost.held.set("curule-ws-ws_a", { address: "10.213.0.10", running: false });
+  lost.answers.push((args) => (args[0] === "inspect" && args.join(" ").includes(".IPAddress") ? { code: 0, stdout: "\n", stderr: "" } : undefined));
+  await assert.rejects(() => addressed(lost).resume("curule-ws-ws_a"), (err: Error) => err instanceof ProvisionError && err.message === "curule-ws-ws_a has no address on the network curule-workspaces");
+  // Without addresses a workspace is reached by name, as it always was.
+  const plain = new FakeRunner();
+  assert.deepEqual(await container(plain).resume("curule-ws-x"), { handle: "curule-ws-x", upstream: { host: "curule-ws-x", port: 7420 } });
+  assert.deepEqual(plain.verbs, ["start"]);
+});
+
+test("what the engine says while looking for a free address is an error with its words, and a container that vanished between the two questions is not one", async () => {
+  const broken = new AddressedEngine();
+  broken.answers.push(fails("ps", "Cannot connect to the Docker daemon", 1));
+  await assert.rejects(() => addressed(broken).create(spec()), /docker ps failed \(1\): Cannot connect to the Docker daemon/);
+  assert.equal(broken.calls.filter((x) => x.args[0] === "run").length, 0, "nothing is run without knowing what is taken");
+  assert.deepEqual(broken.verbs.slice(-1), ["volume rm"], "and the volume goes");
+  const raced = new AddressedEngine();
+  raced.held.set("curule-ws-ws_gone", { address: "10.213.0.10", running: true });
+  raced.answers.push((args) => (args[0] === "inspect" ? { code: 1, stdout: "", stderr: "Error: No such container: curule-ws-ws_gone" } : undefined));
+  assert.equal((await addressed(raced).create(spec({ workspaceId: "ws_new" }))).upstream.host, "10.213.0.10", "a container that is gone has given its address up");
+  // A container that is not a workspace's, or has a name that is not ours, is not asked about.
+  const stray = new FakeRunner();
+  stray.answers.push((args) => (args[0] === "ps" ? { code: 0, stdout: "somebody-elses\ncurule-ws-ws_1\n--flag\n", stderr: "" } : undefined));
+  await addressed(stray).create(spec({ workspaceId: "ws_2" }));
+  const asked = stray.calls.find((x) => x.args[0] === "inspect")!;
+  assert.deepEqual(asked.args.slice(3), ["curule-ws-ws_1"], "only names that are ours, and that the engine could not take for an option");
 });
 
 // ---- running a command ----

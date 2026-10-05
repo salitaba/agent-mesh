@@ -23,6 +23,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { LICENSE_PUBLIC_KEYS, signLicense, verifyLicense, type PublicKeySet } from "../../licensing/src/index";
 import { loadCatalogue, type Catalogue } from "./catalogue";
+import { workspaceAddresses } from "./provision-container";
 import { SmtpError, addressOf, fromHeader } from "./smtp";
 
 export interface ControlConfig {
@@ -53,7 +54,7 @@ export interface ControlConfig {
   gateway: { adminUrl: string; adminToken: string; tenantUrl: string };
   licence?: { kid: string; privateKey: string };
   provisioner:
-    | { kind: "container"; engine: string; image: string; network: string; egressProxy?: string; noProxy: string[]; limits: WorkspaceLimits }
+    | { kind: "container"; engine: string; image: string; network: string; subnet?: string; egressProxy?: string; noProxy: string[]; limits: WorkspaceLimits }
     | { kind: "local"; baseDir: string; hostCommand: string[]; limits: WorkspaceLimits };
   billing: { provider: "manual"; payUrl: string } | { provider: "hosted-checkout"; apiKey: string; webhookSecret: string; baseUrl?: string };
   reconcileMinutes: number;
@@ -400,7 +401,21 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     if (prov.egress_proxy !== undefined) egressProxy = url(prov.egress_proxy, "provisioner.egress_proxy")?.href;
     else if (production) warnings.push("provisioner.egress_proxy is not set: a workspace can reach any address its network allows, including other workspaces if the network is not internal");
     const noProxy = Array.isArray(prov.no_proxy) && prov.no_proxy.every((h) => typeof h === "string" && h !== "") ? (prov.no_proxy as string[]) : prov.no_proxy === undefined ? [] : (problems.push("provisioner.no_proxy must be a list of hosts"), []);
-    provisioner = { kind: "container", engine, image, network, ...(egressProxy ? { egressProxy } : {}), noProxy, limits };
+    // A control plane that runs on the machine and not in a container cannot resolve a container's name, so a workspace is given an address of its own
+    // in the network's subnet and is reached there.
+    let subnet: string | undefined;
+    if (prov.subnet !== undefined) {
+      if (typeof prov.subnet !== "string") problems.push("provisioner.subnet must be the network's subnet, like 10.213.0.0/24");
+      else {
+        try {
+          workspaceAddresses({ subnet: prov.subnet });
+          subnet = prov.subnet;
+        } catch (err) {
+          problems.push(`provisioner.subnet: ${(err as Error).message}`);
+        }
+      }
+    }
+    provisioner = { kind: "container", engine, image, network, ...(subnet ? { subnet } : {}), ...(egressProxy ? { egressProxy } : {}), noProxy, limits };
   } else if (prov.kind === "local") {
     if (production) problems.push("provisioner.kind local is for trying the service on one machine: an agent's shell runs as the same user as every other workspace and as the control plane. Use container, or serve the app over http:// to say this is a trial");
     const hostCommand = Array.isArray(prov.host_command) && prov.host_command.length > 0 && prov.host_command.every((c) => typeof c === "string" && c !== "") ? (prov.host_command as string[]) : (problems.push("provisioner.host_command must be the command that starts a host, as a list: [node, dist/apps/mesh-cli/src/index.js]"), []);

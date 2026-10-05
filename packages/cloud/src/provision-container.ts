@@ -74,20 +74,67 @@ export interface ContainerProvisionerOptions {
   stopTimeoutSeconds?: number;
   /** The domain the workspaces are served under, for the host's allowed-host check. */
   apexDomain?: string;
+  /**
+   * Give each workspace a fixed address of its own on the network, and reach it there. Without this a workspace is reached by its
+   * container's name, which only a process on the same network can resolve (the engine's name server is not reachable from the host).
+   * A control plane that runs on the host, and not in a container on the network, needs this.
+   */
+  addresses?: ContainerAddresses;
+}
+
+/** The addresses a workspace may be given: a subnet the network was made with, and which host numbers in it are for workspaces. */
+export interface ContainerAddresses {
+  /** The network's IPv4 subnet, as the engine was told it: `10.213.0.0/24`. A prefix from /16 to /29. */
+  subnet: string;
+  /** The first and the last host number a workspace may be given (the 10 in 10.213.0.10). Default: 10, and the last usable address. */
+  first?: number;
+  last?: number;
 }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+/** What a network is called when its name goes into the engine's template language: nothing that could end the template or start another. */
+const NETWORK_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+const toNumber = (address: string): number | undefined => {
+  const m = IPV4.exec(address);
+  if (!m) return undefined;
+  const parts = [m[1]!, m[2]!, m[3]!, m[4]!].map(Number);
+  return parts.every((p) => p <= 255) ? ((parts[0]! * 256 + parts[1]!) * 256 + parts[2]!) * 256 + parts[3]! : undefined;
+};
+const toAddress = (n: number): string => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+
+/** The numbers a workspace may be given, as addresses, in order. Throws what is wrong with the subnet or the range. */
+export function workspaceAddresses(a: ContainerAddresses): string[] {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(a.subnet);
+  const base = m ? toNumber(m[1]!) : undefined;
+  const bits = m ? Number(m[2]) : Number.NaN;
+  if (base === undefined || !Number.isInteger(bits) || bits < 16 || bits > 29) throw new ProvisionError(`'${a.subnet}' is not an IPv4 subnet from /16 to /29, like 10.213.0.0/24`);
+  const size = 2 ** (32 - bits);
+  if (base % size !== 0) throw new ProvisionError(`'${a.subnet}' is not the start of a /${bits}: did you mean ${toAddress(base - (base % size))}/${bits}?`);
+  const last = a.last ?? size - 2;
+  const first = a.first ?? Math.min(10, last);
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first < 2 || last > size - 2 || first > last) throw new ProvisionError(`the workspaces' addresses must run from 2 to ${size - 2} in ${a.subnet}, with the first not after the last (got ${String(a.first)} to ${String(a.last)})`);
+  return Array.from({ length: last - first + 1 }, (_, i) => toAddress(base + first + i));
+}
 
 export class ContainerProvisioner implements Provisioner {
   readonly kind = "container";
   private readonly engine: string;
   private readonly port: number;
   private readonly prefix: string;
+  private readonly pool: string[] | undefined;
+  /** Allocations are made one at a time: two that read the same free address would both ask for it. */
+  private allocating: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly o: ContainerProvisionerOptions) {
     this.engine = o.engine ?? "docker";
     this.port = o.port ?? 7420;
     this.prefix = o.namePrefix ?? "curule-ws-";
+    if (o.addresses) {
+      if (!NETWORK_NAME.test(o.network)) throw new ProvisionError(`the network '${o.network}' cannot be looked up by its addresses: a name is letters, digits and . _ -`);
+      this.pool = workspaceAddresses(o.addresses);
+    }
   }
 
   private nameOf(workspaceId: string): string {
@@ -103,8 +150,8 @@ export class ContainerProvisioner implements Provisioner {
     return res;
   }
 
-  /** The `run` arguments for a workspace: every restriction, and no secret. Exposed so a test can read exactly what is asked. */
-  runArguments(spec: WorkspaceSpec): { args: string[]; env: Record<string, string> } {
+  /** The `run` arguments for a workspace: every restriction, and no secret. Exposed so a test can read exactly what is asked. `address` is the fixed address the workspace is given, when the operator has said which are for workspaces. */
+  runArguments(spec: WorkspaceSpec, address?: string): { args: string[]; env: Record<string, string> } {
     const name = this.nameOf(spec.workspaceId);
     const l = spec.limits;
     if (!(l.cpus > 0) || !(l.memoryMb >= 128) || !(l.pids >= 32)) throw new ProvisionError("a workspace needs at least 0.1 of a CPU, 128 MB of memory and 32 processes");
@@ -137,6 +184,7 @@ export class ContainerProvisioner implements Provisioner {
       name,
       "--network",
       this.o.network,
+      ...(address !== undefined ? ["--ip", address] : []),
       "--read-only",
       "--tmpfs",
       "/tmp:rw,nosuid,size=512m",
@@ -172,18 +220,64 @@ export class ContainerProvisioner implements Provisioner {
     return { args, env };
   }
 
+  /** Run `work` after every allocation that was asked for before it has finished, and whatever happened to those. */
+  private alone<T>(work: () => Promise<T>): Promise<T> {
+    const turn = this.allocating.then(work, work);
+    this.allocating = turn.catch(() => undefined);
+    return turn;
+  }
+
+  /**
+   * The addresses that workspaces' containers hold on the network, running or stopped: a stopped container keeps the address it was made
+   * with, and gives it up only when it is removed. `inspect` answers once for every container it finds, and an empty line for one that has none.
+   */
+  private async takenAddresses(): Promise<Set<string>> {
+    const listed = await this.engineRun(["ps", "--all", "--filter", "label=curule.workspace", "--format", "{{.Names}}"]);
+    const names = listed.stdout.split("\n").map((n) => n.trim()).filter((n) => n.startsWith(this.prefix) && ID.test(n));
+    if (names.length === 0) return new Set();
+    // A container that was removed since it was listed is not a failure: its address is free.
+    const found = await this.engineRun(["inspect", "--format", `{{with index .NetworkSettings.Networks "${this.o.network}"}}{{with .IPAMConfig}}{{.IPv4Address}}{{end}}{{end}}`, ...names], undefined, /No such (container|object)/i);
+    return new Set(found.stdout.split("\n").map((a) => a.trim()).filter((a) => a !== ""));
+  }
+
+  /** The address a started workspace's container has on the network. */
+  private async addressOf(name: string): Promise<string> {
+    const res = await this.engineRun(["inspect", "--format", `{{with index .NetworkSettings.Networks "${this.o.network}"}}{{.IPAddress}}{{end}}`, name]);
+    const address = res.stdout.trim();
+    if (toNumber(address) === undefined) throw new ProvisionError(`${name} has no address on the network ${this.o.network}`);
+    return address;
+  }
+
   async create(spec: WorkspaceSpec): Promise<ProvisionedWorkspace> {
     const name = this.nameOf(spec.workspaceId);
-    const { args, env } = this.runArguments(spec);
+    // What the engine could not be asked for is refused before anything is run.
+    const plain = this.runArguments(spec);
     await this.engineRun(["volume", "create", "--label", `curule.workspace=${spec.workspaceId}`, name]);
+    let asked = false;
     try {
-      await this.engineRun(args, env);
+      const pool = this.pool;
+      if (!pool) {
+        asked = true;
+        await this.engineRun(plain.args, plain.env);
+        return { handle: name, upstream: { host: name, port: this.port } };
+      }
+      const address = await this.alone(async () => {
+        const taken = await this.takenAddresses();
+        const free = pool.find((a) => !taken.has(a));
+        if (free === undefined) throw new ProvisionError(`no address is left for a workspace: ${pool.length} are for workspaces in ${this.o.addresses!.subnet}, and all are in use`);
+        const { args, env } = this.runArguments(spec, free);
+        asked = true;
+        await this.engineRun(args, env);
+        return free;
+      });
+      return { handle: name, upstream: { host: address, port: this.port } };
     } catch (err) {
-      // A volume made for a container that never started is not worth keeping.
+      // A container that was made and did not start is still there, in the state "created", and holds its address: it goes first, and then
+      // the volume made for it, which is not worth keeping either.
+      if (asked) await this.engineRun(["rm", "--force", name], undefined, /No such (container|object)/i).catch(() => undefined);
       await this.engineRun(["volume", "rm", "--force", name]).catch(() => undefined);
       throw err;
     }
-    return { handle: name, upstream: { host: name, port: this.port } };
   }
 
   async suspend(handle: string): Promise<void> {
@@ -192,7 +286,7 @@ export class ContainerProvisioner implements Provisioner {
 
   async resume(handle: string): Promise<ProvisionedWorkspace> {
     await this.engineRun(["start", handle]);
-    return { handle, upstream: { host: handle, port: this.port } };
+    return { handle, upstream: { host: this.pool ? await this.addressOf(handle) : handle, port: this.port } };
   }
 
   async destroy(handle: string, options: { keepData?: boolean } = {}): Promise<void> {

@@ -248,6 +248,15 @@ async function containers(config: ControlConfig, runner: CommandRunner, connect:
   else if (network.stdout.trim() === "true") say("ok", `the network ${p.network} is internal: a workspace on it has no route out of its own`);
   else say("problem", `the network ${p.network} is not internal: a workspace on it can reach any address this machine can, which is the one thing the network is there to prevent. Make it with \`--internal\``);
 
+  // A workspace is given an address in the subnet the operator named, and the engine refuses one that is not in the network's own.
+  if (p.subnet && network && network.code === 0) {
+    const subnets = await run(["network", "inspect", "--format", "{{range .IPAM.Config}}{{.Subnet}} {{end}}", p.network]);
+    const has = (subnets?.stdout ?? "").split(/\s+/).filter((s) => s !== "");
+    if (!subnets || subnets.code !== 0) say("warning", `the subnet of the network ${p.network} could not be read, so it was not compared with provisioner.subnet ${p.subnet}`);
+    else if (has.includes(p.subnet)) say("ok", `the network ${p.network} has the subnet ${p.subnet}: a workspace is given an address in it`);
+    else say("problem", `the network ${p.network} has the subnet ${has.join(", ") || "(none)"} and provisioner.subnet says ${p.subnet}: the engine would refuse the address of every workspace`);
+  }
+
   if (p.egressProxy) {
     const proxy = new URL(p.egressProxy);
     const port = proxy.port !== "" ? Number(proxy.port) : proxy.protocol === "https:" ? 443 : 80;

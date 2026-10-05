@@ -133,6 +133,7 @@ function provisionerFor(config: ControlConfig, runner: CommandRunner | undefined
     engine: p.engine,
     image: p.image,
     network: p.network,
+    ...(p.subnet ? { addresses: { subnet: p.subnet } } : {}),
     apexDomain: config.workspaces.domain,
     ...(p.egressProxy ? { egressProxy: p.egressProxy, noProxy: [...new Set([...p.noProxy, gatewayHost])] } : {}),
   });
@@ -275,7 +276,7 @@ export function describeControl(config: ControlConfig): string[] {
   const p = c.provisioner;
   lines.push(
     p.kind === "container"
-      ? `workspaces run as ${p.engine} containers of ${p.image} on the network ${p.network}, with ${p.limits.cpus} CPU, ${p.limits.memoryMb} MB and ${p.limits.pids} processes each${p.egressProxy ? `, going out through ${new URL(p.egressProxy).host}` : ", with no egress proxy"}`
+      ? `workspaces run as ${p.engine} containers of ${p.image} on the network ${p.network}${p.subnet ? ` (each at an address of its own in ${p.subnet})` : ""}, with ${p.limits.cpus} CPU, ${p.limits.memoryMb} MB and ${p.limits.pids} processes each${p.egressProxy ? `, going out through ${new URL(p.egressProxy).host}` : ", with no egress proxy"}`
       : `workspaces run as child processes under ${p.baseDir} (a trial: not a boundary between customers)`,
   );
   lines.push(c.licence ? `workspace licences are signed with key ${c.licence.kid}` : "workspace licences are not signed: workspaces run on the Community plan");

@@ -17,8 +17,8 @@ import { CATALOGUE } from "./support";
 interface World {
   /** The gateway's answer to its health check: a status and a body, or an error for a gateway that is not there. */
   gateway?: { status: number; body?: unknown } | Error;
-  /** What the engine says to `version`, `image inspect` and `network inspect`. */
-  engine?: Partial<Record<"version" | "image" | "network", { code: number; stdout?: string; stderr?: string } | Error>>;
+  /** What the engine says to `version`, `image inspect`, `network inspect` and the question of what subnet the network has. */
+  engine?: Partial<Record<"version" | "image" | "network" | "subnet", { code: number; stdout?: string; stderr?: string } | Error>>;
   /** Names that resolve, and to what. */
   dns?: Record<string, string[]>;
   /** `host:port` that cannot be connected to, and why. */
@@ -32,7 +32,7 @@ const HEALTHY = { ok: true, writable: true, currency: "USD", priceVersion: "2026
 function world(w: World = {}): PreflightDeps & { asked: { fetches: Array<{ url: string; authorization: string | null }>; engine: string[][]; connects: string[]; listens: string[] } } {
   const asked = { fetches: [] as Array<{ url: string; authorization: string | null }>, engine: [] as string[][], connects: [] as string[], listens: [] as string[] };
   const gateway = w.gateway ?? { status: 200, body: HEALTHY };
-  const answer = (key: "version" | "image" | "network", fallback: { code: number; stdout: string }): { code: number; stdout: string; stderr: string } => {
+  const answer = (key: "version" | "image" | "network" | "subnet", fallback: { code: number; stdout: string }): { code: number; stdout: string; stderr: string } => {
     const set: { code: number; stdout?: string; stderr?: string } | Error = w.engine?.[key] ?? fallback;
     if (set instanceof Error) throw set;
     return { code: set.code, stdout: set.stdout ?? "", stderr: set.stderr ?? "" };
@@ -42,7 +42,7 @@ function world(w: World = {}): PreflightDeps & { asked: { fetches: Array<{ url: 
       asked.engine.push([command, ...args]);
       if (args[0] === "version") return answer("version", { code: 0, stdout: "27.3.1\n" });
       if (args[0] === "image") return answer("image", { code: 0, stdout: "sha256:abc\n" });
-      if (args[0] === "network") return answer("network", { code: 0, stdout: "true\n" });
+      if (args[0] === "network") return args.some((a) => a.includes("IPAM")) ? answer("subnet", { code: 0, stdout: "10.213.0.0/24 " }) : answer("network", { code: 0, stdout: "true\n" });
       throw new Error(`unexpected engine call: ${args.join(" ")}`);
     },
   };
@@ -329,6 +329,36 @@ test("an image that is not here is a warning, because it is pulled; a network th
     const open = await run(w, world({ dns: KNOWN, engine: { network: { code: 0, stdout: "false\n" } } }));
     assert.deepEqual(said(open, "problem"), ["the network curule-workspaces is not internal: a workspace on it can reach any address this machine can, which is the one thing the network is there to prevent. Make it with `--internal`"]);
     assert.ok(!hasOk(open, /is internal/));
+  });
+});
+
+test("when workspaces are given addresses, the network's subnet must be the one the configuration names, or the engine would refuse every workspace", async () => {
+  const addressed = (raw: Record<string, any>): void => {
+    deployed(raw);
+    raw.provisioner.subnet = "10.213.0.0/24";
+  };
+  await using(workdir(addressed), async (w) => {
+    const deps = world({ dns: KNOWN });
+    const right = await run(w, deps);
+    assert.deepEqual(said(right, "problem"), []);
+    assert.ok(hasOk(right, /^the network curule-workspaces has the subnet 10\.213\.0\.0\/24: a workspace is given an address in it$/));
+    assert.deepEqual(deps.asked.engine.filter((c) => c[1] === "network").map((c) => c[4]), ["{{.Internal}}", "{{range .IPAM.Config}}{{.Subnet}} {{end}}"], "the network is asked about twice, and the second time about its subnets");
+    const other = await run(w, world({ dns: KNOWN, engine: { subnet: { code: 0, stdout: "172.20.0.0/16 " } } }));
+    assert.deepEqual(said(other, "problem"), ["the network curule-workspaces has the subnet 172.20.0.0/16 and provisioner.subnet says 10.213.0.0/24: the engine would refuse the address of every workspace"]);
+    const none = await run(w, world({ dns: KNOWN, engine: { subnet: { code: 0, stdout: " \n" } } }));
+    assert.ok(hasProblem(none, /has the subnet \(none\) and provisioner\.subnet says 10\.213\.0\.0\/24/));
+    const unreadable = await run(w, world({ dns: KNOWN, engine: { subnet: { code: 1, stderr: "boom" } } }));
+    assert.deepEqual(said(unreadable, "problem"), []);
+    assert.ok(hasWarning(unreadable, /^the subnet of the network curule-workspaces could not be read, so it was not compared with provisioner\.subnet 10\.213\.0\.0\/24$/));
+    const gone = world({ dns: KNOWN, engine: { network: { code: 1, stderr: "Error: No such network: curule-workspaces" } } });
+    const missing = await run(w, gone);
+    assert.equal(said(missing, "problem").length, 1, "a network that is not there is said once, and its subnet is not asked about");
+    assert.equal(gone.asked.engine.filter((c) => c[1] === "network").length, 1);
+  });
+  await using(workdir(deployed), async (w) => {
+    const deps = world({ dns: KNOWN });
+    await run(w, deps);
+    assert.equal(deps.asked.engine.filter((c) => c[1] === "network").length, 1, "with no subnet named, nothing about it is asked");
   });
 });
 
