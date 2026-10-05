@@ -277,7 +277,10 @@ function byPriorityThenAge(now: number): (a: QueueItem, b: QueueItem) => number 
  * sweep, so only notices are carried across a merge.
  */
 function carriesNotice(reason: ActivationReason): boolean {
-  return reason.kind === "recovery" && typeof reason.note === "string" && reason.note.length > 0;
+  // A recovery wake carries the runtime's notices (a deadlock broken, an input that moved). An interest wake carries one too when
+  // the supervisor wakes an artifact's owner for the verdict that moved it (`noticeOwnerOfVerdict`): that wake is the weakest kind,
+  // and a notice it carries is news that no mail replaces.
+  return (reason.kind === "recovery" || reason.kind === "interest_event") && typeof reason.note === "string" && reason.note.length > 0;
 }
 
 /** Bound on a merged note, so a seat that collects many notices is not handed an essay. */
@@ -1253,7 +1256,15 @@ export class Scheduler implements SchedulerPort {
       // one follow-up turn either way. Stashed or coalesced, a follow-up turn
       // IS owed, so `true` is now the truth rather than a courtesy.
       if (!stashed || (!strong(stashed) && req.priority > stashed.priority)) {
-        this.wakeAfterTurn.set(req.agentId, { agentId: req.agentId, reason: req.reason, priority: req.priority });
+        // A notice the replaced stash carried rides along, as it does when a strong wake replaces one.
+        const reason = stashed && carriesNotice(stashed.reason) ? withNotice(req.reason, stashed.reason.note) : req.reason;
+        this.wakeAfterTurn.set(req.agentId, { agentId: req.agentId, reason, priority: req.priority });
+      } else if (carriesNotice(req.reason)) {
+        // Coalesced into the stash that buys the next turn, but not without its notice: the turn renders the event log, and the
+        // log does not say what the runtime told the seat. The eighteenth cronlite run's developer was mid-turn when the tech lead
+        // approved its test-suite patch, and was never told ("it needs VERIFIED next, and you can move it"): the patch sat
+        // APPROVED, and the mission with it, until the stall watchdog woke the developer 2 min 28 s later.
+        this.wakeAfterTurn.set(req.agentId, { ...stashed, reason: withNotice(stashed.reason, req.reason.note) });
       }
       return true;
     }

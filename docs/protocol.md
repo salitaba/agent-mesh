@@ -235,7 +235,12 @@ what the mesh then accepts cannot differ:
   for a review of a patch that had just been approved and waited for a QA nobody
   had asked, and the patch took 5 min 50 s to climb where the round before had
   taken 30 s. The wake is skipped when the owner's own interests already wake it
-  for that event.
+  for that event. A seat that is mid-turn has the wake stashed behind its turn, and the stash holds one
+  wake per seat; the note rides along with whichever wake the stash keeps, so mail that
+  arrives before or after the verdict neither drops it nor replaces it. It did both: the
+  eighteenth cronlite run's developer was mid-turn when its test-suite patch was
+  approved, the notice was dropped behind the mail wake, and the patch sat APPROVED, and
+  the mission with it, for 2 min 28 s, until the stall watchdog said what the note had.
 
 **A submission asks nobody.** Moving an artifact to `READY_FOR_REVIEW` records that its owner is done; it sends no
 request and wakes no one, and neither does announcing it (`mesh_announce` obliges nobody and "wakes no one"). A seat
