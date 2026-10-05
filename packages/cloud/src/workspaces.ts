@@ -47,6 +47,10 @@ export interface WorkspacesOptions {
 
 const LIVE = new Set(["requested", "provisioning", "running", "suspended"]);
 
+/** How long workspaces keep running after a payment fails, and how long they are kept after a subscription ends, unless the operator says otherwise. */
+export const DEFAULT_GRACE_DAYS = 3;
+export const DEFAULT_RETENTION_DAYS = 30;
+
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 160);
 
 export class Workspaces {
@@ -66,6 +70,11 @@ export class Workspaces {
   /** The credential the proxy presents to a workspace's host. Derived, never stored. */
   operatorToken(workspaceId: string): string {
     return createHmac("sha256", this.o.secret).update(`workspace-operator:${workspaceId}`).digest("base64url");
+  }
+
+  /** What the pages tell a customer about a payment that fails and a subscription that ends, so they say what this service does. */
+  get policy(): { graceDays: number; retentionDays: number } {
+    return { graceDays: this.o.graceDays ?? DEFAULT_GRACE_DAYS, retentionDays: this.o.retentionDays ?? DEFAULT_RETENTION_DAYS };
   }
 
   hostOf(slug: string): string {
@@ -243,7 +252,7 @@ export class Workspaces {
         actions.push(`${account.accountId}: past due, no payment recorded for the period that ended`);
       }
       const current = this.state.accounts.get(account.accountId)!.subscription!;
-      const overdue = current.status === "past_due" && current.pastDueSince !== undefined && now - Date.parse(current.pastDueSince) > (this.o.graceDays ?? 3) * day;
+      const overdue = current.status === "past_due" && current.pastDueSince !== undefined && now - Date.parse(current.pastDueSince) > (this.o.graceDays ?? DEFAULT_GRACE_DAYS) * day;
       const ended = current.status === "ended";
       if (overdue || ended) {
         for (const w of this.forAccount(account.accountId)) {
@@ -256,7 +265,7 @@ export class Workspaces {
           );
         }
       }
-      if (ended && current.endedAt && now - Date.parse(current.endedAt) > (this.o.retentionDays ?? 30) * day) {
+      if (ended && current.endedAt && now - Date.parse(current.endedAt) > (this.o.retentionDays ?? DEFAULT_RETENTION_DAYS) * day) {
         for (const w of this.forAccount(account.accountId)) {
           await this.destroy(w.workspaceId).then(
             () => actions.push(`${w.workspaceId}: deleted, the retention period after the subscription ended is over`),

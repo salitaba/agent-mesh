@@ -23,7 +23,7 @@ a decision, an account or a credential from the operator of the service is state
 | Workspace provisioner (local process for development, container for production) | `packages/cloud` | built and tested against a recording engine; no real container has been started |
 | A workspace host that is given its models: a team made on it runs on the gateway, with no key from the person | `apps/mesh-server`, `packages/cloud` | built and tested; [runtime-native.md](runtime-native.md#hosted-workspaces) |
 | Authenticating edge proxy for the dashboard and its event stream | `packages/cloud` | built and tested against a host that records what it is asked; each workspace is served at an address of its own |
-| Sign up, billing and workspace pages | `apps/cloud-server` | not built; the API they call is |
+| Sign up, sign in, billing and workspace pages | `apps/cloud-server/pages` | built and tested (the files, the script on a small DOM, and a pass in a real browser); the terms and the privacy notice are placeholders marked for the operator, and a production service is not started on them; [cloud-control-plane.md](cloud-control-plane.md#the-account-pages) |
 
 ## What a customer gets
 

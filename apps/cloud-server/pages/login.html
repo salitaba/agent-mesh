@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in – Curule Cloud</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="login">
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav aria-label="Main">
+      <a href="/" data-nav="home">Plans</a>
+      <a href="/login" data-when="out">Sign in</a>
+      <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
+      <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="narrow">
+  <h1>Sign in</h1>
+  <p class="lede">To your Curule Cloud account.</p>
+  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+  <div class="card">
+    <form id="form" novalidate>
+      <div id="status" class="note" role="status" aria-live="polite"></div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="submit">Sign in</button>
+        <a class="btn" href="/forgot">Forgot your password?</a>
+      </div>
+    </form>
+  </div>
+  <p class="aside">New here? <a href="/signup">Create an account</a>. If you have not confirmed your address yet, signing in with your password sends the link again.</p>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Curule Cloud</span>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="#" data-contact hidden>Contact</a>
+  </div>
+</footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

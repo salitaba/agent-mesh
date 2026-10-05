@@ -66,6 +66,11 @@ export class ControlPlane {
     return this.o.log.state;
   }
 
+  /** The lifetimes and grace periods the pages state: sessions, links, a failed payment, a cancelled subscription. */
+  get policy(): Accounts["policy"] & Workspaces["policy"] {
+    return { ...this.accounts.policy, ...this.workspaces.policy };
+  }
+
   view(account: Account): AccountView {
     const sub = account.subscription;
     const plan = sub ? this.o.catalogue.plan(sub.plan) : undefined;

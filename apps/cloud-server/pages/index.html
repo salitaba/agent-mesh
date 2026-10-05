@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Curule Cloud: run a mesh without running a server</title>
+<meta name="description" content="Run a mesh in your browser. Curule Cloud operates the servers and supplies the models.">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="home">
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav aria-label="Main">
+      <a href="/" data-nav="home">Plans</a>
+      <a href="/login" data-when="out">Sign in</a>
+      <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
+      <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="wrap">
+  <section class="hero" aria-labelledby="top">
+    <h1 id="top">Run a mesh without running a server.</h1>
+    <p class="lede">Curule Cloud is the runtime, run for you. Sign up, pick a plan and open a workspace in your browser: the same dashboard and the same agents as the self-hosted product, on servers we operate and on models we supply. You install nothing, rent nothing and bring no API key.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/signup" data-when="out">Create an account</a>
+      <a class="btn" href="/login" data-when="out">Sign in</a>
+      <a class="btn btn-primary" href="/account" data-when="in" hidden>Go to your account</a>
+    </div>
+  </section>
+  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+  <ul class="facts">
+    <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files. Deleting a workspace deletes them.</span></li>
+    <li><strong>Models, without keys</strong><span>Your agents call models through our gateway, with a key that belongs to that workspace alone. You choose a tier; which provider answers is our business and can change without you touching a setting.</span></li>
+    <li><strong>A balance, in money</strong><span>A plan includes usage each period and you can add credit. You see what each call cost. When the balance runs out, calls are refused and the mesh pauses with one notice that says why.</span></li>
+    <li><strong>Your record is yours</strong><span>It is the same append-only event log a self-hosted install writes, so a mission can be replayed and its record read anywhere.</span></li>
+  </ul>
+  <section class="section" aria-labelledby="plans-h">
+    <h2 id="plans-h">Plans</h2>
+    <div id="plans" class="plans" aria-live="polite"></div>
+    <p id="topups" class="muted small"></p>
+  </section>
+  <section class="section" aria-labelledby="billing-h">
+    <h2 id="billing-h">How billing works</h2>
+    <ul class="facts">
+      <li><strong>Each period</strong><span>A plan's payment replaces the usage it includes. It is not added to what was left.</span></li>
+      <li><strong>Credit you add</strong><span>It does not expire, and it is spent after the plan's included usage.</span></li>
+      <li><strong>If a payment fails</strong><span>Your workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. A payment that arrives before then puts everything back.</span></li>
+      <li><strong>If you cancel</strong><span>Your workspaces stop, and they are deleted <span data-policy="retentionDays">30 days</span> later.</span></li>
+    </ul>
+  </section>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Curule Cloud</span>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="#" data-contact hidden>Contact</a>
+  </div>
+</footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

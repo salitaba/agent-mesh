@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your account – Curule Cloud</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="account">
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav aria-label="Main">
+      <a href="/" data-nav="home">Plans</a>
+      <a href="/login" data-when="out">Sign in</a>
+      <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
+      <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="wrap">
+  <div class="account-head">
+    <h1>Your account</h1>
+    <p class="muted" id="who"></p>
+  </div>
+  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+  <div id="notice" class="note" role="status" aria-live="polite"></div>
+
+  <section class="panel" aria-labelledby="workspaces-h">
+    <h2 id="workspaces-h">Workspaces</h2>
+    <ul class="rows" id="workspaces"></ul>
+    <form id="create" class="inline-form" novalidate hidden>
+      <div class="field">
+        <label for="workspace-name">Name a new workspace</label>
+        <input id="workspace-name" name="name" type="text" maxlength="60" autocomplete="off" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Create workspace</button>
+    </form>
+    <p id="create-note" class="muted small"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="plan-h">
+    <h2 id="plan-h">Plan</h2>
+    <div id="plan-status" class="note" role="status" aria-live="polite"></div>
+    <div id="plan"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="balance-h">
+    <h2 id="balance-h">Balance</h2>
+    <dl class="figures" id="figures"></dl>
+    <div id="topup-status" class="note" role="status" aria-live="polite"></div>
+    <div class="btn-row topup-options" id="topup-options"></div>
+    <form id="topup" class="inline-form" novalidate>
+      <div class="field">
+        <label for="topup-amount">Add credit</label>
+        <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
+      </div>
+      <button class="btn" type="submit">Pay</button>
+    </form>
+    <p id="topup-hint" class="muted small"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="usage-h">
+    <h2 id="usage-h">Usage</h2>
+    <p class="muted small">What each call was charged, by day and by workspace. It is what your balance was debited, and nothing else.</p>
+    <div id="usage"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="security-h">
+    <h2 id="security-h">Password</h2>
+    <form id="password-form" novalidate>
+      <div id="password-status" class="note" role="status" aria-live="polite"></div>
+      <div class="field">
+        <label for="current">Current password</label>
+        <input id="current" name="current" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label for="next">New password</label>
+        <input id="next" name="next" type="password" autocomplete="new-password" required minlength="10">
+        <span class="hint">Changing it signs you out on every other device.</span>
+      </div>
+      <button class="btn" type="submit">Change password</button>
+    </form>
+  </section>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Curule Cloud</span>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="#" data-contact hidden>Contact</a>
+  </div>
+</footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

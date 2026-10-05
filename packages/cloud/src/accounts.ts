@@ -37,6 +37,11 @@ export interface SessionResult {
 
 export const hashToken = (token: string): string => createHash("sha256").update(token, "utf8").digest("hex");
 
+export const DEFAULT_SESSION_DAYS = 30;
+export const DEFAULT_IDLE_DAYS = 14;
+export const DEFAULT_VERIFICATION_HOURS = 24;
+export const DEFAULT_RESET_HOURS = 2;
+
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,63}$/;
 
 export class Accounts {
@@ -50,6 +55,16 @@ export class Accounts {
 
   private get state() {
     return this.o.log.state;
+  }
+
+  /** The lifetimes the pages tell a person about, so that what they say is what this service does. */
+  get policy(): { sessionDays: number; idleDays: number; verificationHours: number; resetHours: number } {
+    return {
+      sessionDays: this.o.sessionDays ?? DEFAULT_SESSION_DAYS,
+      idleDays: this.o.idleDays ?? DEFAULT_IDLE_DAYS,
+      verificationHours: this.o.verificationHours ?? DEFAULT_VERIFICATION_HOURS,
+      resetHours: this.o.resetHours ?? DEFAULT_RESET_HOURS,
+    };
   }
 
   private link(path: string, token: string): string {
@@ -68,7 +83,7 @@ export class Accounts {
 
   private async issue(accountId: string, email: string, purpose: "verify" | "reset"): Promise<void> {
     const token = this.newToken();
-    const hours = purpose === "verify" ? (this.o.verificationHours ?? 24) : (this.o.resetHours ?? 2);
+    const hours = purpose === "verify" ? this.policy.verificationHours : this.policy.resetHours;
     const lasts = `${hours} hour${hours === 1 ? "" : "s"}`;
     await this.o.log.append({ type: "verification.issued", accountId, tokenHash: hashToken(token), expiresAt: new Date(this.clock().getTime() + hours * 3_600_000).toISOString(), purpose });
     if (purpose === "verify") {
@@ -102,7 +117,7 @@ export class Accounts {
 
   private async openSession(account: Account, meta: { ip?: string; userAgent?: string }): Promise<SessionResult> {
     const token = `s_${this.newToken()}`;
-    const expiresAt = new Date(this.clock().getTime() + (this.o.sessionDays ?? 30) * 86_400_000).toISOString();
+    const expiresAt = new Date(this.clock().getTime() + this.policy.sessionDays * 86_400_000).toISOString();
     await this.o.log.append({
       type: "session.created",
       sessionId: `sess_${this.random(8).toString("hex")}`,
@@ -173,7 +188,7 @@ export class Accounts {
     if (!s || s.revokedAt !== undefined) return undefined;
     const now = this.clock().getTime();
     if (Date.parse(s.expiresAt) <= now) return undefined;
-    if (now - Date.parse(s.lastSeenAt) > (this.o.idleDays ?? 14) * 86_400_000) return undefined;
+    if (now - Date.parse(s.lastSeenAt) > this.policy.idleDays * 86_400_000) return undefined;
     const account = this.state.accounts.get(s.accountId);
     if (!account || account.disabledAt !== undefined || account.verifiedAt === undefined) return undefined;
     return { account, sessionId };
@@ -214,7 +229,7 @@ export class Accounts {
       sessionId: `sess_${this.random(8).toString("hex")}`,
       accountId: account.accountId,
       tokenHash: hashToken(token),
-      expiresAt: new Date(this.clock().getTime() + (this.o.sessionDays ?? 30) * 86_400_000).toISOString(),
+      expiresAt: new Date(this.clock().getTime() + this.policy.sessionDays * 86_400_000).toISOString(),
     });
   }
 

@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { stringify } from "yaml";
 import { describeControl, loadControlConfig, type ControlConfig } from "../../packages/cloud/src/index";
 import { generateLicenseKeyPair } from "../../packages/licensing/src/index";
-import { ENV, pricedCatalogue, workdir, type Workdir } from "./control-support";
+import { ENV, pricedCatalogue, trial, workdir, type Workdir } from "./control-support";
 
 const load = (w: Workdir, env: NodeJS.ProcessEnv = ENV, publicKeys: Record<string, string> = { k1: w.publicKey }): ControlConfig => loadControlConfig(w.file, env, { publicKeys });
 
@@ -107,18 +107,31 @@ test("an address with its default port is the origin without it, and a trailing 
   });
 });
 
-test("the example configuration that ships is valid once its key is where it says and the build trusts that key", () => {
+test("the example configuration that ships is valid once its key is where it says, the build trusts that key, and the places its pages mark for the operator are decided", () => {
   const keys = generateLicenseKeyPair();
+  const root = path.join(__dirname, "..", "..", "..");
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "control-example-"));
   try {
-    fs.mkdirSync(path.join(dir, "secrets"));
-    for (const f of ["control.yaml", "plans.yaml"]) fs.copyFileSync(path.join(__dirname, "..", "..", "..", "examples", "cloud", f), path.join(dir, f));
-    fs.writeFileSync(path.join(dir, "secrets", "licence-k1.pem"), keys.privateKeyPem);
-    const c = loadControlConfig(path.join(dir, "control.yaml"), ENV, { publicKeys: { k1: keys.publicKey } });
+    // The layout the example is written for: it names the product's own pages relative to where it is.
+    const here = path.join(dir, "examples", "cloud");
+    fs.mkdirSync(path.join(here, "secrets"), { recursive: true });
+    for (const f of ["control.yaml", "plans.yaml"]) fs.copyFileSync(path.join(root, "examples", "cloud", f), path.join(here, f));
+    const pages = path.join(dir, "apps", "cloud-server", "pages");
+    fs.cpSync(path.join(root, "apps", "cloud-server", "pages"), pages, { recursive: true });
+    fs.writeFileSync(path.join(here, "secrets", "licence-k1.pem"), keys.privateKeyPem);
+    const file = path.join(here, "control.yaml");
+    const load = (publicKeys: Record<string, string> = { k1: keys.publicKey }): ControlConfig => loadControlConfig(file, ENV, { publicKeys });
+
+    // As it ships, the pages carry places for the operator, and a production service is not started on them.
+    assert.throws(load, /the pages in '[^']*pages' have \d+ places marked TODO\(owner\)/);
+    for (const f of ["terms.html", "privacy.html", path.join("assets", "app.js")]) fs.writeFileSync(path.join(pages, f), fs.readFileSync(path.join(pages, f), "utf8").replace(/TODO\(owner\)/g, "decided"));
+
+    const c = load();
     assert.equal(c.appHost, "app.curule.example");
+    assert.equal(c.pagesDir, pages, "the pages are the product's own");
     assert.deepEqual(c.warnings, []);
     assert.ok(describeControl(c).length > 8);
-    assert.throws(() => loadControlConfig(path.join(dir, "control.yaml"), ENV, { publicKeys: {} }), /this build trusts no public key 'k1'/);
+    assert.throws(() => load({}), /this build trusts no public key 'k1'/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -269,6 +282,47 @@ test("the files it names are checked where they can be: the pages are a director
   });
   using(workdir((raw) => delete raw.control_log), (w) => assert.match(refusal(w), /control_log is required/));
   using(workdir((raw) => (raw.mail = {})), (w) => assert.match(refusal(w), /mail.outbox is required/));
+});
+
+/** Pages written into a workdir's pages folder, by path. */
+function writePages(w: Workdir, files: Record<string, string>): void {
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(w.dir, "pages", name)), { recursive: true });
+    fs.writeFileSync(path.join(w.dir, "pages", name), text);
+  }
+}
+
+test("pages that still carry a place marked for the operator are not ready to take payments: a problem in production, a warning in a trial, and each place is named", () => {
+  const todo = (what: string): string => `<p class="todo">TODO(owner): ${what}</p>\n`;
+  using(workdir(), (w) => {
+    writePages(w, { "terms.html": "<h1>Terms</h1>\n", "assets/app.js": "const CONTACT = 'x';\n" });
+    assert.deepEqual(load(w).warnings, [], "pages with nothing marked are fine");
+  });
+  using(workdir(), (w) => {
+    writePages(w, { "terms.html": `<h1>Terms</h1>\n${todo("the entity")}<p>fine</p>\n${todo("refunds")}`, "assets/app.js": "// fine\nconst CONTACT = \"\"; // TODO(owner): contact\n", "assets/data.bin": "TODO(owner) in a file that is not text is not read" });
+    const m = refusal(w);
+    assert.match(m, /the pages in '[^']*pages' have 3 places marked TODO\(owner\), for the operator to write or confirm \(assets\/app\.js:2, terms\.html:2, terms\.html:4\)\. The terms and the privacy notice are what a person agrees to when they sign up and pay/);
+  });
+  using(workdir(), (w) => {
+    writePages(w, { "a.html": todo("one") });
+    assert.match(refusal(w), /have 1 place marked TODO\(owner\), for the operator to write or confirm \(a\.html:1\)\./, "one place is one place");
+  });
+  using(workdir(), (w) => {
+    writePages(w, { "terms.html": Array.from({ length: 6 }, (_v, i) => todo(`item ${i}`)).join("") });
+    assert.match(refusal(w), /have 6 places marked TODO\(owner\), for the operator to write or confirm \(terms\.html:1, terms\.html:2, terms\.html:3, terms\.html:4, and 2 more\)\./, "four are named and the rest are counted");
+  });
+  // On one machine, over http, the pages are a draft and are said to be: it is a warning, shown by the check.
+  using(workdir(trial), (w) => {
+    writePages(w, { "terms.html": todo("the entity") });
+    const c = load(w);
+    assert.equal(c.production, false);
+    const marked = c.warnings.filter((x) => x.includes("TODO(owner)"));
+    assert.equal(marked.length, 1);
+    assert.match(marked[0]!, /have 1 place marked TODO\(owner\)/);
+    assert.ok(describeControl(c).some((l) => l.startsWith("WARNING: the pages in ") && l.includes("TODO(owner)")));
+  });
+  // No pages, or no pages directory named, has nothing to mark.
+  using(workdir((raw) => delete raw.pages), (w) => assert.deepEqual(load(w).warnings, []));
 });
 
 test("the model gateway is named by its admin address and the address workspaces call, which ends in /v1", () => {

@@ -68,7 +68,6 @@ export interface WebOptions {
 }
 
 const JSON_TYPE = /^application\/json\s*(;|$)/i;
-const SESSION_DAYS_FALLBACK = 30;
 
 export function parseCookies(header: string | string[] | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -154,7 +153,7 @@ export class ControlWeb {
   }
 
   private sessionCookie(token: string): string {
-    return `${this.cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${(this.o.plane.o.accounts?.sessionDays ?? SESSION_DAYS_FALLBACK) * 86_400}${this.secureCookies ? "; Secure" : ""}`;
+    return `${this.cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${this.o.plane.accounts.policy.sessionDays * 86_400}${this.secureCookies ? "; Secure" : ""}`;
   }
 
   private clearedCookie(): string {
@@ -220,6 +219,7 @@ export class ControlWeb {
     { method: "POST", pattern: /^\/api\/forgot$/, run: (req) => this.forgot(req) },
     { method: "POST", pattern: /^\/api\/reset$/, run: (req) => this.reset(req) },
     { method: "POST", pattern: /^\/api\/password$/, run: (req, _m, who) => this.password(req, this.needSession(who)) },
+    { method: "GET", pattern: /^\/api\/session$/, run: (_req, _m, who) => this.sessionView(who) },
     { method: "GET", pattern: /^\/api\/me$/, run: (_req, _m, who) => this.me(this.needSession(who)) },
     { method: "GET", pattern: /^\/api\/usage$/, run: (_req, _m, who) => this.usage(this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/checkout$/, run: (req, _m, who) => this.checkout(req, this.needSession(who)) },
@@ -271,6 +271,7 @@ export class ControlWeb {
       currency: c.currency,
       plans: c.plans().map((p) => ({ id: p.id, title: p.title, priceMinor: p.priceMinor, period: p.period, includedUsageMicros: p.includedUsageMicros, workspaces: p.workspaces, ...(p.tiers ? { tiers: p.tiers } : {}), ...(p.summary ? { summary: p.summary } : {}) })),
       topups: c.topups,
+      policy: this.o.plane.policy,
     });
   }
 
@@ -345,6 +346,15 @@ export class ControlWeb {
     await this.o.plane.accounts.changePassword(who.account.accountId, body.current, body.next, who.token);
     this.limiter.reset(`loginEmail:${who.account.email}`);
     return this.json(200, { ok: true });
+  }
+
+  /**
+   * Whether the browser is signed in, and as whom. Every page asks this to draw its header, so it is cheap (no balance is read)
+   * and it never answers 401: a visitor who is not signed in is the ordinary case, and an error in the browser's console for it
+   * would be noise on every page they open.
+   */
+  private async sessionView(who: Session | undefined): Promise<WebResponse> {
+    return this.json(200, { account: who ? this.o.plane.view(who.account) : null });
   }
 
   private async me(who: Session): Promise<WebResponse> {

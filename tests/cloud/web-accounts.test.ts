@@ -492,6 +492,39 @@ test("an account page still opens when the balance cannot be read, and says so b
   assert.ok(s.logs.some((l) => l.level === "warn" && l.msg === "the balance could not be read" && String(l.error).includes("10.0.0.9")));
 });
 
+test("the header of every page asks who is signed in: the account for a session, and no account, not an error, for anyone else; and it reads no balance", async () => {
+  const { p, ada, workspaceId } = await running();
+  const s = site(p);
+  let reads = 0;
+  const original = p.plane.o.gateway.account.bind(p.plane.o.gateway);
+  Object.assign(p.plane.o.gateway, { account: async (id: string) => (reads++, original(id)) });
+
+  const out = await s.call("GET", "/api/session");
+  assert.deepEqual([out.status, out.json], [200, { account: null }], "a visitor is the ordinary case: it is not a 401 for every page they open");
+  assert.equal(out.headers["cache-control"], "no-store");
+  for (const cookie of ["x=1", `${s.web.sessionCookieName}=`, `${s.web.sessionCookieName}=s_unknown`, `curule_session=${ada.sessionToken}`]) {
+    const r = await s.call("GET", "/api/session", { headers: { cookie } });
+    assert.deepEqual([r.status, r.json], [200, { account: null }], cookie);
+  }
+
+  const me = await s.call("GET", "/api/session", { session: ada.sessionToken });
+  assert.equal(me.status, 200);
+  assert.deepEqual(me.json, { account: p.plane.view(p.log.state.accounts.get(ada.accountId)!) }, "the account as its owner sees it, with its plan and workspaces, and no balance");
+  assert.equal(reads, 0, "the gateway is not asked for what a header does not show");
+  const record = p.log.state.workspaces.get(workspaceId)!;
+  for (const secret of [p.log.state.accounts.get(ada.accountId)!.passwordHash, ada.sessionToken, hashToken(ada.sessionToken), record.gatewayKeyId!, p.provisioner.ops("create")[0]!.spec!.operatorToken]) assert.ok(!me.body.includes(secret));
+  assert.equal((await s.call("POST", "/api/session", { json: {}, origin: null })).status, 405, "it only reads");
+
+  // Opening a page is use of the session, so a person who reads pages is not signed out for being idle.
+  const seen = () => p.store.entries.filter((e) => e.type === "session.seen").length;
+  p.clock.advance(11 * MINUTE);
+  await s.call("GET", "/api/session", { session: ada.sessionToken });
+  assert.equal(seen(), 1);
+
+  await p.plane.disableAccount(ada.accountId, "abuse report 12");
+  assert.deepEqual((await s.call("GET", "/api/session", { session: ada.sessionToken })).json, { account: null }, "a stopped account is not signed in");
+});
+
 test("a session ends when the account is stopped, and a stopped account cannot sign in", async () => {
   const p = await plane();
   const ada = await p.account("ada@example.com");

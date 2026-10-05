@@ -22,9 +22,22 @@ test("the plans a visitor reads are the ones on offer, with their prices and wha
     { id: "yearly", title: "Team, yearly", priceMinor: 148_800, period: "year", includedUsageMicros: 20_000_000, workspaces: 1 },
   ]);
   assert.deepEqual(r.json.topups, { optionsMinor: [1_000, 2_500, 10_000], minimumMinor: 500, maximumMinor: 100_000, usageMicrosPerMinor: 10_000 });
+  assert.deepEqual(r.json.policy, { sessionDays: 30, idleDays: 14, verificationHours: 24, resetHours: 2, graceDays: 3, retentionDays: 30 });
   for (const hidden of ["price_team", "providerPriceId", "licencePlan", "licence_plan"]) assert.ok(!r.body.includes(hidden), hidden);
   Object.assign(p.plane.o, { catalogue: parseCatalogue({ ...CATALOGUE, plans: { team: { ...CATALOGUE.plans.team, summary: "For one team that ships." } } }) });
   assert.equal((await s.call("GET", "/api/plans")).json.plans[0].summary, "For one team that ships.", "a plan's own words are passed on when it has them");
+});
+
+test("the periods the pages state are the service's own settings, so what a page says about a failed payment or a link is what happens", async () => {
+  const p = await plane({ workspaces: { graceDays: 5, retentionDays: 90 }, accounts: { sessionDays: 7, idleDays: 2, verificationHours: 1, resetHours: 6 } });
+  const s = site(p);
+  assert.deepEqual((await s.call("GET", "/api/plans")).json.policy, { sessionDays: 7, idleDays: 2, verificationHours: 1, resetHours: 6, graceDays: 5, retentionDays: 90 });
+  // And each is what the service does with it.
+  await p.account("ada@example.com");
+  const login = await s.call("POST", "/api/login", { json: { email: "ada@example.com", password: PASSWORD }, origin: null });
+  assert.ok(cookieSet(login).attrs.includes(`Max-Age=${7 * 86_400}`), "a session lasts the days the page says");
+  await p.plane.accounts.signup("bob@example.com", PASSWORD);
+  assert.match(p.mailer.sent.filter((m) => m.to === "bob@example.com")[0]!.text, /expires in 1 hour\./, "and a link the hours it says");
 });
 
 // ---- what the account has used ----

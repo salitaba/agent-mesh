@@ -25,8 +25,11 @@ owner:
   port: 7501
   token_env: CONTROL_OWNER_TOKEN
 
-# The account pages: HTML with its scripts and styles under assets/. Leave this out to serve the API alone.
-# pages: ./pages
+# The account pages: HTML with its scripts and styles under assets/. These are the product's own, and they are what a person
+# sees when they sign up and pay. Copy the folder to change it. The terms and the privacy notice have places marked
+# TODO(owner) for you to write or confirm, and in production the check refuses to start while any is left. Leave `pages`
+# out to serve the API alone.
+pages: ../../apps/cloud-server/pages
 
 control_log: ./data/control.jsonl     # the record of accounts, payments and workspaces; one process writes it at a time
 mail:

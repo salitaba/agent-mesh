@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms – Curule Cloud</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="terms">
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <nav aria-label="Main">
+      <a href="/" data-nav="home">Plans</a>
+      <a href="/login" data-when="out">Sign in</a>
+      <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
+      <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<article class="prose">
+  <h1>Terms</h1>
+  <p class="todo">TODO(owner): these terms are a starting point and not legal advice. Have them reviewed by counsel for the entity that operates the service, and replace every marked item, before the service takes a payment.</p>
+
+  <h2>Who provides the service</h2>
+  <p class="todo">TODO(owner): the legal name, registered address and contact of the entity that operates Curule Cloud.</p>
+
+  <h2>What the service is</h2>
+  <p>Curule Cloud runs Curule workspaces on infrastructure the operator controls, and supplies the models they call. A workspace is one isolated host with its own projects, event log and files. The software in a workspace is the same Curule that can be run on your own machines.</p>
+
+  <h2>Plans, credit and payment</h2>
+  <ul>
+    <li>A plan renews each period until it is cancelled, and includes an amount of model usage that is replaced, not added to, each period.</li>
+    <li>Credit you add does not expire and is spent after a plan's included usage. When the balance is zero, calls to models are refused.</li>
+    <li>If a payment fails, workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. If a subscription ends, workspaces stop, and are deleted <span data-policy="retentionDays">30 days</span> later.</li>
+    <li>Deleting a workspace deletes its data. That cannot be undone.</li>
+  </ul>
+  <p class="todo">TODO(owner): refunds and cancellation, taxes, the currency and the payment provider, price changes and notice of them.</p>
+
+  <h2>Acceptable use</h2>
+  <p>Agents in a workspace run code and reach the network. You are responsible for what they do. A workspace may not be used to attack others, to mine cryptocurrency, to send unsolicited messages, to host content that is illegal where it is served, or to work around the limits of a plan. We may stop a workspace or an account that is, and we say why when we do.</p>
+  <p class="todo">TODO(owner): confirm this list, and say how an abuse report is made and how long it takes to answer.</p>
+
+  <h2>Your data and the models</h2>
+  <p>Your workspace's contents are yours. The text of the calls your agents make is sent to the model provider that answers them. What we keep about you is described in the <a href="/privacy">Privacy notice</a>.</p>
+
+  <h2>Availability and liability</h2>
+  <p class="todo">TODO(owner): the service level you are willing to state, the warranty disclaimer, the limit of liability, and the governing law and courts.</p>
+
+  <h2>Changes to these terms</h2>
+  <p class="todo">TODO(owner): how and when changes are notified.</p>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Curule Cloud</span>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="#" data-contact hidden>Contact</a>
+  </div>
+</footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

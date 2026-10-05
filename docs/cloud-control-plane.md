@@ -9,9 +9,11 @@ provider's key.
 workspaces and their provisioners, licences for workspaces, the operator's views, the public API, the proxy that puts each
 workspace at an address of its own, the operator's API, and `curule-cloud control`, which runs them. It is exercised against
 fakes of everything outside it: a payment provider that answers in its documented shapes, a container engine that records what
-it is asked, a gateway that is the real admin API, called over HTTP. The pages a customer sees (sign up, sign in, account) are
-not built yet; the API is what they will call. Nothing here has taken a real payment or started a real container. What each of
-those needs from the operator is in [What only the operator can do](#what-only-the-operator-can-do).
+it is asked, a gateway that is the real admin API, called over HTTP. The pages a customer sees (sign up, sign in, the account,
+the terms and the privacy notice) are built too, in `apps/cloud-server/pages`, and the terms and the privacy notice are
+placeholders until the operator writes them ([The account pages](#the-account-pages)). Nothing here has taken a real payment or
+started a real container. What each of those needs from the operator is in
+[What only the operator can do](#what-only-the-operator-can-do).
 
 ## What is kept
 
@@ -214,7 +216,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 | `workspaces.domain` | Workspaces are served at `<slug>.<domain>`. See below for what it may not be. |
 | `public` | The listener a load balancer connects to: `host`, `port`, and `trust_proxy_hops`, how many proxies in front add to `X-Forwarded-For`. With 0 the header is not read, and behind a proxy every caller then looks like the proxy. |
 | `owner` | The operator's listener (`host`, `port`) and `token_env`, the environment variable that holds its token (24 characters or more). |
-| `pages` | A directory of account pages. Leave it out to serve the API alone. |
+| `pages` | A directory of account pages: the product's own are in `apps/cloud-server/pages` ([below](#the-account-pages)). Leave it out to serve the API alone. |
 | `control_log`, `mail.outbox` | Where the log and the mail are written. |
 | `plans` | The plan catalogue, [above](#plans-and-credit). |
 | `secret_env` | The service's secret, 32 characters or more. Workspace cookies are signed with a key derived from it, and so is every workspace's operator token. Do not change it while workspaces exist: a workspace was given its operator token when it was made, the proxy presents the one derived from the current secret, and every existing workspace would refuse it. |
@@ -235,6 +237,9 @@ prints what the service would run (no secret is in it), and touches nothing.
   workspace would read its licence as invalid and run on the Community plan, whatever was paid for. The check signs a
   licence and verifies it against the build.
 - *The local provisioner in production.*
+- *Pages with a place still marked `TODO(owner)`.* The terms and the privacy notice are what a person agrees to when they sign up
+  and pay, and they are the operator's to write. The check reads every text file in the `pages` folder and, in production,
+  refuses to start while any carries the marker, naming the first four places; in a trial it is a warning.
 - A hosted checkout for a catalogue in which a plan has no `provider_price_id`, listeners on the same address, and the
   owner API open to every interface (allowed, and warned of).
 
@@ -258,7 +263,8 @@ header and a preflight is not answered.
 | Method and path | Needs | Does |
 |---|---|---|
 | `GET /healthz` | | 200 while the log can be written, 503 when it cannot. Not counted against an address. |
-| `GET /api/plans` | | The plans and top-ups on offer: price, period, included usage, workspaces and tiers. Nothing of how they are paid for. |
+| `GET /api/plans` | | The plans and top-ups on offer: price, period, included usage, workspaces and tiers, and the `policy` the pages quote: how long a session and a link last, how long workspaces keep running after a payment fails, and how long they are kept after a subscription ends. Nothing of how plans are paid for. |
+| `GET /api/session` | | Who the browser is signed in as: `{account}` with the plan and the workspaces, or `{account: null}`. It is what every page asks to draw its header, so it reads no balance, and it is not a 401 for a visitor. |
 | `POST /api/signup` `{email, password}` | | Always 202 with the same words, for an address that has an account and one that has not. The difference is in the mail. |
 | `POST /api/verify` `{token}` | | Confirms the address from a mailed link, once, and signs the person in. |
 | `POST /api/login` `{email, password}` | | Signs in. Every way it can fail is one answer, the same in status, body and headers. |
@@ -305,6 +311,42 @@ guessing, but cannot keep them out. Their open sessions and workspaces are not a
 signature is the whole credential. A message that is refused is answered `400` with words that say nothing about why, and the
 reason is logged. One that could not be applied is answered `500`, so the provider sends it again; applying is idempotent by the
 payment's own reference.
+
+## The account pages
+
+`apps/cloud-server/pages` is what a customer sees: the front page (the plans, what a top-up buys, how billing works), sign up, sign
+in, the page the confirmation link opens, forgot and reset, the account, the terms and the privacy notice. They are plain HTML,
+one stylesheet and one script, with no build step and nothing loaded from another address. The control plane serves them at
+fixed paths (`/`, `/signup`, `/login`, `/verify`, `/forgot`, `/reset`, `/account`, `/terms`, `/privacy`) and the assets by
+name; a path that is not on that list is never looked for on the disk. The colours and the type are the site's.
+
+- **They are written for the policy they are served under**: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`,
+  `frame-ancestors 'none'`. No inline script, no inline style, no handler attribute, no address of another site. A test reads
+  every page and fails on any of them. The script builds everything it shows from text nodes and elements, never from a string
+  of markup, so a workspace named like markup is a name.
+- **The account** shows the workspaces (create, open, pause, resume, delete with its name typed), the plan (choose, switch,
+  manage billing), the balance and what a top-up buys, the usage by day and by workspace as what was charged, and the password.
+  A workspace that is starting is looked at again every few seconds. A payment is made on the provider's page, and the account is
+  where it returns to: what the account looked like before leaving is kept in the tab, so a payment that was applied while the
+  person was away is said to have arrived, and one that has not been is waited for for a minute and then said to be on its way.
+  The balance is shown rounded down.
+- **What a page says about a period is the service's own setting.** How long a session or a link lasts, how long workspaces keep
+  running after a payment fails and how long they are kept after a subscription ends are options of the control plane;
+  `GET /api/plans` returns them as `policy`, the pages fill them in (`data-policy`), and a test fails if a page states one as a
+  fixed number.
+- **The terms and the privacy notice are placeholders.** They state what the software does (what it keeps, who receives what),
+  and every place that needs the operator is marked `TODO(owner)`: the legal entity, refunds and tax, the acceptable-use list,
+  liability and governing law, the processors, retention, a contact. They are not legal advice and they are not finished. The
+  check [refuses to start a production service](#running-it) while any marker is left. The footer's contact link stays hidden
+  until `CONTACT` in `assets/app.js` is given an address.
+- **To change them, copy the folder** and name the copy in `pages`. The files are the product's, so the colours, the logo and the
+  words can all be yours; what must stay is the `id`s and `data-` attributes the script looks for (a test compares each page with
+  the list at the top of the script) and the absence of anything inline.
+- **How they are tested.** The files by `tests/cloud/pages.test.ts`: what is in the folder and what serves it, the policy, the
+  markup the script needs, every link and every call the script makes, the colours and their contrast, and the numbers. The script
+  by `tests/cloud/pages-app.test.ts`, which runs it unchanged on the real files in a small DOM with a service that answers as
+  each test says. And in a real browser, at three widths and in both colour schemes, with an accessibility scan, against a control
+  plane started for the purpose; that pass is not part of `npm test`.
 
 ## The edge: a workspace at its own address
 

@@ -12,6 +12,8 @@
  *   - A licence key the build does not trust. Every workspace would read its licence as an unknown key and run on the
  *     Community plan, whatever was paid for.
  *   - The local provisioner in production. It is not a boundary between customers.
+ *   - Pages that still carry a place marked `TODO(owner)`: the terms and the privacy notice are the operator's to write, and the
+ *     service must not take a payment from a person who agreed to a placeholder.
  */
 import { createPrivateKey } from "node:crypto";
 import * as fs from "node:fs";
@@ -65,6 +67,26 @@ export interface LoadOptions {
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** The places in a folder of pages that are marked for the operator, as `file:line`, in a stable order. */
+export function markersIn(dir: string): string[] {
+  const found: string[] = [];
+  const walk = (rel: string): void => {
+    for (const entry of fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const next = path.join(rel, entry.name);
+      if (entry.isDirectory()) walk(next);
+      else if (/\.(html|js|css|txt|svg|json)$/.test(entry.name)) {
+        fs.readFileSync(path.join(dir, next), "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (line.includes("TODO(owner)")) found.push(`${next.split(path.sep).join("/")}:${i + 1}`);
+          });
+      }
+    }
+  };
+  walk("");
+  return found;
+}
 
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
@@ -179,6 +201,14 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   // ---- files
   const pagesDir = at(raw.pages, "pages", false);
   if (pagesDir !== "" && !(fs.existsSync(pagesDir) && fs.statSync(pagesDir).isDirectory())) problems.push(`pages '${pagesDir}' is not a directory`);
+  else if (pagesDir !== "") {
+    const marked = markersIn(pagesDir);
+    if (marked.length > 0) {
+      const shown = marked.slice(0, 4).join(", ");
+      const message = `the pages in '${pagesDir}' have ${marked.length} place${marked.length === 1 ? "" : "s"} marked TODO(owner), for the operator to write or confirm (${shown}${marked.length > 4 ? `, and ${marked.length - 4} more` : ""}). The terms and the privacy notice are what a person agrees to when they sign up and pay`;
+      (production ? problems : warnings).push(message);
+    }
+  }
   const logPath = at(raw.control_log, "control_log");
   const mail = isObject(raw.mail) ? raw.mail : {};
   const outboxPath = at(mail.outbox, "mail.outbox");
