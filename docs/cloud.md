@@ -31,8 +31,11 @@ a decision, an account or a credential from the operator of the service is state
    with a signed licence minted for the plan.
 2. Models, without keys. The workspace's agents call the service's gateway with a key that belongs to that workspace
    alone. The customer picks a tier (`fast`, `balanced`, `best`) or leaves the default; which provider and model serves a
-   tier is the service's business and can change without the customer touching a setting.
-3. A balance. Each plan period includes an amount of model usage; more can be bought. When the balance reaches zero the
+   tier is the service's business and can change without the customer touching a setting. A customer who already holds
+   terms with a model provider can bring that provider's key instead. The service keeps it as a secret of the workspace's
+   host, never in an agent's shell, and does not resell that usage.
+3. A balance, in money, not tokens. A plan period may include an amount of model usage, and more can be bought. The
+   balance is debited what each call cost, which the customer can read in the usage report. When it reaches zero the
    gateway refuses new calls and the mesh pauses with one clear notice that says why. It does not fail seat by seat.
 4. Their data. The workspace's event log, artifacts and git worktrees are exportable; deleting a workspace deletes them.
 
@@ -120,6 +123,7 @@ workspace has no public address.
 |---|---|---|
 | One customer reaches another's workspace | Membership check at the edge; a workspace has no public address; containers share no network | Container escape is the provider's and the host's risk; mitigated by a microVM provisioner |
 | An agent, steered by hostile text in a repository, runs commands to attack the host | The workspace is the blast radius; its container has no route to anything but the gateway and the allowed egress | An agent can do what its container can reach, which is why the egress list is short |
+| A customer uses a workspace to attack others, mine cryptocurrency or send spam | CPU and memory limits on the container; no inbound routes; egress limited to the gateway and the hosts the operator lists; suspension in one action | Traffic to a listed host; abuse is noticed after it starts, not before |
 | An agent exfiltrates the workspace's gateway key | The key is budgeted, rate-limited, revocable and valid only at the gateway; the agent's shell does not inherit it in its environment | Anyone who obtains it can spend that workspace's balance until it is revoked or empty |
 | A customer runs up usage the service cannot bill | The balance is checked before each call and settled after; the key's budget is the balance | A call in flight can overdraw by at most its own cost |
 | A forged payment event grants a plan | Webhooks are verified against the provider's signature before they are read; unverified bodies are refused | Compromise of the provider account |
