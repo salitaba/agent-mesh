@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OwnerWeb, createOwnerServer, type WebLog } from "../../packages/cloud/src/index";
+import { OwnerWeb, createOwnerServer, type MailStats, type WebLog } from "../../packages/cloud/src/index";
 import { chatBody, spends } from "../ai-gateway/support";
 import { ask, listen } from "./net-support";
 import { plane, running, type Plane } from "./support";
@@ -15,9 +15,9 @@ interface Reply {
   json: any;
 }
 
-function owner(p: Plane) {
+function owner(p: Plane, mail?: () => MailStats) {
   const logs: WebLog[] = [];
-  const web = new OwnerWeb({ plane: p.plane, token: TOKEN, clock: () => new Date(p.clock.now), log: (r) => logs.push(r) });
+  const web = new OwnerWeb({ plane: p.plane, token: TOKEN, clock: () => new Date(p.clock.now), log: (r) => logs.push(r), ...(mail ? { mail } : {}) });
   async function call(method: string, path: string, init: { json?: unknown; raw?: string; token?: string | null; header?: string; ip?: string } = {}): Promise<Reply> {
     const headers: Record<string, string | string[]> = {};
     const bearer = init.header ?? (init.token === null ? undefined : `Bearer ${init.token ?? TOKEN}`);
@@ -82,6 +82,24 @@ test("the health of the service is whether it can write its log, with what there
   assert.deepEqual(health.json, { ok: true, writable: true, accounts: 1, workspaces: { running: 1 }, unmatchedPayments: 0 });
   p.store.failure = new Error("disk full");
   assert.deepEqual((await o.call("GET", "/owner/health")).json, { ok: false, writable: false, accounts: 1, workspaces: { running: 1 }, unmatchedPayments: 0 });
+});
+
+test("the health says what the mail queue holds, and is not ok while mail is stuck, with the rest of what the operator watches", async () => {
+  const { p } = await running();
+  let stats: MailStats = { queued: 0, failed: 0, stuck: false };
+  const o = owner(p, () => stats);
+  assert.deepEqual((await o.call("GET", "/owner/health")).json, { ok: true, writable: true, accounts: 1, workspaces: { running: 1 }, unmatchedPayments: 0, mail: { queued: 0, failed: 0, stuck: false } });
+  stats = { queued: 2, failed: 1, oldestQueuedAt: "2026-10-05T11:00:00.000Z", lastError: { at: "2026-10-05T11:59:00.000Z", error: "could not connect to smtp.example.com:587" }, stuck: false };
+  const waiting = await o.call("GET", "/owner/health");
+  assert.equal(waiting.json.ok, true, "mail that is waiting, and has failed before, is not yet an alarm");
+  assert.deepEqual(waiting.json.mail, stats);
+  stats = { ...stats, stuck: true };
+  const stuck = await o.call("GET", "/owner/health");
+  assert.equal(stuck.status, 200);
+  assert.deepEqual([stuck.json.ok, stuck.json.writable, stuck.json.mail.stuck], [false, true, true]);
+  p.store.failure = new Error("disk full");
+  stats = { queued: 0, failed: 0, stuck: false };
+  assert.deepEqual([(await o.call("GET", "/owner/health")).json.ok, (await o.call("GET", "/owner/health")).json.mail.stuck], [false, false], "a log that cannot be written is not ok whatever the mail does");
 });
 
 test("accounts are listed oldest first with what the operator needs of each, filtered by what is typed, in pages that say they were cut", async () => {

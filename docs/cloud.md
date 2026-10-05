@@ -24,6 +24,7 @@ a decision, an account or a credential from the operator of the service is state
 | A workspace host that is given its models: a team made on it runs on the gateway, with no key from the person | `apps/mesh-server`, `packages/cloud` | built and tested; [runtime-native.md](runtime-native.md#hosted-workspaces) |
 | Authenticating edge proxy for the dashboard and its event stream | `packages/cloud` | built and tested against a host that records what it is asked; each workspace is served at an address of its own |
 | The whole service on one machine, with stand-ins for what costs money (`curule-cloud trial`) | `apps/cloud-server` | built; an end-to-end test runs it with a real host process for each workspace, [below](#try-it-on-one-machine) |
+| Mail over SMTP, queued on disk with retry, and `curule-cloud mail-check` | `packages/cloud`, `apps/cloud-server` | built and tested against a server that speaks SMTP, with TLS and STARTTLS over a real handshake; no mail provider has been used; [cloud-control-plane.md](cloud-control-plane.md#mail) |
 | Sign up, sign in, billing and workspace pages | `apps/cloud-server/pages` | built and tested (the files, the script on a small DOM, and a pass in a real browser); the terms and the privacy notice are placeholders marked for the operator, and a production service is not started on them; [cloud-control-plane.md](cloud-control-plane.md#the-account-pages) |
 
 ## What a customer gets

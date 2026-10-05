@@ -1,6 +1,7 @@
 # An example configuration for the control plane (docs/cloud-control-plane.md). Copy this folder, change it, and check it:
 #
 #   CONTROL_SECRET=<32 or more characters> CONTROL_OWNER_TOKEN=<24 or more> GATEWAY_ADMIN_TOKEN=<24 or more> \
+#   SMTP_USER=<the mail account> SMTP_PASSWORD=<its password> \
 #     npm run cloud -- control --config examples/cloud/control.yaml --check
 #
 # Secrets are never written here. Each names the environment variable it is read from, or a file.
@@ -32,8 +33,21 @@ owner:
 pages: ../../apps/cloud-server/pages
 
 control_log: ./data/control.jsonl     # the record of accounts, payments and workspaces; one process writes it at a time
+
+# Mail (confirmation links, a payment that failed) is delivered over SMTP to any provider that offers it. A message is written
+# to a folder first and stays there until the provider has taken it, so a provider that is down, a restart or a crash does not
+# lose a link. `curule-cloud mail-check` sends one message through this and prints what the server said.
 mail:
-  outbox: ./data/outbox.jsonl         # mail is written here, a JSON object per line, for a delivery script to send
+  smtp:
+    host: smtp.curule.example
+    port: 587
+    security: starttls                # tls (port 465, encrypted from the first byte), starttls (587), or none (a relay on a trusted network)
+    user_env: SMTP_USER               # the account and its password, both or neither; never written here
+    password_env: SMTP_PASSWORD
+    from: "Curule <no-reply@curule.example>"
+  # spool: ./data/mail                # where mail waits for delivery; the default is a folder `mail` beside control_log
+  # To try the service with no mail server, write mail to a file instead of delivering it (a JSON object per line):
+  # outbox: ./data/outbox.jsonl
 plans: ./plans.yaml
 secret_env: CONTROL_SECRET            # 32 or more characters; cookies and every workspace's credential derive from it
 

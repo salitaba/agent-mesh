@@ -9,6 +9,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { ControlPlane } from "./control-plane";
 import { ServiceError, describeError } from "./errors";
 import { RateLimiter } from "./limits";
+import type { MailStats } from "./mail-queue";
 import { ControlUnavailableError } from "./store";
 import type { WebLog, WebRequest, WebResponse } from "./web";
 import { pathSegment, securityHeaders } from "./web";
@@ -19,6 +20,8 @@ export interface OwnerOptions {
   token: string;
   clock?: () => Date;
   log?: (record: WebLog) => void;
+  /** What the mail queue holds, when mail goes by one. Mail that cannot get out is a thing the operator is told with the rest of the health. */
+  mail?: () => MailStats;
 }
 
 const MAX_PAGE = 200;
@@ -106,7 +109,10 @@ export class OwnerWeb {
     const state = this.o.plane.o.log.state;
     const byStatus: Record<string, number> = {};
     for (const w of state.workspaces.values()) byStatus[w.status] = (byStatus[w.status] ?? 0) + 1;
-    return this.json(200, { ok: this.o.plane.o.log.writable, writable: this.o.plane.o.log.writable, accounts: state.accounts.size, workspaces: byStatus, unmatchedPayments: this.o.plane.unmatched().length });
+    const mail = this.o.mail?.();
+    const writable = this.o.plane.o.log.writable;
+    // A queue whose oldest message has waited too long is mail that is not getting out: no one is told to confirm an address or that a payment failed.
+    return this.json(200, { ok: writable && !(mail?.stuck ?? false), writable, accounts: state.accounts.size, workspaces: byStatus, unmatchedPayments: this.o.plane.unmatched().length, ...(mail ? { mail } : {}) });
   }
 
   private summary(accountId: string) {

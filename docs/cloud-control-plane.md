@@ -223,7 +223,8 @@ prints what the service would run (no secret is in it), and touches nothing.
 | `public` | The listener a load balancer connects to: `host`, `port`, and `trust_proxy_hops`, how many proxies in front add to `X-Forwarded-For`. With 0 the header is not read, and behind a proxy every caller then looks like the proxy. |
 | `owner` | The operator's listener (`host`, `port`) and `token_env`, the environment variable that holds its token (24 characters or more). |
 | `pages` | A directory of account pages: the product's own are in `apps/cloud-server/pages` ([below](#the-account-pages)). Leave it out to serve the API alone. |
-| `control_log`, `mail.outbox` | Where the log and the mail are written. |
+| `control_log` | Where the log is written. |
+| `mail` | Where mail goes: `smtp`, a server it is delivered to, or `outbox`, a file it is written to. [Below](#mail). |
 | `plans` | The plan catalogue, [above](#plans-and-credit). |
 | `secret_env` | The service's secret, 32 characters or more. Workspace cookies are signed with a key derived from it, and so is every workspace's operator token. Do not change it while workspaces exist: a workspace was given its operator token when it was made, the proxy presents the one derived from the current secret, and every existing workspace would refuse it. |
 | `gateway` | `admin_url` and `admin_token_env` for the [model gateway](ai-gateway.md)'s admin API, and `tenant_url`, the address a workspace is told to call for models. It ends in `/v1`. |
@@ -246,6 +247,9 @@ prints what the service would run (no secret is in it), and touches nothing.
 - *Pages with a place still marked `TODO(owner)`.* The terms and the privacy notice are what a person agrees to when they sign up
   and pay, and they are the operator's to write. The check reads every text file in the `pages` folder and, in production,
   refuses to start while any carries the marker, naming the first four places; in a trial it is a warning.
+- *A mail server that would be sent a password in the clear.* `security: none` with an account, to a server that is not on this
+  machine, is refused; without an account it is warned of. Mail held in an outbox file in production is warned of: nothing
+  delivers it, and a person who signs up gets no link.
 - A hosted checkout for a catalogue in which a plan has no `provider_price_id`, listeners on the same address, and the
   owner API open to every interface (allowed, and warned of).
 
@@ -259,6 +263,100 @@ so a workspace that was being made when the last process ended is looked at now 
 is still running is not started again, and one that fails is logged and the timer goes on. On `SIGINT` or `SIGTERM` it stops
 taking requests, gives the ones in flight ten seconds and then ends them (an open event stream included), waits for
 workspaces that are being made for the same time (what is not finished is looked at at the next start), and closes the log.
+
+## Mail
+
+The control plane sends the link that confirms an address, the link that resets a password, and notices that a payment failed,
+that a subscription ended and that a workspace was stopped. Which service delivers it is the operator's choice, and two ways
+ship. Both are behind one interface (`Mailer`, in `packages/cloud/src/mailer.ts`), so another can be added without touching
+what sends.
+
+**An outbox file** (`mail.outbox`) delivers nothing. Each message is appended to the file as a JSON object on a line, readable
+by its owner alone, for something of the operator's to deliver or for a person to read while trying the service (the
+[trial](cloud.md#try-it-on-one-machine) prints each as it is written). In production the check warns of it.
+
+**SMTP** (`mail.smtp`) delivers to any provider that offers it, with nothing but Node's standard library:
+
+```yaml
+mail:
+  smtp:
+    host: smtp.example.com
+    port: 587                    # default by security: tls 465, starttls 587, none 25
+    security: starttls           # tls, starttls or none; default starttls, or tls when the port is 465
+    user_env: SMTP_USER          # the account and its password, both or neither
+    password_env: SMTP_PASSWORD
+    from: "Curule <no-reply@example.com>"
+    hello: curule.example.com    # what this machine calls itself in EHLO; default its host name
+  spool: ./data/mail             # where mail waits; default a folder `mail` beside control_log
+```
+
+`host` is a name or an address with no port and no scheme. `from` is an address, or a name and an address in angle brackets.
+The account and password are read from the environment and are never in the file, the check, or a message.
+
+*The connection.* `tls` is encrypted from the first byte. `starttls` starts plain and is upgraded before anything private is said;
+the server's list of what it offers is asked for again afterwards, because what was said before the upgrade is not to be relied
+on. A server that does not offer STARTTLS when it is asked for is an error and nothing is sent. The certificate is verified
+against the system's authorities and its name is checked; there is no setting that turns this off (an internal authority is
+added with `NODE_EXTRA_CA_CERTS`). A password is never sent over a connection that is not encrypted, unless the server is on
+this machine (`localhost`, `::1` and the `127.` addresses, and not a name that merely begins with `127.`). Sign-in is `AUTH PLAIN`,
+or `AUTH LOGIN` when that is all the server offers.
+
+*The message.* Nothing that reaches a header or a command is trusted: an address, a subject or a sender with a line break is
+refused before any connection is made, which is how an address becomes a way to send other mail. A domain that is not ASCII is
+sent as its ASCII form (`bücher.de` as `xn--bcher-kva.de`); an address whose part before the `@` is not ASCII needs an extension
+this does not use, and is refused. The text is UTF-8, sent as quoted-printable; a subject or a name that is not plain ASCII
+is sent as RFC 2047 words, cut between characters. Every message carries `Auto-Submitted: auto-generated`, so that an
+out-of-office reply does not answer it.
+
+*The queue.* A confirmation link is sent while a person waits, and a provider that is slow or down must not make sign-up slow or
+fail, nor a restart at the wrong moment lose the link. So the control plane does not send: it writes the message to the spool
+and returns, and a worker delivers it.
+
+```
+<spool>/queue/<id>.json    a message waiting; written whole to another name, synced, and renamed into place
+<spool>/failed/<id>.json   a message set aside, with the reason and how many times it was tried
+<spool>/sent.jsonl         a line for each message delivered or set aside: when, to whom, what for. Never the text
+```
+
+A message holds a link that signs someone in, so it is kept no longer than it is needed: when a message is delivered its file
+is removed, and nothing on disk keeps the text. Files are readable by their owner alone. A message is delivered at least once:
+one that was being sent when the process ended is sent again at the next start, and can arrive twice; one that was queued is not
+lost. Order is not promised.
+
+What is done about a failure depends on whose it is:
+
+| The server said | Meaning | What happens |
+|---|---|---|
+| A 5xx answer to the recipient (`550 no such user`) | The recipient cannot be sent to | Set aside at once, and not tried again |
+| The connection failed or went quiet, the greeting or EHLO was refused, STARTTLS or the certificate failed, the sign-in was refused, the sender was refused, any 421 | Trouble in reaching or using the service, which the operator puts right | Nothing is tried for a while, for any message, and the wait doubles with each failure: one probe goes to a service that is down, not one for every message waiting |
+| Any other refusal (a 4xx to the recipient, a refusal of DATA or of the message) | This message, for now | This message is tried again after a wait that doubles; the others are not held back |
+
+The waits are 30 seconds, doubling to 15 minutes. A message that has not been delivered after 24 hours is set aside, because the
+link in it has expired. A customer whose confirmation link was set aside asks for another by signing up again, or by signing
+in with the right password; one whose reset link was set aside asks for the reset again.
+
+*What the operator sees.* `GET /owner/health` has `mail`: how many messages are queued, how many were set aside and are in `failed/`,
+when the oldest was queued, and what the last failed try said until a delivery works. `ok` is false while the oldest message has
+waited more than an hour (`mail.stuck`), because then no one is being told to confirm an address or that a payment failed. The
+process log says what happened to a message by its name and kind, and never by its address or its words. To clear a message that
+was set aside, remove its file.
+
+*Checking it.* Mail is proved before the first customer asks for a link, and before the rest of the service is ready:
+
+```bash
+npm run cloud -- mail-check --config control.yaml --to you@example.com
+```
+
+It reads only the `mail` settings, sends one message now through the server the file names (not through the queue), and says
+what the server answered, apart for a recipient it will not take, a message it will not take, and trouble with the server itself
+(its address, the encryption, the account). Then look in the inbox, and in the spam folder: a message from a sender that is
+new is often put there until the sending domain has SPF and DKIM records, which the mail provider tells you how to add.
+
+*What this does not do.* It does not hear of a message that the provider accepted and bounced later: that comes back to the
+sending address, as the provider sets it up. It does not set up the sending domain's SPF, DKIM or DMARC records, which belong to
+the domain. It sends plain text, from one address. A provider that offers only an HTTP API and no SMTP needs an adapter behind
+`Mailer`; the queue works over any `Mailer` whose errors say, as `DeliveryError` does, whether the message is refused for good and
+whether the trouble is with the service.
 
 ## The public API
 
@@ -391,7 +489,7 @@ against nobody. It returns no credential and no hash, and every change is an ent
 
 | Method and path | Does |
 |---|---|
-| `GET /owner/health` | Whether the log can be written, how many accounts there are, workspaces by status, and unmatched payments. |
+| `GET /owner/health` | Whether the log can be written, how many accounts there are, workspaces by status, unmatched payments, and what the [mail queue](#mail) holds. `ok` is false when the log cannot be written or mail is stuck. |
 | `GET /owner/accounts?q=&limit=` | Accounts, oldest first, filtered by part of an email or an id; up to 200, the newest kept, with a note when the list was cut. |
 | `GET /owner/accounts/:id` | One account as its owner sees it, with its balance. |
 | `POST /owner/accounts/:id/disable` `{reason}`, `enable` | Stops an account (it cannot sign in, its sessions end, its running workspaces stop) or starts it again. Starting does not start what was stopped. |
@@ -417,7 +515,7 @@ against nobody. It returns no credential and no hash, and every change is an ent
 |---|---|
 | A payment provider and the entity that takes the money | Which provider can take payment depends on where the company is established and where its customers are. |
 | The adapter's check in the provider's test mode | The adapter has not met the live service. |
-| A mail service | The control plane writes mail to an outbox file and sends none. An adapter for a mail service is a few lines behind the `Mailer` interface. |
+| A mail service and its account, and the sending domain's records | The control plane delivers over SMTP to the server the operator names. The account, the address mail is sent from, and the domain's SPF and DKIM records are the provider's and the operator's, and `mail-check` is how they are proved. |
 | An infrastructure account, the network and the egress proxy | Container isolation is only as good as the network around it. |
 | A domain for workspaces, separate from the app's, and TLS for both | The control plane speaks plain HTTP and serves `<slug>.<domain>` for every workspace, so the certificate is a wildcard for that domain. |
 | The licence signing key, and its public half in the build | See above. |
@@ -428,6 +526,6 @@ against nobody. It returns no credential and no hash, and every change is an ent
 
 `tests/cloud/` has the control plane's tests, and each module's are mutation-checked: a change to the code that no test
 notices is a gap in the tests. The public API and the owner API are tested as plain functions of a request, and again over
-real sockets; the edge is tested against a host that records what it is asked; and one test runs a customer from sign-up to an
+real sockets; the edge is tested against a host that records what it is asked; mail is tested against a server of the tests' own that speaks SMTP (and, for the certificate checks, a real TLS handshake with a certificate made by `openssl`, skipped where it is not installed); and one test runs a customer from sign-up to an
 open workspace through the running service, against the real gateway admin API. `tests/ai-gateway/` and `tests/integration/gateway-mission.test.ts` cover the gateway, and a
 whole mission through it.

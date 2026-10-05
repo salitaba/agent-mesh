@@ -27,6 +27,7 @@ npm run clean         # rm -rf dist
 npm run qa:console -- --base <url> --token <t>   # visual pass over every view (needs playwright-core, axe-core, Chrome)
 npm run qa:walk -- --base <url> --token <t> --project <id>   # a person's session on the scripted demo (needs playwright-core, Chrome)
 npm run cloud -- trial [--port 7500] [--dir <folder>]   # the hosted service on this machine, with stand-ins for what costs money
+npm run cloud -- mail-check --config <control.yaml> --to <address>   # send one message through the configured SMTP server and say what it answered
 npm run qa:cloud -- --base <url> --outbox <control/outbox.jsonl>   # a customer's session on a trial (needs playwright-core, axe-core, Chrome)
 ```
 
@@ -61,7 +62,7 @@ packages/
   runtime-native/    the agent loop that belongs to Curule, over any provider through `llm`
   llm/               the model port and its adapters (OpenAI-compatible chat, Anthropic Messages)
   ai-gateway/        virtual keys, append-only ledger of spend, tiers with failover, OpenAI-compatible proxy
-  cloud/             control plane: accounts, plans, payments, workspaces, provisioners, the edge proxy
+  cloud/             control plane: accounts, plans, payments, workspaces, provisioners, the edge proxy, mail (SMTP and its queue)
   licensing/         offline licence keys and the plan table
   observability/     graph, views, metrics, SSE hub
   projects/          multi-project registry (~/.curule/projects.json)

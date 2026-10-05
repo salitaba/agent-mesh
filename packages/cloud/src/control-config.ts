@@ -14,13 +14,16 @@
  *   - The local provisioner in production. It is not a boundary between customers.
  *   - Pages that still carry a place marked `TODO(owner)`: the terms and the privacy notice are the operator's to write, and the
  *     service must not take a payment from a person who agreed to a placeholder.
+ *   - Mail that is configured to cross a network unencrypted with a password in it.
  */
 import { createPrivateKey } from "node:crypto";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { LICENSE_PUBLIC_KEYS, signLicense, verifyLicense, type PublicKeySet } from "../../licensing/src/index";
 import { loadCatalogue, type Catalogue } from "./catalogue";
+import { SmtpError, addressOf, fromHeader } from "./smtp";
 
 export interface ControlConfig {
   /** The address customers reach the app at, as an origin: `https://app.example.com`. */
@@ -40,7 +43,10 @@ export interface ControlConfig {
   owner: { host: string; port: number; token: string };
   pagesDir?: string;
   logPath: string;
+  /** Where mail is written when it is not sent. Empty when `smtp` is set. */
   outboxPath: string;
+  /** Mail is delivered over SMTP, through a queue kept in `spoolDir`. When it is absent, mail is written to `outboxPath`. */
+  smtp?: SmtpSettings;
   plansPath: string;
   catalogue: Catalogue;
   secret: string;
@@ -53,6 +59,21 @@ export interface ControlConfig {
   reconcileMinutes: number;
   /** Things that are allowed and that the operator should know about. */
   warnings: string[];
+}
+
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  security: "tls" | "starttls" | "none";
+  /** The account and password to sign in with, both or neither. */
+  user?: string;
+  password?: string;
+  /** The address mail is sent from, with a name if it has one. */
+  from: string;
+  /** What this machine calls itself in EHLO, when it is not its host name. */
+  hello?: string;
+  /** The folder mail waits in until a service has taken it. */
+  spoolDir: string;
 }
 
 export interface WorkspaceLimits {
@@ -115,21 +136,8 @@ const siteOf = (host: string): string => host.split(".").slice(-2).join(".");
 
 const isLocal = (host: string): boolean => host === "localhost" || host.endsWith(".localhost");
 
-/** Read and check a control-plane configuration. Paths in it are relative to the file. `env` is where secrets are read from. */
-export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process.env, options: LoadOptions = {}): ControlConfig {
-  let raw: unknown;
-  try {
-    raw = parseYaml(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    throw new Error(`cannot read the control-plane configuration ${file}: ${(err as Error).message}`);
-  }
-  const dir = path.dirname(path.resolve(file));
-  const problems: string[] = [];
-  /** Problems another file's loader already worded, with that file's name in them. */
-  const elsewhere: string[] = [];
-  const warnings: string[] = [];
-  if (!isObject(raw)) throw new Error(`${file}: expected a mapping with app_url, workspaces, gateway, plans and billing`);
-
+/** The readers a configuration is checked with: a path from the file, a secret from the environment, an http address. Each says what is wrong in `problems` and carries on. */
+function readers(dir: string, env: NodeJS.ProcessEnv, problems: string[]) {
   const at = (p: unknown, what: string, required = true): string => {
     if (typeof p !== "string" || p.trim() === "") {
       if (required) problems.push(`${what} is required`);
@@ -164,6 +172,140 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
       return undefined;
     }
   };
+  return { at, fromEnv, url };
+}
+
+const MAIL_PORTS = { tls: 465, starttls: 587, none: 25 } as const;
+
+/** `mail.smtp`: where mail is delivered, checked as the rest of the file is, with every problem reported and the secrets read from the environment. */
+function smtpSettings(
+  raw: unknown,
+  spool: unknown,
+  logPath: string,
+  dir: string,
+  fromEnv: (name: unknown, key: string, noun: string, minLength: number) => string,
+  problems: string[],
+  warnings: string[],
+): SmtpSettings | undefined {
+  if (!isObject(raw)) {
+    problems.push("mail.smtp must be a mapping with host and from, and user_env and password_env for a server that asks for a sign-in");
+    return undefined;
+  }
+  const before = problems.length;
+  const host = typeof raw.host === "string" ? raw.host.trim().toLowerCase() : "";
+  if (host === "") problems.push("mail.smtp.host is required: the mail server, as a name or an address, without a port");
+  else if (!HOSTNAME.test(host) && !net.isIP(host)) problems.push(`mail.smtp.host '${String(raw.host)}' is not a host name or an address (the port is mail.smtp.port, and there is no scheme)`);
+  const port = raw.port === undefined || raw.port === null ? undefined : wholeNumber(raw.port, "mail.smtp.port", 1, 65_535, 0, problems);
+  let security: SmtpSettings["security"] | undefined;
+  if (raw.security === undefined || raw.security === null) security = port === 465 ? "tls" : "starttls";
+  else if (raw.security === "tls" || raw.security === "starttls" || raw.security === "none") security = raw.security;
+  else problems.push(`mail.smtp.security must be tls, starttls or none (got ${JSON.stringify(raw.security)})`);
+  const from = typeof raw.from === "string" ? raw.from.trim() : "";
+  if (from === "") problems.push("mail.smtp.from is required: the address mail is sent from, like no-reply@example.com or Curule <no-reply@example.com>");
+  else {
+    try {
+      addressOf(from);
+      fromHeader(from);
+    } catch (err) {
+      problems.push(`mail.smtp.from '${from.replace(/[\r\n]/g, " ")}' is not an address, or a name followed by one in angle brackets: ${err instanceof SmtpError ? err.message : String(err)}`);
+    }
+  }
+  let hello: string | undefined;
+  if (raw.hello !== undefined && raw.hello !== null) {
+    if (typeof raw.hello === "string" && HOSTNAME.test(raw.hello.trim().toLowerCase())) hello = raw.hello.trim().toLowerCase();
+    else problems.push(`mail.smtp.hello '${String(raw.hello)}' is not a host name: it is what this machine calls itself to the mail server`);
+  }
+  // A sign-in is both halves or neither: one without the other would be sent as no sign-in and fail at the first customer.
+  const hasUser = raw.user_env !== undefined && raw.user_env !== null;
+  const hasPassword = raw.password_env !== undefined && raw.password_env !== null;
+  let user: string | undefined;
+  let password: string | undefined;
+  if (hasUser !== hasPassword) problems.push("mail.smtp.user_env and mail.smtp.password_env go together: a server that asks for a sign-in needs both, and one that does not needs neither");
+  else if (hasUser) {
+    user = fromEnv(raw.user_env, "mail.smtp.user_env", "the mail server's user name", 1);
+    password = fromEnv(raw.password_env, "mail.smtp.password_env", "the mail server's password", 1);
+    if (/[\0\r\n]/.test(user) || /[\0\r\n]/.test(password)) problems.push("the mail server's user name and password must not hold a line break or a NUL: a sign-in cannot carry one");
+  }
+  const local = host === "localhost" || host === "::1" || (net.isIPv4(host) && host.startsWith("127."));
+  if (security === "none" && !local && host !== "") {
+    if (user !== undefined) problems.push(`mail.smtp.security is none and the mail server '${host}' is not on this machine: the password would cross the network in the clear. Use starttls or tls`);
+    else warnings.push(`mail.smtp.security is none for '${host}': mail, and the links in it that sign a person in, cross the network unencrypted. Use it only on a network that is trusted`);
+  }
+  let spoolDir = "";
+  if (spool !== undefined && spool !== null) {
+    if (typeof spool === "string" && spool.trim() !== "") spoolDir = path.resolve(dir, spool);
+    else problems.push("mail.spool must be a folder");
+  } else if (logPath !== "") spoolDir = path.join(path.dirname(logPath), "mail");
+  if (problems.length > before || security === undefined) return undefined;
+  return { host, port: port ?? MAIL_PORTS[security], security, ...(user !== undefined ? { user, password: password! } : {}), from, ...(hello ? { hello } : {}), spoolDir };
+}
+
+/** `mail`: where mail goes. A server, to deliver it over SMTP; or a file, to write it to for something of the operator's to deliver. */
+function mailSettings(
+  raw: unknown,
+  logPath: string,
+  production: boolean,
+  read: { at: (p: unknown, what: string, required?: boolean) => string; fromEnv: (name: unknown, key: string, noun: string, minLength: number) => string },
+  dir: string,
+  problems: string[],
+  warnings: string[],
+): { smtp?: SmtpSettings; outboxPath: string } {
+  const mail = isObject(raw) ? raw : {};
+  const named = mail.smtp !== undefined && mail.smtp !== null;
+  const smtp = named ? smtpSettings(mail.smtp, mail.spool, logPath, dir, read.fromEnv, problems, warnings) : undefined;
+  if (smtp) {
+    if (mail.outbox !== undefined) warnings.push("mail.outbox is not used while mail.smtp is set: mail is delivered, and no copy is written to a file");
+    return { smtp, outboxPath: "" };
+  }
+  // A server that was named and is wrong has had its problems said: the file is not asked for as well.
+  if (named) return { outboxPath: "" };
+  if (typeof mail.outbox !== "string" || mail.outbox.trim() === "") {
+    problems.push("mail.outbox is required, or mail.smtp to deliver mail over SMTP");
+    return { outboxPath: "" };
+  }
+  const outboxPath = read.at(mail.outbox, "mail.outbox");
+  if (production) warnings.push(`mail is written to ${outboxPath} and is not sent. A person who signs up gets no confirmation link unless something of yours delivers that file. Set mail.smtp to send it`);
+  return { outboxPath };
+}
+
+function readConfigFile(file: string): Record<string, unknown> {
+  let raw: unknown;
+  try {
+    raw = parseYaml(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    throw new Error(`cannot read the control-plane configuration ${file}: ${(err as Error).message}`);
+  }
+  if (!isObject(raw)) throw new Error(`${file}: expected a mapping with app_url, workspaces, gateway, plans and billing`);
+  return raw;
+}
+
+/**
+ * Only the mail part of a configuration, read and checked as the whole is, and nothing else: `curule-cloud mail-check` uses it,
+ * so that mail can be proved before the rest of the service is ready (the legal pages written, the licence key in the build).
+ */
+export function loadMailConfig(file: string, env: NodeJS.ProcessEnv = process.env): { smtp?: SmtpSettings; outboxPath: string; warnings: string[] } {
+  const raw = readConfigFile(file);
+  const dir = path.dirname(path.resolve(file));
+  const problems: string[] = [];
+  const warnings: string[] = [];
+  const read = readers(dir, env, problems);
+  const logPath = read.at(raw.control_log, "control_log", false);
+  const production = typeof raw.app_url === "string" && /^https:/i.test(raw.app_url.trim());
+  const result = mailSettings(raw.mail, logPath, production, read, dir, problems, warnings);
+  if (problems.length > 0) throw new Error(problems.map((p) => `${file}: ${p}`).join("\n"));
+  return { ...result, warnings };
+}
+
+/** Read and check a control-plane configuration. Paths in it are relative to the file. `env` is where secrets are read from. */
+export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process.env, options: LoadOptions = {}): ControlConfig {
+  const raw = readConfigFile(file);
+  const dir = path.dirname(path.resolve(file));
+  const problems: string[] = [];
+  /** Problems another file's loader already worded, with that file's name in them. */
+  const elsewhere: string[] = [];
+  const warnings: string[] = [];
+
+  const { at, fromEnv, url } = readers(dir, env, problems);
 
   // ---- where the app is, and where workspaces are
   const app = url(raw.app_url, "app_url");
@@ -210,8 +352,7 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     }
   }
   const logPath = at(raw.control_log, "control_log");
-  const mail = isObject(raw.mail) ? raw.mail : {};
-  const outboxPath = at(mail.outbox, "mail.outbox");
+  const { smtp, outboxPath } = mailSettings(raw.mail, logPath, production, { at, fromEnv }, dir, problems, warnings);
   const plansPath = at(raw.plans, "plans");
   let catalogue: Catalogue | undefined;
   if (plansPath !== "") {
@@ -342,6 +483,7 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     ...(pagesDir !== "" ? { pagesDir } : {}),
     logPath,
     outboxPath,
+    ...(smtp ? { smtp } : {}),
     plansPath,
     catalogue: catalogue!,
     secret,

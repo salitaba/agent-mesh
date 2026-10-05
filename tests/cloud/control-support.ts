@@ -9,6 +9,8 @@ export const ENV = {
   CONTROL_SECRET: "a-control-secret-of-at-least-thirty-two-chars",
   CONTROL_OWNER_TOKEN: "an-owner-token-of-at-least-24-chars",
   GATEWAY_ADMIN_TOKEN: "a-gateway-admin-token-of-24-chars",
+  SMTP_USER: "mailer@curule.example",
+  SMTP_PASSWORD: "an-smtp-password-with-: and é",
 };
 
 /** A configuration that is valid, as an object: a test changes what it is about and leaves the rest. */
@@ -20,7 +22,7 @@ export function baseConfig(): Record<string, any> {
     owner: { host: "127.0.0.1", port: 0, token_env: "CONTROL_OWNER_TOKEN" },
     pages: "./pages",
     control_log: "./data/control.jsonl",
-    mail: { outbox: "./data/outbox.jsonl" },
+    mail: { smtp: { host: "smtp.mail.example", port: 587, security: "starttls", user_env: "SMTP_USER", password_env: "SMTP_PASSWORD", from: "Curule <no-reply@curule.example>" } },
     plans: "./plans.yaml",
     secret_env: "CONTROL_SECRET",
     gateway: { admin_url: "http://gateway.internal:8081", admin_token_env: "GATEWAY_ADMIN_TOKEN", tenant_url: "http://gateway.internal:8080/v1" },

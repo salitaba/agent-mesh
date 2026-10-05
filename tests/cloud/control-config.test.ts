@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { stringify } from "yaml";
-import { describeControl, loadControlConfig, type ControlConfig } from "../../packages/cloud/src/index";
+import { describeControl, loadControlConfig, loadMailConfig, type ControlConfig } from "../../packages/cloud/src/index";
 import { generateLicenseKeyPair } from "../../packages/licensing/src/index";
 import { ENV, pricedCatalogue, trial, workdir, type Workdir } from "./control-support";
 
@@ -42,7 +42,8 @@ test("a valid configuration is read as it was meant: addresses as origins, paths
     assert.deepEqual(c.owner, { host: "127.0.0.1", port: 0, token: ENV.CONTROL_OWNER_TOKEN });
     assert.equal(c.pagesDir, path.join(w.dir, "pages"));
     assert.equal(c.logPath, path.join(w.dir, "data", "control.jsonl"));
-    assert.equal(c.outboxPath, path.join(w.dir, "data", "outbox.jsonl"));
+    assert.equal(c.outboxPath, "", "mail is delivered, and not written to a file");
+    assert.deepEqual(c.smtp, { host: "smtp.mail.example", port: 587, security: "starttls", user: ENV.SMTP_USER, password: ENV.SMTP_PASSWORD, from: "Curule <no-reply@curule.example>", spoolDir: path.join(w.dir, "data", "mail") });
     assert.equal(c.plansPath, path.join(w.dir, "plans.yaml"));
     assert.deepEqual(c.catalogue.plans().map((p) => p.id), ["team", "business", "yearly"]);
     assert.equal(c.secret, ENV.CONTROL_SECRET);
@@ -281,7 +282,7 @@ test("the files it names are checked where they can be: the pages are a director
     assert.ok(m.split("\n").every((l) => l.startsWith(path.join(w.dir, "plans.yaml"))), "the catalogue's own words, with the catalogue's own file name");
   });
   using(workdir((raw) => delete raw.control_log), (w) => assert.match(refusal(w), /control_log is required/));
-  using(workdir((raw) => (raw.mail = {})), (w) => assert.match(refusal(w), /mail.outbox is required/));
+  using(workdir((raw) => (raw.mail = {})), (w) => assert.match(refusal(w), /mail.outbox is required, or mail.smtp to deliver mail over SMTP/));
 });
 
 /** Pages written into a workdir's pages folder, by path. */
@@ -500,4 +501,160 @@ test("a configuration with a hosted checkout is described without its key", () =
     assert.match(shown, /the checks on workspaces run every 1 minute$/m);
     assert.ok(!shown.includes("sk_live_very_secret") && !shown.includes("whsec_very_secret"));
   });
+});
+
+// ---- mail ----
+
+const smtp = (over: Record<string, unknown> = {}): ((raw: Record<string, any>) => void) => (raw) => {
+  raw.mail = { smtp: { ...raw.mail.smtp, ...over } };
+  for (const [k, v] of Object.entries(over)) if (v === undefined) delete raw.mail.smtp[k];
+};
+
+test("mail is delivered over SMTP to the server the file names, signed in with an account read from the environment, and waits in a folder beside the control log", () => {
+  using(workdir(), (w) => {
+    const c = load(w);
+    assert.deepEqual(c.smtp, { host: "smtp.mail.example", port: 587, security: "starttls", user: ENV.SMTP_USER, password: ENV.SMTP_PASSWORD, from: "Curule <no-reply@curule.example>", spoolDir: path.join(w.dir, "data", "mail") });
+  });
+  using(workdir((raw) => (smtp({ hello: "Mail.Curule.Example" })(raw), (raw.mail.spool = "../elsewhere/spool"))), (w) => {
+    const c = load(w);
+    assert.equal(c.smtp?.spoolDir, path.resolve(w.dir, "..", "elsewhere", "spool"), "a folder named in the file is read from the file's own folder");
+    assert.equal(c.smtp?.hello, "mail.curule.example");
+  });
+});
+
+test("the port and the way a connection is encrypted follow each other when only one is said, and a server that asks for no sign-in needs none", () => {
+  const cases: Array<[Record<string, unknown>, [string, number]]> = [
+    [{ port: undefined, security: undefined }, ["starttls", 587]],
+    [{ port: 465, security: undefined }, ["tls", 465]],
+    [{ port: 2525, security: undefined }, ["starttls", 2525]],
+    [{ port: undefined, security: "tls" }, ["tls", 465]],
+    [{ port: undefined, security: "starttls" }, ["starttls", 587]],
+    [{ port: undefined, security: "none", host: "localhost", user_env: undefined, password_env: undefined }, ["none", 25]],
+    [{ port: 465, security: "starttls" }, ["starttls", 465]],
+  ];
+  for (const [over, [security, port]] of cases) {
+    using(workdir(smtp(over)), (w) => {
+      const c = load(w);
+      assert.deepEqual([c.smtp?.security, c.smtp?.port], [security, port], JSON.stringify(over));
+    });
+  }
+  using(workdir(smtp({ user_env: undefined, password_env: undefined })), (w) => {
+    const c = load(w);
+    assert.ok(c.smtp && !("user" in c.smtp) && !("password" in c.smtp));
+  });
+});
+
+test("every mistake in the mail settings is reported at once, in words that name the setting, and no password is in them", () => {
+  using(
+    workdir((raw) => {
+      raw.mail = { smtp: { host: "smtp://mail.example:587", port: 70_000, security: "ssl", from: "Curule <no-reply>", hello: "not a name", user_env: "SMTP_USER" } };
+    }),
+    (w) => {
+      const m = refusal(w);
+      assert.match(m, /mail\.smtp\.host 'smtp:\/\/mail\.example:587' is not a host name or an address/);
+      assert.match(m, /mail\.smtp\.port must be a whole number from 1 to 65535 \(got 70000\)/);
+      assert.match(m, /mail\.smtp\.security must be tls, starttls or none \(got "ssl"\)/);
+      assert.match(m, /mail\.smtp\.from 'Curule <no-reply>' is not an address/);
+      assert.match(m, /mail\.smtp\.hello 'not a name' is not a host name/);
+      assert.match(m, /mail\.smtp\.user_env and mail\.smtp\.password_env go together/);
+      assert.ok(!m.includes(ENV.SMTP_PASSWORD) && !m.includes(ENV.SMTP_USER));
+    },
+  );
+  using(workdir(smtp({ host: undefined, from: undefined })), (w) => {
+    const m = refusal(w);
+    assert.match(m, /mail\.smtp\.host is required/);
+    assert.match(m, /mail\.smtp\.from is required/);
+  });
+  using(workdir(smtp({ host: "smtp.mail.example:587" })), (w) => assert.match(refusal(w), /mail\.smtp\.host 'smtp\.mail\.example:587' is not a host name or an address \(the port is mail\.smtp\.port/));
+  using(workdir(smtp({ from: "no-reply@curule.example\nBcc: eve@example.net" })), (w) => assert.match(refusal(w), /mail\.smtp\.from 'no-reply@curule\.example Bcc: eve@example\.net' is not an address/));
+  using(workdir((raw) => (raw.mail.spool = 12)), (w) => assert.match(refusal(w), /mail\.spool must be a folder/));
+  using(workdir((raw) => (raw.mail = { smtp: "smtp.mail.example" })), (w) => assert.match(refusal(w), /mail\.smtp must be a mapping with host and from/));
+});
+
+test("the account and password are read from the environment, and a variable that is not set stops the start", () => {
+  using(workdir(), (w) => {
+    assert.match(refusal(w, { ...ENV, SMTP_USER: undefined }), /the environment variable SMTP_USER is not set, so there is no mail server's user name/);
+    assert.match(refusal(w, { ...ENV, SMTP_PASSWORD: "  " }), /the environment variable SMTP_PASSWORD is not set, so there is no mail server's password/);
+    assert.match(refusal(w, { ...ENV, SMTP_PASSWORD: "a\nb" }), /must not hold a line break or a NUL/);
+    assert.equal(load(w, { ...ENV, SMTP_PASSWORD: "p" }).smtp?.password, "p", "a short password is the provider's to allow");
+  });
+  using(workdir(smtp({ password_env: undefined })), (w) => assert.match(refusal(w), /user_env and mail\.smtp\.password_env go together/));
+  using(workdir(smtp({ user_env: undefined })), (w) => assert.match(refusal(w), /user_env and mail\.smtp\.password_env go together/));
+});
+
+test("mail that crosses a network unencrypted is warned of, and one that would carry a password in the clear is refused, unless the server is this machine", () => {
+  using(workdir(smtp({ security: "none", user_env: undefined, password_env: undefined })), (w) => {
+    assert.match(load(w).warnings.join("\n"), /mail\.smtp\.security is none for 'smtp\.mail\.example': mail, and the links in it that sign a person in, cross the network unencrypted/);
+  });
+  using(workdir(smtp({ security: "none" })), (w) => assert.match(refusal(w), /mail\.smtp\.security is none and the mail server 'smtp\.mail\.example' is not on this machine: the password would cross the network in the clear\. Use starttls or tls/));
+  for (const host of ["localhost", "127.0.0.1", "127.9.8.7", "::1"]) {
+    using(workdir(smtp({ security: "none", host })), (w) => {
+      const c = load(w);
+      assert.equal(c.smtp?.host, host);
+      assert.deepEqual(c.warnings, [], `${host} is this machine`);
+    });
+  }
+  for (const host of ["127.example.com", "localhost.example.com", "10.0.0.5"]) {
+    using(workdir(smtp({ security: "none", host })), (w) => assert.match(refusal(w), /is not on this machine/, host));
+  }
+});
+
+test("where mail goes: a file or a server, and one of the two is needed; a file in production is warned of, because it is not sent", () => {
+  using(workdir((raw) => (raw.mail = { outbox: "./data/outbox.jsonl" })), (w) => {
+    const c = load(w);
+    assert.equal(c.outboxPath, path.join(w.dir, "data", "outbox.jsonl"));
+    assert.equal(c.smtp, undefined);
+    assert.match(c.warnings.join("\n"), /mail is written to .*outbox\.jsonl and is not sent\. A person who signs up gets no confirmation link unless something of yours delivers that file\. Set mail\.smtp to send it/);
+  });
+  using(workdir((raw) => ((raw.mail = { outbox: "./data/outbox.jsonl" }), trial(raw))), (w) => assert.ok(!load(w).warnings.some((x) => /outbox/.test(x)), "a trial writes mail to a file, and that is what it is for"));
+  using(workdir((raw) => (raw.mail = { ...raw.mail, outbox: "./data/outbox.jsonl" })), (w) => {
+    const c = load(w);
+    assert.equal(c.outboxPath, "");
+    assert.match(c.warnings.join("\n"), /mail\.outbox is not used while mail\.smtp is set/);
+  });
+  using(workdir((raw) => delete raw.mail), (w) => assert.match(refusal(w), /mail\.outbox is required, or mail\.smtp to deliver mail over SMTP/));
+  using(workdir((raw) => (raw.mail = { smtp: null, outbox: "./o.jsonl" })), (w) => assert.equal(load(w).smtp, undefined, "an empty smtp is no smtp"));
+});
+
+test("the mail that would be sent is shown for a person to check: where, how it is encrypted, as whom, and where it waits, with no password", () => {
+  using(workdir(), (w) => {
+    const shown = describeControl(load(w)).join("\n");
+    assert.match(shown, /mail is delivered over SMTP to smtp\.mail\.example:587 \(upgraded with STARTTLS, signed in\) as Curule <no-reply@curule\.example>, and waits in .*data\/mail until it is taken/);
+    assert.ok(!shown.includes(ENV.SMTP_PASSWORD) && !shown.includes(ENV.SMTP_USER));
+  });
+  using(workdir(smtp({ security: "tls", port: undefined })), (w) => assert.match(describeControl(load(w)).join("\n"), /smtp\.mail\.example:465 \(TLS from the first byte, signed in\)/));
+  using(workdir(smtp({ security: "none", port: undefined, host: "localhost", user_env: undefined, password_env: undefined })), (w) => assert.match(describeControl(load(w)).join("\n"), /localhost:25 \(not encrypted\) as /));
+  using(workdir((raw) => (raw.mail = { outbox: "./data/outbox.jsonl" })), (w) => assert.match(describeControl(load(w)).join("\n"), /mail is written to .*outbox\.jsonl and not sent/));
+});
+
+test("an environment variable that is not named, for the mail account or its password, is said to be needed by its own key", () => {
+  using(workdir(smtp({ user_env: 12, password_env: "" })), (w) => {
+    const m = refusal(w);
+    assert.match(m, /mail\.smtp\.user_env must name the environment variable that holds the mail server's user name/);
+    assert.match(m, /mail\.smtp\.password_env must name the environment variable that holds the mail server's password/);
+  });
+});
+
+test("only the mail part is read for the mail check: it needs no control log, one mistake is enough to refuse it, and a file that is not sent is warned of when the app is served over TLS", () => {
+  const minimal = (mail: Record<string, unknown>, extra: Record<string, unknown> = {}): ((raw: Record<string, any>) => void) => (raw) => {
+    for (const key of Object.keys(raw)) delete raw[key];
+    Object.assign(raw, { mail, ...extra });
+  };
+  using(workdir(minimal({ smtp: { host: "smtp.mail.example", from: "no-reply@curule.example", user_env: "SMTP_USER", password_env: "SMTP_PASSWORD" } })), (w) => {
+    const c = loadMailConfig(w.file, ENV);
+    assert.equal(c.smtp?.host, "smtp.mail.example");
+    assert.equal(c.smtp?.spoolDir, "", "with no control log there is no default folder to name");
+    assert.deepEqual(c.warnings, []);
+  });
+  using(workdir(minimal({ smtp: { host: "smtp.mail.example", from: "nobody" } })), (w) => {
+    assert.throws(() => loadMailConfig(w.file, ENV), (err: Error) => err.message.split("\n").length === 1 && err.message.startsWith(`${w.file}: mail.smtp.from 'nobody' is not an address`));
+  });
+  for (const [appUrl, warned] of [["https://app.curule.example", true], ["http://localhost:7500", false], [undefined, false]] as const) {
+    using(workdir(minimal({ outbox: "./outbox.jsonl" }, appUrl ? { app_url: appUrl } : {})), (w) => {
+      const c = loadMailConfig(w.file, ENV);
+      assert.equal(c.outboxPath, path.join(w.dir, "outbox.jsonl"));
+      assert.equal(c.warnings.some((x) => /is not sent/.test(x)), warned, String(appUrl));
+    });
+  }
+  using(workdir(minimal({})), (w) => assert.throws(() => loadMailConfig(w.file, ENV), /mail\.outbox is required, or mail\.smtp to deliver mail over SMTP/));
 });

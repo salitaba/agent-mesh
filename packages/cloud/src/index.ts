@@ -3,6 +3,8 @@ export * from "./catalogue";
 export * from "./licences";
 export * from "./errors";
 export * from "./mailer";
+export * from "./smtp";
+export * from "./mail-queue";
 export * from "./billing";
 export * from "./hosted-checkout";
 export * from "./store";

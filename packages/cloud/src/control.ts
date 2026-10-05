@@ -8,17 +8,19 @@
  */
 import type * as http from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ControlConfig } from "./control-config";
+import type { ControlConfig, SmtpSettings } from "./control-config";
 import { ControlPlane } from "./control-plane";
 import { WorkspaceEdge } from "./edge";
 import { HttpGatewayAdmin } from "./gateway-client";
 import { HostedCheckoutBilling } from "./hosted-checkout";
 import { ManualBilling, type BillingProvider } from "./billing";
-import { OutboxMailer } from "./mailer";
+import { OutboxMailer, type Mailer } from "./mailer";
+import { QueuedMailer, type QueuedMailerOptions } from "./mail-queue";
 import { OwnerWeb } from "./owner";
 import { ContainerProvisioner, ProcessRunner, type CommandRunner } from "./provision-container";
 import { LocalProcessProvisioner } from "./provision-local";
 import type { Provisioner } from "./provisioner";
+import { SmtpTransport } from "./smtp";
 import { ControlLog, JsonlControlStore, type ControlStore } from "./store";
 import { ControlWeb } from "./web";
 import { createOwnerServer, createPublicServer } from "./web-server";
@@ -74,6 +76,10 @@ export interface StartOptions {
   provisioner?: Provisioner;
   /** The payment provider. For tests and for the trial, whose provider is a page of its own; the default is the one the configuration names. */
   billing?: BillingProvider;
+  /** What delivers mail. For tests; the default is the SMTP queue or the outbox file the configuration names. */
+  mailer?: Mailer;
+  /** How the mail queue waits and gives up, when mail goes over SMTP. For tests; the defaults are 30 seconds doubling to 15 minutes, a day, and an hour. */
+  mailQueue?: Pick<QueuedMailerOptions, "firstDelayMs" | "maxDelayMs" | "giveUpMs" | "stuckAfterMs">;
   /** How the container engine is run, when the provisioner is the container one. For tests; the default starts the engine. */
   runner?: CommandRunner;
   waitReady?: WorkspacesOptions["waitReady"];
@@ -85,6 +91,8 @@ export interface RunningControl {
   plane: ControlPlane;
   web: ControlWeb;
   edge: WorkspaceEdge;
+  /** The queue mail waits in, when it is delivered over SMTP. */
+  mail?: QueuedMailer;
   public: Listening;
   owner: Listening;
   /** Run the checks that keep workspaces honest now, and say what they did. */
@@ -100,6 +108,19 @@ function billingFor(config: ControlConfig, fetchImpl: typeof fetch | undefined):
   if (b.provider === "manual") return new ManualBilling({ payUrl: (ref) => b.payUrl.replace("{ref}", encodeURIComponent(ref)) });
   const planOfPrice = new Map(config.catalogue.plans().flatMap((p) => (p.providerPriceId ? [[p.providerPriceId, p.id] as const] : [])));
   return new HostedCheckoutBilling({ apiKey: b.apiKey, webhookSecret: b.webhookSecret, planOfPrice: (id) => planOfPrice.get(id), ...(b.baseUrl ? { baseUrl: b.baseUrl } : {}), ...(fetchImpl ? { fetch: fetchImpl } : {}) });
+}
+
+/** What delivers one message over the SMTP server the configuration names. It signs in, encrypts and checks as `SmtpTransport` does, and does not queue. */
+export function smtpTransportFor(smtp: SmtpSettings, clock?: () => Date): SmtpTransport {
+  return new SmtpTransport({ host: smtp.host, port: smtp.port, security: smtp.security, from: smtp.from, ...(smtp.user !== undefined ? { user: smtp.user, password: smtp.password! } : {}), ...(smtp.hello ? { hello: smtp.hello } : {}), ...(clock ? { clock } : {}) });
+}
+
+/** The outbox file, or the queue in front of an SMTP server. The queue is opened, and what was waiting from before the last stop is delivered once it is started. */
+async function mailerFor(config: ControlConfig, clock: () => Date, log: (record: ControlLogRecord) => void, queueOptions: StartOptions["mailQueue"]): Promise<{ mailer: Mailer; queue?: QueuedMailer }> {
+  const smtp = config.smtp;
+  if (!smtp) return { mailer: new OutboxMailer(config.outboxPath, clock) };
+  const queue = await QueuedMailer.open({ transport: smtpTransportFor(smtp, clock), dir: smtp.spoolDir, clock, log: (r) => log(r), ...queueOptions });
+  return { mailer: queue, queue };
 }
 
 function provisionerFor(config: ControlConfig, runner: CommandRunner | undefined): Provisioner {
@@ -125,15 +146,18 @@ export async function startControl(config: ControlConfig, options: StartOptions 
   const closeLog = async (): Promise<void> => {
     await (store as { close?: () => Promise<void> }).close?.();
   };
+  let queue: QueuedMailer | undefined;
   try {
     const provisioner = options.provisioner ?? provisionerFor(config, options.runner);
     const gateway = new HttpGatewayAdmin({ baseUrl: config.gateway.adminUrl, token: config.gateway.adminToken, ...(options.fetch ? { fetch: options.fetch } : {}) });
+    const { mailer, queue: opened } = options.mailer ? { mailer: options.mailer, queue: undefined } : await mailerFor(config, clock, log, options.mailQueue);
+    queue = opened;
     const plane = new ControlPlane({
       log: controlLog,
       catalogue: config.catalogue,
       billing: options.billing ?? billingFor(config, options.fetch),
       gateway,
-      mailer: new OutboxMailer(config.outboxPath, clock),
+      mailer,
       appUrl: config.appUrl,
       workspaces: {
         provisioner,
@@ -158,7 +182,7 @@ export async function startControl(config: ControlConfig, options: StartOptions 
     });
     const edge = new WorkspaceEdge({ plane, access, appUrl: config.appUrl, workspaceScheme: config.workspaces.scheme, log: (r) => log(r) });
     const publicServer = createPublicServer({ web, edge, appHost: config.appHost, workspaceDomain: config.workspaces.domain, trustProxyHops: config.public.trustProxyHops, ...(config.pagesDir ? { pagesDir: config.pagesDir } : {}) });
-    const ownerServer = createOwnerServer({ owner: new OwnerWeb({ plane, token: config.owner.token, clock, log: (r) => log(r) }) });
+    const ownerServer = createOwnerServer({ owner: new OwnerWeb({ plane, token: config.owner.token, clock, log: (r) => log(r), ...(queue ? { mail: () => queue!.stats() } : {}) }) });
 
     const pub = await listenOn(publicServer, config.public.port, config.public.host);
     let own: Listening;
@@ -168,6 +192,9 @@ export async function startControl(config: ControlConfig, options: StartOptions 
       await pub.close(0);
       throw err;
     }
+
+    // What was waiting from before the last stop is delivered now; from here on a message is delivered as it is queued.
+    queue?.start();
 
     let checking: Promise<string[]> | undefined;
     const reconcile = (): Promise<string[]> => {
@@ -199,6 +226,7 @@ export async function startControl(config: ControlConfig, options: StartOptions 
       plane,
       web,
       edge,
+      ...(queue ? { mail: queue } : {}),
       public: pub,
       owner: own,
       reconcile,
@@ -213,10 +241,13 @@ export async function startControl(config: ControlConfig, options: StartOptions 
         await checking;
         // Hosts that are children of this process (the local provisioner) do not outlive it. A container does, and is looked at again at the next start.
         await (provisioner as { stopAll?: () => Promise<void> }).stopAll?.();
+        // A message a check queued while the service stopped is on disk, and goes out at the next start.
+        await queue?.stop();
         await closeLog();
       },
     };
   } catch (err) {
+    await queue?.stop(0);
     await closeLog();
     throw err;
   }
@@ -234,7 +265,7 @@ export function describeControl(config: ControlConfig): string[] {
     `the app is at ${c.appUrl}; workspaces are at <slug>.${c.workspaces.domain}${c.workspaces.port !== undefined ? `:${c.workspaces.port}` : ""} over ${c.workspaces.scheme}${c.production ? " (cookies are Secure and HSTS is sent)" : " (a trial: no Secure cookies)"}`,
     `public listener ${c.public.host}:${c.public.port}, ${c.public.trustProxyHops === 0 ? "reading no proxy header for the caller's address" : `trusting ${c.public.trustProxyHops} proxy hop${c.public.trustProxyHops === 1 ? "" : "s"} for the caller's address`}${c.pagesDir ? `; pages from ${c.pagesDir}` : "; no pages, the API only"}`,
     `owner API ${c.owner.host}:${c.owner.port}, behind a token`,
-    `control log ${c.logPath}; mail is written to ${c.outboxPath}`,
+    `control log ${c.logPath}; ${c.smtp ? `mail is delivered over SMTP to ${c.smtp.host}:${c.smtp.port} (${c.smtp.security === "tls" ? "TLS from the first byte" : c.smtp.security === "starttls" ? "upgraded with STARTTLS" : "not encrypted"}${c.smtp.user !== undefined ? ", signed in" : ""}) as ${c.smtp.from}, and waits in ${c.smtp.spoolDir} until it is taken` : `mail is written to ${c.outboxPath} and not sent`}`,
     `plans from ${c.plansPath}, sold in ${c.catalogue.currency}:`,
   ];
   for (const p of c.catalogue.plans()) lines.push(`  ${p.id}: ${p.title}, ${money(p.priceMinor, c.catalogue.currency)} a ${p.period}, ${p.workspaces} workspace${p.workspaces === 1 ? "" : "s"}, ${p.includedUsageMicros / 1_000_000} ${c.catalogue.currency} of usage included, limits of the ${p.licencePlan} plan${p.tiers ? `, tiers ${p.tiers.join(", ")}` : ""}`);
