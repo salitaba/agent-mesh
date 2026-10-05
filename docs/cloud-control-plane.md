@@ -270,7 +270,7 @@ It sends a message only when it is given an address to send it to.
 |---|---|---|
 | The configuration | It is not valid (every problem is listed, and nothing else is looked at) | `--check` would warn of something |
 | Folders the service writes (the log, the mail spool or outbox, a trial's workspaces) | A file cannot be made there, or in the nearest folder above that exists | |
-| The model gateway (`GET /admin/health` with the admin token) | It cannot be reached, refuses the token, answers something else, says it is not well, or does not have a tier that a plan lets a workspace use | The ledger is kept in another currency than the plans are sold in; the address workspaces call does not accept a connection from here |
+| The model gateway (`GET /admin/health` with the admin token) | It cannot be reached, refuses the token, answers something else, says it is not well, lists no tiers, or does not have a tier that a plan lets a workspace use | The ledger is kept in another currency than the plans are sold in; the address workspaces call does not accept a connection from here |
 | The container engine, its image and the workspace network | The engine cannot be run, or the network does not exist or is not internal | The image is not here (it is pulled at the first workspace); the egress proxy does not accept a connection from here, or there is none |
 | The names customers use | | The app's host, or a name under the workspace domain, does not resolve (the wildcard record) |
 | The listeners | | An address cannot be listened on (it may be this service, already running) |

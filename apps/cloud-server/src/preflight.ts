@@ -43,9 +43,11 @@ export interface PreflightOptions {
   publicKeys?: Record<string, string>;
 }
 
-const defaultLookup = async (host: string): Promise<string[]> => (await dns.promises.lookup(host, { all: true })).map((a) => a.address);
+/** The addresses a name resolves to, by the system's resolver. */
+export const defaultLookup = async (host: string): Promise<string[]> => (await dns.promises.lookup(host, { all: true })).map((a) => a.address);
 
-const defaultConnect = (host: string, port: number, timeoutMs: number): Promise<void> =>
+/** Whether a connection can be made to a host and port within a time: it is made and ended at once, and nothing is said. */
+export const defaultConnect = (host: string, port: number, timeoutMs: number): Promise<void> =>
   new Promise((resolve, reject) => {
     const socket = net.connect({ host, port });
     const timer = setTimeout(() => socket.destroy(new Error(`no answer in ${timeoutMs / 1000} seconds`)), timeoutMs);
@@ -60,7 +62,8 @@ const defaultConnect = (host: string, port: number, timeoutMs: number): Promise<
     });
   });
 
-const defaultListen = (host: string, port: number): Promise<void> =>
+/** Whether an address can be listened on: it is listened on and let go at once. */
+export const defaultListen = (host: string, port: number): Promise<void> =>
   new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", reject);
@@ -199,12 +202,20 @@ async function gateway(config: ControlConfig, doFetch: typeof fetch, connect: No
   if (health.ok !== true) say("problem", `the model gateway at ${where} says it is not well${health.writable === false ? ": it cannot write its ledger, and so cannot let a call through" : ""}`);
   else say("ok", `the model gateway at ${where} answered, accepts the admin token, and can write its ledger`);
   const tiers = Array.isArray(health.tiers) ? (health.tiers as unknown[]).filter((t): t is string => typeof t === "string") : [];
-  for (const plan of config.catalogue.plans()) {
-    for (const tier of plan.tiers ?? []) {
-      if (!tiers.includes(tier)) say("problem", `the plan '${plan.id}' lets a workspace use the tier '${tier}', and the gateway has no such tier (it has: ${tiers.join(", ") || "none"}): a workspace on that plan could not be given a key`);
+  if (tiers.length === 0) {
+    // A plan that names no tier may use any, and with none there is nothing to use: it is the gateway that is not ready.
+    say("problem", `the model gateway at ${where} lists no tiers: no workspace could be given a model`);
+  } else {
+    let missing = false;
+    for (const plan of config.catalogue.plans()) {
+      for (const tier of plan.tiers ?? []) {
+        if (tiers.includes(tier)) continue;
+        missing = true;
+        say("problem", `the plan '${plan.id}' lets a workspace use the tier '${tier}', and the gateway has no such tier (it has: ${tiers.join(", ")}): a workspace on that plan could not be given a key`);
+      }
     }
+    if (!missing) say("ok", `every tier a plan names is one the gateway has (${tiers.join(", ")})`);
   }
-  if (tiers.length > 0 && config.catalogue.plans().every((p) => (p.tiers ?? []).every((t) => tiers.includes(t)))) say("ok", `every tier a plan names is one the gateway has (${tiers.join(", ")})`);
   if (typeof health.currency === "string" && health.currency !== config.catalogue.currency) {
     say("warning", `the gateway keeps its ledger in ${health.currency} and the plans are sold in ${config.catalogue.currency}: the usage a plan includes is granted in the gateway's currency, and the two are not converted`);
   }

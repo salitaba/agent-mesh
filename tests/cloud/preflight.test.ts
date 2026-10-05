@@ -2,13 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as path from "node:path";
 import { stringify } from "yaml";
 import { USAGE, main, type Io } from "../../apps/cloud-server/src/index";
-import { describePreflight, preflight, type Finding, type PreflightDeps } from "../../apps/cloud-server/src/preflight";
+import { defaultConnect, defaultListen, defaultLookup, describePreflight, preflight, type Finding, type PreflightDeps } from "../../apps/cloud-server/src/preflight";
 import type { CommandRunner } from "../../packages/cloud/src/index";
 import { ENV, pricedCatalogue, trial, workdir, type Workdir } from "./control-support";
-import { FakeSmtp, type FakeOptions } from "./smtp-support";
+import { FakeSmtp, headersOf, type FakeOptions } from "./smtp-support";
+import { CATALOGUE } from "./support";
 
 // ---- a world to look at: a gateway, an engine, a name server and a network, each saying what the test tells it to ----
 
@@ -247,8 +249,26 @@ test("a tier a plan promises that the gateway does not have is a problem that na
     assert.deepEqual(said(findings, "problem"), ["the plan 'team' lets a workspace use the tier 'balanced', and the gateway has no such tier (it has: fast): a workspace on that plan could not be given a key"]);
     assert.ok(!hasOk(findings, /every tier a plan names/));
     const none = await run(w, world({ dns: KNOWN, gateway: { status: 200, body: { ...HEALTHY, tiers: [] } } }));
-    assert.equal(said(none, "problem").length, 2);
-    assert.ok(hasProblem(none, /it has: none\)/));
+    assert.deepEqual(said(none, "problem"), ["the model gateway at http://gateway.internal:8081 lists no tiers: no workspace could be given a model"], "one problem, and not one for each tier a plan names");
+    const unsaid = await run(w, world({ dns: KNOWN, gateway: { status: 200, body: { ok: true, writable: true, currency: "USD" } } }));
+    assert.equal(said(unsaid, "problem").length, 1, "a gateway that does not say which tiers it has is the same");
+  });
+});
+
+test("one tier is enough when the plans name no other, and a gateway with none is a problem even when no plan names a tier", async () => {
+  const team = (tiers: string[] | undefined) => ({ ...CATALOGUE, plans: { ...CATALOGUE.plans, team: { ...CATALOGUE.plans.team, tiers } } });
+  await using(workdir(deployed, team(["fast"])), async (w) => {
+    const findings = await run(w, world({ dns: KNOWN, gateway: { status: 200, body: { ...HEALTHY, tiers: ["fast"] } } }));
+    assert.deepEqual(said(findings, "problem"), []);
+    assert.ok(hasOk(findings, /^every tier a plan names is one the gateway has \(fast\)$/));
+  });
+  await using(workdir(deployed, team(undefined)), async (w) => {
+    const some = await run(w, world({ dns: KNOWN, gateway: { status: 200, body: { ...HEALTHY, tiers: ["best"] } } }));
+    assert.deepEqual(said(some, "problem"), [], "a plan that names no tier may use whatever the gateway has");
+    assert.ok(hasOk(some, /^every tier a plan names is one the gateway has \(best\)$/));
+    const none = await run(w, world({ dns: KNOWN, gateway: { status: 200, body: { ...HEALTHY, tiers: [] } } }));
+    assert.deepEqual(said(none, "problem"), ["the model gateway at http://gateway.internal:8081 lists no tiers: no workspace could be given a model"]);
+    assert.ok(!hasOk(none, /every tier a plan names/));
   });
 });
 
@@ -287,6 +307,10 @@ test("an engine that cannot be run is a problem, with what it said, and nothing 
     assert.equal(deps.asked.engine.length, 1);
     const missing = await run(w, world({ dns: KNOWN, engine: { version: new Error("spawn docker ENOENT") } }));
     assert.ok(hasProblem(missing, /^docker could not be run: the control plane starts a workspace/));
+    const wordy = await run(w, world({ dns: KNOWN, engine: { version: { code: 1, stderr: `  ${"a".repeat(200)}${"b".repeat(100)}  ` } } }));
+    assert.deepEqual(said(wordy, "problem"), [`docker could not be run (${"a".repeat(200)}): the control plane starts a workspace by running it, as the user it runs as`], "what it said is read from its first word, and cut at 200 characters");
+    const silent = await run(w, world({ dns: KNOWN, engine: { version: { code: 125, stderr: "  \n" } } }));
+    assert.ok(hasProblem(silent, /^docker could not be run \(exit 125\): /), "with no words, the exit status");
   });
   await using(workdir((raw) => (deployed(raw), (raw.provisioner.engine = "podman"))), async (w) => {
     const deps = world({ dns: KNOWN });
@@ -319,6 +343,11 @@ test("an egress proxy that does not accept a connection from here is a warning, 
     await run(w, deps);
     assert.ok(deps.asked.connects.includes("proxy.curule.example:443"));
   });
+  await using(workdir((raw) => (deployed(raw), (raw.provisioner.egress_proxy = "http://proxy.curule.example"))), async (w) => {
+    const deps = world({ dns: KNOWN });
+    await run(w, deps);
+    assert.ok(deps.asked.connects.includes("proxy.curule.example:80"));
+  });
   await using(workdir((raw) => (deployed(raw), delete raw.provisioner.egress_proxy)), async (w) => {
     const findings = await run(w, world({ dns: KNOWN }));
     assert.ok(hasWarning(findings, /^no egress proxy: a workspace can reach any address its network allows$/));
@@ -338,6 +367,12 @@ test("a name that does not resolve is a warning that says which record is missin
     const findings = await run(w, world());
     assert.ok(hasOk(findings, /^the app is at localhost, a name of this machine: it needs no record$/));
     assert.ok(hasOk(findings, /^workspaces are served at <name>\.localhost, which this machine resolves by itself$/));
+  });
+  await using(workdir((raw) => (deployed(raw), (raw.app_url = "http://app.localhost:7500"), (raw.workspaces = { domain: "ws.localhost" }))), async (w) => {
+    const findings = await run(w, world());
+    assert.deepEqual(said(findings, "problem"), []);
+    assert.ok(hasOk(findings, /^the app is at app\.localhost, a name of this machine: it needs no record$/), "a name under .localhost is this machine's");
+    assert.ok(hasOk(findings, /^workspaces are served at <name>\.ws\.localhost, which this machine resolves by itself$/));
   });
 });
 
@@ -368,6 +403,7 @@ test("mail is proved by sending a message when there is an address to send it to
       assert.ok(hasOk(sent, new RegExp(`^127\\.0\\.0\\.1:${smtp.port} accepted a message for ada@example\\.com: look for it in the inbox, and in the spam folder$`)));
       assert.equal(smtp.accepted.length, 1);
       assert.equal(smtp.accepted[0]!.user, ENV.SMTP_USER);
+      assert.equal(headersOf(smtp.accepted[0]!.data).get("subject"), "Curule Cloud preflight", "a person who finds it knows what sent it");
       const refused = await run(w, world({ dns: KNOWN }), "not an address");
       assert.ok(hasProblem(refused, /^'not an address' is not an address mail can be sent to/));
       const wrong = await run(w, world({ dns: KNOWN }), "ada@example.com", { ...ENV, SMTP_PASSWORD: "not the password" });
@@ -425,6 +461,56 @@ test("workspace licences: a key the build trusts is said to be, and a configurat
     const findings = await preflight(w.file, ENV, {}, world({ dns: KNOWN }));
     assert.ok(findings.some((f) => f.level === "problem" && /the licence key does not verify \(this build trusts no public key 'k1'/.test(f.text)));
   });
+});
+
+// ---- what the defaults do on a real socket, on this machine ----
+
+const listening = async (): Promise<{ server: net.Server; port: number; ended: () => number }> => {
+  let ended = 0;
+  const server = net.createServer((socket) => {
+    socket.on("error", () => undefined);
+    socket.on("close", () => (ended += 1));
+    socket.resume();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { server, port: (server.address() as net.AddressInfo).port, ended: () => ended };
+};
+const closed = (server: net.Server): Promise<void> => new Promise((resolve) => server.close(() => resolve()));
+const eventually = async (ok: () => boolean, ms = 5_000): Promise<void> => {
+  const end = Date.now() + ms;
+  while (!ok() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(ok(), "it did not come to pass in time");
+};
+
+test("the default look at a name returns every address of it, and an address is its own", async () => {
+  assert.deepEqual(await defaultLookup("127.0.0.1"), ["127.0.0.1"]);
+  assert.deepEqual(await defaultLookup("::1"), ["::1"]);
+  const machine = await defaultLookup("localhost");
+  assert.ok(Array.isArray(machine) && machine.length >= 1 && machine.every((a) => typeof a === "string" && /^[0-9a-f:.]+$/i.test(a)), JSON.stringify(machine));
+});
+
+test("the default connection is made to what listens and ended at once, and is refused, with the reason, when nothing does", async () => {
+  const l = await listening();
+  try {
+    await defaultConnect("127.0.0.1", l.port, 5_000);
+    await eventually(() => l.ended() === 1);
+    await defaultConnect("127.0.0.1", l.port, 5_000);
+    await eventually(() => l.ended() === 2);
+  } finally {
+    await closed(l.server);
+  }
+  await assert.rejects(defaultConnect("127.0.0.1", l.port, 5_000), /ECONNREFUSED/);
+});
+
+test("the default listen is made and let go, and is refused, with the reason, when something already has the address", async () => {
+  const taken = await listening();
+  try {
+    await assert.rejects(defaultListen("127.0.0.1", taken.port), /EADDRINUSE/);
+  } finally {
+    await closed(taken.server);
+  }
+  await defaultListen("127.0.0.1", taken.port);
+  await defaultListen("127.0.0.1", taken.port);
 });
 
 // ---- the command ----
