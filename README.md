@@ -209,6 +209,8 @@ packages/
   runtime-native    provider-neutral runtime: the agent loop, the seat's tools, conversations on disk
   ai-gateway        the model gateway of the hosted service: virtual keys, a price table, an append-only ledger,
                     tiers with failover, OpenAI-compatible chat completions in and any provider out
+  cloud             the hosted service's control plane: accounts, plans, payments, workspaces and the provisioners that
+                    start them, the proxy that serves each at its own address, and mail over SMTP
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub
@@ -217,7 +219,8 @@ apps/
   mesh-server     bootstrap + HTTP/SSE API + MCP bus + config-designer API + static UI
   mesh-dashboard  live UI + mesh designer (Vite + React + TS SPA in `src/`,
                   built to `dist/` and served by mesh-server on the same port)
-  cloud-server    the hosted service's processes: `npm run cloud -- gateway --config gateway.yaml`
+  cloud-server    the hosted service's processes and checks: `npm run cloud -- gateway|control|trial|mail-check|preflight`
+                  (see [docs/cloud.md](docs/cloud.md))
 deploy/           Helm chart, fleet provisioning script, container entrypoint
 site/             static landing and pricing page (its numbers are generated from the plan table)
 pricing/          the measured mission and the generated plan data
