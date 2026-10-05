@@ -5,6 +5,7 @@
  *   curule-cloud control --config control.yaml [--check]
  *   curule-cloud mail-check --config control.yaml --to <address>
  *   curule-cloud preflight --config control.yaml [--mail-to <address>]
+ *   curule-cloud egress --config egress.yaml [--check]
  *   curule-cloud trial [--port 7500] [--dir <folder>]
  *
  * `gateway` runs the model gateway: the one process that holds provider credentials and the ledger of what workspaces spend.
@@ -14,11 +15,13 @@
  * message through the mail server the control plane's configuration names and says what the server answered, so that mail is
  * proved before the first customer asks for a confirmation link. `preflight` looks at what the configuration points at (the
  * gateway, the container engine and its network, the folders, the names, the mail server) and says what would fail a customer.
- * `trial` runs both on this machine with nothing real behind them (a stand-in model, a payment page of its own, mail that is
+ * `egress` runs the one way out of a workspace's network: a proxy that tunnels HTTPS to the hosts the operator lists and to nothing
+ * else. `trial` runs both on this machine with nothing real behind them (a stand-in model, a payment page of its own, mail that is
  * printed), so the service can be tried and shown before anything is paid for.
  */
 import { formatMoney, loadGatewayConfig, startGateway, type GatewayConfig } from "../../../packages/ai-gateway/src/index";
 import { SmtpError, describeControl, loadControlConfig, loadMailConfig, mailbox, smtpTransportFor, startControl } from "../../../packages/cloud/src/index";
+import { describeEgress, loadEgressConfig, startEgress } from "./egress";
 import { describePreflight, preflight, type PreflightDeps } from "./preflight";
 import { DEFAULT_TRIAL_PORT, describeTrial, startTrial, trialPorts } from "./trial";
 
@@ -29,6 +32,7 @@ Commands:
   control --config <control.yaml> [--check]                 run the control plane: accounts, payments, workspaces, the public API and the owner API
   mail-check --config <control.yaml> --to <address>         send one message through the configured mail server, and say what it answered
   preflight --config <control.yaml> [--mail-to <address>]   look at what the configuration points at (gateway, container engine and network, folders, names, mail), and say what would fail a customer
+  egress --config <egress.yaml> [--check]                   the way out of a workspace's network: tunnels HTTPS to the hosts listed, and to nothing else (--check validates the file and exits)
   trial [--port <n>] [--dir <folder>]                       the whole service on this machine, with nothing real behind it (default port 7500; a named folder is kept)
   help                                                      show this text`;
 
@@ -267,6 +271,31 @@ async function runPreflight(args: string[], env: NodeJS.ProcessEnv, io: Io, deps
   return problems > 0 ? 1 : 0;
 }
 
+async function runEgress(args: string[], io: Io, start: typeof startEgress): Promise<number> {
+  const options = parseOptions("egress", args, io);
+  if (!options) return 1;
+  let config: ReturnType<typeof loadEgressConfig>;
+  try {
+    config = loadEgressConfig(options.file);
+  } catch (err) {
+    io.err((err as Error).message);
+    return 1;
+  }
+  for (const line of describeEgress(config)) io.out(line);
+  if (options.check) {
+    io.out("the configuration is valid");
+    return 0;
+  }
+  let running;
+  try {
+    running = await start(config);
+  } catch (err) {
+    io.err(`curule-cloud egress: ${(err as Error).message}`);
+    return 1;
+  }
+  return untilSignalled("egress", io, () => running.stop(), "no longer taking tunnels; letting the open ones finish");
+}
+
 async function runTrial(args: string[], io: Io, start: typeof startTrial): Promise<number> {
   let port = DEFAULT_TRIAL_PORT;
   let dir: string | undefined;
@@ -312,6 +341,7 @@ export async function main(
   startControlPlane: typeof startControl = startControl,
   startTrialRun: typeof startTrial = startTrial,
   preflightDeps: PreflightDeps = {},
+  startEgressProxy: typeof startEgress = startEgress,
 ): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
@@ -323,6 +353,8 @@ export async function main(
       return runMailCheck(rest, env, io);
     case "preflight":
       return runPreflight(rest, env, io, preflightDeps);
+    case "egress":
+      return runEgress(rest, io, startEgressProxy);
     case "trial":
       return runTrial(rest, io, startTrialRun);
     case "help":
