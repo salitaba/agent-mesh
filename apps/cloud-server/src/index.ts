@@ -2,17 +2,21 @@
  * The processes of the hosted service, behind one command.
  *
  *   curule-cloud gateway --config gateway.yaml [--check]
+ *   curule-cloud control --config control.yaml [--check]
  *
  * `gateway` runs the model gateway: the one process that holds provider credentials and the ledger of what workspaces spend.
- * With `--check` it reads and validates the configuration, prints what it would run, and exits without listening, so a change
- * can be proved before it is deployed.
+ * `control` runs the control plane: accounts, plans, payments and workspaces, the public site's API and the proxy that puts a
+ * workspace behind its own address, and the operator's API. With `--check` either reads and validates its configuration,
+ * prints what it would run, and exits without listening, so a change can be proved before it is deployed.
  */
 import { formatMoney, loadGatewayConfig, startGateway, type GatewayConfig } from "../../../packages/ai-gateway/src/index";
+import { describeControl, loadControlConfig, startControl } from "../../../packages/cloud/src/index";
 
 export const USAGE = `Usage: curule-cloud <command>
 
 Commands:
   gateway --config <gateway.yaml> [--check]   run the model gateway (--check validates the file and exits)
+  control --config <control.yaml> [--check]   run the control plane: accounts, payments, workspaces, the public API and the owner API
   help                                         show this text`;
 
 export interface Io {
@@ -59,7 +63,8 @@ export function describeGateway(config: GatewayConfig): string[] {
   return lines;
 }
 
-async function runGateway(args: string[], env: NodeJS.ProcessEnv, io: Io, start: typeof startGateway): Promise<number> {
+/** `--config <file>` and `--check`, the same for every command. Undefined when what was given cannot be run, after saying why. */
+function parseOptions(command: string, args: string[], io: Io): { file: string; check: boolean } | undefined {
   let file: string | undefined;
   let check = false;
   for (let i = 0; i < args.length; i++) {
@@ -68,22 +73,51 @@ async function runGateway(args: string[], env: NodeJS.ProcessEnv, io: Io, start:
     else if (a.startsWith("--config=")) file = a.slice("--config=".length);
     else if (a === "--check") check = true;
     else {
-      io.err(`curule-cloud gateway: unknown option '${a}'\n${USAGE}`);
-      return 1;
+      io.err(`curule-cloud ${command}: unknown option '${a}'\n${USAGE}`);
+      return undefined;
     }
   }
   if (!file) {
-    io.err(`curule-cloud gateway: --config is required\n${USAGE}`);
-    return 1;
+    io.err(`curule-cloud ${command}: --config is required\n${USAGE}`);
+    return undefined;
   }
+  return { file, check };
+}
+
+/** Wait for a stop signal, then stop. Resolves with the exit code. */
+function untilSignalled(command: string, io: Io, stop: () => Promise<void>, note: string): Promise<number> {
+  return new Promise<number>((resolve) => {
+    // The first signal takes both listeners away, so a second one finds none and does what the process does by default: ends it.
+    const stopNow = (signal: string): void => {
+      io.signals.off("SIGINT", onInt);
+      io.signals.off("SIGTERM", onTerm);
+      io.out(`${signal}: ${note}`);
+      stop().then(
+        () => resolve(0),
+        (err: Error) => {
+          io.err(`curule-cloud ${command}: stopping failed: ${err.message}`);
+          resolve(1);
+        },
+      );
+    };
+    const onInt = (): void => stopNow("SIGINT");
+    const onTerm = (): void => stopNow("SIGTERM");
+    io.signals.once("SIGINT", onInt);
+    io.signals.once("SIGTERM", onTerm);
+  });
+}
+
+async function runGateway(args: string[], env: NodeJS.ProcessEnv, io: Io, start: typeof startGateway): Promise<number> {
+  const options = parseOptions("gateway", args, io);
+  if (!options) return 1;
   let config: GatewayConfig;
   try {
-    config = loadGatewayConfig(file, env);
+    config = loadGatewayConfig(options.file, env);
   } catch (err) {
     io.err((err as Error).message);
     return 1;
   }
-  if (check) {
+  if (options.check) {
     for (const line of describeGateway(config)) io.out(line);
     io.out("the configuration is valid");
     return 0;
@@ -95,33 +129,49 @@ async function runGateway(args: string[], env: NodeJS.ProcessEnv, io: Io, start:
     io.err(`curule-cloud gateway: ${(err as Error).message}`);
     return 1;
   }
-  return new Promise<number>((resolve) => {
-    // The first signal takes both listeners away, so a second one finds none and does what the process does by default: ends it.
-    const stop = (signal: string): void => {
-      io.signals.off("SIGINT", onInt);
-      io.signals.off("SIGTERM", onTerm);
-      io.out(`${signal}: no longer taking calls; finishing the ones in flight`);
-      running.stop().then(
-        () => resolve(0),
-        (err: Error) => {
-          io.err(`curule-cloud gateway: stopping failed: ${err.message}`);
-          resolve(1);
-        },
-      );
-    };
-    const onInt = (): void => stop("SIGINT");
-    const onTerm = (): void => stop("SIGTERM");
-    io.signals.once("SIGINT", onInt);
-    io.signals.once("SIGTERM", onTerm);
-  });
+  return untilSignalled("gateway", io, () => running.stop(), "no longer taking calls; finishing the ones in flight");
 }
 
-/** `start` is what brings the gateway up; a test supplies its own to prove what happens when stopping fails. */
-export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env, io: Io = processIo, start: typeof startGateway = startGateway): Promise<number> {
+async function runControl(args: string[], env: NodeJS.ProcessEnv, io: Io, start: typeof startControl): Promise<number> {
+  const options = parseOptions("control", args, io);
+  if (!options) return 1;
+  let config: ReturnType<typeof loadControlConfig>;
+  try {
+    config = loadControlConfig(options.file, env);
+  } catch (err) {
+    io.err((err as Error).message);
+    return 1;
+  }
+  if (options.check) {
+    for (const line of describeControl(config)) io.out(line);
+    io.out("the configuration is valid");
+    return 0;
+  }
+  for (const warning of config.warnings) io.err(`WARNING: ${warning}`);
+  let running;
+  try {
+    running = await start(config);
+  } catch (err) {
+    io.err(`curule-cloud control: ${(err as Error).message}`);
+    return 1;
+  }
+  return untilSignalled("control", io, () => running.stop(), "no longer taking requests; finishing the ones in flight");
+}
+
+/** `start` and `startControlPlane` are what bring each process up; a test supplies its own to prove what happens when stopping fails. */
+export async function main(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  io: Io = processIo,
+  start: typeof startGateway = startGateway,
+  startControlPlane: typeof startControl = startControl,
+): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
     case "gateway":
       return runGateway(rest, env, io, start);
+    case "control":
+      return runControl(rest, env, io, startControlPlane);
     case "help":
     case "--help":
     case "-h":

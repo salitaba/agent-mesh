@@ -56,6 +56,8 @@ export interface WebOptions {
   appUrl: string;
   /** `https` (the default) or `http`, for the addresses workspaces are opened at. `http` is for trying it on one machine. */
   workspaceScheme?: "https" | "http";
+  /** The port workspaces are reached on, when it is not the scheme's own. */
+  workspacePort?: number;
   /** Whether cookies are marked `Secure`. Default: whether `appUrl` is HTTPS. */
   secureCookies?: boolean;
   limits?: Partial<Limits>;
@@ -394,7 +396,7 @@ export class ControlWeb {
       throw new ServiceError(409, "not_running", why[view.status] ?? `This workspace is ${view.status}.`);
     }
     const code = this.o.access.issueCode({ accountId: who.account.accountId, workspaceId, sessionId: who.sessionId });
-    return this.json(200, { url: `${this.scheme}://${view.host}/__enter?code=${encodeURIComponent(code)}` });
+    return this.json(200, { url: `${this.scheme}://${view.host}${this.o.workspacePort !== undefined ? `:${this.o.workspacePort}` : ""}/__enter?code=${encodeURIComponent(code)}` });
   }
 
   private async changeWorkspace(action: "suspend" | "resume", workspaceId: string, who: Session): Promise<WebResponse> {

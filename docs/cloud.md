@@ -18,11 +18,11 @@ a decision, an account or a credential from the operator of the service is state
 | Provider-neutral runtime, `native` | `packages/runtime-native` | built and tested; [runtime-native.md](runtime-native.md) |
 | Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | built and tested against servers that speak each format; `curule providers check` proves a real provider |
 | Model gateway: virtual keys, budgets, metering ledger, tiers with failover, admin API | `packages/ai-gateway`, `apps/cloud-server` | built and tested against servers that speak each wire format; [ai-gateway.md](ai-gateway.md) |
-| Control plane: accounts, plans, credits, workspaces | `packages/cloud` | core built and tested; no HTTP interface yet; [cloud-control-plane.md](cloud-control-plane.md) |
+| Control plane: accounts, plans, credits, workspaces, and `curule-cloud control` to run them | `packages/cloud`, `apps/cloud-server` | built and tested, with a public API and an operator's API; [cloud-control-plane.md](cloud-control-plane.md) |
 | Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | built and tested; the hosted-checkout adapter against servers that answer in the provider's documented shapes, not the live service |
 | Workspace provisioner (local process for development, container for production) | `packages/cloud` | built and tested against a recording engine; no real container has been started |
-| Authenticating edge proxy for the dashboard and its event stream | `apps/cloud-server` | designed, not built |
-| Sign up, billing and workspace pages | `apps/cloud-server` | designed, not built |
+| Authenticating edge proxy for the dashboard and its event stream | `packages/cloud` | built and tested against a host that records what it is asked; each workspace is served at an address of its own |
+| Sign up, billing and workspace pages | `apps/cloud-server` | not built; the API they call is |
 
 ## What a customer gets
 
@@ -117,9 +117,10 @@ Stronger boundaries (a microVM per workspace) fit behind the same interface.
 
 ### Edge proxy
 
-The dashboard and its server-sent event stream are served through the control plane's proxy. It checks the session and the
-membership, adds the workspace's operator credential on the way in, and never sends that credential to the browser. A
-workspace has no public address.
+The dashboard and its server-sent event stream are served through the control plane's proxy, at `<slug>.<workspace domain>`.
+It checks the session and the membership on every request, and again while a stream is open, adds the workspace's operator
+credential on the way in, and never sends that credential to the browser. A workspace has no public address. How it works is
+in [cloud-control-plane.md](cloud-control-plane.md#the-edge-a-workspace-at-its-own-address).
 
 ## Threats and what answers them
 

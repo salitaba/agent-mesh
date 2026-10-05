@@ -1,0 +1,64 @@
+# An example configuration for the control plane (docs/cloud-control-plane.md). Copy this folder, change it, and check it:
+#
+#   CONTROL_SECRET=<32 or more characters> CONTROL_OWNER_TOKEN=<24 or more> GATEWAY_ADMIN_TOKEN=<24 or more> \
+#     npm run cloud -- control --config examples/cloud/control.yaml --check
+#
+# Secrets are never written here. Each names the environment variable it is read from, or a file.
+
+# Where customers reach the app, as an address with no path. A workspace is served at <slug>.<workspaces.domain>.
+app_url: https://app.curule.example
+
+workspaces:
+  # A domain of its own, and not a subdomain of the app's: a workspace runs a customer's code, and a page on a sibling
+  # address could set cookies for the app. The check refuses a domain under the app's registrable domain.
+  domain: curule-ws.example
+
+# What the load balancer in front of the service connects to.
+public:
+  host: 0.0.0.0
+  port: 7500
+  trust_proxy_hops: 1       # proxies in front that add to X-Forwarded-For; 0 reads no header and every caller is the proxy
+
+# The operator's API: it records payments and stops customers. Keep it off any network a customer can reach.
+owner:
+  host: 127.0.0.1
+  port: 7501
+  token_env: CONTROL_OWNER_TOKEN
+
+# The account pages: HTML with its scripts and styles under assets/. Leave this out to serve the API alone.
+# pages: ./pages
+
+control_log: ./data/control.jsonl     # the record of accounts, payments and workspaces; one process writes it at a time
+mail:
+  outbox: ./data/outbox.jsonl         # mail is written here, a JSON object per line, for a delivery script to send
+plans: ./plans.yaml
+secret_env: CONTROL_SECRET            # 32 or more characters; cookies and every workspace's credential derive from it
+
+gateway:
+  admin_url: http://gateway.internal:8081          # the admin API of the model gateway (docs/ai-gateway.md)
+  admin_token_env: GATEWAY_ADMIN_TOKEN
+  tenant_url: http://gateway.internal:8080/v1      # what a workspace is told to call for models; it ends in /v1
+
+# The key each workspace's licence is signed with. Its public half must be in the build (packages/licensing/src/keys.ts),
+# and the check proves it is: otherwise every workspace would run on the Community plan, whatever was paid for.
+licence:
+  kid: k1
+  private_key_file: ./secrets/licence-k1.pem
+
+provisioner:
+  kind: container                     # `local` is for trying the service on one machine, over http://
+  image: ghcr.io/example/curule:latest
+  network: curule-workspaces          # internal, with an egress proxy and no route to the control plane or to other workspaces
+  egress_proxy: http://egress.curule-workspaces:3128
+  limits: { cpus: 1, memory_mb: 2048, pids: 512 }
+
+billing:
+  # `manual`: the customer is sent to your own page to pay by invoice or transfer, and you record what arrives (owner API).
+  provider: manual
+  pay_url: https://app.curule.example/pay?ref={ref}
+  # `hosted-checkout`: a payment provider's hosted page, with its messages verified by signature.
+  # provider: hosted-checkout
+  # api_key_env: BILLING_API_KEY
+  # webhook_secret_env: BILLING_WEBHOOK_SECRET
+
+reconcile_minutes: 15                 # how often unpaid and stuck workspaces are looked at

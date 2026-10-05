@@ -219,6 +219,8 @@ test("opening a workspace gives a link that works once, for this session, at the
   assert.deepEqual(s.access.redeemCode(new URL(again.json.url).searchParams.get("code")), { accountId: ada.accountId, workspaceId, sessionId });
   const http = await site(p, { workspaceScheme: "http" }).call("POST", `/api/workspaces/${workspaceId}/open`, { session: ada.sessionToken });
   assert.equal(new URL(http.json.url).protocol, "http:", "on one machine, without a certificate, it is HTTP");
+  const ported = await site(p, { workspacePort: 8443 }).call("POST", `/api/workspaces/${workspaceId}/open`, { session: ada.sessionToken });
+  assert.equal(new URL(ported.json.url).host, `${host}:8443`, "a service on another port than the scheme's own says so in the address it opens a workspace at");
 });
 
 test("a workspace that is not running says what it is and what to do, and opens again when it is", async () => {

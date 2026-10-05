@@ -27,6 +27,8 @@ export class JsonlLog<T> {
   /** Bytes of a cut-off last line that were dropped when the file was opened. */
   truncatedTailBytes = 0;
   private handle: fs.promises.FileHandle | undefined;
+  /** Whether this log is the one that holds the lock file. A log that was refused it, and is closed, must not release another's. */
+  private locked = false;
   private pending: Array<{ line: string; resolve: () => void; reject: (err: unknown) => void }> = [];
   private writing: Promise<void> | undefined;
   private readonly lockFile: string;
@@ -95,6 +97,7 @@ export class JsonlLog<T> {
         fs.writeSync(fd, String(process.pid));
         fs.closeSync(fd);
         heldLocks.add(this.lockFile);
+        this.locked = true;
         return;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
@@ -110,7 +113,9 @@ export class JsonlLog<T> {
   }
 
   private releaseLock(): void {
-    if (!heldLocks.delete(this.lockFile)) return;
+    if (!this.locked) return;
+    this.locked = false;
+    heldLocks.delete(this.lockFile);
     fs.rmSync(this.lockFile, { force: true });
   }
 

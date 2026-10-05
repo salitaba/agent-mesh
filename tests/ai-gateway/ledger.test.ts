@@ -443,6 +443,25 @@ test("one process writes a ledger at a time: a second open is refused while the 
   }
 });
 
+test("closing a store that was refused the lock does not release the lock of the one that holds it", async () => {
+  const t = tmp();
+  try {
+    const holder = new JsonlLedgerStore(t.file);
+    await holder.load();
+    const refused = new JsonlLedgerStore(t.file);
+    await assert.rejects(() => refused.load(), new RegExp(`in use by process ${process.pid}`));
+    await refused.close();
+    assert.equal(fs.existsSync(`${t.file}.lock`), true, "a start that failed and cleaned up after itself left the running one's lock alone");
+    await assert.rejects(() => new JsonlLedgerStore(t.file).load(), /in use by process/);
+    await holder.close();
+    assert.equal(fs.existsSync(`${t.file}.lock`), false);
+    await holder.close();
+    assert.equal(fs.existsSync(`${t.file}.lock`), false, "closing twice is harmless");
+  } finally {
+    t.done();
+  }
+});
+
 test("a lock left by a process that is gone is taken over, and a lock held by one that is alive is respected", async () => {
   const t = tmp();
   try {

@@ -12,8 +12,8 @@ OpenAI-compatible format and for Anthropic Messages alike.
 
 **Status.** Built and tested against servers that speak each wire format (`tests/ai-gateway/`). No real provider has been
 called by this code: `curule providers check` proves a key and a model, and a staging run proves the whole path, and both
-need credentials the operator holds. The control plane that creates keys and credit for workspaces is
-[designed, not built](cloud.md#status); until it exists, the admin API below is how an operator does it by hand.
+need credentials the operator holds. The [control plane](cloud-control-plane.md) that creates keys and credit for workspaces is built and uses the admin API below;
+an operator can do the same by hand.
 
 ## Running it
 

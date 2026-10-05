@@ -46,6 +46,8 @@ export class FakeProvisioner implements Provisioner {
   failNext: Array<"create" | "suspend" | "resume" | "destroy"> = [];
   /** While set, a create waits for it: a workspace stays in `provisioning` for as long as a test wants to look at it. */
   hold: Promise<void> | undefined;
+  /** Where the host of every workspace it makes is, when a test has a real server to stand for it. */
+  upstream: { host: string; port: number } | undefined;
   private n = 0;
 
   private maybeFail(op: "create" | "suspend" | "resume" | "destroy"): void {
@@ -62,7 +64,7 @@ export class FakeProvisioner implements Provisioner {
     this.maybeFail("create");
     const handle = `fake-${spec.workspaceId}-${++this.n}`;
     this.state.set(handle, "running");
-    return { handle, upstream: { host: handle, port: 7420 } };
+    return { handle, upstream: this.upstream ?? { host: handle, port: 7420 } };
   }
   async suspend(handle: string): Promise<void> {
     this.calls.push({ op: "suspend", handle });
@@ -73,7 +75,7 @@ export class FakeProvisioner implements Provisioner {
     this.calls.push({ op: "resume", handle });
     this.maybeFail("resume");
     this.state.set(handle, "running");
-    return { handle, upstream: { host: handle, port: 7420 } };
+    return { handle, upstream: this.upstream ?? { host: handle, port: 7420 } };
   }
   async destroy(handle: string, options?: { keepData?: boolean }): Promise<void> {
     this.calls.push({ op: "destroy", handle, options });
