@@ -3,20 +3,25 @@
  *
  *   curule-cloud gateway --config gateway.yaml [--check]
  *   curule-cloud control --config control.yaml [--check]
+ *   curule-cloud trial [--port 7500] [--dir <folder>]
  *
  * `gateway` runs the model gateway: the one process that holds provider credentials and the ledger of what workspaces spend.
  * `control` runs the control plane: accounts, plans, payments and workspaces, the public site's API and the proxy that puts a
  * workspace behind its own address, and the operator's API. With `--check` either reads and validates its configuration,
- * prints what it would run, and exits without listening, so a change can be proved before it is deployed.
+ * prints what it would run, and exits without listening, so a change can be proved before it is deployed. `trial` runs both on
+ * this machine with nothing real behind them (a stand-in model, a payment page of its own, mail that is printed), so the service
+ * can be tried and shown before anything is paid for.
  */
 import { formatMoney, loadGatewayConfig, startGateway, type GatewayConfig } from "../../../packages/ai-gateway/src/index";
 import { describeControl, loadControlConfig, startControl } from "../../../packages/cloud/src/index";
+import { DEFAULT_TRIAL_PORT, describeTrial, startTrial, trialPorts } from "./trial";
 
 export const USAGE = `Usage: curule-cloud <command>
 
 Commands:
   gateway --config <gateway.yaml> [--check]   run the model gateway (--check validates the file and exits)
   control --config <control.yaml> [--check]   run the control plane: accounts, payments, workspaces, the public API and the owner API
+  trial [--port <n>] [--dir <folder>]          the whole service on this machine, with nothing real behind it (default port 7500; a named folder is kept)
   help                                         show this text`;
 
 export interface Io {
@@ -158,13 +163,50 @@ async function runControl(args: string[], env: NodeJS.ProcessEnv, io: Io, start:
   return untilSignalled("control", io, () => running.stop(), "no longer taking requests; finishing the ones in flight");
 }
 
-/** `start` and `startControlPlane` are what bring each process up; a test supplies its own to prove what happens when stopping fails. */
+async function runTrial(args: string[], io: Io, start: typeof startTrial): Promise<number> {
+  let port = DEFAULT_TRIAL_PORT;
+  let dir: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--port" || a.startsWith("--port=")) {
+      const raw = a === "--port" ? args[++i] : a.slice("--port=".length);
+      port = /^\d+$/.test(raw ?? "") ? Number(raw) : Number.NaN;
+      // The trial uses the next ports up for the owner's API, the payment page and the gateway.
+      if (!Number.isInteger(port) || port < 1024 || port > 65_000) {
+        io.err(`curule-cloud trial: --port must be a whole number from 1024 to 65000 (the trial uses the twelve above it too), not '${raw ?? ""}'\n${USAGE}`);
+        return 1;
+      }
+    } else if (a === "--dir" || a.startsWith("--dir=")) {
+      dir = a === "--dir" ? args[++i] : a.slice("--dir=".length);
+      if (!dir) {
+        io.err(`curule-cloud trial: --dir needs a folder\n${USAGE}`);
+        return 1;
+      }
+    } else {
+      io.err(`curule-cloud trial: unknown option '${a}'\n${USAGE}`);
+      return 1;
+    }
+  }
+  const ports = trialPorts(port);
+  let running;
+  try {
+    running = await start({ ports, ...(dir !== undefined ? { dir } : {}), out: (line) => io.out(line) });
+  } catch (err) {
+    io.err(`curule-cloud trial: ${(err as Error).message}`);
+    return 1;
+  }
+  for (const line of describeTrial(running, ports, dir !== undefined)) io.out(line);
+  return untilSignalled("trial", io, () => running.stop(), "stopping, and ending the workspaces' hosts");
+}
+
+/** `start`, `startControlPlane` and `startTrialRun` are what bring each process up; a test supplies its own to prove what happens when stopping fails. */
 export async function main(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
   io: Io = processIo,
   start: typeof startGateway = startGateway,
   startControlPlane: typeof startControl = startControl,
+  startTrialRun: typeof startTrial = startTrial,
 ): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
@@ -172,6 +214,8 @@ export async function main(
       return runGateway(rest, env, io, start);
     case "control":
       return runControl(rest, env, io, startControlPlane);
+    case "trial":
+      return runTrial(rest, io, startTrialRun);
     case "help":
     case "--help":
     case "-h":

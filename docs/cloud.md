@@ -23,6 +23,7 @@ a decision, an account or a credential from the operator of the service is state
 | Workspace provisioner (local process for development, container for production) | `packages/cloud` | built and tested against a recording engine; no real container has been started |
 | A workspace host that is given its models: a team made on it runs on the gateway, with no key from the person | `apps/mesh-server`, `packages/cloud` | built and tested; [runtime-native.md](runtime-native.md#hosted-workspaces) |
 | Authenticating edge proxy for the dashboard and its event stream | `packages/cloud` | built and tested against a host that records what it is asked; each workspace is served at an address of its own |
+| The whole service on one machine, with stand-ins for what costs money (`curule-cloud trial`) | `apps/cloud-server` | built; an end-to-end test runs it with a real host process for each workspace, [below](#try-it-on-one-machine) |
 | Sign up, sign in, billing and workspace pages | `apps/cloud-server/pages` | built and tested (the files, the script on a small DOM, and a pass in a real browser); the terms and the privacy notice are placeholders marked for the operator, and a production service is not started on them; [cloud-control-plane.md](cloud-control-plane.md#the-account-pages) |
 
 ## What a customer gets
@@ -122,6 +123,39 @@ The dashboard and its server-sent event stream are served through the control pl
 It checks the session and the membership on every request, and again while a stream is open, adds the workspace's operator
 credential on the way in, and never sends that credential to the browser. A workspace has no public address. How it works is
 in [cloud-control-plane.md](cloud-control-plane.md#the-edge-a-workspace-at-its-own-address).
+
+## Try it on one machine
+
+`npm run cloud -- trial` runs the whole service on one machine with nothing real behind it, so that it can be tried, and shown,
+before anything is paid for or any account exists anywhere. It needs the build (`npm run build`) and Node 20 or later.
+
+```bash
+npm run build
+npm run cloud -- trial                       # the app is at http://localhost:7500
+npm run cloud -- trial --port 9000 --dir ./trial   # another port; a folder that is named is kept
+```
+
+It prints where everything is, and then it prints each mail as the service writes it, which is how the confirmation link
+reaches you. Open the app, create an account, follow the link, choose a plan, press the button on the trial's payment page,
+make a workspace and open it. The workspace is a real Curule host in a process of its own, behind the control plane's proxy at
+`<name>.localhost:<port>` (Chrome opens `*.localhost` on the machine by itself; for another browser, add the name to
+`/etc/hosts`). A team made in it runs on the service's models, with no key asked for, and what each call was charged is in the
+account page.
+
+What is real: the gateway and its ledger, the control plane and its log, the account pages, the proxy and its credentials, the
+virtual key each workspace is given, and a Curule host for each workspace. What stands in: the model (an answer of one sentence,
+with no tool use, so a mission will not get far), the payment page (it applies the payment as a provider's message would, and
+nothing is charged), mail (printed, and kept in the outbox file), and the isolation (a workspace is a child process, which is
+not a boundary between customers, and the control plane refuses to use it in production). The plans and prices are the
+trial's own and are not an offer. A named `--dir` keeps the accounts, the ledger and the workspaces; start the trial on it again
+and the workspaces that were running are started again at once. Stopping the trial ends the hosts it started.
+
+What it proves is that the parts fit: the proxy's credentials against the host's own checks, the host's environment from the
+provisioner, the team the host writes naming the gateway and no key, the virtual key from the control plane working at the
+gateway, and the ledger's spend reaching the account page. `tests/integration/cloud-trial.test.ts` walks a customer through all
+of it, and `npm run qa:cloud` (`scripts/qa-cloud.mjs`) does the same in a real browser, with the public pages at three widths
+and in both colour schemes and an accessibility scan. What it does not prove is a real payment provider, a real container
+engine, a real model provider, mail that is delivered, TLS, or load.
 
 ## Threats and what answers them
 

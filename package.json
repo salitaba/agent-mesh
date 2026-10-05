@@ -38,6 +38,7 @@
     "demo:capture": "node scripts/capture-demo.mjs",
     "qa:console": "node scripts/qa-console.mjs",
     "qa:walk": "node scripts/qa-walk.mjs",
+    "qa:cloud": "node scripts/qa-cloud.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit -p apps/mesh-dashboard/tsconfig.json",
     "lint": "eslint packages apps tests"
   },

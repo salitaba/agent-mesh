@@ -26,6 +26,8 @@ npm run dev:ui        # vite dev only
 npm run clean         # rm -rf dist
 npm run qa:console -- --base <url> --token <t>   # visual pass over every view (needs playwright-core, axe-core, Chrome)
 npm run qa:walk -- --base <url> --token <t> --project <id>   # a person's session on the scripted demo (needs playwright-core, Chrome)
+npm run cloud -- trial [--port 7500] [--dir <folder>]   # the hosted service on this machine, with stand-ins for what costs money
+npm run qa:cloud -- --base <url> --outbox <control/outbox.jsonl>   # a customer's session on a trial (needs playwright-core, axe-core, Chrome)
 ```
 
 Single test (tests run from compiled output, so build first):
@@ -43,6 +45,7 @@ apps/
   mesh-cli/          CLI entrypoint + TUI
   mesh-server/       HTTP/SSE API, MCP bridge, static serving
   mesh-dashboard/    React 19 + Vite SPA (designer + live console)
+  cloud-server/      `curule-cloud`: gateway, control plane, trial; pages/ holds the hosted service's account pages
 packages/
   protocol/          typed model, event catalog, JSON schemas, ids, clock
   config/            mesh.yaml load + validation + role prompts
@@ -55,6 +58,11 @@ packages/
   artifact-store/    immutable content store + git worktree manager
   runtime-claude/    Claude Code adapter (Agent SDK, no server)
   runtime-http/      generic HTTP agent adapter
+  runtime-native/    the agent loop that belongs to Curule, over any provider through `llm`
+  llm/               the model port and its adapters (OpenAI-compatible chat, Anthropic Messages)
+  ai-gateway/        virtual keys, append-only ledger of spend, tiers with failover, OpenAI-compatible proxy
+  cloud/             control plane: accounts, plans, payments, workspaces, provisioners, the edge proxy
+  licensing/         offline licence keys and the plan table
   observability/     graph, views, metrics, SSE hub
   projects/          multi-project registry (~/.curule/projects.json)
 tests/               mirrors packages/ layout

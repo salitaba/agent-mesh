@@ -153,16 +153,22 @@ grace period (three days). After it they are stopped, not deleted. A payment tha
 subscription that ended stops its workspaces at once, and they are deleted after the retention period (30 days). A period that
 ended with no payment recorded, because a message was lost or the payment did not come, makes the subscription past due after
 three days. `reconcile()` is what applies these, and it is idempotent, so it is run on a timer. It also gives up on a start that
-was in progress when the service stopped, and marks a running workspace failed when its host has gone.
+was in progress when the service stopped, and looks at the host of every workspace the log calls running: one that is gone for
+good marks the workspace failed, and one that has stopped (a container that crashed, a machine that was restarted, a control plane
+restarted over hosts that were its children) is started again, with where it now is recorded, and what keeps it from starting is
+said and tried again at the next check.
 
 ### Provisioners
 
 A provisioner starts, stops, resumes and removes the host. Two sit behind one interface.
 
 **Local process** is for development and for a single customer on a machine they own. A workspace is a child process with its
-own directory, and its credentials are in a file only its owner can read, outside the workspace's projects. It refuses to run
-when the service is configured as production: an agent's shell is only as isolated as its process, and that is not isolation
-between customers.
+own directory, and its credentials are in a file only its owner can read, outside the workspace's projects. What the host
+prints is kept in `host.log` beside it, because a host that does not come up has nothing else to say why. A host does not outlive
+the control plane: it does not keep the process open, and it is told to end when the process does, however that happens. It
+refuses to run when the service is configured as production: an agent's shell is only as isolated as its process, and that is not
+isolation between customers. `curule-cloud trial` runs the whole service this way, on one machine
+([cloud.md](cloud.md#try-it-on-one-machine)).
 
 **Container** is for production, one container per workspace. The command is built in one place and run by an injected runner,
 so what it asks the engine to do can be read and tested without an engine:
@@ -224,7 +230,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 | `licence` | `kid`, and `private_key_file` or `private_key_env`: the key workspace licences are signed with. |
 | `provisioner` | `kind: container` with `image`, `network`, an optional `egress_proxy`, `no_proxy` and `limits` (`cpus`, `memory_mb`, `pids`), or `kind: local` for a trial. |
 | `billing` | `provider: manual` with `pay_url` (where a customer is sent to pay, with `{ref}` for the reference to pay under), or `provider: hosted-checkout` with `api_key_env` and `webhook_secret_env`. |
-| `reconcile_minutes` | How often unpaid and stuck workspaces are looked at. Default 15. |
+| `reconcile_minutes` | How often unpaid and stuck workspaces are looked at, and workspaces the log calls running whose host is not. Default 15. |
 
 **What the check refuses**, because none of it can be seen from outside once the service is running:
 
