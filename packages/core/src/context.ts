@@ -630,6 +630,7 @@ export function buildAgentContext(
   const relevantArtifacts = [...ranked, ...citable.filter((a) => !ranked.some((r) => r.id === a.id))]
     .map((a) => ({
       ref: refToString({ uri: `artifact://${a.type}/${a.name}/${a.version}` }),
+      id: a.id,
       type: a.type,
       status: a.status,
       name: a.name,
@@ -1477,7 +1478,9 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
             ? ` — a review of it is settled by: ${a.settlers.join(", ")} (name only these)`
             : " — no seat here can settle a review of it: only the operator can";
       const cite = a.citable ? " — submitted: you may accept a criterion that is still open against it" : "";
-      lines.push(`- ${a.ref} (${a.type}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}${cite}`);
+      // The id is what every tool that acts on the artifact asks for (`artifactId`). It was left off, and the seats that had
+      // to name one wrote what they had in front of them: a message id, a URI, an id of their own making.
+      lines.push(`- ${a.ref} (${a.type}, id ${a.id}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}${cite}`);
     }
     // Said once, under the list, where the seat decides what to cite. An acceptance from a turn that read or ran nothing is
     // recorded ASSERTED (the verification gate) and the mission goes on waiting for it: the pm in the tenth run's second round

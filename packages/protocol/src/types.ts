@@ -2821,6 +2821,17 @@ export interface AgentContextBundle {
   openBacklog?: BacklogEntry[];
   relevantArtifacts: Array<{
     ref: string;
+    /**
+     * The id (`art-…`) that a verdict, a transition, a review request or a merge names the artifact by.
+     *
+     * The line used to carry the URI and no id, and the only id-shaped strings a seat could read were the
+     * message ids in its mailbox. In the eighteenth cronlite run 11 of the 14 operations the mesh refused were
+     * a verdict or an acceptance naming an artifact by an id the seat had made up: a message id with `art-` in
+     * front of it (twice), a URI folded into an id (twice), a real id with the wrong tail (once) and ids that
+     * match nothing (six operations, one id three times running). Each cost a call, and each landed only after
+     * the refusal had listed the real ids.
+     */
+    id: string;
     type: ArtifactType;
     status: ArtifactStatus;
     name: string;

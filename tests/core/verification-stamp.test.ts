@@ -247,7 +247,7 @@ test("a CodePatch line names the commit that is the patch", async () => {
     await m.supervisor.transitionArtifact("dev", p.id, { to: "READY_FOR_REVIEW" });
     const ctx = buildAgentContext({ config: m.config, kernel: m.kernel }, "qa");
     assert.equal(ctx.relevantArtifacts.find((a) => a.type === "CodePatch")?.commit, SHA.slice(0, 12));
-    assert.match(renderContextInstructions(ctx), new RegExp(`artifact://CodePatch/cronlite.{1,3}implementation/1 \\(CodePatch, READY_FOR_REVIEW, commit ${SHA.slice(0, 12)}\\)`));
+    assert.match(renderContextInstructions(ctx), new RegExp(`artifact://CodePatch/cronlite.{1,3}implementation/1 \\(CodePatch, id art-[A-Za-z0-9]+, READY_FOR_REVIEW, commit ${SHA.slice(0, 12)}\\)`));
   } finally {
     restore();
     await m.cleanup();

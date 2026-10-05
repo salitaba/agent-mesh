@@ -111,7 +111,11 @@ test("integration: the §30 mission converges without a predefined workflow", as
         { op: "transition_artifact", artifactId: id, to: "ACCEPTED" },
       );
     }
-    if (release && merged === "MERGED" && (goal?.acceptanceCriteria.find((c) => c.id === "requirements-documented")?.status ?? "UNSATISFIED") === "UNSATISFIED") {
+    // Only once the release has what it needs. The pm used to accept the criteria as soon as the patch was merged, whichever of QA's
+    // and security's release results had reached it, so a mission whose QA result arrived a few events later than security's closed
+    // on the criteria with the release plan still unaccepted, and `release.accepted` never preceded the end of the mission. It is
+    // woken again by the other result (a message wake), so waiting costs a turn and not the mission.
+    if (release && merged === "MERGED" && sim.qaRelease && sim.secRelease && (goal?.acceptanceCriteria.find((c) => c.id === "requirements-documented")?.status ?? "UNSATISFIED") === "UNSATISFIED") {
       const reqDoc = latest("RequirementsDoc");
       const patch = latest("CodePatch");
       const trep = latest("TestReport");

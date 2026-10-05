@@ -211,6 +211,12 @@ what the mesh then accepts cannot differ:
   of it: only the operator can` — so a seat stops rediscovering it from a refusal
   every round. The bundle carries it as `relevantArtifacts[].settlers`; absent
   means no review can be asked of that artifact at all.
+- The same line carries the artifact's id (`(CodePatch, id art-…, UNDER_REVIEW)`),
+  the name every tool that acts on an artifact asks for (`artifactId`). It used to
+  carry the URI alone, and a seat that had to write an id wrote what it had in front
+  of it: a message id with `art-` in front, a URI folded into one, an id of its own
+  making (11 of the 14 operations the mesh refused in the eighteenth cronlite run).
+  The verdict tools' `artifactId` says where to read it.
 - The owner of an artifact is **woken** when somebody else's verdict moves it: the
   stock developer listens for `review.rejected` but not `review.approved`, so an
   approval used to reach nobody who could act on it (a patch sat approved for

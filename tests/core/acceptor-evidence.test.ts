@@ -69,7 +69,7 @@ test("the pm is shown the report QA submitted and passed, on a line that says it
     const shown = line(m, "pm", "Quality Verification Report");
     assert.ok(shown, "the pm's briefing lists it");
     assert.match(shown!, CITE, "and says what it is for");
-    assert.match(shown!, /TestReport, FINAL/);
+    assert.match(shown!, /TestReport, id art-[A-Za-z0-9]+, FINAL/);
     assert.equal(hints(m, "pm"), 1, "and, once under the list, how to make the acceptance count");
   } finally {
     await m.cleanup();

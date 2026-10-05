@@ -90,7 +90,7 @@ test("inputs: a newer version of an input tells the dependent's owner once, and 
     const ctx = buildAgentContext({ config: m.config, kernel: m.kernel }, "ux");
     const line = ctx.relevantArtifacts.find((a) => a.name === "ux-flow");
     assert.deepEqual(line?.staleInputs, ["ApiSpec/api v1 → v3"]);
-    assert.match(renderContextInstructions(ctx), /ux-flow\/1 \(DesignSpec, DRAFT\) — built on ApiSpec\/api v1 → v3/);
+    assert.match(renderContextInstructions(ctx), /ux-flow\/1 \(DesignSpec, id art-[A-Za-z0-9]+, DRAFT\) — built on ApiSpec\/api v1 → v3/);
 
     // Rebuilt on the current input, the flag clears.
     const ux = turnFor("ux");
