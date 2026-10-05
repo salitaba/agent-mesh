@@ -68,12 +68,17 @@ test("the links are written the way each page's depth needs, and the page you ar
   assert.match(home, /<a class="brand" href="\.\/" aria-label="Curule, home">/);
   assert.match(pricing, /<a class="brand" href="\.\.\/" aria-label="Curule, home">/);
   assert.match(notFound, /<a class="brand" href="\/" aria-label="Curule, home">/);
-  assert.match(home, /<a class="btn btn-primary" href="#try">Try the demo<\/a>/, "the demo is on the home page itself");
-  assert.match(pricing, /<a class="btn btn-primary" href="\.\.\/#try">Try the demo<\/a>/, "and a click from another page goes there");
+  assert.match(home, /<a class="btn btn-primary" href="#try" data-selfhost-only>Try the demo<\/a>/, "the demo is on the home page itself");
+  assert.match(pricing, /<a class="btn btn-primary" href="\.\.\/#try" data-selfhost-only>Try the demo<\/a>/, "and a click from another page goes there");
   assert.match(pricing, /<a href="\.\.\/docs\/" data-doc="\.\.\/README\.md">Quickstart<\/a>/, "a link the shared script sets has a page to go to without it");
   assert.match(pricing, /<a href="\.\.\/docs\/" data-repo="">Source code<\/a>/);
   // Sign in is a link the shared script gives an address, and it is not there for a visitor who has no script.
   for (const html of [home, pricing, notFound]) assert.equal((html.match(/<a [^>]*data-app hidden>Sign in<\/a>/g) ?? []).length, 2, "the sign-in link, in the bar and in the phone menu, hidden until the script gives it an address");
+  // Curule Cloud's links are the same: two ways to sign in, one to get started, none of them there until it is open and the script says where.
+  for (const html of [home, pricing, notFound]) {
+    assert.equal((html.match(/<a [^>]*data-cloud="login" hidden>Sign in<\/a>/g) ?? []).length, 2, "Sign in into the account, in the bar and in the phone menu");
+    assert.equal((html.match(/<a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started<\/a>/g) ?? []).length, 1, "and Get started, in the bar");
+  }
 });
 
 test("a page whose header was edited by hand is reported, and the script puts it right and touches nothing else", () => {

@@ -4,7 +4,7 @@
  * cannot disagree and none is forgotten.
  *
  *   node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>]
- *                               [--company "<name>"] [--app-url <https address>|none] [--docs-base github]
+ *                               [--company "<name>"] [--app-url <https address>|none] [--cloud-url <https address>|none] [--docs-base github]
  *   node scripts/set-domain.mjs <domain> ... --dry-run      say what would change, write nothing
  *   node scripts/set-domain.mjs --check                     list what is still marked TODO(owner); exit 1 while any is
  *
@@ -18,7 +18,9 @@
  *   site/contact/index.html    the sales, support and security addresses (--contact, which sales and support default to,
  *                              --sales, --support, --security) and the company line (--company)
  *   site/assets/site.js        CONTACT_HREF ("Talk to us", the paid plans), APP_URL (where "Sign in" goes, or none to remove
- *                              the link: --app-url) and the documents' base (--docs-base github: keep them in the repository)
+ *                              the link: --app-url), CLOUD_URL (the address of Curule Cloud, once it is open: the pages then
+ *                              offer "Sign in" and "Get started" and say it is also run for you; none while it is not:
+ *                              --cloud-url) and the documents' base (--docs-base github: keep them in the repository)
  *   SECURITY.md                the reporting address (--security)
  *   site/CNAME                 the custom domain, for the hosts that read it from the site (an Actions publish to GitHub Pages
  *                              takes it from the repository's Pages settings and ignores this file)
@@ -40,7 +42,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const USAGE =
-  'usage: node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>] [--company "<name>"] [--app-url <https address>|none] [--docs-base github] [--dry-run] [--today YYYY-MM-DD] [--root <dir>]\n' +
+  'usage: node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>] [--company "<name>"] [--app-url <https address>|none] [--cloud-url <https address>|none] [--docs-base github] [--dry-run] [--today YYYY-MM-DD] [--root <dir>]\n' +
   "       node scripts/set-domain.mjs --check [--root <dir>]";
 
 const DOMAIN = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$/;
@@ -59,7 +61,7 @@ function refuse(message) {
 
 function parseArgs(argv) {
   const out = { positional: [], flags: {} };
-  const valued = new Set(["contact", "security", "sales", "support", "company", "app-url", "docs-base", "today", "root"]);
+  const valued = new Set(["contact", "security", "sales", "support", "company", "app-url", "cloud-url", "docs-base", "today", "root"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith("--")) {
@@ -151,6 +153,13 @@ function applyToScript(js, o) {
   if (o.appUrl !== undefined) {
     const note = o.appUrl === "" ? '// No hosted dashboard: the "Sign in" link is removed' : '// Where "Sign in" goes: your own dashboard';
     out = edit(out, /var APP_URL = "[^"]*";[^\n]*/, `var APP_URL = "${o.appUrl}"; ${note}`, `${label} APP_URL`);
+  }
+  if (o.cloudUrl !== undefined) {
+    const note =
+      o.cloudUrl === ""
+        ? "// Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link"
+        : '// Curule Cloud\'s address: the pages offer "Sign in" and "Get started", and say Curule is also run for you';
+    out = edit(out, /var CLOUD_URL = "[^"]*";[^\n]*/, `var CLOUD_URL = "${o.cloudUrl}"; ${note}`, `${label} CLOUD_URL`);
   }
   if (o.docsBase === "github") {
     out = out.replace(/\/\/ TODO\(owner\): where the documents are published\.[^\n]*/, "// Where the documents are published: the repository, until a documentation site exists.");
@@ -251,6 +260,9 @@ function main() {
   if (flags["app-url"] !== undefined && flags["app-url"] !== "none" && !HTTPS_ADDRESS.test(flags["app-url"])) {
     refuse(`--app-url "${flags["app-url"]}" is not an https address (https://mesh.example.com/), or none to remove the "Sign in" link`);
   }
+  if (flags["cloud-url"] !== undefined && flags["cloud-url"] !== "none" && !HTTPS_ADDRESS.test(flags["cloud-url"])) {
+    refuse(`--cloud-url "${flags["cloud-url"]}" is not an https address (https://app.example.com/), or none while Curule Cloud is not open`);
+  }
   if (flags.company && !flags.contact) refuse("--company goes with --contact (the footer shows both)");
   const o = {
     domain,
@@ -261,6 +273,7 @@ function main() {
     support: flags.support,
     company: flags.company?.trim(),
     appUrl: flags["app-url"] === undefined ? undefined : flags["app-url"] === "none" ? "" : flags["app-url"],
+    cloudUrl: flags["cloud-url"] === undefined ? undefined : flags["cloud-url"] === "none" ? "" : flags["cloud-url"],
     docsBase: flags["docs-base"],
   };
 

@@ -8,6 +8,7 @@ var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
 // The repository the source is in: the "Source code" links, and the address the "Try it" commands clone.
 var REPO_URL = "https://github.com/salitaba/agent-mesh";
 var APP_URL = ""; // No hosted dashboard: the "Sign in" link is removed
+var CLOUD_URL = ""; // Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link
 var CONTACT_HREF = "mailto:ali79taba@gmail.com"; // "Talk to us" and the paid plans
 // Off until the first release tag has published the image to ghcr.io: a command that pulls it fails until then. Switch it to
 // true on the day of the release and the "Try it" steps also show the pull-and-run path.
@@ -39,6 +40,23 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       a.hidden = false;
       if (/^https?:/.test(APP_URL)) a.rel = "noopener noreferrer";
     });
+  }
+  // Curule Cloud, once it is open: the links into it are set here, and the sentences that say it is not offered give way to the
+  // ones that say it is. Nothing is fetched: a visitor who follows "Sign in" lands on the account pages, which send someone who is
+  // already signed in on to their account.
+  if (CLOUD_URL) {
+    var cloud = CLOUD_URL.replace(/\/+$/, "");
+    var CLOUD_PATH = { home: "/", login: "/login", signup: "/signup", terms: "/terms", privacy: "/privacy" };
+    all("[data-cloud]").forEach(function (a) {
+      var path = CLOUD_PATH[a.getAttribute("data-cloud")];
+      if (path === undefined) return;
+      a.href = cloud + path;
+      a.hidden = false;
+    });
+    all("[data-cloud-only]").forEach(function (node) { node.hidden = false; });
+    all("[data-selfhost-only]").forEach(function (node) { node.hidden = true; });
+    // Two sign-in links would ask a visitor which one is theirs: the account is what the site offers.
+    all("[data-app]").forEach(function (a) { a.hidden = true; });
   }
   if (/^mailto:/.test(CONTACT_HREF)) {
     all("[data-contact]").forEach(function (a) {

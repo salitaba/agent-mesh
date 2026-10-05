@@ -117,13 +117,16 @@ ${nav}
     </nav>
     <div class="bar-actions">
       <a class="signin" href="#" data-app hidden>Sign in</a>
-      <a class="btn btn-primary" href="${demo}">Try the demo</a>
+      <a class="signin" href="#" data-cloud="login" hidden>Sign in</a>
+      <a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started</a>
+      <a class="btn btn-primary" href="${demo}" data-selfhost-only>Try the demo</a>
       <details class="menu">
         <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
         <div class="menu-panel">
           <nav aria-label="Menu">
 ${menu}
             <a href="#" data-app hidden>Sign in</a>
+            <a href="#" data-cloud="login" hidden>Sign in</a>
           </nav>
         </div>
       </details>

@@ -75,6 +75,7 @@ const TEMPLATE_SCRIPT = `"use strict";
 // TODO(owner): where the documents are published. Until the commercial branch is merged to main these links 404.
 var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
 var APP_URL = "#"; // TODO(owner): where "Sign in" goes, for example https://mesh.<your-domain>/ (your own dashboard); "" removes the link
+var CLOUD_URL = ""; // Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link
 var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
 var IMAGE_RELEASED = false;
 `;
@@ -226,6 +227,47 @@ test("a sales or support address of their own, and no sign-in link, are written 
   assert.match(contact, /<span data-company>TODO\(owner\): company name<\/span>/, "without --company the company line stays marked");
   assert.match(read(dir, "site/assets/site.js"), /^var APP_URL = ""; \/\/ No hosted dashboard: the "Sign in" link is removed$/m);
   assert.match(r.out, /marker\(s\) still say TODO\(owner\)/);
+});
+
+test("the address of Curule Cloud is written where the script keeps it, taken out again with none, and refused when it is not an https address", () => {
+  const dir = templateRepo();
+  const args = (cloud: string): string[] => ["curule.dev", "--contact", "hello@curule.dev", "--cloud-url", cloud, "--today", "2026-10-03"];
+  const on = run(dir, args("https://app.curule.dev"));
+  assert.equal(on.status, 0, on.err);
+  const script = read(dir, "site/assets/site.js");
+  assert.match(script, /^var CLOUD_URL = "https:\/\/app\.curule\.dev"; \/\/ Curule Cloud's address: the pages offer "Sign in" and "Get started", and say Curule is also run for you$/m);
+  assert.match(script, /^var APP_URL = "#";/m, "the dashboard's address is not touched by it");
+  const written = snapshot(dir);
+  assert.equal(run(dir, args("https://app.curule.dev")).status, 0);
+  assert.deepEqual(snapshot(dir), written, "twice is once");
+  const another = run(dir, ["curule.dev", "--contact", "hello@curule.dev", "--today", "2026-10-03"]);
+  assert.equal(another.status, 0, another.err);
+  assert.match(read(dir, "site/assets/site.js"), /^var CLOUD_URL = "https:\/\/app\.curule\.dev";/m, "run again for another reason, without the flag, it does not close what is open");
+  const off = run(dir, args("none"));
+  assert.equal(off.status, 0, off.err);
+  assert.match(read(dir, "site/assets/site.js"), /^var CLOUD_URL = ""; \/\/ Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link$/m);
+  const without = templateRepo();
+  assert.equal(run(without, ["curule.dev", "--contact", "hello@curule.dev", "--today", "2026-10-03"]).status, 0);
+  assert.match(read(without, "site/assets/site.js"), /^var CLOUD_URL = "";/m, "and without the flag a closed one is left as it is");
+  for (const bad of ["http://app.curule.dev", "app.curule.dev", "https://", "ftp://x.example", "https://app.curule.dev/ x", "javascript:alert(1)", ""]) {
+    const fresh = templateRepo();
+    const before = snapshot(fresh);
+    const r = run(fresh, args(bad));
+    assert.equal(r.status, 2, `'${bad}': ${r.out}${r.err}`);
+    assert.match(r.err, /--cloud-url ".*" is not an https address \(https:\/\/app\.example\.com\/\), or none while Curule Cloud is not open/, bad);
+    assert.deepEqual(snapshot(fresh), before, `'${bad}': nothing was written`);
+  }
+});
+
+test("a script that has lost its CLOUD_URL line is refused by name when the address is given, and nothing is written", () => {
+  const dir = templateRepo();
+  const abs = path.join(dir, "site", "assets", "site.js");
+  fs.writeFileSync(abs, fs.readFileSync(abs, "utf8").replace(/var CLOUD_URL = "[^"]*";[^\n]*\n/, ""), "utf8");
+  const before = snapshot(dir);
+  const r = run(dir, ["curule.dev", "--contact", "hello@curule.dev", "--cloud-url", "https://app.curule.dev", "--today", "2026-10-03"]);
+  assert.equal(r.status, 2, r.out + r.err);
+  assert.match(r.err, /site\/assets\/site\.js .*CLOUD_URL/);
+  assert.deepEqual(snapshot(dir), before, "half-applied");
 });
 
 test("the repository's own site and policy take a domain cleanly, in whatever state they are in, and leave only the terms to counsel", () => {

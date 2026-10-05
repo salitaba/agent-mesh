@@ -36,7 +36,9 @@
     </nav>
     <div class="bar-actions">
       <a class="signin" href="#" data-app hidden>Sign in</a>
-      <a class="btn btn-primary" href="../#try">Try the demo</a>
+      <a class="signin" href="#" data-cloud="login" hidden>Sign in</a>
+      <a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started</a>
+      <a class="btn btn-primary" href="../#try" data-selfhost-only>Try the demo</a>
       <details class="menu">
         <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
         <div class="menu-panel">
@@ -46,6 +48,7 @@
             <a href="../docs/">Docs</a>
             <a href="../security/">Security</a>
             <a href="#" data-app hidden>Sign in</a>
+            <a href="#" data-cloud="login" hidden>Sign in</a>
           </nav>
         </div>
       </details>
@@ -123,6 +126,7 @@
   </header>
   <div class="prose">
     <p>There are no accounts on this site, and nothing is accepted by clicking. A paid plan is bought by email, and the licence key is issued by hand once the terms have been agreed.</p>
+    <p data-cloud-only hidden>Curule Cloud has its own <a href="#" data-cloud="terms" hidden>terms</a> and <a href="#" data-cloud="privacy" hidden>privacy notice</a>, on its sign-up pages. They govern an account there, and not this site.</p>
     <p>The terms of a commercial agreement are written with counsel and agreed with each customer. They are not published on this page.</p>
     <p class="notice"><b>TODO(owner):</b> say here, or link to, the terms that apply, once counsel has written them. Until then leave this section as it is, or remove it, and do not publish a summary of terms that has not been through counsel.</p>
   </div>

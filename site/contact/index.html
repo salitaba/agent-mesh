@@ -36,7 +36,9 @@
     </nav>
     <div class="bar-actions">
       <a class="signin" href="#" data-app hidden>Sign in</a>
-      <a class="btn btn-primary" href="../#try">Try the demo</a>
+      <a class="signin" href="#" data-cloud="login" hidden>Sign in</a>
+      <a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started</a>
+      <a class="btn btn-primary" href="../#try" data-selfhost-only>Try the demo</a>
       <details class="menu">
         <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
         <div class="menu-panel">
@@ -46,6 +48,7 @@
             <a href="../docs/">Docs</a>
             <a href="../security/">Security</a>
             <a href="#" data-app hidden>Sign in</a>
+            <a href="#" data-cloud="login" hidden>Sign in</a>
           </nav>
         </div>
       </details>
@@ -120,7 +123,8 @@
     <ul class="rows">
       <li><b>We answer</b><span>Questions about plans, licences and pricing; help with installing and running Curule, as your plan provides; and security reports.</span></li>
       <li><b>We cannot see your instance</b><span>Nothing phones home, so we know only what you send us. That is also why we ask for the output of <code>curule doctor</code>.</span></li>
-      <li><b>We do not run it for you</b><span>It is software you run on your own infrastructure. It is not offered as a hosted service.</span></li>
+      <li data-selfhost-only><b>We do not run it for you</b><span>It is software you run on your own infrastructure. It is not offered as a hosted service.</span></li>
+      <li data-cloud-only hidden><b>Curule Cloud has its own sign-up</b><span>You do not need to write to us to start: <a href="#" data-cloud="signup" hidden>create an account</a> and choose a plan. A licence is for the software you run on your own infrastructure.</span></li>
       <li><b>Your model provider answers the rest</b><span>Questions about your model provider, its prices, limits and outages, go to it.</span></li>
     </ul>
   </div>

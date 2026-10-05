@@ -335,10 +335,11 @@ test("the documents the pages link to exist, at the base the shared script sets"
 
 test("the script's constants are the shape set-domain and the publish gate expect", () => {
   const script = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
-  for (const name of ["DOCS_BASE", "REPO_URL", "APP_URL", "CONTACT_HREF", "IMAGE_RELEASED", "IMAGE_NAME"]) {
+  for (const name of ["DOCS_BASE", "REPO_URL", "APP_URL", "CLOUD_URL", "CONTACT_HREF", "IMAGE_RELEASED", "IMAGE_NAME"]) {
     assert.equal((script.match(new RegExp(`^var ${name} = `, "gm")) ?? []).length, 1, `${name} is defined once, at the start of a line`);
   }
   assert.match(script, /^var APP_URL = "[^"]*";/m);
+  assert.match(script, /^var CLOUD_URL = "(https:\/\/[^"\s]+)?";/m, "Curule Cloud's address is empty, or an https address");
   assert.match(script, /^var CONTACT_HREF = "[^"]*";/m);
   assert.match(script, /^var IMAGE_RELEASED = (true|false);/m);
   // The image path is for after the first release: while it is off, no page can tell a visitor to pull what is not there.
