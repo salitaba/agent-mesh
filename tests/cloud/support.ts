@@ -10,8 +10,10 @@ import {
   MemoryMailer,
   ManualBilling,
   parseCatalogue,
+  type BillingEvent,
   type BillingProvider,
   type Catalogue,
+  type CheckoutInput,
   type ControlPlaneOptions,
   type GatewayAdmin,
   type ProvisionedWorkspace,
@@ -83,6 +85,27 @@ export class FakeProvisioner implements Provisioner {
   }
   ops(op: string): typeof this.calls {
     return this.calls.filter((c) => c.op === op);
+  }
+}
+
+/** A provider that remembers what it was asked and answers as the test says. */
+export class RecordingBilling implements BillingProvider {
+  readonly name = "recording";
+  readonly checkouts: CheckoutInput[] = [];
+  readonly portals: Array<{ accountId: string; customerRef?: string; returnUrl: string }> = [];
+  failWith: Error | undefined;
+  async createCheckout(input: CheckoutInput): Promise<{ url: string; ref: string }> {
+    this.checkouts.push(input);
+    if (this.failWith) throw this.failWith;
+    return { url: `https://pay.example/c/${input.idempotencyKey}`, ref: `ref_${input.idempotencyKey}` };
+  }
+  async openPortal(input: { accountId: string; customerRef?: string; returnUrl: string }): Promise<{ url: string }> {
+    this.portals.push(input);
+    if (this.failWith) throw this.failWith;
+    return { url: "https://pay.example/portal" };
+  }
+  parseWebhook(): BillingEvent[] {
+    return [];
   }
 }
 

@@ -157,16 +157,26 @@ export class Accounts {
 
   /** The account a session cookie belongs to, or undefined. Pure: it writes nothing. */
   authenticate(token: unknown): Account | undefined {
+    return this.identify(token)?.account;
+  }
+
+  /** The account and the session a cookie belongs to, or undefined when it is not a session that is good now. */
+  identify(token: unknown): { account: Account; sessionId: string } | undefined {
     if (typeof token !== "string" || token === "") return undefined;
     const sid = this.state.sessionsByToken.get(hashToken(token));
-    const s = sid ? this.state.sessions.get(sid) : undefined;
+    return sid ? this.session(sid) : undefined;
+  }
+
+  /** The same, by the session's own id: how a workspace's access, which holds an id and never a token, asks whether it is still good. */
+  session(sessionId: string): { account: Account; sessionId: string } | undefined {
+    const s = this.state.sessions.get(sessionId);
     if (!s || s.revokedAt !== undefined) return undefined;
     const now = this.clock().getTime();
     if (Date.parse(s.expiresAt) <= now) return undefined;
     if (now - Date.parse(s.lastSeenAt) > (this.o.idleDays ?? 14) * 86_400_000) return undefined;
     const account = this.state.accounts.get(s.accountId);
     if (!account || account.disabledAt !== undefined || account.verifiedAt === undefined) return undefined;
-    return account;
+    return { account, sessionId };
   }
 
   /** Record that a session was used, at most every ten minutes, so a busy page does not write on every request. */
@@ -221,7 +231,7 @@ export class Accounts {
     if (account && account.verifiedAt !== undefined && account.disabledAt === undefined) await this.issue(account.accountId, email, "reset");
   }
 
-  async completeReset(token: unknown, password: unknown): Promise<void> {
+  async completeReset(token: unknown, password: unknown): Promise<{ email: string }> {
     const invalid = new ServiceError(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one.");
     if (typeof token !== "string" || token === "") throw invalid;
     const tokenHash = hashToken(token);
@@ -235,5 +245,6 @@ export class Accounts {
     await this.o.log.append({ type: "verification.used", tokenHash });
     await this.o.log.append({ type: "account.password_changed", accountId: account.accountId, passwordHash: await hashPassword(password) });
     await this.o.log.append({ type: "sessions.revoked_for", accountId: account.accountId });
+    return { email: account.email };
   }
 }

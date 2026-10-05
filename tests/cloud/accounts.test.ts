@@ -341,3 +341,18 @@ test("a reset may not choose the person's own address as the password", async ()
   const token = tokenOf(mailTo(p, "ada.lovelace@example.com", "reset")[0]!);
   assert.equal((await refusal(p.plane.accounts.completeReset(token, "ada.lovelace@example.com"))).message, "The password must not be your email address.");
 });
+
+test("the time a sign-in or a sign-up takes does not say whether the address has an account: each way of failing does the work of checking a password", async () => {
+  const p = await plane();
+  await p.account("ada@example.com");
+  const time = async (work: () => Promise<unknown>): Promise<number> => {
+    const start = performance.now();
+    await work().catch(() => undefined);
+    return performance.now() - start;
+  };
+  assert.ok((await time(() => p.plane.accounts.login("nobody@example.com", PASSWORD))) > 5, "an unknown address");
+  assert.ok((await time(() => p.plane.accounts.login("not an email", PASSWORD))) > 5, "an address that is not one");
+  assert.ok((await time(() => p.plane.accounts.login("ada@example.com", undefined))) > 5, "a password that is not text");
+  assert.ok((await time(() => p.plane.accounts.login("ada@example.com", "wrong password here"))) > 5, "a wrong password");
+  assert.ok((await time(() => p.plane.accounts.signup("ada@example.com", "another good password"))) > 5, "signing up with an address that has an account");
+});

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BillingProviderError, BillingWebhookError, HostedCheckoutBilling, formEncode, signWebhook, type CheckoutInput } from "../../packages/cloud/src/index";
+import { BillingProviderError, BillingUnsupportedError, BillingWebhookError, HostedCheckoutBilling, formEncode, signWebhook, type CheckoutInput } from "../../packages/cloud/src/index";
 
 const SECRET = "whsec_test_secret";
 const NOW = new Date("2026-10-05T12:00:00.000Z");
@@ -125,7 +125,8 @@ test("the customer portal needs a customer, and goes to the provider's page for 
   assert.equal(p.requests[0]!.url, "https://api.stripe.com/v1/billing_portal/sessions");
   assert.deepEqual(Object.fromEntries(p.requests[0]!.body), { customer: "cus_1", return_url: "https://app.example.com/account" });
   assert.equal(p.requests[0]!.headers["idempotency-key"], undefined);
-  await assert.rejects(() => p.billing.openPortal({ accountId: "acct_1", returnUrl: "https://app" }), /there is no customer to open a portal for yet: the account has not paid/);
+  await assert.rejects(() => p.billing.openPortal({ accountId: "acct_1", returnUrl: "https://app" }), (err: Error) => err instanceof BillingUnsupportedError && err.message === "There is nothing to manage yet: no payment has been made on this account.");
+  assert.equal(p.requests.length, 1, "the provider is not asked about a customer that does not exist");
   const none = provider(() => ({ body: {} }));
   await assert.rejects(() => none.billing.openPortal({ accountId: "acct_1", customerRef: "cus_1", returnUrl: "https://app" }), /answered without a portal address/);
 });

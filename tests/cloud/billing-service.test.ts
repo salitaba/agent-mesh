@@ -67,7 +67,12 @@ test("a payment for an account that does not exist grants nothing and is recorde
   assert.equal(applied(p, "payment.succeeded:pi_1")!.accountId, "acct_nobody");
   assert.equal(applied(p, "payment.succeeded:pi_2")!.accountId, "");
   assert.deepEqual(applied(p, "payment.succeeded:pi_2")!.grants, []);
+  assert.deepEqual([applied(p, "payment.succeeded:pi_2")!.amountMinor, applied(p, "payment.succeeded:pi_2")!.currency], [100, "USD"], "how much arrived, and in what, is what the operator needs to place it");
   assert.equal(p.plane.unmatched().length, 3);
+  assert.deepEqual(await p.plane.billing.apply({ type: "payment.refunded", ref: "re_lost", paymentRef: "pi_gone", amountMinor: 400, currency: "USD", at: at(p) }), { applied: false, note: "unmatched" });
+  const refund = applied(p, "payment.refunded:re_lost")!;
+  assert.deepEqual([refund.amountMinor, refund.currency, refund.paymentRef, refund.note], [400, "USD", "pi_gone", "unmatched: no account is known for this payment"]);
+  assert.equal((await p.plane.margin()).revenue.USD, undefined, "none of it is revenue");
 });
 
 test("a payment in a currency the catalogue does not sell in grants nothing, and says so", async () => {
@@ -331,7 +336,7 @@ test("what an unmatched event records is what the operator's list shows, and an 
   await p.plane.billing.apply(topup(p, "acct_nobody", "pi_lost", 700));
   await p.plane.billing.apply(topup(p, ada.accountId, "pi_eur", 800, { currency: "EUR" }));
   assert.deepEqual(p.plane.unmatched(), [
-    { key: "payment.succeeded:pi_lost", kind: "payment.succeeded", note: "unmatched: no account is known for this payment" },
+    { key: "payment.succeeded:pi_lost", kind: "payment.succeeded", amountMinor: 700, currency: "USD", note: "unmatched: no account is known for this payment" },
     { key: "payment.succeeded:pi_eur", kind: "payment.succeeded", amountMinor: 800, currency: "EUR", note: "unmatched: the catalogue sells in USD, this payment is in EUR" },
   ]);
 });

@@ -13,7 +13,7 @@
  * acknowledged and ignored.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { BillingProviderError, BillingWebhookError, header, type BillingEvent, type BillingProvider, type CheckoutInput } from "./billing";
+import { BillingProviderError, BillingUnsupportedError, BillingWebhookError, header, type BillingEvent, type BillingProvider, type CheckoutInput } from "./billing";
 
 export interface HostedCheckoutOptions {
   /** The secret API key. Read from the environment by the caller. */
@@ -118,7 +118,8 @@ export class HostedCheckoutBilling implements BillingProvider {
   }
 
   async openPortal(input: { accountId: string; customerRef?: string; returnUrl: string }): Promise<{ url: string }> {
-    if (!input.customerRef) throw new BillingProviderError("there is no customer to open a portal for yet: the account has not paid");
+    // Said to the customer as it is: trying again will not help until something has been paid for.
+    if (!input.customerRef) throw new BillingUnsupportedError("There is nothing to manage yet: no payment has been made on this account.");
     const session = await this.post("/v1/billing_portal/sessions", { customer: input.customerRef, return_url: input.returnUrl });
     const url = str(session.url);
     if (!url) throw new BillingProviderError("the payment provider answered without a portal address");

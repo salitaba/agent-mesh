@@ -8,12 +8,9 @@ import {
   HostedCheckoutBilling,
   ServiceError,
   signWebhook,
-  type BillingEvent,
-  type BillingProvider,
-  type CheckoutInput,
 } from "../../packages/cloud/src/index";
 import { chatBody, spends } from "../ai-gateway/support";
-import { plane, running, type Plane } from "./support";
+import { RecordingBilling, plane, running, type Plane } from "./support";
 
 const DAY = 86_400_000;
 const at = (p: Plane): string => new Date(p.clock.now).toISOString();
@@ -26,27 +23,6 @@ const refusal = async (promise: Promise<unknown>): Promise<ServiceError> => {
   }
   throw new Error("it was accepted");
 };
-
-/** A provider that remembers what it was asked and answers as the test says. */
-class RecordingBilling implements BillingProvider {
-  readonly name = "recording";
-  readonly checkouts: CheckoutInput[] = [];
-  readonly portals: Array<{ accountId: string; customerRef?: string; returnUrl: string }> = [];
-  failWith: Error | undefined;
-  async createCheckout(input: CheckoutInput): Promise<{ url: string; ref: string }> {
-    this.checkouts.push(input);
-    if (this.failWith) throw this.failWith;
-    return { url: `https://pay.example/c/${input.idempotencyKey}`, ref: `ref_${input.idempotencyKey}` };
-  }
-  async openPortal(input: { accountId: string; customerRef?: string; returnUrl: string }): Promise<{ url: string }> {
-    this.portals.push(input);
-    if (this.failWith) throw this.failWith;
-    return { url: "https://pay.example/portal" };
-  }
-  parseWebhook(): BillingEvent[] {
-    return [];
-  }
-}
 
 const key = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 32);
 

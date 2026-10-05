@@ -563,3 +563,34 @@ test("waiting for the starts that are in progress waits for all of them", async 
     ["running", "running"],
   );
 });
+
+test("a workspace that cannot be stopped or deleted is said so and tried again, and does not stop the others from being stopped", async () => {
+  const p = await plane();
+  const ada = await p.account("ada@example.com");
+  await p.subscribe(ada.accountId, "business");
+  const first = await p.plane.workspaces.create(ada.accountId, "One");
+  const second = await p.plane.workspaces.create(ada.accountId, "Two");
+  await p.plane.workspaces.idle();
+  await p.plane.billing.apply({ type: "payment.failed", ref: "in_f", accountId: ada.accountId, at: new Date(p.clock.now).toISOString() });
+  p.clock.advance(3 * DAY + 1);
+  p.provisioner.failNext.push("suspend");
+  const actions = await p.plane.workspaces.reconcile();
+  assert.equal(actions.length, 2);
+  assert.match(actions[0]!, new RegExp(`^${first.workspaceId}: could not be stopped \\(the suspend failed\\), payment is overdue; it is tried again at the next check$`));
+  assert.equal(actions[1], `${second.workspaceId}: stopped, payment is overdue`);
+  assert.equal(p.log.state.workspaces.get(first.workspaceId)!.status, "running");
+  assert.equal(p.log.state.workspaces.get(second.workspaceId)!.status, "suspended");
+  assert.deepEqual(await p.plane.workspaces.reconcile(), [`${first.workspaceId}: stopped, payment is overdue`], "and the next check stops it");
+
+  await p.plane.billing.apply({ type: "subscription.ended", ref: "ended", subscriptionRef: "sub", accountId: ada.accountId, at: new Date(p.clock.now).toISOString() });
+  p.clock.advance(30 * DAY + 1);
+  p.provisioner.failNext.push("destroy");
+  const later = await p.plane.workspaces.reconcile();
+  assert.equal(later.length, 2);
+  assert.match(later[0]!, /could not be deleted \(the destroy failed\), the retention period after the subscription ended is over; it is tried again at the next check$/);
+  assert.match(later[1]!, /: deleted, the retention period after the subscription ended is over$/);
+  assert.equal(p.log.state.workspaces.get(first.workspaceId)!.status, "suspended", "the one that could not be deleted is still there");
+  const again = await p.plane.workspaces.reconcile();
+  assert.equal(again.length, 1);
+  assert.match(again[0]!, /: deleted, the retention period/);
+});

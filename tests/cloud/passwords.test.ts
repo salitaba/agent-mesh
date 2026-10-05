@@ -101,3 +101,19 @@ test("a password is not the person's email address or the first part of it, in a
 test("an ordinary passphrase has nothing wrong with it", () => {
   assert.equal(passwordProblem("correct horse battery staple", "ada@example.com"), undefined);
 });
+
+test("a hash that cannot be read, and a sign-in with no account to check, each cost the time of a real check, so the time says nothing", async () => {
+  const time = async (work: () => Promise<unknown>): Promise<number> => {
+    const start = performance.now();
+    await work();
+    return performance.now() - start;
+  };
+  assert.ok((await time(() => burnPasswordTime("anything"))) > 5, "a check with nothing to check against did no work");
+  assert.ok((await time(() => verifyPassword("anything", "not a hash"))) > 5, "a hash that cannot be read was refused without the work");
+  assert.ok((await time(() => verifyPassword("anything", ""))) > 5);
+});
+
+test("an email in capitals is compared with the password in any case too", () => {
+  assert.equal(passwordProblem("someone.long@example.com", "Someone.Long@Example.com"), "The password must not be your email address.");
+  assert.equal(passwordProblem("someone.long", "Someone.Long@Example.com"), "The password must not be your email address.");
+});

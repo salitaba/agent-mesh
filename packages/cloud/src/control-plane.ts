@@ -11,7 +11,7 @@ import { BillingService } from "./billing-service";
 import { BillingUnsupportedError, type BillingEvent, type BillingProvider } from "./billing";
 import type { Catalogue } from "./catalogue";
 import { ServiceError } from "./errors";
-import type { GatewayAdmin } from "./gateway-client";
+import type { GatewayAdmin, UsageGroup } from "./gateway-client";
 import type { Mailer } from "./mailer";
 import type { Account, ControlLog, Workspace } from "./store";
 import { Workspaces, type WorkspacesOptions } from "./workspaces";
@@ -36,6 +36,17 @@ export interface AccountView {
   createdAt: string;
   subscription: null | { plan: string; title: string; status: string; periodEnd?: string; pastDueSince?: string };
   workspaces: Array<{ workspaceId: string; name: string; slug: string; plan: string; status: string; statusReason?: string; host: string }>;
+}
+
+/** A line of a customer's usage. */
+export interface UsageRow {
+  group: string;
+  calls: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  chargedMicros: number;
 }
 
 export class ControlPlane {
@@ -81,6 +92,28 @@ export class ControlPlane {
     return { currency: a.currency, balance: { included: a.balance.included, purchased: a.balance.purchased, total: a.balance.total, available: a.balance.available }, charged: a.charged };
   }
 
+  /**
+   * What the account has used, for the customer: by day and by workspace, with what it was charged. What a call cost the service
+   * and what the service made on it are the operator's, and are not in this.
+   */
+  async usage(accountId: string): Promise<{ currency: string; byDay: UsageRow[]; byWorkspace: UsageRow[]; total: Omit<UsageRow, "group"> }> {
+    const [days, workspaces] = await Promise.all([this.o.gateway.report({ groupBy: "day", accountId }), this.o.gateway.report({ groupBy: "workspace", accountId })]);
+    const figures = (g: UsageGroup): Omit<UsageRow, "group"> => ({
+      calls: g.calls,
+      failed: g.failed,
+      inputTokens: g.input,
+      outputTokens: g.output,
+      cachedTokens: g.cacheRead + g.cacheWrite,
+      chargedMicros: g.chargeMicros,
+    });
+    return {
+      currency: days.currency,
+      byDay: days.groups.map((g) => ({ group: g.group, ...figures(g) })),
+      byWorkspace: workspaces.groups.map((g) => ({ group: g.group, ...figures(g) })),
+      total: figures(days.total),
+    };
+  }
+
   /** Where to send the customer to pay for a plan or a top-up. */
   async startCheckout(accountId: string, input: { purpose: unknown; plan?: unknown; amountMinor?: unknown }): Promise<{ url: string }> {
     const account = this.state.accounts.get(accountId);
@@ -110,7 +143,7 @@ export class ControlPlane {
       return { url: (await this.o.billing.createCheckout(input)).url };
     } catch (err) {
       if (err instanceof ServiceError) throw err;
-      throw new ServiceError(502, "billing_unavailable", "The payment page could not be opened. Try again in a moment.");
+      throw new ServiceError(502, "billing_unavailable", "The payment page could not be opened. Try again in a moment.", {}, { cause: err });
     }
   }
 
@@ -123,7 +156,7 @@ export class ControlPlane {
     } catch (err) {
       if (err instanceof BillingUnsupportedError) throw new ServiceError(409, "no_portal", err.message);
       if (err instanceof ServiceError) throw err;
-      throw new ServiceError(502, "billing_unavailable", "The billing page could not be opened. Try again in a moment.");
+      throw new ServiceError(502, "billing_unavailable", "The billing page could not be opened. Try again in a moment.", {}, { cause: err });
     }
   }
 

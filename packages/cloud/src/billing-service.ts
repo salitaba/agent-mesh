@@ -81,7 +81,9 @@ export class BillingService {
     if (this.state.applied.has(key)) return { applied: false, note: "duplicate" };
     const accountId = this.accountOf(event);
     if (!accountId || !this.state.accounts.has(accountId)) {
-      await this.record(key, accountId ?? "", event.type, [], { note: "unmatched: no account is known for this payment" });
+      // Money that arrived and cannot be placed is where the operator most needs to see how much, and in what.
+      const money = event.type === "payment.succeeded" ? { amountMinor: event.amountMinor, currency: event.currency } : event.type === "payment.refunded" ? { amountMinor: event.amountMinor, currency: event.currency, paymentRef: event.paymentRef } : {};
+      await this.record(key, accountId ?? "", event.type, [], { ...money, note: "unmatched: no account is known for this payment" });
       return { applied: false, note: "unmatched" };
     }
     const account = this.state.accounts.get(accountId)!;

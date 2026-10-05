@@ -47,6 +47,8 @@ export interface WorkspacesOptions {
 
 const LIVE = new Set(["requested", "provisioning", "running", "suspended"]);
 
+const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 160);
+
 export class Workspaces {
   private readonly clock: () => Date;
   /** Provisioning in progress, by workspace id: awaited by tests and by shutdown. */
@@ -245,16 +247,21 @@ export class Workspaces {
       const ended = current.status === "ended";
       if (overdue || ended) {
         for (const w of this.forAccount(account.accountId)) {
-          if (w.status === "running") {
-            await this.suspend(w.workspaceId, ended ? "the subscription ended" : "payment is overdue");
-            actions.push(`${w.workspaceId}: stopped, ${ended ? "the subscription ended" : "payment is overdue"}`);
-          }
+          if (w.status !== "running") continue;
+          const why = ended ? "the subscription ended" : "payment is overdue";
+          // One workspace that cannot be stopped is not a reason to leave the others running: it is said, and tried again next time.
+          await this.suspend(w.workspaceId, why).then(
+            () => actions.push(`${w.workspaceId}: stopped, ${why}`),
+            (err: unknown) => actions.push(`${w.workspaceId}: could not be stopped (${reasonOf(err)}), ${why}; it is tried again at the next check`),
+          );
         }
       }
       if (ended && current.endedAt && now - Date.parse(current.endedAt) > (this.o.retentionDays ?? 30) * day) {
         for (const w of this.forAccount(account.accountId)) {
-          await this.destroy(w.workspaceId);
-          actions.push(`${w.workspaceId}: deleted, the retention period after the subscription ended is over`);
+          await this.destroy(w.workspaceId).then(
+            () => actions.push(`${w.workspaceId}: deleted, the retention period after the subscription ended is over`),
+            (err: unknown) => actions.push(`${w.workspaceId}: could not be deleted (${reasonOf(err)}), the retention period after the subscription ended is over; it is tried again at the next check`),
+          );
         }
       }
     }
