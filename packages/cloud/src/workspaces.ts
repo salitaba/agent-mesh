@@ -274,11 +274,24 @@ export class Workspaces {
         }
       }
     }
+    // A workspace the log calls running whose host is not. A host that is gone for good is a failure and is said to be. One that has
+    // stopped (a container that crashed, a machine that was restarted, a control plane restarted over hosts that were its children)
+    // is started again, and what stops it from starting is said and tried again at the next check.
     for (const w of this.state.workspaces.values()) {
       if (w.status !== "running" || !w.handle) continue;
-      if ((await this.o.provisioner.status(w.handle).catch(() => "running")) === "missing") {
+      const seen = await this.o.provisioner.status(w.handle).catch(() => "running" as const);
+      if (seen === "missing") {
         await this.o.log.append({ type: "workspace.status", workspaceId: w.workspaceId, status: "failed", reason: "the host disappeared" });
         actions.push(`${w.workspaceId}: failed, the host disappeared`);
+      } else if (seen === "stopped") {
+        try {
+          const made = await this.o.provisioner.resume(w.handle);
+          await this.o.log.append({ type: "workspace.provisioned", workspaceId: w.workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: w.gatewayKeyId ?? "" });
+          await (this.o.waitReady ?? ((u) => waitUntilReady(u)))(made.upstream);
+          actions.push(`${w.workspaceId}: started again, its host had stopped`);
+        } catch (err) {
+          actions.push(`${w.workspaceId}: its host had stopped and could not be started (${reasonOf(err)}); it is tried again at the next check`);
+        }
       }
     }
     return actions;

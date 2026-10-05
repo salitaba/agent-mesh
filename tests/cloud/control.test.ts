@@ -18,7 +18,7 @@ import { rig as gatewayRig } from "../ai-gateway/support";
 import { fakeHost, waitFor } from "./edge-support";
 import { ask, type Ask } from "./net-support";
 import { ENV, pricedCatalogue, workdir } from "./control-support";
-import { FakeProvisioner, plane } from "./support";
+import { FakeProvisioner, RecordingBilling, plane } from "./support";
 import { PASSWORD, tokenIn } from "./web-support";
 
 const APP_HOST = "app.curule.example";
@@ -330,6 +330,38 @@ test("the checks run again on a timer, one at a time, and one that fails is logg
 });
 
 // ---- down ----
+
+test("a payment provider given to the start is the one customers are sent to, whatever the configuration names", async () => {
+  const billing = new RecordingBilling();
+  const s = await stack({ start: { billing } });
+  try {
+    const ada = await signedUp(s);
+    const out = await ada.post("/api/checkout", { purpose: "subscription", plan: "team" });
+    assert.equal(out.status, 200);
+    assert.match(out.json.url, /^https:\/\/pay\.example\/c\//, "not the configuration's manual page");
+    assert.equal(billing.checkouts.length, 1);
+    assert.equal(billing.checkouts[0]!.accountId, ada.accountId);
+  } finally {
+    await s.close();
+  }
+});
+
+test("stopping ends the hosts that were this process's children, and leaves alone what a provisioner keeps running by itself", async () => {
+  let stopped = 0;
+  const children = Object.assign(new FakeProvisioner(), { stopAll: async () => void stopped++ });
+  const a = await stack({ start: { provisioner: children } });
+  await a.running.stop(0);
+  assert.equal(stopped, 1);
+  await a.admin.close(0);
+  a.w.done();
+
+  const b = await stack();
+  await b.running.stop(0);
+  assert.equal((b.provisioner as FakeProvisioner & { stopAll?: unknown }).stopAll, undefined, "a container is not stopped because the control plane is");
+  assert.equal(b.provisioner.ops("suspend").length, 0);
+  await b.admin.close(0);
+  b.w.done();
+});
 
 test("stopping closes both listeners and the log, so the same log can be opened again, and a second process on it is refused", async () => {
   const w = workdir((raw) => ((raw.gateway.admin_url = "http://127.0.0.1:9"), (raw.public = { host: "127.0.0.1", port: 0, trust_proxy_hops: 0 })));

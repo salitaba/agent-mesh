@@ -72,6 +72,8 @@ export interface StartOptions {
   store?: ControlStore;
   /** What starts workspaces. For tests; the default is the one the configuration names. */
   provisioner?: Provisioner;
+  /** The payment provider. For tests and for the trial, whose provider is a page of its own; the default is the one the configuration names. */
+  billing?: BillingProvider;
   /** How the container engine is run, when the provisioner is the container one. For tests; the default starts the engine. */
   runner?: CommandRunner;
   waitReady?: WorkspacesOptions["waitReady"];
@@ -124,16 +126,17 @@ export async function startControl(config: ControlConfig, options: StartOptions 
     await (store as { close?: () => Promise<void> }).close?.();
   };
   try {
+    const provisioner = options.provisioner ?? provisionerFor(config, options.runner);
     const gateway = new HttpGatewayAdmin({ baseUrl: config.gateway.adminUrl, token: config.gateway.adminToken, ...(options.fetch ? { fetch: options.fetch } : {}) });
     const plane = new ControlPlane({
       log: controlLog,
       catalogue: config.catalogue,
-      billing: billingFor(config, options.fetch),
+      billing: options.billing ?? billingFor(config, options.fetch),
       gateway,
       mailer: new OutboxMailer(config.outboxPath, clock),
       appUrl: config.appUrl,
       workspaces: {
-        provisioner: options.provisioner ?? provisionerFor(config, options.runner),
+        provisioner,
         secret: config.secret,
         workspaceDomain: config.workspaces.domain,
         gatewayUrl: config.gateway.tenantUrl,
@@ -208,6 +211,8 @@ export async function startControl(config: ControlConfig, options: StartOptions 
         await Promise.race([Promise.allSettled([...plane.workspaces.inFlight.values()]), new Promise<void>((resolve) => (timeout = setTimeout(resolve, graceMs)))]);
         clearTimeout(timeout);
         await checking;
+        // Hosts that are children of this process (the local provisioner) do not outlive it. A container does, and is looked at again at the next start.
+        await (provisioner as { stopAll?: () => Promise<void> }).stopAll?.();
         await closeLog();
       },
     };

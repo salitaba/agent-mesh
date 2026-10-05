@@ -7,6 +7,7 @@
  *
  * A stopped workspace's environment (which holds its operator token and gateway key) is kept in a file only its owner can
  * read, outside the workspace's own project directory, so that it can be started again after the control plane restarts.
+ * What a host prints is kept in `host.log` beside it, because a host that does not come up has nothing else to say why.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -39,6 +40,15 @@ function pickFreePort(): Promise<number> {
 }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+
+/** Every host any local provisioner in this process has started and that has not ended. */
+const live = new Set<ChildProcess>();
+let hooked = false;
+
+/** Ask every host this process started to end. Hosts are children of the control plane and do not outlive it, however it ends. */
+export function killLiveHosts(): void {
+  for (const child of live) child.kill("SIGTERM");
+}
 
 interface Saved {
   env: Record<string, string>;
@@ -91,17 +101,39 @@ export class LocalProcessProvisioner implements Provisioner {
     const [command, ...base] = this.o.hostCommand;
     if (!command) throw new ProvisionError("no host command is configured");
     const args = [...base, "host", "--port", String(saved.port), "--bind", "127.0.0.1"];
-    const child = (this.o.spawn ?? ((c, a, opts) => spawn(c, a, { ...opts, stdio: "ignore", detached: false })))(command, args, { env: { ...process.env, ...saved.env, MESH_PORT: String(saved.port), MESH_BIND: "127.0.0.1" }, cwd: this.dir(id) });
+    const logFd = fs.openSync(path.join(this.dir(id), "host.log"), "a", 0o600);
+    let child: ChildProcess;
+    try {
+      child = (this.o.spawn ?? ((c, a, opts) => spawn(c, a, { ...opts, stdio: ["ignore", logFd, logFd], detached: false })))(command, args, { env: { ...process.env, ...saved.env, MESH_PORT: String(saved.port), MESH_BIND: "127.0.0.1" }, cwd: this.dir(id) });
+    } finally {
+      // The child has its own copy of the descriptor now.
+      fs.closeSync(logFd);
+    }
     this.children.set(id, child);
+    live.add(child);
+    // A host that is still running does not keep this process alive, and it is ended with this process rather than left behind.
+    child.unref?.();
+    if (!hooked) {
+      hooked = true;
+      process.once("exit", killLiveHosts);
+    }
     child.once("exit", () => {
+      live.delete(child);
       if (this.children.get(id) === child) this.children.delete(id);
     });
     return { handle: id, upstream: { host: "127.0.0.1", port: saved.port } };
   }
 
+  /** Stop every host this process started. Local hosts are children of the control plane and do not outlive it. */
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.children.keys()].map((handle) => this.suspend(handle)));
+  }
+
   async suspend(handle: string): Promise<void> {
     const child = this.children.get(handle);
     if (!child) return;
+    // Waiting for a host to end is a reason to stay up until it has.
+    child.ref?.();
     await new Promise<void>((resolve) => {
       child.once("exit", () => resolve());
       child.kill("SIGTERM");

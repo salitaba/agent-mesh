@@ -531,6 +531,36 @@ test("an account whose subscription ended has its workspaces stopped, and after 
   assert.deepEqual(await q.p.plane.workspaces.reconcile(), []);
 });
 
+test("a running workspace whose host has stopped is started again, and one that cannot be started is said and tried at the next check", async () => {
+  const { p, workspace, workspaceId } = await running();
+  const handle = workspace().handle!;
+  p.provisioner.state.set(handle, "stopped");
+  assert.deepEqual(await p.plane.workspaces.reconcile(), [`${workspaceId}: started again, its host had stopped`]);
+  assert.equal(p.provisioner.state.get(handle), "running");
+  assert.equal(workspace().status, "running");
+  assert.equal(p.provisioner.ops("resume").length, 1);
+  assert.equal(p.store.entries.filter((e) => e.type === "workspace.provisioned").length, 2, "where it is now is recorded, because it may not be where it was");
+  assert.deepEqual(await p.plane.workspaces.reconcile(), [], "a host that is running is left alone");
+
+  p.provisioner.state.set(handle, "stopped");
+  p.provisioner.failNext.push("resume");
+  assert.deepEqual(await p.plane.workspaces.reconcile(), [`${workspaceId}: its host had stopped and could not be started (the resume failed); it is tried again at the next check`]);
+  assert.equal(workspace().status, "running", "a workspace is not given up on for one failed start");
+  assert.deepEqual(await p.plane.workspaces.reconcile(), [`${workspaceId}: started again, its host had stopped`]);
+
+  // A host that does not become ready is the same.
+  const q = await running();
+  Object.assign((q.p.plane.workspaces as unknown as { o: object }).o, { waitReady: async () => { throw new Error("no answer yet"); } });
+  q.p.provisioner.state.set(q.workspace().handle!, "stopped");
+  assert.deepEqual(await q.p.plane.workspaces.reconcile(), [`${q.workspaceId}: its host had stopped and could not be started (no answer yet); it is tried again at the next check`]);
+
+  // A workspace that was stopped on purpose is not started: only what the log calls running is looked at.
+  const r = await running();
+  await r.p.plane.workspaces.suspend(r.workspaceId, "paused by its owner");
+  assert.deepEqual(await r.p.plane.workspaces.reconcile(), []);
+  assert.equal(r.p.provisioner.ops("resume").length, 0);
+});
+
 test("a running workspace whose host has disappeared is marked failed, and one whose host cannot be asked about is left alone", async () => {
   const { p, workspace, workspaceId } = await running();
   p.provisioner.state.delete(workspace().handle!);

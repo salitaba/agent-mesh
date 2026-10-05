@@ -8,6 +8,7 @@ import type { ChildProcess } from "node:child_process";
 import {
   ContainerProvisioner,
   LocalProcessProvisioner,
+  killLiveHosts,
   ProcessRunner,
   ProvisionError,
   waitUntilReady,
@@ -276,6 +277,16 @@ test("a host is waited for until its health check answers, and the wait names wh
 
 class FakeChild extends EventEmitter {
   readonly signals: string[] = [];
+  unrefs = 0;
+  unref(): this {
+    this.unrefs++;
+    return this;
+  }
+  refs = 0;
+  ref(): this {
+    this.refs++;
+    return this;
+  }
   /** Whether SIGTERM ends it. */
   obeys = true;
   kill(signal: string): boolean {
@@ -394,6 +405,62 @@ test("a workspace is stopped by asking its process to end, and started again on 
     assert.deepEqual(await l.p.resume("ws_abc123"), again, "starting what runs starts nothing");
     assert.equal(l.started.length, 2);
     await assert.rejects(() => l.p.resume("ws_unknown"), /there is no workspace 'ws_unknown' to resume/);
+  } finally {
+    l.done();
+  }
+});
+
+test("every host this process started can be stopped at once, and one that is already stopped is not asked again", async () => {
+  const l = local();
+  try {
+    await l.p.create(spec({ workspaceId: "ws_one" }));
+    await l.p.create(spec({ workspaceId: "ws_two" }));
+    await l.p.create(spec({ workspaceId: "ws_three" }));
+    await l.p.suspend("ws_three");
+    await l.p.stopAll();
+    assert.deepEqual(l.started.map((s) => s.child.signals), [["SIGTERM"], ["SIGTERM"], ["SIGTERM"]]);
+    for (const id of ["ws_one", "ws_two", "ws_three"]) assert.equal(await l.p.status(id), "stopped");
+    await l.p.stopAll();
+    assert.deepEqual(l.started.map((s) => s.child.signals), [["SIGTERM"], ["SIGTERM"], ["SIGTERM"]], "nothing is running to stop");
+    await assert.doesNotReject(() => local().p.stopAll(), "none started is none stopped");
+  } finally {
+    l.done();
+  }
+});
+
+test("a host does not outlive the process that started it: it is told to end whenever that process does, and it does not hold that process open", async () => {
+  const l = local();
+  try {
+    await l.p.create(spec({ workspaceId: "ws_one" }));
+    await l.p.create(spec({ workspaceId: "ws_two" }));
+    await l.p.suspend("ws_two");
+    killLiveHosts();
+    assert.deepEqual(l.started[0]!.child.signals, ["SIGTERM"], "what is running is told to end");
+    assert.deepEqual(l.started[1]!.child.signals, ["SIGTERM"], "(once: what had ended is no longer one of them)");
+    assert.deepEqual(l.started.map((s) => s.child.refs), [0, 1], "a host that is being waited for to end is a reason to stay up until it has");
+    killLiveHosts();
+    assert.equal(l.started[1]!.child.signals.length, 1);
+    assert.ok(l.started.every((s) => s.child.unrefs === 1), "no host is a reason for the control plane to stay up");
+  } finally {
+    l.done();
+  }
+});
+
+test("what a host prints is kept beside its workspace, where only its owner can read it, because a host that does not come up has nothing else to say why", async () => {
+  const l = local({ spawn: undefined, hostCommand: [process.execPath, "-e", "console.log('the host is up'); console.error('and one thing it complains of'); setTimeout(() => {}, 20000)"] });
+  try {
+    await l.p.create(spec());
+    const file = path.join(l.dir, "ws_abc123", "host.log");
+    const deadline = Date.now() + 10_000;
+    while (!/complains of/.test(fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+    assert.equal(fs.readFileSync(file, "utf8"), "the host is up\nand one thing it complains of\n");
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.ok(!fs.readdirSync(path.join(l.dir, "ws_abc123", "projects")).length, "and it is not among the workspace's own files");
+    await l.p.suspend("ws_abc123");
+    await l.p.resume("ws_abc123");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.match(fs.readFileSync(file, "utf8"), /^(the host is up\nand one thing it complains of\n){2}$/, "a host that is started again adds to it");
+    await l.p.stopAll();
   } finally {
     l.done();
   }
