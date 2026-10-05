@@ -30,6 +30,7 @@ const answer = {
   defaultParent: "/home/me/curule-projects",
   confined: false,
   modelAccess: ["ANTHROPIC_API_KEY"],
+  managed: false,
 };
 
 test("the host's answer is read into offers, and what is not complete is dropped, not half shown", () => {
@@ -43,6 +44,13 @@ test("the host's answer is read into offers, and what is not complete is dropped
   assert.equal(messy.templates[0]!.seats, 0, "a seat count that is not a number is not invented");
   assert.deepEqual(messy.modelAccess, ["X"]);
   for (const bad of [null, undefined, 3, "x", [], {}, { templates: [] }, { templates: "x" }, { templates: [{ id: "a" }] }]) assert.equal(parseTemplates(bad), null, JSON.stringify(bad));
+});
+
+test("a host that says its models are supplied is read as managed, and one that says nothing, or something else, is not", () => {
+  const one = [{ id: "x", kind: "example", suggestedRoot: "/x" }];
+  assert.equal(parseTemplates({ templates: one, managed: true })!.managed, true);
+  for (const not of [undefined, false, "true", 1, null, {}]) assert.equal(parseTemplates({ templates: one, managed: not })!.managed, false, JSON.stringify(not));
+  assert.equal(parseTemplates(answer)!.managed, false);
 });
 
 test("a field the host left out is read as the cautious thing: a team needs a key unless it says it does not", () => {
@@ -89,6 +97,24 @@ test("a team that needs no key says it needs nothing; one that does says what th
   assert.equal(lacks.tone, "warn");
   assert.match(lacks.text, /which this host lacks/);
   assert.match(lacks.text, /ANTHROPIC_API_KEY.*Bedrock.*Vertex AI.*Foundry/);
+});
+
+test("where the service supplies the models a team needs nothing from the person, said before the host's own settings are looked at", () => {
+  const team = claude({ runtime: "native" });
+  assert.deepEqual(whatItNeeds(team, [], true), { text: "Models, which this workspace's service supplies. You bring no key.", tone: "ok" });
+  assert.deepEqual(whatItNeeds(team, ["ANTHROPIC_API_KEY"], true).tone, "ok");
+  assert.equal(whatItNeeds(team, [], false).tone, "warn", "the same team on a host with no models and no managed flag still lacks them");
+  assert.deepEqual(whatItNeeds(offer(), [], true), { text: "Nothing. It runs on the stub runtime, so it makes no model calls.", tone: "ok" }, "the demo needs no models, managed or not");
+});
+
+test("where the service supplies the models, a team draws on the account's balance and does not spend on a provider account of the person's own", () => {
+  assert.equal(
+    whatItCosts(claude({ missionTokens: 2_000_000, runtime: "native" }), 50, true),
+    "Draws on your account's balance: each call is charged what it cost, and the usage is in your account. The mission is capped at 2,000,000 tokens. The host parks every open project once their estimated spend reaches $50.00.",
+  );
+  assert.equal(whatItCosts(claude({ missionTokens: null }), null, true), "Draws on your account's balance: each call is charged what it cost, and the usage is in your account.");
+  assert.equal(whatItCosts(offer(), 50, true), "Nothing, and there is no bill. The token counts it shows are the script's own.", "the demo costs nothing on any host");
+  assert.match(whatItCosts(claude(), null, false), /^Spends tokens on your own provider account/);
 });
 
 test("what it costs: nothing for the demo; tokens on the person's own account for the Claude team, with the caps that exist", () => {

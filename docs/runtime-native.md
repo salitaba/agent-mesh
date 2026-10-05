@@ -209,6 +209,40 @@ The designer's chat, and acceptance-criteria generation, can run on the same run
 default when `default` is `native`), with `designer_model: provider/model` or the default model. The designer gets only the tools
 the bus offers it (staging and read-only observability); it proposes and never executes.
 
+## Hosted workspaces
+
+On [Curule Cloud](cloud.md) every workspace's host is started with three settings, and a person who opens the workspace brings
+no key:
+
+| Setting | Meaning |
+|---|---|
+| `CURULE_GATEWAY_URL` | The service's model gateway, up to and including `/v1`. |
+| `CURULE_GATEWAY_KEY` | A virtual key for that gateway, scoped to this workspace. It works there and nowhere else, and it is removed from the environment of every seat's shell like any other provider key. |
+| `CURULE_GATEWAY_MODEL` | The tier a team uses unless a seat names another. The plan sets it; left out, `balanced`. |
+
+A host with the address and the key is a *managed* one. A team made on it from the dashboard, from a shipped example or by adding a
+folder with `init`, runs on the native runtime through one provider named `curule`: the default runtime and each seat that
+would have been on the Claude runtime go to `native`, a Claude model hint on a seat is dropped (it cannot be placed on another
+provider), and the model is `curule/<tier>`. What is written names the variable the key is read from and never the key:
+
+```yaml
+mesh:
+  runtime:
+    default: native
+    designer: native
+    model: curule/balanced
+    providers:
+      curule:
+        kind: openai-compatible
+        base_url: https://gateway.example/v1
+        api_key_env: CURULE_GATEWAY_KEY
+```
+
+The shipped demo runs on the stub runtime and makes no model calls, so it is left as it is. The welcome says the models are
+supplied and that what a team uses is charged to the account's balance, and `curule doctor` lists the three settings by name.
+A mesh that already names its own providers is not rewritten. A mesh taken out of a workspace names the service's gateway: point
+its provider at one of your own to run it anywhere else.
+
 ## What it does not do
 
 - Extended thinking is not enabled on the Anthropic adapter, so no signed thinking blocks are carried between calls. Reasoning

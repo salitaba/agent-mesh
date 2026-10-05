@@ -64,6 +64,14 @@ start an open server.
 | `MESH_LICENSE_FILE` | none | Path of a file holding the key. Otherwise `<MESH_HOME>/license.key`, which `curule license install` writes. |
 | `MESH_LICENSE_ENFORCEMENT` | `warn` | `off`, `warn` or `enforce`. See [Licence](#licence-1). |
 
+### Models supplied by a gateway
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CURULE_GATEWAY_URL` | none | The address of a model gateway, up to and including `/v1`. The hosted service sets it for every workspace. |
+| `CURULE_GATEWAY_KEY` | none | A key for that gateway. With the address, it makes the host *managed*: a team made on it runs on the gateway's models and the person brings no key. See [Hosted workspaces](runtime-native.md#hosted-workspaces). |
+| `CURULE_GATEWAY_MODEL` | `balanced` | The tier a team uses unless a seat names another. |
+
 ### The agents' model access
 
 The agents run on **your** credentials, billed to you by the provider. Pass `ANTHROPIC_API_KEY`, or the

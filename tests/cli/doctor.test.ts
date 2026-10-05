@@ -400,6 +400,21 @@ test("an install with nothing registered and nothing set reports cleanly", async
   assert.ok(first.findings.every((x) => x.level !== "fail"));
 });
 
+test("a host that is given its models by a gateway says so, by the names of the settings, and shows no value; a project on the native runtime asks nothing of Claude's", async () => {
+  const f = fixture();
+  const SECRET = "ck_live_do-not-print-this-key";
+  const env = { CURULE_GATEWAY_URL: "https://gateway.example/v1", CURULE_GATEWAY_KEY: SECRET, CURULE_GATEWAY_MODEL: "fast" };
+  const managed = await buildDoctorReport([], {}, { env, home: f.home, publicKeys: PUBLIC, now: NOW, uid: 10001 });
+  assert.ok(managed.findings.some((x) => x.level === "info" && /given its models by a gateway \(CURULE_GATEWAY_URL and CURULE_GATEWAY_KEY are set\)/.test(x.summary)));
+  assert.deepEqual(managed.settings.filter((s) => s.name.startsWith("CURULE_GATEWAY")).map((s) => s.name), ["CURULE_GATEWAY_URL", "CURULE_GATEWAY_KEY", "CURULE_GATEWAY_MODEL"]);
+  assert.ok(!JSON.stringify(managed).includes(SECRET) && !JSON.stringify(managed).includes("gateway.example"), "the report shows names, and no value");
+  assert.deepEqual(managed.modelAccess, [], "a gateway is not one of the ways a Claude-runtime seat reaches a model");
+  for (const half of [{ CURULE_GATEWAY_URL: env.CURULE_GATEWAY_URL }, { CURULE_GATEWAY_KEY: SECRET }]) {
+    const r = await buildDoctorReport([], {}, { env: half, home: f.home, publicKeys: PUBLIC, now: NOW, uid: 10001 });
+    assert.ok(!r.findings.some((x) => /given its models by a gateway/.test(x.summary)), "an address with no key, or a key with no address, is not managed");
+  }
+});
+
 test("an install still on the state directory from before the rename is told so once, as information; one that is not is not", async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-doctor-legacy-"));
   const legacy = path.join(base, ".agent-mesh");

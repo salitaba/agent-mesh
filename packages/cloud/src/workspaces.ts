@@ -11,7 +11,7 @@
  * present it after a restart and nothing in the log can be used to reach a workspace.
  */
 import { createHmac, randomBytes } from "node:crypto";
-import type { Catalogue } from "./catalogue";
+import { defaultTierOf, type Catalogue } from "./catalogue";
 import { ServiceError } from "./errors";
 import type { GatewayAdmin } from "./gateway-client";
 import { mintWorkspaceLicence, type LicenceSigner } from "./licences";
@@ -140,7 +140,7 @@ export class Workspaces {
       operatorToken: this.operatorToken(w.workspaceId),
       gateway: { baseUrl: this.o.gatewayUrl, key: key.token },
       limits: this.o.limits ?? { cpus: 1, memoryMb: 2048, pids: 512 },
-      ...(this.o.workspaceEnv ? { env: this.o.workspaceEnv } : {}),
+      ...(this.o.workspaceEnv || (plan && defaultTierOf(plan)) ? { env: { ...this.o.workspaceEnv, ...(plan && defaultTierOf(plan) ? { CURULE_GATEWAY_MODEL: defaultTierOf(plan)! } : {}) } } : {}),
     };
   }
 

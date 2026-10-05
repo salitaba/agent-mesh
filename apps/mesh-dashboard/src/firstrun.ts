@@ -33,6 +33,8 @@ export interface TemplatesAnswer {
   defaultParent: string;
   confined: boolean;
   modelAccess: string[];
+  /** The host was given its models by the service it runs on: a team made here needs no key from the person. */
+  managed: boolean;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -69,6 +71,7 @@ export function parseTemplates(json: unknown): TemplatesAnswer | null {
     defaultParent: str(json.defaultParent) ?? "",
     confined: json.confined === true,
     modelAccess: Array.isArray(json.modelAccess) ? json.modelAccess.filter((x): x is string => typeof x === "string") : [],
+    managed: json.managed === true,
   };
 }
 
@@ -99,8 +102,9 @@ export function whatItTakes(o: TemplateOffer): string | null {
 }
 
 /** What it needs from this host. Says what the host has, by the names of the settings. */
-export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[]): { text: string; tone: "ok" | "warn" } {
+export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[], managed = false): { text: string; tone: "ok" | "warn" } {
   if (!o.needsApiKey) return { text: `Nothing. It runs on the ${o.runtime} runtime, so it makes no model calls.`, tone: "ok" };
+  if (managed) return { text: "Models, which this workspace's service supplies. You bring no key.", tone: "ok" };
   if (modelAccess.length > 0) return { text: `Model access, which this host has (${modelAccess.join(", ")}).`, tone: "ok" };
   return {
     text: "Model access, which this host lacks. Set ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in its environment.",
@@ -108,13 +112,16 @@ export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[]): {
   };
 }
 
-/** What it costs. A team that needs no key costs nothing; one that does spends tokens on the person's own account. */
-export function whatItCosts(o: TemplateOffer, ceilingUsd: number | null): string {
+/**
+ * What it costs. A team that needs no key costs nothing. One that does spends tokens on the person's own provider account, or,
+ * where the service supplies the models, draws on the balance of the account the workspace belongs to.
+ */
+export function whatItCosts(o: TemplateOffer, ceilingUsd: number | null, managed = false): string {
   // The console shows token counts for the demo too: they are the script's own, and said to be.
   if (!o.needsApiKey) return "Nothing, and there is no bill. The token counts it shows are the script's own.";
   const cap = o.missionTokens ? ` The mission is capped at ${o.missionTokens.toLocaleString("en-US")} tokens.` : "";
   const ceiling = ceilingUsd !== null && ceilingUsd > 0 ? ` The host parks every open project once their estimated spend reaches ${usd(ceilingUsd)}.` : "";
-  return `Spends tokens on your own provider account.${cap}${ceiling}`;
+  return `${managed ? "Draws on your account's balance: each call is charged what it cost, and the usage is in your account." : "Spends tokens on your own provider account."}${cap}${ceiling}`;
 }
 
 /** Where each way of starting lands the person: the demo to be run, a new mesh to be written, an existing one to be looked at. */

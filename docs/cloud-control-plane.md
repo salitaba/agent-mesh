@@ -63,6 +63,7 @@ is an example to copy; its numbers are not an offer.
 | `plans.<id>.workspaces` | Workspaces an account may run at once. |
 | `plans.<id>.provider_price_id` | The payment provider's id for this price, where the provider needs one. |
 | `plans.<id>.tiers` | The gateway tiers a workspace of this plan may use. Left out, every tier. |
+| `plans.<id>.default_tier` | The tier a team in the workspace uses unless a seat names another, one of `tiers` when that is given. Left out, a plan that lists tiers uses `balanced` if it is among them and the first listed if it is not, and a plan with no list leaves the host's own default. The workspace is told it as `CURULE_GATEWAY_MODEL`. |
 | `topups.options_minor`, `minimum_minor`, `maximum_minor` | The amounts offered, and the bounds of any other amount. |
 | `topups.usage_micros_per_minor` | Model usage one minor unit buys, in millionths of a unit of the gateway's currency. |
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadCatalogue, parseCatalogue } from "../../packages/cloud/src/index";
+import { defaultTierOf, loadCatalogue, parseCatalogue } from "../../packages/cloud/src/index";
 import { CATALOGUE } from "./support";
 
 const clone = (): any => JSON.parse(JSON.stringify(CATALOGUE));
@@ -195,4 +195,41 @@ test("the example catalogue that ships is valid and describes two plans and the 
   assert.equal(c.plan("business")!.tiers, undefined);
   assert.deepEqual(c.topups, { optionsMinor: [1_000, 2_500, 10_000], minimumMinor: 500, maximumMinor: 100_000, usageMicrosPerMinor: 10_000 });
   assert.ok(c.plans().every((p) => /REPLACE/.test(p.providerPriceId ?? "")), "the provider's price ids are placeholders for the operator to replace");
+});
+
+test("a plan may name the tier its workspaces' teams use unless a seat names another, and it must be one the plan allows", () => {
+  const raw = clone();
+  raw.plans.team.default_tier = "fast";
+  assert.equal(parseCatalogue(raw).plan("team")!.defaultTier, "fast");
+  raw.plans.business.default_tier = "best";
+  assert.equal(parseCatalogue(raw).plan("business")!.defaultTier, "best", "a plan that lists no tiers allows any, so any name will do");
+  raw.plans.team.default_tier = "best";
+  assert.match(problems(raw), /plans\.team\.default_tier 'best' is not one of the plan's tiers \(fast, balanced\)/);
+  raw.plans.team.default_tier = "";
+  assert.match(problems(raw), /plans\.team\.default_tier must be a tier name/);
+  raw.plans.team.default_tier = 7;
+  assert.match(problems(raw), /plans\.team\.default_tier must be a tier name/);
+});
+
+test("the tier a host is told to default to is the plan's own, else balanced when the plan lists it, else the first it lists, else none and the host's own stands", () => {
+  const plan = (extra: Record<string, unknown>) => {
+    const raw = clone();
+    raw.plans.team = { ...raw.plans.team, ...extra };
+    return parseCatalogue(raw).plan("team")!;
+  };
+  assert.equal(defaultTierOf(plan({ tiers: ["fast", "balanced"], default_tier: "fast" })), "fast");
+  assert.equal(defaultTierOf(plan({ tiers: ["fast", "balanced"] })), "balanced");
+  assert.equal(defaultTierOf(plan({ tiers: ["fast", "best"] })), "fast", "a key that may not use balanced is not told to");
+  assert.equal(defaultTierOf(plan({ tiers: ["best"] })), "best");
+  const all = clone();
+  delete all.plans.team.tiers;
+  assert.equal(defaultTierOf(parseCatalogue(all).plan("team")!), undefined);
+  all.plans.team.default_tier = "best";
+  assert.equal(defaultTierOf(parseCatalogue(all).plan("team")!), "best");
+});
+
+test("the example plans file names a default tier its plan allows", () => {
+  const c = loadCatalogue(path.join(__dirname, "..", "..", "..", "examples", "cloud", "plans.yaml"));
+  assert.equal(c.plan("team")!.defaultTier, "balanced");
+  assert.ok(c.plan("team")!.tiers!.includes("balanced"));
 });

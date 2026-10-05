@@ -26,6 +26,8 @@ export interface HostedPlan {
   providerPriceId?: string;
   /** The gateway tiers a workspace of this plan may use. Absent means all of them. */
   tiers?: string[];
+  /** The tier a team in a workspace of this plan uses unless a seat names another. See {@link defaultTierOf}. */
+  defaultTier?: string;
   summary?: string;
 }
 
@@ -36,6 +38,18 @@ export interface TopUps {
   maximumMinor: number;
   /** Model usage bought per minor unit of the billing currency, in gateway micro-units. */
   usageMicrosPerMinor: number;
+}
+
+/**
+ * The tier a workspace's teams use unless a seat names another, as the host is told it (`CURULE_GATEWAY_MODEL`). The plan's own
+ * `default_tier` when it has one. Otherwise nothing when the plan allows every tier, so the host's default stands (`balanced`),
+ * and when it lists some, `balanced` if it is among them and the first listed if it is not: a team that defaulted to a tier its
+ * key may not use would fail on its first call.
+ */
+export function defaultTierOf(plan: HostedPlan): string | undefined {
+  if (plan.defaultTier) return plan.defaultTier;
+  if (!plan.tiers) return undefined;
+  return plan.tiers.includes("balanced") ? "balanced" : plan.tiers[0];
 }
 
 export class Catalogue {
@@ -97,6 +111,10 @@ export function parseCatalogue(raw: unknown, source = "the plan catalogue"): Cat
       if (p.period !== "month" && p.period !== "year") problems.push(`${where}.period must be month or year`);
       if (p.provider_price_id !== undefined && (typeof p.provider_price_id !== "string" || p.provider_price_id === "")) problems.push(`${where}.provider_price_id must be text`);
       if (p.tiers !== undefined && (!Array.isArray(p.tiers) || p.tiers.length === 0 || p.tiers.some((t) => typeof t !== "string" || t === ""))) problems.push(`${where}.tiers must be a non-empty list of tier names`);
+      if (p.default_tier !== undefined) {
+        if (typeof p.default_tier !== "string" || p.default_tier === "") problems.push(`${where}.default_tier must be a tier name`);
+        else if (Array.isArray(p.tiers) && !p.tiers.includes(p.default_tier)) problems.push(`${where}.default_tier '${p.default_tier}' is not one of the plan's tiers (${p.tiers.join(", ")})`);
+      }
       plans.set(id, {
         id,
         title: typeof p.title === "string" ? p.title.trim() : "",
@@ -107,6 +125,7 @@ export function parseCatalogue(raw: unknown, source = "the plan catalogue"): Cat
         workspaces: whole(p.workspaces, `${where}.workspaces`, 1, 1_000, problems),
         ...(typeof p.provider_price_id === "string" ? { providerPriceId: p.provider_price_id } : {}),
         ...(Array.isArray(p.tiers) ? { tiers: p.tiers as string[] } : {}),
+        ...(typeof p.default_tier === "string" && p.default_tier !== "" ? { defaultTier: p.default_tier } : {}),
         ...(typeof p.summary === "string" ? { summary: p.summary } : {}),
       });
     }

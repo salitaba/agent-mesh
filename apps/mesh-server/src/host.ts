@@ -42,8 +42,8 @@ import {
   type ProjectSupervisor,
   type SupervisionEvent,
 } from "../../../packages/projects/src/index";
-import { findShippedRoot, writeDefaultMeshYaml } from "../../../packages/config/src/index";
-import { createFromTemplate, expandHome, outsideRootsReason, projectErrorReason, templatesView } from "./new-project";
+import { findShippedRoot } from "../../../packages/config/src/index";
+import { createFromTemplate, expandHome, outsideRootsReason, projectErrorReason, templatesView, writeDefaultTeam } from "./new-project";
 import type { GitMode } from "../../../packages/protocol/src/index";
 import {
   MultiplexHub,
@@ -1013,7 +1013,7 @@ export function createHostServer(deps: {
           let scaffolded = false;
           const resolved = path.resolve(root);
           if (b.init === true && !fs.existsSync(path.join(resolved, MESH_CONFIG_FILENAME))) {
-            writeDefaultMeshYaml(resolved, path.basename(resolved), "claude");
+            writeDefaultTeam(resolved, path.basename(resolved));
             scaffolded = true;
           }
           // If the add below throws, the scaffolded files stay. They are a valid

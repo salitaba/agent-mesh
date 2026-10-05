@@ -30,6 +30,7 @@ import {
 import { toProjectId } from "../../../packages/protocol/src/index";
 import { MESH_CONFIG_FILENAME, type ProjectRef } from "../../../packages/projects/src/index";
 import { insideRoots, projectRoots, realLocation } from "./confine";
+import { managedModels, rewriteForManagedModels, type ManagedModels } from "./managed";
 
 /** The slice of the registry this needs. The real one satisfies it; a test can hand over two functions. */
 export interface TemplateRegistry {
@@ -60,6 +61,11 @@ export interface TemplatesView {
    * Names only, never values. Empty means a team on that runtime could not start a turn yet.
    */
   modelAccess: string[];
+  /**
+   * This host was given the address and the key of a model gateway (the hosted service does this for every workspace). A team
+   * made here runs on those models, the person brings no key, and what it uses is charged to their balance.
+   */
+  managed: boolean;
 }
 
 export type NewProjectResult =
@@ -125,11 +131,14 @@ export function modelAccessFound(env: NodeJS.ProcessEnv = process.env): string[]
 export function templatesView(deps: NewProjectDeps): TemplatesView {
   const env = deps.env ?? process.env;
   const taken = new Set(deps.registry.list().map((r) => r.id));
+  const managed = managedModels(env) !== undefined;
   return {
-    templates: describeTemplates(deps.shippedRoot).map((t) => ({ ...t, suggestedRoot: suggestRoot(t, taken, env) })),
+    // On managed models a team that would have run on the Claude runtime runs on the native one, and says so.
+    templates: describeTemplates(deps.shippedRoot).map((t) => ({ ...t, ...(managed && t.runtime === "claude" ? { runtime: "native" } : {}), suggestedRoot: suggestRoot(t, taken, env) })),
     defaultParent: defaultParent(env),
     confined: projectRoots(env).length > 0,
     modelAccess: modelAccessFound(env),
+    managed,
   };
 }
 
@@ -158,6 +167,19 @@ function whyNotWritten(err: unknown, dir: string): string {
     : code === "EROFS" ? "that location is read-only"
     : (err as Error)?.message ?? "unknown error";
   return `Could not write to ${dir}: ${why}.`;
+}
+
+/** Rewrite what was just scaffolded to run on the host's managed models. A mesh that needs no models is left as it is. */
+function rewriteForTheService(file: string, managed: ManagedModels): void {
+  const rewritten = rewriteForManagedModels(fs.readFileSync(file, "utf8"), managed);
+  if (rewritten.changed) fs.writeFileSync(file, rewritten.text, "utf8");
+}
+
+/** The default team in a folder: on the Claude runtime, or on the host's managed models when it was given some. */
+export function writeDefaultTeam(dir: string, name: string, env: NodeJS.ProcessEnv = process.env): void {
+  writeDefaultMeshYaml(dir, name, "claude");
+  const managed = managedModels(env);
+  if (managed) rewriteForTheService(path.join(dir, MESH_CONFIG_FILENAME), managed);
 }
 
 export async function createFromTemplate(input: { template: unknown; root: unknown }, deps: NewProjectDeps): Promise<NewProjectResult> {
@@ -200,10 +222,12 @@ export async function createFromTemplate(input: { template: unknown; root: unkno
 
   try {
     if (template.kind === "default") {
-      writeDefaultMeshYaml(target, path.basename(realLocation(target)), "claude");
+      writeDefaultTeam(target, path.basename(realLocation(target)), env);
     } else {
       // An example is only in `templates` when the install ships examples, so `shippedRoot` is set.
       scaffoldExample(deps.shippedRoot as string, template.id, target);
+      const managed = managedModels(env);
+      if (managed) rewriteForTheService(path.join(target, MESH_CONFIG_FILENAME), managed);
     }
   } catch (err) {
     // The file appeared between the check above and the write. The writers refuse to replace it; say so, as above.

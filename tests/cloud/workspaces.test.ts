@@ -60,7 +60,7 @@ test("a workspace is given a model key that works at the gateway, a licence for 
   assert.equal(spec.accountId, ada.accountId);
   assert.equal(spec.plan, "team");
   assert.deepEqual(spec.limits, { cpus: 1, memoryMb: 2048, pids: 512 });
-  assert.equal(spec.env, undefined);
+  assert.deepEqual(spec.env, { CURULE_GATEWAY_MODEL: "balanced" }, "the tier a team uses unless a seat names another: one this plan's key may use");
   assert.equal(spec.gateway.baseUrl, "http://gateway.internal:8080/v1");
   assert.equal(spec.operatorToken, p.plane.workspaces.operatorToken(workspaceId));
   const key = p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`);
@@ -81,12 +81,15 @@ test("a plan that names no tiers gives its workspaces every tier, and a service 
   assert.equal(spec.licence, undefined);
   assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`).models, undefined, "a key with no list may use every tier");
   assert.equal(spec.plan, "business");
+  assert.equal(spec.env, undefined, "and the host's own default tier stands");
 });
 
 test("the limits and the environment a host is given are the operator's", async () => {
   const { p } = await running({ workspaces: { limits: { cpus: 2, memoryMb: 4096, pids: 1024 }, workspaceEnv: { HTTPS_PROXY: "http://egress.internal:3128" } } });
   assert.deepEqual(specOf(p).limits, { cpus: 2, memoryMb: 4096, pids: 1024 });
-  assert.deepEqual(specOf(p).env, { HTTPS_PROXY: "http://egress.internal:3128" });
+  assert.deepEqual(specOf(p).env, { HTTPS_PROXY: "http://egress.internal:3128", CURULE_GATEWAY_MODEL: "balanced" });
+  const business = await running({ workspaces: { workspaceEnv: { HTTPS_PROXY: "http://egress.internal:3128" } } }, "business");
+  assert.deepEqual(specOf(business.p).env, { HTTPS_PROXY: "http://egress.internal:3128" }, "a plan with no tier of its own adds nothing to what the operator gave");
 });
 
 test("a workspace is for an account that is confirmed, not stopped, and paid up", async () => {
