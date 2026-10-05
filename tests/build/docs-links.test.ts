@@ -13,7 +13,7 @@ import * as path from "path";
 const ROOT = path.resolve(__dirname, "..", "..", "..");
 
 function publicDocs(): string[] {
-  const docs = ["README.md", "CHANGELOG.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "PRODUCT.md", "packages/README.md", "site/README.md", "docs/operations.md", "docs/brand.md", "docs/cloud.md", "docs/cloud-control-plane.md", "docs/runtime-native.md", "docs/ai-gateway.md", "brand/README.md"];
+  const docs = ["README.md", "CHANGELOG.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "PRODUCT.md", "packages/README.md", "site/README.md", "docs/operations.md", "docs/brand.md", "docs/cloud.md", "docs/cloud-control-plane.md", "docs/cloud-go-live.md", "docs/runtime-native.md", "docs/ai-gateway.md", "brand/README.md"];
   const commercial = path.join(ROOT, "docs", "commercial");
   if (fs.existsSync(commercial)) for (const f of fs.readdirSync(commercial)) if (f.endsWith(".md")) docs.push(`docs/commercial/${f}`);
   return docs.filter((d) => fs.existsSync(path.join(ROOT, d)));

@@ -539,6 +539,8 @@ against nobody. It returns no credential and no hash, and every change is an ent
 
 ## What only the operator can do
 
+The order in which these are done, and what each step proves, is in [cloud-go-live.md](cloud-go-live.md).
+
 | Needs | Because |
 |---|---|
 | A payment provider and the entity that takes the money | Which provider can take payment depends on where the company is established and where its customers are. |

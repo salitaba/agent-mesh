@@ -95,6 +95,10 @@ sections 1 to 24) are described there, run by run.
   is there and the workspace network is internal; whether the folders can be written, the names resolve (the wildcard record), the
   listeners can be had and, given an address, a message goes through the mail server. Each answer is `ok`, `warning` or `problem`,
   and the exit status is 1 on a problem.
+- **A guide to going live.** [docs/cloud-go-live.md](docs/cloud-go-live.md) gives the order in which the service is made ready for
+  a first customer (the licence key, the build, the models, the configuration, mail, the machine, payments in the provider's test
+  mode, a rehearsal as a customer, opening, and what to keep), with what each step proves. The steps that meet a real provider are
+  marked, because nothing here has been run against one.
 - **Licensing.** Offline Ed25519 licence keys (`AML1.…`) verified on the customer's machine with no call out; the plan table
   (Community, Team, Business, Enterprise) with its limits and entitlements; `curule license status|install|verify|remove`;
   a licence card and an expiry banner in the dashboard; `tools/license/mesh-license.mjs` to generate and sign keys.

@@ -28,6 +28,9 @@ a decision, an account or a credential from the operator of the service is state
 | Mail over SMTP, queued on disk with retry, and `curule-cloud mail-check` | `packages/cloud`, `apps/cloud-server` | built and tested against a server that speaks SMTP, with TLS and STARTTLS over a real handshake; no mail provider has been used; [cloud-control-plane.md](cloud-control-plane.md#mail) |
 | Sign up, sign in, billing and workspace pages | `apps/cloud-server/pages` | built and tested (the files, the script on a small DOM, and a pass in a real browser); the terms and the privacy notice are placeholders marked for the operator, and a production service is not started on them; [cloud-control-plane.md](cloud-control-plane.md#the-account-pages) |
 
+The order in which the parts are made ready for a first customer, with what each step proves, is in
+[cloud-go-live.md](cloud-go-live.md).
+
 ## What a customer gets
 
 1. A workspace: one isolated Curule host with its own state, projects and event log. The plan sets how many projects,
