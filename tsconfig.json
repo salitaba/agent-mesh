@@ -20,6 +20,7 @@
       "@mesh/runtime-http": ["packages/runtime-http/src/index.ts"],
       "@mesh/llm": ["packages/llm/src/index.ts"],
       "@mesh/ai-gateway": ["packages/ai-gateway/src/index.ts"],
+      "@mesh/cloud": ["packages/cloud/src/index.ts"],
       "@mesh/runtime-native": ["packages/runtime-native/src/index.ts"],
       "@mesh/observability": ["packages/observability/src/index.ts"],
       "@mesh/persistence": ["packages/persistence/src/index.ts"],

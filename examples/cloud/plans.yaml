@@ -1,0 +1,39 @@
+# The plans a customer can buy on the hosted service (docs/cloud-control-plane.md). The operator owns this file and the
+# code ships no figures: what follows is an example to copy and change, not an offer.
+#
+# Amounts of money are whole minor units of `currency` (cents for USD) so that nothing is rounded. Model usage is in the
+# currency of the model gateway's price table, as a decimal with at most six places.
+
+currency: USD
+
+plans:
+  team:
+    title: Team
+    # The self-hosted plan whose limits a workspace of this plan runs with: seats per mesh, projects, concurrent turns.
+    licence_plan: team
+    price_minor: 14900          # 149.00 each period
+    period: month
+    included_usage: 20          # model usage included each period; replaced, not added to, when the next period is paid
+    workspaces: 1               # workspaces an account may run at once
+    # The payment provider's own id for this price, where it needs one (a hosted-checkout subscription does).
+    provider_price_id: price_REPLACE_WITH_THE_PROVIDERS_ID
+    # The gateway tiers a workspace of this plan may use. Leave it out to allow every tier.
+    tiers: [fast, balanced]
+    summary: One workspace for a team that wants its meshes run for it.
+  business:
+    title: Business
+    licence_plan: business
+    price_minor: 59900
+    period: month
+    included_usage: 100
+    workspaces: 3
+    provider_price_id: price_REPLACE_WITH_THE_PROVIDERS_ID
+    summary: Several workspaces, with every model tier.
+
+topups:
+  # Credit bought on top of a plan. It does not expire, and it is spent after the plan's included usage.
+  options_minor: [1000, 2500, 10000]
+  minimum_minor: 500
+  maximum_minor: 100000
+  # Model usage one minor unit buys, in micro-units of the gateway's currency. 10000 is 0.01 of a unit: a cent buys a cent.
+  usage_micros_per_minor: 10000

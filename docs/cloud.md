@@ -18,9 +18,9 @@ a decision, an account or a credential from the operator of the service is state
 | Provider-neutral runtime, `native` | `packages/runtime-native` | built and tested; [runtime-native.md](runtime-native.md) |
 | Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | built and tested against servers that speak each format; `curule providers check` proves a real provider |
 | Model gateway: virtual keys, budgets, metering ledger, tiers with failover, admin API | `packages/ai-gateway`, `apps/cloud-server` | built and tested against servers that speak each wire format; [ai-gateway.md](ai-gateway.md) |
-| Control plane: accounts, plans, credits, workspaces | `packages/cloud`, `apps/cloud-server` | designed, not built |
-| Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | designed, not built |
-| Workspace provisioner (local process for development, container for production) | `packages/cloud` | designed, not built |
+| Control plane: accounts, plans, credits, workspaces | `packages/cloud` | core built and tested; no HTTP interface yet; [cloud-control-plane.md](cloud-control-plane.md) |
+| Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | built and tested; the hosted-checkout adapter against servers that answer in the provider's documented shapes, not the live service |
+| Workspace provisioner (local process for development, container for production) | `packages/cloud` | built and tested against a recording engine; no real container has been started |
 | Authenticating edge proxy for the dashboard and its event stream | `apps/cloud-server` | designed, not built |
 | Sign up, billing and workspace pages | `apps/cloud-server` | designed, not built |
 
@@ -85,9 +85,10 @@ tier answers; what the caller is told about a failure is the same for every prov
 
 ### Control plane
 
-Accounts, organisations, plans, credits, workspaces and their lifecycle (created, running, suspended for non-payment,
-deleted). Its state is an append-only log with projections, like the kernel's, behind a store interface so a database can
-replace the file when one process is no longer enough.
+Accounts, plans, credits, workspaces and their lifecycle (created, running, suspended for non-payment, deleted). Its state
+is an append-only log with projections, like the kernel's, behind a store interface so a database can replace the file when
+one process is no longer enough. The reference, including what each payment event does, is
+[cloud-control-plane.md](cloud-control-plane.md).
 
 - **Sign in.** Email and password (scrypt), sessions in an `HttpOnly`, `SameSite=Lax` cookie, a request-origin check on
   every mutating call, rate limits on sign-in and sign-up, and answers that do not reveal whether an email has an
