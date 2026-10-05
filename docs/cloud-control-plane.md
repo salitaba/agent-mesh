@@ -253,6 +253,34 @@ prints what the service would run (no secret is in it), and touches nothing.
 - A hosted checkout for a catalogue in which a plan has no `provider_price_id`, listeners on the same address, and the
   owner API open to every interface (allowed, and warned of).
 
+**Looking at what the configuration points at.** `--check` says whether a file is consistent. `preflight` goes on to look at what the
+file names, and says what would fail a customer, so that mistakes in the world around the service are found at deploy time and not
+by the first person to sign up:
+
+```bash
+npm run cloud -- preflight --config control.yaml [--mail-to you@example.com]
+```
+
+Each check is independent, so one that fails does not hide the next, and each answer is `ok`, a `warning` (allowed, and worth reading)
+or a `problem` (the service would fail a customer). The exit status is 1 when there is a problem. It sends nothing to a customer; it
+asks for the gateway's health, asks the engine to inspect, and makes and removes one empty file in each folder the service writes.
+It sends a message only when it is given an address to send it to.
+
+| Looks at | A problem when | A warning when |
+|---|---|---|
+| The configuration | It is not valid (every problem is listed, and nothing else is looked at) | `--check` would warn of something |
+| Folders the service writes (the log, the mail spool or outbox, a trial's workspaces) | A file cannot be made there, or in the nearest folder above that exists | |
+| The model gateway (`GET /admin/health` with the admin token) | It cannot be reached, refuses the token, answers something else, says it is not well, or does not have a tier that a plan lets a workspace use | The ledger is kept in another currency than the plans are sold in; the address workspaces call does not accept a connection from here |
+| The container engine, its image and the workspace network | The engine cannot be run, or the network does not exist or is not internal | The image is not here (it is pulled at the first workspace); the egress proxy does not accept a connection from here, or there is none |
+| The names customers use | | The app's host, or a name under the workspace domain, does not resolve (the wildcard record) |
+| The listeners | | An address cannot be listened on (it may be this service, already running) |
+| Mail | With `--mail-to`: the message is not taken | The configuration writes mail to a file |
+
+A network that is not internal is the one check that cannot be a warning: it is the one thing the network is there to prevent. What
+`preflight` cannot see from one machine is whether a workspace on the network really has no route to the control plane, to another
+workspace or to a cloud metadata address, and whether the certificate covers `*.<workspace domain>`; those are the operator's to prove
+from a container on the network and from a browser.
+
 **Two listeners.** The public one serves the app's host (the API, and the pages when there are any), every workspace host
 (through the edge), and `/healthz` on any host, for a load balancer that asks by address. A request for any other host is
 answered 404. The owner's is a separate listener behind its own token: keep it off any network a customer can reach.

@@ -28,6 +28,7 @@ npm run qa:console -- --base <url> --token <t>   # visual pass over every view (
 npm run qa:walk -- --base <url> --token <t> --project <id>   # a person's session on the scripted demo (needs playwright-core, Chrome)
 npm run cloud -- trial [--port 7500] [--dir <folder>]   # the hosted service on this machine, with stand-ins for what costs money
 npm run cloud -- mail-check --config <control.yaml> --to <address>   # send one message through the configured SMTP server and say what it answered
+npm run cloud -- preflight --config <control.yaml> [--mail-to <address>]   # look at what the configuration points at: gateway, engine, network, folders, names, mail
 npm run qa:cloud -- --base <url> --outbox <control/outbox.jsonl>   # a customer's session on a trial (needs playwright-core, axe-core, Chrome)
 ```
 

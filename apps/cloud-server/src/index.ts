@@ -4,6 +4,7 @@
  *   curule-cloud gateway --config gateway.yaml [--check]
  *   curule-cloud control --config control.yaml [--check]
  *   curule-cloud mail-check --config control.yaml --to <address>
+ *   curule-cloud preflight --config control.yaml [--mail-to <address>]
  *   curule-cloud trial [--port 7500] [--dir <folder>]
  *
  * `gateway` runs the model gateway: the one process that holds provider credentials and the ledger of what workspaces spend.
@@ -11,12 +12,14 @@
  * workspace behind its own address, and the operator's API. With `--check` either reads and validates its configuration,
  * prints what it would run, and exits without listening, so a change can be proved before it is deployed. `mail-check` sends one
  * message through the mail server the control plane's configuration names and says what the server answered, so that mail is
- * proved before the first customer asks for a confirmation link. `trial` runs both on this machine with nothing real behind them
- * (a stand-in model, a payment page of its own, mail that is printed), so the service can be tried and shown before anything is
- * paid for.
+ * proved before the first customer asks for a confirmation link. `preflight` looks at what the configuration points at (the
+ * gateway, the container engine and its network, the folders, the names, the mail server) and says what would fail a customer.
+ * `trial` runs both on this machine with nothing real behind them (a stand-in model, a payment page of its own, mail that is
+ * printed), so the service can be tried and shown before anything is paid for.
  */
 import { formatMoney, loadGatewayConfig, startGateway, type GatewayConfig } from "../../../packages/ai-gateway/src/index";
 import { SmtpError, describeControl, loadControlConfig, loadMailConfig, mailbox, smtpTransportFor, startControl } from "../../../packages/cloud/src/index";
+import { describePreflight, preflight, type PreflightDeps } from "./preflight";
 import { DEFAULT_TRIAL_PORT, describeTrial, startTrial, trialPorts } from "./trial";
 
 export const USAGE = `Usage: curule-cloud <command>
@@ -25,6 +28,7 @@ Commands:
   gateway --config <gateway.yaml> [--check]                 run the model gateway (--check validates the file and exits)
   control --config <control.yaml> [--check]                 run the control plane: accounts, payments, workspaces, the public API and the owner API
   mail-check --config <control.yaml> --to <address>         send one message through the configured mail server, and say what it answered
+  preflight --config <control.yaml> [--mail-to <address>]   look at what the configuration points at (gateway, container engine and network, folders, names, mail), and say what would fail a customer
   trial [--port <n>] [--dir <folder>]                       the whole service on this machine, with nothing real behind it (default port 7500; a named folder is kept)
   help                                                      show this text`;
 
@@ -232,6 +236,37 @@ async function runMailCheck(args: string[], env: NodeJS.ProcessEnv, io: Io): Pro
   return 0;
 }
 
+/** Look at what a control plane's configuration points at, and say what would fail a customer. Exits 1 when something would. */
+async function runPreflight(args: string[], env: NodeJS.ProcessEnv, io: Io, deps: PreflightDeps): Promise<number> {
+  let file: string | undefined;
+  let mailTo: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--config") file = args[++i];
+    else if (a.startsWith("--config=")) file = a.slice("--config=".length);
+    else if (a === "--mail-to") mailTo = args[++i];
+    else if (a.startsWith("--mail-to=")) mailTo = a.slice("--mail-to=".length);
+    else {
+      io.err(`curule-cloud preflight: unknown option '${a}'\n${USAGE}`);
+      return 1;
+    }
+  }
+  if (!file) {
+    io.err(`curule-cloud preflight: --config is required\n${USAGE}`);
+    return 1;
+  }
+  if (mailTo === "" || (args.includes("--mail-to") && mailTo === undefined)) {
+    io.err(`curule-cloud preflight: --mail-to needs an address\n${USAGE}`);
+    return 1;
+  }
+  const findings = await preflight(file, env, mailTo !== undefined ? { mailTo } : {}, deps);
+  const { lines, problems, warnings } = describePreflight(findings);
+  for (const line of lines) io.out(line);
+  const said = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  io.out(problems > 0 ? `preflight found ${said(problems, "problem")} and ${said(warnings, "warning")}: the service would fail a customer` : `preflight found no problem${warnings > 0 ? ` and ${said(warnings, "warning")} to read` : ""}`);
+  return problems > 0 ? 1 : 0;
+}
+
 async function runTrial(args: string[], io: Io, start: typeof startTrial): Promise<number> {
   let port = DEFAULT_TRIAL_PORT;
   let dir: string | undefined;
@@ -276,6 +311,7 @@ export async function main(
   start: typeof startGateway = startGateway,
   startControlPlane: typeof startControl = startControl,
   startTrialRun: typeof startTrial = startTrial,
+  preflightDeps: PreflightDeps = {},
 ): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
@@ -285,6 +321,8 @@ export async function main(
       return runControl(rest, env, io, startControlPlane);
     case "mail-check":
       return runMailCheck(rest, env, io);
+    case "preflight":
+      return runPreflight(rest, env, io, preflightDeps);
     case "trial":
       return runTrial(rest, io, startTrialRun);
     case "help":
