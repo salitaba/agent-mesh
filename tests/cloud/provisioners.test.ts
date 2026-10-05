@@ -458,8 +458,11 @@ test("what a host prints is kept beside its workspace, where only its owner can 
     assert.ok(!fs.readdirSync(path.join(l.dir, "ws_abc123", "projects")).length, "and it is not among the workspace's own files");
     await l.p.suspend("ws_abc123");
     await l.p.resume("ws_abc123");
-    await new Promise((r) => setTimeout(r, 400));
-    assert.match(fs.readFileSync(file, "utf8"), /^(the host is up\nand one thing it complains of\n){2}$/, "a host that is started again adds to it");
+    // The second host is a new process, which a busy machine takes longer than any fixed time to start.
+    const twice = /^(the host is up\nand one thing it complains of\n){2}$/;
+    const again = Date.now() + 10_000;
+    while (!twice.test(fs.readFileSync(file, "utf8")) && Date.now() < again) await new Promise((r) => setTimeout(r, 25));
+    assert.match(fs.readFileSync(file, "utf8"), twice, "a host that is started again adds to it");
     await l.p.stopAll();
   } finally {
     l.done();
