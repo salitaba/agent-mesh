@@ -1128,6 +1128,12 @@ interface TurnState {
   /** The summary a `done` op stated, so the turn can report it. */
   declaredSummary?: string;
   /**
+   * Each artifact's version at the moment the turn began, by id: what the seat's briefing could show it. A verdict on an
+   * artifact that has moved past this since, which the turn has not read, is a verdict on content the seat has not seen
+   * (`verdict.unread-version`). Absent on an op run outside a turn.
+   */
+  versionsAtStart?: ReadonlyMap<string, number>;
+  /**
    * What this turn has landed on the mesh so far, counted from the events the kernel correlates to it. `done` reads it:
    * a seat that said it is waiting and has made nothing has not finished the task it holds. Absent on an op run outside a
    * turn, which reads as "no information" and completes as before.
@@ -5675,6 +5681,43 @@ export class Supervisor {
   }
 
   /**
+   * The refusal for an approve or a reject of a version this turn has not seen, or undefined when the verdict may stand.
+   *
+   * Seen means: the version existed when the turn began (the briefing could list it), or the turn read it
+   * (`read_artifact`), or this seat published it in the turn. A seat gets the third for free because it wrote the content.
+   *
+   * The eighteenth cronlite run's tech lead began a turn at 03:33:51 to review the implementation. It had rejected the first
+   * versions of the developer's CLI and test patches at 03:31 ("descriptions, not code"), and the developer published a second
+   * version of each at 03:34:02 and 03:34:05. The tech lead rejected both again at 03:34:34 and 03:34:35 with "still contains
+   * descriptions rather than code", which was true of the versions it remembered. It had not read the new ones. Each rejection was recorded against the
+   * current version, the patches were REJECTED with the code the tech lead went on to approve, and the mission, with every
+   * criterion evidenced at 03:35:04, could not complete until the developer was woken by the stall watchdog 2 min 47 s later
+   * to archive them (3 min 25 s, and three turns of 43.4k tokens that did nothing else, in a 14-minute round).
+   *
+   * Not for `pass` (the verdict of the seats that run what they test: a worktree is read by running it, and the
+   * verification stamp already records which commit a report measured; an approve from a seat that holds only the pass
+   * has become one by the time this runs), `veto`, `block`, a verdict on a criterion, or a verdict on a domain with no
+   * artifact. An op run outside a turn (the operator's, or a seat's between turns) has no baseline and passes.
+   */
+  private unreadVersionRefusal(actorId: string, kind: ApprovalKind, subject: string, artifact: Artifact | undefined): string | undefined {
+    if (!artifact || (kind !== "approve" && kind !== "reject") || subject.startsWith("criterion:")) return undefined;
+    const turn = this.liveTurnByAgent.get(actorId);
+    if (!turn?.versionsAtStart) return undefined;
+    const had = turn.versionsAtStart.get(artifact.id) ?? 0;
+    if (artifact.version <= had) return undefined;
+    const read = this.turnArtifactReads.get(actorId);
+    if (read?.turnId === turn.turnId && (read.reads.get(artifact.id) ?? 0) >= artifact.version) return undefined;
+    const wrote = this.turnPublishedVersions.get(actorId);
+    if (wrote?.turnId === turn.turnId && wrote.versions.get(artifact.id) === artifact.version) return undefined;
+    const when = had > 0 ? `it was v${had} when your turn began and has been published since` : "it did not exist when your turn began";
+    return (
+      `${artifact.type} "${artifact.name}" is v${artifact.version} now: ${when}, and you have not read it in this turn. Nothing was recorded: a verdict names the ` +
+      `artifact, so a ruling reached on what you saw earlier would land on this version. Read it (mesh_artifact_read ${artifactUri(artifact.type, artifact.name, artifact.version)}) ` +
+      `and rule on what it says.`
+    );
+  }
+
+  /**
    * @param citedUri The `artifact://…/<version>` the caller actually reviewed, when
    *   it supplied one. Checked against the artifact's CURRENT version, because
    *   nothing else in the pipeline does: `resolveArtifactRef` throws the version
@@ -5887,6 +5930,15 @@ export class Supervisor {
         await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason, ruleId: "verdict.stale-version" });
         return { ok: false, reason };
       }
+    }
+    // A verdict on a version the seat's turn has not seen. The tools name the artifact and not a version, so a ruling reached on
+    // the version the seat knew lands on the one published since (the reducer drops the old version's verdicts and keeps the
+    // artifact), and a rejection there leaves a REJECTED patch that nobody asked to be rejected. The stale-version check above
+    // catches a seat that cites a version; this one catches the seat that cites none.
+    const unread = this.unreadVersionRefusal(actorId, kind, subject, artifact);
+    if (unread) {
+      await this.denied(actorId, artifactId, `${kind} ${subject}`, { decision: "DENY", reason: unread, ruleId: "verdict.unread-version" });
+      return { ok: false, reason: unread };
     }
     // A seat that passes the verification report it wrote has put it forward as the evidence of its verdict,
     // so it is submitted with the pass. Left a DRAFT, the pass could not settle it ("move it to review first"
@@ -8395,7 +8447,9 @@ export class Supervisor {
         },
       };
 
-      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [], handover: handover !== null, landed };
+      const versionsAtStart = new Map<string, number>();
+      for (const a of this.state.artifacts.values()) versionsAtStart.set(a.id, a.version);
+      const turn: TurnState = { turnId, agentId, reason, sentOps: 0, publishedOps: 0, waitRequested: false, escalated: false, results: [], handover: handover !== null, landed, versionsAtStart };
       this.liveTurnByAgent.set(agentId, turn);
       // Open the verification tally BEFORE the runtime runs. MCP ops execute
       // during the call, and with no entry `claimIsVerified` reads "no turn in

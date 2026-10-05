@@ -307,6 +307,28 @@ kept beside it: a required property is its bare name, an optional one carries `?
 and its summary and nothing of what it takes, and `mesh_contracts`, which says, was never called.
 The refusal names the expected schema and every seat recovered, at a round trip each.
 
+### A verdict names the version the seat has seen
+
+`mesh_approve` and `mesh_reject` name an artifact, not a version, so a ruling lands on whatever version is current. Two refusals keep a
+ruling from landing on content its author never read, and both record nothing:
+
+- `verdict.stale-version`: the seat cited a version (`artifact://…/1`) and the artifact is now at another. "You cited v1 but the patch is
+  now v2."
+- `verdict.unread-version`: the seat cited none, and the current version was published after its turn began and the turn has not read
+  it. The mesh takes each artifact's version when a turn starts (`TurnState.versionsAtStart`, what the briefing could list) and the
+  versions the turn read with `read_artifact`; a version above both is unseen. The refusal says what the version was at the turn's start,
+  that it is newer, and which `mesh_artifact_read` to make; the seat reads it and rules in the same turn.
+
+The second exists because of what a rejection does. The eighteenth cronlite run's tech lead had rejected the first versions of the developer's
+CLI and test patches ("descriptions, not code"), and rejected them again at 03:34:34 ("still contains descriptions rather than code"), half a
+minute after the developer had published a second version of each. It had not read them. Both rejections were recorded against the new versions, the patches were REJECTED with the code the
+tech lead then approved, and the mission, every criterion evidenced, could not complete until the developer archived them: 3 min 25 s.
+
+What it leaves alone: a version that existed when the turn began (the seat may have read it in an earlier turn, and a briefing lists
+references, not contents), a version the seat published in the turn, a `pass` (the verdict of the seats that run what they test, and an
+`approve` from a seat that holds only the pass is one), `veto`, `block`, a verdict on a criterion or on a domain with no artifact, and any
+op run outside a turn, which has no baseline.
+
 ### Evidence for a criterion
 
 A mandatory criterion closes by `approve subject:"criterion:<id>"` from a seat holding
