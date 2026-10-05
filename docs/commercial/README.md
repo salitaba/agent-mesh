@@ -21,8 +21,9 @@ The architecture, protocol and configuration references are in the other files o
 ## The short version
 
 - **Self-hosted.** One container (or pod) per tenant. Nothing phones home: no telemetry, no licence server.
-- **Your model credentials.** Anthropic, Amazon Bedrock, Google Cloud or Microsoft Foundry, billed to you by
-  the provider. The plans are for the runtime only.
+- **Your model credentials.** Any provider the native runtime speaks (OpenAI-compatible endpoints, the Anthropic
+  API), or Claude Code on Anthropic, Amazon Bedrock, Google Cloud or Microsoft Foundry, billed to you by the
+  provider. The plans are for the runtime only.
 - **Free to start.** The Community plan (one open project, eight agents) needs no licence and never expires.
 - **Source-available.** The code is public under the Business Source License 1.1 ([LICENSE](../../LICENSE)): free to
   read and run, free for production within the Community plan, a commercial licence beyond it

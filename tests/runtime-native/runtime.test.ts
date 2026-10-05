@@ -84,7 +84,7 @@ test("the system prompt is the seat's role with the shared voice rules and the r
   const bus = await fakeBus();
   const r = rig();
   try {
-    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rt = runtimeFor(provider);
     const session = await rt.start(agent(), context(r, bus));
     await rt.send(session, turnInput());
@@ -122,7 +122,7 @@ test("the seat's own file tools run in its workspace and what they return reache
     fs.writeFileSync(path.join(r.workspace, "notes.txt"), "alpha\nbeta\n");
     const provider = new ScriptedProvider([
       { tools: [{ name: "Read", args: { file_path: "notes.txt" }, id: "r1" }, { name: "Grep", args: { pattern: "beta", output_mode: "content" }, id: "g1" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "ok" },
     ]);
     const rt = runtimeFor(provider);
@@ -144,7 +144,7 @@ test("a tool the seat has no capability for is refused by the gate, in the gate'
   try {
     const provider = new ScriptedProvider([
       { tools: [{ name: "Write", args: { file_path: "x.txt", content: "x" }, id: "w1" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "ok" },
     ]);
     const rt = runtimeFor(provider);
@@ -167,13 +167,13 @@ test("a tool behind an operator's approval is held and reported, and runs once t
   try {
     const provider = new ScriptedProvider([
       { tools: [{ name: "Bash", args: { command: "echo hi" }, id: "b1" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "waiting" },
       { tools: [{ name: "Bash", args: { command: "echo hi" }, id: "b2" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "ran" },
       { tools: [{ name: "Bash", args: { command: "echo hi" }, id: "b3" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "held again" },
     ]);
     const rt = runtimeFor(provider);
@@ -215,6 +215,50 @@ test("a seat that ends its turn without calling a mesh tool is told once, in the
   } finally {
     r.cleanup();
     await bus.close();
+  }
+});
+
+test("a seat that finishes with mesh_done is finished: the mesh took it plainly, so no call is spent on a goodbye", async () => {
+  const bus = await fakeBus();
+  const r = rig();
+  try {
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_send", id: "t1" }], usage: { input: 100, output: 10 } },
+      { text: "all done", tools: [{ name: "mesh_done", args: { summary: "did it" }, id: "t2" }], usage: { input: 150, output: 12 } },
+      { text: "never asked for", usage: { input: 999, output: 999 } },
+    ]);
+    const rt = runtimeFor(provider);
+    const session = await rt.start(agent(), context(r, bus));
+    const events = await collect(rt.stream(session, turnInput()));
+    assert.equal(provider.requests.length, 2);
+    const end = turnEnd(events);
+    assert.equal(end.stopReason, "end_turn");
+    assert.equal(end.text, "all done", "what the seat said alongside the call is its reply");
+    assert.deepEqual(end.tokensUsed, { input: 250, output: 22, total: 272, cacheRead: 0 });
+    // The conversation ends on the call's result; the next turn's briefing follows it, which both wire formats accept.
+    await rt.send(session, turnInput("next"));
+    assert.deepEqual(provider.requests[2]!.messages.map((m) => m.role), ["user", "assistant", "tool", "assistant", "tool", "user"]);
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
+test("a mesh_done that comes back with a note, or an error, is not the end: the seat has to read it", async () => {
+  for (const answer of [{ text: '{"ok":true,"note":"task t1 stays claimed by you: this turn waited and made nothing"}' }, { text: '{"ok":false,"error":"refused"}', isError: true }, { text: "not json" }]) {
+    const bus = await fakeBus((name) => (name === "mesh_done" ? answer : { text: '{"ok":true}' }));
+    const r = rig();
+    try {
+      const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "I will complete it properly" }]);
+      const rt = runtimeFor(provider);
+      const session = await rt.start(agent(), context(r, bus));
+      const end = turnEnd(await collect(rt.stream(session, turnInput())));
+      assert.equal(provider.requests.length, 2, JSON.stringify(answer));
+      assert.equal(end.text, "I will complete it properly");
+    } finally {
+      r.cleanup();
+      await bus.close();
+    }
   }
 });
 
@@ -266,7 +310,7 @@ test("arguments that are not a JSON object are answered with what was sent, and 
   const r = rig();
   try {
     fs.writeFileSync(path.join(r.workspace, "a.txt"), "x");
-    const provider = new ScriptedProvider([{ tools: [{ name: "Read", invalid: '{"file_path": "a.txt"', id: "bad" }] }, { tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "Read", invalid: '{"file_path": "a.txt"', id: "bad" }] }, { tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rt = runtimeFor(provider);
     const session = await rt.start(agent(), context(r, bus));
     const events = await collect(rt.stream(session, turnInput()));
@@ -419,7 +463,7 @@ test("interrupting while a command runs stops the command, and the call is answe
   const bus = await fakeBus();
   const r = rig();
   try {
-    const provider = new ScriptedProvider([{ tools: [{ name: "Bash", args: { command: "echo started; sleep 30" }, id: "b1" }] }, { tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "Bash", args: { command: "echo started; sleep 30" }, id: "b1" }] }, { tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rt = runtimeFor(provider);
     const session = await rt.start(agent({ capabilities: ["test.execute"] }), context(r, bus));
     const seen: AgentEvent[] = [];
@@ -496,7 +540,7 @@ test("a batch of calls cut short by an interrupt leaves every call answered, tho
     fs.writeFileSync(path.join(r.workspace, "a.txt"), "x");
     const provider = new ScriptedProvider([
       { tools: [{ name: "Bash", args: { command: "sleep 30" }, id: "b1" }, { name: "Read", args: { file_path: "a.txt" }, id: "r1" }] },
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "ok" },
     ]);
     const rt = runtimeFor(provider);
@@ -544,7 +588,7 @@ test("the status follows the seat: idle, running, parked, gone", async () => {
   const r = rig();
   try {
     const started = gate();
-    const provider = new ScriptedProvider([{ hang: true, before: () => started.open() }, { tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ hang: true, before: () => started.open() }, { tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rt = runtimeFor(provider);
     const ctx = context(r, bus);
     const session = await rt.start(agent(), ctx);
@@ -591,7 +635,7 @@ test("a seat's shell never holds the provider key, the mesh's tokens, or (in min
   const r = rig();
   try {
     for (const [mode, expectOther] of [["inherit", true], ["minimal", false]] as const) {
-      const provider = new ScriptedProvider([{ tools: [{ name: "Bash", args: { command: "env" }, id: "b" }] }, { tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+      const provider = new ScriptedProvider([{ tools: [{ name: "Bash", args: { command: "env" }, id: "b" }] }, { tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
       const rt = runtimeFor(provider, {
         providers: { scripted: { kind: "openai-compatible", baseUrl: "http://unused.invalid/v1", keyEnv: "SCRIPTED_API_KEY" } },
         env: { PATH: process.env.PATH, HOME: "/home/x", SCRIPTED_API_KEY: "sk-very-secret", MESH_API_TOKEN: "operator-token", OTHER: "visible" },
@@ -619,7 +663,7 @@ test("a model names its provider as provider/model, split on the first slash; a 
       openrouter: { kind: "openai-compatible" as const, baseUrl: "http://a.invalid/v1" },
       local: { kind: "openai-compatible" as const, baseUrl: "http://b.invalid/v1" },
     };
-    const make = (name: string) => new ScriptedProvider([(req) => (seen.push(`${name}:${req.model}`), { tools: [{ name: "mesh_done" }] }), { text: "ok" }]);
+    const make = (name: string) => new ScriptedProvider([(req) => (seen.push(`${name}:${req.model}`), { tools: [{ name: "mesh_send" }] }), { text: "ok" }]);
     const byName: Record<string, ScriptedProvider> = { "a.invalid": make("openrouter"), "b.invalid": make("local") };
     const rt = new NativeRuntime({
       providers,
@@ -663,7 +707,7 @@ test("prompt caching is asked for only of a provider that caches on request", as
   const r = rig();
   try {
     for (const [kind, want] of [["anthropic", true], ["openai-compatible", false]] as const) {
-      const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "ok" }], kind);
+      const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "ok" }], kind);
       const rt = runtimeFor(provider, { providers: { scripted: { kind } } });
       const session = await rt.start(agent(), context(r, bus));
       await rt.send(session, turnInput());
@@ -679,7 +723,7 @@ test("model settings reach the call: the output cap, the effort and the temperat
   const bus = await fakeBus();
   const r = rig();
   try {
-    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rt = runtimeFor(provider, { models: { "m-1": { maxOutputTokens: 4096, effort: "low", temperature: 0.2 } } });
     const session = await rt.start(agent(), context(r, bus));
     const end = turnEnd(await collect(rt.stream(session, turnInput())));
@@ -737,9 +781,9 @@ test("the handover turn runs on the old conversation; the turn after it starts a
     const provider = new ScriptedProvider([
       { tools: [{ name: "mesh_send" }], usage: { input: 700, output: 10 } },
       { text: "first done", usage: { input: 750, output: 10 } },
-      { tools: [{ name: "mesh_done" }], usage: { input: 760, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 760, output: 10 } },
       { text: "continuity written", usage: { input: 765, output: 10 } },
-      { tools: [{ name: "mesh_done" }], usage: { input: 100, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 100, output: 10 } },
       { text: "fresh", usage: { input: 110, output: 10 } },
     ]);
     const rt = runtimeFor(provider, { contextWindow: 1000, onRotate: (i) => rotations.push(i) });
@@ -800,7 +844,7 @@ test("a prompt the model refuses for its size is shrunk once, and then the conve
       { tools: [{ ...big, id: "b5" }] },
       overflow(), // shrink
       overflow(), // still too long: rotate
-      { tools: [{ name: "mesh_done" }] },
+      { tools: [{ name: "mesh_send" }] },
       { text: "recovered" },
     ]);
     const rt = runtimeFor(provider, { onNotice: (n) => void (n.kind === "context_overflow" && notices.push(n.kind)) });
@@ -865,7 +909,7 @@ test("a conversation is kept on disk and resumed by a new process, from the id t
     const session = await rtA.start(agent(), context(r, bus));
     await rtA.send(session, turnInput("first briefing"));
 
-    const second = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "resumed" }]);
+    const second = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "resumed" }]);
     const rtB = runtimeFor(second, { stateDir: state, contextWindow: 500 });
     const restored = await rtB.restoreSession(agent(), session.sessionId, context(r, bus));
     assert.ok(restored);
@@ -901,7 +945,7 @@ test("a conversation a kill cut short resumes cleanly: a torn last line is dropp
         '{"type":"message","role":"tool","toolCallId":"x2","na', // cut mid-write
       ].join("\n"),
     );
-    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rtB = runtimeFor(provider, { stateDir: state });
     const restored = await rtB.restoreSession(agent(), session.sessionId, context(r, bus));
     assert.ok(restored);
@@ -932,7 +976,7 @@ test("a line that does not parse ends the conversation there, and the file is cu
       file,
       [JSON.stringify({ type: "message", role: "user", content: "briefing" }), "{not json", JSON.stringify({ type: "message", role: "assistant", content: "after the damage" })].join("\n"),
     );
-    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_done" }] }, { text: "ok" }]);
+    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "ok" }]);
     const rtB = runtimeFor(provider, { stateDir: state });
     const restored = await rtB.restoreSession(agent(), session.sessionId, context(r, bus));
     assert.ok(restored);

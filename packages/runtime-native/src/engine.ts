@@ -98,6 +98,8 @@ export class TurnLoop {
   /** What the last model call was handed: the size of the conversation. */
   lastPromptTokens = 0;
   meshCalls = 0;
+  /** The seat called `mesh_done` and the mesh accepted it plainly: the turn is over. */
+  private finished = false;
   private reminded = false;
   private continuations = 0;
   private overflows = 0;
@@ -148,6 +150,9 @@ export class TurnLoop {
 
       if (result.toolCalls.length > 0) {
         yield* this.runTools(result.toolCalls);
+        // `mesh_done` is how a seat says its turn is over. When the mesh took it without a word to the contrary, another
+        // call would only be the model saying goodbye, on a prompt the size of the whole conversation.
+        if (this.finished) return this.end("end_turn");
         continue;
       }
       if (result.stopReason === "max_tokens" && this.continuations < MAX_CONTINUATIONS) {
@@ -248,6 +253,7 @@ export class TurnLoop {
         }
       }
       if (outcome.mesh) this.meshCalls++;
+      if (isCleanDone(call, outcome)) this.finished = true;
       const text = outcome.text.length > MAX_TOOL_RESULT_CHARS ? `${outcome.text.slice(0, MAX_TOOL_RESULT_CHARS)}\n[result cut at ${MAX_TOOL_RESULT_CHARS} characters]` : outcome.text;
       results.push({ role: "tool", toolCallId: call.id, name: call.name, content: text, ...(outcome.isError ? { isError: true } : {}) });
       yield {
@@ -264,5 +270,19 @@ export class TurnLoop {
       last.content += `\n\n[notice from the mesh]\n${notes.join("\n\n")}`;
     }
     this.append(...results);
+  }
+}
+
+/**
+ * A `mesh_done` the mesh accepted with nothing to add. A refusal (`ok: false`, or an answer that is not the bus's JSON at all), or an
+ * acceptance that carries a note (a task kept claimed, say), is something the seat has to read, so it is not the end.
+ */
+function isCleanDone(call: ToolCall, outcome: ToolOutcome): boolean {
+  if (call.name !== "mesh_done") return false;
+  try {
+    const body = JSON.parse(outcome.text) as Record<string, unknown>;
+    return body.ok === true && body.note === undefined && body.error === undefined;
+  } catch {
+    return false;
   }
 }

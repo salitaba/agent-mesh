@@ -25,6 +25,7 @@ import {
   type MessageType,
   type GitMode,
 } from "../../protocol/src/index";
+import { resolveProviderModel } from "../../llm/src/index";
 
 /**
  * Model that derives acceptance criteria when `mesh.criteria_model` is unset.
@@ -124,6 +125,15 @@ export interface RawMeshFile {
        * proxies and CA variables are kept either way. See `host-isolation.ts`.
        */
       isolate_host?: boolean;
+      /** The native runtime's providers, by the name a seat's `model: provider/model` uses. */
+      providers?: Record<string, RawProvider>;
+      default_provider?: string;
+      /** Settings per bare model id. */
+      models?: Record<string, RawModelSettings>;
+      /** Which runtime answers the designer's chat. Defaults to the default runtime when that is `native`. */
+      designer?: "claude" | "native";
+      designer_model?: string;
+      native?: { shell_env?: "inherit" | "minimal"; extra_read_roots?: string[]; max_steps?: number };
     };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
     /**
@@ -751,6 +761,11 @@ export interface ResolvedMeshConfig {
    */
   defaultStaleAfterMs?: number;
   /**
+   * `mesh.runtime.providers` and the settings that go with them, for the native runtime. Absent when the mesh declares no
+   * provider and runs no seat on `native`.
+   */
+  native?: NativeRuntimeSpec;
+  /**
    * `mesh.runtime.isolate_host`: seats run without the launching machine's Claude
    * settings and without an outer session's environment. Absent means off, which is
    * how every mesh has behaved.
@@ -911,6 +926,167 @@ export interface ResolvedMeshConfig {
     turnSilenceMs: number;
   };
   server: { host: string; port: number; dashboard: boolean };
+}
+
+/** One entry of `mesh.runtime.providers`, as written. */
+export interface RawProvider {
+  kind: "openai-compatible" | "anthropic";
+  base_url?: string;
+  /** The environment variable the key is read from. A key is never written in mesh.yaml. */
+  api_key_env?: string;
+  headers?: Record<string, string>;
+  auth_header?: "x-api-key" | "bearer";
+  max_tokens_field?: "max_tokens" | "max_completion_tokens";
+  stream_usage?: boolean;
+  effort_field?: string | false;
+  default_max_output_tokens?: number;
+  context_window?: number;
+  cache_ttl_ms?: number;
+  idle_timeout_ms?: number;
+  max_retries?: number;
+}
+
+export interface RawModelSettings {
+  context_window?: number;
+  max_output_tokens?: number;
+  effort?: "low" | "medium" | "high";
+  temperature?: number;
+}
+
+/** A provider as the native runtime is configured with it. */
+export interface NativeProviderSpec {
+  kind: "openai-compatible" | "anthropic";
+  baseUrl?: string;
+  apiKeyEnv?: string;
+  headers?: Record<string, string>;
+  authHeader?: "x-api-key" | "bearer";
+  maxTokensField?: "max_tokens" | "max_completion_tokens";
+  streamUsage?: boolean;
+  effortField?: string | false;
+  defaultMaxOutputTokens?: number;
+  contextWindow?: number;
+  cacheTtlMs?: number;
+  idleTimeoutMs?: number;
+  maxRetries?: number;
+}
+
+export interface NativeModelSpec {
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  effort?: "low" | "medium" | "high";
+  temperature?: number;
+}
+
+/** `mesh.runtime.providers` and what goes with it, resolved. Present when the mesh declares providers or runs a seat on `native`. */
+export interface NativeRuntimeSpec {
+  providers: Record<string, NativeProviderSpec>;
+  defaultProvider?: string;
+  models: Record<string, NativeModelSpec>;
+  designer: "claude" | "native";
+  designerModel?: string;
+  shellEnv?: "inherit" | "minimal";
+  /** Absolute. */
+  extraReadRoots: string[];
+  maxSteps?: number;
+}
+
+/**
+ * `mesh.runtime.providers` and the rest of the native runtime's settings, checked and resolved.
+ *
+ * The checks that would otherwise surface on a seat's first turn, long after the mesh looked healthy, are made here: a
+ * provider that cannot be reached without a base URL, a default that names nothing, and every seat on `native` whose model
+ * cannot be placed. A key that is not set in the environment is NOT an error here, since a config is read in places the
+ * secret is not; the server says so at boot.
+ */
+function resolveNativeRuntime(
+  raw: RawMeshFile,
+  dir: string,
+  agentIds: string[],
+  defaultRuntime: string,
+  errors: string[],
+  warnings: string[],
+): NativeRuntimeSpec | undefined {
+  const rt = raw.mesh.runtime;
+  const nativeSeats = agentIds.filter((id) => (raw.agents[id].runtime ?? defaultRuntime) === "native");
+  const providersRaw = rt?.providers ?? {};
+  const names = Object.keys(providersRaw);
+  const designer = rt?.designer ?? (defaultRuntime === "native" ? "native" : "claude");
+  if (names.length === 0 && nativeSeats.length === 0 && designer !== "native" && !rt?.models && !rt?.native) return undefined;
+
+  const providers: Record<string, NativeProviderSpec> = {};
+  for (const [name, p] of Object.entries(providersRaw)) {
+    const at = `mesh.runtime.providers.${name}`;
+    if (p.kind === "openai-compatible" && !p.base_url) {
+      errors.push(`${at}: kind openai-compatible needs base_url (for example https://api.openai.com/v1)`);
+    }
+    if (p.base_url) {
+      let url: URL | undefined;
+      try {
+        url = new URL(p.base_url);
+      } catch {
+        errors.push(`${at}.base_url '${p.base_url}' is not a URL`);
+      }
+      if (url && url.protocol !== "http:" && url.protocol !== "https:") errors.push(`${at}.base_url must be an http or https URL`);
+      else if (url && url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname) && p.api_key_env) {
+        warnings.push(`${at} sends its API key over plain http to ${url.hostname}; use https unless the network between is yours`);
+      }
+    }
+    if (p.api_key_env === undefined && p.kind === "anthropic") {
+      warnings.push(`${at} names no api_key_env, so its requests carry no API key`);
+    }
+    providers[name] = {
+      kind: p.kind,
+      ...(p.base_url ? { baseUrl: p.base_url } : {}),
+      ...(p.api_key_env ? { apiKeyEnv: p.api_key_env } : {}),
+      ...(p.headers ? { headers: p.headers } : {}),
+      ...(p.auth_header ? { authHeader: p.auth_header } : {}),
+      ...(p.max_tokens_field ? { maxTokensField: p.max_tokens_field } : {}),
+      ...(p.stream_usage !== undefined ? { streamUsage: p.stream_usage } : {}),
+      ...(p.effort_field !== undefined ? { effortField: p.effort_field } : {}),
+      ...(p.default_max_output_tokens ? { defaultMaxOutputTokens: p.default_max_output_tokens } : {}),
+      ...(p.context_window ? { contextWindow: p.context_window } : {}),
+      ...(p.cache_ttl_ms ? { cacheTtlMs: p.cache_ttl_ms } : {}),
+      ...(p.idle_timeout_ms ? { idleTimeoutMs: p.idle_timeout_ms } : {}),
+      ...(p.max_retries !== undefined ? { maxRetries: p.max_retries } : {}),
+    };
+  }
+  if (rt?.default_provider && !names.includes(rt.default_provider)) {
+    errors.push(`mesh.runtime.default_provider '${rt.default_provider}' names no provider; the providers are ${names.join(", ") || "none"}`);
+  }
+  const defaults = { provider: rt?.default_provider, model: rt?.model?.trim() || undefined };
+  for (const id of nativeSeats) {
+    try {
+      resolveProviderModel(raw.agents[id].model, `agents.${id}`, names, defaults);
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+  }
+  if (designer === "native") {
+    try {
+      resolveProviderModel(rt?.designer_model, "the designer (mesh.runtime.designer)", names, defaults);
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+  }
+  const models: Record<string, NativeModelSpec> = {};
+  for (const [id, m] of Object.entries(rt?.models ?? {})) {
+    models[id] = {
+      ...(m.context_window ? { contextWindow: m.context_window } : {}),
+      ...(m.max_output_tokens ? { maxOutputTokens: m.max_output_tokens } : {}),
+      ...(m.effort ? { effort: m.effort } : {}),
+      ...(m.temperature !== undefined ? { temperature: m.temperature } : {}),
+    };
+  }
+  return {
+    providers,
+    ...(rt?.default_provider ? { defaultProvider: rt.default_provider } : {}),
+    models,
+    designer,
+    ...(rt?.designer_model ? { designerModel: rt.designer_model } : {}),
+    ...(rt?.native?.shell_env ? { shellEnv: rt.native.shell_env } : {}),
+    extraReadRoots: (rt?.native?.extra_read_roots ?? []).map((r) => path.resolve(dir, r)),
+    ...(rt?.native?.max_steps ? { maxSteps: rt.native.max_steps } : {}),
+  };
 }
 
 export class ConfigError extends Error {
@@ -1305,6 +1481,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
         "@anthropic-ai/claude-agent-sdk dependency), or 'stub' to run with zero model calls.",
     );
   }
+  const native = resolveNativeRuntime(raw, dir, agentIds, defaultRuntime, errors, configWarnings);
   // mesh-wide defaults an agent inherits when it leaves the key out. Resolved with
   // `??` everywhere below: an agent that explicitly sets `false` or `0` means it, and
   // must win over the mesh default — only an absent key inherits.
@@ -1535,6 +1712,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     defaultModel,
     defaultContextWindow: raw.mesh.runtime?.context_window,
     defaultStaleAfterMs: raw.mesh.runtime?.stale_after_ms,
+    ...(native ? { native } : {}),
     ...(raw.mesh.runtime?.isolate_host === true ? { isolateHost: true } : {}),
     defaultVariant,
     startupActivate,

@@ -75,8 +75,10 @@ Tagged releases publish the image as `ghcr.io/salitaba/curule`.
 | [docs/commercial/security.md](docs/commercial/security.md) | what it protects and what it does not; [SECURITY.md](SECURITY.md) to report a vulnerability |
 | [docs/commercial/pricing.md](docs/commercial/pricing.md), [docs/commercial/licensing.md](docs/commercial/licensing.md) | the plans, their limits, licence keys and how limits are enforced |
 
-The agents use model credentials that belong to you (an Anthropic API key, or Amazon Bedrock, Google Vertex or
-Microsoft Foundry credentials). Curule never resells or touches model usage; the plans are for the runtime.
+The agents use model credentials that belong to you: any provider the native runtime speaks (OpenAI-compatible chat
+completions, which most providers and local model servers offer, or the Anthropic API), or Claude Code with an Anthropic API
+key or Amazon Bedrock, Google Vertex or Microsoft Foundry credentials. A self-hosted Curule never resells or touches model
+usage; the plans are for the runtime.
 
 ## Product tour (the three journeys)
 
@@ -169,6 +171,11 @@ Real LLM collaboration needs a model backend:
 
 - `runtime: claude` — Claude Code via `@anthropic-ai/claude-agent-sdk`. Nothing
   to install: the SDK is a declared dependency and ships its own executable.
+- `runtime: native` — the provider-neutral runtime: Curule calls the model itself,
+  on any provider that speaks OpenAI-compatible chat completions or the Anthropic
+  Messages API, including local model servers. Providers and keys are named in
+  `mesh.runtime.providers`; `curule providers check` proves a provider and a model
+  before a mission runs. See [docs/runtime-native.md](docs/runtime-native.md).
 - `runtime: stub` — no model calls at all, for offline runs and tests.
 
 `runtime: opencode` was removed. A config that still names it fails to load,
@@ -198,6 +205,8 @@ packages/
   artifact-store  immutable content store + git worktree manager
   projects        multi-project registry (~/.curule/projects.json)
   licensing       offline licence keys (Ed25519), the plan table, entitlements, pricing export
+  llm               the model port: OpenAI-compatible and Anthropic Messages adapters, no vendor types
+  runtime-native    provider-neutral runtime: the agent loop, the seat's tools, conversations on disk
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub

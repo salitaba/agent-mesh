@@ -68,7 +68,7 @@ Details, and the tests that pin each control, are in [security.md](security.md).
 
 | Question | Answer |
 |---|---|
-| Which models does it use, and who controls them? | The ones you configure, through your own provider account (Anthropic directly, or Amazon Bedrock, Google Cloud or Microsoft Foundry). The vendor does not sit between you and the model. |
+| Which models does it use, and who controls them? | The ones you configure, through your own provider account (any OpenAI-compatible provider or a local model server, the Anthropic API, or Claude Code on Anthropic, Amazon Bedrock, Google Cloud or Microsoft Foundry). In a self-hosted install the vendor does not sit between you and the model. |
 | Is our data used to train a model? | The vendor never receives it. Whether your provider trains on it is governed by your agreement with them; check it. |
 | Can the agents be manipulated by what they read (prompt injection)? | **Yes, like any agent that reads untrusted text and can act.** The mitigations are structural, not a guarantee: the container and its egress limits bound what an agent can do; the mesh's gates, approvals and escalations put a person or another agent's review in front of a change; budgets and the spend ceiling bound what a runaway can cost. |
 | Is there human oversight? | Missions have acceptance criteria, review gates and escalations to a person; the operator can park everything at any time. What you configure as a gate is the control; the agents' good behaviour is not. |

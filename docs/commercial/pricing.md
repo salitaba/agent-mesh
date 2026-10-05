@@ -22,9 +22,12 @@ on 2026-10-01; confirm they have not changed before you rely on them):
 and, for products built on the SDK, that developers "should use API key authentication through Claude Console or
 a supported cloud provider".
 
-So **the vendor cannot sell model usage**: not tokens, not credits, not a bundle. Every plan is a **platform
-fee for the runtime**. The customer brings their own Anthropic, Bedrock, Vertex or Foundry credentials, and their
-provider bills them for the model. The product reports usage and an estimate of its cost, and never charges for
+So **the vendor cannot sell model usage through Claude Code**: not tokens, not credits, not a bundle. Every plan is a
+**platform fee for the runtime**. The customer brings their own credentials (Anthropic, Bedrock, Vertex or Foundry for
+Claude Code, or any provider the native runtime speaks), and their provider bills them for the model. The restriction is
+Anthropic's, on Claude Code and the Agent SDK. A seller who supplies models through the native runtime is bound by the
+terms of each provider it buys from, which it has to read and agree to before it sells anything; [../cloud.md](../cloud.md)
+says how a hosted service is built so that this is a decision of the seller and not a limit of the software. The product reports usage and an estimate of its cost, and never charges for
 either.
 
 This is also the strongest thing to say to a buyer: no markup on the model, their own enterprise discounts and

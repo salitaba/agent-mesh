@@ -26,7 +26,7 @@ import {
   ProviderTimeoutError,
   createProvider,
   defaultContextWindow,
-  parseModelRef,
+  resolveProviderModel,
   type ChatMessage,
   type LlmProvider,
   type ProviderConfig,
@@ -223,15 +223,12 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
 
   /** `provider/model`, resolved against the configured providers and the defaults. Throws, in words an operator can act on. */
   private resolve(spec: string | undefined, what: string): ResolvedModel {
-    const names = Object.keys(this.options.providers);
-    if (names.length === 0) throw new Error(`${what} runs on the native runtime, but no provider is configured (mesh.runtime.providers)`);
-    const text = (spec ?? this.options.defaultModel ?? "").trim();
-    if (!text) throw new Error(`${what} has no model: set its \`model:\` to provider/model (providers: ${names.join(", ")}) or set a default model`);
-    const ref = parseModelRef(text, names);
-    const providerName = ref.provider ?? this.options.defaultProvider ?? (names.length === 1 ? names[0] : undefined);
-    if (!providerName) throw new Error(`${what}: model '${text}' names no provider and there is no default; write it as provider/model (providers: ${names.join(", ")})`);
+    const { provider: providerName, model } = resolveProviderModel(spec, what, Object.keys(this.options.providers), {
+      provider: this.options.defaultProvider,
+      model: this.options.defaultModel,
+    });
     const { provider, config } = this.providerFor(providerName);
-    return { providerName, provider, config, model: ref.model };
+    return { providerName, provider, config, model };
   }
 
   private windowFor(agent: AgentDefinition | undefined, m: ResolvedModel): { tokens: number; known: boolean } {

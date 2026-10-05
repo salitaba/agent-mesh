@@ -272,7 +272,7 @@ docker build -t curule .</code></pre></div>
       <h2 class="title">Questions, answered plainly.</h2>
     </div>
     <div class="faq">
-      <details><summary>Do I need an Anthropic account?</summary><div class="answer"><p>You need credentials for a model provider that you own: an Anthropic API key, or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry. The agents use them and your provider bills you. We never see them and we do not resell model usage.</p></div></details>
+      <details><summary>Do I need an Anthropic account?</summary><div class="answer"><p>No. You need credentials for a model provider that you own. The native runtime takes any provider that offers an OpenAI-compatible endpoint or the Anthropic API, and Claude Code takes an Anthropic API key or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry credentials. The agents use them and your provider bills you. A self-hosted Curule never sees them and does not resell model usage.</p></div></details>
       <details><summary>Does it send my code to you?</summary><div class="answer"><p>No. It runs on your infrastructure and sends nothing to us. Your code goes to your model provider, because the agents cannot work without it, under your agreement with them.</p></div></details>
       <details><summary>What is the free plan?</summary><div class="answer"><p>Community: one open project of up to eight agents, with the full runtime, dashboard, designer and command line. It needs no licence and never expires.</p></div></details>
       <details><summary>Is it open source?</summary><div class="answer"><p>No, it is source-available. The code is public under the Business Source License 1.1: you can read, build, modify and run it, and real work on the free plan is free. Running more than the free plan allows, or offering it to others as a hosted service or inside your own product, needs a commercial licence. Each version becomes Apache 2.0 four years after it is published.</p></div></details>
@@ -280,7 +280,7 @@ docker build -t curule .</code></pre></div>
       <details><summary>What happens when a licence expires?</summary><div class="answer"><p>Nothing stops and nothing is lost. The plan&rsquo;s limits stay in force for a grace period (14 days by default); after it the instance is on the free plan. We cannot disable anything remotely, and your data is yours.</p></div></details>
       <details><summary>Can it run without internet access?</summary><div class="answer"><p>Yes. A licence is verified on your machine. The agents need a route to your model provider, which can be a private endpoint.</p></div></details>
       <details><summary>Can you host it for us?</summary><div class="answer"><p>Not today. It is software you run, one instance per team; the repository has a Compose file, a Helm chart and a provisioning script for that.</p></div></details>
-      <details><summary>Does it work with models other than Claude?</summary><div class="answer"><p>The runtime runs Claude through the Agent SDK, on Anthropic, Bedrock, Vertex or Foundry. A generic HTTP adapter exists for other backends; we have not measured its quality and do not sell it as equivalent.</p></div></details>
+      <details><summary>Does it work with models other than Claude?</summary><div class="answer"><p>Yes. The native runtime calls the model itself through OpenAI-compatible chat completions or the Anthropic Messages API, so it works with providers and local model servers that offer either, and <code>curule providers check</code> proves a provider and a model before a mission runs. A model has to be able to call tools. Everything measured on this site ran on Claude Haiku through Claude Code; we have not measured the quality of other models and do not claim it is equivalent.</p></div></details>
       <details><summary>How reliable are the results?</summary><div class="answer"><p>We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate, and a mesh may do worse than a single agent on some work. Try it on your own task in a pilot.</p></div></details>
     </div>
   </div>
@@ -289,7 +289,7 @@ docker build -t curule .</code></pre></div>
 <section class="section cta">
   <div class="wrap">
     <h2>Run the demo, then bring your own credentials.</h2>
-    <p class="lede">The scripted team needs no API key. The same seats run on your own Anthropic, Bedrock, Vertex or Foundry credentials, on your infrastructure.</p>
+    <p class="lede">The scripted team needs no API key. The same seats run on model credentials you own (any OpenAI-compatible provider, the Anthropic API, Bedrock, Vertex or Foundry), on your infrastructure.</p>
     <div class="btn-row">
       <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
       <a class="btn btn-lg" href="contact/" data-contact data-subject="Curule">Talk to us</a>

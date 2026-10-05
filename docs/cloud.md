@@ -15,8 +15,8 @@ a decision, an account or a credential from the operator of the service is state
 
 | Part | Where | State |
 |---|---|---|
-| Provider-neutral runtime, `native` | `packages/runtime-native` | designed, not built |
-| Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | designed, not built |
+| Provider-neutral runtime, `native` | `packages/runtime-native` | built and tested; [runtime-native.md](runtime-native.md) |
+| Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | built and tested against servers that speak each format; `curule providers check` proves a real provider |
 | Model gateway: virtual keys, budgets, metering | `packages/ai-gateway` | designed, not built |
 | Control plane: accounts, plans, credits, workspaces | `packages/cloud`, `apps/cloud-server` | designed, not built |
 | Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | designed, not built |
@@ -136,5 +136,5 @@ workspace has no public address.
   product does today.
 - The control plane runs as one process. Its store interface is the seam for running more.
 - Real-provider behaviour is only as tested as an operator makes it: the adapters are tested against servers that speak
-  each wire format, and a provider check command (planned) is how an operator proves a key and a model work before
-  relying on them.
+  each wire format, and `curule providers check` is how an operator proves a key and a model work before relying
+  on them.

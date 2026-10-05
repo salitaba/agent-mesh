@@ -336,6 +336,64 @@ export const meshConfigSchema = {
             isolate_host: { type: "boolean" },
             variant: { type: "string", maxLength: 200 },
             requires_approval: { type: "array", items: { type: "string", maxLength: 200 } },
+            // The native runtime's providers, by the name a seat's `model: provider/model` uses. A key is never written
+            // here: `api_key_env` names the environment variable it is read from.
+            providers: {
+              type: "object",
+              propertyNames: { pattern: "^[a-z0-9][a-z0-9_-]{0,62}$" },
+              additionalProperties: {
+                type: "object",
+                required: ["kind"],
+                properties: {
+                  kind: { type: "string", enum: ["openai-compatible", "anthropic"] },
+                  base_url: { type: "string", minLength: 1, maxLength: 500 },
+                  api_key_env: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$" },
+                  headers: { type: "object", additionalProperties: { type: "string", maxLength: 1000 } },
+                  auth_header: { type: "string", enum: ["x-api-key", "bearer"] },
+                  max_tokens_field: { type: "string", enum: ["max_tokens", "max_completion_tokens"] },
+                  stream_usage: { type: "boolean" },
+                  effort_field: { oneOf: [{ type: "string", minLength: 1, maxLength: 100 }, { const: false }] },
+                  default_max_output_tokens: { type: "integer", minimum: 1 },
+                  context_window: { type: "integer", minimum: 1000 },
+                  cache_ttl_ms: { type: "integer", minimum: 60000 },
+                  idle_timeout_ms: { type: "integer", minimum: 5000 },
+                  max_retries: { type: "integer", minimum: 0, maximum: 10 },
+                },
+                additionalProperties: false,
+              },
+            },
+            default_provider: { type: "string", maxLength: 63 },
+            // Settings per bare model id (the part of `model:` after `provider/`).
+            models: {
+              type: "object",
+              additionalProperties: {
+                type: "object",
+                properties: {
+                  context_window: { type: "integer", minimum: 1000 },
+                  max_output_tokens: { type: "integer", minimum: 1 },
+                  effort: { type: "string", enum: ["low", "medium", "high"] },
+                  temperature: { type: "number", minimum: 0, maximum: 2 },
+                },
+                additionalProperties: false,
+              },
+            },
+            // Which runtime answers the designer's chat and generates acceptance criteria. Defaults to the default runtime
+            // when that is `native`, and to `claude` otherwise.
+            designer: { type: "string", enum: ["claude", "native"] },
+            designer_model: { type: "string", maxLength: 200 },
+            // Settings of the native runtime itself.
+            native: {
+              type: "object",
+              properties: {
+                // `inherit`: a seat's shell starts from the process environment minus credentials. `minimal`: an allowlist.
+                shell_env: { type: "string", enum: ["inherit", "minimal"] },
+                // Directories a seat may read besides its workspace and the product checkout.
+                extra_read_roots: { type: "array", items: { type: "string", maxLength: 500 } },
+                // Model calls one turn may make.
+                max_steps: { type: "integer", minimum: 1, maximum: 10000 },
+              },
+              additionalProperties: false,
+            },
           },
           additionalProperties: false,
         },

@@ -770,6 +770,12 @@ hidden tool is not there. See *What a seat is told about its tools* below and `d
   names the key; with it, the audit log records what was removed. See
   `docs/configuration.md` § `isolate_host`
 
+### `runtime-native`
+- the provider-neutral runtime: Curule makes the model call itself, through a port with adapters for OpenAI-compatible chat
+  completions and the Anthropic Messages API, with the seat's tools behind the same gate as the Claude adapter and the mesh
+  bus over HTTP. Any provider that speaks either format, and local model servers, can serve a seat.
+- see [runtime-native.md](runtime-native.md) for providers, models, tools, what a seat can reach and how sessions are kept
+
 ### `runtime-http`
 - generic custom/remote agents over `POST /sessions`, `/turn`, `/interrupt`, …
 - used to attach Codex/A2A, or any agent, behind an HTTP shim (Claude Code no

@@ -18,6 +18,7 @@ import { BACKUPS_HELP, RESTORE_HELP, runBackupsCommand, runRestoreCommand } from
 import { runDoctorCommand } from "./doctor";
 import { runLicenseCommand } from "./license";
 import { runUsageCommand } from "./usage";
+import { runProvidersCommand } from "./providers";
 import { runInitCommand } from "./init";
 
 const DEFAULT_BUS = process.env.MESH_BUS_URL ?? "http://127.0.0.1:7420";
@@ -379,6 +380,7 @@ usage:
   curule license [status|install|verify|remove]   this install's plan, limits and licence (see: curule license --help)
   curule usage <mesh.yaml>... | --all             what meshes consumed, by day/seat/model, from their logs (see: curule usage --help)
   curule doctor [mesh.yaml ...] [--json] [--host url]   diagnose this install; safe to paste into a support ticket (see: curule doctor --help)
+  curule providers check [mesh.yaml] [--model provider/model]   prove the native runtime's providers and a model work before a mesh runs (see: curule providers --help)
   curule backups <mesh.yaml>                 archives this mesh has written, newest first (--json)
   curule restore <mesh.yaml> <stamp>         put an archived mission back; the mesh must be stopped (--keep-sessions)
     a reset writes one set of archives under one stamp: the state dir (the only
@@ -622,6 +624,10 @@ export async function main(argv: string[]): Promise<number> {
       case "usage": {
         // Offline, like backups: it reads event logs, so it works on a mesh that is stopped.
         return await runUsageCommand(args.positional, args.flags);
+      }
+      case "providers": {
+        // Offline apart from the providers themselves: it reads mesh.yaml and the environment, never a running mesh.
+        return await runProvidersCommand(args.positional, args.flags);
       }
       case "doctor": {
         // Offline too, and the one command that is safe to paste into a ticket: no event-log content, no values.

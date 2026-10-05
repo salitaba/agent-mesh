@@ -7,9 +7,10 @@ running, [operations.md](../operations.md) is the reference and the runbooks.
 
 - **Somewhere to run a container**: Docker (any machine) or Kubernetes 1.25 or later. The image is built for
   `linux/amd64` and `linux/arm64`.
-- **Outbound HTTPS to a model provider**, and a credential for it that belongs to you: an Anthropic API key, or
-  Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry credentials. The agents use it; you are billed by
-  the provider. Without one, the shipped demo still runs (see below).
+- **Outbound HTTPS to a model provider**, and a credential for it that belongs to you: for the native runtime, a key
+  for any OpenAI-compatible provider or the Anthropic API ([runtime-native.md](../runtime-native.md)); for Claude
+  Code, an Anthropic API key or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry credentials. The agents
+  use it; you are billed by the provider. Without one, the shipped demo still runs (see below).
 - **For anything beyond your own laptop**: a host name and TLS in front of it, and a token of 32 or more random
   characters. The server refuses to listen on a network address without one.
 

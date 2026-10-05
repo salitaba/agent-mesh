@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { URL } from "url";
 import { promisify } from "util";
 import type { MeshEvent, MeshMessage, MessageType, ArtifactStatus, Artifact, DesignerRuntime, DesignerPromptOptions, StagedMutation, StagedProposal, SessionRotated, MuteSuspected } from "../../../packages/protocol/src/index";
-import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts } from "../../../packages/config/src/index";
+import { resolveConfig, loadMeshFile, resolveUseGit, type ResolvedMeshConfig, analyzeMeshConfig, stringifyMesh, ConfigError, materializeRolePrompts, DEFAULT_CRITERIA_MODEL } from "../../../packages/config/src/index";
 import { parse as parseYaml } from "yaml";
 const parseYamlText = (text: string): unknown => parseYaml(text);
 import { Kernel, Supervisor, BudgetManager, HUMAN_AGENT_ID, WORK_TURN_TIMEOUT_MULTIPLE, generateAcceptanceCriteria, projectionConfigFor, readableMailDepth, resolveUnread, secretsEqual, type CriteriaGeneratorPort, type OpResult } from "../../../packages/core/src/index";
@@ -55,6 +55,7 @@ import { DesignerTurnBuffer, createDesignerStagingToolset } from "./designer-sta
 import { fillTurnSteps, namesTurn, recentTurnSteps, turnEvents } from "./steps-view";
 import { HttpRuntimeAdapter } from "../../../packages/runtime-http/src/index";
 import { describeToolPermissions } from "../../../packages/agent-runtime/src/index";
+import { createNativeRuntime } from "./native";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
@@ -540,10 +541,40 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
       },
     });
   resolver.register("claude", claudeAdapter);
-  // Answers the designer's own chat and serves its model picker. Only one
-  // runtime implements DesignerRuntime now, so there is nothing to select:
-  // MESH_DESIGNER_RUNTIME went with the opencode adapter.
-  const designerAdapter: DesignerRuntime = claudeAdapter;
+  // The provider-neutral runtime: seats whose model is called by Curule itself, through any provider that speaks a wire
+  // format it knows. Registered unconditionally, like the Claude adapter: it holds no connection until a seat starts.
+  const nativeRuntime = createNativeRuntime(config, {
+    stateDir: options.inMemory ? undefined : config.stateDir,
+    env: process.env,
+    notice: (message) => auditLog(message),
+    warn: (message) => console.warn(`warn: ${message}`),
+    // The same two things the Claude adapter's rotation does: the registry keeps the id a restart resumes, and the log says
+    // the seat's memory was replaced.
+    onRotate: (info) => {
+      void sessionRegistry
+        ?.record(info.agentId, info.sdkSessionId, "native")
+        .catch((err: unknown) => auditLog(`session registry update failed for ${info.agentId}: ${(err as Error).message}`));
+      void kernel
+        .emit(
+          "session.rotated",
+          {
+            agentId: info.agentId,
+            fromSessionId: info.previousSdkSessionId,
+            toSessionId: info.sdkSessionId,
+            sessionOrdinal: info.rotations + 1,
+            reason: "rotation",
+            transcriptTokensDiscarded: info.contextTokens,
+          } satisfies SessionRotated,
+          { actorId: info.agentId },
+        )
+        .catch((err: unknown) => auditLog(`session.rotated emit failed: ${(err as Error).message}`));
+    },
+  });
+  resolver.register("native", nativeRuntime);
+  // Answers the designer's own chat and serves its model picker. The Claude adapter and the native runtime both implement
+  // DesignerRuntime; `mesh.runtime.designer` picks, and defaults to the default runtime when that is native.
+  const designerIsNative = config.native?.designer === "native";
+  const designerAdapter: DesignerRuntime = designerIsNative ? nativeRuntime : claudeAdapter;
   if (options.httpRuntimeUrl) {
     resolver.register("http", new HttpRuntimeAdapter({ baseUrl: options.httpRuntimeUrl }));
   }
@@ -604,7 +635,10 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
         generateAcceptanceCriteria(
           goalText,
           (text, opts) => designerAdapter.prompt(text, opts),
-          config.criteriaModel,
+          // The default is a Claude id: handed to a provider that does not serve it, criteria generation would fail on a
+          // model nobody chose. Under the native designer the one in `designer_model` (or the default) is used unless the
+          // mesh names a criteria model itself.
+          designerIsNative && config.criteriaModel === DEFAULT_CRITERIA_MODEL ? undefined : config.criteriaModel,
         )),
     scheduler: noopScheduler,
     auditFile: options.inMemory ? undefined : path.join(layout.logs, "turn-audit.jsonl"),

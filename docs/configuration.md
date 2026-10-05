@@ -111,6 +111,13 @@ Mesh-wide only; there is no per-seat form. `curule validate` refuses a value bel
 a minute (60000), because anything shorter is a seconds-written-as-milliseconds
 typo rather than a window anyone means.
 
+### providers, models and the native runtime
+
+`mesh.runtime.providers`, `default_provider`, `models`, `designer`, `designer_model` and `native` configure the provider-neutral
+runtime (`runtime: native`): which providers a mesh uses, where their keys are read from, what each model's window is, which
+runtime answers the designer, and how a seat's shell and file tools are bounded. A key is never written in `mesh.yaml`;
+`api_key_env` names the variable. The whole block, with every key, is in [runtime-native.md](runtime-native.md).
+
 ### isolate_host
 
 `mesh.runtime.isolate_host: true` runs every Claude seat without what the launching

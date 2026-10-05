@@ -92,3 +92,26 @@ export function parseModelRef(spec: string, providers: ReadonlySet<string> | rea
   }
   return { model: trimmed };
 }
+
+/**
+ * Which provider and model a seat's `model:` means, with the defaults a deployment names. Throws, in words an operator can
+ * act on, when it means nothing: the same sentences at config load (where every seat is checked before anything runs) and at
+ * the first turn (where the config may have changed under a running mesh).
+ *
+ * `what` names the thing being resolved ("seat dev", "the designer") so the sentence says whose model it is.
+ */
+export function resolveProviderModel(
+  spec: string | undefined,
+  what: string,
+  providers: readonly string[],
+  defaults: { provider?: string; model?: string } = {},
+): { provider: string; model: string } {
+  if (providers.length === 0) throw new Error(`${what} runs on the native runtime, but no provider is configured (mesh.runtime.providers)`);
+  const text = (spec ?? defaults.model ?? "").trim();
+  if (!text) throw new Error(`${what} has no model: set its \`model:\` to provider/model (providers: ${providers.join(", ")}) or set a default model`);
+  const ref = parseModelRef(text, providers);
+  const provider = ref.provider ?? defaults.provider ?? (providers.length === 1 ? providers[0] : undefined);
+  if (!provider) throw new Error(`${what}: model '${text}' names no provider and there is no default; write it as provider/model (providers: ${providers.join(", ")})`);
+  if (!providers.includes(provider)) throw new Error(`no provider named '${provider}'; the configured providers are ${providers.join(", ")}`);
+  return { provider, model: ref.model };
+}
