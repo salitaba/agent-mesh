@@ -1,6 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import { withoutOuterSession } from "./host-isolation";
+// The mesh's own credentials, and the filter that keeps them out of a seat's shell, are shared by every runtime.
+import { isMeshSecret, withoutMeshSecrets } from "../../agent-runtime/src/env";
+export { isMeshSecret, withoutMeshSecrets };
 
 /**
  * Seat CLIs left running by a mesh process that died.
@@ -34,32 +37,6 @@ export const HOST_PID_ENV = "CURULE_HOST_PID";
  * read, never written.
  */
 export const LEGACY_HOST_PID_ENV = "AGENT_MESH_HOST_PID";
-
-/**
- * The mesh's own credentials, which no seat has a use for.
- *
- * A seat's shell inherits the CLI's environment, and the CLI inherits the mesh's. `MESH_API_TOKEN` is the
- * operator's token (or, under a host, this child's own): a seat that reads it can call the API as the
- * operator, which is `POST /approvals {by: "human"}`, `/mission/reset`, `/config/save`, past every gate
- * the mesh enforces on the seat. `MESH_LICENSE` is the vendor-signed entitlement: not a way into anything, but a
- * seat that can read it can send it anywhere, and a licence is meant to stay with the install it was issued to. A seat reaches the
- * mesh through its MCP bridge with a per-seat token the adapter hands that bridge directly, so none of
- * these is ever needed in the seat's own environment, and a seat prompt-injected through a web fetch is
- * the case this is for.
- *
- * Anything named like a mesh token, secret or password goes: a credential added later is covered without
- * anyone remembering to list it. Not touched: `ANTHROPIC_*`, which the seat's own CLI needs to reach the
- * model, and the rest of the process environment (that is a separate decision, documented in
- * docs/commercial/security.md: run the mesh in an environment that holds only what a seat may use).
- */
-export function isMeshSecret(name: string): boolean {
-  return name === "MESH_API_TOKEN" || name === "MESH_LICENSE" || name === "MESH_LICENSE_KEY" || /^MESH_.*(TOKEN|SECRET|PASSWORD)$/.test(name);
-}
-
-/** `env` without the mesh's own credentials. */
-export function withoutMeshSecrets(env: Record<string, string | undefined>): Record<string, string | undefined> {
-  return Object.fromEntries(Object.entries(env).filter(([name]) => !isMeshSecret(name)));
-}
 
 /**
  * The environment a seat CLI is spawned with: `base` (the operator's own `env`
