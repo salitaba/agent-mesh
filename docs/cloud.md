@@ -17,7 +17,7 @@ a decision, an account or a credential from the operator of the service is state
 |---|---|---|
 | Provider-neutral runtime, `native` | `packages/runtime-native` | built and tested; [runtime-native.md](runtime-native.md) |
 | Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | built and tested against servers that speak each format; `curule providers check` proves a real provider |
-| Model gateway: virtual keys, budgets, metering | `packages/ai-gateway` | designed, not built |
+| Model gateway: virtual keys, budgets, metering ledger, tiers with failover, admin API | `packages/ai-gateway`, `apps/cloud-server` | built and tested against servers that speak each wire format; [ai-gateway.md](ai-gateway.md) |
 | Control plane: accounts, plans, credits, workspaces | `packages/cloud`, `apps/cloud-server` | designed, not built |
 | Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | designed, not built |
 | Workspace provisioner (local process for development, container for production) | `packages/cloud` | designed, not built |
@@ -68,17 +68,20 @@ among several, not the product's foundation.
 ### Model gateway
 
 The gateway is the only place provider credentials exist. A workspace gets a virtual key: scoped to that workspace,
-carrying a budget and a rate limit, revocable at any moment, useless anywhere but the gateway.
+carrying a rate limit and optionally a daily cap, revocable at any moment, useless anywhere but the gateway. The full
+reference is [ai-gateway.md](ai-gateway.md); this is what it guarantees.
 
-For each call the gateway checks the key, the budget and the model allowlist, forwards to the provider chosen for the
-requested tier, streams the answer back, reads the usage the provider reports, and appends one record to an append-only
-usage ledger. Budgets are enforced before the call (from the balance) and settled after it (from the usage), so a single
-long call cannot overdraw by more than its own cost. The ledger, not a counter, is the source of truth: a balance is a
-projection of it, in the same way every other view in Curule is a projection of its event log.
+For each call the gateway checks the key and its limits, holds back the most the call could cost from the account's balance,
+forwards to the first model of the requested tier that can answer, streams the answer back, reads the usage the provider
+reports, and appends one record to an append-only ledger. Budgets are enforced before the call (from the balance) and settled
+after it (from the usage), so a single long call cannot overdraw an account by more than its own cost. The ledger, not a
+counter, is the source of truth: a balance is a projection of it, in the same way every other view in Curule is a projection
+of its event log.
 
 The tenant-facing API is OpenAI-compatible chat completions with tool calls and streaming, which is exactly what the
 `native` runtime speaks. Providers whose wire format differs are reached through the same adapters the runtime uses, so
-there is one translation to maintain, not two.
+there is one translation to maintain, not two. When a provider fails before it has produced anything, the next model in the
+tier answers; what the caller is told about a failure is the same for every provider and names none.
 
 ### Control plane
 
@@ -124,8 +127,8 @@ workspace has no public address.
 | One customer reaches another's workspace | Membership check at the edge; a workspace has no public address; containers share no network | Container escape is the provider's and the host's risk; mitigated by a microVM provisioner |
 | An agent, steered by hostile text in a repository, runs commands to attack the host | The workspace is the blast radius; its container has no route to anything but the gateway and the allowed egress | An agent can do what its container can reach, which is why the egress list is short |
 | A customer uses a workspace to attack others, mine cryptocurrency or send spam | CPU and memory limits on the container; no inbound routes; egress limited to the gateway and the hosts the operator lists; suspension in one action | Traffic to a listed host; abuse is noticed after it starts, not before |
-| An agent exfiltrates the workspace's gateway key | The key is budgeted, rate-limited, revocable and valid only at the gateway; the agent's shell does not inherit it in its environment | Anyone who obtains it can spend that workspace's balance until it is revoked or empty |
-| A customer runs up usage the service cannot bill | The balance is checked before each call and settled after; the key's budget is the balance | A call in flight can overdraw by at most its own cost |
+| An agent exfiltrates the workspace's gateway key | The key is rate-limited, may carry a daily cap, is revocable and is valid only at the gateway; the agent's shell does not inherit it in its environment | Anyone who obtains it can spend that account's balance, up to the key's daily cap, until it is revoked or empty |
+| A customer runs up usage the service cannot bill | The balance is checked and held before each call and settled after; a key may also carry a daily cap | A call in flight can overdraw by at most its own cost |
 | A forged payment event grants a plan | Webhooks are verified against the provider's signature before they are read; unverified bodies are refused | Compromise of the provider account |
 | Stolen session | `HttpOnly`, `SameSite=Lax`, rotation on sign-in and password change, server-side revocation | A compromised browser |
 | Provider outage or exhausted provider account | The gateway returns a typed error; the mesh pauses once, not seat by seat; tiers can fail over to another provider | Provider concentration, reduced by the tier layer |

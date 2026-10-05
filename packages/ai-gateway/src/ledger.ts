@@ -11,9 +11,7 @@
  * overdrawn, which can happen by at most the cost of the calls that were in flight when the balance ran out.
  */
 import { randomBytes } from "node:crypto";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as readline from "node:readline";
+import { JsonlLog } from "./jsonl-log";
 import { mintKey } from "./keys";
 import type { Micros } from "./money";
 
@@ -229,154 +227,10 @@ export class MemoryLedgerStore implements LedgerStore {
   async close(): Promise<void> {}
 }
 
-/** Files this process holds a ledger lock on. A lock file naming our own pid that is not in here was left by an earlier life of this pid. */
-const heldLocks = new Set<string>();
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/**
- * One JSON object per line, appended and synced before the append resolves. Entries that arrive while a write is in flight
- * go out together in the next one, so the cost of the sync is shared and not paid per call.
- */
-export class JsonlLedgerStore implements LedgerStore {
-  failure: Error | undefined;
-  /** Bytes of a cut-off last line that were dropped when the file was opened. */
-  truncatedTailBytes = 0;
-  private handle: fs.promises.FileHandle | undefined;
-  private pending: Array<{ line: string; resolve: () => void; reject: (err: unknown) => void }> = [];
-  private writing: Promise<void> | undefined;
-  private readonly lockFile: string;
-
-  constructor(private readonly file: string) {
-    this.file = path.resolve(file);
-    this.lockFile = `${this.file}.lock`;
-  }
-
-  async load(): Promise<LedgerEntry[]> {
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    this.acquireLock();
-    try {
-      const entries = this.read();
-      this.handle = await fs.promises.open(this.file, "a");
-      return entries;
-    } catch (err) {
-      this.releaseLock();
-      throw err;
-    }
-  }
-
-  private read(): LedgerEntry[] {
-    if (!fs.existsSync(this.file)) return [];
-    const raw = fs.readFileSync(this.file, "utf8");
-    const lines = raw.split("\n");
-    // Whatever follows the last newline is an append that was cut short, or nothing.
-    const tail = lines.pop() ?? "";
-    const entries: LedgerEntry[] = [];
-    lines.forEach((line, i) => {
-      if (line.trim() === "") return;
-      try {
-        entries.push(JSON.parse(line) as LedgerEntry);
-      } catch {
-        // Not a torn write (those are only ever last): a record of money is not skipped, so the gateway does not start.
-        throw new Error(`the ledger ${this.file} has an unreadable line (line ${i + 1}); refusing to start rather than skip a record of money. Restore the file from a backup, or repair that line`);
-      }
-    });
-    if (tail.trim() !== "") {
-      try {
-        // Cut after the closing brace, before the newline: the entry is whole, so keep it and finish the line.
-        entries.push(JSON.parse(tail) as LedgerEntry);
-        fs.appendFileSync(this.file, "\n");
-      } catch {
-        // Cut mid-entry. It was never acknowledged to anyone; drop it so the next append starts on a clean line.
-        this.truncatedTailBytes = Buffer.byteLength(tail);
-        fs.truncateSync(this.file, Buffer.byteLength(raw) - this.truncatedTailBytes);
-      }
-    }
-    return entries;
-  }
-
-  private acquireLock(): void {
-    for (;;) {
-      try {
-        const fd = fs.openSync(this.lockFile, "wx");
-        fs.writeSync(fd, String(process.pid));
-        fs.closeSync(fd);
-        heldLocks.add(this.lockFile);
-        return;
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      }
-      const pid = Number(fs.readFileSync(this.lockFile, "utf8").trim());
-      const ours = pid === process.pid && heldLocks.has(this.lockFile);
-      if (ours || (Number.isInteger(pid) && pid !== process.pid && isAlive(pid))) {
-        throw new Error(`the ledger ${this.file} is in use by process ${pid}; one gateway writes a ledger at a time (if no gateway is running, delete ${this.lockFile})`);
-      }
-      // Its owner is gone: a crash left it.
-      fs.rmSync(this.lockFile, { force: true });
-    }
-  }
-
-  private releaseLock(): void {
-    if (!heldLocks.delete(this.lockFile)) return;
-    fs.rmSync(this.lockFile, { force: true });
-  }
-
-  append(entry: LedgerEntry): Promise<void> {
-    if (this.failure) return Promise.reject(this.failure);
-    if (!this.handle) return Promise.reject(new Error("the ledger is not open"));
-    return new Promise<void>((resolve, reject) => {
-      this.pending.push({ line: `${JSON.stringify(entry)}\n`, resolve, reject });
-      this.writing ??= this.drain();
-    });
-  }
-
-  private async drain(): Promise<void> {
-    try {
-      while (this.pending.length > 0) {
-        const batch = this.pending.splice(0);
-        try {
-          await this.handle!.appendFile(batch.map((b) => b.line).join(""), "utf8");
-          await this.handle!.sync();
-          for (const b of batch) b.resolve();
-        } catch (err) {
-          this.failure = err instanceof Error ? err : new Error(String(err));
-          for (const b of batch) b.reject(this.failure);
-          for (const b of this.pending.splice(0)) b.reject(this.failure);
-        }
-      }
-    } finally {
-      this.writing = undefined;
-    }
-  }
-
-  async *scan(): AsyncGenerator<LedgerEntry, void> {
-    await this.writing;
-    if (!fs.existsSync(this.file)) return;
-    const lines = readline.createInterface({ input: fs.createReadStream(this.file, { encoding: "utf8" }), crlfDelay: Infinity });
-    for await (const line of lines) {
-      if (line.trim() === "") continue;
-      try {
-        yield JSON.parse(line) as LedgerEntry;
-      } catch {
-        // The cut-off tail of a write still in flight; everything before it has been yielded.
-        return;
-      }
-    }
-  }
-
-  async close(): Promise<void> {
-    await this.writing;
-    const handle = this.handle;
-    this.handle = undefined;
-    await handle?.close();
-    this.releaseLock();
+/** The ledger on disk: one JSON object per line, appended and synced before the append resolves. See {@link JsonlLog}. */
+export class JsonlLedgerStore extends JsonlLog<LedgerEntry> implements LedgerStore {
+  constructor(file: string) {
+    super(file, "the ledger");
   }
 }
 

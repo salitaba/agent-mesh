@@ -207,6 +207,8 @@ packages/
   licensing       offline licence keys (Ed25519), the plan table, entitlements, pricing export
   llm               the model port: OpenAI-compatible and Anthropic Messages adapters, no vendor types
   runtime-native    provider-neutral runtime: the agent loop, the seat's tools, conversations on disk
+  ai-gateway        the model gateway of the hosted service: virtual keys, a price table, an append-only ledger,
+                    tiers with failover, OpenAI-compatible chat completions in and any provider out
   runtime-claude    Claude Code adapter (Agent SDK, long-lived streaming query)
   runtime-http      generic HTTP/custom/remote agent adapter
   observability     graph, goal/artifact/cost views, metrics, SSE hub
@@ -215,6 +217,7 @@ apps/
   mesh-server     bootstrap + HTTP/SSE API + MCP bus + config-designer API + static UI
   mesh-dashboard  live UI + mesh designer (Vite + React + TS SPA in `src/`,
                   built to `dist/` and served by mesh-server on the same port)
+  cloud-server    the hosted service's processes: `npm run cloud -- gateway --config gateway.yaml`
 deploy/           Helm chart, fleet provisioning script, container entrypoint
 site/             static landing and pricing page (its numbers are generated from the plan table)
 pricing/          the measured mission and the generated plan data

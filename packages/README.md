@@ -15,6 +15,9 @@ other via relative paths:
 | `scheduler` | event-driven activation: interest registry, mailboxes, priorities, concurrency, timeouts, triage |
 | `agent-runtime` | runtime adapter interface + deterministic `StubRuntime` (simulation/tests) |
 | `artifact-store` | immutable content store + git worktree management |
+| `llm` | the model port: OpenAI-compatible and Anthropic Messages adapters, no vendor types |
+| `runtime-native` | provider-neutral runtime: the agent loop, the seat's tools, conversations on disk |
+| `ai-gateway` | the hosted service's model gateway: virtual keys, a price table, an append-only ledger, tiers with failover |
 | `runtime-claude` | Claude Code adapter through the Agent SDK (long-lived streaming query, sessions, tokens, restore) |
 | `runtime-http` | generic HTTP agent adapter for custom/remote agents |
 | `observability` | projections → views: mesh graph, goal view, artifact timeline, cost, metrics, usage report, SSE hub |

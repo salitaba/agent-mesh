@@ -1,0 +1,47 @@
+# An example configuration for the model gateway (docs/ai-gateway.md). Copy this folder, change it, and check it:
+#
+#   GATEWAY_ADMIN_TOKEN=<24 or more characters> EXAMPLE_API_KEY=<a key> \
+#     npm run cloud -- gateway --config examples/cloud/gateway.yaml --check
+#
+# Keys are never written here. A provider names the environment variable its key is read from.
+
+# Where the ledger of keys, credit and spend is kept. One gateway writes it at a time.
+ledger: ./data/ledger.jsonl
+
+# What each model costs, and the markup. The operator owns this file; see prices.yaml beside this one.
+prices: ./prices.yaml
+
+# Workspaces connect here. Put TLS in front of it; the gateway speaks plain HTTP.
+tenant: { host: 0.0.0.0, port: 8080 }
+
+# The control plane connects here. Keep it off any network a workspace can reach.
+admin: { host: 127.0.0.1, port: 8081, token_env: GATEWAY_ADMIN_TOKEN }
+
+limits:
+  default_rpm: 120          # calls a minute per key, unless the key says otherwise
+  default_concurrent: 16    # calls open at once per key
+  reserve_cap: 2            # the most one call holds back from the balance, in currency units
+  deadline_seconds: 600     # the longest one call may take
+  commit_seconds: 10        # how long to wait for a provider's first word before the stream is opened anyway
+
+# Show callers which model answered. With false they see the tier they asked for; the ledger records the model either way.
+expose_upstream_model: true
+
+providers:
+  # `openai-compatible` is the wire format of most providers and of local servers. `anthropic` is the Messages format.
+  example:
+    kind: openai-compatible
+    base_url: https://api.example.com/v1
+    api_key_env: EXAMPLE_API_KEY
+
+# The names a workspace uses. Each is a chain: the first model is tried first, and the next when the one before it
+# could not answer. A model written provider/model must have a price in prices.yaml.
+tiers:
+  fast:
+    - example/small
+  balanced:
+    - model: example/medium
+      max_output_tokens: 8192
+    - example/small
+  best:
+    - example/large

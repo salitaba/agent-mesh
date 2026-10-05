@@ -84,6 +84,21 @@ When a provider refuses a turn, the failure is worded `API Error: <status> <deta
 the Claude CLI's: a rate limit, an exhausted account, a rejected key or an outage is one fault shared by every seat, and the
 mesh pauses once with a clear notice instead of failing seat by seat ([provider outages](runtime.md#provider-outages-the-mission-wide-breaker)).
 
+A workspace on [Curule Cloud](cloud.md) has one provider, the [model gateway](ai-gateway.md), and names tiers instead of models:
+
+```yaml
+mesh:
+  runtime:
+    default: native
+    model: curule/balanced        # the tiers are fast, balanced and best
+    providers:
+      curule: { kind: openai-compatible, base_url: "https://gateway.example.com/v1", api_key_env: CURULE_GATEWAY_KEY }
+```
+
+The key is a virtual key: it works at the gateway and nowhere else, and the seats' shells do not inherit it. A balance that
+runs out arrives as `API Error: 402`, which the supervisor reads as an exhausted account, so the mesh pauses once with that
+notice and carries on when credit is added (`tests/integration/gateway-mission.test.ts` runs exactly that).
+
 Behind a proxy, set `NODE_USE_ENV_PROXY=1` with `HTTPS_PROXY` (Node 22.21 and later).
 
 ## Models

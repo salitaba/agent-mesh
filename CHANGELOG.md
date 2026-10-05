@@ -53,6 +53,18 @@ sections 1 to 24) are described there, run by run.
 
 ### Added
 
+- **A runtime that is not tied to one model vendor.** `runtime: native` runs the agent loop in Curule itself, against any
+  provider that speaks OpenAI-compatible chat completions or Anthropic Messages, with the seat's own tools (`Read`,
+  `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `WebFetch` and the `mesh_*` bus) behind the same permission, approval and
+  landing gates the Claude adapter uses. A mesh names its providers under `mesh.runtime.providers` and a seat's model as
+  `provider/model`; a key is read from the environment variable its provider names. `curule providers check [mesh.yaml]
+  [--model provider/model]` proves a key, lists the models and makes one call that must use a tool. It is tested against
+  servers that speak each format; how well other models do this product's work has not been measured. See
+  [docs/runtime-native.md](docs/runtime-native.md).
+- **The model gateway of Curule Cloud.** `packages/ai-gateway` and `npm run cloud -- gateway --config gateway.yaml`:
+  virtual keys, a price table the operator owns, an append-only ledger of credit and spend in whole millionths of a
+  currency unit, tiers with failover, OpenAI-compatible chat completions in and any provider out, and an admin API. It has
+  not been run against a real provider. See [docs/ai-gateway.md](docs/ai-gateway.md) and [docs/cloud.md](docs/cloud.md).
 - **Licensing.** Offline Ed25519 licence keys (`AML1.…`) verified on the customer's machine with no call out; the plan table
   (Community, Team, Business, Enterprise) with its limits and entitlements; `curule license status|install|verify|remove`;
   a licence card and an expiry banner in the dashboard; `tools/license/mesh-license.mjs` to generate and sign keys.

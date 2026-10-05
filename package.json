@@ -34,6 +34,7 @@
     "test:coverage:only": "node --test --experimental-test-coverage \"dist/tests/**/*.test.js\"",
     "curule": "node dist/apps/mesh-cli/src/index.js",
     "mesh": "node dist/apps/mesh-cli/src/index.js",
+    "cloud": "node apps/cloud-server/bin/curule-cloud.mjs",
     "demo:capture": "node scripts/capture-demo.mjs",
     "qa:console": "node scripts/qa-console.mjs",
     "qa:walk": "node scripts/qa-walk.mjs",

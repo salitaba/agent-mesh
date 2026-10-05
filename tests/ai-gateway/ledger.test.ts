@@ -554,3 +554,25 @@ test("a report can read the whole file, including what was appended a moment ago
     t.done();
   }
 });
+
+test("a report that starts while a batch is still going to disk waits for it, so it never misses what a caller has been told is recorded", async () => {
+  const t = tmp();
+  try {
+    const store = new JsonlLedgerStore(t.file);
+    const ledger = await Ledger.open(store, { currency: "USD" });
+    const handle = (store as unknown as { handle: { appendFile: (...a: unknown[]) => Promise<void> } }).handle;
+    const append = handle.appendFile.bind(handle);
+    handle.appendFile = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return append(...args);
+    };
+    const pending = ledger.recordSpend(spend({ requestId: "slow" }));
+    const seen: string[] = [];
+    for await (const e of ledger.scan()) seen.push(e.id);
+    assert.ok(seen.includes("spend_slow"), "the entry that was on its way to disk is in the report");
+    await pending;
+    await ledger.close();
+  } finally {
+    t.done();
+  }
+});

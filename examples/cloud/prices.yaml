@@ -1,0 +1,18 @@
+# THESE FIGURES ARE PLACEHOLDERS for a provider that does not exist.
+#
+# Replace every number with the price on the provider's own price page, and write the date you read it in `version`: it is
+# recorded on every spend, so a past charge can be explained from the table that produced it. The gateway ships no prices
+# and refuses to start when a model that a tier names has none.
+
+currency: USD
+version: "placeholder"
+
+# What a customer is charged is what the call cost times this. Below 1 is refused unless allow_below_cost: true.
+default_markup: 1.25
+
+# Currency units per million tokens, as the provider charges you. All four rates are required for each model: write 0 where
+# the provider does not charge for something, so that nothing is assumed.
+models:
+  example/small:  { input: 1,  output: 4,  cache_read: 0.1, cache_write: 1.25 }
+  example/medium: { input: 3,  output: 12, cache_read: 0.3, cache_write: 3.75 }
+  example/large:  { input: 10, output: 40, cache_read: 1,   cache_write: 12.5, markup: 1.5 }
