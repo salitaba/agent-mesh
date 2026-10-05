@@ -1930,3 +1930,107 @@ removed as unreachable), Y2 (22, 21 on the final code) and Y3 (17): every one no
   times in runs 14 and 16, QA in this one); the note is now computed from the same `evaluateTransition` the transition goes through.
 - **A mutation survivor is sometimes a line that should not exist.** Two guards of the hook and the `.slice(1)` of Y2 survived because they could not be
   reached; deleting them left less to read than a test that pinned them would have.
+
+## 24. The eighteenth run, on the redesign build: four findings (Z1–Z4)
+
+The fourteenth cycle of the standing loop (the second at the daily cadence): the routine fired at 03:19 UTC on 2026-10-05. The same mission, SPEC, mesh config,
+model and clean launch environment, on the branch at `28c996c`: every fix of §0–§23, including Y1 to Y3, and what came after run 17 besides them: the console redesign
+and the host's project creation (the core and runtime changes since run 17 are Y1 to Y3). Round 1 03:23:47 to 03:38:29 UTC, round 2 03:41:52 to 03:59:02: 73 turns,
+1,402,391 billed tokens (about $6.30 at list price; `curule usage` and the analysis tool agree to the token; round 1 686.1k, round 2 716.3k), every turn on `claude-haiku-4-5`, 1,375 events, no escalation and no failed
+agent. Round 1 ran headless (`curule run --no-tui`); the reopen went through a parked console, and the restart after the kill ran on the same state directory. One
+run, so the rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 03:23:47 | `curule run` | five seats start |
+| 03:35:04 | the last of six criteria evidenced (the merge) | 11 min 17 s after the launch (run 17: 8 min 17 s); 36 turns, 686.1k billed (run 17: 23 turns, 438.7k) |
+| 03:38:29 | goal met, 6/6 | **3 min 25 s after the last criterion** (Z1): two patches the tech lead had rejected without reading them held the mission open until the developer archived them |
+| 03:41:53 | operator reopen quoting five defects and naming four criteria | those four and the `operator-feedback-…` criterion the reopen mints are UNSATISFIED; all five seats revived, pm running |
+| 03:42:54 | `kill -9` of the host with the pm thinking and the architect and the developer one second into their turns | three turns open, one seat process (the pm's) running on, two more a few seconds old |
+| 03:42:57 | restart, 3 s after the kill | the three open turns closed as interrupted, seven budget holds released, five seats woken for recovery; the reaper stopped the pm's orphan at 03:42:59.9 |
+| 03:54:55 | the last criterion evidenced again | 13 min 2 s after the reopen |
+| 03:59:02 | goal met again | 17 min 9 s after the reopen, 16 min 5 s after the restart; **4 min 7 s after the last criterion** (Z3): the developer was never told its test-suite patch was approved |
+
+**Quality** (the oracle of §2): round 1 scored 1463/2230 raw (65.6%) and 2749/2914 stratified (94.3%), against run 17's round 1 at 65.8% and 97.3%; the product's own
+suite was 94/94 and the CLI probes 23/23. Five families, all verified on the merged product before the reopen and quoted in it: **`*` as a list item is refused** (686
+of the 767 raw failures; the defect of twelve of the fourteen runs from the fifth), **the day name `sun` is refused in every spelling** (36 raw, 85 stratified; new
+this run: a name that maps to 0 read as missing), **a day-of-week range that reaches 7 is refused or read as Sunday only** (`5-7`, `1-7`, `4-7/2`; and `0-7`, which is
+accepted and matches only Sundays), **a month or day name in capitals that contains an `L` or a `W` is refused as Quartz syntax** (`WED`, `JUL`; 32 raw, 55
+stratified; run 17's second family, back in a fresh product), and **the messages** (14 of 76 soft checks: an empty expression and a macro name no field or value, the
+Quartz refusals name the symbol and not the field, `*/-1` is printed as `*/`). Four were fixed outright; the final product scored **3026/3049 raw (99.2%) and
+3019/3034 stratified (99.5%)**, its own suite 123/123, the CLI probes 23/23, the soft message checks 75/76. All 23 raw failures left are one case, `0-7` (every
+`nextRun` and `matches` over a day-of-week of `0-7` reads it as Sunday only), which the reopen quoted with its required result and QA did not run: it ran one example
+for each of the five defects (`5-7` for the third) and reported all fixed. 41 of 73 turns (56.2%, 38.2% of the billed tokens) changed no durable state (run 17: 57.7%
+and 44%).
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| Y3 | exercised twice, once held and once lost to Z3: at 03:52:32 an idle developer was woken with "it needs VERIFIED next, and you can move it" and took VERIFIED and MERGEABLE at 03:52:39 and 03:52:41; at 03:55:10 the same note, for the second patch, was dropped behind mail |
+| Y2 | held: no `dependency.changed` in either round (the developer's first commit created a `package.json` with no dependency) |
+| Y1 | **not exercised**: no turn ended without a mesh call, so the `Stop` hook never fired (no transcript carries its text). The developer's session did carry the dead-bridge record into round 2 (`mesh bus unreachable: fetch failed` at 03:38:33 and 03:38:37, as the host shut down), and it called mesh tools at once on resuming |
+| W1 | held: six handover turns, 6.8k to 10.2k billed each (54.9k in all), none booked 0 |
+| W2 | held: QA claimed its verification task at 03:26:22 and the claim stood until its report was published and passed (03:32:34) |
+| W3 | **did not hold, a fourth run**: QA ran the developer's 94 tests, four CLI commands and two scripts, wrote that the library and CLI contracts were verified, and the oracle failed 767 of 2,230 checks; in round 2 it ran one example for each defect |
+| U5 and the verdict route | held: 11 ids a seat had made up were refused and each landed on the next call with the right id, from the list the refusal gives. What it could not do was stop the seats making them up (Z2) |
+| B21, B22, M1 | held: the three open turns closed as interrupted ("abandoned by server restart"), seven budget holds released, and the reopen put the four criteria it named back to UNSATISFIED |
+| B23 | **exercised for the sixth time**: at 03:42:59.9, "claude runtime: stopped 1 seat process(es) left running by a mesh process that died (pid 5694): 5856"; the two seat processes a few seconds old exited on their own |
+| U3, P2 | the parked-patch nudge fired once (03:57:38, 2 min 28 s after the approval: the idle window), named the patch and the rung, and the developer took both rungs 35 s later |
+| X1 to X4, U1, U2, U4, T2, T3, T5, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1, V1 | **not exercised**: nothing here asked for what they guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| Z1 | **A tech lead rejected two patches it had not read, and the mission could not complete for 3 min 25 s.** It began a turn at 03:33:51 to review the implementation. It had rejected the first versions of the developer's CLI and test patches at 03:31 ("descriptions, not code"); the developer published a second version of each at 03:34:02 and 03:34:05; at 03:34:34 and 03:34:35 the tech lead rejected both again ("still contains descriptions rather than code"), true of the versions it remembered, with no `mesh_artifact_read` of either in its transcript. The verdict tools name an artifact and not a version, so both landed on the new versions. The patches were REJECTED with the code the tech lead approved at 03:35:00 (an approval cannot advance a REJECTED patch), and a rejected patch that is neither merged nor archived holds the mission open (`openRejections`): with all six criteria evidenced at 03:35:04 it waited for the stall watchdog to wake the developer at 03:37:51, which archived them at 03:38:19 and 03:38:29. Three turns, 43.4k tokens, did nothing else | each turn records every artifact's version when it begins (`TurnState.versionsAtStart`: what its briefing could list). An approve or a reject of a version above that, which the turn has not read with `read_artifact` and did not publish itself, is refused with `verdict.unread-version` and records nothing; the refusal says the version it was, the version it is, and the read to make. Left alone: a version that existed when the turn began (a seat may have read it in an earlier turn, and a briefing lists references, not contents), a `pass` and an approve from a seat that holds only the pass, `veto`, `block`, a verdict on a criterion, and any op outside a turn | `tests/policy/verdict-unread-version.test.ts` (10 tests); 12 mutants of the guard, 11 killed and the 12th, a pass-holder's exemption, a line that could not matter (the approve has become a pass before the guard runs) and was removed |
+| Z2 | **No seat was ever shown an artifact id.** The briefing's artifact line carried the URI, the type and the status; every tool that acts on an artifact takes `artifactId`. The only id-shaped strings in a seat's briefing were the message ids of its mailbox. Of the 14 operations the mesh refused in round 1, 11 named an artifact by an id the seat had made up: a message id with `art-` in front of it (`art-M451S9HY00c9f3388396` is the review ask's `msg-M451S9HY00c9f3388396`), a URI folded into an id (`art-ArchitectureDocument-cronlite%20Architecture-1`), a real id with a wrong tail, and ids that match nothing (the pm four times, one id three times running across three criteria). U5 refused each and listed the real ids, so nothing phantom was recorded, and each cost a call; round 2 did it again within five minutes (`art-M452RKKJ00c9093480f3` is `msg-M452RKKJ00c90934` and a tail) | the line reads `(CodePatch, id art-M451S752001ef4a40d60, UNDER_REVIEW)`, from a new `relevantArtifacts[].id`, and `mesh_approve`, `mesh_reject`, `mesh_veto` and `mesh_block` say in their schema that `artifactId` is the id as the briefing lists it, or the URI, and never a message id | `tests/core/context-artifact-ids.test.ts` (2 tests): each line carries its own id and no other's, and the id read off the line is the one a verdict takes while the id built from the review ask's message id is refused; three tests that pinned the old line shape changed. The full suite then failed `tests/integration/mission.test.ts` on every run with the id on the line (9 of 9; 0 of 24 on the base build under CPU load): its pm accepted every criterion as soon as the patch merged, whichever of QA's and security's release results had reached it, so a longer briefing was enough to let the mission close with the release plan unaccepted. The pm now waits for both (0 failures in 24 runs, with and without the id); the assertions are unchanged. Mutation check: removing the id fails both new tests |
+| Z3 | **The note an owner is woken with was dropped behind mail.** `noticeOwnerOfVerdict` wakes the owner of an artifact with what a verdict did to it. That wake is an interest wake, the weakest kind; a seat that is mid-turn has it stashed behind the turn, the stash holds one wake per seat, and only a recovery wake carried a notice. Behind a mail wake the interest wake was coalesced away with its note, and a mail wake arriving after it replaced it without the note. At 03:55:10 the tech lead approved the developer's test-suite patch while the developer was mid-turn (03:55:01 to 03:55:35); the developer was never told, the patch sat APPROVED with every criterion evidenced, and the stall watchdog said it at 03:57:38. The same note had reached an idle developer at 03:52:32 and been acted on in 9 s. A probe on the stub runtime reproduced it both ways round: with mail before the verdict and with mail after it the owner took one turn and no notice; with no mail it took two | `carriesNotice` includes an interest wake that carries a note (the only one is this notice), and the busy branch merges the notice of a weak wake into the stash it is coalesced behind, and of a weak stash into the more urgent weak wake that replaces it, as a strong wake replacing a stash already did. The merged note is not the scheduler's own mail sentence, so `isStaleMailWake` keeps the wake | `tests/scheduler/busy-owner-verdict-notice.test.ts` (4 tests): the control with no mail, mail before the verdict, mail after it, and two notices behind one running turn at equal and rising priority; 4 mutants, all killed |
+| Z4 | **A rejection woke its owner with the event and no reason.** The reviewer's comment lived in the `review.rejected` event and nowhere its owner reads. The developer was woken ("Event matched your declared interests: review.rejected (event evt-…)"), shown no reason, and asked the reviewer for it with a `REQUEST_INFO`: four times (03:31:41, 03:36:24, 03:49:23, 03:53:07), each two turns, about 24k tokens and a minute. The 20 briefings of the developer's turns were searched for the reviewer's words: the four turns woken by the event carry none of them, and the one that does (03:33:26) was woken by the reviewer's own `mesh_reply`, which the tool description tells it not to send. "Read the verdict in your mailbox", the note to an owner whose interests do not cover the event, assumed a message that nothing sends | `ApprovalRecord` keeps the verdict's comment (bounded at 4,000 characters, optional, so older logs read as before), and the line of an artifact the seat owns lists the verdicts standing on its current version that say it is not done (a reject, a veto or a block) as `  - tech-lead rejected it: <comment>`, on one line, cut at 1,500 characters with the remainder counted. A new version drops them (the reducer already dropped the verdicts). The note now says where the reason is | `tests/core/context-owner-verdicts.test.ts` (5 tests, one of them a replay of the log into a fresh kernel); `tests/policy/owner-verdict-notice.test.ts` follows the note to the line; 10 mutants, all killed |
+
+What each does and why is in `docs/protocol.md` (the artifact line and its id and verdicts; a verdict names the version the seat has seen; the owner's wake); the commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **QA's breadth did not change, a fourth run, and this time the operator's own examples were not run.** The reopen quoted `nextRun(parse('0 0 * * 0-7'), …)` with its required result;
+  QA ran `5-7` for the same defect and reported it fixed, and every one of the 23 failures left is `0-7`. A rule that refused a pass without every quoted example run would
+  police the shape of a report; handing QA the examples a reopen quotes as a list, and the required results as the checks, is the next thing to try, and the examples are the
+  customer's.
+- **Three patches for one branch.** The developer put the library, the tests and the CLI forward as three patches over one worktree; the first merge took the branch whole
+  ("5 commit(s) came in with it"), and the others stayed open as bookkeeping. Z1 and Z3 close the two routes by which a sibling patch held the mission open in this run
+  (3 min 25 s of 14 min 42 s, and 4 min 7 s of 17 min 9 s); the structural cause stands. A merge that lands the owner's branch whole could say so to the owner, with the
+  patches it covers, and it does not.
+- **The stale-input wakes for a report built on patches that moved.** QA's report cited three patches; the two re-versions of the CLI and test patches each woke it
+  (14.3k and 10.4k, 03:34:02 and 03:34:25) to confirm that nothing it had tested had changed. They were archived minutes later. Batching notices that arrive within a
+  window would have bought one of the two turns.
+- **The pm's no-op wakes.** Seven of its 11 turns in round 1 changed nothing (65k tokens, 9.5% of the round), woken by `goal.progress`, which the mesh config gives it.
+- **Y1 in a live mesh is still unseen** (see the table).
+- **Z1 refuses, so it costs a call when it fires.** In this run it would have fired twice (the two rejections) and spared three turns; its rate over a longer mission is
+  not known. A refusal that names the read is the cheapest form of the check.
+- **One run.**
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| head `28c996c`, before this round | 4280 | 4277 | 1 | 0 | 2 |
+| this round, final (the test run: 4 min 1 s) | 4301 | 4299 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (195 warnings, one rule). The failure in the first row was `tests/workspace.test.ts`, whose `git gc` could not run while
+`/dev/null` was a regular file in this sandbox; it is a device again (since 01:28 UTC) and the test passed in both of this round's runs. The first full run of the round had one failure,
+`tests/integration/mission.test.ts` (the Z2 row), fixed in the scenario; the final run is clean. Tests added: 21 (2 for Z2, 10 for Z1, 4 for Z3, 5 for Z4). Mutation checks, each reverted: Z1 (12 mutants, 11 killed and the 12th removed as redundant), Z3 (4), Z4 (10)
+and Z2 (the line without its id): every one now fails a test.
+
+### Worth keeping from this round
+
+- **A seat can only name what it is shown.** Eleven made-up ids were not a defect of the model alone: the briefing offered a URI and the tool asked for an id, and the nearest
+  id-shaped string in the room was a message id. The refusal that lists the real ones (U5) is the right answer to a slip; putting the id on the line is the right answer
+  to a slip made eleven times.
+- **A briefing is a photograph, and a verdict is made after it.** Z1 is a seat ruling on a thing that changed after it looked; Z4 is a seat waking to a briefing that
+  had the event and not the words. Both were invisible in the log, where every event was correct: the rejection was recorded with a comment, against the version it named,
+  by a seat that held the authority. Only the transcript showed that the artifact it ruled on was never opened.
+- **A queue that holds one entry per seat drops words, not only wakes.** The stash decided which wake survived; the notice rode on a wake kind the stash did not
+  recognise. Anything a wake carries that no mailbox repeats has to be merged by the same code that picks the survivor.
+- **A test that passes by the order two seats happen to finish in is a test of that order.** The mission test's pm accepted the criteria as soon as the patch merged and
+  relied on QA's release result arriving before security's. A change to the length of a briefing, which nothing about the order should depend on, settled it the other way
+  on every run. The fix was in the scenario (wait for both results), not in the product, and the assertions were left as they were.
+- **A mutation survivor is sometimes a line that should not exist, again.** The pass-holder's exemption in Z1 survived because the approve has become a pass before the
+  guard runs; deleting it left less to read than a test that pinned it would have.
