@@ -217,6 +217,14 @@ what the mesh then accepts cannot differ:
   of it: a message id with `art-` in front, a URI folded into one, an id of its own
   making (11 of the 14 operations the mesh refused in the eighteenth cronlite run).
   The verdict tools' `artifactId` says where to read it.
+- On the line of an artifact the seat owns, the verdicts standing on its current version that say it is not
+  done (a reject, a veto or a block) are listed with what the reviewer wrote, on one line and cut at 1,500
+  characters with the rest counted: `  - tech-lead rejected it: Strong progress, but …`
+  (`relevantArtifacts[].verdicts`, from `ApprovalRecord.comment`, which the ledger now keeps). The reason lived
+  in the verdict's event and nowhere its owner reads: a rejection woke the developer with "Event matched your
+  declared interests: review.rejected" and no reason, and it asked the reviewer why, four times in the
+  eighteenth cronlite run, two turns each. A new version drops the verdicts on the old one, and the lines with
+  them.
 - The owner of an artifact is **woken** when somebody else's verdict moves it: the
   stock developer listens for `review.rejected` but not `review.approved`, so an
   approval used to reach nobody who could act on it (a patch sat approved for

@@ -6320,7 +6320,7 @@ export class Supervisor {
     const rung = now.type === "CodePatch" ? (CODE_ARTIFACT_TRANSITIONS[now.status] ?? [])[0] : undefined;
     const what = `${now.type} "${now.name}" v${now.version}`;
     const note = rejected
-      ? `${actorId} rejected your ${what}: read the verdict in your mailbox and publish a new version of the same artifact (asVersionOf) that answers it.`
+      ? `${actorId} rejected your ${what}: what ${actorId} wrote is under the artifact's line in your briefing (nothing is sent to your mailbox for a verdict). Publish a new version of the same artifact (asVersionOf) that answers it.`
       : `${actorId} approved your ${what}: it is now ${now.status}.` + (rung ? ` ${this.nextRungNote(now, rung)}` : " Carry on from there.");
     await this.activateAgent(owner, { kind: "interest_event", eventId, eventType, note }).catch(() => undefined);
   }

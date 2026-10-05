@@ -1238,6 +1238,13 @@ export interface ApprovalRecord {
   artifactRef?: ArtifactRef;
   actorId: AgentId;
   actorRole: string;
+  /**
+   * What the seat wrote with the verdict, as it wrote it (bounded). A rejection's reason is the one thing its owner has to act
+   * on, and it lived only in the `review.rejected` event: the owner was woken for the event and shown no reason, and asked the
+   * reviewer for it (four times in the eighteenth cronlite run, a round trip of two turns each). Absent on records written
+   * before it was kept, and on a verdict given with no comment.
+   */
+  comment?: string;
   evidenceEventId: EventId;
   recordedAt: string;
 }
@@ -2873,6 +2880,11 @@ export interface AgentContextBundle {
      * review it, the rule `request_review` applies.
      */
     settlers?: string[];
+    /**
+     * For an artifact this seat owns: the verdicts standing on its current version that say it is not done (a reject, a veto or a
+     * block) and what the reviewer wrote with them, bounded and on one line. See `ApprovalRecord.comment`.
+     */
+    verdicts?: Array<{ by: string; kind: "reject" | "veto" | "block"; comment: string }>;
     /**
      * Set for a seat that can accept criteria, on a submitted artifact it could cite for one that is
      * still open (`citableEvidence`): what the acceptance would take, said where the seat reads its

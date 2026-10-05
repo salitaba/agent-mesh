@@ -91,6 +91,18 @@ const MAX_DECISION_CHARS = 600;
  */
 const MAX_PAYLOAD_LINE_CHARS = 400;
 const MAX_PAYLOAD_LINES = 20;
+/**
+ * What a reviewer wrote when it ruled one of the seat's artifacts not done, as the artifact's line carries it. Long enough for the
+ * reasons Haiku reviewers give (the longest in the eighteenth run's two rounds was about 1.4k characters), and it says what it
+ * cut, as the other budgets here do.
+ */
+const MAX_VERDICT_LINE_CHARS = 1500;
+
+/** `text` on one line, cut at `max` characters with the remainder counted. */
+function oneLine(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max)}… ${flat.length - max} more character(s) omitted`;
+}
 
 /**
  * Message priority as a number, mirroring the scheduler's `PRIORITY_BY_MESSAGE`.
@@ -627,6 +639,18 @@ export function buildAgentContext(
   const citable =
     goalId && needsAcceptance.length > 0 && mayAcceptCriteria(config.agents[agentId]?.authority) ? citableEvidence(state, goalId, needsAcceptance) : [];
   const citableIds = new Set(citable.map((a) => a.id));
+  // What the reviewers of this seat's own artifacts said when they ruled it not done. The comment lived in the verdict's event
+  // and nowhere the owner reads: it was woken for a rejection, shown the event and no reason, and asked the reviewer for it.
+  const notDone = new Map<string, NonNullable<AgentContextBundle["relevantArtifacts"][number]["verdicts"]>>();
+  for (const list of state.approvals.values()) {
+    for (const r of list) {
+      if (!r.artifactId || !r.comment || (r.kind !== "reject" && r.kind !== "veto" && r.kind !== "block")) continue;
+      if (state.artifacts.get(r.artifactId)?.owner !== agentId) continue;
+      const mine = notDone.get(r.artifactId) ?? [];
+      mine.push({ by: r.actorId, kind: r.kind, comment: oneLine(r.comment, MAX_VERDICT_LINE_CHARS) });
+      notDone.set(r.artifactId, mine);
+    }
+  }
   const relevantArtifacts = [...ranked, ...citable.filter((a) => !ranked.some((r) => r.id === a.id))]
     .map((a) => ({
       ref: refToString({ uri: `artifact://${a.type}/${a.name}/${a.version}` }),
@@ -654,6 +678,7 @@ export function buildAgentContext(
       ...(a.status === "DRAFT" || a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW"
         ? { settlers: settlersOf(state, a) }
         : {}),
+      ...(notDone.has(a.id) ? { verdicts: notDone.get(a.id)! } : {}),
     }));
 
   // The task board, beyond the one task this seat holds. Open work first —
@@ -1481,6 +1506,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
       // The id is what every tool that acts on the artifact asks for (`artifactId`). It was left off, and the seats that had
       // to name one wrote what they had in front of them: a message id, a URI, an id of their own making.
       lines.push(`- ${a.ref} (${a.type}, id ${a.id}, ${a.status}${a.commit ? `, commit ${a.commit}` : ""})${rung}${stale}${settle}${cite}`);
+      for (const v of a.verdicts ?? []) lines.push(`  - ${v.by} ${v.kind === "reject" ? "rejected" : v.kind === "veto" ? "vetoed" : "blocked"} it: ${v.comment}`);
     }
     // Said once, under the list, where the seat decides what to cite. An acceptance from a turn that read or ran nothing is
     // recorded ASSERTED (the verification gate) and the mission goes on waiting for it: the pm in the tenth run's second round

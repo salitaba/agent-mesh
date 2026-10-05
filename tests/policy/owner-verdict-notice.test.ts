@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeMesh, stub, waitFor } from "../helpers";
+import { buildAgentContext, renderContextInstructions } from "../../packages/core/src/context";
 import type { ActivationReason, MeshOp } from "../../packages/protocol/src/index";
 
 /**
@@ -125,7 +126,10 @@ test("a rejection wakes its owner too, and says to answer it with a new version"
     assert.equal(m.kernel.state.artifacts.get(id)!.status, "REJECTED");
 
     await waitFor("the owner is woken by the verdict", () => woken.dev!.some((r) => r.eventType === "review.rejected" && r.kind === "interest_event"));
-    assert.match(String(woken.dev!.find((r) => r.eventType === "review.rejected")!.note), /lead rejected your CodePatch "patch" v1: read the verdict .* publish a new version of the same artifact/);
+    assert.match(String(woken.dev!.find((r) => r.eventType === "review.rejected")!.note), /lead rejected your CodePatch "patch" v1: what lead wrote is under the artifact's line in your briefing .*Publish a new version of the same artifact/);
+    // And the briefing the note points to has it: the reason is on the artifact's line, where the note says.
+    const text = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "dev"));
+    assert.ok(text.includes("  - lead rejected it: the parser drops the last field"), "the line the note points at carries what the reviewer wrote");
   } finally {
     await m.cleanup();
   }

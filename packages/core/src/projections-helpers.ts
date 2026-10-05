@@ -811,6 +811,9 @@ export function artifactForRef(state: Projections, artifactId?: string, uri?: st
   return undefined;
 }
 
+/** What a verdict's comment keeps in the ledger: the reasons a reviewer gives run to a page, and the ledger is read on every replay. */
+const MAX_VERDICT_COMMENT_CHARS = 4000;
+
 export function recordApproval(
   state: Projections,
   p: Record<string, any>,
@@ -830,6 +833,7 @@ export function recordApproval(
     artifactRef: p.artifactRef,
     actorId: p.actorId ?? event.actorId ?? "unknown",
     actorRole: p.actorRole ?? "",
+    ...(typeof p.comment === "string" && p.comment.trim() ? { comment: p.comment.trim().slice(0, MAX_VERDICT_COMMENT_CHARS) } : {}),
     evidenceEventId: event.id,
     recordedAt: event.timestamp,
   });
