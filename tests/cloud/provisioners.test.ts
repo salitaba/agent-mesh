@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ChildProcess } from "node:child_process";
+import { spawnSync, type ChildProcess } from "node:child_process";
 import {
   ContainerProvisioner,
   LocalProcessProvisioner,
@@ -327,6 +327,7 @@ test("a workspace is started as a process of its own, in a directory of its own,
     const home = path.join(l.dir, "ws_abc123", "home");
     assert.equal(run!.env.MESH_HOME, home);
     assert.equal(run!.env.HOME, home);
+    assert.ok(fs.statSync(home).isDirectory(), "the home it names is there");
     assert.equal(run!.env.MESH_PROJECTS_ROOT, path.join(l.dir, "ws_abc123", "projects"));
     assert.equal(run!.env.MESH_API_TOKEN, "operator-token-SECRET");
     assert.equal(run!.env.MESH_LICENSE, "AML1.k1.PAYLOAD.SIGNATURE");
@@ -469,6 +470,68 @@ test("what a host prints is kept beside its workspace, where only its owner can 
   }
 });
 
+test("the hook that ends hosts when the process ends is set once however many are started, and a process that exits leaves none behind", async () => {
+  const l = local();
+  try {
+    for (const id of ["ws_a", "ws_b", "ws_c"]) await l.p.create(spec({ workspaceId: id }));
+    const hooks = process.rawListeners("exit").filter((f) => (f as { listener?: unknown }).listener === killLiveHosts);
+    assert.equal(hooks.length, 1, "one handler, and not one for each host");
+  } finally {
+    l.done();
+  }
+  // With a real process: it starts a host that would run for a minute, says which, and ends without stopping it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "exit-hosts-"));
+  const script = [
+    'const { LocalProcessProvisioner } = require(process.argv[1]);',
+    'const { spawn } = require("node:child_process");',
+    "const p = new LocalProcessProvisioner({",
+    '  baseDir: process.argv[2], production: false, hostCommand: [process.execPath, "-e", "setTimeout(() => {}, 60000)"],',
+    '  spawn: (command, args, options) => { const child = spawn(command, args, { ...options, stdio: "ignore" }); console.log(child.pid); return child; },',
+    "});",
+    "p.create(JSON.parse(process.argv[3])).then(() => process.exit(0));",
+  ].join("\n");
+  const ran = spawnSync(process.execPath, ["-e", script, require.resolve("../../packages/cloud/src/index"), dir, JSON.stringify(spec())], { encoding: "utf8", timeout: 30_000 });
+  const pid = Number(ran.stdout.trim().split("\n")[0]);
+  const gone = (): boolean => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "ESRCH";
+    }
+  };
+  try {
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.ok(Number.isInteger(pid) && pid > 0, `a host was started: ${ran.stdout}`);
+    const until = Date.now() + 5_000;
+    while (!gone() && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(gone(), true, "the host was ended with the process that started it");
+  } finally {
+    if (Number.isInteger(pid) && pid > 0 && !gone()) process.kill(pid, "SIGKILL");
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a host that does not end when it is asked is killed after fifteen seconds, and not before", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const l = local();
+  try {
+    await l.p.create(spec());
+    const child = l.started[0]!.child;
+    child.obeys = false;
+    const stopped = l.p.suspend("ws_abc123");
+    assert.deepEqual(child.signals, ["SIGTERM"]);
+    t.mock.timers.tick(14_999);
+    assert.deepEqual(child.signals, ["SIGTERM"], "fifteen seconds are not up");
+    t.mock.timers.tick(1);
+    assert.deepEqual(child.signals, ["SIGTERM", "SIGKILL"]);
+    await stopped;
+    assert.equal(await l.p.status("ws_abc123"), "stopped");
+  } finally {
+    l.done();
+  }
+});
+
 test("a process that ends by itself is a workspace that is stopped", async () => {
   const l = local();
   try {
@@ -492,6 +555,8 @@ test("a workspace is removed with its directory, or with its credentials only wh
     assert.equal(fs.existsSync(path.join(root, ".provision")), false, "the credentials go");
     assert.equal(fs.readFileSync(path.join(root, "projects", "keep.txt"), "utf8"), "mine");
     assert.equal(await l.p.status("ws_abc123"), "missing");
+    await assert.doesNotReject(() => l.p.destroy("ws_abc123", { keepData: true }), "the credentials are gone already, and that is not an error either");
+    assert.equal(fs.readFileSync(path.join(root, "projects", "keep.txt"), "utf8"), "mine");
     await l.p.create(spec());
     await l.p.destroy("ws_abc123");
     assert.equal(fs.existsSync(root), false);
