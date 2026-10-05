@@ -13,6 +13,9 @@ workspaces:
   # A domain of its own, and not a subdomain of the app's: a workspace runs a customer's code, and a page on a sibling
   # address could set cookies for the app. The check refuses a domain under the app's registrable domain.
   domain: curule-ws.example
+  # With only one domain, `ws.curule.example` beside `app.curule.example` is refused, unless you write the next line, which says
+  # you know what it costs (docs/cloud-control-plane.md, "What the check refuses") and makes the check warn of it every time.
+  # allow_same_site: true
 
 # What the load balancer in front of the service connects to.
 public:

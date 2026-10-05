@@ -238,7 +238,13 @@ prints what the service would run (no secret is in it), and touches nothing.
 - *A workspace domain that shares the app's registrable domain.* A workspace runs a customer's code. A page on a sibling address
   can set cookies for the whole domain, and so can set cookies for the app, or fill the app's requests with cookies until the
   server refuses them. The workspace domain must be one of its own (`curule-ws.example` beside `app.curule.example`). The
-  check compares the last two labels, which is right for most domains and conservative for the rest.
+  check compares the last two labels, which is right for most domains and conservative for the rest. An operator who has only
+  one domain can write `allow_same_site: true` under `workspaces`, which turns the refusal into a warning that the check prints
+  every time. What then stands in the way of a page in a workspace is two things and no more: the app's session cookie is
+  host-only and prefixed `__Host-`, so a sibling address can neither set nor read it, and every change to the app must name
+  the app's own address as its `Origin`. What no longer does is `SameSite`: the two are the same site. A page in a workspace can
+  still set cookies for the whole domain, which is enough to make a browser's requests to the app too large to be answered.
+  It is the operator's to accept, and a domain of its own is the way to stop needing to.
 - *A licence key the build does not trust.* A workspace verifies its licence offline against the public keys in
   `packages/licensing/src/keys.ts`. If the key the service signs with is not the one whose public half is there, every
   workspace would read its licence as invalid and run on the Community plan, whatever was paid for. The check signs a

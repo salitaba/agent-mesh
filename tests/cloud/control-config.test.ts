@@ -235,6 +235,68 @@ test("workspaces are served from a domain of their own: not the app's host, not 
   }
 });
 
+test("a plan whose provider price id is still the example's placeholder is refused in production and warned of in a trial, and only where hosted checkout uses the id", () => {
+  const hosted = (raw: Record<string, any>): void => {
+    raw.billing = { provider: "hosted-checkout", api_key_env: "BILLING_API_KEY", webhook_secret_env: "BILLING_WEBHOOK_SECRET" };
+  };
+  const env = { ...ENV, BILLING_API_KEY: "sk_test_0123456789", BILLING_WEBHOOK_SECRET: "whsec_0123456789" };
+  const withIds = (ids: Record<string, string>) => {
+    const catalogue = pricedCatalogue();
+    for (const [plan, id] of Object.entries(ids)) catalogue.plans[plan].provider_price_id = id;
+    return catalogue;
+  };
+  using(workdir(hosted, withIds({ team: "price_REPLACE_WITH_THE_PROVIDERS_ID", business: "price_1Real" })), (w) => {
+    const m = refusal(w, env);
+    assert.match(m, /plan 'team' has provider_price_id 'price_REPLACE_WITH_THE_PROVIDERS_ID', which is still the example's placeholder: put the provider's own id for this price there/);
+    assert.doesNotMatch(m, /plan 'business'/, "only the plan that still has it");
+    assert.doesNotMatch(m, /plan 'yearly'/);
+  });
+  using(workdir(hosted, withIds({ team: "price_replace_me" })), (w) => assert.match(refusal(w, env), /plan 'team' has provider_price_id 'price_replace_me'/));
+  using(workdir(hosted, withIds({})), (w) => assert.doesNotThrow(() => load(w, env)));
+  // A trial only warns: it is on one machine and nothing is sold.
+  using(
+    workdir((raw) => {
+      trial(raw);
+      hosted(raw);
+    }, withIds({ team: "price_REPLACE_WITH_THE_PROVIDERS_ID" })),
+    (w) => assert.match(load(w, env).warnings.join("\n"), /plan 'team' has provider_price_id 'price_REPLACE_WITH_THE_PROVIDERS_ID', which is still the example's placeholder/),
+  );
+  // Manual billing never sends the id anywhere, so what it says does not matter.
+  using(workdir(undefined, withIds({ team: "price_REPLACE_WITH_THE_PROVIDERS_ID" })), (w) => assert.equal(load(w).warnings.filter((x) => x.includes("placeholder")).length, 0));
+});
+
+test("a workspace domain under the app's registrable domain is refused until the operator writes, in the file, that they know; then it is a warning that says what stands in the way and what does not", () => {
+  const same = (change: (raw: Record<string, any>) => void = () => undefined) =>
+    workdir((raw) => {
+      raw.app_url = "https://app.curule.example";
+      raw.workspaces = { domain: "ws.curule.example" };
+      change(raw);
+    });
+  using(same(), (w) => assert.match(refusal(w), /same registrable domain as the app 'app\.curule\.example'.*or, knowing that, write workspaces\.allow_same_site: true/s));
+  using(same((raw) => (raw.workspaces.allow_same_site = false)), (w) => assert.match(refusal(w), /same registrable domain/));
+  using(same((raw) => (raw.workspaces.allow_same_site = "yes")), (w) => assert.match(refusal(w), /workspaces\.allow_same_site must be true or false/));
+  using(same((raw) => (raw.workspaces.allow_same_site = true)), (w) => {
+    const c = load(w);
+    assert.deepEqual(c.workspaces, { domain: "ws.curule.example", scheme: "https", allowSameSite: true });
+    const said = c.warnings.filter((x) => x.includes("allow_same_site"));
+    assert.equal(said.length, 1);
+    assert.match(said[0]!, /under the same registrable domain as the app 'app\.curule\.example'/);
+    assert.match(said[0]!, /can set cookies for all of curule\.example/);
+    assert.match(said[0]!, /SameSite cookies do not hold it back/);
+    assert.match(said[0]!, /host-only and prefixed __Host-/);
+    assert.match(said[0]!, /must name the app's own address as its Origin/);
+    assert.ok(describeControl(c).some((l) => l.startsWith("WARNING: workspaces.domain 'ws.curule.example'")), "and it is shown with what the service would run");
+  });
+  // It excuses only that. The app's own host, or above or below it, is not made safe by it, and a domain of its own needs it for nothing.
+  using(workdir((raw) => ((raw.app_url = "https://app.curule.example"), (raw.workspaces = { domain: "app.curule.example", allow_same_site: true }))), (w) => assert.match(refusal(w), /must not be the app's host/));
+  using(workdir((raw) => ((raw.app_url = "https://app.curule.example"), (raw.workspaces = { domain: "curule.example", allow_same_site: true }))), (w) => assert.match(refusal(w), /or above it or below it/));
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", allow_same_site: true })), (w) => {
+    const c = load(w);
+    assert.equal("allowSameSite" in c.workspaces, false, "no warning and no flag for a domain that did not need it");
+    assert.equal(c.warnings.filter((x) => x.includes("allow_same_site")).length, 0);
+  });
+});
+
 test("a secret is read from the environment variable the file names, and one that is missing or short stops the start without being written in the message", () => {
   const cases: Array<[string, NodeJS.ProcessEnv, RegExp]> = [
     ["CONTROL_SECRET", { ...ENV, CONTROL_SECRET: "short-secret-0123456789" }, /the environment variable CONTROL_SECRET must hold the service secret of at least 32 characters/],

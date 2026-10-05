@@ -8,7 +8,8 @@
  * Three mistakes are caught here because they cannot be seen from outside once the service is running:
  *
  *   - Workspaces served from the app's own registrable domain. A workspace runs a customer's code, and a page on a sibling
- *     address can set cookies for the whole domain, including the app's. The workspace domain must be a domain of its own.
+ *     address can set cookies for the whole domain, including the app's. The workspace domain must be a domain of its own,
+ *     unless the operator writes `workspaces.allow_same_site: true`, which says in the file that they know, and is warned of.
  *   - A licence key the build does not trust. Every workspace would read its licence as an unknown key and run on the
  *     Community plan, whatever was paid for.
  *   - The local provisioner in production. It is not a boundary between customers.
@@ -37,6 +38,8 @@ export interface ControlConfig {
     scheme: "https" | "http";
     /** The port they are reached on, when it is not the scheme's own. */
     port?: number;
+    /** The operator has accepted, in the file, that the domain shares its registrable domain with the app. */
+    allowSameSite?: true;
   };
   /** True when the service is behind TLS. The local provisioner is refused then. */
   production: boolean;
@@ -325,9 +328,21 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   if (!ws) problems.push("workspaces must be a mapping with a domain");
   const domain = typeof ws?.domain === "string" ? ws.domain.trim().toLowerCase() : "";
   if (ws && !HOSTNAME.test(domain)) problems.push(`workspaces.domain '${String(ws.domain ?? "")}' is not a domain name`);
+  if (ws && ws.allow_same_site !== undefined && typeof ws.allow_same_site !== "boolean") problems.push("workspaces.allow_same_site must be true or false");
+  const allowSameSite = ws?.allow_same_site === true;
+  let sameSiteAccepted = false;
   if (app && HOSTNAME.test(domain) && !(isLocal(appHost) && isLocal(domain))) {
     if (domain === appHost || appHost.endsWith(`.${domain}`) || domain.endsWith(`.${appHost}`)) problems.push(`workspaces.domain '${domain}' must not be the app's host '${appHost}', or above it or below it: a workspace is served at <slug>.${domain}`);
-    else if (siteOf(domain) === siteOf(appHost)) problems.push(`workspaces.domain '${domain}' is under the same registrable domain as the app '${appHost}'. A workspace runs a customer's code, and a page there could set cookies for the app. Serve workspaces from a domain of their own`);
+    else if (siteOf(domain) === siteOf(appHost)) {
+      if (allowSameSite) {
+        sameSiteAccepted = true;
+        warnings.push(
+          `workspaces.domain '${domain}' is under the same registrable domain as the app '${appHost}', which workspaces.allow_same_site accepts. A page in a workspace can set cookies for all of ${siteOf(appHost)}, and it is the same site as the app, so SameSite cookies do not hold it back. What stands in its way is that the app's session cookie is host-only and prefixed __Host- (a sibling address can neither set it nor read it) and that every change to the app must name the app's own address as its Origin. A domain of its own removes the risk`,
+        );
+      } else {
+        problems.push(`workspaces.domain '${domain}' is under the same registrable domain as the app '${appHost}'. A workspace runs a customer's code, and a page there could set cookies for the app. Serve workspaces from a domain of their own, or, knowing that, write workspaces.allow_same_site: true`);
+      }
+    }
   }
 
   // ---- listeners
@@ -482,7 +497,13 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     const webhookSecret = fromEnv(bill.webhook_secret_env, "billing.webhook_secret_env", "the signing secret of the provider's messages", 8);
     const base = bill.base_url === undefined ? undefined : url(bill.base_url, "billing.base_url")?.href;
     billing = { provider: "hosted-checkout", apiKey, webhookSecret, ...(base ? { baseUrl: base } : {}) };
-    if (catalogue) for (const p of catalogue.plans()) if (!p.providerPriceId) problems.push(`plan '${p.id}' has no provider_price_id, which hosted checkout needs to sell it`);
+    if (catalogue) {
+      for (const p of catalogue.plans()) {
+        if (!p.providerPriceId) problems.push(`plan '${p.id}' has no provider_price_id, which hosted checkout needs to sell it`);
+        // The example says REPLACE where the provider's own id goes. Left there, a checkout is asked for a price that does not exist, and the first customer finds out.
+        else if (/REPLACE/i.test(p.providerPriceId)) (production ? problems : warnings).push(`plan '${p.id}' has provider_price_id '${p.providerPriceId}', which is still the example's placeholder: put the provider's own id for this price there`);
+      }
+    }
   } else if (bill) problems.push(`billing.provider must be manual or hosted-checkout (got ${JSON.stringify(bill.provider)})`);
 
   const reconcileMinutes = wholeNumber(raw.reconcile_minutes, "reconcile_minutes", 1, 1_440, 15, problems);
@@ -491,7 +512,7 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   return {
     appUrl,
     appHost,
-    workspaces: { domain, scheme: production ? "https" : "http", ...(workspacePort !== undefined ? { port: workspacePort } : {}) },
+    workspaces: { domain, scheme: production ? "https" : "http", ...(workspacePort !== undefined ? { port: workspacePort } : {}), ...(sameSiteAccepted ? { allowSameSite: true as const } : {}) },
     production,
     public: { ...publicListen, trustProxyHops },
     owner: { ...ownerListen, token: ownerToken },
