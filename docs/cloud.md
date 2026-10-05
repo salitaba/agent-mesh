@@ -1,0 +1,140 @@
+# Curule Cloud: the hosted service
+
+Curule Cloud is the runtime, run for you. A person signs up on the site, pays, and opens a workspace in the browser:
+the same dashboard, the same agents, on servers the service operates and on models the service supplies. Nobody installs
+anything, rents a server, or holds an API key.
+
+It is the same product as the self-hosted one. The kernel, the policy engine and the dashboard are unchanged; what is
+added is the part around them (accounts, payment, per-customer isolation, a model gateway) and one thing inside: a
+runtime that is not tied to any single model vendor.
+
+This document is the design and the status of each part. A part is listed as built only when its tests pass; what needs
+a decision, an account or a credential from the operator of the service is stated as such, never assumed.
+
+## Status
+
+| Part | Where | State |
+|---|---|---|
+| Provider-neutral runtime, `native` | `packages/runtime-native` | designed, not built |
+| Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | designed, not built |
+| Model gateway: virtual keys, budgets, metering | `packages/ai-gateway` | designed, not built |
+| Control plane: accounts, plans, credits, workspaces | `packages/cloud`, `apps/cloud-server` | designed, not built |
+| Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | designed, not built |
+| Workspace provisioner (local process for development, container for production) | `packages/cloud` | designed, not built |
+| Authenticating edge proxy for the dashboard and its event stream | `apps/cloud-server` | designed, not built |
+| Sign up, billing and workspace pages | `apps/cloud-server` | designed, not built |
+
+## What a customer gets
+
+1. A workspace: one isolated Curule host with its own state, projects and event log. The plan sets how many projects,
+   seats per mesh and concurrent turns it allows, exactly as the self-hosted licence does, because the workspace runs
+   with a signed licence minted for the plan.
+2. Models, without keys. The workspace's agents call the service's gateway with a key that belongs to that workspace
+   alone. The customer picks a tier (`fast`, `balanced`, `best`) or leaves the default; which provider and model serves a
+   tier is the service's business and can change without the customer touching a setting.
+3. A balance. Each plan period includes an amount of model usage; more can be bought. When the balance reaches zero the
+   gateway refuses new calls and the mesh pauses with one clear notice that says why. It does not fail seat by seat.
+4. Their data. The workspace's event log, artifacts and git worktrees are exportable; deleting a workspace deletes them.
+
+## What the mesh keeps guaranteeing
+
+The guarantees of the runtime do not depend on where it runs or which model answers: every action is an appended event,
+the policy engine refuses what a seat has no authority for on the op itself, budgets bound spend, and any moment can be
+replayed. A hosted workspace gets the same log format as a local one, so a customer can leave with their record and
+open it anywhere.
+
+## Parts
+
+### Provider-neutral runtime
+
+`runtime: native` seats run an agent loop that belongs to Curule, behind a small port (`LlmProvider`) with one adapter
+per wire format rather than one per vendor:
+
+- **OpenAI-compatible chat completions.** The common format: OpenAI, Azure OpenAI, Google's compatibility endpoint,
+  Groq, Together, Fireworks, DeepSeek, Mistral, OpenRouter, and local servers such as Ollama, vLLM and llama.cpp.
+- **Anthropic Messages**, for Claude models called directly with an API key, with prompt caching.
+
+The loop reads the same briefing the Claude adapter reads, calls the model with the seat's tools, runs them, and ends the
+turn when the model stops. The tools are the ones a seat already knows (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`,
+`WebFetch`, and the `mesh_*` bus tools over the bus's HTTP endpoint), gated by the same capability rules, the same
+operator approval gate and the same landing gate. The gate code is shared with the Claude adapter, not copied.
+
+The Claude adapter stays, for operators who run Claude Code with their own subscription or credentials. It is one runtime
+among several, not the product's foundation.
+
+### Model gateway
+
+The gateway is the only place provider credentials exist. A workspace gets a virtual key: scoped to that workspace,
+carrying a budget and a rate limit, revocable at any moment, useless anywhere but the gateway.
+
+For each call the gateway checks the key, the budget and the model allowlist, forwards to the provider chosen for the
+requested tier, streams the answer back, reads the usage the provider reports, and appends one record to an append-only
+usage ledger. Budgets are enforced before the call (from the balance) and settled after it (from the usage), so a single
+long call cannot overdraw by more than its own cost. The ledger, not a counter, is the source of truth: a balance is a
+projection of it, in the same way every other view in Curule is a projection of its event log.
+
+The tenant-facing API is OpenAI-compatible chat completions with tool calls and streaming, which is exactly what the
+`native` runtime speaks. Providers whose wire format differs are reached through the same adapters the runtime uses, so
+there is one translation to maintain, not two.
+
+### Control plane
+
+Accounts, organisations, plans, credits, workspaces and their lifecycle (created, running, suspended for non-payment,
+deleted). Its state is an append-only log with projections, like the kernel's, behind a store interface so a database can
+replace the file when one process is no longer enough.
+
+- **Sign in.** Email and password (scrypt), sessions in an `HttpOnly`, `SameSite=Lax` cookie, a request-origin check on
+  every mutating call, rate limits on sign-in and sign-up, and answers that do not reveal whether an email has an
+  account.
+- **Billing port.** The control plane never talks to a payment provider directly. It speaks a small interface (create a
+  checkout, open the customer portal, verify and normalise a webhook), and each provider is an adapter. A hosted-checkout
+  adapter and a manual adapter (the operator records a payment, which is how invoices and bank transfers work) ship
+  first. Which provider can take payment for a given company depends on where the company is established and where its
+  customers are; that choice belongs to the operator and changes nothing else.
+- **Entitlements.** A paid plan becomes a signed licence for the workspace, minted by the control plane with the key the
+  operator holds. The workspace verifies it offline, as any self-hosted install does.
+- **Credits.** Plan periods and purchases append grants to a ledger; the gateway's usage appends spend. The balance is
+  the sum, and it sets the virtual key's budget.
+
+### Workspaces
+
+A provisioner creates, suspends, resumes and destroys workspaces. It has two implementations behind one interface:
+
+- **Local process**, for development and single-customer installs. It refuses to run when the service is configured as
+  production, because an agent's shell is only as isolated as its process, and that is not isolation between customers.
+- **Container**, for production: one container per workspace with a read-only image, a writable state volume, CPU and
+  memory limits, no route to the control plane or to other workspaces, no route to cloud metadata addresses, and egress
+  limited to the gateway, the package registries and git hosts the operator allows.
+
+Stronger boundaries (a microVM per workspace) fit behind the same interface.
+
+### Edge proxy
+
+The dashboard and its server-sent event stream are served through the control plane's proxy. It checks the session and the
+membership, adds the workspace's operator credential on the way in, and never sends that credential to the browser. A
+workspace has no public address.
+
+## Threats and what answers them
+
+| Threat | Answer | Residual |
+|---|---|---|
+| One customer reaches another's workspace | Membership check at the edge; a workspace has no public address; containers share no network | Container escape is the provider's and the host's risk; mitigated by a microVM provisioner |
+| An agent, steered by hostile text in a repository, runs commands to attack the host | The workspace is the blast radius; its container has no route to anything but the gateway and the allowed egress | An agent can do what its container can reach, which is why the egress list is short |
+| An agent exfiltrates the workspace's gateway key | The key is budgeted, rate-limited, revocable and valid only at the gateway; the agent's shell does not inherit it in its environment | Anyone who obtains it can spend that workspace's balance until it is revoked or empty |
+| A customer runs up usage the service cannot bill | The balance is checked before each call and settled after; the key's budget is the balance | A call in flight can overdraw by at most its own cost |
+| A forged payment event grants a plan | Webhooks are verified against the provider's signature before they are read; unverified bodies are refused | Compromise of the provider account |
+| Stolen session | `HttpOnly`, `SameSite=Lax`, rotation on sign-in and password change, server-side revocation | A compromised browser |
+| Provider outage or exhausted provider account | The gateway returns a typed error; the mesh pauses once, not seat by seat; tiers can fail over to another provider | Provider concentration, reduced by the tier layer |
+| Server-side request forgery from an agent's `WebFetch` | Private, loopback and link-local addresses are refused after DNS resolution, including through redirects | An allowlisted host that is itself hostile |
+
+## What is not done, and not claimed
+
+- No model provider's terms are assumed to allow resale. The service must hold, for each provider it routes to, a
+  commercial agreement that permits it to supply that provider's models to its customers. The runtime and gateway are
+  provider-neutral so that this is a configuration of the service, not a limit of the software.
+- Single sign-on and per-operator roles are not built; a workspace has one operator credential, as the self-hosted
+  product does today.
+- The control plane runs as one process. Its store interface is the seam for running more.
+- Real-provider behaviour is only as tested as an operator makes it: the adapters are tested against servers that speak
+  each wire format, and a provider check command (planned) is how an operator proves a key and a model work before
+  relying on them.
