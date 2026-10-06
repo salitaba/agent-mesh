@@ -467,3 +467,30 @@ test("Escape clears what is typed, and is left alone when there is nothing to cl
   assert.equal(r.key("Escape"), false, "an empty field lets Escape through");
   assert.equal(r.key("a"), false);
 });
+
+// ---------------------------------------------------------------- the phone menu
+
+test("the phone menu closes on a touch anywhere else and when Tab takes the focus out of it, and stays open while the focus is in it", () => {
+  for (const p of pages) {
+    const doc = parsePage(p.html);
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
+    const menu = doc.querySelector(".menu") as FakeNode & { open?: boolean };
+    const summary = menu.querySelector("summary")!;
+    const inside = menu.querySelector(".menu-panel a")!;
+    const outside = doc.getElementById("main")!;
+    const touch = (target: FakeNode): void => (doc.listeners.get("pointerdown") ?? []).forEach((fn) => fn(event(target)));
+    const leave = (to: FakeNode | null): void => (menu.listeners.get("focusout") ?? []).forEach((fn) => fn(event(summary, { relatedTarget: to })));
+    menu.open = true;
+    touch(inside);
+    touch(summary);
+    assert.equal(menu.open, true, `${p.rel}: a touch in the menu is the menu's own (the summary opens and closes it itself)`);
+    touch(outside);
+    assert.equal(menu.open, false, `${p.rel}: a touch on the page closes it`);
+    menu.open = true;
+    leave(inside);
+    leave(null);
+    assert.equal(menu.open, true, `${p.rel}: the focus moving inside it, or the window losing it, leaves it open`);
+    leave(outside);
+    assert.equal(menu.open, false, `${p.rel}: Tab out of it closes it`);
+  }
+});

@@ -297,11 +297,19 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     filter.hidden = false;
   }
 
-  // The phone menu closes when a link in it is followed (on the same page) and on Escape.
+  // The phone menu closes when a link in it is followed (on the same page) and on Escape. It closes too when the reader touches
+  // the page anywhere else, and when Tab takes the focus out of it: an open panel is never left over the page, where it would
+  // hide the very link the keyboard has moved to.
   all(".menu").forEach(function (menu) {
     menu.addEventListener("click", function (event) {
       var target = event.target;
       if (target && target.closest && target.closest("a")) menu.removeAttribute("open");
+    });
+    document.addEventListener("pointerdown", function (event) {
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
+    });
+    menu.addEventListener("focusout", function (event) {
+      if (menu.open && event.relatedTarget && !menu.contains(event.relatedTarget)) menu.open = false;
     });
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && menu.open) {
