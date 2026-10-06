@@ -734,6 +734,15 @@ const KERNEL_OPENERS = [/^continuity written for the session handover\b/, /^\d+ 
 const unwarn = (s: string): string => s.replace(/^⚠\s*/, "").trim();
 
 /**
+ * A record's own notices (`TurnRecord.notices`), as the step drawer's Reasoning list shows them. The list draws its own warning
+ * mark, so the kernel's leading "⚠" is dropped from each, as `splitSummary` drops it from the notices it splits out of an older
+ * record's summary: the notices that came as a list read "▲ ⚠ turn only done", the mark twice.
+ */
+export function recordNotices(notices: unknown): string[] {
+  return Array.isArray(notices) ? notices.filter((n): n is string => typeof n === "string").map(unwarn).filter(Boolean) : [];
+}
+
+/**
  * Split a turn summary into what the kernel said and what the model said.
  *
  * The summary is one string the supervisor assembles: kernel verdicts ("⚠ 1 of

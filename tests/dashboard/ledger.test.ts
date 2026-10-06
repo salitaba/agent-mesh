@@ -14,6 +14,7 @@ import {
   ledgerTally,
   opHead,
   producedFromTimeline,
+  recordNotices,
   splitSummary,
   storageClips,
   valueAt,
@@ -308,6 +309,17 @@ test("a turn summary splits into kernel notices and the model's own words", () =
     notices: ["continuity written for the session handover — this turn is not scored as work"],
     model: "",
   });
+});
+
+test("a record's notices lose the kernel's own warning mark, since the list draws one: one mark, not two", () => {
+  // The step drawer's Reasoning read "▲ ⚠ turn only done — …" for notices that came as a list, and "▲ turn only done" for the same
+  // notice split out of an older record's summary.
+  assert.deepEqual(
+    recordNotices(["⚠ turn only done — no work was produced while the mission has unmet criteria", "landed this turn: 2 messages sent", "⚠  ", "  ", 3, null]),
+    ["turn only done — no work was produced while the mission has unmet criteria", "landed this turn: 2 messages sent"],
+  );
+  assert.deepEqual(recordNotices(undefined), []);
+  assert.deepEqual(recordNotices(["⚠ request_review: pm cannot deliver a verdict"]), splitSummary("⚠ request_review: pm cannot deliver a verdict").notices, "the same notice reads the same however the record carries it");
 });
 
 test("an uncaptured row is named from the event it landed, but only where that pairing is no guess", () => {

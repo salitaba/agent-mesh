@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
-import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
+import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, recordNotices, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
@@ -982,9 +982,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
   const split = Array.isArray(t.notices) || typeof t.modelSummary === "string"
     ? null
     : typeof t.summary === "string" && !summaryIsOps ? splitSummary(t.summary) : null;
-  const notices: string[] = Array.isArray(t.notices)
-    ? t.notices.filter((n: unknown): n is string => typeof n === "string" && n.trim().length > 0)
-    : split?.notices ?? [];
+  const notices: string[] = Array.isArray(t.notices) ? recordNotices(t.notices) : split?.notices ?? [];
   // The model's own summary when there is one; otherwise the reply itself.
   // Showing only the summary told the reader "no narration" on turns whose
   // reply was all prose, while Outcome said the model wrote prose. A summary
