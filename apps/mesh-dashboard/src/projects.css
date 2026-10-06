@@ -159,4 +159,6 @@
 .pj-skel i:nth-child(3) { width: 60%; }
 @media (max-width: 560px) {
   .pj-summary { gap: var(--s2-5) var(--s5); padding: var(--s3); }
+  /* Starting, opening, closing or removing a project is pressed with a thumb. */
+  .pj-page button { min-height: 44px; }
 }

@@ -217,6 +217,11 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
   .ms-checks-anchor { position: static; }
   .ms-pop.ms-checks { position: fixed; left: var(--s3); right: var(--s3); width: auto; top: var(--ms-pop-top, 9rem); }
 }
+@media (max-width: 560px) {
+  /* The first minute here is thumbs on the guide and the save bar: the steps' buttons and Save are 44px tall (the canvas and the
+     header's tools stay the editor's own density). */
+  .ms-guide button, .ms-bar-acts > button { min-height: 44px; }
+}
 @media (max-width: 760px) {
   /* The header's actions join the title row's own wrapping, so undo and redo sit beside the title and the rest fills the row below it. */
   .ms .page-actions { display: contents; }

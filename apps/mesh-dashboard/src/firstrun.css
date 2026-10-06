@@ -146,4 +146,7 @@
 @media (max-width: 560px) {
   /* A dialog at 6vh leaves a phone's keyboard nowhere to go: dock it to the bottom, where the thumb is. */
   .np-dialog { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0; padding: var(--s4); }
+  /* Everything that makes the first team is pressed with a thumb: the buttons of the welcome and of this dialog, the folder and its Browse. */
+  .fr-card-acts .fr-go, .fr-demo button, .fr-folder-row button, .fr-path-row button, .fr-folder-row input, .np-head .icon-btn { min-height: 44px; }
+  .np-head .icon-btn { min-width: 44px; }
 }
