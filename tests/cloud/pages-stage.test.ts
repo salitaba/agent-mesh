@@ -137,7 +137,8 @@ test("the card says one thing for each stage, in a sentence, with the one action
 
 test("a late payment says when the workspaces stop, or that they are stopped, and the one thing to do is to update the payment details", () => {
   const action = { kind: "billing", label: "Update payment details" };
-  assert.deepEqual(card(view({ subscription: LATE, workspaces: [ws("A", "running")] })), { tone: "warn", title: "Your last payment did not go through", text: "Your workspaces keep running until October 8, 2026 and are then stopped. A payment before then puts everything back.", action });
+  assert.deepEqual(card(view({ subscription: LATE, workspaces: [ws("A", "running")] })), { tone: "warn", title: "Your last payment did not go through", text: "Your workspaces keep running until October 8, 2026 and are then stopped. A payment before then puts everything back.", action, also: { kind: "open", label: "Open" } }, "a workspace that is still running can be opened from the card: the payment is first, and the work is not behind it");
+  assert.equal(card(view({ subscription: LATE, workspaces: [ws("A", "suspended")] })).also, undefined, "one that is stopped has nothing to open");
   assert.equal(card(view({ subscription: LATE, workspaces: [ws("A", "running")], policy: { ...PLANS.policy, graceDays: 7 } })).text.slice(0, 55), "Your workspaces keep running until October 12, 2026 and", "the day follows the service's own grace period");
   assert.equal(card(view({ subscription: { ...LATE, pastDueSince: undefined } })).text, "Your workspaces are stopped after a short grace period. A payment before then puts everything back.", "no day is made up when the service gives none");
   assert.equal(card(view({ subscription: LATE, policy: null })).text, "Your workspaces are stopped after a short grace period. A payment before then puts everything back.");
@@ -268,6 +269,21 @@ test("what the card offers is done from the card: open the workspace, resume it,
   await l.idle();
   assert.equal(l.text("plan-status"), "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan.", "a service that has no portal says so in its own words");
   assert.equal(l.button("stage-actions", "Update payment details").disabled, false);
+});
+
+test("a late payment puts the payment first and keeps Open beside it for a workspace that still runs, which is how a person comes back to work", async () => {
+  const w = world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; });
+  w.answers.set("POST /api/workspaces/ws_1/open", { json: { url: "https://research-1a2b3c.ws.example.com/__enter?code=abc" } });
+  const v = await visit("account", { routes: w.routes });
+  assert.deepEqual(v.labels("stage-actions"), ["Update payment details", "Open"]);
+  assert.deepEqual(v.buttons("stage-actions").map((b) => b.className), ["btn btn-primary", "btn"], "the payment is the main thing, and Open is the lesser of the two");
+  assert.equal(v.button("stage-actions", "Open").getAttribute("aria-label"), "Open Research");
+  v.click(v.button("stage-actions", "Open"));
+  await v.idle();
+  assert.deepEqual(v.navigations, ["assign https://research-1a2b3c.ws.example.com/__enter?code=abc"]);
+
+  const stopped = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace({ status: "suspended", statusReason: "payment is overdue" })]; }).routes });
+  assert.deepEqual(stopped.labels("stage-actions"), ["Update payment details"], "a workspace that was stopped for it has nothing to open");
 });
 
 test("the form for a first workspace is in the card, goes back to the workspaces once there is one, and a look at the account does not empty it", async () => {
@@ -430,8 +446,11 @@ test("a plan that is chosen, a payment that was cancelled and a payment that is 
   assert.deepEqual(v.navigations, ["assign https://pay.example/c/abc"]);
 
   const back = await visit("account", { routes: world().routes, search: "?cancelled=1" });
-  assert.equal(back.text("notice"), "Checkout was cancelled. Nothing was charged.");
+  assert.equal(back.text("notice"), "Checkout was cancelled. Nothing was charged. Choose a plan below when you are ready.");
   assert.equal(back.text("stage-title"), "Choose a plan", "and the way to try again is where it was");
+  const late = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace({ status: "suspended", statusReason: "payment is overdue" })]; }).routes, search: "?cancelled=1" });
+  assert.equal(late.text("notice"), "Checkout was cancelled. Nothing was charged, and your plan and balance are as they were.", "a payment that was late is still late, and the card says what to do about it");
+  assert.equal(late.text("stage-title"), "Your last payment did not go through");
   const spent = await visit("account", { routes: world((x) => { paid(x); x.balance = balance({ included: 0, available: 0 }); }).routes });
   assert.match(spent.text("notice"), /^Your balance is used up\./);
   assert.equal(spent.text("stage-title"), "Make your first workspace", "a balance that is gone is not a stage: the card is for what is next");

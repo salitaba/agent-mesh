@@ -740,7 +740,7 @@ test("a payment that has failed is said at the top with the day the workspaces s
   assert.equal(v.text("stage-title"), "Your last payment did not go through");
   assert.equal(v.text("stage-text"), "Your workspaces keep running until October 8, 2026 and are then stopped. A payment before then puts everything back.");
   assert.equal(v.$("stage").className, "stage stage-warn");
-  assert.deepEqual(v.labels("stage-actions"), ["Update payment details"], "the one thing to do is where the card says it");
+  assert.deepEqual(v.labels("stage-actions"), ["Update payment details", "Open"], "the one thing to do is where the card says it, with Open beside it for the workspace that still runs");
   assert.equal(v.text("notice"), "", "and it is said once: not again in the notice above it");
   assert.match(v.text(v.$("plan").querySelector(".row")!), /^Team Payment overdue /i);
   assert.equal(v.text("create-note"), "Update your payment details to create a workspace.", "the card at the top has said why");
@@ -1163,12 +1163,14 @@ test("coming back with nothing remembered (another tab, a browser that keeps not
   await w.until("the arrival to be seen", () => w.text("notice") === "Your payment has arrived.");
 });
 
-test("a checkout that was cancelled says nothing was charged and leaves the address", async () => {
+test("a checkout that was cancelled says nothing was charged and that what there was is as it was, and leaves the address", async () => {
   const w = world(paid);
   const v = await visit("account", { routes: w.routes, search: "?cancelled=1" });
-  assert.equal(v.text("notice"), "Checkout was cancelled. Nothing was charged.");
+  assert.equal(v.text("notice"), "Checkout was cancelled. Nothing was charged, and your plan and balance are as they were.");
   assert.deepEqual(v.history, ["/account"]);
   assert.equal(v.to("GET", "/api/me").length, 1);
+  const h = await visit("account", { routes: hosting().routes, search: "?cancelled=1" });
+  assert.equal(h.text("notice"), "Checkout was cancelled. Nothing was charged, and your plan is as it was.", "a plan that sells hosting only has no balance to speak of");
 });
 
 test("the back button returns to a page that is drawn again from the service, not one frozen with a payment page's button pressed", async () => {

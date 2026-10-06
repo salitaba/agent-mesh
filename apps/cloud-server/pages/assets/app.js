@@ -245,7 +245,9 @@
         const days = view.policy ? view.policy.graceDays : null;
         const ends = days !== null && sub.pastDueSince ? when(new Date(Date.parse(sub.pastDueSince) + days * 86_400_000).toISOString()) : "";
         const text = stopped ? "Your workspaces were stopped because of it. A payment puts everything back." : ends ? `Your workspaces keep running until ${ends} and are then stopped. A payment before then puts everything back.` : "Your workspaces are stopped after a short grace period. A payment before then puts everything back.";
-        return { tone: "warn", title: "Your last payment did not go through", text, action: { kind: "billing", label: "Update payment details" } };
+        // Workspaces keep running for the grace period, and a person comes to work in one: Open is there, as the lesser of two, so that the payment is the first thing and the work is not behind it.
+        const card = { tone: "warn", title: "Your last payment did not go through", text, action: { kind: "billing", label: "Update payment details" } };
+        return w && w.status === "running" ? { ...card, also: { kind: "open", label: "Open" } } : card;
       }
       case "no-workspace":
         return {
@@ -1238,19 +1240,21 @@
       if (target) target.focus();
     }
 
-    function stageAction(a, w) {
+    /** The button for what the card offers. `lesser` is for the second of two: the first is the main thing. */
+    function stageAction(a, w, lesser) {
       const named = w ? { "aria-label": `${a.label} ${w.name}` } : undefined;
+      const kind = lesser ? "" : "primary";
       switch (a.kind) {
         case "link":
           return el("a", { class: "btn btn-primary", href: a.href }, a.label);
         case "billing":
-          return button(a.label, { kind: "primary", onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) });
+          return button(a.label, { kind, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) });
         case "key":
-          return button(a.label, { kind: "primary", onclick: () => focusKey(w) });
+          return button(a.label, { kind, onclick: () => focusKey(w) });
         case "open":
-          return button(a.label, { id: "stage-open", kind: "primary", onclick: () => open(w), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-open", kind, onclick: () => open(w), ...(named ? { attrs: named } : {}) });
         default:
-          return button(a.label, { id: "stage-resume", kind: "primary", onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-resume", kind, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
       }
     }
 
@@ -1302,7 +1306,7 @@
           $("create-slot").append(form);
           state.createAt = "panel";
         }
-        actions.replaceChildren(...(card.action ? [stageAction(card.action, w)] : []));
+        actions.replaceChildren(...(card.action ? [stageAction(card.action, w, false), ...(card.also ? [stageAction(card.also, w, true)] : [])] : []));
       }
       // What a screen reader is told, once, when the account moves on: the page was not asked, and nothing it was looking at is gone.
       if (state.stageId !== undefined && state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
@@ -1713,7 +1717,11 @@
     const paid = params.get("paid") === "1";
     const cancelled = params.get("cancelled") === "1";
     if (paid || cancelled) history.replaceState(null, "", "/account");
-    if (cancelled) flash("", "Checkout was cancelled. Nothing was charged.");
+    if (cancelled) {
+      // Nothing is known of what was being bought, so what is said is true of every case: nothing was charged, and what there was is as it was.
+      const said = !holdsPlan(subscription()) ? ". Choose a plan below when you are ready." : sectionsOf(viewOf()).balance ? ", and your plan and balance are as they were." : ", and your plan is as it was.";
+      flash("", `Checkout was cancelled. Nothing was charged${said}`);
+    }
     if (paid) {
       // What the account looked like before the person left is kept in the tab, so that a payment that was applied while they were
       // away is seen as one. Without it (another tab, a browser that keeps nothing) the page can only watch for a change.

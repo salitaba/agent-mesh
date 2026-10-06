@@ -543,7 +543,8 @@ error. The colours and the type are the site's.
   of markup, so a workspace named like markup is a name.
 - **The account knows where the customer is.** A card at the top says the one thing the account is waiting for and offers one
   action: choose a plan, make the first workspace, add the model key (a plan that sells hosting only), open the workspace, resume
-  it, or update the payment details when the last payment failed. While a person is getting started it shows the steps (Plan,
+  it, or update the payment details when the last payment failed (with Open beside it while a workspace still runs, so that the
+  payment is first and the work is not behind it). While a person is getting started it shows the steps (Plan,
   Workspace, Model key where there is one, Open) and which one they are at; the key comes after the workspace because it can only be
   given to a workspace that has started. `stageOf` and `nextStepOf` in `assets/app.js` decide the stage and the words from
   `GET /api/me` and `GET /api/plans`, and are tried on tables. The rest of the page follows the stage: workspaces are listed once
@@ -558,7 +559,8 @@ error. The colours and the type are the site's.
   at again every few seconds, for ten minutes, and the page says when it has stopped looking. A payment is made on the provider's
   page, and the account is where it returns to: what the account looked like before leaving is kept in the tab, so a payment that
   was applied while the person was away is said to have arrived, and one that has not been is waited for for a minute and then
-  said to be on its way. The balance is shown rounded down.
+  said to be on its way. A checkout that was cancelled says that nothing was charged and that what there was is as it was (or,
+  with no plan yet, to choose one when ready). The balance is shown rounded down.
 - **"Check your email" helps.** It names the address the link went to, offers Resend the email (a wait of a minute starts when the
   email goes, shown as text that counts down and not read out at every second; what is read out is the service's answer and that
   the wait is over) and Use another address (which hands the address that was typed back to the sign-up page, once, in the tab,
