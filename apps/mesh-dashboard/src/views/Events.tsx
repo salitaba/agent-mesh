@@ -3,10 +3,10 @@ import { useMesh, type TimelineEvent } from "../store";
 import { Button, EmptyState, ErrorState, Input, PageHeader, Select, useNow } from "../components";
 import { EventDetail, EventMissing } from "../evdetail";
 import { Icon } from "../icons";
-import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord } from "../events";
+import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord, useNameOf } from "../events";
 import {
   applySeverity, buildRows, eventHaystack, facetOne, facetValues, filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
-  type EventFilter, type Severity,
+  type EventFilter, type NameOf, type Severity,
 } from "../eventmodel";
 import { heldList, newestKey } from "../feed";
 import { FeedStatus, HoldBar, PauseButton, useFeedHold } from "../feedstatus";
@@ -36,8 +36,8 @@ const NO_EVENT_FILTER: EventFilter = { search: "", groups: new Set(), actor: nul
 
 /* ------------------------------- rows ---------------------------------- */
 
-const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab }: {
-  e: TimelineEvent; selected: boolean; tab: boolean; onOpen: (seq: number) => void; onTab: (key: string) => void;
+const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab, nameOf }: {
+  e: TimelineEvent; selected: boolean; tab: boolean; onOpen: (seq: number) => void; onTab: (key: string) => void; nameOf: NameOf;
 }): React.JSX.Element {
   const sev = evSeverity(e);
   return (
@@ -53,7 +53,7 @@ const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab }: {
     >
       <span className="evc-sev"><SevMark s={sev} /><span className="sr-only">{sevWord(sev)}</span></span>
       <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
-      <span className="evc-sum" onMouseEnter={titleWhenClipped}><EventSummary e={e} /></span>
+      <span className="evc-sum" onMouseEnter={titleWhenClipped}><EventSummary e={e} nameOf={nameOf} /></span>
       <span className="evc-type" onMouseEnter={titleWhenClipped}>{plainEvent(e.type, e.payload)}</span>
       <span className="evc-actor" onMouseEnter={titleWhenClipped}>{e.actorId ?? ""}</span>
     </button>
@@ -159,8 +159,9 @@ export default function Events(): React.JSX.Element {
   /* ---------------------------- filtering ------------------------------ */
 
   // The haystack only changes when the buffer does; building it inside the filter re-stringified up to 800 payloads on every
-  // keystroke.
-  const hay = useMemo(() => events.map(eventHaystack), [events]);
+  // keystroke. It holds each row's line, so a file is found by its name on the rows that name it.
+  const nameOf = useNameOf(events);
+  const hay = useMemo(() => events.map((e) => eventHaystack(e, nameOf)), [events, nameOf]);
   const actors = useMemo(() => topActors(events), [events]);
 
   // Everything except the severity facet. Severity counts are taken from this, so "Alerts 3" means three alerts within what you
@@ -321,7 +322,7 @@ export default function Events(): React.JSX.Element {
                 {rows.map((r) => {
                   if (r.kind === "bucket") return <h3 key={r.key} className="evc-bucket">{r.label}</h3>;
                   if (r.kind === "event") {
-                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} tab={roving.stop === String(r.e.seq)} onOpen={open} onTab={roving.setLast} />;
+                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} tab={roving.stop === String(r.e.seq)} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />;
                   }
                   const isOpen = openFolds.has(r.key);
                   const newestItem = r.items[0]!;
@@ -347,7 +348,7 @@ export default function Events(): React.JSX.Element {
                         <span className="muted">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
                       </button>
                       {isOpen ? r.items.map((e) => (
-                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} onOpen={open} onTab={roving.setLast} />
+                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />
                       )) : null}
                     </div>
                   );

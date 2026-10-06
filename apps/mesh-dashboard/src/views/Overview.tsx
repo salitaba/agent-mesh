@@ -5,6 +5,7 @@ import { Button, ErrorState, EventRow, PageHeader, Pill, StepMini } from "../com
 import { ArtifactDrawer, StepDrawer } from "../drawers";
 import { latestArtifactSeq } from "../files";
 import { CollabCard } from "../collabcard";
+import { useNameOf } from "../events";
 import { useProjectsOptional } from "../projects";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
@@ -120,6 +121,7 @@ export default function Overview(): React.JSX.Element {
   // the live ones. The Overview reads the latest events, so it asks for them once when it finds the buffer behind the log, and reads
   // the buffer in the order it was written.
   const timeline = useMemo(() => bySeq(events), [events]);
+  const nameOf = useNameOf(events);
   const behind = bufferIsBehind(timeline.length ? timeline[timeline.length - 1]!.seq : 0, status?.eventCount);
   const tailAsked = useRef(false);
   const [tailFailed, setTailFailed] = useState(false);
@@ -262,7 +264,7 @@ export default function Overview(): React.JSX.Element {
               event can actually be read, and arriving there with it selected keeps the stream in view. */}
           {timeline.length ? (
             <div className="ev-list">
-              {timeline.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} onOpen={(s) => openDetail("event", String(s), "events")} />)}
+              {timeline.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} />)}
             </div>
           ) : <p className="ov-empty">No events yet.</p>}
         </Panel>

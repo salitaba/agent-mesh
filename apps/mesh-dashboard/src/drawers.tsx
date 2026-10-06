@@ -16,6 +16,7 @@ import { ClampedProse, EventRows, Inspector, JsonBlock, OpLedger, Prose, STEP_NA
 import { placeLabel, placeStep } from "./stepwalk";
 import { ageText, deadlineOf, deadlineText, firstDeadline, hardStopText, liveWorkOf, mergeLiveTools, tokenText, type DeadlineInput } from "./livework";
 import { DeadlineBar, LiveWork, NowLine } from "./liveview";
+import { EventSummary, serverRow, useNameOf } from "./events";
 
 /** The most steps `/steps` will return (the server clamps `limit` to it). */
 const STEPS_MAX = 200;
@@ -255,8 +256,9 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; hint: string }> = [
 ];
 
 export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
-  const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client, confirm } = useMesh();
+  const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client, confirm, events } = useMesh();
   const { streams } = useMeshStreams();
+  const nameOf = useNameOf(events);
   // The events console is where an event can be read properly now, so this feed
   // hands off to it rather than stacking a third drawer on top of this one.
   // `closeDrawer` is a no-op when this drawer came from the route instead of the
@@ -459,7 +461,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
               <h3>Just happened<ZoneNote /></h3>
               <div className="ev-list">{evs.slice(0, 6).map((e: any) => (
                 <div className="ev" key={e.seq} data-seq={e.seq} role="button" tabIndex={0} onClick={() => seeEvent(e.seq)} onKeyDown={rowKey(() => seeEvent(e.seq))}>
-                  <time>{hhmmss(e.at)}</time><span className="type">{(plainEvent(e.type))}</span><span className="summary">{(e.summary)}</span>
+                  <time>{hhmmss(e.at)}</time><span className="type">{(plainEvent(e.type))}</span><span className="summary"><EventSummary e={serverRow(e)} nameOf={nameOf} /></span>
                 </div>
               ))}</div>
             </>
@@ -595,6 +597,7 @@ export { matchOpEffects, type OpRow } from "./ledger";
 export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string; steps: any[]; routed?: boolean }): React.JSX.Element {
   const { openDrawer, openDetail, closeDrawer, drawerDepth, view, setView, events, client, stepLimit, setStepLimit, refreshSteps } = useMesh();
   const { streams } = useMeshStreams();
+  const bufferNames = useNameOf(events);
   const [walked, setWalked] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   useEffect(() => { setWalked(null); }, [openedId]);
@@ -868,6 +871,8 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
   const workTools = isRunning ? mergeLiveTools(work.liveTools, streams[vid]?.tools) : work.liveTools;
   const summaryIsOps = typeof t.summary === "string" && /^\s*[\[{]/.test(t.summary) && t.summary.includes('"op"');
   const ledger = buildLedger({ ops: t.ops, opTimings: t.opTimings ?? listStep?.opTimings, toolCalls, timeline });
+  // A turn older than the console's buffer still names its own files and tasks from its own timeline.
+  const nameOf = (id: string): string | undefined => ledger?.names.get(id) ?? bufferNames(id);
   const opRows = ledger?.rows ?? null;
   const tally = opRows ? ledgerTally(opRows) : null;
   // A live op is a ledger row's `op`, so it takes the row's head: that one
@@ -1076,6 +1081,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
       toolCalls={toolCalls}
       opRows={opRows}
       timeline={timeline}
+      nameOf={nameOf}
       onClose={() => select(null)}
       onArtifact={(id: string) => openDrawer(<ArtifactDrawer id={id} />)}
     />
@@ -1238,7 +1244,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
             {/* The count is on the section's jump pill. */}
             <div className="sv-sec-h"><h4>Events</h4></div>
             {timeline.length
-              ? <EventRows rows={timeline} sel={sel} onSelect={select} t0={t.startedAt} detail={inline} />
+              ? <EventRows rows={timeline} sel={sel} onSelect={select} t0={t.startedAt} detail={inline} nameOf={nameOf} />
               : <div className="step-empty"><b>No linked events.</b><span>Either this step changed nothing, or it is older than the live log window.</span></div>}
             <CausalRail links={links} onTurn={goTo} onEvent={(seq: number) => select({ kind: "event", seq })} />
           </section>

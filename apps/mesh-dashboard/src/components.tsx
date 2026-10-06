@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, zoneLabel, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSeverity, EventSummary } from "./events";
+import type { NameOf } from "./eventmodel";
 import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
 
@@ -217,13 +218,13 @@ export function useNow(ms: number): number {
  * crash identically to a budget reservation is the miniature version of the
  * problem the console was rebuilt to fix.
  */
-export function EventRow({ e, onOpen }: { e: TimelineEvent; onOpen: (seq: number) => void }): React.JSX.Element {
+export function EventRow({ e, onOpen, nameOf }: { e: TimelineEvent; onOpen: (seq: number) => void; nameOf?: NameOf }): React.JSX.Element {
   const open = () => onOpen(e.seq);
   return (
     <div className={`ev sev-${evSeverity(e)}`} data-seq={e.seq} role="button" tabIndex={0} onClick={open} onKeyDown={rowKey(open)}>
       <time title={e.timestamp}>{localTime(e.timestamp)}</time>
       <span className={`type ${evClass(e.type)}`}>{plainEvent(e.type)}</span>
-      <span className="summary"><EventSummary e={e} /></span>
+      <span className="summary"><EventSummary e={e} nameOf={nameOf} /></span>
     </div>
   );
 }

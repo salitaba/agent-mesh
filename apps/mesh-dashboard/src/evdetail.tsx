@@ -3,7 +3,8 @@ import { ago, localDateTime, localTime, plainEvent, zoneLabel } from "./format";
 import { Button, CopyButton, IconButton, IdChip } from "./components";
 import { Icon } from "./icons";
 import { JsonTree } from "./jsontree";
-import { EventSummary, SevMark, evSeverity, sevWord } from "./events";
+import { EventSummary, SevMark, evSeverity, sevWord, useNameOf } from "./events";
+import type { NameOf } from "./eventmodel";
 import type { TimelineEvent } from "./store";
 
 /**
@@ -20,12 +21,12 @@ import type { TimelineEvent } from "./store";
 /** A thread longer than this shows its first rows and a button, so one chatty turn does not become two hundred buttons. */
 const THREAD_ROWS = 40;
 
-function ThreadRow({ e, current, onSelect }: { e: TimelineEvent; current: boolean; onSelect: (seq: number) => void }): React.JSX.Element {
+function ThreadRow({ e, current, onSelect, nameOf }: { e: TimelineEvent; current: boolean; onSelect: (seq: number) => void; nameOf: NameOf }): React.JSX.Element {
   return (
     <button type="button" className={`evd-tr sev-${evSeverity(e)}${current ? " on" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onSelect(e.seq)}>
       <span className="sr-only">{sevWord(evSeverity(e))}</span>
       <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
-      <span className="evd-tr-sum"><EventSummary e={e} /></span>
+      <span className="evd-tr-sum"><EventSummary e={e} nameOf={nameOf} /></span>
     </button>
   );
 }
@@ -85,6 +86,7 @@ export function EventDetail({
 }): React.JSX.Element {
   const sev = evSeverity(e);
   const [allRows, setAllRows] = useState(false);
+  const nameOf = useNameOf(all);
   // A correlation id that names a turn is the one link out of here that goes somewhere richer: the step view knows what the agent
   // was doing, not just what it emitted. Other correlation ids have no such page.
   const turnId = e.correlationId && String(e.correlationId).startsWith("turn-") ? String(e.correlationId) : null;
@@ -113,7 +115,7 @@ export function EventDetail({
           {e.actorId ? <b>{e.actorId}</b> : null}
           <code className="evd-seq">#{e.seq}</code>
         </p>
-        <p className="evd-sum"><EventSummary e={e} /></p>
+        <p className="evd-sum"><EventSummary e={e} nameOf={nameOf} /></p>
         {/* The raw type is here and not in the heading: the heading is the human label, and this is the string you would grep for. */}
         <p className="evd-raw">
           <code>{e.type}</code>
@@ -124,7 +126,7 @@ export function EventDetail({
       <section className="evd-sec" aria-labelledby="evd-why">
         <h4 id="evd-why">Why it happened</h4>
         {parent ? (
-          <div className="evd-thread"><ThreadRow e={parent} current={false} onSelect={onSelect} /></div>
+          <div className="evd-thread"><ThreadRow e={parent} current={false} onSelect={onSelect} nameOf={nameOf} /></div>
         ) : e.causationId ? (
           <p className="evd-note">Caused by <IdChip value={e.causationId} label="causation id" max={26} />, which has scrolled out of the live buffer.</p>
         ) : (
@@ -150,7 +152,7 @@ export function EventDetail({
         {e.correlationId ? (
           <>
             <div className="evd-thread">
-              {shownThread.map((x) => <ThreadRow key={x.seq || x.id} e={x} current={x.seq === e.seq} onSelect={onSelect} />)}
+              {shownThread.map((x) => <ThreadRow key={x.seq || x.id} e={x} current={x.seq === e.seq} onSelect={onSelect} nameOf={nameOf} />)}
             </div>
             {thread.length > THREAD_ROWS ? (
               <Button variant="linklike" onClick={() => setAllRows((a) => !a)} aria-expanded={allRows}>

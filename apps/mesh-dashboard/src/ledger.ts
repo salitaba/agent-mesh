@@ -810,7 +810,7 @@ export function sentenceCase(s: string): string {
 const upFirst = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 /** A message type the way the console names it everywhere else. */
-function msgKind(type: string): string {
+export function msgKind(type: string): string {
   return MESSAGE_PLAIN[type] ?? sentenceCase(type).toLowerCase();
 }
 
@@ -826,7 +826,7 @@ function decode(s: string): string {
 }
 
 /** Artifact name from `artifact://<Type>/<Name>/<version>`, or null for anything else. */
-function nameFromUri(u: string): string | null {
+export function nameFromUri(u: string): string | null {
   const m = /^artifact:\/\/[^/]+\/([^/]+)/.exec(u);
   return m ? decode(m[1]!) : null;
 }

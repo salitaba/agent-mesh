@@ -81,7 +81,7 @@ test("filtering returns newest first whatever order the buffer is in, and drops 
     ev("message.sent", 30, { actorId: "qa", correlationId: "turn-a" }),
     ev("agent.failed", 20, { actorId: "qa", payload: { error: "boom" } }),
   ];
-  const hay = buf.map(eventHaystack);
+  const hay = buf.map((e) => eventHaystack(e));
   assert.deepEqual(filterBase(buf, hay, NO_FILTER).map((e) => e.seq), [4, 3, 2, 1]);
   assert.deepEqual(filterBase(buf, hay, { ...NO_FILTER, groups: new Set(["message"]) }).map((e) => e.seq), [3, 1]);
   assert.deepEqual(filterBase(buf, hay, { ...NO_FILTER, actor: "qa" }).map((e) => e.seq), [4, 3]);
@@ -98,7 +98,7 @@ test("the severity counts describe what the other filters already left, not the 
     ev("message.sent", 30, { actorId: "qa" }),
     ev("budget.consumed", 20, { actorId: "qa" }),
   ];
-  const hay = buf.map(eventHaystack);
+  const hay = buf.map((e) => eventHaystack(e));
   const everything = severityCounts(filterBase(buf, hay, NO_FILTER));
   assert.deepEqual(everything, { alert: 2, notice: 1, routine: 1 });
   const justQa = severityCounts(filterBase(buf, hay, { ...NO_FILTER, actor: "qa" }));

@@ -3,7 +3,8 @@ import { Button, ZoneNote, rowKey } from "./components";
 import { hhmmss, plainEvent, snippetDiff, zoneLabel, type SnippetLine } from "./format";
 import { storageClips, type StorageClip } from "./ledger";
 import { renderMarkdown } from "./markdown";
-import { evClass, evSeverity } from "./events";
+import { EventSummary, Line, evClass, evSeverity, serverRow } from "./events";
+import { eventLine, lineText, type NameOf } from "./eventmodel";
 import { CopyBtn, bareToolName, salientArg, textStats, toolFailure, toolGroupOf, type ToolCall, type SandboxPerms } from "./stepdetail";
 // The rows are built in ledger.ts and composed with the pieces below by
 // drawers.tsx.
@@ -370,12 +371,13 @@ export function isBookkeeping(e: { type?: unknown; payload?: unknown }): boolean
   return evSeverity({ type, payload: e.payload } as TimelineEvent) === "routine";
 }
 
-export function EventRows({ rows, sel, onSelect, t0, detail }: {
+export function EventRows({ rows, sel, onSelect, t0, detail, nameOf }: {
   rows: any[];
   sel: Sel;
   onSelect: (s: Sel) => void;
   t0?: string;
   detail?: React.ReactNode;
+  nameOf?: NameOf;
 }): React.JSX.Element {
   const [showAll, setShowAll] = useState(false);
   const base = t0 ? Date.parse(t0) : NaN;
@@ -396,6 +398,7 @@ export function EventRows({ rows, sel, onSelect, t0, detail }: {
         // the question is "how long after it woke did this land?".
         const ms = Number.isNaN(base) ? NaN : Date.parse(e.at) - base;
         const off = Number.isNaN(ms) ? null : offsetText(ms);
+        const line = eventLine(serverRow(e), nameOf);
         return (
           <Fragment key={e.seq ?? e.id}>
           <div
@@ -410,7 +413,7 @@ export function EventRows({ rows, sel, onSelect, t0, detail }: {
             {/* With the payload: "couldn't wake" and "moved to draft" both
                 live there, and the bare type dropped them. */}
             <span className={`sv-ev-t ${evClass(e.type)}`}>{plainEvent(e.type, e.payload)}</span>
-            <span className="sv-ev-s" title={e.summary || undefined}>{e.summary}</span>
+            <span className="sv-ev-s" title={lineText(line)}><Line l={line} /></span>
             <span className="sv-ev-q mono">#{e.seq}</span>
           </div>
           {on && detail ? detail : null}
@@ -593,11 +596,12 @@ function fileChange(name: string, args: unknown, clipped?: unknown): React.React
  * pushing a drawer, which is what kept costing the reader their scroll
  * position and forced a refetch of /turns/:id on the way back.
  */
-export function Inspector({ sel, toolCalls, opRows, timeline, onClose, onArtifact }: {
+export function Inspector({ sel, toolCalls, opRows, timeline, nameOf, onClose, onArtifact }: {
   sel: Sel;
   toolCalls: ToolCall[];
   opRows: OpRow[] | null;
   timeline: any[];
+  nameOf?: NameOf;
   onClose: () => void;
   /** Opening an artifact is the one drill-down still worth leaving for. */
   onArtifact?: (id: string) => void;
@@ -724,7 +728,7 @@ export function Inspector({ sel, toolCalls, opRows, timeline, onClose, onArtifac
     body = e ? (
       <>
         <div className="sv-insp-meta mono">#{e.seq} · {e.type} · {hhmmss(e.at)} {zoneLabel()}{e.actor ? ` · ${e.actor}` : ""}</div>
-        {e.summary ? <Prose dim>{e.summary}</Prose> : null}
+        <Prose dim><EventSummary e={serverRow(e)} nameOf={nameOf} /></Prose>
         <h5>payload</h5>
         <JsonBlock value={e.payload ?? {}} />
       </>

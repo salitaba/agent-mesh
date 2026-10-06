@@ -9,6 +9,9 @@ export const fmt = (n: unknown): string => {
   return Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(Math.abs(v) >= 100000 ? 0 : 1)}k` : String(n ?? 0);
 };
 
+/** "1 approval", "2 approvals": a count and its noun, which agree when the count is one. */
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
 /**
  * A time of day, in the reader's own time zone: `19:02:07`.
  *
