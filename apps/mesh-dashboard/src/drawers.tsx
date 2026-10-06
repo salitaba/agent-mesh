@@ -82,6 +82,16 @@ export function MessageDrawer(): React.JSX.Element {
   const [wake, setWake] = useState(parked || missionOver);
   const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null);
   const [sending, setSending] = useState(false);
+  // The panel says what came of a send in its own line under the button, so a corner notice as well only said it twice (and a
+  // screen reader heard it twice). The notice is for a panel closed before the answer came back, refusals included, which
+  // nothing used to report at all.
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (sending) return;
@@ -108,13 +118,16 @@ export function MessageDrawer(): React.JSX.Element {
       if (st === 202) {
         // The words are cleared and the recipients kept: a second note to the same seat is the common next step.
         setOut({ ok: true, text: `Sent to ${recipients.join(", ")}.` });
-        toast("Message sent", `to ${recipients.join(", ")}`, "ok");
+        if (!shown.current) toast("Message sent", `to ${recipients.join(", ")}`, "ok");
         setNote("");
       } else {
-        setOut({ ok: false, text: `Could not send it: ${json?.reason ?? `the server answered ${st}`}` });
+        const reason = json?.reason ?? `the server answered ${st}`;
+        setOut({ ok: false, text: `Could not send it: ${reason}` });
+        if (!shown.current) toast("Message not sent", `To ${recipients.join(", ")}: ${reason}`, "bad");
       }
     } catch {
       setOut({ ok: false, text: "The server did not answer. Try again." });
+      if (!shown.current) toast("Message not sent", "The server did not answer.", "bad");
     } finally {
       setSending(false);
     }
