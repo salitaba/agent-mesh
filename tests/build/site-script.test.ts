@@ -83,6 +83,8 @@ interface Reading {
   marked: () => string[];
   /** Put the sections' tops where they would be (pixels from the top of the window) and let the observer say so. */
   at: (tops: number[]) => void;
+  /** The same, without the observer saying anything (a jump that passes whole sections at once), and the window's scroll event instead. */
+  jumpTo: (tops: number[]) => void;
   fire: (type: string) => void;
   runTimers: () => void;
   rowScrolls: number[];
@@ -119,6 +121,7 @@ function read(rel: string, height = 800): Reading {
     getComputedStyle: () => ({ scrollPaddingTop: "150px" }),
     matchMedia: () => ({ matches: true }),
     addEventListener: (type: string, fn: () => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+    requestAnimationFrame: (fn: () => void) => fn(),
     setTimeout: (fn: () => void) => timers.push(fn),
     clearTimeout: () => undefined,
   };
@@ -131,6 +134,10 @@ function read(rel: string, height = 800): Reading {
     at: (next) => {
       tops = next;
       observer().callback();
+    },
+    jumpTo: (next) => {
+      tops = next;
+      (listeners.get("scroll") ?? []).forEach((fn) => fn());
     },
     fire: (type) => (listeners.get(type) ?? []).forEach((fn) => fn()),
     runTimers: () => timers.splice(0).forEach((fn) => fn()),
@@ -222,6 +229,78 @@ test("the marked chip is scrolled into view in its row, and only when it is not 
   assert.deepEqual(r.rowScrolls, [146]);
   r.at([-300, 1200, 1900, 3000, 3800, 4500]);
   assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, back at the start of the row");
+});
+
+test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {
+  const r = read("security/index.html");
+  r.at([-4500, -3000, -2300, -1200, -400, 260]);
+  assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
+  assert.ok(r.chips[0]!.getBoundingClientRect!().left < 0, "the row was scrolled to the last chips");
+  // The observer is told when a top crosses the line; nothing crosses it from where the last section is to the top in one step.
+  r.jumpTo([500, 2000, 2700, 3800, 4600, 5300]);
+  assert.deepEqual(r.marked(), [], "the bar does not say the reader is in the last section at the top of the page");
+  assert.equal(r.rowScrolls[r.rowScrolls.length - 1], 0, "and the row shows its first chips again");
+  assert.ok(r.chips[0]!.getBoundingClientRect!().left >= 0);
+  // With the row already at its start there is nothing to bring back: reading the first section and then going to the top moves nothing.
+  r.jumpTo([-300, 1200, 1900, 3000, 3800, 4500]);
+  assert.deepEqual(r.marked(), ["What it protects=true"]);
+  const scrolled = r.rowScrolls.length;
+  r.jumpTo([500, 2000, 2700, 3800, 4600, 5300]);
+  assert.deepEqual(r.marked(), []);
+  assert.equal(r.rowScrolls.length, scrolled, "the row is not scrolled when it is at its start");
+  // A jump the other way, from the top to a section in the middle, is marked as well.
+  r.jumpTo([-1300, 200, 900, 2000, 2800, 3500]);
+  assert.deepEqual(r.marked(), ["What leaves your environment=true"]);
+  // It is looked at once a frame, not on every event, and a hold on a followed chip is still held until the page gets there.
+  const held = read("security/index.html");
+  held.at([500, 2000, 2700, 3800, 4600, 5300]);
+  click(held, 4);
+  held.jumpTo([-900, 600, 1300, 2400, 3200, 3900]);
+  assert.deepEqual(held.marked(), ["Assurance=true"], "the sections the page passes on the way to a chip that was followed are not marked");
+});
+
+test("the bar and Back to top work together on a long page: one scroll event updates both, and neither holds the other back", () => {
+  FakeObserver.made = [];
+  const doc = parsePage(page(pages, "security/index.html").html);
+  const row = doc.querySelector(".toc-bar")!.querySelector(".toc") as Placed;
+  const chips = row.querySelectorAll("a") as Placed[];
+  const sections = chips.map((a) => doc.getElementById(a.getAttribute("href")!.slice(1)) as Placed);
+  let tops = sections.map(() => 5000);
+  sections.forEach((s, i) => (s.getBoundingClientRect = () => ({ top: tops[i]!, bottom: tops[i]! + 600, left: 0, right: 1280 })));
+  row.scrollLeft = 0;
+  row.scrollTo = ({ left }) => void (row.scrollLeft = left);
+  row.getBoundingClientRect = () => ({ top: 69, bottom: 130, left: 0, right: 390 });
+  chips.forEach((chip, i) => (chip.getBoundingClientRect = () => ({ top: 77, bottom: 121, left: 16 + i * 168 - row.scrollLeft!, right: 16 + i * 168 + 160 - row.scrollLeft! })));
+  const listeners = new Map<string, Array<() => void>>();
+  // A frame comes after the event, as it does in a browser: the work that was asked for runs once the listeners have all been called.
+  const frames: Array<() => void> = [];
+  const win = {
+    IntersectionObserver: FakeObserver,
+    innerHeight: 800,
+    scrollY: 0,
+    getComputedStyle: () => ({ scrollPaddingTop: "150px" }),
+    matchMedia: () => ({ matches: true }),
+    addEventListener: (type: string, fn: () => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+    requestAnimationFrame: (fn: () => void) => frames.push(fn),
+    scrollTo: () => undefined,
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  };
+  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: win }, { filename: "site.js" });
+  const button = doc.querySelector(".to-top")!;
+  const scroll = (y: number, next: number[]): void => {
+    win.scrollY = y;
+    tops = next;
+    (listeners.get("scroll") ?? []).forEach((fn) => fn());
+    frames.splice(0).forEach((fn) => fn());
+  };
+  const marked = (): string[] => chips.filter((a) => a.getAttribute("aria-current") !== null).map((a) => a.textContent);
+  scroll(9000, [-4500, -3000, -2300, -1200, -400, 260]);
+  assert.equal(button.className, "to-top is-shown", "the button shows two screens down, though the bar looked at the same event");
+  assert.deepEqual(marked(), ["Reporting a problem"], "and the bar followed it");
+  scroll(0, [500, 2000, 2700, 3800, 4600, 5300]);
+  assert.equal(button.className, "to-top");
+  assert.deepEqual(marked(), []);
 });
 
 test("a chip that is followed is marked at once, and the sections passed on the way there are not marked", () => {

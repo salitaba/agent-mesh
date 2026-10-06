@@ -39,7 +39,9 @@ the next section).
 The long pages (pricing, security, legal) have an *On this page* bar under their heading: a row of chips, one for each section.
 Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
 section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
-the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. A followed link
+the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. The reading
+position is looked at when a section's top crosses the line (an IntersectionObserver) and as the window scrolls, once a frame, so a
+jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
 `tests/build/site-script.test.ts` checks them against the rules that make them.
 

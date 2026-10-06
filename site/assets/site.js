@@ -172,6 +172,12 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       if (typeof row.scrollTo === "function") row.scrollTo({ left: Math.max(0, to), behavior: reducedMotion() ? "auto" : "smooth" });
       else row.scrollLeft = Math.max(0, to);
     };
+    // Nothing being read (the reader is back at the top): the row goes back to its first chips, as it is at rest.
+    var rewind = function () {
+      if (!row.scrollLeft) return;
+      if (typeof row.scrollTo === "function") row.scrollTo({ left: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+      else row.scrollLeft = 0;
+    };
     var mark = function (i) {
       if (i === current) return;
       current = i;
@@ -180,6 +186,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
         else a.removeAttribute("aria-current");
       });
       if (i >= 0) reveal(chips[i]);
+      else rewind();
     };
     // A chip that is followed is the section being read from the moment it is chosen: the sections a smooth scroll passes on the
     // way there are not marked one after another. The hold ends when the page gets there, or when the scroll ends anywhere else
@@ -207,6 +214,18 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       holding = window.setTimeout(release, 3000);
     });
     window.addEventListener("scrollend", function () { if (held >= 0) release(); });
+    // The observer says when a section's top crosses the line, which is not said when a jump passes whole sections at once (Back to top
+    // under reduced motion goes from the last section to the top in one step), so the reading position is looked at as the window
+    // scrolls too, once a frame, and the bar never says the reader is somewhere they are not.
+    var checking = false;
+    window.addEventListener("scroll", function () {
+      if (checking) return;
+      checking = true;
+      window.requestAnimationFrame(function () {
+        checking = false;
+        spy();
+      });
+    }, { passive: true });
     var watch = function () {
       var landing = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
       line = Math.round(Math.max(window.innerHeight / 3, landing + 20));
