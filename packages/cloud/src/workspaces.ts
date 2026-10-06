@@ -41,6 +41,8 @@ export interface WorkspacesOptions {
   limits?: { cpus: number; memoryMb: number; pids: number };
   /** Environment given to every workspace's host (an egress proxy, for instance). */
   workspaceEnv?: Record<string, string>;
+  /** The address of the app. A workspace's host is told where the account page is (`CURULE_ACCOUNT_URL`), so its console can send a person there to add a model key. */
+  appUrl?: string;
   /** How a host is waited for. For tests. */
   waitReady?: (upstream: { host: string; port: number }) => Promise<void>;
   /** A workspace that has been starting this long without finishing is given up on, in ms. */
@@ -148,6 +150,8 @@ export class Workspaces {
     const plan = this.o.catalogue.plan(w.plan);
     const own = plan?.byok ? this.o.modelKeys?.read(w.workspaceId) : undefined;
     const tier = plan && !plan.byok ? defaultTierOf(plan) : undefined;
+    // After the operator's own additions, so they cannot point a customer's console somewhere else.
+    const env = { ...this.o.workspaceEnv, ...(this.o.appUrl ? { CURULE_ACCOUNT_URL: `${this.o.appUrl.replace(/\/+$/, "")}/account` } : {}), ...(tier ? { CURULE_GATEWAY_MODEL: tier } : {}) };
     return {
       workspaceId: w.workspaceId,
       accountId: w.accountId,
@@ -158,7 +162,7 @@ export class Workspaces {
       ...(key && this.o.gatewayUrl ? { gateway: { baseUrl: this.o.gatewayUrl, key: key.token } } : {}),
       ...(own ? { model: { provider: own.provider, name: own.model, ...(own.baseUrl ? { baseUrl: own.baseUrl } : {}), key: own.key } } : {}),
       limits: this.o.limits ?? { cpus: 1, memoryMb: 2048, pids: 512 },
-      ...(this.o.workspaceEnv || tier ? { env: { ...this.o.workspaceEnv, ...(tier ? { CURULE_GATEWAY_MODEL: tier } : {}) } } : {}),
+      ...(Object.keys(env).length > 0 ? { env } : {}),
     };
   }
 

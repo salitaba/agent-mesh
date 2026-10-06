@@ -60,7 +60,7 @@ test("a workspace is given a model key that works at the gateway, a licence for 
   assert.equal(spec.accountId, ada.accountId);
   assert.equal(spec.plan, "team");
   assert.deepEqual(spec.limits, { cpus: 1, memoryMb: 2048, pids: 512 });
-  assert.deepEqual(spec.env, { CURULE_GATEWAY_MODEL: "balanced" }, "the tier a team uses unless a seat names another: one this plan's key may use");
+  assert.deepEqual(spec.env, { CURULE_ACCOUNT_URL: "https://app.example.com/account", CURULE_GATEWAY_MODEL: "balanced" }, "the tier a team uses unless a seat names another: one this plan's key may use, and where the account page is");
   assert.equal(spec.gateway!.baseUrl, "http://gateway.internal:8080/v1");
   assert.equal(spec.operatorToken, p.plane.workspaces.operatorToken(workspaceId));
   const key = p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`);
@@ -81,15 +81,24 @@ test("a plan that names no tiers gives its workspaces every tier, and a service 
   assert.equal(spec.licence, undefined);
   assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`).models, undefined, "a key with no list may use every tier");
   assert.equal(spec.plan, "business");
-  assert.equal(spec.env, undefined, "and the host's own default tier stands");
+  assert.deepEqual(spec.env, { CURULE_ACCOUNT_URL: "https://app.example.com/account" }, "the host's own default tier stands: only where the account page is is added");
 });
 
 test("the limits and the environment a host is given are the operator's", async () => {
   const { p } = await running({ workspaces: { limits: { cpus: 2, memoryMb: 4096, pids: 1024 }, workspaceEnv: { HTTPS_PROXY: "http://egress.internal:3128" } } });
   assert.deepEqual(specOf(p).limits, { cpus: 2, memoryMb: 4096, pids: 1024 });
-  assert.deepEqual(specOf(p).env, { HTTPS_PROXY: "http://egress.internal:3128", CURULE_GATEWAY_MODEL: "balanced" });
+  assert.deepEqual(specOf(p).env, { HTTPS_PROXY: "http://egress.internal:3128", CURULE_ACCOUNT_URL: "https://app.example.com/account", CURULE_GATEWAY_MODEL: "balanced" });
   const business = await running({ workspaces: { workspaceEnv: { HTTPS_PROXY: "http://egress.internal:3128" } } }, "business");
-  assert.deepEqual(specOf(business.p).env, { HTTPS_PROXY: "http://egress.internal:3128" }, "a plan with no tier of its own adds nothing to what the operator gave");
+  assert.deepEqual(specOf(business.p).env, { HTTPS_PROXY: "http://egress.internal:3128", CURULE_ACCOUNT_URL: "https://app.example.com/account" }, "a plan with no tier of its own adds only where the account page is to what the operator gave");
+});
+
+test("a workspace's host is told where its account page is, whatever the operator's environment says, and is told again when it is made again", async () => {
+  const { p, workspaceId } = await running({ workspaces: { workspaceEnv: { CURULE_ACCOUNT_URL: "https://elsewhere.example/account", HTTPS_PROXY: "http://egress.internal:3128" } } });
+  assert.equal(specOf(p).env!.CURULE_ACCOUNT_URL, "https://app.example.com/account", "the service's own address for its app: a console that sends a person to add a key must not be pointed elsewhere by an addition");
+  assert.equal(specOf(p).env!.HTTPS_PROXY, "http://egress.internal:3128", "the rest of the operator's additions stand");
+  // Making the host again (a plan change, a key) keeps it: the console of a host that lost it would stop saying where the key goes.
+  await p.plane.workspaces.reprovision(workspaceId, "business");
+  assert.equal(specOf(p, 1).env!.CURULE_ACCOUNT_URL, "https://app.example.com/account");
 });
 
 test("a workspace is for an account that is confirmed, not stopped, and paid up", async () => {

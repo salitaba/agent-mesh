@@ -207,8 +207,9 @@ test("a container provisioner is given the image, the network and the egress pro
     assert.match(line, /--env MESH_ALLOWED_HOSTS=main-[0-9a-f]{6}\.curule-ws\.example/);
     assert.match(line, /--env CURULE_GATEWAY_URL=http:\/\/gateway\.internal:8080\/v1/);
     assert.ok(!line.includes(ENV.CONTROL_SECRET) && !line.includes(s.w.privateKeyPem), "no secret is in the arguments");
-    assert.equal(Object.keys(run.env).sort().join(","), "CURULE_GATEWAY_KEY,CURULE_GATEWAY_MODEL,MESH_API_TOKEN,MESH_LICENSE", "the credentials and the plan's default tier go in the environment of the command, by name");
+    assert.equal(Object.keys(run.env).sort().join(","), "CURULE_ACCOUNT_URL,CURULE_GATEWAY_KEY,CURULE_GATEWAY_MODEL,MESH_API_TOKEN,MESH_LICENSE", "the credentials, the plan's default tier and where the account page is go in the environment of the command, by name");
     assert.equal(run.env.CURULE_GATEWAY_MODEL, "balanced");
+    assert.equal(run.env.CURULE_ACCOUNT_URL, "https://app.curule.example/account", "from the app_url the service was configured with: the console in the workspace sends a person there");
   } finally {
     await s.close();
   }

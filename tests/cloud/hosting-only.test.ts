@@ -57,7 +57,7 @@ test("a workspace of a hosting-only plan makes no gateway key and is started wit
   const spec = creates(p)[0]!.spec!;
   assert.equal(spec.gateway, undefined, "no gateway address and no virtual key");
   assert.equal(spec.model, undefined, "and no key of the customer's until they set one");
-  assert.equal(spec.env, undefined, "no tier: a tier is the gateway's");
+  assert.deepEqual(spec.env, { CURULE_ACCOUNT_URL: "https://app.example.com/account" }, "no tier: a tier is the gateway's. The host is told where the account page is, which is where this customer adds the key");
   assert.equal(spec.plan, "hosting");
   assert.equal(workspace().gatewayKeyId, undefined);
   assert.equal(workspace().status, "running");

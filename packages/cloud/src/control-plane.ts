@@ -28,7 +28,7 @@ export interface ControlPlaneOptions {
   modelKeys?: ModelKeyStore;
   /** The address of the app, for return links and mail. */
   appUrl: string;
-  workspaces: Omit<WorkspacesOptions, "log" | "catalogue" | "gateway" | "modelKeys" | "mailer">;
+  workspaces: Omit<WorkspacesOptions, "log" | "catalogue" | "gateway" | "modelKeys" | "mailer" | "appUrl">;
   accounts?: Partial<Omit<AccountsOptions, "log" | "mailer" | "appUrl">>;
   clock?: () => Date;
 }
@@ -71,7 +71,7 @@ export class ControlPlane {
   constructor(readonly o: ControlPlaneOptions) {
     this.clock = o.clock ?? (() => new Date());
     this.accounts = new Accounts({ ...o.accounts, log: o.log, mailer: o.mailer, appUrl: o.appUrl, clock: this.clock });
-    this.workspaces = new Workspaces({ ...o.workspaces, log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), ...(o.modelKeys ? { modelKeys: o.modelKeys } : {}), mailer: o.mailer, clock: this.clock });
+    this.workspaces = new Workspaces({ ...o.workspaces, log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), ...(o.modelKeys ? { modelKeys: o.modelKeys } : {}), mailer: o.mailer, appUrl: o.appUrl, clock: this.clock });
     this.billing = new BillingService({ log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), workspaces: this.workspaces, mailer: o.mailer, provider: o.billing.name, appUrl: o.appUrl, clock: this.clock });
   }
 
