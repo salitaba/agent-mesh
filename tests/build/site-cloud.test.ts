@@ -187,6 +187,12 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
 });
 
+test("when it is open, the pricing page's estimate says it is for a licence, so a visitor to Curule Cloud does not read it as the price of a workspace", () => {
+  const estimate = (url: string): string => visibleTextOf(visit("pricing/index.html", url).getElementById("calculator")!.querySelector(".section-head")!);
+  assert.match(estimate(APP), /An estimate, not a quote\. The model figure comes from one measured mission, and yours will differ\. It is for a licence for the software you run yourself: Curule Cloud(?:&rsquo;|')s plans are on its sign-up page\./);
+  assert.ok(!/Curule Cloud/.test(estimate("")), "and while it is closed the sentence is not there");
+});
+
 test("the page for an address that is not found offers the account while Curule Cloud is open, and not while it is not", () => {
   const open = visit("404.html", APP).querySelectorAll(".nf-list li").filter((li) => shown(li));
   assert.deepEqual(open.map((li) => li.querySelector("b")!.textContent), ["Try the demo", "Pricing", "Documentation", "Security", "Contact", "Your account"]);
