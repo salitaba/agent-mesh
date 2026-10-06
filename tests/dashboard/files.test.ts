@@ -24,6 +24,7 @@ import {
   pathFromRef,
   previousVersion,
   readAs,
+  readerPaths,
   trailWords,
   typeCounts,
   type Art,
@@ -294,4 +295,14 @@ test("an empty Files page says what is missing and offers the mission's own next
   assert.equal(done.title, "No files were published", "a delivered mission with no files is a fact, not 'no files yet'");
   assert.equal(done.start, false);
   for (const phase of ["needs-you", "ceiling", "failed", "offline", "loading", "no-goal"]) assert.equal(emptyCopy(phase, false).start, false, phase);
+});
+
+test("a reader leads with the file's path in the product when it has one, and keeps where the mesh stores it for the details", () => {
+  const stored = "file:///tmp/p/.mesh-state/artifacts/artifacts/art-1/v2.txt";
+  // A document has no path in the product: nothing for the header, and the stored path for Details.
+  assert.deepEqual(readerPaths({ metadata: undefined }, stored), { product: "", stored: "/tmp/p/.mesh-state/artifacts/artifacts/art-1/v2.txt" });
+  // A patch names its file: that is the header's, and the stored path is still there, as its own value.
+  assert.deepEqual(readerPaths({ metadata: { path: "src/tx/Pipeline.java" } }, stored), { product: "src/tx/Pipeline.java", stored: "/tmp/p/.mesh-state/artifacts/artifacts/art-1/v2.txt" });
+  assert.deepEqual(readerPaths({ metadata: { file: "README.md" } }, undefined), { product: "README.md", stored: "" });
+  assert.deepEqual(readerPaths({ metadata: { path: 3 } }, undefined), { product: "", stored: "" }, "a path that is not text is not one");
 });

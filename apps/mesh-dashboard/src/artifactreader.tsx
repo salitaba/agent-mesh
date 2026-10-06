@@ -14,7 +14,7 @@ import { ago, artifactCls, localDateTime, plainArtifact } from "./format";
 import { CopyButton, ErrorState, IconButton, Pill, Select, type PillTone } from "./components";
 import { Icon } from "./icons";
 import { FileView, type DiffPayload, type FileViewMode } from "./fileview";
-import { distinctVersions, downloadName, pathFromRef, previousVersion, readAs, repoPathOf, trailWords, type Art, type ArtRecord, type ArtVersion } from "./files";
+import { distinctVersions, downloadName, previousVersion, readAs, readerPaths, trailWords, type Art, type ArtRecord, type ArtVersion } from "./files";
 import { useMesh } from "./store";
 
 type Meta =
@@ -180,9 +180,7 @@ export function ArtifactReader({ id, as, stamp }: {
   }
 
   const status = viewed?.status ?? art.status;
-  const repoPath = repoPathOf(art);
-  const storedAt = pathFromRef(viewed?.contentRef ?? art.contentRef);
-  const shownPath = repoPath || storedAt;
+  const { product: repoPath, stored: storedAt } = readerPaths(art, viewed?.contentRef ?? art.contentRef);
   const readable = body && body.version === shown ? body : null;
   const kind = readAs(art);
   const older = shown !== null && latest !== null && shown !== latest;
@@ -210,11 +208,11 @@ export function ArtifactReader({ id, as, stamp }: {
           <span>by {art.owner}</span>
           <span title={viewed ? localDateTime(viewed.createdAt) : undefined}>{ago(viewed?.createdAt ?? art.createdAt)}</span>
         </p>
-        {shownPath ? (
+        {repoPath ? (
           <div className="reader-path">
-            <span className="reader-path-l">{repoPath ? "Repo path" : "Stored at"}</span>
-            <span className="pathline mono" title={shownPath}><bdi>{shownPath}</bdi></span>
-            <CopyButton text={shownPath} label="Copy path" title={repoPath ? "Copy the path of this file in the product" : "Copy where this version is stored on the host"} />
+            <span className="reader-path-l">Repo path</span>
+            <span className="pathline mono" title={repoPath}><bdi>{repoPath}</bdi></span>
+            <CopyButton text={repoPath} label="Copy path" title="Copy the path of this file in the product" />
           </div>
         ) : null}
         <div className="reader-versions">
@@ -278,7 +276,7 @@ export function ArtifactReader({ id, as, stamp }: {
           <dd><span className="mono">{art.id}</span> <CopyButton text={art.id} label="Copy id" /></dd>
           {viewed?.digest ? (<><dt>Digest</dt><dd className="mono">{viewed.digest}</dd></>) : null}
           {typeof art.metadata?.commit === "string" ? (<><dt>Commit</dt><dd className="mono">{art.metadata.commit}</dd></>) : null}
-          {repoPath && storedAt ? (<><dt>Stored at</dt><dd><span className="pathline mono" title={storedAt}><bdi>{storedAt}</bdi></span> <CopyButton text={storedAt} label="Copy stored path" /></dd></>) : null}
+          {storedAt ? (<><dt>Stored at</dt><dd><span className="pathline mono" title={storedAt}><bdi>{storedAt}</bdi></span> <CopyButton text={storedAt} label="Copy path" title="Copy where this version is stored on the host" /></dd></>) : null}
           {art.goalId ? (<><dt>Goal</dt><dd className="mono">{art.goalId}</dd></>) : null}
         </dl>
       </details>

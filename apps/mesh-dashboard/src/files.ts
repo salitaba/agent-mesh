@@ -332,3 +332,13 @@ export function pathFromRef(ref: string | undefined): string {
     return ref.slice("file://".length);
   }
 }
+
+/**
+ * The paths a reader shows for a file, and where. A file in the product's repository has a path a person recognises
+ * (`src/tx/Pipeline.java`): that is the header's, with a button to copy it. Where the mesh keeps the bytes of a version
+ * (`.../.mesh-state/artifacts/artifacts/art-.../v1.txt`) is the mesh's own store: it is what a person who runs the host pastes into
+ * a shell, and for everyone else it was the first thing they read before the content. It is under "Details", with its copy button.
+ */
+export function readerPaths(art: Pick<Art, "metadata">, contentRef: string | undefined): { product: string; stored: string } {
+  return { product: repoPathOf(art), stored: pathFromRef(contentRef) };
+}
