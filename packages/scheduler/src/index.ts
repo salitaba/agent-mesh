@@ -301,9 +301,10 @@ function withNotice(reason: ActivationReason, extra: string | undefined): Activa
  * that recognises them (`isStaleMailWake`) cannot drift apart: a wake whose note is anything else
  * carries news that outlives the mail, and is never dropped for want of it.
  */
-const mailWaitingNote = (count: number): string => `${count} messages waiting in your mailbox.`;
+const mailWaitingNote = (count: number): string => `${count} ${count === 1 ? "message" : "messages"} waiting in your mailbox.`;
+/** Written only for more than one message, so it is always plural. */
 const mailTogetherNote = (count: number): string => `${count} messages arrived together, not one — the others are in your mailbox below.`;
-const OWN_MAIL_NOTE = /^\d+ messages (?:waiting in your mailbox\.|arrived together, not one — the others are in your mailbox below\.)$/;
+const OWN_MAIL_NOTE = /^(?:1 message waiting in your mailbox\.|\d+ messages (?:waiting in your mailbox\.|arrived together, not one — the others are in your mailbox below\.))$/;
 
 /**
  * `survivor` as it stands after absorbing `absorbed` — a coalesce onto a queued

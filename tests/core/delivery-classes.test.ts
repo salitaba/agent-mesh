@@ -214,7 +214,7 @@ test("accrue: beside mail that IS worth a turn, the wake is for that mail and do
     await waitFor("the ask buys the turn the FYI does not", async () => (await awakenings(m, "dev")).length > during, 6000);
     const woke = (await awakenings(m, "dev")).at(-1);
     const note = (woke?.payload as { reason?: { note?: string } } | undefined)?.reason?.note;
-    assert.equal(note, "1 messages waiting in your mailbox.", "the depth it names is the mail worth a turn, not the box");
+    assert.equal(note, "1 message waiting in your mailbox.", "the depth it names is the mail worth a turn, not the box");
   } finally {
     await m.cleanup();
   }

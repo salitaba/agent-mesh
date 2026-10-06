@@ -147,7 +147,7 @@ test("mail that arrives after the follow-up turn started still buys a turn of it
 // ------------------------------------------------------- what the drop does not touch
 
 /** The wake the retry writes for a box it found unread, naming the head message. */
-const RETRY_NOTE = "1 messages waiting in your mailbox.";
+const RETRY_NOTE = "1 message waiting in your mailbox.";
 
 type Wake = (req: Record<string, unknown>) => Promise<boolean>;
 
