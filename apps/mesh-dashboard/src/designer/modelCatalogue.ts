@@ -55,7 +55,9 @@ function load(cache: Cache, client: ProjectClient, refresh: boolean): Promise<vo
   publish(cache, { phase: "loading" });
   // `refresh=1` on an explicit retry bypasses the server's catalogue cache —
   // the usual reason to retry is "I just configured a provider".
-  const p = client.api("GET", refresh ? "/models?refresh=1" : "/models")
+  // Quiet: a catalogue that cannot be read is shown where it is used (the seat's model list, with the host's reason and a retry), and
+  // "server error /models -> 503" over the first screen of a new team says less than that does.
+  const p = client.api("GET", refresh ? "/models?refresh=1" : "/models", undefined, { quiet: true })
     .then(({ status, json, timeout }) => {
       if (timeout) return publish(cache, { phase: "error", detail: "the request timed out" });
       if (status !== 200 || !json || !Array.isArray(json.models)) {

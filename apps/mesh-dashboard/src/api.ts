@@ -16,6 +16,8 @@ export interface ApiOptions {
    *  background provider's poll or an open drawer's POST land on whichever
    *  project happened to render last. */
   projectId?: string | null;
+  /** The caller shows a failure itself, in place: a 5xx does not also raise the generic "server error" notice, which says only the route and the code. */
+  quiet?: boolean;
 }
 
 let down = false;
@@ -109,7 +111,7 @@ export async function api(method: string, path: string, body?: unknown, opts: Ap
   } catch {
     /* non-json */
   }
-  if (!res.ok && res.status >= 500) notifier("server error", `${path} -> ${res.status}`, "bad");
+  if (!res.ok && res.status >= 500 && !opts.quiet) notifier("server error", `${path} -> ${res.status}`, "bad");
   return { status: res.status, json };
 }
 
