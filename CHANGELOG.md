@@ -48,6 +48,13 @@ event type or what a number means.
   top-up field names its currency. The front page says what the service sells: a hosting-only plan no longer promises
   model usage it does not sell. The terms and the privacy notice have a margin on a phone, and an address the service does
   not have shows a page (with a way back), not a line of JSON.
+- **The marketing site.** The long pages (pricing, security, legal) keep an *On this page* bar under the header, one row at
+  every width, and mark the section being read (not by colour alone). Every page has a *Back to top* button once the reader is
+  two screens down; it rests above the footer, so it never covers a footer link. The documentation page says what a title
+  opens (not how the page sets its links) and has a filter over its documents. On a phone a comparison table keeps its corner
+  and shows that it scrolls, a long command shows that it goes on, a card that a link points at is marked, and the menu closes
+  on a touch elsewhere and when Tab leaves it. Without JavaScript every page still reads and works as it did: the bar is a row
+  of links, and the filter and the button are not there.
 
 ### Changed: read this before upgrading a deployment
 
