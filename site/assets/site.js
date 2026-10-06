@@ -241,9 +241,11 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     tocBar.className += " is-live";
   }
 
-  // Back to top: once the reader is about two screens down a page, a button in the corner goes back to the start, and takes the
-  // keyboard's focus to the top of the content too, so that Tab carries on from there. It sits at the end of the page's main
-  // content and stays at the bottom of the window only while that content is in view, so it never covers the footer's links.
+  // Back to top: once the reader is about two screens down a page and turns back (scrolls up), or has come to the end of the content,
+  // a button in the corner goes back to the start, and takes the keyboard's focus to the top of the content too, so that Tab carries
+  // on from there. While the reader is going down it is not there: in the corner of a phone it would sit on the end of the lines
+  // being read. It sits at the end of the page's main content and stays at the bottom of the window only while that content is in
+  // view, so it never covers the footer's links.
   var main = document.getElementById("main");
   if (main && typeof window.addEventListener === "function" && typeof window.scrollTo === "function") {
     var dock = el("div", "to-top-dock");
@@ -252,14 +254,25 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     up.append(el("span", "sr", "Back to top"));
     dock.append(up);
     main.append(dock);
-    var far = false;
+    var shown = false;
     var looking = false;
+    var turning = false; // the last movement of eight pixels or more was upward
+    var from = window.scrollY || 0; // where that movement ended: a few pixels of shake do not turn the reader round
+    // The end of the content has been reached when the dock is in its place, above the bottom of the window, and not riding at it.
+    var atEnd = function () {
+      return typeof dock.getBoundingClientRect === "function" && dock.getBoundingClientRect().top < window.innerHeight - 1;
+    };
     var look = function () {
       looking = false;
-      var now = window.scrollY > 2 * window.innerHeight;
-      if (now === far) return;
-      far = now;
-      up.className = far ? "to-top is-shown" : "to-top";
+      var y = window.scrollY;
+      if (Math.abs(y - from) >= 8) {
+        turning = y < from;
+        from = y;
+      }
+      var now = y > 2 * window.innerHeight && (turning || atEnd());
+      if (now === shown) return;
+      shown = now;
+      up.className = shown ? "to-top is-shown" : "to-top";
     };
     window.addEventListener("scroll", function () {
       if (looking) return;

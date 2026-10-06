@@ -296,8 +296,11 @@ test("the bar and Back to top work together on a long page: one scroll event upd
   };
   const marked = (): string[] => chips.filter((a) => a.getAttribute("aria-current") !== null).map((a) => a.textContent);
   scroll(9000, [-4500, -3000, -2300, -1200, -400, 260]);
-  assert.equal(button.className, "to-top is-shown", "the button shows two screens down, though the bar looked at the same event");
+  assert.equal(button.className, "to-top", "going down it stays out of the way of the lines being read, though the bar looked at the same event");
   assert.deepEqual(marked(), ["Reporting a problem"], "and the bar followed it");
+  scroll(8200, [-3700, -2200, -1500, -400, 400, 1060]);
+  assert.equal(button.className, "to-top is-shown", "a reader who turns back is offered it, in the one event that moves the bar");
+  assert.deepEqual(marked(), [chips[3]!.textContent], "and the bar went back with them");
   scroll(0, [500, 2000, 2700, 3800, 4600, 5300]);
   assert.equal(button.className, "to-top");
   assert.deepEqual(marked(), []);
@@ -382,7 +385,7 @@ function scrolled(rel: string, reduce = true, height = 800): Scrolled {
   return { doc, win, scrolls, fire: (type) => (listeners.get(type) ?? []).forEach((fn) => fn()), button: () => doc.querySelector(".to-top") };
 }
 
-test("every page gets a Back to top button at the end of its content: a real button with a name, shown from two screens down", () => {
+test("every page gets a Back to top button at the end of its content: a real button with a name, shown to a reader who is two screens down and turns back", () => {
   for (const p of pages) {
     const r = scrolled(p.rel);
     const main = r.doc.getElementById("main")!;
@@ -395,12 +398,17 @@ test("every page gets a Back to top button at the end of its content: a real but
     assert.equal(button.textContent, "Back to top", `${p.rel}: its name, said by a screen reader`);
     assert.equal(button.querySelector(".sr")!.textContent, "Back to top", "and shown as the arrow");
     assert.equal(button.className, "to-top", `${p.rel}: not shown at the top of the page`);
-    r.win.scrollY = 1600;
-    r.fire("scroll");
-    assert.equal(button.className, "to-top", "two screens down exactly is not yet past them");
     r.win.scrollY = 1700;
     r.fire("scroll");
-    assert.equal(button.className, "to-top is-shown");
+    assert.equal(button.className, "to-top", "going down it is not there, however far: on a phone it would sit on the ends of the lines being read");
+    r.win.scrollY = 1600;
+    r.fire("scroll");
+    assert.equal(button.className, "to-top", "turned back, but two screens down exactly is not yet past them");
+    r.win.scrollY = 1650;
+    r.fire("scroll");
+    r.win.scrollY = 1620;
+    r.fire("scroll");
+    assert.equal(button.className, "to-top is-shown", "a reader who is past two screens and turns back is offered it");
     r.win.scrollY = 900;
     r.fire("scroll");
     assert.equal(button.className, "to-top", "and it goes when the reader is back near the top");
@@ -408,6 +416,48 @@ test("every page gets a Back to top button at the end of its content: a real but
     r.fire("resize");
     assert.equal(button.className, "to-top is-shown", "two screens of a smaller window");
   }
+});
+
+test("Back to top follows the way the reader is going, and a shake of a few pixels does not turn them round", () => {
+  const r = scrolled("security/index.html");
+  const button = r.button()!;
+  const at = (y: number): string => {
+    r.win.scrollY = y;
+    r.fire("scroll");
+    return button.className;
+  };
+  assert.equal(at(3000), "to-top", "down");
+  assert.equal(at(2996), "to-top", "four pixels back is a shake of the thumb, not a turn");
+  assert.equal(at(3003), "to-top");
+  assert.equal(at(2990), "to-top is-shown", "ten pixels back is");
+  assert.equal(at(2993), "to-top is-shown", "and a few pixels the other way do not put it away");
+  assert.equal(at(2960), "to-top is-shown", "further back, it stays");
+  assert.equal(at(2965), "to-top is-shown", "a little down again: still the same turn");
+  assert.equal(at(3010), "to-top", "and going on down puts it away");
+  assert.equal(at(3500), "to-top");
+  assert.equal(at(3400), "to-top is-shown", "turning back anywhere below two screens offers it again");
+  assert.equal(at(0), "to-top", "and at the top there is nothing to go back to");
+  assert.equal(at(400), "to-top", "going down from there it is not shown either");
+});
+
+test("a reader who has come to the end of the content is offered Back to top whichever way they are going, where it covers nothing", () => {
+  const r = scrolled("pricing/index.html");
+  const dock = r.doc.getElementById("main")!.children.at(-1) as Placed;
+  let top = 800;
+  dock.getBoundingClientRect = () => ({ top, bottom: top, left: 0, right: 0 });
+  const button = r.button()!;
+  const go = (y: number, dockTop: number): string => {
+    r.win.scrollY = y;
+    top = dockTop;
+    r.fire("scroll");
+    return button.className;
+  };
+  assert.equal(go(5000, 800), "to-top", "going down with the end of the content out of sight (the dock rides at the bottom of the window)");
+  assert.equal(go(5400, 799.5), "to-top", "the dock is at the window's edge, and not yet in its place");
+  assert.equal(go(6000, 700), "to-top is-shown", "the end has come into view: the button is where it rests, above the footer, and covers no text");
+  assert.equal(go(6100, 600), "to-top is-shown", "and it stays while the end is in view, going down");
+  assert.equal(go(5000, 800), "to-top is-shown", "going up it is shown for the other reason");
+  assert.equal(go(5300, 800), "to-top", "and going down again, with the end out of view, it is put away");
 });
 
 test("Back to top goes to the top at once under reduced motion and smoothly otherwise, and takes the focus to the content", () => {
