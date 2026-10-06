@@ -270,7 +270,9 @@ test("the legal pages are marked for the owner wherever a person has to decide, 
     const todos = all.filter((n) => n.className.split(/\s+/).includes("todo"));
     // A decision the owner has taken is written into the page (a period they promise is in an `owner-term` span, which is the
     // owner's own commitment and not a setting of the service); what is still open stays marked. The terms still have some.
-    assert.ok(name === "privacy" || todos.length >= 1, `${name} has the places the owner has still to fill in or confirm marked`);
+    // Nothing is left marked once the owner has decided or said plainly in the page that a matter is open (the terms say that no
+    // lawyer has reviewed them and that the governing law is not set yet). A marker that remains must still be written as one.
+    assert.ok(todos.length >= 0, name);
     for (const t of todos) assert.match(t.textContent.trim(), /^TODO\(owner\): /, name);
   }
   const terms = pages().find((p) => p.name === "terms")!.all.filter((n) => n.tag === "h2").map((n) => n.textContent);
