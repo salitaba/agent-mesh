@@ -399,7 +399,7 @@ test("the model gateway is named by its admin address and the address workspaces
   ];
   for (const [change, expected] of cases) using(workdir((raw) => Object.assign(raw.gateway, change)), (w) => assert.match(refusal(w), expected, JSON.stringify(change)));
   using(workdir((raw) => Object.assign(raw.gateway, { admin_url: "http://gateway.internal:8081/", tenant_url: "http://gateway.internal:8080/v1/" })), (w) => {
-    assert.deepEqual([load(w).gateway.adminUrl, load(w).gateway.tenantUrl], ["http://gateway.internal:8081", "http://gateway.internal:8080/v1"]);
+    assert.deepEqual([load(w).gateway!.adminUrl, load(w).gateway!.tenantUrl], ["http://gateway.internal:8081", "http://gateway.internal:8080/v1"]);
   });
 });
 

@@ -22,6 +22,7 @@
 import { BillingWebhookError } from "./billing";
 import type { ControlPlane } from "./control-plane";
 import { ServiceError, describeError } from "./errors";
+import { checkModelKeyInput } from "./model-keys";
 import { DEFAULT_LIMITS, RateLimiter, type Limit, type Limits } from "./limits";
 import { ControlUnavailableError, type Account } from "./store";
 import type { WorkspaceAccess } from "./workspace-access";
@@ -229,6 +230,8 @@ export class ControlWeb {
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/suspend$/, run: (_req, m, who) => this.changeWorkspace("suspend", pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/resume$/, run: (_req, m, who) => this.changeWorkspace("resume", pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/delete$/, run: (req, m, who) => this.deleteWorkspace(req, pathSegment(m[1]!), this.needSession(who)) },
+    { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/model-key$/, run: (req, m, who) => this.setModelKey(req, pathSegment(m[1]!), this.needSession(who)) },
+    { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/model-key\/delete$/, run: (_req, m, who) => this.deleteModelKey(pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/webhooks\/billing$/, run: (req) => this.webhook(req) },
   ];
 
@@ -269,8 +272,9 @@ export class ControlWeb {
     const c = this.o.plane.o.catalogue;
     return this.json(200, {
       currency: c.currency,
-      plans: c.plans().map((p) => ({ id: p.id, title: p.title, priceMinor: p.priceMinor, period: p.period, includedUsageMicros: p.includedUsageMicros, workspaces: p.workspaces, ...(p.tiers ? { tiers: p.tiers } : {}), ...(p.summary ? { summary: p.summary } : {}) })),
-      topups: c.topups,
+      plans: c.plans().map((p) => ({ id: p.id, title: p.title, priceMinor: p.priceMinor, period: p.period, includedUsageMicros: p.includedUsageMicros, workspaces: p.workspaces, ...(p.byok ? { byok: true } : {}), ...(p.tiers ? { tiers: p.tiers } : {}), ...(p.summary ? { summary: p.summary } : {}) })),
+      // A service that sells no model usage has no top-ups to offer, and says so by not listing any.
+      topups: c.sellsUsage ? c.topups : null,
       policy: this.o.plane.policy,
     });
   }
@@ -423,6 +427,26 @@ export class ControlWeb {
     if (body.confirm !== view.name) throw new ServiceError(400, "confirmation_needed", "Type the workspace's name to delete it and everything in it.");
     await this.o.plane.workspaces.destroy(workspaceId, who.account.accountId);
     return this.json(200, { ok: true });
+  }
+
+  /** The key is read from the body here and handed on; it is not logged, not echoed, and not in any error. The response is the workspace as the customer sees it. */
+  private async setModelKey(req: WebRequest, workspaceId: string, who: Session): Promise<WebResponse> {
+    const body = this.readJson(req);
+    this.limit("modelKeySession", who.sessionId);
+    this.limit("modelKeyAccount", who.account.accountId);
+    this.workspaceView(who, workspaceId);
+    await this.o.plane.workspaces.setModelKey(who.account.accountId, workspaceId, checkModelKeyInput(body));
+    this.log("info", "a model key was set", { workspaceId });
+    return this.json(200, { workspace: this.workspaceView(who, workspaceId) });
+  }
+
+  private async deleteModelKey(workspaceId: string, who: Session): Promise<WebResponse> {
+    this.limit("modelKeySession", who.sessionId);
+    this.limit("modelKeyAccount", who.account.accountId);
+    this.workspaceView(who, workspaceId);
+    await this.o.plane.workspaces.setModelKey(who.account.accountId, workspaceId, null);
+    this.log("info", "a model key was removed", { workspaceId });
+    return this.json(200, { workspace: this.workspaceView(who, workspaceId) });
   }
 
   private async webhook(req: WebRequest): Promise<WebResponse> {

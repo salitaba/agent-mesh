@@ -85,6 +85,10 @@ export interface Limits {
   apiIp: Limit;
   /** Things that cost something (a checkout, a portal, a workspace made or opened), per session. */
   actionSession: Limit;
+  /** A model key stored, replaced or deleted, per session: each one restarts the workspace's host. */
+  modelKeySession: Limit;
+  /** The same, per account, so a new session is not a new allowance. */
+  modelKeyAccount: Limit;
 }
 
 const HOUR = 3_600_000;
@@ -100,4 +104,6 @@ export const DEFAULT_LIMITS: Limits = {
   tokenIp: { max: 30, windowMs: HOUR },
   apiIp: { max: 600, windowMs: MINUTE },
   actionSession: { max: 60, windowMs: HOUR },
+  modelKeySession: { max: 10, windowMs: HOUR },
+  modelKeyAccount: { max: 20, windowMs: HOUR },
 };

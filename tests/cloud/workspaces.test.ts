@@ -61,9 +61,9 @@ test("a workspace is given a model key that works at the gateway, a licence for 
   assert.equal(spec.plan, "team");
   assert.deepEqual(spec.limits, { cpus: 1, memoryMb: 2048, pids: 512 });
   assert.deepEqual(spec.env, { CURULE_GATEWAY_MODEL: "balanced" }, "the tier a team uses unless a seat names another: one this plan's key may use");
-  assert.equal(spec.gateway.baseUrl, "http://gateway.internal:8080/v1");
+  assert.equal(spec.gateway!.baseUrl, "http://gateway.internal:8080/v1");
   assert.equal(spec.operatorToken, p.plane.workspaces.operatorToken(workspaceId));
-  const key = p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`);
+  const key = p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`);
   assert.equal(key.accountId, ada.accountId);
   assert.equal(key.workspaceId, workspaceId);
   assert.deepEqual(key.models, ["fast", "balanced"], "this plan's tiers, and no others");
@@ -72,14 +72,14 @@ test("a workspace is given a model key that works at the gateway, a licence for 
   assert.equal(ent.plan, "team");
   assert.equal(ent.customer, ada.accountId);
   const log = JSON.stringify(p.store.entries);
-  for (const secret of [spec.gateway.key, spec.operatorToken, spec.licence!]) assert.ok(!log.includes(secret), "a credential is in the log");
+  for (const secret of [spec.gateway!.key, spec.operatorToken, spec.licence!]) assert.ok(!log.includes(secret), "a credential is in the log");
 });
 
 test("a plan that names no tiers gives its workspaces every tier, and a service with no signing key starts workspaces without a licence", async () => {
   const { p } = await running({ noSigner: true }, "business");
   const spec = specOf(p);
   assert.equal(spec.licence, undefined);
-  assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`).models, undefined, "a key with no list may use every tier");
+  assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`).models, undefined, "a key with no list may use every tier");
   assert.equal(spec.plan, "business");
   assert.equal(spec.env, undefined, "and the host's own default tier stands");
 });
@@ -228,7 +228,7 @@ test("a host that cannot be created leaves nothing behind: its model key is revo
   const now = p.log.state.workspaces.get(w.workspaceId)!;
   assert.equal(now.status, "failed");
   assert.equal(now.statusReason, "the workspace could not be started", "what the provisioner said is not shown to the customer");
-  assert.equal(worksAtGateway(p, specOf(p).gateway.key), false, "the key that was made for it is revoked");
+  assert.equal(worksAtGateway(p, specOf(p).gateway!.key), false, "the key that was made for it is revoked");
   assert.equal(p.provisioner.ops("destroy").length, 0, "there was no host to remove");
 });
 
@@ -263,7 +263,7 @@ test("a host that never becomes ready is removed, its key is revoked, and the wo
   assert.equal(now.statusReason, "the workspace did not become ready: status 503");
   assert.deepEqual(p.provisioner.ops("destroy").map((c) => c.handle), [now.handle]);
   assert.equal(p.provisioner.state.has(now.handle!), false);
-  assert.equal(worksAtGateway(p, specOf(p).gateway.key), false);
+  assert.equal(worksAtGateway(p, specOf(p).gateway!.key), false);
 });
 
 test("a clean-up that itself fails does not hide the failure, and a gateway that is down means no host is made", async () => {
@@ -304,7 +304,7 @@ test("a workspace is stopped by its owner, keeping its data, and stopping it aga
   await p.plane.workspaces.suspend(workspaceId, "again", ada.accountId);
   assert.equal(p.provisioner.ops("suspend").length, 1);
   assert.equal(workspace().statusReason, "paused by its owner");
-  assert.ok(worksAtGateway(p, specOf(p).gateway.key), "stopping a host does not revoke its key: it has not been deleted");
+  assert.ok(worksAtGateway(p, specOf(p).gateway!.key), "stopping a host does not revoke its key: it has not been deleted");
 });
 
 test("what is done to a workspace is done only for its owner, and a workspace that does not exist, or is not in the right state, says so", async () => {
@@ -367,7 +367,7 @@ test("deleting a workspace stops its key first, then removes the host and its da
     order.push("destroy");
     return destroy(handle, options);
   };
-  const key = specOf(p).gateway.key;
+  const key = specOf(p).gateway!.key;
   assert.ok(worksAtGateway(p, key));
   await p.plane.workspaces.destroy(workspaceId, ada.accountId);
   assert.deepEqual(order, ["revoke:workspace deleted", "destroy"]);
@@ -403,7 +403,7 @@ test("a workspace is not marked deleted when its key could not be revoked, so it
 
 test("a workspace is made again on its new plan, with a new key and licence, keeping its data and the old key revoked", async () => {
   const { p, workspaceId, workspace } = await running();
-  const oldKey = specOf(p).gateway.key;
+  const oldKey = specOf(p).gateway!.key;
   const oldHandle = workspace().handle!;
   await p.plane.workspaces.reprovision(workspaceId, "business");
   assert.equal(workspace().plan, "business");
@@ -414,9 +414,9 @@ test("a workspace is made again on its new plan, with a new key and licence, kee
   assert.equal(spec.plan, "business");
   assert.equal(resolveEntitlements({ token: spec.licence, publicKeys: { [p.keys.kid]: p.keys.publicKey }, now: new Date(p.clock.now) }).plan, "business");
   assert.equal(worksAtGateway(p, oldKey), false);
-  assert.ok(worksAtGateway(p, spec.gateway.key));
-  assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`).models, undefined, "business has no tier list");
-  assert.equal(workspace().gatewayKeyId, p.gatewayCore.authenticate(`Bearer ${spec.gateway.key}`).keyId);
+  assert.ok(worksAtGateway(p, spec.gateway!.key));
+  assert.equal(p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`).models, undefined, "business has no tier list");
+  assert.equal(workspace().gatewayKeyId, p.gatewayCore.authenticate(`Bearer ${spec.gateway!.key}`).keyId);
 });
 
 test("a stopped workspace that is moved to another plan stays stopped, and keeps the reason it was stopped", async () => {

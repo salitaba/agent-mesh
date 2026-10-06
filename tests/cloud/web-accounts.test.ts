@@ -475,7 +475,7 @@ test("what the account page reads is the account as its owner sees it, with the 
   assert.deepEqual(me.json.balance, await p.plane.balance(ada.accountId));
   assert.ok(me.json.balance.balance.total > 0, "the plan's usage is in it");
   const record = p.log.state.workspaces.get(workspaceId)!;
-  for (const secret of [p.log.state.accounts.get(ada.accountId)!.passwordHash, ada.sessionToken, hashToken(ada.sessionToken), record.gatewayKeyId!, p.provisioner.ops("create")[0]!.spec!.operatorToken, p.provisioner.ops("create")[0]!.spec!.gateway.key]) {
+  for (const secret of [p.log.state.accounts.get(ada.accountId)!.passwordHash, ada.sessionToken, hashToken(ada.sessionToken), record.gatewayKeyId!, p.provisioner.ops("create")[0]!.spec!.operatorToken, p.provisioner.ops("create")[0]!.spec!.gateway!.key]) {
     assert.ok(!me.body.includes(secret));
   }
 });
@@ -483,7 +483,7 @@ test("what the account page reads is the account as its owner sees it, with the 
 test("an account page still opens when the balance cannot be read, and says so by having none", async () => {
   const { p, ada } = await running();
   const s = site(p);
-  Object.assign(p.plane.o.gateway, { account: async () => { throw new Error("gateway down at 10.0.0.9:8080"); } });
+  Object.assign(p.plane.o.gateway!, { account: async () => { throw new Error("gateway down at 10.0.0.9:8080"); } });
   const me = await s.call("GET", "/api/me", { session: ada.sessionToken });
   assert.equal(me.status, 200);
   assert.equal(me.json.balance, null);
@@ -496,8 +496,8 @@ test("the header of every page asks who is signed in: the account for a session,
   const { p, ada, workspaceId } = await running();
   const s = site(p);
   let reads = 0;
-  const original = p.plane.o.gateway.account.bind(p.plane.o.gateway);
-  Object.assign(p.plane.o.gateway, { account: async (id: string) => (reads++, original(id)) });
+  const original = p.plane.o.gateway!.account.bind(p.plane.o.gateway!);
+  Object.assign(p.plane.o.gateway!, { account: async (id: string) => (reads++, original(id)) });
 
   const out = await s.call("GET", "/api/session");
   assert.deepEqual([out.status, out.json], [200, { account: null }], "a visitor is the ordinary case: it is not a 401 for every page they open");

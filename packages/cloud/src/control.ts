@@ -275,7 +275,7 @@ export function describeControl(config: ControlConfig): string[] {
   for (const p of c.catalogue.plans()) lines.push(`  ${p.id}: ${p.title}, ${money(p.priceMinor, c.catalogue.currency)} a ${p.period}, ${p.workspaces} workspace${p.workspaces === 1 ? "" : "s"}, ${p.byok ? "hosting only: the customer's own model key, no usage sold" : `${p.includedUsageMicros / 1_000_000} ${c.catalogue.currency} of usage included`}, limits of the ${p.licencePlan} plan${p.tiers ? `, tiers ${p.tiers.join(", ")}` : ""}`);
   const t = c.catalogue.topups;
   if (c.catalogue.sellsUsage) lines.push(`  top-ups ${t.optionsMinor.map((o) => money(o, c.catalogue.currency)).join(", ")} (any amount from ${money(t.minimumMinor, c.catalogue.currency)} to ${money(t.maximumMinor, c.catalogue.currency)})`);
-  lines.push(c.gateway ? `gateway: admin API at ${c.gateway.adminUrl}; workspaces of a plan that sells usage are told to call ${c.gateway.tenantUrl}` : "no gateway: every plan is hosting only, no model usage is sold and no balance is kept");
+  lines.push(c.gateway ? `gateway: admin API at ${c.gateway.adminUrl}; workspaces are told to call ${c.gateway.tenantUrl}` : "no gateway: every plan is hosting only, no model usage is sold and no balance is kept");
   lines.push(`customers' own model keys are kept, encrypted, in ${c.modelKeysPath}`);
   const p = c.provisioner;
   lines.push(

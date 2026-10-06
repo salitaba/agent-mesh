@@ -142,7 +142,7 @@ test("one account is shown as its owner sees it, with its balance, and an accoun
   assert.equal(r.json.account.workspaces, 1);
   assert.deepEqual(await o.call("GET", "/owner/accounts/acct_nobody").then((x) => [x.status, x.json.error.code]), [404, "not_found"]);
   assert.equal((await o.call("GET", "/owner/accounts/%E0%A4%A")).status, 404, "an id that is not even valid names nothing");
-  Object.assign(p.plane.o.gateway, { account: async () => { throw new Error("gateway down"); } });
+  Object.assign(p.plane.o.gateway!, { account: async () => { throw new Error("gateway down"); } });
   const without = await o.call("GET", `/owner/accounts/${ada.accountId}`);
   assert.deepEqual([without.status, without.json.balance], [200, null], "the operator still sees the account when the gateway cannot be asked");
 });
@@ -178,9 +178,9 @@ test("a payment that came some other way is recorded once, by its reference, and
   const pay = (json: unknown) => o.call("POST", "/owner/payments", { json });
   const wire = { accountId: ada.accountId, purpose: "topup", amountMinor: 2_500, currency: "USD", ref: "wire-1", note: "bank transfer, invoice 12" };
   assert.deepEqual(await pay(wire).then((r) => [r.status, r.json]), [200, { applied: true }]);
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 25_000_000);
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 25_000_000);
   assert.deepEqual(await pay(wire).then((r) => r.json), { applied: false, note: "duplicate" }, "the same reference again is not a second payment");
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 25_000_000);
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 25_000_000);
 
   assert.deepEqual(await pay({ accountId: ada.accountId, purpose: "subscription", plan: "team", amountMinor: 14_900, currency: "USD", ref: "inv-1" }).then((r) => [r.status, r.json]), [200, { applied: true }]);
   assert.equal(p.log.state.accounts.get(ada.accountId)!.subscription?.plan, "team");

@@ -35,9 +35,12 @@ export interface ControlPlaneOptions {
 
 /**
  * What a customer sees of where a workspace's models come from. Never the key: only that one is kept, for which provider and model, and where.
- * `supplied` is a plan that sells model usage through the gateway; `own` is a hosting-only plan, on the customer's own key.
+ * Present only for a hosting-only plan, whose workspace runs on the customer's own key; a plan that sells model usage has none.
  */
-export type WorkspaceModels = { source: "supplied" } | { source: "own"; key: null | { provider: string; model: string; baseUrl?: string; setAt: string } };
+export interface WorkspaceModels {
+  source: "own";
+  key: null | { provider: string; model: string; baseUrl?: string; setAt: string };
+}
 
 /** What a customer sees of an account. Nothing in it is secret. */
 export interface AccountView {
@@ -45,7 +48,7 @@ export interface AccountView {
   email: string;
   createdAt: string;
   subscription: null | { plan: string; title: string; status: string; periodEnd?: string; pastDueSince?: string };
-  workspaces: Array<{ workspaceId: string; name: string; slug: string; plan: string; status: string; statusReason?: string; host: string; models: WorkspaceModels }>;
+  workspaces: Array<{ workspaceId: string; name: string; slug: string; plan: string; status: string; statusReason?: string; host: string; models?: WorkspaceModels }>;
 }
 
 /** A line of a customer's usage. */
@@ -97,7 +100,7 @@ export class ControlPlane {
         status: w.status,
         ...(w.statusReason ? { statusReason: w.statusReason } : {}),
         host: this.workspaces.hostOf(w.slug),
-        models: this.o.catalogue.plan(w.plan)?.byok ? { source: "own" as const, key: w.modelKey ? { provider: w.modelKey.provider, model: w.modelKey.model, ...(w.modelKey.baseUrl ? { baseUrl: w.modelKey.baseUrl } : {}), setAt: w.modelKey.setAt } : null } : { source: "supplied" as const },
+        ...(this.o.catalogue.plan(w.plan)?.byok ? { models: { source: "own" as const, key: w.modelKey ? { provider: w.modelKey.provider, model: w.modelKey.model, ...(w.modelKey.baseUrl ? { baseUrl: w.modelKey.baseUrl } : {}), setAt: w.modelKey.setAt } : null } } : {}),
       })),
     };
   }

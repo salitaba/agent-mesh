@@ -83,8 +83,8 @@ test("a customer signs up, is invoiced by hand, pays, makes a workspace and open
     await s.running.plane.workspaces.idle();
     const spec = s.provisioner.ops("create")[0]!.spec!;
     assert.equal(spec.accountId, ada.accountId);
-    assert.equal(spec.gateway.baseUrl, "http://gateway.internal:8080/v1");
-    const key = s.g.gateway.authenticate(`Bearer ${spec.gateway.key}`);
+    assert.equal(spec.gateway!.baseUrl, "http://gateway.internal:8080/v1");
+    const key = s.g.gateway.authenticate(`Bearer ${spec.gateway!.key}`);
     assert.equal(key.accountId, ada.accountId, "the key the workspace was given is a key at the gateway, for this account");
     assert.equal(verifyLicense(spec.licence!, { k1: s.w.publicKey }).ok, true, "and its licence is signed with the configured key");
 

@@ -70,7 +70,7 @@ test("what a customer sees of their usage is what they were charged, by day and 
 test("usage that cannot be read is a 502 that says to try again, with the cause in the log and not in the answer", async () => {
   const { p, ada } = await running();
   const s = site(p);
-  Object.assign(p.plane.o.gateway, { report: async () => { throw new Error("gateway admin refused: token tk_secret at 10.0.0.9"); } });
+  Object.assign(p.plane.o.gateway!, { report: async () => { throw new Error("gateway admin refused: token tk_secret at 10.0.0.9"); } });
   const r = await s.call("GET", "/api/usage", { session: ada.sessionToken });
   assert.deepEqual([r.status, r.json.error.code, r.json.error.message], [502, "usage_unavailable", "Usage could not be read just now. Try again in a moment."]);
   assert.ok(!r.body.includes("tk_secret") && !r.body.includes("10.0.0.9"));
@@ -353,10 +353,10 @@ test("a message from the provider is applied once and acknowledged, and one that
   const { p, ada, deliver, topup } = await paying();
   const first = await deliver(topup());
   assert.deepEqual([first.status, first.json], [200, { received: true, events: 2, applied: 2 }]);
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 25_000_000, "twenty-five dollars of a top-up is twenty-five units of models");
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 25_000_000, "twenty-five dollars of a top-up is twenty-five units of models");
   const again = await deliver(topup("evt_retry"));
   assert.deepEqual([again.status, again.json], [200, { received: true, events: 2, applied: 0 }], "the provider retries, and so a payment is applied by its own reference and not by the message");
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 25_000_000);
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 25_000_000);
   assert.equal(p.log.state.accounts.get(ada.accountId)!.customers["hosted-checkout"], "cus_1", "the customer is linked, so the portal and later invoices find the account");
 });
 
@@ -374,7 +374,7 @@ test("a message whose signature is not the provider's is refused in words that s
   for (const [what, r] of attempts) {
     assert.deepEqual([r.status, r.json], [400, { error: { code: "bad_message", message: "That message was not accepted." } }], what);
   }
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 0, "none of them was applied");
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 0, "none of them was applied");
   const reasons = s.logs.filter((l) => l.level === "warn" && l.msg === "a message from the payment provider was refused").map((l) => String(l.reason));
   assert.equal(reasons.length, 5);
   assert.match(reasons[0]!, /carries no signature/);
@@ -391,7 +391,7 @@ test("the signature is the provider's whole credential: no cookie, origin or con
   const r = await deliver(topup(), { headers: { "content-type": "text/plain", origin: "https://evil.example", cookie: `__Host-curule_session=${session.sessionToken}` } });
   assert.equal(r.status, 200);
   assert.equal(r.headers["set-cookie"], undefined);
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 25_000_000);
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 25_000_000);
 });
 
 test("the provider's messages are not counted against an address, and a message that means nothing to us is acknowledged and ignored", async () => {
@@ -414,7 +414,7 @@ test("a message that could not be applied is a 500, so the provider sends it aga
   assert.deepEqual([r.status, r.json], [500, { error: { code: "internal_error", message: "The message could not be applied." } }]);
   assert.ok(!r.body.includes("10.0.0.5"));
   assert.ok(s.logs.some((l) => l.level === "error" && l.msg === "a payment message could not be applied" && String(l.error).includes("10.0.0.5")));
-  assert.equal((await p.plane.balance(ada.accountId)).balance.purchased, 0);
+  assert.equal((await p.plane.balance(ada.accountId))!.balance.purchased, 0);
 });
 
 test("a deployment that takes payments by hand refuses every message from a provider", async () => {
