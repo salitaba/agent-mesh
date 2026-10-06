@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
-import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
+import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
 import { buildLedger, ledgerTally, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
@@ -18,6 +18,7 @@ import { placeLabel, placeStep } from "./stepwalk";
 import { ageText, deadlineOf, deadlineText, firstDeadline, hardStopText, liveWorkOf, mergeLiveTools, tokenText, type DeadlineInput } from "./livework";
 import { DeadlineBar, LiveWork, NowLine } from "./liveview";
 import { EventSummary, serverRow, useNameOf } from "./events";
+import { verdictDone, verdictSubject } from "./eventmodel";
 
 /** The most steps `/steps` will return (the server clamps `limit` to it). */
 const STEPS_MAX = 200;
@@ -381,6 +382,13 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     ? { ...current.phases, deadlineAt: current.deadlineAt ?? current.phases?.deadlineAt, ceilingAt: current.ceilingAt ?? current.phases?.ceilingAt }
     : undefined;
   const signalCount = approvals.length + decisions.length + escalations.length + pending.length;
+  // A lock is a signal while it is held, and it is on a file: named by the files the lock event listed, else by the artifact.
+  const held = leases.filter((l: any) => l.active);
+  const lockedWhat = held.length
+    ? nameOf(String(held[0].id)) ?? nameOf(String(held[0].artifactId)) ?? arts.find((a: any) => a.id === held[0].artifactId)?.name
+    : undefined;
+  /** "1 verdict: …", "6 verdicts, the latest: …". */
+  const latest = (n: number, one: string, many?: string): string => `${plural(n, one, many)}${n === 1 ? ":" : ", the latest:"}`;
   return (
     <>
       <h2 id="drawer-title"><AgentAvatar id={id} color="var(--accent)" />{(id)}
@@ -452,14 +460,14 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             </div>
           )}
           {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{(json.activeTask.status)}</Chip></div> : null}
-          {signalCount || leases.length ? (
+          {signalCount || held.length ? (
             <>
               <h3>Signals</h3>
               {escalations.length ? <div className="sig bad">{escalations.length} escalation{escalations.length > 1 ? "s" : ""} — latest [{(escalations[0].reason)}] {(escalations[0].status)}</div> : null}
               {pending.length ? <div className="sig warn">{pending.length} open request{pending.length > 1 ? "s" : ""} waiting on an answer</div> : null}
-              {approvals.length ? <div className="sig">{approvals.length} approvals — latest {(approvals[0].kind)} {(approvals[0].subject)}</div> : null}
-              {decisions.length ? <div className="sig">{decisions.length} decisions proposed — latest “{(String(decisions[0].topic ?? "").slice(0, 60))}”</div> : null}
-              {leases.length ? <div className="sig">{leases.filter((l: any) => l.active).length} active file locks{leases[0] ? ` — ${(String(leases[0].artifactId).slice(0, 20))}` : ""}</div> : null}
+              {approvals.length ? <div className="sig">{latest(approvals.length, "verdict")} {verdictDone(approvals[0].kind)} {verdictSubject(approvals[0], nameOf)}</div> : null}
+              {decisions.length ? <div className="sig">{latest(decisions.length, "decision proposed", "decisions proposed")} “{(String(decisions[0].topic ?? "").slice(0, 60))}”</div> : null}
+              {held.length ? <div className="sig">{plural(held.length, "file lock")} held{lockedWhat ? `, on ${lockedWhat}` : ""}</div> : null}
             </>
           ) : null}
           {evs.length ? (
@@ -542,7 +550,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           {threads.length ? (
             <>
               <h3>Threads {`(${threads.length})`}</h3>
-              <div>{threads.slice(0, 10).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }}>“{(String(t.subject ?? "").slice(0, 60))}” <span className="muted">· {t.messageCount} msgs · {((t.participants || []).join(", "))}</span></div>)}</div>
+              <div>{threads.slice(0, 10).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }}>“{(String(t.subject ?? "").slice(0, 60))}” <span className="muted">· {plural(Number(t.messageCount ?? 0), "message")} · {((t.participants || []).join(", "))}</span></div>)}</div>
             </>
           ) : null}
         </TabPanel>
@@ -580,7 +588,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             <tr><td>budget</td><td className="mono">{fmt(d.budget?.tokens ?? 0)} tokens{json.budgets?.mission ? ` · mission ${fmt(json.budgets.mission.consumed)} / ${json.budgets.mission.limit ?? "?"}` : ""}</td></tr>
             {json.communication ? <tr><td>contacts</td><td style={{ fontSize: 12 }}>→ {((json.communication.mayContact || []).join(", ") || "nobody new")}<br />← {((json.communication.mayBeContactedBy || []).join(", ") || "restricted")}</td></tr> : null}
             {json.session ? <tr><td>session</td><td className="mono">{(json.session.sessionId)} ({(json.session.runtime)})</td></tr> : null}
-            {json.stats ? <tr><td>totals</td><td className="mono" style={{ fontSize: 12 }}>{json.stats.messagesSent} sent · {json.stats.messagesReceived} received · {json.stats.artifactsCreated} files</td></tr> : null}
+            {json.stats ? <tr><td>totals</td><td className="mono" style={{ fontSize: 12 }}>{json.stats.messagesSent} sent · {json.stats.messagesReceived} received · {plural(Number(json.stats.artifactsCreated ?? 0), "file")}</td></tr> : null}
           </tbody></table>
         </TabPanel>
       ) : null}
@@ -1006,8 +1014,8 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
     : ledger.source === "ops"
       ? ledger.captured < ledger.rows.length
         ? {
-            text: `arguments captured for ${ledger.captured} of ${ledger.rows.length} actions`,
-            title: `the runtime kept arguments for ${toolCalls.length} of ${toolTotal} tool calls; the other actions are listed by name, from the kernel's own record`,
+            text: `arguments captured for ${ledger.captured} of ${plural(ledger.rows.length, "action")}`,
+            title: `the runtime kept arguments for ${toolCalls.length} of ${plural(toolTotal, "tool call")}; the other actions are listed by name, from the kernel's own record`,
             warn: false,
           }
         : null

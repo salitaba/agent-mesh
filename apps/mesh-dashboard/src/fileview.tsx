@@ -17,6 +17,7 @@ import { Button, CopyButton } from "./components";
 import { Icon } from "./icons";
 import { LINE_WINDOW, fileModes, fmtSize, lineWindow, modeLabel, type FileKind, type FileViewMode } from "./files";
 import { renderMarkdown } from "./markdown";
+import { plural } from "./format";
 
 export type { FileKind, FileViewMode } from "./files";
 
@@ -79,7 +80,7 @@ export function DiffView({ diff, label }: { diff: DiffPayload; label?: string })
   }
   const total = diff.hunks.reduce((n, h) => n + h.lines.length, 0);
   return (
-    <div className="fv-diff" role="group" aria-label={`${label ?? "Changes"}: ${diff.added} lines added, ${diff.removed} removed`}>
+    <div className="fv-diff" role="group" aria-label={`${label ?? "Changes"}: ${plural(diff.added, "line")} added, ${diff.removed} removed`}>
       {drawn.map((h, hi) => (
         <div className="fv-hunk" key={hi}>
           <div className="fv-hunk-head">Line {h.aStart || h.bStart}</div>
@@ -174,7 +175,7 @@ export function FileView({
   const meta: string[] = [];
   if (kind !== "text") meta.push(kind);
   if (typeof size === "number") meta.push(fmtSize(size));
-  if (content !== undefined) meta.push(`${lines.length.toLocaleString("en-GB")} lines`);
+  if (content !== undefined) meta.push(lines.length === 1 ? "1 line" : `${lines.length.toLocaleString("en-GB")} lines`);
   if (mode === "changes" && cmp?.diff && !cmp.diff.identical) meta.push(`+${cmp.diff.added} −${cmp.diff.removed}`);
 
   return (

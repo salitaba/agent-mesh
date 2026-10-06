@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { fmt, mandatoryProgress } from "./format";
+import { fmt, mandatoryProgress, plural } from "./format";
 import { useMesh, type View } from "./store";
 import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
@@ -709,7 +709,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             <div className="goal-text">
               <strong id="top-goal" title={goal.description || undefined}>{goalTitle}</strong>
               <span id="top-criteria" className="muted">
-                {goal.status ? `${done} of ${critTotal} checks done` : ""}{parked && state.phase !== "parked" && state.phase !== "ceiling" && state.phase !== "offline" && goal.status ? " · project is parked" : ""}
+                {goal.status ? `${done} of ${plural(critTotal, "check")} done` : ""}{parked && state.phase !== "parked" && state.phase !== "ceiling" && state.phase !== "offline" && goal.status ? " · project is parked" : ""}
               </span>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { LINE_MAX, eventHaystack, eventLine, eventNames, lineText, type LineEvent } from "../../apps/mesh-dashboard/src/eventmodel";
+import { LINE_MAX, eventHaystack, eventLine, eventNames, lineText, verdictDone, verdictSubject, type LineEvent } from "../../apps/mesh-dashboard/src/eventmodel";
 import { plainEvent } from "../../apps/mesh-dashboard/src/format";
 import { EVENT_TYPES } from "../../packages/protocol/src/catalog";
 
@@ -235,6 +235,20 @@ test("the person reading is 'you', and the mesh's own holds are not said as some
   assert.equal(text("agent.suspended"), "you paused developer");
   assert.equal(text("escalation.responded"), "you answered: “raise it to 8 hours”");
   assert.equal(text("message.sent", { actorId: "human", payload: { message: { from: "human", to: ["all"], type: "INFORM", payload: { note: "ship friday" } } } }), "you wrote to everyone (update): ship friday");
+});
+
+test("a verdict is said as what the seat did, about a file by its name or a check by its id (the agent drawer's signal line)", () => {
+  // It read "1 approvals — latest pass implementation" and "latest approve artifact:art-M48WD20T003a31be8089".
+  assert.equal(verdictDone("pass"), "passed");
+  assert.equal(verdictDone("approve"), "approved");
+  assert.equal(verdictDone("block"), "blocked");
+  assert.equal(verdictDone("veto"), "vetoed");
+  assert.equal(verdictDone("sign_off"), "sign off", "a kind this build does not know is said as words");
+  assert.equal(verdictSubject({ subject: `artifact:${ART}` }, nameOf), "payment-architecture");
+  assert.equal(verdictSubject({ subject: `artifact:${ART}`, artifactRef: { uri: "artifact://ArchitectureDocument/payment-architecture/1" } }), "payment-architecture", "the reference names it with no lookup");
+  assert.equal(verdictSubject({ subject: "criterion:requirements-documented" }), "check requirements-documented");
+  assert.equal(verdictSubject({ subject: "implementation", artifactId: PATCH }, nameOf), "patch-tx-pipeline-2", "a domain verdict on a file names the file");
+  assert.equal(verdictSubject({ subject: "release" }), "release");
 });
 
 test("a refusal and a wake that was denied say who and why, in words", () => {

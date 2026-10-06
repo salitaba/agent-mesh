@@ -199,13 +199,19 @@ function budgetName(key: unknown, self: string, nameOf: NameOf): string {
   return "a budget";
 }
 
-/** What a review was about: a file by its name, a check by its id, else the domain the gate reads ("release"). */
-function reviewSubject(p: Record<string, any>, nameOf: NameOf): string {
+/** What a verdict was about: a file by its name, a check by its id, else the domain the gate reads ("release"). */
+export function verdictSubject(p: { subject?: unknown; artifactId?: unknown; artifactRef?: unknown }, nameOf: NameOf = NO_NAMES): string {
   const s = str(p.subject);
   if (s.startsWith("criterion:")) return `check ${s.slice("criterion:".length)}`;
   const file = fileName(s.startsWith("artifact:") ? s.slice("artifact:".length) : p.artifactId, p.artifactRef, nameOf);
   return file || words(s);
 }
+
+const VERDICT_DONE: Record<string, string> = {
+  approve: "approved", reject: "rejected", pass: "passed", block: "blocked", veto: "vetoed", accept: "accepted", merge: "merged",
+};
+/** A verdict's kind (`ApprovalKind`) as what the seat did: `pass` → "passed". */
+export const verdictDone = (kind: unknown): string => VERDICT_DONE[str(kind)] ?? (words(kind) || "ruled on");
 
 /** How an outstanding ask stopped being outstanding (`DischargeReason` in core's state.ts). */
 function settled(reason: string, by: string): string {
@@ -567,7 +573,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
     }
     case "review.approved":
     case "review.rejected": {
-      const subject = reviewSubject(p, nameOf);
+      const subject = verdictSubject(p, nameOf);
       const reviewer = str(p.actorId) || actorId;
       if (!subject || !reviewer) return null;
       const verb = type === "review.rejected" ? "asked for changes to" : p.kind === "pass" ? "passed" : p.kind === "accept" ? "accepted" : "approved";

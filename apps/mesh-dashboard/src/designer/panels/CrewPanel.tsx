@@ -202,7 +202,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
         </div>
       </Section>
 
-      <Section id="tools" title="Tools and authority" meta={`${(a.capabilities || []).length} tools, ${(a.authority || []).length} authority`} reveal={reveal}>
+      <Section id="tools" title="Tools and authority" meta={`${(a.capabilities || []).length} tool${(a.capabilities || []).length === 1 ? "" : "s"}, ${(a.authority || []).length} authority`} reveal={reveal}>
         <div className="field">
           <span className="ms-flabel" id="ms-tools-label">Tools: what this seat may do in the workspace</span>
           {capBuckets.map(({ group, caps }) => {

@@ -45,6 +45,19 @@ test("tool work that then stops still reports a stall", () => {
   assert.match(v.detail, /2 tool calls/);
 });
 
+test("a turn that went silent after one character says one character", () => {
+  const silent = NOW - (STALL_BAD_MS + 5_000);
+  const v = vitalsOf({
+    phases: base({ firstTokenAt: NOW - 80_000, lastTokenAt: silent, firstActivityAt: NOW - 80_000, lastActivityAt: silent }),
+    clientChars: 1,
+    running: true,
+    now: NOW,
+  });
+
+  assert.equal(v.health, "stalled");
+  assert.match(v.detail, /after streaming 1 character —/);
+});
+
 test("a turn with no sign of life at all still reads as no response", () => {
   const v = vitalsOf({ phases: base({}), running: true, now: NOW });
 

@@ -221,7 +221,7 @@ export function vitalsOf(inp: VitalsInput): Vitals {
 
   const base = { ttftMs, silentMs, charsPerSec, chars, toolFrames, ...(toolCallCount !== undefined ? { toolCallCount } : {}) };
   if (silentMs !== undefined && silentMs > STALL_BAD_MS) {
-    return { ...base, health: "stalled", label: "stalled", detail: `silent for ${Math.round(silentMs / 1000)}s after streaming ${chars} characters — the turn is probably wedged` };
+    return { ...base, health: "stalled", label: "stalled", detail: `silent for ${Math.round(silentMs / 1000)}s after streaming ${chars} character${chars === 1 ? "" : "s"} — the turn is probably wedged` };
   }
   if (silentMs !== undefined && silentMs > STALL_WARN_MS) {
     return { ...base, health: "slow", label: "paused", detail: `nothing for ${Math.round(silentMs / 1000)}s — may be running a long tool or thinking mid-answer` };

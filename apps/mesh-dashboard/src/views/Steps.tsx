@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { ago, dur, fmt, localTime, plainBlocker, plainReason, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
+import { ago, dur, fmt, localTime, plainBlocker, plainReason, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
 import { AgentAvatar, Button, EmptyState, ErrorState, Input, PageHeader, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
@@ -92,19 +92,19 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
           <div
             title={
               missionTokens == null
-                ? `${fmt(spend.loaded)} tokens across the ${steps.length} turns loaded here.`
-                : `Every turn of the mission, from the budget ledger.${spend.partial ? ` The ${steps.length} turns loaded below account for ${fmt(spend.loaded)}.` : ""}`
+                ? `${fmt(spend.loaded)} tokens across the ${plural(steps.length, "turn")} loaded here.`
+                : `Every turn of the mission, from the budget ledger.${spend.partial ? ` The ${plural(steps.length, "turn")} loaded below account for ${fmt(spend.loaded)}.` : ""}`
             }
           >
             <dt>tokens</dt><dd>{loaded || missionTokens != null ? fmt(spend.tokens) : "–"}</dd>
           </div>
           <div
             className={spend.wastedPct >= 40 ? "warn" : ""}
-            title={`Share of the ${fmt(spend.loaded)} tokens in the ${steps.length} loaded turns that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
+            title={`Share of the ${fmt(spend.loaded)} tokens in the ${plural(steps.length, "loaded turn")} that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
           >
             {/* Not "wasted": a turn that decided nothing needed doing, or was refused by policy, is working as designed. The figure says what is
                 measured (tokens that produced no output) and leaves the verdict to the reader. */}
-            <dt>{spend.partial ? `no output (${steps.length} turns loaded)` : "no output"}</dt><dd>{loaded ? `${spend.wastedPct}%` : "–"}</dd>
+            <dt>{spend.partial ? `no output (${plural(steps.length, "turn")} loaded)` : "no output"}</dt><dd>{loaded ? `${spend.wastedPct}%` : "–"}</dd>
           </div>
         </dl>
       </div>
@@ -410,7 +410,7 @@ export default function Steps(): React.JSX.Element {
             {!stepsLoaded ? "Loading…" : filtered ? `${rows.length} of ${visible.length}` : `${visible.length} turn${visible.length === 1 ? "" : "s"}`}
           </span>
           {/* Said aloud only while a filter is on: a count that announced every new turn would talk all through a live run. */}
-          <span className="sr-only" role="status">{filtered ? `${rows.length} of ${visible.length} turns match.` : ""}</span>
+          <span className="sr-only" role="status">{filtered ? `${rows.length} of ${plural(visible.length, "turn")} ${rows.length === 1 ? "matches" : "match"}.` : ""}</span>
           <button
             type="button"
             className={`fchip${folding ? " on" : ""}`}

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { dur, hhmmss, localDateTime, localTime, plainBlocker, plainEvent, snippetDiff, spanLabel, zoneLabel } from "../../apps/mesh-dashboard/src/format";
+import { dur, hhmmss, localDateTime, localTime, plainBlocker, plainEvent, plural, snippetDiff, spanLabel, zoneLabel } from "../../apps/mesh-dashboard/src/format";
 // Deep import for the same reason events.tsx uses one: catalog.ts carries only
 // the const tables, not the AJV-backed barrel.
 import { EVENT_TYPES } from "../../packages/protocol/src/catalog";
@@ -37,6 +37,15 @@ test("an activation denial still reads as couldn't wake, and only with its paylo
   assert.equal(plainEvent("message.rejected", denial), "couldn't wake");
   assert.equal(plainEvent("message.rejected"), "blocked message");
   assert.equal(plainEvent("message.rejected", { to: ["pm"], action: "activate (x)" }), "blocked message");
+});
+
+test("a count agrees with its noun when the count is one", () => {
+  // The agent drawer said "1 approvals" and "0 active file locks", the step drawer "arguments captured for 0 of 1 actions".
+  assert.equal(plural(1, "verdict"), "1 verdict");
+  assert.equal(plural(2, "verdict"), "2 verdicts");
+  assert.equal(plural(0, "file lock"), "0 file locks");
+  assert.equal(plural(1, "match", "matches"), "1 match");
+  assert.equal(plural(3, "match", "matches"), "3 matches");
 });
 
 test("unknown types still fall back to the raw name", () => {

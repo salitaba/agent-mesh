@@ -10,7 +10,7 @@
  * ---------------------------------------------------------------------- */
 
 import { useEffect, useState } from "react";
-import { dur, fmt, plainEvent, HEALTH_CLS, type OpHead } from "./format";
+import { dur, fmt, plainEvent, plural, HEALTH_CLS, type OpHead } from "./format";
 import { sentenceCase } from "./ledger";
 import { PHASE_PLAIN, deviation, phaseLegs, slowestLeg, type Baseline, type OpTiming, type PhaseLeg, type TurnError, type TurnPhases, type Vitals } from "./vitals";
 import type { TimelineEvent, TurnStep } from "./store";
@@ -263,7 +263,7 @@ export function ErrorPanel({ err, fallback }: { err?: TurnError; fallback?: stri
       ) : null}
       {err.frames?.length ? (
         <details className="esc-raw">
-          <summary>stack ({err.frames.length} frames)</summary>
+          <summary>stack ({plural(err.frames.length, "frame")})</summary>
           <pre className="crash-stack">{err.frames.join("\n")}</pre>
         </details>
       ) : (

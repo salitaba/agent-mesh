@@ -6,7 +6,7 @@
    pinning with node:test, and a test cannot import a .tsx file. Imports only
    from "./format", which is DOM-free too. */
 
-import { MESSAGE_PLAIN, plainArtifact, type OpFact, type OpHead } from "./format";
+import { MESSAGE_PLAIN, plainArtifact, plural, type OpFact, type OpHead } from "./format";
 
 /* ---------------------------------------------------------------------- *
  * Vocabulary.
@@ -994,7 +994,7 @@ export function opHead(o: any, ctx: HeadContext = {}): OpHead {
         facts: [
           ...(kind ? [fact("kind", kind)] : []),
           ...(str(o?.fromPath) ? [fact("from", o.fromPath)] : []),
-          ...(len ? [fact("size", `${len} chars`)] : []),
+          ...(len ? [fact("size", plural(len, "char"))] : []),
           ...(edits ? [fact("edits", String(edits))] : []),
           ...(o?.asVersionOf ? [fact("version of", art(o.asVersionOf))] : []),
         ],
