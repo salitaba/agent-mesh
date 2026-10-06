@@ -149,7 +149,9 @@ Rules:
   optical-compensating a border or a glyph (e.g. `1.5px` ring, `padding: 0 0 6px`
   to centre a `3px`-bordered box) — and should say why in a comment.
 - Radii are the three tokens only.
-- Fixed/stuck layers use the `--z-*` ladder; never a bare `z-index`.
+- Fixed/stuck layers use the `--z-*` ladder; never a bare `z-index`. On a narrow screen the notices lie over the top of the view
+  (`--z-notice`: above the page and its bars, under every menu, panel and dialog) instead of at the foot of the screen, where they
+  sat on the button a person was about to press.
 
 ---
 
@@ -183,7 +185,7 @@ view that re-implements one with inline styles is a bug against this spec (§1.5
 | `EmptyState`, `ErrorState` | What is missing and the next move; what could not be loaded and a retry. Never an empty box, never an error that reads as an empty list. |
 | `CopyButton`, `IdChip` | Copying says what happened ("Copied", or "Can't copy"), through a route that works on an http origin; a long id keeps both ends. |
 | `Pill`, `Chip`, `Input`, `Select`, `TextArea`, `Tabs`, `ZoneNote` | The rest of the vocabulary, each owning its focus ring. |
-| `ViewBoundary`, `ViewLoading` | Around the view area: a crash stays in the view (`crash.ts` words it and builds the report); a lazy view shows the shape of a page, invisible for the first 150 ms so a fast load does not flash. |
+| `ViewBoundary`, `ViewLoading` | Around the view area: a crash stays in the view (`crash.ts` words it and builds the report); a lazy view shows the shape of a page with a `role="status"` line ("Loading this page…"), invisible for the first 150 ms so a fast load does not flash. The shell shows it too while the host's project list has not answered, so the view area is never blank. |
 | `.sk` | The skeleton shimmer a view draws while its first read is in flight. |
 
 Icons are one registry (`icons.tsx`): every icon is used, every one draws from
@@ -209,7 +211,12 @@ A view is then drawing.
 | `navmodel.ts` | Which pages a server has (host or single mesh). |
 | `route.ts` | The hash router and the stream URLs, host (`/api/events/stream`) and single mesh (`/events/stream`). |
 | `crash.ts` | What a crashed view says, whether the tab is stale, and the report that is copied. |
-| `feed.ts`, `eventmodel.ts`, `steps.ts`, `agents.ts`, `graph.ts`, `files.ts`, `product.ts`, `cost.ts`, `hostsettings.ts`, `license-facts.ts`, `firstrun.ts`, `signin.ts`, `projectsmodel.ts`, `designer/*` | The same, per view. |
+| `eventmodel.ts` (`eventLine`) | One event, one line: who did what, in the console's words, for every event type (a test fails when the catalog grows a type without one). The Overview's *Just happened*, the Events list, search and detail pane, and both drawers read it, so a row never says only its own label. A thin payload falls back to the label, never "undefined". |
+| `palette.ts` | What the command palette lists for a query and in what order (label starts with it, a word does, the label holds it, keywords and id; each id once), and when a pointer may pick a row: only once it has moved, so a mouse resting over the list never takes the selection from the keyboard. |
+| `toasttext.ts` | What a notice says, how long it stays (`toastLife`) and which page already shows it (`pageShowing`): a decision is not announced on the Needs you page. |
+| `message-form.ts` | The Message panel's recipients (a seat toggled in the comma list, tidied, in the seat's own case) and the plain name of each kind of message. |
+| `designer/load.ts` | What the answer to the Designer's first read means: only a 200 with no file is "no mesh.yaml"; a project that is not running is asked again; any other failure is a load error with a retry, never a blank template. |
+| `feed.ts`, `steps.ts`, `agents.ts`, `graph.ts`, `files.ts`, `product.ts`, `cost.ts`, `hostsettings.ts`, `license-facts.ts`, `firstrun.ts`, `signin.ts`, `projectsmodel.ts`, `designer/*` | The same, per view. |
 
 Mutation-check a new rule the way these were: break the code, see the test fail,
 put it back.
