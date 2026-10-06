@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
 import { useMission } from "../useMission";
@@ -6,7 +6,7 @@ import { Button, Card, EmptyState, ErrorState, PageHeader, rowKey, useNow } from
 import { AgentDrawer } from "../drawers";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
-import { around, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges, type NodeTone } from "../graph";
+import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges, type NodeTone } from "../graph";
 import "./graph.css";
 
 /* Who talks to whom. Where the seats sit, which way their names point and which lines are drawn is decided in graph.ts, which
@@ -14,7 +14,7 @@ import "./graph.css";
    under the drawing. Pointing at or focusing a seat picks out its lines, the key hides a kind of line, and a line in the list opens
    its messages in Events. */
 
-const W = 900, H = 480;
+const H = 480;
 /** Lines drawn at most; the page says how many it left off. */
 const MAX_LINES = 12;
 /** A message among the newest events makes its line flow. */
@@ -46,6 +46,19 @@ export default function Graph(): React.JSX.Element {
   // The kinds of line the person has hidden with the key.
   const [off, setOff] = useState<ReadonlySet<string>>(() => new Set());
   const now = useNow(5000);
+  // The drawing is made at the width it is shown at, so its text is the size it was designed at (graph.ts `drawingWidth`). The width is
+  // read off the drawing itself, which CSS sizes: a phone's frame is wider than its screen, and what is measured is that frame.
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
+  const [shown, setShown] = useState(0);
+  useLayoutEffect(() => {
+    if (!svgEl) return;
+    const read = (): void => setShown(Math.round(svgEl.getBoundingClientRect().width));
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(svgEl);
+    return () => ro.disconnect();
+  }, [svgEl]);
   // Lines are message counts and seats are the roster, so those two event families are what invalidates the drawing. Keying on the
   // top seq refetches once per change rather than on a timer.
   const graphSeq = useMemo(() => {
@@ -79,7 +92,8 @@ export default function Graph(): React.JSX.Element {
     [events],
   );
   const nodes: { id: string; lifecycle: string }[] = useMemo(() => (graph?.nodes || []).filter((n: { id: string }) => n.id !== "human"), [graph]);
-  const seats = useMemo(() => ringLayout(nodes.length, W, H), [nodes.length]);
+  const W = useMemo(() => drawingWidth(shown, nodes.length), [shown, nodes.length]);
+  const seats = useMemo(() => ringLayout(nodes.length, W, H), [nodes.length, W]);
   const pos = useMemo(() => new Map(nodes.map((n, i) => [n.id, seats[i]!])), [nodes, seats]);
   // A line is drawn only between two seats on the ring. The operator ("human") is not a seat, so lines to and from it are counted, not drawn.
   const lines = useMemo(() => {
@@ -128,7 +142,7 @@ export default function Graph(): React.JSX.Element {
         <p className="gr-swipe">Scroll sideways to see every seat.</p>
         <div className="gr-scroll">
         {/* A group, not an image: an img has presentational children, and the seats inside are buttons. */}
-        <svg className={`gr-svg${hot || near ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
+        <svg ref={setSvgEl} className={`gr-svg${hot || near ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
           <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
           {lines.shown.map((e) => {
             const p = pos.get(e.from)!, q = pos.get(e.to)!;

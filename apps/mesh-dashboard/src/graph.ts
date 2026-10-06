@@ -144,22 +144,65 @@ export interface Seat {
   angle: number;
 }
 
+/** What the ring leaves free beyond its seats: each side for a name, the top and the bottom for a name and the word for its state. */
+const SIDE_ROOM = 150;
+const END_ROOM = 70;
+
 /**
  * Where the seats sit. One is in the middle, two face each other left and right, and three or more share an ellipse that starts at
  * the top. The ring is narrower than the drawing so there is room for a name beyond each seat: a ring as wide as the canvas left
- * the side labels nowhere to go.
+ * the side labels nowhere to go. In a drawing narrower than the one it was designed on (`DRAWING_MAX`), the ring narrows with it.
  */
 export function ringLayout(n: number, W: number, H: number): Seat[] {
   if (n <= 0) return [];
   const cx = W / 2, cy = H / 2;
   if (n === 1) return [{ x: cx, y: cy, angle: Math.PI / 2 }];
-  const rx = n === 2 ? 150 : n <= 5 ? 230 : W / 2 - 150;
-  const ry = n === 2 ? 0 : n <= 5 ? 130 : H / 2 - 70;
+  const room = W / 2 - SIDE_ROOM;
+  const rx = n === 2 ? Math.min(150, room) : n <= 5 ? Math.min(230, room) : room;
+  const ry = n === 2 ? 0 : n <= 5 ? 130 : H / 2 - END_ROOM;
   const start = n === 2 ? Math.PI : -Math.PI / 2;
   return Array.from({ length: n }, (_, i) => {
     const a = start + (i / n) * Math.PI * 2;
     return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), angle: a };
   });
+}
+
+/** The width the drawing was designed on, and the most it is ever made at. */
+export const DRAWING_MAX = 900;
+/** The narrowest it is made at: a ring much narrower than this is a column, and its lines cross its names. */
+const DRAWING_MIN = 520;
+/** The height it is made at, which does not change with the width. */
+const DRAWING_H = 480;
+/** The least that two names side by side along the top or the bottom of the ring may be apart, in the drawing's own units. */
+const NAMES_APART = 100;
+
+/** The least distance along the drawing between two names that sit on the same side of the ring, above it or below it. */
+function nearestNames(seats: readonly Seat[]): number {
+  let least = Infinity;
+  for (let i = 0; i < seats.length; i++) {
+    const a = labelPlacement(seats[i]!.angle);
+    if (a.anchor !== "middle") continue;
+    for (let j = i + 1; j < seats.length; j++) {
+      const b = labelPlacement(seats[j]!.angle);
+      if (b.anchor === "middle" && Math.sign(b.name.dy) === Math.sign(a.name.dy)) least = Math.min(least, Math.abs(seats[i]!.x - seats[j]!.x));
+    }
+  }
+  return least;
+}
+
+/**
+ * The width to draw at, given the width it is shown at. A drawing made at 900 and shown at 530 (a tablet beside the sidebar) has its
+ * text at 59%: seven-pixel names. Made at the width it is shown at, the text is its authored size, and the ring narrows with it (see
+ * `ringLayout`). It is never made narrower than the ring needs for its seats, though: the seats nearest the top (or the bottom) of
+ * the ring come closer together as there are more of them or the ring is narrower, and closer than `NAMES_APART` their names run into
+ * each other. A roster that needs more than the width it is shown at is drawn wider and shrunk to fit, as before, and a width that
+ * is not known (nothing measured yet) is the designed one.
+ */
+export function drawingWidth(shown: number, seats: number): number {
+  if (!Number.isFinite(shown) || shown <= 0) return DRAWING_MAX;
+  let needs = DRAWING_MIN;
+  while (needs < DRAWING_MAX && nearestNames(ringLayout(seats, needs, DRAWING_H)) < NAMES_APART) needs += 4;
+  return Math.round(Math.min(DRAWING_MAX, Math.max(shown, needs)));
 }
 
 export interface LabelSpot {

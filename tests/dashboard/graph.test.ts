@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  KINDS, around, capEdges, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges,
+  DRAWING_MAX, KINDS, around, capEdges, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges,
   type EdgeLike,
 } from "../../apps/mesh-dashboard/src/graph";
 import { eventHaystack, facetOne, facetValues, filterBase, parseFacets, type EventLike } from "../../apps/mesh-dashboard/src/eventmodel";
@@ -37,6 +37,80 @@ test("every seat is in the drawing at every roster size, and no two share a plac
     assert.equal(places.size, n, `${n} seats`);
     for (const s of seats) assert.ok(s.x > 0 && s.x < W && s.y > 0 && s.y < H, `${n} seats: (${s.x}, ${s.y})`);
   }
+});
+
+/* The drawing is made at the width it is shown at (a tablet beside the sidebar shows it at about 530), so that its text is not shrunk to
+   seven pixels. These pin the width it is made at and that the ring, narrowed to it, still holds every seat and every name. */
+
+test("at the width it was designed on, the ring is where it always was", () => {
+  const near = (a: number, b: number): void => assert.ok(Math.abs(a - b) < 1e-6, `${a} is not ${b}`);
+  assert.equal(DRAWING_MAX, W);
+  const two = ringLayout(2, W, H);
+  assert.deepEqual([two[0]!.x, two[0]!.y, two[1]!.x, two[1]!.y], [300, 240, 600, 240]);
+  const five = ringLayout(5, W, H);
+  near(five[0]!.x, 450); near(five[0]!.y, 110); near(five[1]!.x, 668.7429987478853); near(five[1]!.y, 199.82779073125684);
+  const seven = ringLayout(7, W, H);
+  near(seven[0]!.x, 450); near(seven[0]!.y, 70); near(seven[1]!.x, 684.549444740409); near(seven[1]!.y, 134.0067336840153);
+});
+
+test("the drawing is made at the width it is shown at, no wider than it was designed and no narrower than its ring needs", () => {
+  assert.equal(drawingWidth(1118, 7), 900, "a wide screen shows the designed drawing, scaled up as before");
+  assert.equal(drawingWidth(900, 7), 900);
+  assert.equal(drawingWidth(820, 7), 820);
+  assert.equal(drawingWidth(532, 7), 532, "seven seats beside the sidebar of a tablet: shown as drawn");
+  assert.equal(drawingWidth(531, 7), 532, "not narrower than seven seats need, so two names never meet; it is shrunk to fit instead");
+  assert.equal(drawingWidth(400, 7), 532);
+  assert.equal(drawingWidth(400, 3), 520, "a short roster needs little, and there is a floor");
+  assert.equal(drawingWidth(530, 5), 530);
+});
+
+test("a long roster needs a wider ring: the more seats, the nearer the ones at the top, and from sixteen the designed width is none too wide", () => {
+  assert.deepEqual([6, 7, 8, 10, 12, 16, 20, 24].map((n) => drawingWidth(400, n)), [520, 532, 584, 644, 700, 900, 900, 900]);
+  assert.equal(drawingWidth(1000, 12), 900);
+  assert.equal(drawingWidth(700, 12), 700);
+});
+
+test("a width that is not known yet is the designed one", () => {
+  for (const shown of [0, -5, NaN, Infinity]) assert.equal(drawingWidth(shown, 7), 900, String(shown));
+});
+
+test("narrowed to the width it is shown at, every seat is still in the drawing, no two share a place, and every name has room", () => {
+  const NAME = 110;
+  for (const shown of [400, 520, 531, 600, 700, 820, 900, 1118]) {
+    for (let n = 1; n <= 16; n++) {
+      const w = drawingWidth(shown, n);
+      const seats = ringLayout(n, w, H);
+      assert.equal(new Set(seats.map((s) => `${Math.round(s.x)},${Math.round(s.y)}`)).size, n, `${n} seats at ${shown}`);
+      for (const s of seats) {
+        assert.ok(s.x > 0 && s.x < w && s.y > 0 && s.y < H, `${n} seats at ${shown}: (${s.x}, ${s.y})`);
+        const spot = labelPlacement(s.angle);
+        if (n === 1) continue;
+        for (const part of [spot.name, spot.state]) {
+          const x = s.x + part.dx, y = s.y + part.dy;
+          assert.ok(y >= 10 && y <= H - 4, `${n} seats at ${shown}: label at y=${y}`);
+          if (spot.anchor === "end") assert.ok(x - NAME >= 0, `${n} seats at ${shown}: left label reaches x=${x - NAME}`);
+          if (spot.anchor === "start") assert.ok(x + NAME <= w, `${n} seats at ${shown}: right label reaches x=${x + NAME}`);
+        }
+      }
+    }
+  }
+});
+
+test("two names on the top of the ring, or two on the bottom, are never closer than a name is wide, for every roster the designed width can hold", () => {
+  for (const shown of [400, 520, 531, 600, 700, 820, 900, 1118]) {
+    for (let n = 3; n <= 15; n++) {
+      const seats = ringLayout(n, drawingWidth(shown, n), H);
+      const side = (a: number): number => (Math.abs(Math.sin(a)) > 0.7 ? Math.sign(Math.sin(a)) : 0);
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          if (side(seats[i]!.angle) === 0 || side(seats[i]!.angle) !== side(seats[j]!.angle)) continue;
+          assert.ok(Math.abs(seats[i]!.x - seats[j]!.x) >= 100 - 1e-9, `${n} seats at ${shown}: seats ${i} and ${j} are ${Math.abs(seats[i]!.x - seats[j]!.x)} apart`);
+        }
+      }
+    }
+  }
+  // Longer than that, no width is enough, and the drawing is the designed one (names may meet, as they did).
+  for (let n = 16; n <= 19; n++) assert.equal(drawingWidth(400, n), 900, `${n} seats`);
 });
 
 test("a seat's label points away from the centre, where no line runs", () => {
