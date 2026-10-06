@@ -43,6 +43,9 @@ const PAGES: Record<string, string> = {
   "/privacy": "privacy.html",
 };
 
+/** What a browser is shown at an address the service does not have. It is not at a path of its own: it is what any wrong address gets. */
+const NOT_FOUND_PAGE = "404.html";
+
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -177,14 +180,19 @@ export function createPublicServer(o: PublicServerOptions): http.Server {
       if (!m) return false;
       file = path.join("assets", m[1]!);
     }
+    return sendFile(req, res, file, 200);
+  }
+
+  /** One file of the pages' folder, as a page or an asset: with the policy a page is written for, and a page is never cached. */
+  function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: string, status: number): boolean {
     let body: Buffer;
     try {
-      body = fs.readFileSync(path.join(o.pagesDir, file));
+      body = fs.readFileSync(path.join(o.pagesDir!, file));
     } catch {
       return false;
     }
     const isPage = path.extname(file) === ".html";
-    res.writeHead(200, {
+    res.writeHead(status, {
       "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
       "content-length": String(body.length),
       "x-content-type-options": "nosniff",
@@ -195,6 +203,13 @@ export function createPublicServer(o: PublicServerOptions): http.Server {
     });
     res.end(req.method === "HEAD" ? undefined : body);
     return true;
+  }
+
+  /** A browser that follows a wrong address is shown a page. A program that asks for anything but HTML, and every address under the API, is told in JSON. */
+  function wantsPage(req: http.IncomingMessage, pathname: string): boolean {
+    if (!o.pagesDir || (req.method !== "GET" && req.method !== "HEAD")) return false;
+    if (/^\/(api|owner|webhooks)(\/|$)/.test(pathname)) return false;
+    return /\btext\/html\b/.test(String(req.headers.accept ?? ""));
   }
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -214,7 +229,9 @@ export function createPublicServer(o: PublicServerOptions): http.Server {
     const body = await bodyOf(req, res, url.pathname === "/webhooks/billing" ? maxWebhook : maxBody, secure);
     if (body === undefined) return;
     const request: WebRequest = { method: req.method ?? "GET", path: url.pathname, query: url.searchParams, headers: req.headers, body, ip };
-    write(res, await o.web.handle(request));
+    const answer = await o.web.handle(request);
+    if (answer.status === 404 && wantsPage(req, url.pathname) && sendFile(req, res, NOT_FOUND_PAGE, 404)) return;
+    write(res, answer);
   }
 
   const server = http.createServer((req, res) => {

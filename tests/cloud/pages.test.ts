@@ -21,10 +21,12 @@ const ASSETS = path.join(PAGES_DIR, "assets");
 /** The path each page is served at. `index` is the front page. */
 const PATHS: Record<string, string> = { index: "/", signup: "/signup", login: "/login", verify: "/verify", forgot: "/forgot", reset: "/reset", account: "/account", terms: "/terms", privacy: "/privacy" };
 /** What a page calls itself in the script. */
-const PAGE_OF: Record<string, string> = { index: "home" };
+const PAGE_OF: Record<string, string> = { index: "home", "404": "notfound" };
+/** The files that are pages: those served at a path, and the one a browser is shown at an address that does not exist. */
+const FILES = [...Object.keys(PATHS), "404"];
 
 function pages() {
-  return Object.keys(PATHS).map((name) => {
+  return FILES.map((name) => {
     const html = read(path.join(PAGES_DIR, `${name}.html`));
     const doc = parsePage(html);
     return { name, page: PAGE_OF[name] ?? name, html, doc, all: doc.root.descendants() };
@@ -45,7 +47,7 @@ async function serve() {
 // ---- what is in the folder, and what serves it ----
 
 test("the folder holds the pages and their assets and nothing else, and the server serves each page at its path and each asset by its name", async () => {
-  assert.deepEqual(fs.readdirSync(PAGES_DIR).sort(), ["account.html", "assets", "forgot.html", "index.html", "login.html", "privacy.html", "reset.html", "signup.html", "terms.html", "verify.html"]);
+  assert.deepEqual(fs.readdirSync(PAGES_DIR).sort(), ["404.html", "account.html", "assets", "forgot.html", "index.html", "login.html", "privacy.html", "reset.html", "signup.html", "terms.html", "verify.html"]);
   assert.deepEqual(fs.readdirSync(ASSETS).sort(), ["app.css", "app.js", "favicon.svg"]);
 
   const srv = await serve();
@@ -64,6 +66,44 @@ test("the folder holds the pages and their assets and nothing else, and the serv
       assert.equal(r.body, read(path.join(ASSETS, file)));
     }
     for (const missing of ["/index.html", "/index", "/account.html", "/assets/", "/assets/missing.js", "/assets/../account.html"]) assert.equal((await ask(srv.port, { host: "app.example.com", path: missing })).status, 404, missing);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("a browser that follows a wrong address is shown a page that says so and where to go; a program, and anything under the API, is told in JSON", async () => {
+  const srv = await serve();
+  try {
+    const html = { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" };
+    for (const wrong of ["/pricing", "/docs", "/dashboard", "/accounts", "/index.html", "/assets/missing.js"]) {
+      const r = await ask(srv.port, { host: "app.example.com", path: wrong, headers: html });
+      assert.equal(r.status, 404, wrong);
+      assert.equal(r.headers["content-type"], "text/html; charset=utf-8", wrong);
+      assert.equal(r.body, read(path.join(PAGES_DIR, "404.html")), `${wrong} is shown the page, as it is`);
+      assert.equal(r.headers["cache-control"], "no-store");
+      assert.equal(r.headers["x-frame-options"], "DENY");
+      assert.match(String(r.headers["content-security-policy"]), /(^|; )script-src 'self'(;|$)/, "the page is served under the policy it is written for");
+    }
+    // A HEAD for a wrong address is answered as the GET would be, with no body.
+    const head = await ask(srv.port, { host: "app.example.com", path: "/pricing", method: "HEAD", headers: html });
+    assert.deepEqual([head.status, head.headers["content-type"], head.body], [404, "text/html; charset=utf-8", ""]);
+    // The same address, asked for by something that wants data, is an error in JSON, as it always was.
+    for (const accept of [undefined, "application/json", "*/*"]) {
+      const r = await ask(srv.port, { host: "app.example.com", path: "/pricing", ...(accept ? { headers: { accept } } : {}) });
+      assert.equal(r.status, 404, String(accept));
+      assert.match(String(r.headers["content-type"]), /^application\/json/, String(accept));
+      assert.deepEqual(JSON.parse(r.body), { error: { code: "not_found", message: "There is nothing at /pricing." } });
+    }
+    // Under the API, whatever the caller says it accepts, an unknown route is JSON: a page there would be taken for an answer.
+    for (const api of ["/api/nothing", "/api/workspaces/ws_x/nothing", "/owner/nothing", "/webhooks/nothing"]) {
+      const r = await ask(srv.port, { host: "app.example.com", path: api, headers: html });
+      assert.equal(r.status, 404, api);
+      assert.match(String(r.headers["content-type"]), /^application\/json/, api);
+    }
+    // A page that exists is still itself, and the page for a wrong address is not served at a path of its own.
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/", headers: html })).status, 200);
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/404", headers: html })).status, 404);
+    assert.equal((await ask(srv.port, { host: "app.example.com", path: "/404.html", headers: html })).headers["content-type"], "text/html; charset=utf-8");
   } finally {
     await srv.close();
   }
@@ -181,7 +221,7 @@ test("a page can be read and used by anyone: a language, a title, one heading, a
 
 test("every link goes to a page or an anchor that exists, whether it is written in a page or made by the script", () => {
   const served = new Set(Object.values(PATHS));
-  const byPath = Object.fromEntries(pages().map((p) => [PATHS[p.name]!, p]));
+  const byPath = Object.fromEntries(pages().filter((p) => p.name in PATHS).map((p) => [PATHS[p.name]!, p]));
   const check = (target: string, from: string): void => {
     const [beforeFragment, fragment] = target.split("#");
     const at = beforeFragment!.split("?")[0]!;

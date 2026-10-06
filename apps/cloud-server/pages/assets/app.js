@@ -32,6 +32,7 @@
     account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
+    notfound: [],
   };
 
   // ---- numbers, money, dates and addresses ----

@@ -176,7 +176,7 @@ test("words and dates: plurals, the reasons a workspace is stopped for, the day 
   assert.notEqual(h.fingerprint(before), h.fingerprint(credit));
   assert.equal(h.fingerprint(before), h.fingerprint(JSON.parse(JSON.stringify(before))));
   assert.equal(typeof h.fingerprint({ account: { subscription: null }, balance: null }), "string", "a balance that could not be read does not break it");
-  assert.deepEqual(Object.keys(h.NEEDS), ["home", "signup", "login", "verify", "forgot", "reset", "account", "terms", "privacy"]);
+  assert.deepEqual(Object.keys(h.NEEDS), ["home", "signup", "login", "verify", "forgot", "reset", "account", "terms", "privacy", "notfound"]);
 });
 
 // ---- every page ----
@@ -504,6 +504,18 @@ test("a reset link that has been used offers a new one; a password that is too w
   await u.send(u.$("form"));
   assert.equal(u.text("status"), "That password is too easy to guess.");
   assert.equal(u.doc.querySelectorAll("a").filter((a) => a.textContent === "Ask for a new link").length, 0);
+});
+
+test("the page for a wrong address offers a visitor the plans and the way in, and a customer their account", async () => {
+  const out = world((x) => (x.signedIn = false));
+  const v = await visit("404", { routes: out.routes });
+  assert.equal(v.text("main"), "That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans Sign in Create an account");
+  assert.deepEqual(v.doc.querySelectorAll("a").filter((a) => v.shows(a) && !a.className.includes("brand") && a.getAttribute("href") !== "#main" && !v.doc.querySelector("footer")!.contains(a)).map((a) => a.getAttribute("href")), ["/", "/login", "/", "/login", "/signup"], "the header's two, then the page's three");
+  const signedIn = world(paid);
+  const u = await visit("404", { routes: signedIn.routes });
+  assert.equal(u.text("main"), "That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans Go to your account");
+  assert.equal(u.link("main", "Go to your account").getAttribute("href"), "/account");
+  assert.deepEqual(u.consoleErrors, []);
 });
 
 // ---- what a page does for the person at it ----

@@ -501,7 +501,9 @@ payment's own reference.
 in, the page the confirmation link opens, forgot and reset, the account, the terms and the privacy notice. They are plain HTML,
 one stylesheet and one script, with no build step and nothing loaded from another address. The control plane serves them at
 fixed paths (`/`, `/signup`, `/login`, `/verify`, `/forgot`, `/reset`, `/account`, `/terms`, `/privacy`) and the assets by
-name; a path that is not on that list is never looked for on the disk. The colours and the type are the site's.
+name; a path that is not on that list is never looked for on the disk. A browser that follows a wrong address (it asks for HTML) is
+shown `404.html` with the status 404, and a program, or any address under `/api`, `/owner` or `/webhooks`, still gets the JSON
+error. The colours and the type are the site's.
 
 - **They are written for the policy they are served under**: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`,
   `frame-ancestors 'none'`. No inline script, no inline style, no handler attribute, no address of another site. A test reads
