@@ -110,6 +110,37 @@ function namedRecipients(raw: unknown): string[] {
   return list.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
 }
 
+/**
+ * The tools that take the id of a message, and the other key a seat writes it under.
+ *
+ * A seat answering a message writes `replyTo`: it is what the message it was sent calls the field, and what `mesh_send` and
+ * `mesh_request` name theirs. `mesh_reply` names its own `messageId`. The nineteenth cronlite run's developer called
+ * `mesh_reply` twice in a row with `{ replyTo: "msg-M47MHWX9000c6d724790", response: {...} }`: the bridge copied `messageId`,
+ * which was not there, and the refusal was "unknown messageId for respond", which names no key and quotes no value. The
+ * seat could not tell a wrong id from a wrong word, wrote the same call again, then tried a contract and an announcement to
+ * a seat it may not start a thread with (4 of the 8 ops in that turn), and the ask stayed open until a later turn answered
+ * it another way.
+ *
+ * `replyTo` is read as the id, then, and a call with neither key is refused by name before it reaches an op.
+ */
+const MESSAGE_ID_TOOLS: ReadonlySet<string> = new Set(["mesh_reply", "mesh_respond", "mesh_discharge", "mesh_withdraw"]);
+
+function withMessageId(name: string, args: Record<string, any>): Record<string, any> {
+  if (!MESSAGE_ID_TOOLS.has(name)) return args;
+  if (typeof args.messageId === "string" && args.messageId.trim()) return args;
+  if (typeof args.replyTo === "string" && args.replyTo.trim()) return { ...args, messageId: args.replyTo.trim() };
+  return args;
+}
+
+/** The refusal for a message-id tool that was given no id under any key it reads, or undefined when it has one. */
+function missingMessageId(name: string, args: Record<string, any>): string | undefined {
+  if (!MESSAGE_ID_TOOLS.has(name)) return undefined;
+  if (typeof args.messageId === "string" && args.messageId.trim()) return undefined;
+  const carried = Object.keys(args);
+  const what = name === "mesh_withdraw" ? "the request you raised and no longer want" : name === "mesh_discharge" ? "the request you are closing" : "the message you are answering";
+  return `${name} needs messageId: the id of ${what} (the msg-… id on its line in your mailbox). This call carried ${carried.length > 0 ? carried.join(", ") : "no arguments"}.`;
+}
+
 export interface McpToolsetOptions {
   readOnly?: boolean;
   /** Accepts a human-seat credential. Absent = the human seat is refused. */
@@ -195,10 +226,13 @@ export class McpToolset {
         return { jsonrpc: "2.0", id, result: { tools: this.toolsFor(agentId) } };
       case "tools/call": {
         const name = request.params?.name as string;
-        const args = (request.params?.arguments ?? {}) as Record<string, any>;
+        const rawArgs = (request.params?.arguments ?? {}) as Record<string, any>;
         if (!this.tools.has(name)) {
           return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown tool ${name}` } };
         }
+        const args = withMessageId(name, rawArgs);
+        const missing = missingMessageId(name, args);
+        if (missing) return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify({ ok: false, error: missing }) }], isError: true } };
         try {
           if (READ_TOOLS.has(name)) {
             const payload = await this.readTool(agentId, name, args);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMesh } from "./store";
 import type { ConfirmFn } from "./components";
 import { goLiveNotice } from "./golive";
+import { REOPEN_DIALOG } from "./reopen";
 import { resumeConfirmBody, startConfirmBody } from "./spend";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
@@ -79,14 +80,7 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
     // The reason is the agents' new brief, so an empty one is not a valid
     // answer: the dialog holds the button rather than accepting it and then
     // telling the operator off in a toast after the fact.
-    const reason = await confirm({
-      title: "Reopen the mission?",
-      body: [
-        "Nothing is deleted — every artifact and step is kept, but the mandatory acceptance criteria go back to UNSATISFIED so the run does not instantly close again.",
-      ],
-      confirmLabel: "Reopen and brief the agents",
-      require: { kind: "text", label: "What was wrong with the result?", placeholder: "the API contract was never implemented" },
-    });
+    const reason = await confirm(REOPEN_DIALOG);
     if (reason === null) return;
     setBusy(true);
     try {

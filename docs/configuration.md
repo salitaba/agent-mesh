@@ -834,6 +834,11 @@ message id and the answer itself; `mesh_announce` broadcasts when you omit `to`
 and tells named seats when you give it. Both send `INFORM`, which the seat never
 writes — what settles an ask is `replyTo`, not the type.
 
+The tools that name a message (`mesh_reply`, `mesh_respond`, `mesh_discharge`, `mesh_withdraw`) take its id as
+`messageId`, and read `replyTo` as the same thing when `messageId` is absent: `replyTo` is what the message a seat was
+sent calls the field, and what `mesh_send` names its own. A call with neither is refused by name, with the keys it
+carried, instead of reaching an op as "unknown messageId"; an id that is not a message is refused with the id quoted.
+
 Hiding is **advertisement only on the server**: `callTool` resolves a tool name
 against the **unfiltered** map, and the hidden tools are filtered only out of the
 advertised list (`apps/mesh-server/src/mcp.ts`), so a caller that names one on
