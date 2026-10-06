@@ -531,12 +531,19 @@ error. The colours and the type are the site's.
   `frame-ancestors 'none'`. No inline script, no inline style, no handler attribute, no address of another site. A test reads
   every page and fails on any of them. The script builds everything it shows from text nodes and elements, never from a string
   of markup, so a workspace named like markup is a name.
-- **The account** shows the workspaces (create, open, pause, resume, delete with its name typed), the plan (choose, switch,
-  manage billing), the balance and what a top-up buys, the usage by day and by workspace as what was charged, and the password.
-  A workspace that is starting is looked at again every few seconds. A payment is made on the provider's page, and the account is
-  where it returns to: what the account looked like before leaving is kept in the tab, so a payment that was applied while the
-  person was away is said to have arrived, and one that has not been is waited for for a minute and then said to be on its way.
-  The balance is shown rounded down.
+- **The account knows where the customer is.** A card at the top says the one thing the account is waiting for and offers one
+  action: choose a plan, make the first workspace, add the model key (a plan that sells hosting only), open the workspace, resume
+  it, or update the payment details when the last payment failed. While a person is getting started it shows the steps (Plan,
+  Workspace, Model key where there is one, Open) and which one they are at; the key comes after the workspace because it can only be
+  given to a workspace that has started. `stageOf` and `nextStepOf` in `assets/app.js` decide the stage and the words from
+  `GET /api/me` and `GET /api/plans`, and are tried on tables. The rest of the page follows the stage: workspaces are listed once
+  there is one (create, open, pause, resume, and delete with its name typed, behind More, away from Open); the plan is shown once,
+  with the others behind Change plan; the balance, what a top-up buys and the usage by day and by workspace (as what was charged)
+  are shown only for a plan that sells model usage; the password is a setting at the end. A workspace that is starting is looked
+  at again every few seconds, for ten minutes, and the page says when it has stopped looking. A payment is made on the provider's
+  page, and the account is where it returns to: what the account looked like before leaving is kept in the tab, so a payment that
+  was applied while the person was away is said to have arrived, and one that has not been is waited for for a minute and then
+  said to be on its way. The balance is shown rounded down.
 - **They help the person at them, and only with a script.** The main button of a form says what it is doing while the call is out
   (`data-busy` in the markup: Signing in, Creating account, Sending, Saving, Changing) and is itself again afterwards; a password
   field has Show and Hide, which the markup carries hidden, so a browser that runs no script shows no control that does nothing, and
@@ -559,9 +566,10 @@ error. The colours and the type are the site's.
   the list at the top of the script) and the absence of anything inline.
 - **How they are tested.** The files by `tests/cloud/pages.test.ts`: what is in the folder and what serves it, the policy, the
   markup the script needs, every link and every call the script makes, the colours and their contrast, and the numbers. The script
-  by `tests/cloud/pages-app.test.ts`, which runs it unchanged on the real files in a small DOM with a service that answers as
-  each test says. And in a real browser, at three widths and in both colour schemes, with an accessibility scan, against a control
-  plane started for the purpose; that pass is not part of `npm test`.
+  by `tests/cloud/pages-app.test.ts` and `tests/cloud/pages-stage.test.ts` (the stage of an account, what the card says, and what is
+  shown), which run it unchanged on the real files in a small DOM with a service that answers as each test says. And in a real
+  browser, at three widths and in both colour schemes, with an accessibility scan, against a control plane started for the purpose;
+  that pass is not part of `npm test`.
 
 ## The edge: a workspace at its own address
 

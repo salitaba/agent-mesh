@@ -29,7 +29,7 @@
     verify: ["status", "title", "again"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -144,6 +144,12 @@
   };
 
   const isStarting = (w) => w.status === "requested" || w.status === "provisioning";
+  /** A workspace that has finished starting, running or stopped: a model key can be given to it. */
+  const canKey = (w) => w.status === "running" || w.status === "suspended";
+  /** A workspace of a plan that sells hosting only and has no key yet: its team has no model to think with. */
+  const lacksKey = (w) => Boolean(w.models) && w.models.key === null;
+  /** A subscription that still holds a plan. One that has ended is a plan that can be chosen again. */
+  const holdsPlan = (sub) => Boolean(sub) && sub.status !== "ended";
 
   const POLICY_UNITS = { graceDays: "day", retentionDays: "day", sessionDays: "day", idleDays: "day", verificationHours: "hour", resetHours: "hour" };
 
@@ -155,6 +161,130 @@
     return facts;
   }
 
+  // ---- where a customer is, and what the account says to them there ----
+
+  const STEP_LABELS = { plan: "Plan", workspace: "Workspace", key: "Model key", open: "Open" };
+
+  /**
+   * Whether the workspaces run on the customer's own model key: the plan says so, or a workspace of it carries the state of a key. A
+   * visitor with no plan is told what every plan on offer says, so that the steps do not change count when they choose.
+   */
+  function isByok(view) {
+    const sub = view.subscription;
+    const plan = holdsPlan(sub) ? view.plans.find((p) => p.id === sub.plan) : undefined;
+    if (plan) return Boolean(plan.byok);
+    if (view.workspaces.some((w) => Boolean(w.models))) return true;
+    return !holdsPlan(sub) && view.plans.length > 0 && view.plans.every((p) => p.byok);
+  }
+
+  /**
+   * The steps of getting started in the order they can be done, and the one a person is at: the first not done. A key can only be given to
+   * a workspace that has started, so on a plan that sells hosting only the key comes after the workspace. Open is never done (a person
+   * opens a workspace again and again), so with everything else done the step is Open, and stays there.
+   */
+  function stepsOf(view, byok) {
+    const started = view.workspaces.filter(canKey);
+    const done = { plan: holdsPlan(view.subscription), workspace: started.length > 0, key: started.some((w) => Boolean(w.models) && w.models.key !== null), open: false };
+    const ids = byok ? ["plan", "workspace", "key", "open"] : ["plan", "workspace", "open"];
+    const current = ids.find((id) => !done[id]);
+    return { current, steps: ids.map((id) => ({ id, label: STEP_LABELS[id], state: id === current ? "now" : done[id] ? "done" : "next" })) };
+  }
+
+  /**
+   * Where the account is, from what the service says of it. `view` is `{ subscription, workspaces, plans, plansKnown, topups, policy }`:
+   * the account's, and the plans on offer. The stage is one of `no-plan`, `late` (the last payment failed), `no-workspace`, `ready`
+   * (a workspace can be opened), `needs-key` (running, on a plan that sells hosting only, with no key), `starting`, `stopped` and
+   * `failed`, and names the workspace it is about. With several workspaces the one that can be opened comes first, then one that
+   * needs a key, then one starting, stopped and failed: what is working is not hidden behind what is not.
+   */
+  function stageOf(view) {
+    const sub = view.subscription;
+    const byok = isByok(view);
+    const { current, steps } = stepsOf(view, byok);
+    const base = { byok, step: current, steps };
+    if (!holdsPlan(sub)) return { id: "no-plan", ended: Boolean(sub), workspace: null, ...base };
+    const items = view.workspaces;
+    const first = (test) => items.find(test) || null;
+    if (sub.status === "past_due") return { id: "late", workspace: first((w) => w.status === "running") || first(canKey) || items[0] || null, ...base };
+    if (items.length === 0) return { id: "no-workspace", workspace: null, ...base };
+    const running = (w) => w.status === "running";
+    const order = [
+      ["ready", (w) => running(w) && !lacksKey(w)],
+      ["needs-key", (w) => running(w) && lacksKey(w)],
+      ["starting", isStarting],
+      ["stopped", (w) => w.status === "suspended"],
+      ["failed", (w) => w.status === "failed"],
+    ];
+    for (const [id, test] of order) {
+      const w = first(test);
+      if (w) return { id, workspace: w, ...base };
+    }
+    return { id: "ready", workspace: items[0], ...base };
+  }
+
+  /**
+   * What the card at the top of the account says for a stage: a title, a sentence, the tone it is said in, and the one action it offers
+   * (`kind` is what the page does: follow a link, open a workspace, resume it, give it a key, update billing, or make the first workspace).
+   */
+  function nextStepOf(stage, view) {
+    const sub = view.subscription;
+    const w = stage.workspace;
+    const name = w ? w.name : "";
+    switch (stage.id) {
+      case "no-plan": {
+        const action = { kind: "link", label: "Choose a plan", href: "#plan-h" };
+        if (stage.ended) {
+          const days = view.policy ? ` ${plural(view.policy.retentionDays, "day")}` : "";
+          return { tone: "warn", title: "Choose a plan to start again", text: `Your subscription has ended and your workspaces are stopped. They are deleted${days} after it ended. Choose a plan again before then and they start again.`, action };
+        }
+        const pays = "Choose one below and pay on the next page.";
+        return { tone: "", title: "Choose a plan", text: stage.byok ? `A plan is a flat monthly price for hosting your workspace. ${pays} You bring your own model key and pay your model provider yourself.` : `A plan is a flat monthly price for your workspace. ${pays}`, action };
+      }
+      case "late": {
+        const stopped = view.workspaces.some((x) => x.statusReason === "payment is overdue");
+        const days = view.policy ? view.policy.graceDays : null;
+        const ends = days !== null && sub.pastDueSince ? when(new Date(Date.parse(sub.pastDueSince) + days * 86_400_000).toISOString()) : "";
+        const text = stopped ? "Your workspaces were stopped because of it. A payment puts everything back." : ends ? `Your workspaces keep running until ${ends} and are then stopped. A payment before then puts everything back.` : "Your workspaces are stopped after a short grace period. A payment before then puts everything back.";
+        return { tone: "warn", title: "Your last payment did not go through", text, action: { kind: "billing", label: "Update payment details" } };
+      }
+      case "no-workspace":
+        return {
+          tone: "",
+          title: "Make your first workspace",
+          text: `${sub && sub.title ? `Your ${sub.title} plan is active.` : "Your plan is active."} A workspace is your own Curule host, with its own projects, event log and files.${stage.byok ? " You give it your model key once it has started." : ""}`,
+          action: { kind: "create", label: "Create workspace" },
+        };
+      case "starting":
+        return { tone: "", title: `${name} is starting`, text: `${view.stale ? "This page has stopped checking. Reload it to look again." : "This page checks every few seconds and shows when it is ready."}${stage.byok ? " Then you give it your model key." : ""}`, action: null };
+      case "needs-key":
+        return { tone: "", title: "Add your model key", text: `${name} is running, but its team has no model yet. Give it the key of your model provider. Curule does not resell model usage, so your provider bills you directly.`, action: { kind: "key", label: "Add your model key" } };
+      case "stopped": {
+        const own = w.statusReason === "paused by its owner";
+        return { tone: "", title: own ? `${name} is paused` : `${name} is stopped`, text: own ? "Its files are kept. Resume it to open it." : `${reasonText(w.statusReason) || "It is not running."} Resume it to open it.`, action: { kind: "resume", label: "Resume" } };
+      }
+      case "failed":
+        return { tone: "bad", title: `${name} could not start`, text: `${reasonText(w.statusReason) || "The workspace could not be started."} Delete it and make a new one. If it fails again, tell the operator.`, action: null, contact: true };
+      default: {
+        const several = view.workspaces.filter((x) => x.status === "running" && !lacksKey(x)).length > 1;
+        if (several) return { tone: "", title: "Your workspaces are running", text: "Open the one you want to work in.", action: null };
+        return { tone: "", title: `${name} is running`, text: "Open it to describe your team and start a mission.", action: { kind: "open", label: "Open" } };
+      }
+    }
+  }
+
+  /**
+   * Which parts of the account are shown. Workspaces when there are some; the plans to choose from before there is one and the plan
+   * itself, with the others behind a button, after; credit and usage only for a plan that sells model usage (never before a plan, and
+   * not on hosting only), and usage only once there is a workspace to use it or something was used.
+   */
+  function sectionsOf(view) {
+    const live = holdsPlan(view.subscription);
+    const plan = live ? view.plans.find((p) => p.id === view.subscription.plan) : undefined;
+    const hostingOnly = plan ? Boolean(plan.byok) : view.workspaces.some((w) => Boolean(w.models));
+    const sellsUsage = live && !hostingOnly && !(view.plansKnown && view.topups === null);
+    return { workspaces: view.workspaces.length > 0, plan: live ? "summary" : "choose", balance: sellsUsage, usage: sellsUsage && (view.workspaces.length > 0 || (view.usageCalls || 0) > 0) };
+  }
+
   /** What the account looks like in the ways a payment changes it. */
   function fingerprint(me) {
     const sub = me.account.subscription;
@@ -162,7 +292,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, STATES, POLICY_UNITS };
+  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -186,7 +316,7 @@
 
   function button(label, o = {}) {
     const classes = ["btn", o.kind ? `btn-${o.kind}` : "", o.small ? "btn-small" : ""].filter(Boolean).join(" ");
-    return el("button", { type: o.type || "button", id: o.id, class: classes, disabled: o.disabled, onclick: o.onclick }, label);
+    return el("button", { type: o.type || "button", id: o.id, class: classes, disabled: o.disabled, onclick: o.onclick, ...o.attrs }, label);
   }
 
   /** Say something in a status area, or clear it. */
@@ -582,6 +712,8 @@
   const BEFORE_PAYMENT = "curule:before-payment";
   /** How many days of usage the table by day shows. */
   const USAGE_DAYS = 14;
+  /** How many times the page looks again while a workspace is starting: every three seconds, so for ten minutes. */
+  const WATCH_LIMIT = 200;
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const SIGN_IN = "/login?next=/account";
 
@@ -616,6 +748,20 @@
       planNote: null,
       timer: 0,
       watched: 0,
+      /** Whether the other plans are shown under the plan the account is on. */
+      changing: false,
+      /** The workspaces whose less used actions (deleting one) are shown. */
+      more: new Set(),
+      /** What the card at the top said last, so that it is drawn again only when it says something else. */
+      stageShape: "",
+      stageId: undefined,
+      /** Set by something the person did, so that the card they were using is not left without the cursor when it says something else. */
+      focusStage: false,
+      createAt: "panel",
+      /** What the card at the top offers, and of which workspace, so that the workspace's own button is not a second one of the same weight. */
+      stageTarget: null,
+      usageCalls: 0,
+      usageLoaded: false,
     };
 
     const offered = await plans();
@@ -628,9 +774,9 @@
     }
 
     const account = () => state.me.account;
-    // A service that sells no model usage has no balance to show, no credit to add and no usage to report.
-    const usageSold = () => !(state.plansKnown && state.topups === null);
     const subscription = () => account().subscription;
+    /** What the pure parts decide from: the account, the plans on offer and what the service says its periods are. */
+    const viewOf = () => ({ subscription: subscription(), workspaces: account().workspaces, plans: state.plans, plansKnown: state.plansKnown, topups: state.topups, policy: state.policy, stale: state.watched >= WATCH_LIMIT, usageCalls: state.usageCalls });
     const standing = () => {
       const sub = subscription();
       return !sub || sub.status === "ended" ? "none" : sub.status;
@@ -654,16 +800,8 @@
         say(node, state.flash.kind, state.flash.text);
         return;
       }
-      const sub = subscription();
       const b = state.me.balance;
-      if (sub && sub.status === "past_due") {
-        const days = state.policy ? state.policy.graceDays : null;
-        const ends = days !== null && sub.pastDueSince ? when(new Date(Date.parse(sub.pastDueSince) + days * 86_400_000).toISOString()) : "";
-        say(node, "warn", `The last payment did not go through. ${ends ? `Your workspaces keep running until ${ends} and are then stopped.` : "Your workspaces are stopped after a short grace period."} A payment before then puts everything back.`);
-      } else if (sub && sub.status === "ended") {
-        const days = state.policy ? ` ${plural(state.policy.retentionDays, "day")}` : "";
-        say(node, "warn", `Your subscription has ended and your workspaces are stopped. They are deleted${days} after it ended. Choose a plan again before then and they start again.`);
-      } else if (sub && b && b.balance.available <= 0) {
+      if (sectionsOf(viewOf()).balance && b && b.balance.available <= 0) {
         say(node, "warn", "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a mesh that needs them pauses with a notice that says why.");
       } else {
         say(node, "", "");
@@ -697,17 +835,24 @@
       setNote(w.workspaceId, "", doing);
       state.busy.add(w.workspaceId);
       renderWorkspaces();
+      renderStage();
       const r = await request();
       state.busy.delete(w.workspaceId);
       if (signInAgain(r)) return;
       if (!r.ok) {
         setNote(w.workspaceId, "bad", r.error.message);
-        if (!(await refresh())) renderWorkspaces();
+        if (!(await refresh())) {
+          renderWorkspaces();
+          renderStage();
+        }
         return;
       }
       setNote(w.workspaceId, "", "");
       if (after) after(r);
-      if (!(await refresh())) renderWorkspaces();
+      if (!(await refresh())) {
+        renderWorkspaces();
+        renderStage();
+      }
     }
 
     const path = (w, action) => `/api/workspaces/${encodeURIComponent(w.workspaceId)}/${action}`;
@@ -765,30 +910,51 @@
 
     function workspaceRow(w) {
       const [label, kind] = STATES[w.status] || [w.status, ""];
-      const held = state.busy.has(w.workspaceId);
-      const note = state.notes.get(w.workspaceId);
+      const id = w.workspaceId;
+      const held = state.busy.has(id);
+      const note = state.notes.get(id);
       const reason = reasonText(w.statusReason);
       const actions = [];
+      const offered = (kind) => Boolean(state.stageTarget) && state.stageTarget.id === id && state.stageTarget.kind === kind;
       if (w.status === "running") {
-        actions.push(button("Open", { id: `open-${w.workspaceId}`, kind: "primary", disabled: held, onclick: () => open(w) }));
-        actions.push(button("Pause", { id: `pause-${w.workspaceId}`, disabled: held, onclick: () => act(w, "Pausing it.", () => call("POST", path(w, "suspend"))) }));
+        actions.push(button("Open", { id: `open-${id}`, kind: offered("open") ? "" : "primary", disabled: held, onclick: () => open(w), attrs: { "aria-label": `Open ${w.name}` } }));
+        actions.push(button("Pause", { id: `pause-${id}`, disabled: held, onclick: () => act(w, "Pausing it.", () => call("POST", path(w, "suspend"))), attrs: { "aria-label": `Pause ${w.name}` } }));
       }
-      if (w.status === "suspended") actions.push(button("Resume", { id: `resume-${w.workspaceId}`, kind: "primary", disabled: held, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))) }));
-      if (!isStarting(w)) {
+      if (w.status === "suspended") actions.push(button("Resume", { id: `resume-${id}`, kind: offered("resume") ? "" : "primary", disabled: held, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), attrs: { "aria-label": `Resume ${w.name}` } }));
+      // Deleting is away from the button a person comes for: behind More, where it takes a click that is meant. A workspace that
+      // could not start has nothing else to be done to it, so there it is shown.
+      const remove = button("Delete this workspace", {
+        id: `delete-${id}`,
+        kind: "danger",
+        disabled: held,
+        attrs: { "aria-label": `Delete this workspace: ${w.name}` },
+        onclick: () => {
+          state.confirming = id;
+          state.typed = "";
+          renderWorkspaces();
+          const input = $(`confirm-${id}`);
+          if (input) input.focus();
+        },
+      });
+      const shown = state.more.has(id) || state.confirming === id;
+      let hidden = null;
+      if (w.status === "failed") actions.push(remove);
+      else if (!isStarting(w)) {
         actions.push(
-          button("Delete", {
-            id: `delete-${w.workspaceId}`,
-            kind: "danger",
+          button("More", {
+            id: `more-${id}`,
+            kind: "quiet",
             disabled: held,
+            attrs: { "aria-expanded": shown ? "true" : "false", "aria-controls": `more-panel-${id}`, "aria-label": `More actions for ${w.name}` },
             onclick: () => {
-              state.confirming = w.workspaceId;
-              state.typed = "";
+              if (state.more.has(id)) state.more.delete(id);
+              else state.more.add(id);
               renderWorkspaces();
-              const input = $(`confirm-${w.workspaceId}`);
-              if (input) input.focus();
+              restoreFocus(`more-${id}`);
             },
           }),
         );
+        hidden = el("div", { id: `more-panel-${id}`, class: "disclosed", hidden: !shown }, remove);
       }
       return el(
         "li",
@@ -796,7 +962,8 @@
         el("div", { class: "row-head" }, el("strong", null, w.name), el("span", { class: kind ? `badge badge-${kind}` : "badge" }, label)),
         el("p", { class: "muted small" }, el("code", null, w.host), reason ? ` ${reason}` : isStarting(w) ? " It starts in the background, and this page updates when it is ready." : ""),
         actions.length > 0 ? el("div", { class: "btn-row" }, actions) : null,
-        state.confirming === w.workspaceId ? confirmBox(w) : null,
+        hidden,
+        state.confirming === id ? confirmBox(w) : null,
         note ? el("p", { class: note.kind ? `note note-${note.kind}` : "muted small", role: "status" }, note.text) : null,
       );
     }
@@ -805,31 +972,34 @@
       const list = $("workspaces");
       const focused = doc.activeElement && list.contains(doc.activeElement) ? doc.activeElement.id : "";
       const items = account().workspaces;
-      const sub = subscription();
-      const standingNow = standing();
-      const plan = planOf();
-      const live = items.filter((w) => w.status !== "failed").length;
       list.replaceChildren(...items.map(workspaceRow));
-      if (items.length === 0) list.append(el("li", { class: "row" }, el("p", { class: "muted" }, "You have no workspace yet.")));
+      $("workspaces-panel").hidden = items.length === 0;
+      renderCreate(items);
+      restoreFocus(focused);
+    }
 
+    /** Whether a workspace can be made, and why not when it cannot. The form itself is where the page puts it: in the card at the top for a first workspace. */
+    function renderCreate(items) {
       const form = $("create");
       const note = $("create-note");
+      const plan = planOf();
+      const live = items.filter((w) => w.status !== "failed").length;
+      const standingNow = standing();
       if (standingNow === "none") {
         form.hidden = true;
         hint(note, "", "");
-        note.replaceChildren(el("a", { href: "#plan-h" }, "Choose a plan"), sub ? " below to create a workspace." : " below to create your first workspace.");
       } else if (standingNow === "past_due") {
         form.hidden = true;
-        hint(note, "", "The last payment did not go through. Update your payment details to create a workspace.");
+        hint(note, "", "Update your payment details to create a workspace.");
       } else if (plan && live >= plan.workspaces) {
         form.hidden = true;
-        hint(note, "", `Your plan includes ${plural(plan.workspaces, "workspace")}. Delete one to make room, or choose a larger plan.`);
+        // While the workspace that fills the plan is starting nothing is asked of the person, so nothing is said about being full.
+        hint(note, "", items.some(isStarting) ? "" : `Your plan includes ${plural(plan.workspaces, "workspace")}. To make another, delete ${plan.workspaces === 1 ? "this one" : "one"} or change your plan.`);
       } else {
         form.hidden = false;
         // What went wrong with the last attempt stays until the next one.
         if (!note.className.includes("note-bad")) hint(note, "", "");
       }
-      restoreFocus(focused);
     }
 
     function restoreFocus(id) {
@@ -837,9 +1007,88 @@
       if (target) target.focus();
     }
 
+    // -- the card at the top: where the account is, and the one thing it is waiting for --
+
+    function stepItem(step, index) {
+      const said = { done: " (done)", now: " (you are here)", next: " (still to do)" }[step.state];
+      return el(
+        "li",
+        { class: step.state, "aria-current": step.state === "now" ? "step" : false },
+        el("span", { class: "num", "aria-hidden": "true" }, step.state === "done" ? "\u2713" : String(index + 1)),
+        step.label,
+        el("span", { class: "sr" }, said),
+      );
+    }
+
+    /** The key's fields, for the workspace the card is about: the model first, as the key is useless to a team without one. */
+    function focusKey(w) {
+      const model = $(`key-model-${w.workspaceId}`);
+      const target = model && model.value.trim() === "" ? model : $(`key-secret-${w.workspaceId}`);
+      if (target) target.focus();
+    }
+
+    function stageAction(a, w, held) {
+      const named = w ? { "aria-label": `${a.label} ${w.name}` } : undefined;
+      switch (a.kind) {
+        case "link":
+          return el("a", { class: "btn btn-primary", href: a.href }, a.label);
+        case "billing":
+          return button(a.label, { kind: "primary", onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) });
+        case "key":
+          return button(a.label, { kind: "primary", onclick: () => focusKey(w) });
+        case "open":
+          return button(a.label, { id: "stage-open", kind: "primary", disabled: held, onclick: () => open(w), ...(named ? { attrs: named } : {}) });
+        default:
+          return button(a.label, { id: "stage-resume", kind: "primary", disabled: held, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
+      }
+    }
+
+    /** Drawn again only when it says something else, so that a name being typed into its form is not lost to a look at the account. */
+    function renderStage() {
+      const view = viewOf();
+      const stage = stageOf(view);
+      const card = nextStepOf(stage, view);
+      const w = stage.workspace;
+      const held = Boolean(w) && state.busy.has(w.workspaceId);
+      const shape = JSON.stringify([stage.id, stage.step, card, stage.steps, held, w ? w.workspaceId : ""]);
+      if (shape === state.stageShape) return;
+      state.stageShape = shape;
+      state.stageTarget = card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
+      const box = $("stage");
+      box.hidden = false;
+      box.className = card.tone ? `stage stage-${card.tone}` : "stage";
+      // The steps are for a person who is getting started; one whose workspace can be opened is not shown them.
+      const steps = $("stage-steps");
+      steps.hidden = stage.step === "open";
+      steps.replaceChildren(...stage.steps.map(stepItem));
+      $("stage-title").textContent = card.title;
+      const text = $("stage-text");
+      text.replaceChildren(card.text);
+      if (card.contact && /^(mailto:|https:)/.test(CONTACT)) text.append(" ", el("a", { href: CONTACT }, "Contact the operator"), ".");
+      const actions = $("stage-actions");
+      const box2 = $("create-box");
+      if (card.action && card.action.kind === "create") {
+        actions.replaceChildren(box2);
+        state.createAt = "stage";
+      } else {
+        if (state.createAt === "stage") {
+          $("create-slot").append(box2);
+          state.createAt = "panel";
+        }
+        actions.replaceChildren(...(card.action ? [stageAction(card.action, w, held)] : []));
+      }
+      // What a screen reader is told, once, when the account moves on: the page was not asked, and nothing it was looking at is gone.
+      if (state.stageId !== undefined && state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
+      state.stageId = stage.id;
+      if (state.focusStage) {
+        state.focusStage = false;
+        $("stage-title").focus();
+      }
+    }
+
     /** While a workspace is starting the page asks again every few seconds, for ten minutes at most, and not while the tab is hidden. */
     function watch() {
-      if (state.timer !== 0 || state.watched >= 200 || !account().workspaces.some(isStarting)) return;
+      if (state.timer !== 0 || state.watched >= WATCH_LIMIT || !account().workspaces.some(isStarting)) return;
       state.timer = setTimeout(async () => {
         state.timer = 0;
         if (doc.visibilityState !== "hidden") {
@@ -853,7 +1102,6 @@
     // -- the customer's own model key --
 
     const PROVIDER_NAMES = { anthropic: "Anthropic", "openai-compatible": "OpenAI-compatible" };
-    const canKey = (w) => w.status === "running" || w.status === "suspended";
 
     /**
      * One workspace's key. The page can send a key and can say that one is kept, for which provider and model; it can never show one,
@@ -957,7 +1205,7 @@
       const panel = $("models-panel");
       panel.hidden = mine.length === 0;
       const shape = JSON.stringify(mine.map((w) => [w.workspaceId, w.name, w.status, w.models.key]));
-      
+      if (!force && shape === state.modelRows) return;
       state.modelRows = shape;
       const list = $("model-keys");
       const focused = doc.activeElement && list.contains(doc.activeElement) ? doc.activeElement.id : "";
@@ -970,37 +1218,52 @@
     function renderPlan() {
       const box = $("plan");
       const sub = subscription();
+      const live = holdsPlan(sub);
+      const plan = planOf();
+      $("plan-panel").hidden = false;
+      // A person with no plan is at the step of choosing one, and the panel says so; a customer's is their plan.
+      $("plan-h").textContent = live ? "Plan" : "Choose a plan";
+      const checkout = (p, kind) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), failedHere, rememberBefore);
       const parts = [];
       if (sub) {
         const label = sub.status === "ended" ? ["Ended", "bad"] : sub.status === "past_due" ? ["Payment overdue", "warn"] : sub.status === "active" ? ["Active", "ok"] : [sub.status, ""];
+        const others = live ? state.plans.filter((p) => p.id !== sub.plan) : [];
+        const said = [plan && live ? `${money(plan.priceMinor, state.currency)} per ${plan.period}.` : "", live && sub.periodEnd ? `Paid until ${when(sub.periodEnd)}.` : ""].filter(Boolean).join(" ");
         parts.push(
           el(
             "div",
             { class: "row" },
             el("div", { class: "row-head" }, el("strong", null, sub.title), el("span", { class: label[1] ? `badge badge-${label[1]}` : "badge" }, label[0])),
-            sub.status !== "ended" && sub.periodEnd ? el("p", { class: "muted small" }, `Paid until ${when(sub.periodEnd)}.`) : null,
-            sub.status !== "ended" ? el("div", { class: "btn-row" }, button("Manage billing", { small: true, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) })) : null,
+            said ? el("p", { class: "muted small plan-line" }, said) : null,
+            plan && live ? el("ul", { class: "facts-list muted small" }, planFacts(plan, state.currency).map((fact) => el("li", null, fact))) : null,
+            live
+              ? el(
+                  "div",
+                  { class: "btn-row" },
+                  button("Manage billing", { small: true, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) }),
+                  others.length > 0
+                    ? button("Change plan", {
+                        id: "plan-change-toggle",
+                        small: true,
+                        kind: "quiet",
+                        attrs: { "aria-expanded": state.changing ? "true" : "false", "aria-controls": "plan-change" },
+                        onclick: () => {
+                          state.changing = !state.changing;
+                          renderPlan();
+                          restoreFocus("plan-change-toggle");
+                        },
+                      })
+                    : null,
+                )
+              : null,
+            live && others.length > 0
+              ? el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))))
+              : null,
           ),
         );
       }
-      const live = sub && sub.status !== "ended";
-      if (!state.plansKnown) {
-        parts.push(el("p", { class: "muted" }, "The plans could not be loaded just now. Reload the page to try again."));
-      } else if (state.plans.length > 0 && (!live || state.plans.length > 1)) {
-        parts.push(
-          el("h3", null, live ? "Change plan" : "Choose a plan"),
-          el(
-            "div",
-            { class: "plans" },
-            state.plans.map((plan) =>
-              planCard(plan, state.currency, {
-                subscription: sub,
-                action: (p) => button(live ? `Switch to ${p.title}` : `Choose ${p.title}`, { kind: live ? "" : "primary", onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), failedHere, rememberBefore) }),
-              }),
-            ),
-          ),
-        );
-      }
+      if (!state.plansKnown) parts.push(el("p", { class: "muted" }, "The plans could not be loaded just now. Reload the page to try again."));
+      else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
       box.replaceChildren(...parts);
       const status = $("plan-status");
       if (state.planNote) say(status, state.planNote.kind, state.planNote.text);
@@ -1082,7 +1345,6 @@
     }
 
     async function loadUsage() {
-      if (!usageSold()) return;
       const box = $("usage");
       box.replaceChildren(el("p", { class: "muted" }, "Loading."));
       const r = await call("GET", "/api/usage");
@@ -1093,6 +1355,8 @@
       }
       const u = r.data;
       state.usageCurrency = u.currency;
+      state.usageCalls = u.total.calls;
+      $("usage-panel").hidden = !sectionsOf(viewOf()).usage;
       if (u.total.calls === 0) {
         box.replaceChildren(el("p", { class: "muted" }, "Nothing has been used yet. Calls appear here when a mesh in one of your workspaces asks a model for something."));
         return;
@@ -1111,13 +1375,20 @@
 
     function renderAll() {
       $("who").textContent = `Signed in as ${account().email}`;
+      const sections = sectionsOf(viewOf());
       renderNotice();
+      renderStage();
       renderWorkspaces();
       renderModelKeys(false);
       renderPlan();
-      $("balance-panel").hidden = !usageSold();
-      $("usage-panel").hidden = !usageSold();
+      $("balance-panel").hidden = !sections.balance;
+      $("usage-panel").hidden = !sections.usage;
       renderBalance();
+      // Credit and usage are asked for once the account has a plan that sells them, whenever that comes to be.
+      if (sections.balance && !state.usageLoaded) {
+        state.usageLoaded = true;
+        loadUsage();
+      }
       watch();
     }
 
@@ -1133,9 +1404,11 @@
         hint(note, "bad", "Give the workspace a name.");
         return;
       }
+      state.focusStage = true;
       const r = await call("POST", "/api/workspaces", { name });
       if (signInAgain(r)) return;
       if (!r.ok) {
+        state.focusStage = false;
         hint(note, "bad", r.error.message);
         return;
       }
@@ -1187,7 +1460,6 @@
 
     renderTopups();
     renderAll();
-    loadUsage();
     // The browser's back button can bring this page back from where it was, and with a payment page's button still pressed.
     window.addEventListener("pageshow", (event) => {
       if (event.persisted) location.reload();
@@ -1214,7 +1486,8 @@
           if (doc.visibilityState === "hidden") continue;
           if ((await refresh()) && fingerprint(state.me) !== then) {
             flash("ok", "Your payment has arrived.");
-            await loadUsage();
+            // A plan that sells usage has some to show now; one that sells hosting only has none, and none is asked for.
+            if (sectionsOf(viewOf()).balance) await loadUsage();
             return;
           }
         }

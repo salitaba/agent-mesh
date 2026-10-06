@@ -178,7 +178,9 @@ if (HOSTING) {
 }
 let workspaceUrl = "";
 await step(page, "opening it shows the host's own dashboard, through the service's address", async () => {
-  await page.getByRole("button", { name: "Open", exact: true }).click();
+  // The card at the top offers it first, and the workspace's own button is the same thing again.
+  expect(/is running/i.test(await text("#stage-title")), `the card at the top does not say the workspace is running: ${await text("#stage-title")}`);
+  await page.getByRole("button", { name: /^Open( |$)/ }).first().click();
   await page.waitForURL((u) => u.host !== new URL(BASE).host, { timeout: 30000 });
   await page.waitForSelector("text=/Welcome to (Curule|your workspace)/", { timeout: 30000 });
   workspaceUrl = page.url();
@@ -219,10 +221,11 @@ if (HOSTING) {
   });
 }
 await step(page, "pausing stops the workspace and says why; resuming starts it", async () => {
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: /^Pause( |$)/ }).click();
   await page.waitForSelector("#workspaces .badge:text('Stopped')");
   expect(/You paused it/.test(await text("#workspaces")), "the reason is not said");
-  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  expect(/is paused/.test(await text("#stage-title")), "the card at the top does not say it is paused");
+  await page.getByRole("button", { name: /^Resume( |$)/ }).first().click();
   await page.waitForSelector("#workspaces .badge:text('Running')", { timeout: 60000 });
 });
 await step(page, "the workspace's own address is closed to someone who is not signed in", async () => {
@@ -234,12 +237,14 @@ await step(page, "the workspace's own address is closed to someone who is not si
   expect(!/Welcome to Curule|Projects/.test(body) && (res?.status() ?? 0) >= 400, `a stranger got ${res?.status()}: ${body.slice(0, 120)}`);
   await other.close();
 });
-await step(page, "deleting needs the name typed, and takes the workspace", async () => {
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  expect(await page.getByRole("button", { name: "Delete workspace" }).isDisabled(), "it can be pressed before the name is typed");
+await step(page, "deleting is away from Open, needs the name typed, and takes the workspace", async () => {
+  expect(await page.getByRole("button", { name: /^Delete this workspace/ }).count() === 0 || !(await page.getByRole("button", { name: /^Delete this workspace/ }).first().isVisible()), "the button that deletes is shown beside Open");
+  await page.getByRole("button", { name: /^More actions for / }).click();
+  await page.getByRole("button", { name: /^Delete this workspace/ }).click();
+  expect(await page.getByRole("button", { name: "Delete workspace", exact: true }).isDisabled(), "it can be pressed before the name is typed");
   await page.keyboard.type("Research");
-  await page.getByRole("button", { name: "Delete workspace" }).click();
-  await page.waitForSelector("#workspaces:has-text('You have no workspace yet.')");
+  await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
+  await page.waitForFunction(() => /Make your first workspace/.test(document.getElementById("stage-title")?.textContent ?? ""), null, { timeout: 30000 });
 });
 await step(page, "signing out, then in, then changing the password and resetting it by mail", async () => {
   await page.getByRole("button", { name: "Sign out" }).click();

@@ -8,83 +8,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import { PAGES_DIR, SCRIPT, Visit, helpers, visit, type Answer, type Call, type Routes } from "./pages-support";
+import { PAGES_DIR, SCRIPT, Visit, helpers, visit, type FakeNode } from "./pages-support";
+import { ACTIVE, HOSTING_PLANS, HOSTING_SUB, KEPT, NOW, NO_USAGE, PLANS, SECRET, World, balance, failure, hosting, paid, workspace, world, type Subscription, type WorkspaceView } from "./pages-world";
 
 // ---- the service, as the pages see it ----
-
-const PLANS = {
-  currency: "USD",
-  plans: [
-    { id: "team", title: "Team", priceMinor: 14_900, period: "month", includedUsageMicros: 20_000_000, workspaces: 1, tiers: ["fast", "balanced"] },
-    { id: "business", title: "Business", priceMinor: 59_900, period: "month", includedUsageMicros: 100_000_000, workspaces: 3, summary: "For a team that runs several projects." },
-  ],
-  topups: { optionsMinor: [1_000, 2_500, 10_000], minimumMinor: 500, maximumMinor: 100_000, usageMicrosPerMinor: 10_000 },
-  policy: { graceDays: 3, retentionDays: 30, sessionDays: 30, idleDays: 14, verificationHours: 24, resetHours: 2 },
-};
-
-interface WorkspaceView {
-  workspaceId: string;
-  name: string;
-  slug: string;
-  plan: string;
-  status: string;
-  statusReason?: string;
-  host: string;
-  /** Present on a hosting-only plan's workspace: where its models come from. */
-  models?: { source: "own"; key: null | { provider: string; model: string; baseUrl?: string; setAt: string } };
-}
-type Subscription = null | { plan: string; title: string; status: string; periodEnd?: string; pastDueSince?: string };
-
-const workspace = (over: Partial<WorkspaceView> = {}): WorkspaceView => ({ workspaceId: "ws_1", name: "Research", slug: "research-1a2b3c", plan: "team", status: "running", host: "research-1a2b3c.ws.example.com", ...over });
-const ACTIVE: Subscription = { plan: "team", title: "Team", status: "active", periodEnd: "2026-11-05T12:00:00.000Z" };
-const balance = (over: Partial<{ included: number; purchased: number; available: number }> = {}) => {
-  const b = { included: 20_000_000, purchased: 0, ...over };
-  return { currency: "USD", balance: { included: b.included, purchased: b.purchased, total: b.included + b.purchased, available: over.available ?? b.included + b.purchased }, charged: 0 };
-};
-const NO_USAGE = { currency: "USD", byDay: [], byWorkspace: [], total: { calls: 0, failed: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, chargedMicros: 0 } };
-const failure = (status: number, code: string, message: string): Answer => ({ status, json: { error: { code, message } } });
-
-class World {
-  signedIn = true;
-  email = "ada@example.com";
-  subscription: Subscription = null;
-  workspaces: WorkspaceView[] = [];
-  balance: ReturnType<typeof balance> | null = balance();
-  usage: unknown = NO_USAGE;
-  plans: Answer = { json: PLANS };
-  /** What the service says to a call, by "METHOD /path", in place of the usual. */
-  readonly answers = new Map<string, Answer | ((call: Call) => Answer)>();
-
-  view() {
-    return { accountId: "acct_1", email: this.email, createdAt: "2026-10-01T00:00:00.000Z", subscription: this.subscription, workspaces: this.workspaces };
-  }
-  readonly routes: Routes = (call) => {
-    const key = `${call.method} ${call.path}`;
-    const said = this.answers.get(key);
-    if (said) return typeof said === "function" ? said(call) : said;
-    switch (key) {
-      case "GET /api/session":
-        return { json: { account: this.signedIn ? this.view() : null } };
-      case "GET /api/me":
-        return this.signedIn ? { json: { account: this.view(), balance: this.balance } } : failure(401, "not_signed_in", "Sign in to continue.");
-      case "GET /api/plans":
-        return this.plans;
-      case "GET /api/usage":
-        return { json: this.usage };
-      default:
-        return undefined;
-    }
-  };
-}
-
-const world = (change: (w: World) => void = () => undefined): World => {
-  const w = new World();
-  change(w);
-  return w;
-};
-const paid = (w: World): void => {
-  w.subscription = ACTIVE;
-};
 
 // ---- the pure parts ----
 
@@ -676,21 +603,23 @@ test("the account page says the service cannot be reached, instead of sending a 
   assert.deepEqual(half.navigations, []);
 });
 
-test("a new account sees what to do first: choose a plan, and nothing to create or open yet", async () => {
+test("a new account sees what to do first: choose a plan, and nothing to create, open, pay for or use yet", async () => {
   const w = world();
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("who"), "Signed in as ada@example.com");
-  assert.equal(v.text("workspaces"), "You have no workspace yet.");
+  assert.equal(v.shows(v.$("stage")), true);
+  assert.equal(v.text("stage-title"), "Choose a plan");
+  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your workspace. Choose one below and pay on the next page.");
+  assert.equal(v.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
+  assert.equal(v.text("stage-steps"), "1 Plan (you are here) 2 Workspace (still to do) 3 Open (still to do)");
+  assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
-  assert.equal(v.text("create-note"), "Choose a plan below to create your first workspace.");
-  const cards = v.$("plan").querySelectorAll("article");
-  assert.equal(cards.length, 2);
-  assert.equal(v.text(v.$("plan").querySelector("h3")!), "Choose a plan");
+  assert.equal(v.text("plan-h"), "Choose a plan");
+  assert.equal(v.$("plan").querySelectorAll("article").length, 2);
   assert.deepEqual(v.labels("plan"), ["Choose Team", "Choose Business"]);
-  assert.equal(v.text("figures"), "Available $20.00 From your plan $20.00 From credit you added $0.00", "(a balance that is there before any plan is whatever the gateway says)");
-  assert.deepEqual(v.labels("topup-options"), ["Add $10.00", "Add $25.00", "Add $100.00"]);
-  assert.equal(v.text("topup-hint"), "From $5.00 to $1,000.00. Each $1.00 adds $1.00 of usage, and credit does not expire.");
-  assert.equal(v.text("usage"), "Nothing has been used yet. Calls appear here when a mesh in one of your workspaces asks a model for something.");
+  assert.equal(v.shows(v.$("balance-panel")), false, "a balance means nothing before a plan, whatever the gateway holds");
+  assert.equal(v.shows(v.$("usage-panel")), false);
+  assert.equal(v.to("GET", "/api/usage").length, 0, "and usage is not asked for until there is a plan that sells it");
   assert.equal(v.text("notice"), "");
   assert.deepEqual(v.consoleErrors, []);
 });
@@ -729,19 +658,30 @@ test("a payment page that cannot be opened is said, with the button back, and an
   assert.deepEqual(v.navigations, ["replace /login?next=/account"]);
 });
 
-test("an account on a plan shows it, when it is paid until, and the other plans to switch to; the plan it is on is not offered", async () => {
+test("an account on a plan shows it once, with what it costs and includes and when it is paid until, and the other plans behind a button", async () => {
   const w = world((x) => {
     paid(x);
     x.workspaces = [workspace()];
   });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text(v.$("plan").querySelector(".row")!), "Team Active Paid until November 5, 2026. Manage billing");
-  assert.equal(v.text(v.$("plan").querySelector("h3")!), "Change plan");
-  const cards = v.$("plan").querySelectorAll("article");
-  assert.equal(cards[0]!.className, "plan current");
-  assert.deepEqual(v.labels("plan"), ["Manage billing", "Switch to Business"]);
+  assert.equal(v.text("plan-h"), "Plan");
+  assert.equal(v.text(v.$("plan").querySelector(".row")!), "Team Active $149.00 per month. Paid until November 5, 2026. $20.00 of model usage each month 1 workspace Model tiers: fast, balanced Manage billing Change plan");
+  assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan"], "the other plans are not offered until they are asked for");
+  const toggle = v.$("plan-change-toggle");
+  assert.deepEqual([toggle.getAttribute("aria-expanded"), toggle.getAttribute("aria-controls")], ["false", "plan-change"]);
+  assert.equal(v.shows(v.$("plan-change")), false);
+
+  v.click(toggle);
+  assert.equal(v.$("plan-change-toggle").getAttribute("aria-expanded"), "true");
+  assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan", "Switch to Business"]);
+  const others = v.$("plan-change").querySelectorAll("article");
+  assert.deepEqual(others.map((a) => v.text(a)), ["Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Switch to Business"], "the plan the account is on is not in the list of plans to change to: it is shown above, once");
+  assert.equal(v.doc.activeElement, v.$("plan-change-toggle"), "the cursor stays on the button that was pressed");
+  v.click(v.$("plan-change-toggle"));
+  assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan"]);
+
   assert.equal(v.text("notice"), "");
-  assert.equal(v.text("create-note"), "Your plan includes 1 workspace. Delete one to make room, or choose a larger plan.");
+  assert.equal(v.text("create-note"), "Your plan includes 1 workspace. To make another, delete this one or change your plan.");
   assert.equal(v.shows(v.$("create")), false, "a plan's last place is not offered to fill");
 });
 
@@ -764,26 +704,42 @@ test("billing on an account is managed on the provider's page, and a provider th
   assert.deepEqual(m.navigations, []);
 });
 
-test("a payment that has failed is a warning with the day the workspaces stop, a subscription that has ended says when its workspaces are deleted, and a balance that is gone says what that means", async () => {
+test("a payment that has failed is said at the top with the day the workspaces stop, a subscription that has ended says when its workspaces are deleted, and a balance that is gone says what that means", async () => {
   const late = world((x) => {
     x.subscription = { plan: "team", title: "Team", status: "past_due", periodEnd: "2026-11-05T12:00:00.000Z", pastDueSince: "2026-10-05T12:00:00.000Z" };
     x.workspaces = [workspace()];
   });
+  late.answers.set("POST /api/portal", { json: { url: "https://pay.example/portal" } });
   const v = await visit("account", { routes: late.routes });
-  assert.equal(v.text("notice"), "The last payment did not go through. Your workspaces keep running until October 8, 2026 and are then stopped. A payment before then puts everything back.");
-  assert.equal(v.$("notice").className, "note note-warn");
+  assert.equal(v.text("stage-title"), "Your last payment did not go through");
+  assert.equal(v.text("stage-text"), "Your workspaces keep running until October 8, 2026 and are then stopped. A payment before then puts everything back.");
+  assert.equal(v.$("stage").className, "stage stage-warn");
+  assert.deepEqual(v.labels("stage-actions"), ["Update payment details"], "the one thing to do is where the card says it");
+  assert.equal(v.text("notice"), "", "and it is said once: not again in the notice above it");
   assert.match(v.text(v.$("plan").querySelector(".row")!), /^Team Payment overdue /i);
-  assert.equal(v.text("create-note"), "The last payment did not go through. Update your payment details to create a workspace.");
+  assert.equal(v.text("create-note"), "Update your payment details to create a workspace.", "the card at the top has said why");
   assert.equal(v.shows(v.$("create")), false);
+  v.click(v.button("stage-actions", "Update payment details"));
+  await v.idle();
+  assert.deepEqual(v.navigations, ["assign https://pay.example/portal"]);
+
+  const stopped = world((x) => {
+    x.subscription = { plan: "team", title: "Team", status: "past_due", pastDueSince: "2026-10-01T12:00:00.000Z" };
+    x.workspaces = [workspace({ status: "suspended", statusReason: "payment is overdue" })];
+  });
+  const t = await visit("account", { routes: stopped.routes });
+  assert.equal(t.text("stage-text"), "Your workspaces were stopped because of it. A payment puts everything back.", "once the workspaces are stopped, the day they would stop is not said as if it were ahead");
 
   const ended = world((x) => {
     x.subscription = { plan: "team", title: "Team", status: "ended" };
   });
   const e = await visit("account", { routes: ended.routes });
-  assert.equal(e.text("notice"), "Your subscription has ended and your workspaces are stopped. They are deleted 30 days after it ended. Choose a plan again before then and they start again.");
+  assert.equal(e.text("stage-title"), "Choose a plan to start again");
+  assert.equal(e.text("stage-text"), "Your subscription has ended and your workspaces are stopped. They are deleted 30 days after it ended. Choose a plan again before then and they start again.");
+  assert.equal(e.$("stage").className, "stage stage-warn");
+  assert.equal(e.text("plan-h"), "Choose a plan");
   assert.equal(e.text(e.$("plan").querySelector(".row")!), "Team Ended");
   assert.deepEqual(e.labels("plan"), ["Choose Team", "Choose Business"], "a plan that ended is a plan that can be chosen again");
-  assert.equal(e.text("create-note"), "Choose a plan below to create a workspace.");
 
   const spent = world((x) => {
     paid(x);
@@ -804,7 +760,7 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   const b = await visit("account", { routes: blind.routes });
   assert.equal(b.text("figures"), "Available Not available just now");
   assert.equal(b.text("notice"), "", "an unknown balance is not a used-up one");
-  assert.equal(b.text(b.$("plan").querySelector(".row")!), "Team Active Paid until November 5, 2026. Manage billing");
+  assert.match(b.text(b.$("plan").querySelector(".row")!), /^Team Active \$149\.00 per month\. Paid until November 5, 2026\. /);
 });
 
 test("the plans being unavailable leaves the rest of the account usable and says what is missing", async () => {
@@ -815,13 +771,13 @@ test("the plans being unavailable leaves the rest of the account usable and says
   assert.equal(v.text(v.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now. Reload the page to try again.");
   assert.equal(v.text("topup-hint"), "");
   assert.deepEqual(v.labels("topup-options"), []);
-  assert.deepEqual(v.labels("workspaces"), ["Resume", "Delete"]);
+  assert.deepEqual(v.labels("workspaces"), ["Resume", "More"]);
   assert.match(v.text("workspaces"), /You paused it\./);
 });
 
 // ---- workspaces ----
 
-test("each workspace shows its state in words, with only what can be done to it in that state", async () => {
+test("each workspace shows its state in words, with only what can be done to it in that state, and deleting is behind More except for a workspace that could not start", async () => {
   const w = world((x) => {
     x.subscription = { ...ACTIVE!, plan: "business", title: "Business" };
     x.workspaces = [
@@ -834,12 +790,20 @@ test("each workspace shows its state in words, with only what can be done to it 
   const v = await visit("account", { routes: w.routes });
   const rows = v.$("workspaces").querySelectorAll("li");
   assert.equal(rows.length, 4);
-  assert.equal(v.text(rows[0]!), "Alpha Running alpha.ws.example.com Open Pause Delete");
-  assert.equal(v.text(rows[1]!), "Beta Stopped beta.ws.example.com Stopped because the last payment did not go through. Resume Delete");
+  assert.equal(v.text(rows[0]!), "Alpha Running alpha.ws.example.com Open Pause More");
+  assert.equal(v.text(rows[1]!), "Beta Stopped beta.ws.example.com Stopped because the last payment did not go through. Resume More");
   assert.equal(v.text(rows[2]!), "Gamma Starting gamma.ws.example.com It starts in the background, and this page updates when it is ready.");
-  assert.equal(v.text(rows[3]!), "Delta Could not start delta.ws.example.com The container did not start. Delete");
-  assert.equal(v.text("create-note"), "Your plan includes 3 workspaces. Delete one to make room, or choose a larger plan.", "three places, and three are in use: a workspace that failed to start does not hold one");
-  assert.equal(v.shows(v.$("create")), false);
+  assert.equal(v.text(rows[3]!), "Delta Could not start delta.ws.example.com The container did not start. Delete this workspace");
+  assert.equal(v.text("create-note"), "", "while a workspace is starting nothing is said about the plan being full: the person has done what was asked of them");
+  assert.equal(v.shows(v.$("create")), false, "three places, and three are in use: a workspace that failed to start does not hold one");
+
+  const full = world((x) => {
+    x.subscription = { ...ACTIVE!, plan: "business", title: "Business" };
+    x.workspaces = [workspace({ workspaceId: "ws_a", name: "Alpha" }), workspace({ workspaceId: "ws_b", name: "Beta", status: "suspended", statusReason: "paused by its owner" }), workspace({ workspaceId: "ws_c", name: "Gamma" }), workspace({ workspaceId: "ws_d", name: "Delta", status: "failed" })];
+  });
+  const f = await visit("account", { routes: full.routes });
+  assert.equal(f.text("create-note"), "Your plan includes 3 workspaces. To make another, delete one or change your plan.");
+  assert.equal(f.shows(f.$("create")), false);
 });
 
 test("naming a workspace creates it, and a workspace that is starting is watched until it is running", async () => {
@@ -860,13 +824,15 @@ test("naming a workspace creates it, and a workspace that is starting is watched
   assert.deepEqual(v.to("POST", "/api/workspaces"), [{ method: "POST", path: "/api/workspaces", body: { name: "Research" } }]);
   assert.equal(v.$("workspace-name").value, "");
   assert.match(v.text("workspaces"), /^Research Starting /);
+  assert.equal(v.text("stage-title"), "Research is starting", "the card at the top says what became of it");
+  assert.equal(v.doc.activeElement, v.$("stage-title"), "and the cursor goes there: the form it was in is gone");
 
   // The page looks again by itself; the workspace is running when it does.
   const before = v.to("GET", "/api/me").length;
   w.workspaces = [workspace({ name: "Research", status: "running" })];
   await v.until("the workspace to show as running", () => /^Research Running /.test(v.text("workspaces")));
   assert.ok(v.to("GET", "/api/me").length > before);
-  assert.deepEqual(v.labels("workspaces"), ["Open", "Pause", "Delete"]);
+  assert.deepEqual(v.labels("workspaces"), ["Open", "Pause", "More"]);
 });
 
 test("a workspace the service refuses to make is said in the service's words and the name stays", async () => {
@@ -901,7 +867,7 @@ test("opening a workspace asks for a one-time address and goes there; an answer 
   o.click(o.button("workspaces", "Open"));
   await o.idle();
   assert.deepEqual(o.navigations, []);
-  assert.equal(o.text("workspaces"), "Research Running research-1a2b3c.ws.example.com Open Pause Delete The address of this workspace is not one this page will open. Tell the operator.");
+  assert.equal(o.text("workspaces"), "Research Running research-1a2b3c.ws.example.com Open Pause More The address of this workspace is not one this page will open. Tell the operator.");
 
   const still = world((x) => {
     paid(x);
@@ -929,10 +895,10 @@ test("pausing and resuming are one request each, with the row saying what is und
   assert.match(v.text("workspaces"), /Pausing it\./, "while the request is out the row says so");
   assert.ok(v.buttons("workspaces").every((b) => b.disabled), "and its buttons are held");
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Stopped research-1a2b3c\.ws\.example\.com You paused it\. Resume Delete$/);
+  assert.match(v.text("workspaces"), /^Research Stopped research-1a2b3c\.ws\.example\.com You paused it\. Resume More$/);
   v.click(v.button("workspaces", "Resume"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Running .* Open Pause Delete$/);
+  assert.match(v.text("workspaces"), /^Research Running .* Open Pause More$/);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/suspend").length, 1);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/resume").length, 1);
 
@@ -962,7 +928,18 @@ test("deleting a workspace needs its name typed; until it is, the button does no
     return { json: { ok: true } };
   });
   const v = await visit("account", { routes: w.routes });
-  v.click(v.button("workspaces", "Delete"));
+  assert.equal(v.shows(v.$("delete-ws_1")), false, "the button that deletes is not beside the one that opens");
+  const more = v.button("workspaces", "More");
+  assert.deepEqual([more.getAttribute("aria-expanded"), more.getAttribute("aria-controls"), more.getAttribute("aria-label")], ["false", "more-panel-ws_1", "More actions for Research"]);
+  v.click(more);
+  assert.equal(v.$("more-ws_1").getAttribute("aria-expanded"), "true");
+  assert.equal(v.doc.activeElement, v.$("more-ws_1"), "the cursor stays on the button that was pressed");
+  assert.equal(v.shows(v.$("delete-ws_1")), true);
+  v.click(v.$("more-ws_1"));
+  assert.equal(v.$("more-ws_1").getAttribute("aria-expanded"), "false", "the same button puts it away again");
+  assert.equal(v.shows(v.$("delete-ws_1")), false);
+  v.click(v.$("more-ws_1"));
+  v.click(v.button("workspaces", "Delete this workspace"));
   const input = v.$("confirm-ws_1");
   assert.equal(v.doc.activeElement, input, "the cursor is in the field that has to be filled");
   assert.match(v.text("workspaces"), /Deleting Research removes it and everything in it\. It cannot be undone\./);
@@ -977,14 +954,15 @@ test("deleting a workspace needs its name typed; until it is, the button does no
   v.click(v.button("workspaces", "Keep it"));
   assert.equal(v.doc.getElementById("confirm-ws_1"), null);
   assert.equal(v.text("workspaces").startsWith("Research Running"), true);
-  v.click(v.button("workspaces", "Delete"));
+  v.click(v.button("workspaces", "Delete this workspace"));
   assert.equal(v.$("confirm-ws_1").value, "", "a second time starts from nothing");
   v.type("confirm-ws_1", "Research");
   assert.equal(v.button("workspaces", "Delete workspace").disabled, false);
   v.click(v.button("workspaces", "Delete workspace"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/workspaces/ws_1/delete"), [{ method: "POST", path: "/api/workspaces/ws_1/delete", body: { confirm: "Research" } }]);
-  assert.equal(v.text("workspaces"), "You have no workspace yet.");
+  assert.equal(v.shows(v.$("workspaces-panel")), false, "there is nothing to list");
+  assert.equal(v.text("stage-title"), "Make your first workspace");
   assert.equal(v.shows(v.$("create")), true, "the place is free again");
 });
 
@@ -996,7 +974,9 @@ test("a confirmation that is open stays open, with what was typed, when the page
   });
   w.answers.set("POST /api/workspaces/ws_1/delete", { json: { ok: true } });
   const v = await visit("account", { routes: w.routes });
-  v.click(v.button(v.$("workspaces").querySelectorAll("li")[0]!, "Delete"));
+  const first = (): FakeNode => v.$("workspaces").querySelectorAll("li")[0]!;
+  v.click(v.button(first(), "More"));
+  v.click(v.button(first(), "Delete this workspace"));
   v.type("confirm-ws_1", "Resea");
   w.workspaces = [workspace(), workspace({ workspaceId: "ws_2", name: "Other", status: "running" })];
   await v.until("the other workspace to show as running", () => /Other Running/.test(v.text("workspaces")));
@@ -1121,7 +1101,7 @@ test("coming back from a payment that has not been applied yet: the page says it
   w.balance = balance({ included: 20_000_000 });
   await started;
   await v.until("the arrival to be seen", () => v.text("notice") === "Your payment has arrived.");
-  assert.match(v.text("plan"), /Team Active Paid until November 5, 2026\./);
+  assert.match(v.text("plan"), /Team Active \$149\.00 per month\. Paid until November 5, 2026\./);
   assert.equal(v.shows(v.$("create")), true, "with a plan the person can create a workspace");
 });
 
@@ -1217,7 +1197,10 @@ test("usage shows only the last fourteen days, newest first, and a Failed column
 });
 
 test("usage that cannot be read says so and can be asked for again", async () => {
-  const w = world(paid);
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
   w.answers.set("GET /api/usage", failure(502, "usage_unavailable", "Usage could not be read just now. Try again in a moment."));
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("usage"), "Usage could not be read just now. Try again in a moment. Try again");
@@ -1271,9 +1254,11 @@ test("names and addresses are shown as text: a workspace named like markup is a 
   assert.ok(v.text("workspaces").startsWith(`${evil} Running `), v.text("workspaces"));
   assert.ok(v.text("workspaces").includes("<i>why</i>."), "a reason is text too");
   assert.ok(v.text("usage").includes(evil), "and so is a name in the usage tables");
+  assert.equal(v.text("stage-title"), `${evil} is running`, "and in the card at the top");
   const inside = (id: string): string[] => v.$(id).descendants().map((n) => n.tag);
-  for (const id of ["workspaces", "usage", "who"]) for (const tag of ["img", "script", "b", "i"]) assert.ok(!inside(id).includes(tag), `no <${tag}> inside #${id}`);
-  v.click(v.button("workspaces", "Delete"));
+  for (const id of ["workspaces", "usage", "who", "stage"]) for (const tag of ["img", "script", "b", "i"]) assert.ok(!inside(id).includes(tag), `no <${tag}> inside #${id}`);
+  v.click(v.button("workspaces", "More"));
+  v.click(v.button("workspaces", "Delete this workspace"));
   assert.ok(v.text("workspaces").includes(`Deleting ${evil} removes it`));
   assert.ok(!inside("workspaces").includes("img"));
 });
@@ -1301,21 +1286,6 @@ test("no page logs an error to the console in the ordinary cases", async () => {
 
 // ---- the customer's own model key ----
 
-const HOSTING_PLANS = { currency: "USD", plans: [{ id: "hosting", title: "Hosting", priceMinor: 4_900, period: "month", includedUsageMicros: 0, workspaces: 1, byok: true, summary: "One workspace. Bring your own model key." }], topups: null, policy: PLANS.policy };
-const HOSTING_SUB: Subscription = { plan: "hosting", title: "Hosting", status: "active", periodEnd: "2026-11-05T12:00:00.000Z" };
-const SECRET = "sk-ant-api03-typed-into-the-page-0001";
-const NOW = "2026-10-05T12:00:00.000Z";
-const KEPT = { provider: "anthropic", model: "claude-sonnet-4-5", setAt: NOW };
-
-/** A hosting-only service: no balance, no usage, no top-ups, and a workspace whose models are the customer's own key. */
-const hosting = (models: WorkspaceView["models"] = { source: "own", key: null }, over: Partial<WorkspaceView> = {}): World =>
-  world((x) => {
-    x.subscription = HOSTING_SUB;
-    x.plans = { json: HOSTING_PLANS };
-    x.balance = null;
-    x.workspaces = [workspace({ workspaceId: "ws_1", name: "Research", plan: "hosting", models, ...over })];
-  });
-
 test("the account page of a hosting-only service says the key stays with the workspace and nothing is resold, and has no balance, credit or usage to show", async () => {
   const w = hosting();
   const v = await visit("account", { routes: w.routes });
@@ -1325,7 +1295,7 @@ test("the account page of a hosting-only service says the key stays with the wor
   assert.equal(v.shows(v.$("usage-panel")), false);
   assert.equal(v.to("GET", "/api/usage").length, 0, "and the page does not ask for usage the service does not have");
   assert.equal(v.text("topup-options"), "");
-  assert.match(v.text("plan"), /Hosting Active Paid until/, "the plan the account is on is shown, and there is no other to change to");
+  assert.match(v.text("plan"), /^Hosting Active \$49\.00 per month\. Paid until November 5, 2026\. Your own model key; you pay your provider directly 1 workspace Manage billing$/, "the plan the account is on is shown, and there is no other to change to");
 });
 
 test("a service that sells usage shows no model key panel, and still shows the balance and the usage", async () => {
@@ -1472,12 +1442,7 @@ test("deleting a key is one request, says what it means, and leaves the workspac
   assert.match(v.text(v.$("model-keys").querySelectorAll("li")[0]!), /No key yet/);
 });
 
-// SKIPPED on the owner's decision (2026-10-06): this test runs away with memory (more than 6 GB within seconds, which got the
-// process, and twice the whole gateway, killed by the out-of-memory killer). The cause is not found: it may be the page's
-// polling loop (watch() in app.js) or the harness's fake timers (setTimeout >= 1000 ms becomes 8 ms in pages-support.ts).
-// TODO: find the loop, fix the page or the harness, and turn this back into `test(`. Until then the behaviour it pins
-// (a starting workspace takes no key yet; a re-look does not empty a field being typed in) is NOT covered.
-test.skip("a workspace that has not started takes no key yet, and a page that looks again does not empty a field somebody is typing in", async () => {
+test("a workspace that has not started takes no key yet, and a page that looks again does not empty a field somebody is typing in", async () => {
   const starting = await visit("account", { routes: hosting({ source: "own", key: null }, { status: "provisioning" }).routes });
   assert.match(starting.text("model-keys"), /You can set its key once the workspace has started\./);
   assert.equal(starting.doc.root.descendants().filter((n) => n.tag === "form" && n.id.startsWith("key-form")).length, 0);
@@ -1492,7 +1457,7 @@ test.skip("a workspace that has not started takes no key yet, and a page that lo
   const looks = v.to("GET", "/api/me").length;
   await v.until("the page to look at the account again", () => v.to("GET", "/api/me").length >= looks + 2);
   await v.idle();
-  assert.equal(v.$("key-form-ws_1"), form, "the form was not drawn again");
+  assert.ok(v.$("key-form-ws_1") === form, "the form was not drawn again");
   assert.equal(v.$("key-secret-ws_1").value, SECRET, "and what was typed is still there");
 });
 

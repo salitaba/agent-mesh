@@ -34,17 +34,29 @@
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
   <div id="notice" class="note" role="status" aria-live="polite"></div>
 
-  <section class="panel" aria-labelledby="workspaces-h">
+  <section class="stage" id="stage" aria-labelledby="stage-title" hidden>
+    <ol class="steps" id="stage-steps" aria-label="Where you are" hidden></ol>
+    <h2 id="stage-title" tabindex="-1"></h2>
+    <p id="stage-text"></p>
+    <div class="btn-row" id="stage-actions"></div>
+  </section>
+  <p class="sr" id="stage-live" role="status" aria-live="polite"></p>
+
+  <section class="panel" id="workspaces-panel" aria-labelledby="workspaces-h" hidden>
     <h2 id="workspaces-h">Workspaces</h2>
     <ul class="rows" id="workspaces"></ul>
-    <form id="create" class="inline-form" novalidate hidden>
-      <div class="field">
-        <label for="workspace-name">Name a new workspace</label>
-        <input id="workspace-name" name="name" type="text" maxlength="60" autocomplete="off" required>
+    <div id="create-slot">
+      <div id="create-box">
+        <form id="create" class="inline-form" novalidate hidden>
+          <div class="field">
+            <label for="workspace-name">Name a new workspace</label>
+            <input id="workspace-name" name="name" type="text" maxlength="60" autocomplete="off" required>
+          </div>
+          <button class="btn btn-primary" type="submit" data-busy="Creating">Create workspace</button>
+        </form>
+        <p id="create-note" class="muted small"></p>
       </div>
-      <button class="btn btn-primary" type="submit" data-busy="Creating">Create workspace</button>
-    </form>
-    <p id="create-note" class="muted small"></p>
+    </div>
   </section>
 
   <section class="panel" id="models-panel" aria-labelledby="models-h" hidden>
@@ -54,13 +66,13 @@
     <ul class="rows" id="model-keys"></ul>
   </section>
 
-  <section class="panel" aria-labelledby="plan-h">
+  <section class="panel" id="plan-panel" aria-labelledby="plan-h" hidden>
     <h2 id="plan-h">Plan</h2>
     <div id="plan-status" class="note" role="status" aria-live="polite"></div>
     <div id="plan"></div>
   </section>
 
-  <section class="panel" id="balance-panel" aria-labelledby="balance-h">
+  <section class="panel" id="balance-panel" aria-labelledby="balance-h" hidden>
     <h2 id="balance-h">Balance</h2>
     <dl class="figures" id="figures"></dl>
     <div id="topup-status" class="note" role="status" aria-live="polite"></div>
@@ -75,15 +87,16 @@
     <p id="topup-hint" class="muted small"></p>
   </section>
 
-  <section class="panel" id="usage-panel" aria-labelledby="usage-h">
+  <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
     <h2 id="usage-h">Usage</h2>
     <p class="muted small">What each call was charged, by day and by workspace. It is what your balance was debited, and nothing else.</p>
     <div id="usage"></div>
   </section>
 
-  <section class="panel" aria-labelledby="security-h">
-    <h2 id="security-h">Password</h2>
-    <form id="password-form" novalidate>
+  <section class="panel panel-quiet" aria-labelledby="security-h">
+    <h2 id="security-h">Settings</h2>
+    <form id="password-form" aria-labelledby="password-h" novalidate>
+      <h3 id="password-h">Change your password</h3>
       <div id="password-status" class="note" role="status" aria-live="polite"></div>
       <div class="field">
         <label for="current">Current password</label>

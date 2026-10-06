@@ -46,6 +46,10 @@ export class FakeNode {
     text?: string,
   ) {
     if (text !== undefined) this.text = text;
+    // A node knows its document and its place in it, and an assertion that fails on two nodes prints everything either one can reach, with
+    // no regard for the nesting (node's own message is built with depth 1000 and custom inspection off). Two pages' worth of nodes once
+    // took a test process past 6 GB to say that two forms were not the same form. The links are there to be followed, not to be shown.
+    for (const link of ["parent", "children", "doc"] as const) Object.defineProperty(this, link, { enumerable: false });
   }
 
   get isText(): boolean {
