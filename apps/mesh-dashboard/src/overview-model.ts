@@ -440,9 +440,10 @@ export function heroNote(i: HeroNoteInput): HeroNote | null {
     case "stalled":
       return { summary: idleCause(i.startupSeats, i.lastBoot), detail: [] };
     case "quiet":
-      // Between two turns of a mission that is moving looks the same as a mission that is waiting for something that never comes, so
-      // this says how agents are woken and only then what to do if nothing is coming. It used to read as if nothing had started.
-      return { summary: "Agents wake when something they care about happens. If nothing is coming, wake one or send a message.", detail: [] };
+      // Between two turns of a mission that is moving looks the same as a mission that is waiting for something that never comes.
+      // "Agents wake when something they care about happens" said the same to every mission and nothing about this one: the hero's
+      // "Right now" (rightnow.ts) says who is next, what is open and, when nothing is queued, what to do, so it is not said twice.
+      return null;
     default:
       return null;
   }

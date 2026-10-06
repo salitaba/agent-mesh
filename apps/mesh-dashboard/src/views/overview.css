@@ -51,6 +51,11 @@
 .ov-bar.warn > i { background: var(--warn); }
 .ov-bar.bad > i { background: var(--bad); }
 
+/* What is happening this minute: a few plain lines under the figures, the last always answering whether it needs the person. */
+.ov-now { display: grid; gap: var(--s1); }
+.ov-now > b { font: var(--tx-label); text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); }
+.ov-now ul { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; font-size: 14px; }
+
 /* The server's own sentence and the long wording behind it: quieter than the headline, one click away. */
 .ov-note { margin: 0; font-size: 14px; color: var(--text-dim); }
 .ov-note > summary { display: flex; align-items: flex-start; gap: var(--s2); cursor: pointer; list-style: none; min-height: 24px; border-radius: var(--r-sm); }

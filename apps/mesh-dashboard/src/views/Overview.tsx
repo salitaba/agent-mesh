@@ -14,6 +14,7 @@ import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
 import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, missionRead, standingBlocks, type FixTarget } from "../overview-model";
+import { rightNowInput } from "../rightnow";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
 import { GoalChecks } from "./GoalChecks";
@@ -213,6 +214,9 @@ export default function Overview(): React.JSX.Element {
     spend,
   });
   const stale = serverDown;
+  // What waits for the person, beyond the headline: what the attention list asks them to look at, and notices (which hold nothing, and are still for them).
+  const forYou = attention.filter((a) => a.tone !== "info" || a.kind === "notices").length;
+  const live = rightNowInput(status, { phase: state.phase, now: 0, forYou, steps: runningSteps });
 
   return (
     <div className="ov">
@@ -230,6 +234,7 @@ export default function Overview(): React.JSX.Element {
         agents={{ working: facts.working, waiting: facts.waiting, queued: Number(sched.pending ?? 0) || 0 }}
         stale={stale}
         ticking={state.phase === "running" || state.phase === "quiet" || state.phase === "stalled"}
+        live={live}
         next={state.next}
         secondary={state.secondary}
         run={run}

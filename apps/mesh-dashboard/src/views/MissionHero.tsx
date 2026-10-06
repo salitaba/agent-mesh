@@ -4,6 +4,7 @@ import { Button, Menu, useNow, type MenuItem } from "../components";
 import { Icon, type IconName } from "../icons";
 import type { HeroAction, MissionAction, MissionControl, MissionState, NextStep } from "../mission";
 import { missionClock, type ChecksSummary, type HeroNote } from "../overview-model";
+import { rightNow, type RightNowInput } from "../rightnow";
 import { Bar } from "./Meter";
 import "./overview.css";
 
@@ -62,6 +63,22 @@ function ClockStat({ goal, ticking }: { goal: unknown; ticking: boolean }): Reac
   );
 }
 
+/**
+ * What is happening this minute, in a few plain lines (rightnow.ts). It owns its own clock, so "for 2 min" moves without the rest of
+ * the page re-rendering with it, and it is not a live region: it changes with every turn, and a screen reader is not told each time.
+ */
+function RightNow({ input }: { input: Omit<RightNowInput, "now"> }): React.JSX.Element | null {
+  const now = useNow(15000);
+  const lines = rightNow({ ...input, now });
+  if (!lines.length) return null;
+  return (
+    <section className="ov-now" aria-labelledby="ov-now-h">
+      <b id="ov-now-h">Right now</b>
+      <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+    </section>
+  );
+}
+
 function Note({ note }: { note: HeroNote }): React.JSX.Element {
   if (!note.detail.length && !note.server) return <p className="ov-note">{note.summary}</p>;
   return (
@@ -94,6 +111,8 @@ export interface HeroProps {
   stale: boolean;
   /** The mission's clock is running: tick it every second. */
   ticking: boolean;
+  /** What rightnow.ts reads, for a mission that is live; it says nothing for the others. */
+  live: Omit<RightNowInput, "now">;
   /** What to do next, beside the headline (`MissionState.next`). */
   next: NextStep[];
   /** What else the mission can do, behind "...": whatever `next` does not already show. */
@@ -159,6 +178,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
         </Stat>
       </dl>
 
+      <RightNow input={p.live} />
       {p.note ? <Note note={p.note} /> : null}
     </section>
   );

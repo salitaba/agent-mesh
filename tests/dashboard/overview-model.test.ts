@@ -349,12 +349,11 @@ test("the spend ceiling explains why Continue cannot fix it and keeps every fact
   assert.ok(heroNote(note({ phase: "ceiling" }))!.detail.every((p) => p.length > 0), "no empty paragraph when the spend has not arrived");
 });
 
-test("an idle live mission explains itself with the cause, and a quiet one says how agents wake and what to do if nothing is coming", () => {
+test("an idle live mission explains itself with the cause, and a quiet one leaves it to the hero's Right now", () => {
   assert.equal(heroNote(note({ phase: "stalled", startupSeats: 0 }))!.summary, idleCause(0, null));
-  const quiet = heroNote(note({ phase: "quiet" }))!.summary;
-  assert.match(quiet, /^Agents wake when something they care about happens\./);
-  assert.match(quiet, /If nothing is coming, wake one or send a message\.$/);
-  assert.doesNotMatch(quiet, /get going/, "a mission between two turns has already started");
+  // "Agents wake when something they care about happens. If nothing is coming, wake one or send a message." said the same to every
+  // mission and nothing about this one. rightnow.ts says who is next, what is open and what to do, so the note does not say it twice.
+  assert.equal(heroNote(note({ phase: "quiet" })), null);
 });
 
 test("paused and failed say what the log says when it phrased a verdict, and paused says a plain line when it did not", () => {
