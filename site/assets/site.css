@@ -426,6 +426,17 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .nf h1 { max-width: 14ch; }
 .nf .lede { margin: 24px 0 32px; }
 
+/* ---------------------------------------------------------------- back to top */
+/* Made by the shared script at the end of <main>. The dock has no height and stays at the bottom of the window while <main> is in
+   view; at the end of <main> it stops, so the button rests above the footer and never covers its links. Until the reader is two
+   screens down the button is not shown, and a hidden button is not in the way of the keyboard either. */
+.to-top-dock { position: sticky; bottom: 0; z-index: 20; height: 0; }
+.to-top { position: absolute; right: 16px; bottom: 16px; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: var(--lift); cursor: pointer; }
+.to-top::before { content: ""; width: 11px; height: 11px; margin-top: 6px; border-top: 2px solid currentColor; border-left: 2px solid currentColor; transform: rotate(45deg); }
+.to-top:hover { border-color: var(--muted); }
+.to-top:not(.is-shown) { visibility: hidden; opacity: 0; }
+@media (min-width: 860px) { .to-top { right: 24px; bottom: 24px; } }
+
 /* The pages carry no style attributes (their content security policy forbids them): spacing is a class. */
 .mt-s { margin-top: 16px; }
 .mt-m { margin-top: 24px; }
@@ -442,6 +453,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
   .tile .frame { transition: border-color .15s; }
   .arrow-link::after, .faq summary::after { transition: transform .15s; }
   .menu-icon::before, .menu-icon::after { transition: transform .18s, top .18s, bottom .18s; }
+  .to-top { transition: opacity .2s, visibility .2s, border-color .15s; }
 }
 /* A forced-colour mode (Windows high contrast) replaces the fill that marks the chosen tab or billing period: say it in system colours. */
 @media (forced-colors: active) {
@@ -456,5 +468,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .site-footer .foot-grid { display: none; }
   .toc-bar.is-live { position: static; }
+  .to-top-dock { display: none; }
   body { background: #fff; color: #000; }
 }

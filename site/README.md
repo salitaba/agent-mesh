@@ -20,7 +20,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short page with links; written with addresses from the root, because a host shows it at the address that was not found |
 | `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
-| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, and the On this page bar of the long pages; nothing else |
+| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the On this page bar of the long pages, and Back to top; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
@@ -36,6 +36,11 @@ section being read is marked (`aria-current`, and a filled chip with a dot). It 
 the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
 `tests/build/site-script.test.ts` checks them against the rules that make them.
+
+Once a reader is two screens down any page, a *Back to top* button shows in the bottom right corner. The script makes it, at the
+end of `<main>`: it stays at the bottom of the window while the content is in view and rests above the footer at the end, so it
+never covers the footer's links. It jumps under reduced motion, and it moves the focus to the top of the content, so the keyboard
+carries on from there. It is not printed, and without a script it is not there.
 
 ## No request leaves the site, and the pages say so
 

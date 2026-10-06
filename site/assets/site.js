@@ -199,6 +199,39 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     tocBar.className += " is-live";
   }
 
+  // Back to top: once the reader is about two screens down a page, a button in the corner goes back to the start, and takes the
+  // keyboard's focus to the top of the content too, so that Tab carries on from there. It sits at the end of the page's main
+  // content and stays at the bottom of the window only while that content is in view, so it never covers the footer's links.
+  var main = document.getElementById("main");
+  if (main && typeof window.addEventListener === "function" && typeof window.scrollTo === "function") {
+    var dock = el("div", "to-top-dock");
+    var up = el("button", "to-top");
+    up.setAttribute("type", "button");
+    up.append(el("span", "sr", "Back to top"));
+    dock.append(up);
+    main.append(dock);
+    var far = false;
+    var looking = false;
+    var look = function () {
+      looking = false;
+      var now = window.scrollY > 2 * window.innerHeight;
+      if (now === far) return;
+      far = now;
+      up.className = far ? "to-top is-shown" : "to-top";
+    };
+    window.addEventListener("scroll", function () {
+      if (looking) return;
+      looking = true;
+      window.requestAnimationFrame(look);
+    }, { passive: true });
+    window.addEventListener("resize", look);
+    up.addEventListener("click", function () {
+      window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+      main.focus({ preventScroll: true });
+    });
+    look();
+  }
+
   // The phone menu closes when a link in it is followed (on the same page) and on Escape.
   all(".menu").forEach(function (menu) {
     menu.addEventListener("click", function (event) {

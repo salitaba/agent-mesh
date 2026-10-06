@@ -245,3 +245,95 @@ test("without an IntersectionObserver the bar is left as it is without a script:
     assert.equal(doc.querySelectorAll("[aria-current]").filter((n) => n.getAttribute("aria-current") === "true").length, 0, rel);
   }
 });
+
+// ---------------------------------------------------------------- back to top
+
+interface Scrolled {
+  doc: FakeDocument;
+  win: { innerHeight: number; scrollY: number };
+  scrolls: Array<{ top: number; behavior: string }>;
+  fire: (type: string) => void;
+  button: () => FakeNode | null;
+}
+
+/** A page with the script run on it in a window that scrolls, as tall as `height`; `reduce` is the visitor's motion setting. */
+function scrolled(rel: string, reduce = true, height = 800): Scrolled {
+  const doc = parsePage(page(pages, rel).html);
+  const listeners = new Map<string, Array<() => void>>();
+  const scrolls: Array<{ top: number; behavior: string }> = [];
+  const win = {
+    innerHeight: height,
+    scrollY: 0,
+    matchMedia: () => ({ matches: reduce }),
+    addEventListener: (type: string, fn: () => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+    requestAnimationFrame: (fn: () => void) => fn(),
+    scrollTo: (to: { top: number; behavior: string }) => {
+      // Copied: an object made inside the sandbox has another realm's prototype, which deepEqual tells apart.
+      scrolls.push({ top: to.top, behavior: to.behavior });
+      win.scrollY = to.top;
+    },
+    setTimeout,
+    clearTimeout,
+  };
+  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: win }, { filename: "site.js" });
+  return { doc, win, scrolls, fire: (type) => (listeners.get(type) ?? []).forEach((fn) => fn()), button: () => doc.querySelector(".to-top") };
+}
+
+test("every page gets a Back to top button at the end of its content: a real button with a name, shown from two screens down", () => {
+  for (const p of pages) {
+    const r = scrolled(p.rel);
+    const main = r.doc.getElementById("main")!;
+    const dock = main.children[main.children.length - 1]!;
+    assert.equal(dock.className, "to-top-dock", `${p.rel}: the last thing in <main>, so that it stops above the footer`);
+    const button = r.button()!;
+    assert.ok(button.parent === dock, `${p.rel}: the button is in the dock`);
+    assert.equal(button.tag, "button");
+    assert.equal(button.getAttribute("type"), "button", `${p.rel}: it submits nothing`);
+    assert.equal(button.textContent, "Back to top", `${p.rel}: its name, said by a screen reader`);
+    assert.equal(button.querySelector(".sr")!.textContent, "Back to top", "and shown as the arrow");
+    assert.equal(button.className, "to-top", `${p.rel}: not shown at the top of the page`);
+    r.win.scrollY = 1600;
+    r.fire("scroll");
+    assert.equal(button.className, "to-top", "two screens down exactly is not yet past them");
+    r.win.scrollY = 1700;
+    r.fire("scroll");
+    assert.equal(button.className, "to-top is-shown");
+    r.win.scrollY = 900;
+    r.fire("scroll");
+    assert.equal(button.className, "to-top", "and it goes when the reader is back near the top");
+    r.win.innerHeight = 400;
+    r.fire("resize");
+    assert.equal(button.className, "to-top is-shown", "two screens of a smaller window");
+  }
+});
+
+test("Back to top goes to the top at once under reduced motion and smoothly otherwise, and takes the focus to the content", () => {
+  for (const reduce of [true, false]) {
+    const r = scrolled("security/index.html", reduce);
+    r.win.scrollY = 5000;
+    r.fire("scroll");
+    const button = r.button()!;
+    for (const fn of button.listeners.get("click") ?? []) fn({ type: "click", target: button, currentTarget: button, defaultPrevented: false, preventDefault() {} });
+    // "auto" is the stylesheet's choice, which is to jump: it scrolls smoothly only for a visitor who has not asked for less.
+    assert.deepEqual(r.scrolls, [{ top: 0, behavior: reduce ? "auto" : "smooth" }]);
+    // Compared as nodes, not printed: a node of the small DOM holds the whole page, and a failure would print all of it.
+    assert.ok(r.doc.activeElement === r.doc.getElementById("main"), "the next Tab starts from the top of the content");
+  }
+  assert.match(CSS, /@media \(prefers-reduced-motion: no-preference\) \{\s*html \{ scroll-behavior: smooth; \}/, "and the stylesheet scrolls smoothly only then");
+});
+
+test("a hidden Back to top button is out of the way of the keyboard and of print, and is a 44 pixel target when it is shown", () => {
+  assert.match(CSS, /\n\.to-top:not\(\.is-shown\) \{ visibility: hidden;/, "a hidden button cannot be reached with Tab or heard");
+  const size = /\n\.to-top \{[^}]*width: (\d+)px; height: (\d+)px;/.exec(CSS)!;
+  assert.ok(Number(size[1]) >= 44 && Number(size[2]) >= 44, `${size[1]} by ${size[2]}`);
+  assert.match(CSS, /\n\.to-top-dock \{ position: sticky; bottom: 0;[^}]*height: 0; \}/, "it rides at the bottom of the window only while the content is there");
+  assert.match(/@media print \{[\s\S]*?\n\}/.exec(CSS)![0], /\.to-top-dock \{ display: none; \}/);
+});
+
+test("a window that cannot be scrolled by the script gets no Back to top button, and the page is as it was", () => {
+  for (const p of pages) {
+    const doc = parsePage(p.html);
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
+    assert.equal(doc.querySelectorAll(".to-top").length, 0, p.rel);
+  }
+});
