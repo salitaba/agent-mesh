@@ -1120,7 +1120,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .confirm-body p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-dim); }
 .confirm-field { display: flex; flex-direction: column; gap: var(--s1); }
 .confirm-field > span { font: 600 13px var(--sans); color: var(--text-dim); }
-.confirm-field input { width: 100%; box-sizing: border-box; }
+.confirm-field input, .confirm-field textarea { width: 100%; box-sizing: border-box; }
+.confirm-field textarea { resize: vertical; min-height: 9em; max-height: 50vh; line-height: 1.45; font-size: 13px; }
 .confirm-field small { font-size: 13px; }
 /* Cancel sits left of confirm and is the wider default target: the safe choice
    should never be the harder one to hit. */

@@ -156,6 +156,22 @@ sections 1 to 24) are described there, run by run.
 
 ### Fixed
 
+- **A reply that named the message under `replyTo` was refused as "unknown messageId".** `mesh_reply`, `mesh_respond`,
+  `mesh_discharge` and `mesh_withdraw` take `messageId`, and a seat answering a message writes `replyTo` (what the message calls
+  it, and what `mesh_send` names its own); the refusal named no key and quoted no value. They read `replyTo` as the id when
+  `messageId` is absent, a call with neither is refused by name with the keys it carried, and an id that is no message is quoted
+  back.
+- **The owner of a ruled-on artifact is told when the ruling seat's turn ends, not at the verdict.** The seat with the power to rule
+  usually has the power to take a patch on, and did, in the same turn; the owner was woken with "it needs VERIFIED next, and you
+  can move it" for a step that was taken or about to be (two turns of 9.4k and 15.1k tokens in one run, and the chatter they
+  started). A patch the turn took on is not announced; one it left where the verdict put it is, as before. A verdict given outside
+  a turn (the operator's) still wakes the owner at once.
+- **The run report printed an operator's whole reopen as one criterion** (49 of a run's 127 lines). A criterion longer than 240
+  characters is one line, its start and a count of what was left out; the report's data keeps it whole.
+- **The reopen dialog took one line.** It is a field of several lines now, and says that a list of checks (each a command and the
+  output it must print) is what gets every one run: QA ran all nineteen of a list, and one example of each problem in a
+  description. The QA, pm and developer prompts say what to do with such a list, and that a product's licence and author are not the
+  developer's to choose (every one of the last six runs' products declared `"license": "MIT"`).
 - A mission delivered in front of the person left **What shipped** saying "No files are recorded for this goal" until a reload: the
   Overview read the file list once, when it opened. It reads it again when an artifact event arrives, and the message count while
   the mission runs and once more when it stops.

@@ -601,7 +601,7 @@ export interface ConfirmRequest {
   danger?: boolean;
   require?:
     | { kind: "match"; value: string; label: string }
-    | { kind: "text"; label: string; placeholder?: string };
+    | { kind: "text"; label: string; placeholder?: string; /** a field of several lines (Enter makes a new one; Ctrl+Enter confirms) */ multiline?: boolean };
 }
 
 /**
@@ -641,16 +641,35 @@ export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResol
           {need ? (
             <label className="confirm-field">
               <span>{need.label}</span>
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={need.kind === "match" ? need.value : need.placeholder}
-                /* The guard is the whole point — never let a password manager or
-                   the browser's own history pre-arm it. */
-                autoComplete="off"
-                spellCheck={false}
-                aria-describedby={need.kind === "match" ? "confirm-hint" : undefined}
-              />
+              {need.kind === "text" && need.multiline ? (
+                <TextArea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  /* Enter is a new line here, so confirming from the keyboard is Ctrl or Cmd with it. */
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && armed) {
+                      e.preventDefault();
+                      onResolve(text.trim());
+                    }
+                  }}
+                  placeholder={need.placeholder}
+                  rows={9}
+                  autoComplete="off"
+                  spellCheck={false}
+                  mono
+                />
+              ) : (
+                <input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={need.kind === "match" ? need.value : need.placeholder}
+                  /* The guard is the whole point — never let a password manager or
+                     the browser's own history pre-arm it. */
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby={need.kind === "match" ? "confirm-hint" : undefined}
+                />
+              )}
               {need.kind === "match" ? (
                 <small id="confirm-hint" className="muted">
                   {/* Says what is still missing rather than only greying the button:

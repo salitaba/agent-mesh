@@ -956,6 +956,18 @@ none) and answers the cards. A state snapshot written before `withdrawnAt` exist
 migrated on import: a criterion of a reopened goal that is still `UNSATISFIED` or
 `ASSERTED` is stamped with the goal's `reopenedAt`.
 
+**A reopen is best given as checks.** The reason a reopen carries is the seats' brief, and how it is written decides what QA does
+with it. The eighteenth cronlite run's described five defects in prose, each with an example and the result it must give, and QA
+ran one example per defect and reported all five fixed; the operator's own `0-7` example was the one not run, and the one still
+wrong. The nineteenth run's ended with a numbered list of nineteen commands, each with the output it must print: QA ran all nineteen,
+published a report that gave each command, the output it required and the output it printed, blocked on the nineteen that failed
+and, after the fix, passed on the nineteen that matched; the product went from 68.1% to a perfect score on the oracle, and the
+tech lead told the developer to run the nineteen before asking for review, which it did. So the dashboard's reopen dialog asks for
+the list in a field of several lines, and the role prompts say what to do with one (`roles/qa.md`: run every check first, in order,
+and a report that leaves one out cannot pass; `roles/pm.md`: accept the reopen's criterion only on a report that gives every check;
+`roles/developer.md`: run them before asking for review). Nothing enforces it, and a reopen without checks works as it always did:
+this is the reason being written in the form the seats follow, one run of each kind so far.
+
 **The report prints a reopen as one line.** The reason a reopen carries becomes a mandatory criterion, and the end-of-run
 report lists every criterion. The nineteenth cronlite run's reopen was 7.6k characters (three defects and nineteen commands for
 QA to run), and the report printed all of it: 49 of its 127 lines, between the six criteria the mission began with and the
