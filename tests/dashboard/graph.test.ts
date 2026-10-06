@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  KINDS, capEdges, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, ringLayout,
+  KINDS, around, capEdges, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges,
   type EdgeLike,
 } from "../../apps/mesh-dashboard/src/graph";
+import { eventHaystack, facetOne, facetValues, filterBase, parseFacets, type EventLike } from "../../apps/mesh-dashboard/src/eventmodel";
 
 /**
  * The Graph page's decisions: where the seats sit, which way their labels point, what each kind of line is called, how many lines
@@ -142,4 +143,72 @@ test("a seat's ring says what it is doing, for every lifecycle", () => {
   assert.equal(nodeTone("SUSPENDED"), "paused");
   for (const l of ["COMPLETED", "STARTING", "IDLE", "odd"]) assert.equal(nodeTone(l), "idle", l);
   assert.equal(nodeTone("failed"), "stopped", "case does not matter");
+});
+
+/* ------------------------------------------------------------ using the page */
+
+test("pressing a kind in the legend hides its lines and pressing it again shows them, without changing what was hidden before", () => {
+  const none = new Set<string>();
+  const one = toggleKind(none, "OTHER");
+  assert.deepEqual([...one], ["OTHER"]);
+  assert.deepEqual([...toggleKind(one, "REQUEST")].sort(), ["OTHER", "REQUEST"]);
+  assert.deepEqual([...toggleKind(one, "OTHER")], [], "pressed again, shown again");
+  assert.equal(none.size, 0, "the set it was given is not changed: React state is replaced, not edited");
+  assert.equal(one.size, 1);
+});
+
+test("hiding a kind leaves the lines of the others, and the cap is applied after, so the next busiest take the place", () => {
+  const edges = [
+    edge("a", "b", "OTHER", 9), edge("b", "c", "OTHER", 8), edge("c", "d", "OTHER", 7),
+    edge("a", "c", "REQUEST", 3), edge("b", "d", "APPROVE", 2), edge("d", "a", "BLOCK", 1),
+  ];
+  const all = visibleEdges(edges, new Set(), 3);
+  assert.deepEqual(all.shown.map((e) => e.kind), ["OTHER", "OTHER", "OTHER"]);
+  assert.deepEqual([all.hidden, all.off], [3, 0]);
+  const withoutMessaged = visibleEdges(edges, new Set(["OTHER"]), 3);
+  assert.deepEqual(withoutMessaged.shown.map((e) => e.kind), ["REQUEST", "APPROVE", "BLOCK"], "no gap where the hidden lines were");
+  assert.deepEqual([withoutMessaged.hidden, withoutMessaged.off], [0, 3], "three left off by the key, none by the cap");
+  const nothing = visibleEdges(edges, new Set(KINDS.map((k) => k.id)), 12);
+  assert.deepEqual([nothing.shown.length, nothing.off], [0, 6]);
+  assert.equal(visibleEdges([edge("a", "b", "WEIRD", 1)], new Set(["OTHER"]), 12).shown.length, 0, "a kind the console has no word for is hidden with 'messaged'");
+});
+
+test("pointing at a seat picks out the lines that run to or from it and the seats on their other ends", () => {
+  const edges = [edge("pm", "architect", "REQUEST"), edge("architect", "pm", "INFORM"), edge("qa", "developer", "BLOCK"), edge("pm", "qa", "OTHER"), edge("developer", "tech-lead", "INFORM")];
+  const near = around(edges, "pm");
+  assert.deepEqual([...near.lines].sort(), ["architect|pm|INFORM", "pm|architect|REQUEST", "pm|qa|OTHER"]);
+  assert.deepEqual([...near.seats].sort(), ["architect", "pm", "qa"]);
+  assert.ok(!near.lines.has("qa|developer|BLOCK"), "a line between two other seats is context");
+  const lonely = around(edges, "explorer");
+  assert.deepEqual([lonely.lines.size, [...lonely.seats]], [0, ["explorer"]], "a seat nobody talks to still picks itself out");
+  const exact = around([edge("dev", "qa"), edge("developer", "qa")], "dev");
+  assert.deepEqual([...exact.lines], ["dev|qa|INFORM"], "dev is not developer");
+});
+
+test("a line's messages are opened in Events with the page's own filters: that seat's messages, mentioning the other", () => {
+  const f = pairFilter("pm", "architect");
+  assert.equal(f.search, "architect");
+  const facets = parseFacets(f.filter);
+  assert.equal(facetOne(facets, "actor"), "pm");
+  assert.deepEqual(facetValues(facets, "grp"), ["message"]);
+  assert.equal(pairFilter("a", "b").filter, "grp:message,actor:a");
+});
+
+test("those filters find the messages from one seat to another and not the others", () => {
+  const sent = (seq: number, from: string, to: string[]): EventLike => ({
+    seq, id: `evt-${seq}`, type: "message.sent", actorId: from, timestamp: "2026-10-06T10:00:00Z", payload: { message: { from, to, type: "REQUEST_REVIEW", payload: { question: "please review" } } },
+  });
+  const events = [
+    sent(1, "pm", ["architect"]),
+    sent(2, "pm", ["qa"]),
+    sent(3, "architect", ["pm"]),
+    sent(4, "pm", ["qa", "architect"]),
+    { seq: 5, id: "evt-5", type: "artifact.created", actorId: "pm", timestamp: "2026-10-06T10:00:00Z", payload: { artifact: { name: "architecture notes" } } },
+    sent(6, "developer", ["architect"]),
+  ];
+  const f = pairFilter("pm", "architect");
+  const facets = parseFacets(f.filter);
+  const hay = events.map((e) => eventHaystack(e));
+  const found = filterBase(events, hay, { search: f.search.toLowerCase(), groups: new Set(facetValues(facets, "grp")), actor: facetOne(facets, "actor"), thread: null });
+  assert.deepEqual(found.map((e) => e.seq).sort(), [1, 4], "pm's messages that name architect, including one sent to several; not pm to qa, not architect to pm, not a file");
 });

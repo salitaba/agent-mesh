@@ -29,6 +29,8 @@
 .gn.stopped circle.node { stroke: var(--bad); stroke-width: 2.5; }
 .gn.paused circle.node { stroke: var(--text-dim); stroke-dasharray: 3 3; }
 .gn:hover circle.node { fill: var(--panel-2); }
+/* Pointing at a seat picks out its lines (the .focus rule below draws the others back); the seats it does not talk to go back too. */
+.gn.dim { opacity: .45; }
 /* The group includes the names, so the ring of focus is around the whole seat. */
 .gn:focus { outline: none; }
 .gn:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
@@ -51,6 +53,11 @@
 
 .gr-legend { display: flex; flex-wrap: wrap; gap: var(--s1-5) var(--s4); margin: var(--s2) 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--text-dim); }
 .gr-legend li { display: inline-flex; align-items: center; gap: var(--s1-5); }
+/* A kind of line is a button: pressed it is shown, and hidden it is struck through with a dotted swatch, so colour is not the only cue. */
+.gr-key { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; margin: 0 calc(var(--s1-5) * -1); padding: 0 var(--s1-5); background: none; border: 0; border-radius: var(--r-sm); color: inherit; font: inherit; cursor: pointer; }
+.gr-key:hover { background: var(--panel-2); color: var(--text); }
+.gr-key[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+.gr-key[aria-pressed="false"] .gr-line { border-top-style: dotted; opacity: .6; }
 .gr-line { display: inline-block; flex: none; width: 18px; height: 0; border-top: 3px solid var(--muted); border-radius: 2px; }
 .gr-line.REQUEST { border-top-color: var(--accent); }
 .gr-line.APPROVE { border-top-color: var(--ok); }
@@ -67,13 +74,23 @@
 /* ---- the list: every line, reachable by keyboard ---- */
 
 .gr-links { margin: 0; padding: 0; list-style: none; }
+/* A row is the line, and beside it the way to its messages. */
+.gr-row { display: flex; align-items: center; gap: var(--s2); border-bottom: 1px solid var(--line); }
+.gr-links li:last-child { border-bottom: 0; }
+.gr-open { flex: none; margin-right: var(--s1); }
 .gr-link {
-  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 32px; padding: var(--s1) var(--s2);
-  background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: var(--s2-5); flex: 1 1 auto; min-width: 0; min-height: 32px; padding: var(--s1) var(--s2);
+  background: none; border: 0; border-radius: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
 }
-.gr-links li:last-child .gr-link { border-bottom: 0; }
 .gr-link:hover, .gr-link[aria-pressed="true"] { background: var(--panel-2); }
 .gr-link:focus-visible { outline-offset: -2px; }
 .gr-link > span:nth-of-type(1) { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .gr-n { flex: none; font-variant-numeric: tabular-nums; }
 .gr-note { margin: var(--s2) 0 0; font-size: 13px; }
+
+/* On a phone the key and the rows are touch targets. After the rules they override, so the order does not undo them. */
+@media (max-width: 620px) {
+  .gr-key { min-height: 44px; }
+  .gr-link, button.gr-open { min-height: 44px; }
+  .gr-legend { gap: var(--s1) var(--s3); }
+}

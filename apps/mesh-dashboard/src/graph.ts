@@ -9,6 +9,7 @@
  */
 import { RUNNING } from "./format";
 import { count as plural } from "./text";
+import { setFacet, toggleFacet } from "./eventmodel";
 
 /* ------------------------------- kinds of line ------------------------------- */
 
@@ -65,6 +66,48 @@ export function kindsPresent(edges: readonly EdgeLike[]): KindDef[] {
 export function capEdges<T extends EdgeLike>(edges: readonly T[], cap: number): { shown: T[]; hidden: number } {
   const sorted = [...edges].sort((a, b) => b.count - a.count || edgeKey(a).localeCompare(edgeKey(b)));
   return { shown: sorted.slice(0, cap), hidden: Math.max(0, sorted.length - cap) };
+}
+
+/**
+ * The lines to draw: those of a kind the person has not hidden, the busiest `cap` of them, and how many were left off for each reason.
+ * The kinds are hidden first and the cap applied after, so hiding "messaged" brings the next busiest lines of the other kinds into the
+ * drawing rather than leaving a gap, and each count says what it counts.
+ */
+export function visibleEdges<T extends EdgeLike>(edges: readonly T[], hiddenKinds: ReadonlySet<string>, cap: number): { shown: T[]; hidden: number; off: number } {
+  const kept = edges.filter((e) => !hiddenKinds.has(kindOf(e.kind).id));
+  return { ...capEdges(kept, cap), off: edges.length - kept.length };
+}
+
+/** The legend's key for a kind, pressed: a kind that is shown becomes hidden, and one that is hidden is shown again. */
+export function toggleKind(hidden: ReadonlySet<string>, id: string): Set<string> {
+  const next = new Set(hidden);
+  if (!next.delete(id)) next.add(id);
+  return next;
+}
+
+/**
+ * What pointing at a seat picks out: the lines that run to or from it, and the seats on the other end of them. Everything else is
+ * context and is drawn back.
+ */
+export function around<T extends Pick<EdgeLike, "from" | "to" | "kind">>(edges: readonly T[], id: string): { lines: Set<string>; seats: Set<string> } {
+  const lines = new Set<string>();
+  const seats = new Set<string>([id]);
+  for (const e of edges) {
+    if (e.from !== id && e.to !== id) continue;
+    lines.add(edgeKey(e));
+    seats.add(e.from);
+    seats.add(e.to);
+  }
+  return { lines, seats };
+}
+
+/**
+ * The Events page's own filters, set to the messages one seat sent to another: the message kinds of event, by that actor, that mention
+ * the recipient. The page's filters are one facet string and one search box, so nothing new is stored and the person can see, change
+ * and clear what was set. A message to several seats names each of them, so the recipient is a search and not an exact match.
+ */
+export function pairFilter(from: string, to: string): { filter: string; search: string } {
+  return { filter: setFacet(toggleFacet("", "grp:message"), "actor", from), search: to };
 }
 
 /**
