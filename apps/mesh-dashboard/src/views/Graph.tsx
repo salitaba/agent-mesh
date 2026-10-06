@@ -123,6 +123,10 @@ export default function Graph(): React.JSX.Element {
     <>
       {header(<span className="feed-meta">{err ? "Refresh failed. Showing the last drawing." : at ? `Drawn ${sinceText(now - Date.parse(at))}` : ""}</span>)}
       <Card variant="graph-wrap">
+        {/* Only on a phone, where the drawing is wider than the screen: it scrolls inside its own frame, so the key below stays put,
+            and a drawing that stops at the edge of the screen would otherwise read as a drawing with seats missing. */}
+        <p className="gr-swipe">Scroll sideways to see every seat.</p>
+        <div className="gr-scroll">
         {/* A group, not an image: an img has presentational children, and the seats inside are buttons. */}
         <svg className={`gr-svg${hot || near ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
           <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
@@ -173,6 +177,7 @@ export default function Graph(): React.JSX.Element {
             );
           })}
         </svg>
+        </div>
 
         {/* The legend says what the colours, the dashes and the rings mean, and lists only what is on the drawing. Each kind of line is
             a key: pressed, it is shown; pressed again, it is hidden, and the list below follows. */}

@@ -14,9 +14,22 @@
 
 /* The drawing is a fixed 900x480 viewBox scaled to fit. On a phone that is a uniformly shrunk desktop drawing: 11px labels at about
    4px and 36px seats at 13px. Below the width where the scale turns illegible it stops scaling and scrolls instead, so the text is
-   its authored size and a seat is a real tap target. */
+   its authored size and a seat is a real tap target. The frame that scrolls is the drawing's own (the key under it stays where it
+   is), it reaches the card's edges, and a soft edge shows on the side that has more: a phone hides its scroll bars, and a drawing
+   that simply stops at the screen's edge reads as one with seats missing. The covers are fixed to the content and the edges to the
+   frame, so an edge appears only while there is something beyond it. */
+.gr-swipe { display: none; margin: 0 0 var(--s2); font-size: 13px; color: var(--text-dim); }
 @media (max-width: 620px) {
-  .graph-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+  .gr-swipe { display: block; }
+  .gr-scroll {
+    margin: 0 -16px; overflow-x: auto; overscroll-behavior-x: contain;
+    --gr-edge: color-mix(in srgb, var(--text) 22%, transparent);
+    background:
+      linear-gradient(to right, var(--panel) 30%, transparent) 0 0 / 32px 100% no-repeat local,
+      linear-gradient(to left, var(--panel) 30%, transparent) 100% 0 / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, var(--gr-edge), transparent) 0 0 / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, var(--gr-edge), transparent) 100% 0 / 14px 100% no-repeat scroll;
+  }
   .gr-svg { min-width: 900px; height: 480px; }
 }
 
