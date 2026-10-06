@@ -72,6 +72,14 @@ their first mission, an operator who leaves a mission running. What each surface
   Chrome) and a visitor with no script, a search engine or a link preview read "Not today" about a service that is open. `npm run
   site:domain -- ... --cloud-url <url>|none` now writes the state into every page (`scripts/site-cloud-state.mjs`), `none` gives the
   pages back exactly, and `npm run site:check` fails on a page written for the other state. The shift is 0.000 in every load measured.
+- **A page and its stylesheet can no longer be a stale pair.** A visitor whose browser had kept the previous stylesheet (a browser may
+  keep a file for ten minutes without asking the host, and the page and the stylesheet are kept on their own clocks) was shown the
+  cards' marks as black shapes as wide as the card, because the older stylesheet had no rule for them. A mark now carries its own size,
+  fill and stroke, so it is right even then. Every page names the stylesheet and the scripts by a fingerprint of the file
+  (`assets/site.css?v=9af9e701cf`), so a new page asks for the new files at once: `node scripts/site-chrome.mjs` writes it (run it after
+  editing `assets/site.css`, `site.js` or `pricing.js`; its `--check`, and a test, fail until it has), and `site:domain` writes the
+  script's. *Back to top* is shown when a reader two screens down scrolls up, or reaches the end, and no longer sits on the ends of
+  the lines being read on a phone. Publish the site again to apply it; a browser that holds the old page needs one reload.
 - **A customer's account knows where they are.** The account page opens with one next step (choose a plan; add your model key;
   make your first workspace; open it) and a stepper, and shows what is theirs at that stage: Balance and Usage only on a plan that
   sells usage, the plan once with "Change plan" behind a button, Delete behind "More" (still needing the typed name), the password

@@ -31,6 +31,12 @@ the three answers in the security page's At a glance box. A shield is what it do
 circle is what it does not do, wherever it appears, so the kind shows in the shape and not in the colour; `tests/build/site-copy.test.ts`
 pins that each card in a row has its own drawing and that the security answers are the same drawings on both pages.
 
+A mark carries its own size, fill and stroke as attributes (`width="24" height="24" fill="none" stroke="currentColor" ...`), the same
+values as the stylesheet's `.mark` rule, which the stylesheet overrides where it says otherwise (a card's mark is 28 px and in the
+accent colour). The attributes are what a mark falls back to, so a card is right in a browser that holds a stylesheet older than the
+page: a mark that waited for the stylesheet to say how big it is, and that it is an outline, once filled its card in black. The same
+test holds the attributes to the rule, so they cannot drift apart.
+
 A page works with a script switched off: the menu, the tabs in the product frame and the Annual/Monthly choice are plain CSS,
 the plan cards and tables are in the markup, and the contact addresses are text. What the script adds is the calculator, the
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
@@ -50,10 +56,12 @@ page (`a[data-mail]`, when the text is an address): one click writes it to the c
 too, for a moment. The address stays a link and text, so a page with no script, or a browser that does not allow copying, loses
 only the button. On a phone the button is a 44 pixel target.
 
-Once a reader is two screens down any page, a *Back to top* button shows in the bottom right corner. The script makes it, at the
-end of `<main>`: it stays at the bottom of the window while the content is in view and rests above the footer at the end, so it
-never covers the footer's links. It jumps under reduced motion, and it moves the focus to the top of the content, so the keyboard
-carries on from there. It is not printed, and without a script it is not there.
+Once a reader is two screens down any page and turns back (scrolls up), or has come to the end of the content, a *Back to top*
+button shows in the bottom right corner. While the reader goes down it is not shown: on a phone it would sit on the ends of the
+lines being read. Eight pixels is a turn; the shake of a thumb is not. The script makes it, at the end of `<main>`: it stays at the
+bottom of the window while the content is in view and rests above the footer at the end, so it never covers the footer's links. It
+jumps under reduced motion, and it moves the focus to the top of the content, so the keyboard carries on from there. It is not
+printed, and without a script it is not there.
 
 The documentation page opens with four "Start here" cards, one for each goal, each with the document to open first, its label and its
 path (the shared script gives the title its address, as it does in the map, and without a script the path is there to read). The card
@@ -156,10 +164,31 @@ To change the navigation or the footer's links, edit the lists at the top of `sc
 written for each page's depth (`../pricing/` from a folder, `/pricing/` on `404.html`). The footer's company and contact line is
 the owner's: the script carries it over as it finds it, so running it after `site:domain` does not put the placeholder back.
 
+## The address of the stylesheet and the scripts
+
+Every page names its stylesheet and its scripts with a fingerprint of the file: `assets/site.css?v=9af9e701cf`. The fingerprint is
+ten hex digits of the file's SHA-256, so it changes when the file does and at no other time. It is there because a browser keeps a
+file for as long as its host says (GitHub Pages: ten minutes, without asking) and a page and its stylesheet are kept on their own
+clocks, so a visitor can be handed today's page with last week's stylesheet. That happened once: the new page drew marks that the
+older stylesheet had no rule for, and each filled its card in black. With the fingerprint a new page asks for an address the older
+stylesheet was never kept under, so it gets the new one. The file keeps its name and a host ignores the query.
+
+```bash
+node scripts/site-chrome.mjs           # also writes the fingerprints: run it after editing assets/site.css, site.js or pricing.js
+node scripts/site-chrome.mjs --check   # exit 1 while a page names an older file than the one in assets/
+```
+
+`tests/build/site-chrome.test.ts` runs the check and pins every page to the files as they are (it computes the fingerprint on its
+own), so a change to the stylesheet fails a test until the new fingerprint is written. `scripts/set-domain.mjs`, which changes
+`assets/site.js`, writes that script's new fingerprint into the pages it writes in the same run. The images are not fingerprinted:
+they are under stable names and only replaced when a picture is retaken, which does a page that still has the older one no harm.
+The code is `scripts/site-assets.mjs`.
+
 ## Adding a page
 
 1. Copy a short page (`legal/index.html`) to `site/<name>/index.html` and change its title, description, `og:` texts and content.
    Keep the marker pairs for the header and the footer, the content security policy, the `<main id="main" tabindex="-1">`, and one `h1`.
+   Load the stylesheet and the script as the other pages do; the next step writes their fingerprints.
 2. Run `node scripts/site-chrome.mjs`. Add the page to the lists in that script if it should be in the navigation or the footer.
 3. Run `npm test`. The structure tests (`tests/build/site.test.ts`) and the claims tests (`tests/build/site-copy.test.ts`) read every
    page in `site/`, so the new one is held to them without being listed anywhere; link it from the home page's footer, or the
@@ -220,6 +249,9 @@ marked, so a placeholder cannot reach the internet by accident. It has to be swi
 publish from Actions takes the domain from those settings and ignores `CNAME`, which is there for hosts that read it and as the
 repository's own record of the domain. GitHub serves Pages from a private repository only on a paid plan.
 `tests/build/pages-workflow.test.ts` pins that the workflow starts only by hand, checks first, and uses nothing but GitHub's own actions.
+Publishing again after any change is all a change needs: the pages name the stylesheet and the scripts by their fingerprints (above),
+so a visitor's browser asks for the new files at once and nobody has to clear a cache. A browser that holds the page itself from
+before the fingerprints (up to ten minutes) needs one reload.
 
 `404.html` is served by GitHub Pages, Netlify and Cloudflare Pages for any address that is not found, at any depth, and it assumes
 the site is served from the root of its domain (which is what `CNAME` and `site:domain` set up). Under a sub-path

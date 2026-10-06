@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "child_process";
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -39,7 +40,7 @@ test("it writes the header and the footer between the markers, and a second run 
   const dir = smallSite();
   const first = run(dir);
   assert.equal(first.status, 0, first.err);
-  assert.match(first.out, /rewrote the header and footer of 4 page\(s\)/);
+  assert.match(first.out, /rewrote 4 page\(s\)/);
   const home = read(dir, "index.html");
   assert.match(home, /<a class="skip" href="#main">Skip to the content<\/a>\n<header class="site-header">/);
   assert.match(home, /<footer class="site-footer">[\s\S]*Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic\./);
@@ -167,13 +168,107 @@ test("a page without the markers is refused whole, and a page nobody listed is f
   assert.equal(run(empty).status, 2, "a folder that is not the repository has no pages to write");
 });
 
+// ---------------------------------------------------------------- the fingerprints of the stylesheet and the scripts
+
+/** What a fingerprint is: ten hex digits of the SHA-256 of the file. Written out here, so that the script is held to it and does not define it. */
+const sha10 = (text: string): string => crypto.createHash("sha256").update(text, "utf8").digest("hex").slice(0, 10);
+
+/** A small site whose pages load the stylesheet and the scripts, each by the address its depth needs, and whose files exist. */
+function assetSite(): string {
+  const dir = smallSite();
+  const loads = (prefix: string, extra = ""): string => `<link rel="stylesheet" href="${prefix}assets/site.css"><link rel="icon" href="${prefix}assets/favicon.svg"><script src="${prefix}assets/site.js" defer></script>${extra}`;
+  const withLoads = (rel: string, prefix: string, extra = ""): void => write(dir, rel, read(dir, rel).replace("</head>", `${loads(prefix, extra)}</head>`));
+  withLoads("index.html", "");
+  withLoads("pricing/index.html", "../", '<script src="../assets/pricing.js" defer></script>');
+  withLoads("docs/index.html", "../");
+  withLoads("404.html", "/");
+  fs.mkdirSync(path.join(dir, "site", "assets"), { recursive: true });
+  write(dir, "assets/site.css", "body { color: #111; }\n");
+  write(dir, "assets/site.js", "var CLOUD_URL = \"\";\n");
+  write(dir, "assets/pricing.js", "var pricing = 1;\n");
+  write(dir, "assets/favicon.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n");
+  return dir;
+}
+const loadsOf = (html: string): string[] => [...html.matchAll(/\b(?:href|src)="([^"]*assets\/[^"]*)"/g)].map((m) => m[1]!);
+
+test("the stylesheet and the scripts are named by a fingerprint of their content, at the address each page's depth needs, and nothing else is", () => {
+  const dir = assetSite();
+  assert.equal(run(dir, "--check").status, 1, "pages that name the files bare are out of date: a visitor's cache could hold older ones");
+  const r = run(dir);
+  assert.equal(r.status, 0, r.err);
+  const css = sha10(read(dir, "assets/site.css"));
+  const js = sha10(read(dir, "assets/site.js"));
+  const pricing = sha10(read(dir, "assets/pricing.js"));
+  assert.deepEqual(loadsOf(read(dir, "index.html")), [`assets/site.css?v=${css}`, "assets/favicon.svg", `assets/site.js?v=${js}`]);
+  assert.deepEqual(loadsOf(read(dir, "pricing/index.html")), [`../assets/site.css?v=${css}`, "../assets/favicon.svg", `../assets/site.js?v=${js}`, `../assets/pricing.js?v=${pricing}`]);
+  assert.deepEqual(loadsOf(read(dir, "404.html")), [`/assets/site.css?v=${css}`, "/assets/favicon.svg", `/assets/site.js?v=${js}`], "the page shown at any depth names them from the root");
+  assert.match(read(dir, "index.html"), /<link rel="stylesheet" href="assets\/site\.css\?v=[0-9a-f]{10}">/, "a stylesheet link is still one, with the address changed and nothing else");
+  assert.match(read(dir, "index.html"), /<script src="assets\/site\.js\?v=[0-9a-f]{10}" defer><\/script>/);
+  assert.equal(run(dir, "--check").status, 0);
+  assert.match(run(dir).out, /nothing to change in 4 pages/, "and a second run writes nothing: the same bytes, the same fingerprint");
+});
+
+test("a changed file is a new address in every page that loads it and in no other, and a page that is stale is reported until the script has run", () => {
+  const dir = assetSite();
+  assert.equal(run(dir).status, 0);
+  const before = Object.fromEntries(["index.html", "pricing/index.html", "docs/index.html", "404.html"].map((rel) => [rel, read(dir, rel)]));
+  // The stylesheet is edited by hand, as it is on the day a rule is fixed.
+  write(dir, "assets/site.css", "body { color: #222; }\n");
+  const stale = run(dir, "--check");
+  assert.equal(stale.status, 1, "an edited stylesheet is out of date in every page until the new address is written");
+  assert.match(stale.err, /out of date: index\.html, docs\/index\.html, pricing\/index\.html, 404\.html/);
+  assert.match(stale.err, /fingerprints of the stylesheet and the scripts/, "and says what to run, and what it writes");
+  assert.equal(run(dir).status, 0);
+  const css = sha10("body { color: #222; }\n");
+  for (const [rel, html] of Object.entries(before)) {
+    const now = read(dir, rel);
+    assert.equal(now, html.replace(/site\.css\?v=[0-9a-f]{10}/, `site.css?v=${css}`), `${rel}: only the stylesheet's address changed`);
+    assert.ok(!/\?v=[0-9a-f]{10}\?v=/.test(now), `${rel}: an address is replaced, not added to`);
+  }
+  // The script is a different file with a different fingerprint: the stylesheet's address is not touched by it.
+  write(dir, "assets/site.js", 'var CLOUD_URL = "";\n// edited\n');
+  assert.equal(run(dir, "--check").status, 1);
+  assert.equal(run(dir).status, 0);
+  assert.match(read(dir, "docs/index.html"), new RegExp(`assets/site\\.css\\?v=${css}`), "the stylesheet's address stayed");
+  assert.match(read(dir, "docs/index.html"), new RegExp(`assets/site\\.js\\?v=${sha10('var CLOUD_URL = "";\n// edited\n')}`));
+  // The same bytes again (a file touched, or an edit undone) are the same address: a visitor's copy stays good.
+  write(dir, "assets/site.css", "body { color: #111; }\n");
+  assert.equal(run(dir).status, 0);
+  assert.equal(read(dir, "index.html").match(/site\.css\?v=([0-9a-f]{10})/)![1], sha10("body { color: #111; }\n"));
+});
+
+test("a file a page names that is not there, and a file that is not one of the three, are left as they are", () => {
+  const dir = assetSite();
+  fs.rmSync(path.join(dir, "site", "assets", "pricing.js"));
+  assert.equal(run(dir).status, 0);
+  assert.ok(read(dir, "pricing/index.html").includes('<script src="../assets/pricing.js" defer></script>'), "no file, no fingerprint: the page is not made to name one that does not exist");
+  assert.ok(read(dir, "index.html").includes('<link rel="icon" href="assets/favicon.svg">'), "the images are under stable names and are not fingerprinted");
+  assert.equal(run(dir, "--check").status, 0);
+});
+
 // ---------------------------------------------------------------- the committed pages
 
 test("the committed pages carry the header and the footer the script writes", () => {
   const r = run(ROOT, "--check");
   assert.equal(r.status, 0, `${r.out}${r.err}`);
-  assert.match(r.out, /the header and footer of \d+ pages are up to date/);
+  assert.match(r.out, /the header, the footer and the fingerprints of the stylesheet and scripts of \d+ pages are up to date/);
   assert.ok(sitePages().length >= 7);
+});
+
+test("every committed page names the stylesheet and the scripts by the fingerprint of the file as it is, so that no visitor reads a page with an older stylesheet than it was written for", () => {
+  const files = Object.fromEntries(["site.css", "site.js", "pricing.js"].map((name) => [name, sha10(fs.readFileSync(path.join(SITE, "assets", name), "utf8"))]));
+  const seen = new Set<string>();
+  for (const p of sitePages()) {
+    const loads = [...p.html.matchAll(/\b(?:href|src)="((?:\.\.\/|\/)?assets\/(site\.css|site\.js|pricing\.js)(\?v=[0-9a-f]+)?)"/g)];
+    const names = loads.map((m) => m[2]!);
+    assert.ok(names.includes("site.css") && names.includes("site.js"), `${p.rel}: loads the stylesheet and the script`);
+    assert.equal(names.includes("pricing.js"), p.rel === "pricing/index.html", `${p.rel}: the calculator's script is the pricing page's`);
+    for (const [, address, name, query] of loads) {
+      assert.equal(query, `?v=${files[name!]}`, `${p.rel}: ${address} carries the fingerprint of ${name}`);
+      seen.add(name!);
+    }
+  }
+  assert.deepEqual([...seen].sort(), ["pricing.js", "site.css", "site.js"]);
 });
 
 test("on the committed pages the navigation goes where the page's depth needs, and each page marks itself", () => {

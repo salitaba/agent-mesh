@@ -21,6 +21,14 @@ interface PricingData {
   plans: { id: string; name: string; priceMonthlyUsd: number | null; priceMonthlyAnnualUsd: number | null; priceAnnualTotalUsd: number | null; roadmap: string[]; features: string[] }[];
   measuredRuns: { seats: number; wallClockMinutes: number; costUsd: number; costUsdByModel: Record<string, number>; outcome: string }[];
 }
+
+/**
+ * A mark's opening tag, whatever its kind: the drawing's own size, fill and stroke, so that a card is right before its stylesheet has
+ * been read, or when the browser has an older one (the same values as the stylesheet's `.mark` rule, which a test below holds it to).
+ */
+const MARK =
+  '<svg class="mark(?: mark-(?:ok|out|no))?" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+
 const data = JSON.parse(/<script type="application\/json" id="plans-data">([\s\S]*?)<\/script>/.exec(page(pages, "pricing/index.html").html)![1]!) as PricingData;
 
 /** Everything a visitor can read or hear on a page: the copy, the head's texts, the images' descriptions and the labels. */
@@ -339,7 +347,7 @@ test("the security page's At a glance box answers in three short lines, in the p
       assert.ok(rest.includes(phrase), `${id}: "${phrase}" is a sentence of the page, argued below`);
     }
     // A mark that says what kind of answer it is: drawn, hidden from a screen reader (the heading says it), no style attribute.
-    const svg = /<svg class="mark mark-(?:ok|out|no)" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>/.exec(item);
+    const svg = new RegExp(`${MARK}([\\s\\S]*?)</svg>`).exec(item);
     assert.ok(svg, `${id}: a mark`);
     shapes.add(svg![1]!);
   });
@@ -373,7 +381,7 @@ test("the cards that carry a mark are the ones where it helps a reader find the 
   const security = page(pages, "security/index.html");
   const section = (html: string, id: string): string => new RegExp(`<section[^>]*\\sid="${id}"[\\s\\S]*?\\n</section>`).exec(html)![0];
   const marks = (html: string): Array<{ title: string; shape: string }> =>
-    [...html.matchAll(/<div class="card">(<svg class="mark[^"]*" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>)<h3>([^<]+)<\/h3>/g)].map((m) => ({ title: m[3]!, shape: m[2]! }));
+    [...html.matchAll(new RegExp(`<div class="card">(${MARK}([\\s\\S]*?)</svg>)<h3>([^<]+)</h3>`, "g"))].map((m) => ({ title: m[3]!, shape: m[2]! }));
   const why = marks(section(home.html, "why"));
   const answers = marks(section(home.html, "security"));
   assert.deepEqual(why.map((m) => m.title), ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"], "the four reasons");
@@ -381,19 +389,30 @@ test("the cards that carry a mark are the ones where it helps a reader find the 
   for (const group of [why, answers]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
   // The security answers are the security page's three, in the same drawings: a shield is what it does, an arrow out of a box is what
   // leaves, a barred circle is what it does not do, wherever the reader meets them.
-  const glance = [...section(security.html, "glance").matchAll(/<svg class="mark[^"]*" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
+  const glance = [...section(security.html, "glance").matchAll(new RegExp(`${MARK}([\\s\\S]*?)</svg>`, "g"))].map((m) => m[1]);
   assert.deepEqual(answers.map((m) => m.shape), glance);
-  // Every mark on every page is drawn the same way: hidden from a screen reader (the heading says it), with no style or colour of its own.
+  // Every mark on every page is drawn the same way: hidden from a screen reader (the heading says it), in the colour of the text it sits
+  // in, and with the size and the stroke of a drawing in its own attributes. A mark that waited for the stylesheet to say how big it is
+  // and that it is an outline is a mark that fills its card in black for a visitor whose browser kept an older stylesheet: it did, once.
   const css = read("site", "assets", "site.css");
-  assert.match(css, /\n\.mark \{[^}]*fill: none; stroke: currentColor;/, "in the colour of the text it sits in, by the stylesheet's tokens, light and dark");
+  const rule = /\n\.mark \{([^}]*)\}/.exec(css)![1]!;
+  const own = (name: string): string => new RegExp(`(?:^|[\\s;])${name}: ([^;]+);`).exec(rule)![1]!;
+  assert.match(rule, /fill: none; stroke: currentColor;/, "the stylesheet draws it in the colour of the text it sits in, by its tokens, light and dark");
   let count = 0;
   for (const p of pages) {
     for (const m of p.markup.matchAll(/<svg\b([^>]*)>/g)) {
       if (!/class="mark/.test(m[1]!)) continue;
       count++;
-      assert.match(m[1]!, /aria-hidden="true"/, `${p.rel}: a mark is not announced`);
-      assert.match(m[1]!, /focusable="false"/, `${p.rel}: or focusable`);
-      assert.ok(!/\s(style|fill|stroke|width|height)=/.test(m[1]!), `${p.rel}: and carries no colour or size of its own: ${m[1]}`);
+      assert.match(`<svg${m[1]}>`, new RegExp(`^${MARK}$`), `${p.rel}: a mark is the one shape, announced to nobody and not focusable: ${m[1]}`);
+      assert.ok(!/\sstyle=/.test(m[1]!), `${p.rel}: with no style attribute, which the policy would block`);
+      // The attributes are the stylesheet's own values (a rule that says otherwise wins, as it should: these are what it falls back to).
+      assert.equal(/\swidth="(\d+)"/.exec(m[1]!)![1] + "px", own("width"), `${p.rel}: its width is the stylesheet's`);
+      assert.equal(/\sheight="(\d+)"/.exec(m[1]!)![1] + "px", own("height"), `${p.rel}: and its height`);
+      assert.equal(/\sfill="([^"]+)"/.exec(m[1]!)![1], own("fill"), `${p.rel}: and its fill`);
+      assert.equal(/\sstroke="([^"]+)"/.exec(m[1]!)![1], own("stroke"), `${p.rel}: and its stroke`);
+      assert.equal(/\sstroke-width="([^"]+)"/.exec(m[1]!)![1], own("stroke-width"), `${p.rel}: and its line`);
+      assert.equal(/\sstroke-linecap="([^"]+)"/.exec(m[1]!)![1], own("stroke-linecap"), `${p.rel}: and its ends`);
+      assert.equal(/\sstroke-linejoin="([^"]+)"/.exec(m[1]!)![1], own("stroke-linejoin"), `${p.rel}: and its corners`);
     }
   }
   assert.ok(count >= 10, `the marks (${count})`);

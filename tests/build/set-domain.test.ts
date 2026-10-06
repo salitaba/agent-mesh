@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "child_process";
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -183,6 +184,8 @@ function snapshot(dir: string, rel = ""): Record<string, string> {
 }
 
 const read = (dir: string, rel: string): string => fs.readFileSync(path.join(dir, rel), "utf8");
+/** What a fingerprint is (scripts/site-assets.mjs): ten hex digits of the SHA-256 of the file. Written out here, so the script is held to it. */
+const sha10 = (text: string): string => crypto.createHash("sha256").update(text, "utf8").digest("hex").slice(0, 10);
 const FULL = ["curule.dev", "--contact", "hello@curule.dev", "--security", "security@curule.dev", "--company", "Curule Labs & Co", "--docs-base", "github", "--app-url", "https://mesh.curule.dev/", "--today", "2026-10-03"];
 
 test("a domain with its addresses fills every marker, on every page, and writes the files a host and a crawler read", () => {
@@ -382,6 +385,8 @@ test("the repository's own site and policy take a domain cleanly, in whatever st
   assert.match(read(dir, "SECURITY.md"), /^- Email: security@curule\.dev$/m);
   assert.match(read(dir, "site/contact/index.html"), /<a data-mail="security" href="mailto:security@curule\.dev">security@curule\.dev<\/a>/);
   assert.match(read(dir, "site/404.html"), /<a href="mailto:hello@curule\.dev">/);
+  const written = sha10(read(dir, "site/assets/site.js"));
+  for (const rel of [...pages, "site/404.html"]) assert.match(read(dir, rel), new RegExp(`<script src="(?:\\.\\./|/)?assets/site\\.js\\?v=${written}" defer></script>`), `${rel}: names the script this run wrote, by its fingerprint`);
   const first = snapshot(dir);
   assert.equal(run(dir, FULL).status, 0);
   assert.deepEqual(snapshot(dir), first, "and a second run changes nothing");
@@ -389,6 +394,38 @@ test("the repository's own site and policy take a domain cleanly, in whatever st
   assert.equal(checked.status, 1, "the publish gate still stops, for the terms");
   assert.match(checked.out, /site\/legal\/index\.html:\d+: .*terms/);
   assert.equal((checked.out.match(/^ {2}site\/|^ {2}SECURITY/gm) ?? []).length, 1, "and for nothing else");
+});
+
+test("the pages name the script by the fingerprint of the script this run leaves, not of the one it found, so a page and its script are never a stale pair", () => {
+  const dir = templateRepo();
+  write(dir, "site/assets/site.css", "body { margin: 0; }\n");
+  const loads = (prefix: string): string => `<link rel="stylesheet" href="${prefix}assets/site.css"><script src="${prefix}assets/site.js" defer></script>`;
+  for (const [rel, prefix] of [["site/index.html", ""], ["site/pricing/index.html", "../"], ["site/contact/index.html", "../"], ["site/404.html", "/"]] as const) {
+    write(dir, rel, read(dir, rel).replace("</head>", `${loads(prefix)}\n</head>`));
+  }
+  const found = sha10(TEMPLATE_SCRIPT);
+  const r = run(dir, FULL);
+  assert.equal(r.status, 0, r.err);
+  const script = read(dir, "site/assets/site.js");
+  assert.notEqual(sha10(script), found, "the run changed the script (the contact address and the dashboard's address are in it)");
+  const css = sha10("body { margin: 0; }\n");
+  for (const [rel, prefix] of [["site/index.html", ""], ["site/pricing/index.html", "../"], ["site/contact/index.html", "../"], ["site/404.html", "/"]] as const) {
+    const page = read(dir, rel);
+    assert.ok(page.includes(`<script src="${prefix}assets/site.js?v=${sha10(script)}" defer></script>`), `${rel}: the script as it was written`);
+    assert.ok(!page.includes(found), `${rel}: and not the one the run found`);
+    assert.ok(page.includes(`<link rel="stylesheet" href="${prefix}assets/site.css?v=${css}">`), `${rel}: the stylesheet, which the run does not change, by its own`);
+  }
+  // Another run that changes the script (Curule Cloud opens) changes the address in every page, and the same run again changes nothing.
+  const open = run(dir, [...FULL, "--cloud-url", "https://app.curule.dev"]);
+  assert.equal(open.status, 0, open.err);
+  const reopened = read(dir, "site/assets/site.js");
+  assert.notEqual(sha10(reopened), sha10(script));
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/contact/index.html", "site/404.html"]) {
+    assert.match(read(dir, rel), new RegExp(`assets/site\\.js\\?v=${sha10(reopened)}"`), `${rel}: follows the script`);
+  }
+  const first = snapshot(dir);
+  assert.equal(run(dir, [...FULL, "--cloud-url", "https://app.curule.dev"]).status, 0);
+  assert.deepEqual(snapshot(dir), first, "the same run again writes the same bytes, fingerprints included");
 });
 
 test("a second run changes nothing, and a second domain replaces the first without leaving a trace of it", () => {

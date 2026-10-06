@@ -18,6 +18,10 @@
  * The footer's company and contact line is the owner's (scripts/set-domain.mjs writes it). It is carried over from the
  * page as it is, so running this after the domain has been applied does not put the placeholder back.
  *
+ * It also writes, in every page, the fingerprint of the stylesheet and the scripts the page loads (`assets/site.css?v=3f9a1c2b4e`:
+ * scripts/site-assets.mjs says why), so that after any change to site/assets/site.css, site.js or pricing.js this is the one command
+ * to run, and --check says when it has not been.
+ *
  * The header is written in the state Curule Cloud is in, which the shared script says (CLOUD_URL in site/assets/site.js): Sign in
  * and Get started with their addresses and no demo button once it is open, as scripts/set-domain.mjs writes the rest of each page
  * (scripts/site-cloud-state.mjs), so that a page needs the script to say neither of them.
@@ -29,6 +33,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloudConfigOf, cloudState } from "./site-cloud-state.mjs";
+import { fingerprints, stampAssets } from "./site-assets.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -225,12 +230,13 @@ function main() {
   }
   // Every page is computed before any is written, so a page that lacks its markers stops the run with nothing changed.
   const writes = [];
+  const prints = fingerprints(siteDir);
   for (const page of pages) {
     const file = path.join(siteDir, page.file);
     const before = fs.readFileSync(file, "utf8");
     let after;
     try {
-      after = applyChrome(before, page, cloud);
+      after = stampAssets(applyChrome(before, page, cloud), prints);
     } catch (e) {
       console.error(`site-chrome: ${e.message}`);
       process.exit(2);
@@ -242,12 +248,12 @@ function main() {
   if (!check) for (const [file, text] of writes) fs.writeFileSync(file, text, "utf8");
   if (check) {
     if (stale.length > 0) {
-      console.error(`out of date: ${stale.join(", ")}\nrun \`node scripts/site-chrome.mjs\` and commit the result`);
+      console.error(`out of date: ${stale.join(", ")}\nrun \`node scripts/site-chrome.mjs\` and commit the result (it writes the header and the footer, and the fingerprints of the stylesheet and the scripts)`);
       process.exit(1);
     }
-    console.log(`the header and footer of ${pages.length} pages are up to date`);
+    console.log(`the header, the footer and the fingerprints of the stylesheet and scripts of ${pages.length} pages are up to date`);
   } else {
-    console.log(stale.length === 0 ? `nothing to change in ${pages.length} pages` : `rewrote the header and footer of ${stale.length} page(s): ${stale.join(", ")}`);
+    console.log(stale.length === 0 ? `nothing to change in ${pages.length} pages` : `rewrote ${stale.length} page(s): ${stale.join(", ")}`);
   }
 }
 

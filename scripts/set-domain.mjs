@@ -26,6 +26,8 @@
  *                              hidden, and its links given their addresses (the reverse for none), so that a page is right
  *                              before the script runs and without it (scripts/site-cloud-state.mjs). A run given no --cloud-url
  *                              puts the pages in the state the script's CLOUD_URL already says.
+ *   every page of the site     and the fingerprint of the site.js it has just written, in the address each page loads it by
+ *                              (assets/site.js?v=...: scripts/site-assets.mjs says why), so that the pages and the script agree.
  *   SECURITY.md                the reporting address (--security)
  *   site/CNAME                 the custom domain, for the hosts that read it from the site (an Actions publish to GitHub Pages
  *                              takes it from the repository's Pages settings and ignores this file)
@@ -46,6 +48,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloudConfigOf, cloudState } from "./site-cloud-state.mjs";
+import { fingerprints, stampAssets } from "./site-assets.mjs";
 
 const USAGE =
   'usage: node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>] [--company "<name>"] [--app-url <https address>|none] [--cloud-url <https address>|none] [--docs-base github] [--dry-run] [--today YYYY-MM-DD] [--root <dir>]\n' +
@@ -325,12 +328,14 @@ function main() {
   } catch (e) {
     refuse(`site/${SCRIPT}: ${e.message}`);
   }
+  // The pages name the script by its fingerprint: the one of the text it is about to hold, not of the file as it is now.
+  const prints = fingerprints(siteDir, { "site.js": script });
   const writes = new Map();
   for (const rel of files) {
     if (!/\.(html|js)$/.test(rel)) continue;
     const text = fs.readFileSync(path.join(siteDir, rel), "utf8");
-    if (isPage(rel)) writes.set(`site/${rel}`, cloudState(applyToPage(text, rel, o), cloud));
-    else if (rel === "404.html") writes.set(`site/${rel}`, cloudState(applyOwnerText(text, `site/${rel}`, o, { required: true }), cloud));
+    if (isPage(rel)) writes.set(`site/${rel}`, stampAssets(cloudState(applyToPage(text, rel, o), cloud), prints));
+    else if (rel === "404.html") writes.set(`site/${rel}`, stampAssets(cloudState(applyOwnerText(text, `site/${rel}`, o, { required: true }), cloud), prints));
     else if (rel === SCRIPT) writes.set(`site/${rel}`, script);
   }
   writes.set("SECURITY.md", applyToSecurity(security, o));

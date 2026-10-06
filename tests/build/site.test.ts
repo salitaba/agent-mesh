@@ -202,7 +202,8 @@ test("the colour scheme follows the visitor's setting and nothing is remembered:
     assert.ok(css.includes("--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;"), `${f}: the brand's code stack`);
   }
   for (const p of pages) {
-    assert.ok(p.html.includes('<link rel="stylesheet" href="' + (p.rel === "404.html" ? "/" : p.rel.includes("/") ? "../" : "") + 'assets/site.css">'), `${p.rel} uses the shared stylesheet`);
+    // By its address and a fingerprint of the file (scripts/site-assets.mjs): tests/build/site-chrome.test.ts holds the fingerprint to the file.
+    assert.ok(new RegExp('<link rel="stylesheet" href="' + (p.rel === "404.html" ? "/" : p.rel.includes("/") ? "\\.\\./" : "") + 'assets/site\\.css\\?v=[0-9a-f]{10}">').test(p.html), `${p.rel} uses the shared stylesheet`);
     assert.equal((p.markup.match(/<link rel="stylesheet"/g) ?? []).length, 1, `${p.rel}: one stylesheet`);
   }
 });
