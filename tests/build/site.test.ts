@@ -350,3 +350,28 @@ test("the script's constants are the shape set-domain and the publish gate expec
   assert.ok(release.includes("tags: [\"v*\"]"), "the image is published by a version tag");
   assert.equal(name, "ghcr.io/salitaba/curule", "the name the release publishes (docs/commercial/deployment.md says the same)");
 });
+
+test("a table or a command that goes on past its box shows a shadow at the edge while there is more, and a table keeps its corner", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // The cover is attached to the content and the shadow to the box, so the shadow shows only while there is more to scroll to,
+  // and goes at the end, with no script; on a page where everything fits the cover sits on it from the start.
+  for (const [rule, cover] of [[".table-wrap", "var(--panel)"], [".code pre", "var(--code)"]] as const) {
+    const body = new RegExp(`\\n${rule.replace(/\./g, "\\.")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    assert.match(body, /overflow-x: auto;/, `${rule} scrolls sideways`);
+    assert.ok(body.includes(`linear-gradient(to left, ${cover} 30%, transparent) right / 48px 100% no-repeat local`), `${rule}: the cover goes with the content`);
+    assert.ok(body.includes("linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll"), `${rule}: the shadow stays with the box`);
+  }
+  // Every table and every block of commands is in one of those boxes.
+  for (const p of pages) {
+    assert.equal((p.markup.match(/<table\b/g) ?? []).length, (p.markup.match(/<div class="table-wrap"[^>]*>\s*<table\b/g) ?? []).length, `${p.rel}: a table is in a .table-wrap`);
+    assert.equal((p.markup.match(/<pre\b/g) ?? []).length, (p.markup.match(/<div class="code"><pre\b/g) ?? []).length, `${p.rel}: commands are in a .code box`);
+  }
+  // On a phone the table scrolls under its first column: the corner goes with the column, so the plans' names do not show through.
+  assert.match(css, /\n\.compare thead th:first-child \{ position: sticky; left: 0; z-index: 2; \}/);
+  assert.match(css, /\n\.compare tbody th \{[^}]*position: sticky; left: 0;/);
+  const pricing = page(pages, "pricing/index.html").markup;
+  for (const m of pricing.matchAll(/<table class="compare">[\s\S]*?<\/table>/g)) {
+    assert.match(m[0], /<thead><tr><th scope="col">/, "the corner is a header cell, which the stylesheet keeps with the first column");
+    for (const row of m[0].matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)) for (const tr of row[1]!.matchAll(/<tr>([\s\S]*?)<\/tr>/g)) assert.match(tr[1]!, /^<th scope="row">/, "every row starts with its own header, the column that stays");
+  }
+});
