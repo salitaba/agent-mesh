@@ -17,6 +17,7 @@ a decision, an account or a credential from the operator of the service is state
 |---|---|---|
 | Provider-neutral runtime, `native` | `packages/runtime-native` | built and tested; [runtime-native.md](runtime-native.md) |
 | Model providers (OpenAI-compatible chat, Anthropic Messages) | `packages/llm` | built and tested against servers that speak each format; `curule providers check` proves a real provider |
+| Hosting-only plans (`byok`): the customer's own model key per workspace, kept sealed and write-only; no gateway needed | `packages/cloud`, `apps/mesh-server`, `apps/cloud-server/pages` | built and tested against stand-ins; no real provider has been called with a customer's key; [cloud-control-plane.md](cloud-control-plane.md#hosting-only-plans-byok) |
 | Model gateway: virtual keys, budgets, metering ledger, tiers with failover, admin API | `packages/ai-gateway`, `apps/cloud-server` | built and tested against servers that speak each wire format; [ai-gateway.md](ai-gateway.md) |
 | Control plane: accounts, plans, credits, workspaces, and `curule-cloud control` to run them | `packages/cloud`, `apps/cloud-server` | built and tested, with a public API and an operator's API; [cloud-control-plane.md](cloud-control-plane.md) |
 | Billing port with a hosted-checkout adapter and a manual adapter | `packages/cloud` | built and tested; the hosted-checkout adapter against servers that answer in the provider's documented shapes, not the live service |
@@ -72,6 +73,13 @@ operator approval gate and the same landing gate. The gate code is shared with t
 
 The Claude adapter stays, for operators who run Claude Code with their own subscription or credentials. It is one runtime
 among several, not the product's foundation.
+
+### Selling hosting, not model usage
+
+Reselling a provider's models needs that provider's written approval (Anthropic's and OpenRouter's terms both bar it). The service
+can therefore be run with hosting-only plans: the customer pays a flat price for the workspace and brings their own model key,
+and the provider bills them directly. Curule Cloud then holds no balance and no provider credential of its own, and the gateway
+below is not run. The gateway and the plans that sell usage stay in the code for an operator who holds that approval.
 
 ### Model gateway
 

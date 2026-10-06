@@ -63,6 +63,7 @@ is an example to copy; its numbers are not an offer.
 | `plans.<id>.period` | `month` or `year`. |
 | `plans.<id>.included_usage` | Model usage included each period, as a decimal in the gateway's currency with at most six places. Each period's payment replaces the included credit with this amount; it is not added to what was left. |
 | `plans.<id>.workspaces` | Workspaces an account may run at once. |
+| `plans.<id>.byok` | `true` for a hosting-only plan: the customer brings their own model key and the service sells no model usage. Such a plan cannot set `included_usage` (other than 0), `tiers` or `default_tier`; a payment grants no credit. |
 | `plans.<id>.provider_price_id` | The payment provider's id for this price, where the provider needs one. |
 | `plans.<id>.tiers` | The gateway tiers a workspace of this plan may use. Left out, every tier. |
 | `plans.<id>.default_tier` | The tier a team in the workspace uses unless a seat names another, one of `tiers` when that is given. Left out, a plan that lists tiers uses `balanced` if it is among them and the first listed if it is not, and a plan with no list leaves the host's own default. The workspace is told it as `CURULE_GATEWAY_MODEL`. |
@@ -71,6 +72,27 @@ is an example to copy; its numbers are not an offer.
 
 Credit has two buckets, as in the gateway. Included credit is replaced each period and spent first. Purchased credit does not
 expire. When both are gone the gateway refuses new calls and the mesh pauses once with one clear notice.
+
+### Hosting-only plans (`byok`)
+
+When every plan is `byok`, the service holds no balance, has no top-ups (`topups` is refused), and needs no gateway: leave the
+`gateway:` section out of `control.yaml`. `check` and `preflight` say so; a `gateway:` section that no plan uses is a warning.
+The first workspace of such a plan is made without models. The customer sets, replaces or deletes their key for a workspace:
+
+| Route | |
+|---|---|
+| `POST /api/workspaces/:id/model-key` | `{provider, model, key, baseUrl?}`. `provider` is `anthropic` or `openai-compatible` (which needs `baseUrl`, https, public). Answers with the workspace as the customer sees it: which provider, model and base URL, when it was set, never the key. |
+| `POST /api/workspaces/:id/model-key/delete` | Removes it. |
+
+The key is write-only. It is read in one place, to start the workspace's host, which is then started again (its data is kept; a turn
+in progress is interrupted). It is kept encrypted (AES-256-GCM) in `model-keys.json` beside the control log (`model_keys:` names
+another file), mode 0600, with a key derived from `CONTROL_SECRET` and bound to the workspace's id; losing or changing
+`CONTROL_SECRET` loses every stored key. The control log holds only `workspace.model_key_set` (provider, model, base URL) and
+`workspace.model_key_removed`. A container provisioner passes it to the host as an environment variable of that one container
+(`CURULE_MODEL_KEY`, [runtime-native.md](runtime-native.md#hosted-workspaces)), a local one to the child process. Another
+account's workspace is answered as not found. A session may set a key 10 times an hour and an account 20. A plan that sells usage
+refuses it (`409 not_byok`), and a workspace still being made says to wait (`409 not_ready`).
+
 
 ## Payments
 

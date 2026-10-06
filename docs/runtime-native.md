@@ -238,6 +238,24 @@ mesh:
         api_key_env: CURULE_GATEWAY_KEY
 ```
 
+### A workspace on the customer's own model key
+
+On a hosting-only plan (`byok: true`, see [cloud-control-plane.md](cloud-control-plane.md#plans-and-credit)) the service sells no
+model usage and runs no gateway. The customer sets a key of their own for the workspace on their account page, and the host is
+started with these instead of the three above:
+
+| Setting | Meaning |
+|---|---|
+| `CURULE_MODEL_PROVIDER` | `anthropic` or `openai-compatible`. |
+| `CURULE_MODEL_NAME` | The model, as that provider names it. |
+| `CURULE_MODEL_BASE_URL` | For `openai-compatible` only: where the provider is called, up to and including `/v1`. Must be https and public. |
+| `CURULE_MODEL_KEY` | The customer's key. Like the gateway key, it is removed from the environment of every seat's shell. |
+
+A host with a provider, a model and a key is managed the same way: a team made on it runs on the native runtime, on that key, and
+the provider bills the customer directly. `curule doctor` lists the four settings by name and says so, and never prints the key.
+Until a key is set the workspace runs, with no models: the shipped demo (stub runtime) still works. The workspace reaches the
+provider through the operator's egress proxy, so the provider's host must be on its list.
+
 The shipped demo runs on the stub runtime and makes no model calls, so it is left as it is. The welcome says the models are
 supplied and that what a team uses is charged to the account's balance, and `curule doctor` lists the three settings by name.
 A mesh that already names its own providers is not rewritten. A mesh taken out of a workspace names the service's gateway: point

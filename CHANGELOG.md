@@ -7,6 +7,16 @@ sections 1 to 24) are described there, run by run.
 
 ## Unreleased
 
+### Added: Curule Cloud, hosting only
+
+- **Hosting-only plans.** A plan with `byok: true` sells no model usage: no included usage, tiers or top-ups, and a payment grants no
+  credit. When every plan is `byok` the control plane needs no `gateway:` section (a configured one that nothing uses is a warning).
+- **The customer's own model key.** `POST /api/workspaces/:id/model-key` (and `/delete`) store, replace and remove it, with a form
+  on the account page. It is write-only, sealed at rest (AES-256-GCM, derived from `CONTROL_SECRET`, bound to the workspace), not
+  in the control log, any response or any seat's shell, and rate limited. A workspace host is given it as `CURULE_MODEL_PROVIDER`,
+  `CURULE_MODEL_NAME`, `CURULE_MODEL_BASE_URL` and `CURULE_MODEL_KEY` ([docs/runtime-native.md](docs/runtime-native.md#hosted-workspaces)).
+- Known gap: one test of the account page's script (tests/cloud/pages-app.test.ts) is skipped, with a TODO, because it ran away.
+
 ### Changed: read this before upgrading a deployment
 
 - **The product is called Curule** (it was Agent Mesh). The command is `curule`; `mesh` stays installed as the same
