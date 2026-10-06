@@ -14,6 +14,10 @@
  * service), and, outside the repo's dependencies on purpose: npm install --no-save playwright-core axe-core, and a Chrome or
  * Chromium (CHROME=/path/to/chrome). Add --no-stand-in to run it against a service whose models are real: it then waits for any
  * answer from the designer and not for the stand-in's sentence.
+ *
+ * Add --hosting-only to walk a hosting-only service (`trial --hosting-only`: the customer brings a model key, and there is no
+ * balance, credit or usage): the session gives the workspace a key that points at the trial's stand-in before it opens it, and it
+ * checks that the account has no balance or usage to show.
  */
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -30,6 +34,9 @@ const OUTBOX = opt("outbox", "");
 const OUT = resolve(opt("out", join(tmpdir(), "curule-qa-cloud")));
 const CHROME = opt("chrome", process.env.CHROME ?? "");
 const STAND_IN = !args.includes("--no-stand-in");
+const HOSTING = args.includes("--hosting-only");
+/** What a customer gives the key form on a hosting-only trial: the address the trial answers on this machine, and any key. */
+const STAND_IN_ADDRESS = "https://stand-in.example/v1";
 const require = createRequire(join(process.cwd(), "noop.js"));
 let chromium;
 let axeSource;
@@ -153,37 +160,64 @@ await step(page, "a workspace is made and runs", async () => {
   expect(/running/i.test(await text("#workspaces")), `it did not start: ${await text("#workspaces")}`);
   await page.screenshot({ path: `${OUT}/account-running.png`, fullPage: true });
 });
+if (HOSTING) {
+  await step(page, "the workspace has no model until its key is given: the form takes the stand-in's address and any key, and the workspace starts again with it", async () => {
+    expect(/no key yet/i.test(await text("#models-panel")), `the page does not say the key is missing: ${await text("#models-panel")}`);
+    const form = page.locator("form[id^=key-form-]").first();
+    await form.locator("select").selectOption("openai-compatible");
+    await form.locator("input[name=model]").fill("stand-in");
+    await form.locator("input[name=baseUrl]").fill(STAND_IN_ADDRESS);
+    await form.locator("input[name=key]").fill("any-key-12345");
+    await form.locator("button[type=submit]").click();
+    await page.waitForFunction(() => /is kept/i.test(document.getElementById("notice")?.textContent ?? ""), null, { timeout: 60000 });
+    await page.waitForSelector("#workspaces .badge:text('Running')", { timeout: 60000 });
+    expect(/key kept/i.test(await text("#models-panel")), `the page does not say the key is kept: ${await text("#models-panel")}`);
+    expect((await page.locator("body").innerText()).includes("any-key-12345") === false, "the key is shown on the page");
+    await page.screenshot({ path: `${OUT}/account-key-kept.png`, fullPage: true });
+  });
+}
 let workspaceUrl = "";
 await step(page, "opening it shows the host's own dashboard, through the service's address", async () => {
   await page.getByRole("button", { name: "Open", exact: true }).click();
   await page.waitForURL((u) => u.host !== new URL(BASE).host, { timeout: 30000 });
-  await page.waitForSelector("text=Welcome to Curule", { timeout: 30000 });
+  await page.waitForSelector("text=/Welcome to (Curule|your workspace)/", { timeout: 30000 });
   workspaceUrl = page.url();
   await page.screenshot({ path: `${OUT}/workspace-first-run.png` });
 });
-await step(page, "a team is made on the service's models, with no key asked for", async () => {
+await step(page, HOSTING ? "a team is made on the customer's own key, which the page says it has" : "a team is made on the service's models, with no key asked for", async () => {
   // The page asks the host what it can start before it says what each start needs.
-  await page.waitForSelector("text=Models supplied", { timeout: 15000 }).catch(() => {});
-  expect(/models supplied/i.test(await text("body")), "the first-run page does not say the models are supplied");
+  const said = HOSTING ? /your model key|model key you gave/i : /models supplied/i;
+  await page.waitForSelector(HOSTING ? "text=/Your model key|model key you gave/i" : "text=Models supplied", { timeout: 15000 }).catch(() => {});
+  expect(said.test(await text("body")), HOSTING ? "the first-run page does not say the models are the customer's own key" : "the first-run page does not say the models are supplied");
   expect(!/ANTHROPIC_API_KEY/i.test(await text("body")), "it asks for a key");
   await page.getByRole("button", { name: /Create the mesh/ }).click();
   await page.waitForURL(/#\/p\/[^/]+\/designer/, { timeout: 30000 });
   await page.screenshot({ path: `${OUT}/workspace-designer.png` });
 });
-await step(page, "the designer answers, through the gateway", async () => {
+await step(page, HOSTING ? "the designer answers, on the customer's key" : "the designer answers, through the gateway", async () => {
   await page.locator("#btn-designer").click();
   await page.getByRole("textbox").last().fill("A team of two: an architect and a reviewer.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   if (STAND_IN) await page.waitForSelector("text=stand-in model", { timeout: 60000 });
   else await page.waitForFunction(() => document.querySelectorAll("[class*=chat], [class*=dock]").length > 0 && !/Thinking/i.test(document.body.innerText), null, { timeout: 120000 });
 });
-await step(page, "the account shows the call as what it was charged", async () => {
-  await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
-  await page.waitForSelector("#usage table", { timeout: 20000 });
-  const usage = await text("#usage");
-  expect(/Research/.test(usage), `the usage does not name the workspace: ${usage.slice(0, 200)}`);
-  await page.screenshot({ path: `${OUT}/account-usage.png`, fullPage: true });
-});
+if (HOSTING) {
+  await step(page, "the account has no balance, credit or usage to show, because none is sold", async () => {
+    await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
+    expect(await page.locator("#balance-panel").isHidden(), "a balance is shown");
+    expect(await page.locator("#usage-panel").isHidden(), "usage is shown");
+    expect(!/Add \$\d/.test(await text("body")), "credit is offered");
+    await page.screenshot({ path: `${OUT}/account-hosting.png`, fullPage: true });
+  });
+} else {
+  await step(page, "the account shows the call as what it was charged", async () => {
+    await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
+    await page.waitForSelector("#usage table", { timeout: 20000 });
+    const usage = await text("#usage");
+    expect(/Research/.test(usage), `the usage does not name the workspace: ${usage.slice(0, 200)}`);
+    await page.screenshot({ path: `${OUT}/account-usage.png`, fullPage: true });
+  });
+}
 await step(page, "pausing stops the workspace and says why; resuming starts it", async () => {
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.waitForSelector("#workspaces .badge:text('Stopped')");

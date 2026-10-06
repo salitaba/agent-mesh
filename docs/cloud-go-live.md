@@ -138,7 +138,8 @@ workspace and resume it, delete it. Watch while you do:
 
 This is the step that shows whether the pieces agree with each other, which no part's tests can. `npm run qa:cloud` walks the
 same path in a real browser against a trial; it reads the confirmation link from the outbox file, so it cannot be pointed at a
-service that sends mail.
+service that sends mail. For a service that sells hosting only, `curule-cloud trial --hosting-only` is the trial to walk, and
+`npm run qa:cloud -- --hosting-only` gives the workspace a key that points at the trial's stand-in model before it opens it.
 
 ## 9. Opening
 

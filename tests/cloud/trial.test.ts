@@ -198,7 +198,7 @@ test("a payment that could not be applied is said, on the page, and the page goe
 // ---- what a person is told ----
 
 function fakeTrial(over: Partial<RunningTrial> = {}): RunningTrial {
-  return { appUrl: "http://localhost:7500", ownerUrl: "http://127.0.0.1:7501", ownerToken: "owner-token-abc", payUrl: "http://localhost:7502", gatewayUrl: "http://127.0.0.1:7510", dir: "/tmp/curule-trial-x", outboxPath: "/tmp/curule-trial-x/control/outbox.jsonl", notes: [], standIn: new StandInModel(), control: undefined as never, gateway: undefined as never, stop: async () => undefined, ...over };
+  return { appUrl: "http://localhost:7500", ownerUrl: "http://127.0.0.1:7501", ownerToken: "owner-token-abc", payUrl: "http://localhost:7502", gatewayUrl: "http://127.0.0.1:7510", dir: "/tmp/curule-trial-x", outboxPath: "/tmp/curule-trial-x/control/outbox.jsonl", notes: [], standIn: new StandInModel(), hostingOnly: false, control: undefined as never, gateway: undefined as never, stop: async () => undefined, ...over };
 }
 
 test("what the trial says when it is up is where everything is, what is not real, and how to stop it", () => {
@@ -380,7 +380,7 @@ const unused = (async () => {
 }) as never;
 
 test("the usage names the trial command", () => {
-  assert.match(USAGE, /trial \[--port <n>\] \[--dir <folder>\]\s+the whole service on this machine, with nothing real behind it/);
+  assert.match(USAGE, /trial \[--port <n>\] \[--dir <folder>\] \[--hosting-only\]\s+the whole service on this machine, with nothing real behind it/);
 });
 
 test("the trial command refuses what it cannot run, saying why, and starts nothing", async () => {

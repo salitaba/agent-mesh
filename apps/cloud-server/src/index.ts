@@ -6,7 +6,7 @@
  *   curule-cloud mail-check --config control.yaml --to <address>
  *   curule-cloud preflight --config control.yaml [--mail-to <address>]
  *   curule-cloud egress --config egress.yaml [--check]
- *   curule-cloud trial [--port 7500] [--dir <folder>]
+ *   curule-cloud trial [--port 7500] [--dir <folder>] [--hosting-only]
  *
  * `gateway` runs the model gateway: the one process that holds provider credentials and the ledger of what workspaces spend.
  * `control` runs the control plane: accounts, plans, payments and workspaces, the public site's API and the proxy that puts a
@@ -17,7 +17,8 @@
  * gateway, the container engine and its network, the folders, the names, the mail server) and says what would fail a customer.
  * `egress` runs the one way out of a workspace's network: a proxy that tunnels HTTPS to the hosts the operator lists and to nothing
  * else. `trial` runs both on this machine with nothing real behind them (a stand-in model, a payment page of its own, mail that is
- * printed), so the service can be tried and shown before anything is paid for.
+ * printed), so the service can be tried and shown before anything is paid for. `trial --hosting-only` is the service as it is sold when
+ * the customer brings their own model key: plans that sell hosting only, no gateway, and a stand-in model for the key to point at.
  */
 import { formatMoney, loadGatewayConfig, startGateway, type GatewayConfig } from "../../../packages/ai-gateway/src/index";
 import { SmtpError, describeControl, loadControlConfig, loadMailConfig, mailbox, smtpTransportFor, startControl } from "../../../packages/cloud/src/index";
@@ -33,7 +34,7 @@ Commands:
   mail-check --config <control.yaml> --to <address>         send one message through the configured mail server, and say what it answered
   preflight --config <control.yaml> [--mail-to <address>]   look at what the configuration points at (gateway, container engine and network, folders, names, mail), and say what would fail a customer
   egress --config <egress.yaml> [--check]                   the way out of a workspace's network: tunnels HTTPS to the hosts listed, and to nothing else (--check validates the file and exits)
-  trial [--port <n>] [--dir <folder>]                       the whole service on this machine, with nothing real behind it (default port 7500; a named folder is kept)
+  trial [--port <n>] [--dir <folder>] [--hosting-only]      the whole service on this machine, with nothing real behind it (default port 7500; a named folder is kept; --hosting-only sells hosting and no model usage, and the customer brings a model key)
   help                                                      show this text`;
 
 export interface Io {
@@ -299,9 +300,12 @@ async function runEgress(args: string[], io: Io, start: typeof startEgress): Pro
 async function runTrial(args: string[], io: Io, start: typeof startTrial): Promise<number> {
   let port = DEFAULT_TRIAL_PORT;
   let dir: string | undefined;
+  let hostingOnly = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
-    if (a === "--port" || a.startsWith("--port=")) {
+    if (a === "--hosting-only") {
+      hostingOnly = true;
+    } else if (a === "--port" || a.startsWith("--port=")) {
       const raw = a === "--port" ? args[++i] : a.slice("--port=".length);
       port = /^\d+$/.test(raw ?? "") ? Number(raw) : Number.NaN;
       // The trial uses the next ports up for the owner's API, the payment page and the gateway.
@@ -323,7 +327,7 @@ async function runTrial(args: string[], io: Io, start: typeof startTrial): Promi
   const ports = trialPorts(port);
   let running;
   try {
-    running = await start({ ports, ...(dir !== undefined ? { dir } : {}), out: (line) => io.out(line) });
+    running = await start({ ports, ...(dir !== undefined ? { dir } : {}), ...(hostingOnly ? { hostingOnly } : {}), out: (line) => io.out(line) });
   } catch (err) {
     io.err(`curule-cloud trial: ${(err as Error).message}`);
     return 1;

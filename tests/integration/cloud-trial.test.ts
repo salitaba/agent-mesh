@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import { startTrial, type RunningTrial, type TrialPorts } from "../../apps/cloud-server/src/trial";
+import { TRIAL_MODEL_ADDRESS, startTrial, type RunningTrial, type TrialPorts } from "../../apps/cloud-server/src/trial";
 import { ask, type Answer, type Ask } from "../cloud/net-support";
 
 /**
@@ -214,6 +214,84 @@ test("a customer signs up, pays on the trial's page, makes a workspace, makes a 
     await t.stop(0);
   }
   assert.equal(fs.existsSync(t.dir), false, "a trial that made its folder removes it");
+});
+
+test("on a hosting-only trial a customer pays for hosting, makes a workspace that has no model, gives it a key that points at the stand-in, and the team made in it answers through that key", { timeout: 240_000 }, async () => {
+  const ports = await portsForTrial();
+  const t = await startTrial({ ports, hostingOnly: true, reconcileMs: 600_000 });
+  const KEY = "any-key-12345";
+  try {
+    const c = new Customer(t, ports);
+    assert.equal(t.gateway, undefined, "there is no gateway: nothing is sold but hosting");
+
+    // ---- plans that sell hosting, and an account with no balance, no usage and no credit to buy ----
+    const plans = await c.api("GET", "/api/plans");
+    assert.deepEqual(plans.json.plans.map((p: { id: string; byok?: boolean }) => [p.id, p.byok]), [["team", true], ["business", true]]);
+    assert.equal(plans.json.topups, null);
+    await c.signUpAndConfirm("ada@example.com");
+    const page = await c.pay({ purpose: "subscription", plan: "team" });
+    assert.match(page.body, /Team, \$49\.00 a month/);
+    const me = (await c.api("GET", "/api/me")).json;
+    assert.deepEqual([me.account.subscription.plan, me.account.subscription.status, me.balance], ["team", "active", null]);
+    assert.equal((await c.api("GET", "/api/usage")).json.error.code, "no_usage");
+    assert.equal((await c.api("POST", "/api/checkout", { purpose: "topup", amountMinor: 1_000 })).json.error.code, "no_topups");
+
+    // ---- a workspace: a real host, with no model until the customer gives it a key ----
+    const made = await c.api("POST", "/api/workspaces", { name: "Research" });
+    assert.equal(made.status, 201, made.body);
+    const workspaceId = made.json.workspace.workspaceId as string;
+    const view = async () => {
+      const w = ((await c.api("GET", "/api/me")).json.account.workspaces as Array<{ workspaceId: string; status: string; statusReason?: string; models?: { key: unknown } }>).find((x) => x.workspaceId === workspaceId)!;
+      if (w.status === "failed") throw new Error(`the workspace failed: ${w.statusReason}\n${fs.readFileSync(path.join(t.dir, "workspaces", workspaceId, "host.log"), "utf8")}`);
+      return w;
+    };
+    const running = await until("the workspace to run", async () => ((await view()).status === "running" ? view() : undefined));
+    assert.deepEqual(running.models, { source: "own", key: null });
+    let w = await enter(c, workspaceId);
+    const before = (await w.at({ path: "/api/templates" })).json;
+    assert.deepEqual([before.managed, before.modelAccess], [false, []], "the host has no model, and says so");
+
+    // ---- the key: the route the account page calls, with the address the trial hands out and any key ----
+    const keyed = await c.api("POST", `/api/workspaces/${workspaceId}/model-key`, { provider: "openai-compatible", model: "stand-in", baseUrl: TRIAL_MODEL_ADDRESS, key: KEY });
+    assert.equal(keyed.status, 200, keyed.body);
+    assert.deepEqual([keyed.json.workspace.models.key.provider, keyed.json.workspace.models.key.model, keyed.json.workspace.models.key.baseUrl], ["openai-compatible", "stand-in", TRIAL_MODEL_ADDRESS]);
+    assert.ok(!keyed.body.includes(KEY), "the key is never in an answer");
+    await until("the workspace to run again, with its key", async () => {
+      const v = await view();
+      return v.status === "running" && v.models?.key !== null ? v : undefined;
+    });
+
+    // ---- the host was started again with the key: it takes the customer's own, and a team made on it names it ----
+    w = await enter(c, workspaceId);
+    const templates = (await w.at({ path: "/api/templates" })).json;
+    assert.deepEqual([templates.managed, templates.modelSource], [true, "own"], "the host's models are the customer's own key, which the page then says");
+    const team = templates.templates.find((x: { id: string }) => x.id === "default");
+    assert.equal(team.runtime, "native");
+    const created = await w.at({ method: "POST", path: "/api/projects", json: { root: team.suggestedRoot, template: "default" } });
+    assert.equal(created.status, 201, created.body);
+    const projectId = created.json.id as string;
+    const meshYaml = fs.readFileSync(path.join(team.suggestedRoot, "mesh.yaml"), "utf8");
+    assert.match(meshYaml, /kind: openai-compatible/);
+    assert.ok(meshYaml.includes(`base_url: ${TRIAL_MODEL_ADDRESS}`), "the team names the address the customer gave");
+    assert.match(meshYaml, /api_key_env: CURULE_MODEL_KEY/);
+    assert.ok(!meshYaml.includes(KEY), "and holds no key");
+
+    // ---- a call to the model, from the workspace, to the address the customer gave: the stand-in answers it ----
+    assert.equal(t.standIn.calls, 0);
+    const opened = await w.at({ method: "POST", path: `/api/projects/${projectId}/open` });
+    assert.equal(opened.status, 200, opened.body);
+    const chat = await w.at({ method: "POST", path: `/api/p/${projectId}/designer/chat/stream`, json: { messages: [{ role: "user", content: "A team of two: an architect and a reviewer." }], currentConfig: null } });
+    assert.equal(chat.status, 200, chat.body);
+    assert.match(chat.body, /This is the trial's stand-in model/, chat.body.slice(0, 400));
+    assert.ok(t.standIn.calls >= 1, "the call went from the workspace's host to the stand-in, by the address the customer gave");
+    assert.equal((await c.api("GET", "/api/me")).json.balance, null, "and nothing was charged to a balance there is not");
+
+    // ---- deleting the workspace deletes its key with it ----
+    assert.equal((await c.api("POST", `/api/workspaces/${workspaceId}/delete`, { confirm: "Research" })).status, 200);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(t.dir, "control", "model-keys.json"), "utf8")).keys, {});
+  } finally {
+    await t.stop(0);
+  }
 });
 
 test("a trial started again on the same folder finds its accounts, and the workspaces that were running are started again without anyone asking", { timeout: 240_000 }, async () => {

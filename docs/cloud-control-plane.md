@@ -93,6 +93,17 @@ another file), mode 0600, with a key derived from `CONTROL_SECRET` and bound to 
 account's workspace is answered as not found. A session may set a key 10 times an hour and an account 20. A plan that sells usage
 refuses it (`409 not_byok`), and a workspace still being made says to wait (`409 not_ready`).
 
+**Seeing it on one machine.** `curule-cloud trial --hosting-only` runs this mode with nothing real behind it
+([cloud.md](cloud.md#try-it-on-one-machine)): the trial's two plans with `byok: true`, no top-ups, no `gateway:` section and no
+gateway. A key is for a provider at a public https address, which the control plane and the host each insist on, so a model on this
+machine cannot be named in the key form. The trial gives out an address that no one owns, `https://stand-in.example/v1` (`.example`
+never resolves), and starts each workspace's host with a preload (`NODE_OPTIONS=--require .../trial-reroute.js`) that sends the calls
+made to that address, and to no other, to a stand-in on the port the gateway would have had (the app's port plus 10): an
+OpenAI-compatible `POST /v1/chat/completions` (streamed or not) and `GET /v1/models` that answer every call with one sentence, use no
+tool, and take any key. Everything between the key form and the host is the real code, so a workspace shows its own key as its models;
+a real provider's address and key work too. A folder kept with `--dir` belongs to the kind of trial that made it: starting the other
+kind on it is refused. `npm run qa:cloud -- --hosting-only` walks a customer through it, key included.
+
 
 ## Payments
 
