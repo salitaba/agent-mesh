@@ -10,6 +10,7 @@
  */
 import { RUNNING } from "./format";
 import { holdsOf } from "./escalation-card";
+import { goalIsSet, startNeedsGoal } from "./goal";
 
 export type MissionPhase =
   | "loading"
@@ -66,6 +67,8 @@ export interface MissionFacts {
   hasHistory: boolean;
   /** How many seats boot was told to start; null when the server predates the field. */
   startupSeats: number | null;
+  /** The mission's goal is one a person wrote and not the scaffold's placeholder. Absent reads as written: no fact, no nag. */
+  goalWritten?: boolean;
 }
 
 export interface MissionState {
@@ -122,6 +125,7 @@ export function factsFromStatus(
     runningSteps: extra.runningSteps ?? 0,
     hasHistory: extra.hasHistory === true,
     startupSeats: typeof status?.startupActivateCount === "number" ? status.startupActivateCount : null,
+    goalWritten: goalIsSet(status?.goal?.description),
   };
 }
 
@@ -138,7 +142,8 @@ export function factsFromStatus(
  *    is still a call on the operator, but says what it holds and does not claim the mission has stopped.
  * 6. The goal is over (failed, delivered): a parked process is irrelevant to a finished mission, so "parked" never
  *    outranks "delivered".
- * 7. Paused, then parked: two ways of not running, and the action for each is different.
+ * 7. Paused, then parked: two ways of not running, and the action for each is different. A mission that has never run on a goal nobody
+ *    wrote is not offered Start: the goal is the first thing to do.
  * 8. Running: nobody working and nobody waiting is a fault worth naming; waiting without working is quiet; otherwise it is
  *    simply running.
  *
@@ -218,6 +223,14 @@ export function describeMission(f: MissionFacts): MissionState {
     return {
       ...base, phase: "paused", tone: "warn", label: "Paused", headline: "Paused. Nothing is running.",
       primary: { action: "resume", label: "Resume", hint: "Wake the agents and carry on against the mission budget" },
+    };
+  }
+  if (f.parked && startNeedsGoal(f)) {
+    // A mission started on the scaffold's placeholder spends on a goal that says nothing, and every agent reads it on every turn.
+    return {
+      ...base, phase: "parked", tone: "warn", label: "Parked",
+      headline: "The goal is not written yet. Say what the team should deliver, then start the mission.",
+      primary: { action: "designer", label: "Write the goal first", hint: "Open the Designer on the goal: every agent reads it on every turn, so the mission needs one before it starts" },
     };
   }
   if (f.parked) {

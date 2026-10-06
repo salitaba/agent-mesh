@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useMesh } from "./store";
 import type { ConfirmFn } from "./components";
-import { goLiveNotice } from "./golive";
+import { requestArrival } from "./designer/arrival";
+import { startNeedsGoal } from "./goal";
+import { goLiveNotice, startBlock } from "./golive";
 import { REOPEN_DIALOG } from "./reopen";
 import { resumeConfirmBody, startConfirmBody } from "./spend";
+import { useMission } from "./useMission";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
 
@@ -101,9 +104,19 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
 }
 
 export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
-  const { status, toast, refreshStatus, client, confirm } = useMesh();
+  const { status, toast, refreshStatus, client, confirm, setView, projectId } = useMesh();
+  const { facts } = useMission();
   const [busy, setBusy] = useState(false);
   const goLive = async () => {
+    // The top bar and the Overview already say "Write the goal first" in place of Start; this is for every other way in (an empty
+    // page's button, an answer that resumes a parked mission). Same reading of the mission, so it says the same thing.
+    const block = startBlock({ needsGoal: startNeedsGoal(facts) });
+    if (block) {
+      if ((await confirm({ title: block.title, body: block.body, confirmLabel: block.confirmLabel, cancelLabel: block.cancelLabel })) === null) return;
+      requestArrival(String(projectId ?? ""), "goal");
+      setView("designer");
+      return;
+    }
     // Parked is the safe state: going live is the one click that lets agents
     // run and spend. Both call sites (the parked banner's Continue and the
     // auto-resume after an escalation answer) must ask first, or a stray click

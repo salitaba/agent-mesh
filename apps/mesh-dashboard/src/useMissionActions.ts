@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { useMesh, type View } from "./store";
 import { confirmResume, useGoLive, useReopenMission, useResetMission } from "./actions";
+import { requestArrival } from "./designer/arrival";
+import { goalIsSet } from "./goal";
 import type { MissionAction } from "./mission";
 
 /**
@@ -19,7 +21,7 @@ export interface MissionActions {
 }
 
 export function useMissionActions(): MissionActions {
-  const { goalId, client, status, confirm, toast, refreshStatus, setView } = useMesh();
+  const { goalId, client, status, confirm, toast, refreshStatus, setView, projectId } = useMesh();
   const { goLive } = useGoLive();
   const { reopenMission } = useReopenMission();
   const { resetMission } = useResetMission();
@@ -56,9 +58,14 @@ export function useMissionActions(): MissionActions {
       case "review": setView(opts?.inboxView ?? "escalations"); break;
       case "settings": setView("hostsettings"); break;
       case "agents": setView("agents"); break;
-      case "designer": setView("designer"); break;
+      case "designer":
+        // While the mission's goal is still the placeholder, the Designer opens on the goal (designer/arrival.ts): that is what
+        // "Write the goal first" sends a person for.
+        if (!goalIsSet(status?.goal?.description)) requestArrival(String(projectId ?? ""), "goal");
+        setView("designer");
+        break;
     }
-  }, [goLive, pause, resume, reopenMission, setView]);
+  }, [goLive, pause, resume, reopenMission, setView, status, projectId]);
 
   return { run, pause, resume, reset: resetMission };
 }
