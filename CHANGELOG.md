@@ -55,6 +55,10 @@ event type or what a number means.
   and shows that it scrolls, a long command shows that it goes on, a card that a link points at is marked, and the menu closes
   on a touch elsewhere and when Tab leaves it. Without JavaScript every page still reads and works as it did: the bar is a row
   of links, and the filter and the button are not there.
+- Known gap: with Curule Cloud open, the script switches on the pricing page's *Rather not run it yourself?* card after the
+  first paint, so the plans below it move down once while the page loads (a layout shift of about 0.3 on a phone, as before
+  this pass). The fix is to write the Cloud state into the pages when the domain is set (`scripts/set-domain.mjs`) instead of
+  switching it in the browser; that needs a decision about how the pages read without JavaScript.
 
 ### Changed: read this before upgrading a deployment
 
