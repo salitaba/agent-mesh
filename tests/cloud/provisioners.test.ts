@@ -708,3 +708,57 @@ test("a workspace is removed with its directory, or with its credentials only wh
     l.done();
   }
 });
+
+// ---- the customer's own model key ----
+
+const OWN = { provider: "openai-compatible" as const, name: "openai/gpt-4o", baseUrl: "https://openrouter.ai/api/v1", key: "sk-or-v1-CUSTOMERKEYSECRET" };
+
+test("a workspace on the customer's own key is told the provider, model and address in the open and the key by name, and has no gateway in its environment", () => {
+  const { args, env } = container(new FakeRunner()).runArguments(spec({ gateway: undefined, model: OWN }));
+  assert.deepEqual(env, { MESH_API_TOKEN: "operator-token-SECRET", CURULE_MODEL_KEY: OWN.key, MESH_LICENSE: "AML1.k1.PAYLOAD.SIGNATURE" });
+  const everything = args.join("\n");
+  assert.ok(!everything.includes(OWN.key), "the key is in the arguments, which any process on the machine can read");
+  assert.ok(args.includes("CURULE_MODEL_KEY") && args.includes("CURULE_MODEL_PROVIDER=openai-compatible") && args.includes("CURULE_MODEL_NAME=openai/gpt-4o") && args.includes("CURULE_MODEL_BASE_URL=https://openrouter.ai/api/v1"));
+  assert.ok(!/CURULE_GATEWAY/.test(everything), "no gateway: this plan sells none");
+  const anthropic = container(new FakeRunner()).runArguments(spec({ gateway: undefined, model: { provider: "anthropic", name: "claude-sonnet-4-5", key: OWN.key } }));
+  assert.ok(!anthropic.args.some((a) => a.startsWith("CURULE_MODEL_BASE_URL")), "Anthropic has no address to give");
+});
+
+test("the operator's own environment cannot put another key in the place of the customer's", () => {
+  const { env } = container(new FakeRunner()).runArguments(spec({ gateway: undefined, model: OWN, env: { CURULE_MODEL_KEY: "evil" } }));
+  assert.equal(env.CURULE_MODEL_KEY, OWN.key);
+});
+
+test("a workspace with neither a gateway nor a key is started with no model settings, and says so by their absence", () => {
+  const { args, env } = container(new FakeRunner()).runArguments(spec({ gateway: undefined }));
+  assert.deepEqual(Object.keys(env).sort(), ["MESH_API_TOKEN", "MESH_LICENSE"]);
+  assert.ok(!args.some((a) => /CURULE_(GATEWAY|MODEL)/.test(a)));
+});
+
+test("a local process keeps the customer's key in the host's environment file, readable by its owner only, and out of its arguments", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "own-key-local-"));
+  const started: Array<{ args: string[]; env: NodeJS.ProcessEnv }> = [];
+  try {
+    const p = new LocalProcessProvisioner({
+      baseDir: base,
+      hostCommand: ["node", "cli.js"],
+      production: false,
+      freePort: async () => 7601,
+      spawn: (_c, args, options) => {
+        started.push({ args, env: options.env });
+        return Object.assign(new EventEmitter(), { kill: () => true, unref: () => undefined, ref: () => undefined }) as unknown as ChildProcess;
+      },
+    });
+    await p.create(spec({ gateway: undefined, model: OWN }));
+    assert.equal(started[0]!.env.CURULE_MODEL_KEY, OWN.key);
+    assert.equal(started[0]!.env.CURULE_MODEL_PROVIDER, "openai-compatible");
+    assert.equal(started[0]!.env.CURULE_GATEWAY_KEY, undefined);
+    assert.ok(!started[0]!.args.join(" ").includes(OWN.key));
+    const file = path.join(base, "ws_abc123", ".provision", "env.json");
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    // The host's own project folder, which a seat can read, has no copy of it.
+    for (const dir of ["home", "projects"]) assert.ok(!fs.readdirSync(path.join(base, "ws_abc123", dir), { recursive: true }).length);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

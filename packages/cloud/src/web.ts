@@ -374,6 +374,7 @@ export class ControlWeb {
     try {
       return this.json(200, await this.o.plane.usage(who.account.accountId));
     } catch (err) {
+      if (err instanceof ServiceError) throw err;
       throw new ServiceError(502, "usage_unavailable", "Usage could not be read just now. Try again in a moment.", {}, { cause: err });
     }
   }

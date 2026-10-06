@@ -740,3 +740,54 @@ test("only the mail part is read for the mail check: it needs no control log, on
   }
   using(workdir(minimal({})), (w) => assert.throws(() => loadMailConfig(w.file, ENV), /mail\.outbox is required, or mail\.smtp to deliver mail over SMTP/));
 });
+
+// ---- hosting only: no gateway ----
+
+const HOSTING_ONLY = { currency: "USD", plans: { hosting: { title: "Hosting", licence_plan: "team", price_minor: 4_900, period: "month", workspaces: 1, byok: true } } };
+const MIXED = { ...HOSTING_ONLY, plans: { ...HOSTING_ONLY.plans, team: { title: "Team", licence_plan: "team", price_minor: 14_900, period: "month", included_usage: 20, workspaces: 1 } }, topups: { options_minor: [1_000], minimum_minor: 500, maximum_minor: 5_000, usage_micros_per_minor: 10_000 } };
+
+test("a configuration with no gateway section is right when every plan is hosting only, and says where customers' keys are kept", () => {
+  using(
+    workdir((raw) => delete raw.gateway, HOSTING_ONLY),
+    (w) => {
+      const c = load(w);
+      assert.equal(c.gateway, undefined);
+      assert.equal(c.catalogue.sellsUsage, false);
+      assert.equal(c.modelKeysPath, path.join(w.dir, "data", "model-keys.json"));
+      assert.deepEqual(c.warnings, []);
+      const lines = describeControl(c).join("\n");
+      assert.match(lines, /hosting only: the customer's own model key, no usage sold/);
+      assert.match(lines, /no gateway: every plan is hosting only, no model usage is sold and no balance is kept/);
+      assert.match(lines, /customers' own model keys are kept, encrypted, in .*model-keys\.json/);
+      assert.ok(!/top-ups/.test(lines), "no top-ups are offered");
+    },
+  );
+});
+
+test("a gateway section that no plan uses is warned of and not wired in, so a hosting-only service never calls a gateway by mistake", () => {
+  using(workdir(() => undefined, HOSTING_ONLY), (w) => {
+    const c = load(w);
+    assert.equal(c.gateway, undefined);
+    assert.match(c.warnings.join("\n"), /gateway is set and no plan uses it: every plan is byok/);
+  });
+});
+
+test("a mixed catalogue needs the gateway, and the refusal names the plans that sell usage and not the one that does not", () => {
+  using(
+    workdir((raw) => delete raw.gateway, MIXED),
+    (w) => {
+      const message = refusal(w);
+      assert.match(message, /gateway must be a mapping with admin_url, admin_token_env and tenant_url: plan 'team' sell model usage through it \(a plan with byok: true does not\)/);
+      assert.ok(!/'hosting'/.test(message));
+    },
+  );
+  using(workdir(() => undefined, MIXED), (w) => assert.equal(load(w).catalogue.sellsUsage, true));
+  // A gateway section that is wrong is wrong when a plan sells usage, and is not looked at when none does.
+  using(workdir((raw) => (raw.gateway = { admin_url: "nonsense" }), MIXED), (w) => assert.match(refusal(w), /gateway\.admin_url 'nonsense' is not an http or https address/));
+  using(workdir((raw) => (raw.gateway = { admin_url: "nonsense" }), HOSTING_ONLY), (w) => assert.equal(load(w).gateway, undefined));
+});
+
+test("the file the keys are kept in can be named, and is a path", () => {
+  using(workdir((raw) => ((raw.model_keys = "./secrets/model-keys.json"), delete raw.gateway), HOSTING_ONLY), (w) => assert.equal(load(w).modelKeysPath, path.join(w.dir, "secrets", "model-keys.json")));
+  using(workdir((raw) => ((raw.model_keys = ""), delete raw.gateway), HOSTING_ONLY), (w) => assert.match(refusal(w), /model_keys must be a file path/));
+});
