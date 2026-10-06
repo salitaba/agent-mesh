@@ -191,8 +191,8 @@ await step(page, HOSTING ? "a team is made on the customer's own key, which the 
   // A customer's part is the goal and one button; what the workspace has for models is said under Details.
   await page.waitForSelector("text=Welcome to your workspace", { timeout: 15000 });
   await page.locator("summary", { hasText: /^Details$/ }).click();
-  const said = HOSTING ? /your model key|model key you gave/i : /models supplied/i;
-  await page.waitForSelector(HOSTING ? "text=/Your model key|model key you gave/i" : "text=Models supplied", { timeout: 15000 }).catch(() => {});
+  const said = HOSTING ? /your model key|model key you gave/i : /service supplies/i;
+  await page.waitForSelector(HOSTING ? "text=/Your model key|model key you gave/i" : "text=/service supplies/i", { timeout: 15000 }).catch(() => {});
   expect(said.test(await text("body")), HOSTING ? "the first-run page does not say the models are the customer's own key" : "the first-run page does not say the models are supplied");
   expect(!/ANTHROPIC_API_KEY/i.test(await text("body")), "it asks for a key");
   await page.getByRole("textbox", { name: /What should your team do/i }).fill("A small command-line tool that adds up a column of a CSV file, with tests.");
@@ -201,9 +201,12 @@ await step(page, HOSTING ? "a team is made on the customer's own key, which the 
   await page.screenshot({ path: `${OUT}/workspace-designer.png` });
 });
 await step(page, HOSTING ? "the designer answers, on the customer's key" : "the designer answers, through the gateway", async () => {
-  await page.locator("#btn-designer").click();
-  await page.getByRole("textbox").last().fill("A team of two: an architect and a reviewer.");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  // A team made from the welcome opens the assistant on the person's first move; ask for it only when it is not there already.
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  if (!(await send.isVisible().catch(() => false))) await page.locator("#btn-designer").click();
+  // The assistant's own box: the nearest one to its Send button (the goal's box in the guide is another).
+  await send.locator("xpath=ancestor::*[.//textarea][1]").locator("textarea").first().fill("A team of two: an architect and a reviewer.");
+  await send.click();
   if (STAND_IN) await page.waitForSelector("text=stand-in model", { timeout: 60000 });
   else await page.waitForFunction(() => document.querySelectorAll("[class*=chat], [class*=dock]").length > 0 && !/Thinking/i.test(document.body.innerText), null, { timeout: 120000 });
 });

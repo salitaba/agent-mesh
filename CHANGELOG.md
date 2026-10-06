@@ -15,7 +15,6 @@ sections 1 to 24) are described there, run by run.
   on the account page. It is write-only, sealed at rest (AES-256-GCM, derived from `CONTROL_SECRET`, bound to the workspace), not
   in the control log, any response or any seat's shell, and rate limited. A workspace host is given it as `CURULE_MODEL_PROVIDER`,
   `CURULE_MODEL_NAME`, `CURULE_MODEL_BASE_URL` and `CURULE_MODEL_KEY` ([docs/runtime-native.md](docs/runtime-native.md#hosted-workspaces)).
-- Known gap: one test of the account page's script (tests/cloud/pages-app.test.ts) is skipped, with a TODO, because it ran away.
 
 ### Changed: what a person reads and presses
 
@@ -55,10 +54,64 @@ event type or what a number means.
   and shows that it scrolls, a long command shows that it goes on, a card that a link points at is marked, and the menu closes
   on a touch elsewhere and when Tab leaves it. Without JavaScript every page still reads and works as it did: the bar is a row
   of links, and the filter and the button are not there.
-- Known gap: with Curule Cloud open, the script switches on the pricing page's *Rather not run it yourself?* card after the
-  first paint, so the plans below it move down once while the page loads (a layout shift of about 0.3 on a phone, as before
-  this pass). The fix is to write the Cloud state into the pages when the domain is set (`scripts/set-domain.mjs`) instead of
-  switching it in the browser; that needs a decision about how the pages read without JavaScript.
+
+### Changed: the first ten minutes, being told, and the site's first screen
+
+A second pass over the same pages, judged by what a person can get done: a visitor choosing a way in, a new customer reaching
+their first mission, an operator who leaves a mission running. What each surface does now:
+
+- **The marketing site says what Curule is in its first screen.** A statement, a subhead of about thirty words, three proof points
+  the page argues further down, one action that leads (Get started while Curule Cloud is open, Try the demo while it is not) and the
+  product's picture beside the text. The home and pricing pages open with the same choice: *Curule Cloud* (a flat monthly plan; you
+  bring your own model key) or *the software you run* (the free Community plan, paid licences). The documentation page starts with
+  four cards by goal; the security page with "At a glance"; the contact page says which address is for what, and one tap copies it;
+  the cards that were text only have marks; the 404 page lists the pages people come for. The FAQ no longer says Curule Cloud
+  supplies the models (on a hosting-only plan you bring your own key).
+- **The site's pages are written in the state Curule Cloud is in.** The Cloud half of every page used to be switched on by the script
+  after the first paint, so the pricing page jumped while it loaded (a layout shift of 0.34 on a phone, 0.14 on a desktop, measured in
+  Chrome) and a visitor with no script, a search engine or a link preview read "Not today" about a service that is open. `npm run
+  site:domain -- ... --cloud-url <url>|none` now writes the state into every page (`scripts/site-cloud-state.mjs`), `none` gives the
+  pages back exactly, and `npm run site:check` fails on a page written for the other state. The shift is 0.000 in every load measured.
+- **A customer's account knows where they are.** The account page opens with one next step (choose a plan; add your model key;
+  make your first workspace; open it) and a stepper, and shows what is theirs at that stage: Balance and Usage only on a plan that
+  sells usage, the plan once with "Change plan" behind a button, Delete behind "More" (still needing the typed name), the password
+  under Settings. Each workspace is a card that says how it is in a sentence, holds its own model key (kept: provider, model, date,
+  Replace, Remove; none: the form, open) and can open itself when it is ready ("Open it when it is ready", off by default). A workspace
+  stopped for a missing payment says that a payment starts it instead of offering a Resume the service refuses; a late payment keeps
+  Open beside "Update payment details".
+- **"Check your email" helps.** After sign-up the page names the address and offers **Resend the email** (a visible 60-second wait)
+  and **Use another address**; the page for a link that did not work asks for a new one. The plans page opens with how it works
+  and each plan is a ticked list with one action. Every control on the account pages is 44 px on a phone.
+- **A hosted workspace opens on "Welcome to your workspace".** A customer who pressed Open used to meet three folder cards in the
+  self-hoster's words. The welcome now asks what the team should do (a goal field, three examples, "Create the team"), the scripted
+  demo is a quiet second way, and folders and facts are under Details. The team is made with the goal, so the mission begins with it.
+  A mission whose goal is still the placeholder is not offered Start: the top bar and the Overview say "Write the goal first" and take
+  the person to the goal. On a hosting-only plan whose model key is missing the welcome, the Designer and the Start dialog say so and
+  link to the account page, and the page notices the key by itself.
+- **The Designer's first minute.** The guide says what is done, what is now and what is next; a team made from the welcome opens on its next
+  step; the assistant opens on a question with two ways to begin, and when it cannot answer it says what happened, that the draft is
+  unchanged and what to do, instead of a raw error. On a phone the buttons on the way to a first team and every confirm dialog are 44 px.
+- **An operator who leaves a mission is told.** The tab's icon and title say when a decision waits (the mission is paused until it is
+  answered), when the mission is delivered and when it stopped on its own, in shapes and not only colour. A desktop notification, if
+  you ask for one ("Notify me when the mission needs me", on Needs you and in the "..." menu), says the same, only while the page is
+  hidden. It works only while the console is open in a browser tab: there is no push, no e-mail and no service worker, and nothing is
+  sent to anyone else.
+- **Reading a running mission.** The Overview's *Right now* says who is in a turn and for how long, what is next, how many requests are
+  open, which seats crashed or are blocked and whether anything needs you. A delivered mission offers **Open the files**, **Reopen with
+  feedback**, what it cost and Replay. The Graph can be used: point at a seat to see only its lines, hide a kind of line, open a link's
+  messages in Events; it is readable on a tablet and in a short window and scrolls, and says so, on a phone. The file reader leads with
+  the file, and where the mesh stores it is under Details. Answering a decision on a phone has fingertip-sized controls, a 16 px
+  field, a Send key and a way back to the mission.
+- **The account e-mails** name the product in their subject, and the late-payment and ended-subscription mails say how many days
+  (the service's own grace and retention periods) and link to the account page.
+- **For the operator:** `curule-cloud trial --hosting-only` runs the service as it is sold (the customer's own model key, a stand-in
+  that answers one sentence); `POST /api/verify/resend` (always answers the same, mails only an unconfirmed address, shares the sign-up's
+  limits); `POST /api/projects` accepts a `goal` for the default team; `GET /api/templates` says when the host is a hosted workspace
+  (`hosted.accountUrl`), and a workspace's host is given `CURULE_ACCOUNT_URL`.
+- Known gaps: there is no "download everything" for a workspace (a file can be downloaded from its reader; a whole-workspace archive
+  needs a host endpoint); the Overview cannot say who waits for whom (`/status` carries only a count of open requests); a plan's
+  "Get" buttons on the site are a mail link, which opens nothing for a visitor who uses webmail (the contact page has the address
+  with a Copy button).
 
 ### Changed: read this before upgrading a deployment
 

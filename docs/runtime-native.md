@@ -220,6 +220,11 @@ no key:
 | `CURULE_GATEWAY_KEY` | A virtual key for that gateway, scoped to this workspace. It works there and nowhere else, and it is removed from the environment of every seat's shell like any other provider key. |
 | `CURULE_GATEWAY_MODEL` | The tier a team uses unless a seat names another. The plan sets it; left out, `balanced`. |
 
+A workspace's host is also told where its customer's account page is (`CURULE_ACCOUNT_URL`, set by the provisioner after the operator's own
+environment, so that it cannot be overridden). The console reads it from `GET /api/templates` (`hosted: { accountUrl }`) to tell a customer's
+workspace from a laptop: it welcomes the customer with a goal field instead of folders, and, on a hosting-only plan whose model key has not
+been added, links to the account page where it is added. It is not a credential and grants nothing.
+
 A host with the address and the key is a *managed* one. A team made on it from the dashboard, from a shipped example or by adding a
 folder with `init`, runs on the native runtime through one provider named `curule`: the default runtime and each seat that
 would have been on the Claude runtime go to `native`, a Claude model hint on a seat is dropped (it cannot be placed on another

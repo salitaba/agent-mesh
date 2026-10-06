@@ -38,14 +38,21 @@ The order in which the parts are made ready for a first customer, with what each
 1. A workspace: one isolated Curule host with its own state, projects and event log. The plan sets how many projects,
    seats per mesh and concurrent turns it allows, exactly as the self-hosted licence does, because the workspace runs
    with a signed licence minted for the plan.
-2. Models, without keys. The workspace's agents call the service's gateway with a key that belongs to that workspace
-   alone. The customer picks a tier (`fast`, `balanced`, `best`) or leaves the default; which provider and model serves a
-   tier is the service's business and can change without the customer touching a setting. A customer who already holds
-   terms with a model provider can bring that provider's key instead. The service keeps it as a secret of the workspace's
-   host, never in an agent's shell, and does not resell that usage.
-3. A balance, in money, not tokens. A plan period may include an amount of model usage, and more can be bought. The
-   balance is debited what each call cost, which the customer can read in the usage report. When it reaches zero the
-   gateway refuses new calls and the mesh pauses with one clear notice that says why. It does not fail seat by seat.
+2. Models, in one of two ways, chosen per plan (`byok` in the plan file; see
+   [hosting-only plans](cloud-control-plane.md#hosting-only-plans-byok)):
+   - *Hosting only* (`byok: true`). The customer brings their own model key, which the account page keeps sealed and
+     write-only and gives to their workspace's host as a secret, never in an agent's shell. They pay their own provider; the
+     service sells no model usage and holds no balance. A workspace that has no key yet cannot think, and the console says so
+     and links to the account page where it is added.
+   - *Usage sold*, without keys. The workspace's agents call the service's gateway with a key that belongs to that workspace
+     alone. The customer picks a tier (`fast`, `balanced`, `best`) or leaves the default; which provider and model serves a
+     tier is the service's business and can change without the customer touching a setting. A customer who already holds
+     terms with a model provider can bring that provider's key instead; the service keeps it as above and does not resell
+     that usage.
+3. A balance, in money, not tokens, on a plan that sells usage. A plan period may include an amount of model usage, and more
+   can be bought. The balance is debited what each call cost, which the customer can read in the usage report. When it
+   reaches zero the gateway refuses new calls and the mesh pauses with one clear notice that says why. It does not fail seat
+   by seat. A hosting-only plan has none of this: the account page shows no balance, credit or usage.
 4. Their data. The workspace's event log, artifacts and git worktrees are exportable; deleting a workspace deletes them.
 
 ## What the mesh keeps guaranteeing

@@ -71,6 +71,7 @@ start an open server.
 | `CURULE_GATEWAY_URL` | none | The address of a model gateway, up to and including `/v1`. The hosted service sets it for every workspace. |
 | `CURULE_GATEWAY_KEY` | none | A key for that gateway. With the address, it makes the host *managed*: a team made on it runs on the gateway's models and the person brings no key. See [Hosted workspaces](runtime-native.md#hosted-workspaces). |
 | `CURULE_GATEWAY_MODEL` | `balanced` | The tier a team uses unless a seat names another. |
+| `CURULE_ACCOUNT_URL` | none | The address of the customer's account page, up to and including `/account`. The hosted service sets it for every workspace, after the operator's own environment so that it cannot be overridden; the console links a customer to it to add a model key (`GET /api/templates` reports it as `hosted.accountUrl`, for an `http` or `https` address without credentials). Absent on a host that is not a workspace. |
 
 ### The agents' model access
 
