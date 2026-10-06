@@ -223,7 +223,7 @@ test("the policy numbers a page states are changed with the service's settings, 
   const verify = await visit("verify", { routes: w.routes });
   assert.deepEqual(verify.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["1 hour"]);
   const privacy = await visit("privacy", { routes: w.routes });
-  assert.deepEqual(privacy.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["7 days", "2 days"]);
+  assert.deepEqual(privacy.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["7 days", "2 days", "90 days"]);
   const terms = await visit("terms", { routes: w.routes });
   assert.deepEqual(terms.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["1 day", "90 days"]);
 

@@ -251,13 +251,13 @@ test("the colours are the site's, and every text colour clears WCAG AA on the ba
 
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {
   const number = /\b\d+\s*(?:days?|hours?|minutes?|weeks?|months?)\b|\b(?:one|two|three|four|five|six|seven|ten|twelve|fourteen|twenty|thirty|sixty|ninety)[\s-]+(?:days?|hours?|minutes?|weeks?)\b/i;
-  const withoutPolicy = (n: FakeNode): string[] => (n.isText ? [n.textContent] : n.attrs.has("data-policy") || n.tag === "script" || n.tag === "noscript" ? [] : n.children.flatMap(withoutPolicy));
+  const withoutPolicy = (n: FakeNode): string[] => (n.isText ? [n.textContent] : n.attrs.has("data-policy") || n.className.split(/\s+/).includes("owner-term") || n.tag === "script" || n.tag === "noscript" ? [] : n.children.flatMap(withoutPolicy));
   for (const { name, doc } of pages()) {
     const text = withoutPolicy(doc.root).join(" ");
     assert.doesNotMatch(text, number, `${name}: ${number.exec(text)?.[0]}`);
   }
   const labelled = pages().flatMap((p) => p.all.filter((n) => n.attrs.has("data-policy")).map((n) => `${p.name}:${attr(n, "data-policy")}`));
-  assert.deepEqual(labelled.sort(), ["index:graceDays", "index:retentionDays", "privacy:idleDays", "privacy:sessionDays", "terms:graceDays", "terms:retentionDays", "verify:verificationHours"]);
+  assert.deepEqual(labelled.sort(), ["index:graceDays", "index:retentionDays", "privacy:idleDays", "privacy:retentionDays", "privacy:sessionDays", "terms:graceDays", "terms:retentionDays", "verify:verificationHours"]);
   const units = helpers().POLICY_UNITS;
   for (const entry of labelled) assert.ok(units[entry.split(":")[1]!], `the script knows the unit of ${entry}`);
   // The words in the script are the same: it builds its sentences from the numbers it is given.
@@ -268,7 +268,9 @@ test("the legal pages are marked for the owner wherever a person has to decide, 
   for (const name of ["terms", "privacy"]) {
     const { all } = pages().find((p) => p.name === name)!;
     const todos = all.filter((n) => n.className.split(/\s+/).includes("todo"));
-    assert.ok(todos.length >= 3, `${name} has the places the owner has to fill in or confirm marked`);
+    // A decision the owner has taken is written into the page (a period they promise is in an `owner-term` span, which is the
+    // owner's own commitment and not a setting of the service); what is still open stays marked. The terms still have some.
+    assert.ok(name === "privacy" || todos.length >= 1, `${name} has the places the owner has still to fill in or confirm marked`);
     for (const t of todos) assert.match(t.textContent.trim(), /^TODO\(owner\): /, name);
   }
   const terms = pages().find((p) => p.name === "terms")!.all.filter((n) => n.tag === "h2").map((n) => n.textContent);
