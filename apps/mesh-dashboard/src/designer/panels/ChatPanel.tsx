@@ -309,7 +309,7 @@ export default function ChatPanel(): React.JSX.Element {
       ) : trouble ? (
         <div className="verdict bad" role="alert">
           {trouble.text}
-          {hosted && trouble.kind === "credentials" ? (
+          {hosted && trouble.kind === "model" ? (
             <>{" "}<a className="ms-key-link" href={hosted.accountUrl} target="_blank" rel="noopener noreferrer">Open your account page<span className="sr-only"> (in a new tab)</span></a></>
           ) : null}
         </div>

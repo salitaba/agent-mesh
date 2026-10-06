@@ -22,8 +22,8 @@ export const STARTERS: readonly Starter[] = [
   { id: "small", label: "A small team: one builder and one reviewer", text: "A small team: one builder and one reviewer." },
 ];
 
-/** What happened to a question the designer could not answer, and what to do. `key` and `credentials` are about models; the rest about the conversation. */
-export type TroubleKind = "key" | "credentials" | "busy" | "offline" | "interrupted" | "other";
+/** What happened to a question the designer could not answer, and what to do. `key` and `model` are about models; the rest about the conversation. */
+export type TroubleKind = "key" | "model" | "busy" | "offline" | "interrupted" | "other";
 
 export interface Trouble {
   kind: TroubleKind;
@@ -53,8 +53,13 @@ export function plainReason(raw: string): string {
 
 const sentence = (s: string): string => (/[.!?…]$/.test(s) ? s : `${s}.`);
 
-/** Wording for a model the host could not reach with what it has: a refusal from a provider, a missing key, a login that is not there. */
-const NO_MODEL = /api[ _-]?key|authentication|unauthori[sz]ed|credential|log ?in\b|\/login|not configured|no model|permission denied/i;
+/**
+ * Wording for a model the host could not reach: no key or login, a key the provider refused, an address that did not answer or that this
+ * host is not allowed to call. For the person they come to the same thing (the models are not reachable with what is set) and the same
+ * place to look.
+ */
+const MODEL_UNREACHABLE =
+  /api[ _-]?key|authentication|unauthori[sz]ed|credential|log ?in\b|\/login|not configured|no model|permission denied|not in allowlist|egress|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|fetch failed|unable to connect|socket hang up/i;
 
 /**
  * What to tell a person whose question the designer did not answer. `hosted` is the workspace's own account page when this host is one
@@ -72,12 +77,12 @@ export function assistantTrouble(raw: string, ctx: { hosted: { accountUrl: strin
   if (/stream was interrupted/i.test(raw)) {
     return { kind: "interrupted", text: `The answer was cut off before it finished. Ask again. ${UNCHANGED}` };
   }
-  if (NO_MODEL.test(said)) {
+  if (MODEL_UNREACHABLE.test(said)) {
     return ctx.hosted
-      ? { kind: "credentials", text: `The designer could not reach a model with the key this workspace has: ${sentence(said)} Check the key on your account page. ${UNCHANGED} ${BY_HAND}` }
+      ? { kind: "model", text: `The designer could not reach a model with the key this workspace has: ${sentence(said)} Check the key and the provider address on your account page. ${UNCHANGED} ${BY_HAND}` }
       : {
-          kind: "credentials",
-          text: `The designer could not reach a model: ${sentence(said)} Set ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in the host's environment, then ask again. ${UNCHANGED} ${BY_HAND}`,
+          kind: "model",
+          text: `The designer could not reach a model: ${sentence(said)} Check that this host has a working key for a model provider (ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in its environment) and can reach it, then ask again. ${UNCHANGED} ${BY_HAND}`,
         };
   }
   const why = said === "" ? "The designer could not answer." : `The designer could not answer: ${sentence(said)}`;

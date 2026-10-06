@@ -38,19 +38,27 @@ test("a host that did not answer and a stream that was cut off say what happened
   assert.deepEqual([cut.kind, cut.text], ["interrupted", "The answer was cut off before it finished. Ask again. Nothing in your draft was changed."]);
 });
 
-test("a model that could not be reached says so; a laptop is told which settings, a workspace is told to check its key on the account page", () => {
-  for (const raw of ["Invalid API key · Please run /login", "401 Unauthorized", "ANTHROPIC_API_KEY is not set", "No credentials found for the provider", `{"error":"authentication failed"}`]) {
+test("a model that could not be reached says so, whether the key is missing, refused or the provider cannot be called; a laptop is told what to check, a workspace to check its key and address on the account page", () => {
+  const raws = [
+    "Invalid API key · Please run /login", "401 Unauthorized", "ANTHROPIC_API_KEY is not set", "No credentials found for the provider", `{"error":"authentication failed"}`,
+    // What a workspace whose key points at an address its host may not call really answers (the service's egress policy):
+    "API Error: 403 Host not in allowlist: api.openai.com. Add this host to your network egress settings to allow access. (curule)",
+    "fetch failed: getaddrinfo ENOTFOUND api.example.invalid", "connect ECONNREFUSED 127.0.0.1:9", "request to https://x.example/v1 failed, reason: socket hang up",
+  ];
+  for (const raw of raws) {
     const laptop = assistantTrouble(raw, LAPTOP);
-    assert.equal(laptop.kind, "credentials", raw);
+    assert.equal(laptop.kind, "model", raw);
     assert.match(laptop.text, /^The designer could not reach a model: /);
-    assert.match(laptop.text, /Set ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in the host's environment, then ask again\./);
+    assert.match(laptop.text, /Check that this host has a working key for a model provider \(ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in its environment\) and can reach it, then ask again\./);
     assert.match(laptop.text, /Nothing in your draft was changed\. You can still build the team yourself/);
     const workspace = assistantTrouble(raw, WORKSPACE);
-    assert.equal(workspace.kind, "credentials", raw);
+    assert.equal(workspace.kind, "model", raw);
     assert.match(workspace.text, /^The designer could not reach a model with the key this workspace has: /);
-    assert.match(workspace.text, /Check the key on your account page\./);
-    assert.doesNotMatch(workspace.text, /ANTHROPIC_API_KEY, or the settings/, "a customer cannot set a workspace's environment");
+    assert.match(workspace.text, /Check the key and the provider address on your account page\./);
+    // The advice never sends a customer to an environment they cannot set (the host's own words, when they name a setting, are its own).
+    if (!/ANTHROPIC_API_KEY/.test(raw)) assert.doesNotMatch(workspace.text, /ANTHROPIC_API_KEY/, "a customer cannot set a workspace's environment");
   }
+  assert.match(assistantTrouble(raws[5]!, WORKSPACE).text, /Host not in allowlist: api\.openai\.com\.[^]*\(curule\)\. Check the key/, "the host's own words come first, as a sentence, then what to check");
 });
 
 test("anything else is said in the host's own words, as a sentence, with what was kept and what to do", () => {
