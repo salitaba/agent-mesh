@@ -3,11 +3,13 @@
  * A new project holds a placeholder goal and one seat. Without a word about it the Designer opened on a lone circle and a toolbar,
  * and a person who had never seen it had to work out for themselves that there was a goal to write, seats to add and wires to draw.
  * Two pieces: EmptySeats for a mesh with no seat at all (which the server refuses to save), and SetupGuide for a mesh that has a
- * seat or two and is not yet a team. The guide names the next move in each step and says what the assistant can do for it. */
+ * seat or two and is not yet a team. The guide says where the person is (done, now, next: guidemodel.ts) and gives the step that is
+ * now its main action: for a lone seat, describing the team to the assistant. */
 
 import { useEffect, useRef, useState } from "react";
 import { Button, EmptyState, TextArea, useDismissable } from "../components";
 import { Icon } from "../icons";
+import { guideProgress, seatsText } from "./guidemodel";
 import { GOAL_MAX, goalIsPlaceholder, TEMPLATES, type Template } from "./model";
 import { CloseButton, ToolButton } from "./ui";
 
@@ -101,12 +103,11 @@ export interface SetupGuideProps {
 }
 
 export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHide }: SetupGuideProps): React.JSX.Element {
-  const goalDone = !goalIsPlaceholder(goal);
-  const seatsDone = seats >= 2;
-  const wiresDone = seats >= 2 && wires > 0;
-  const steps: Array<{ key: string; done: boolean; title: string; body: React.ReactNode }> = [
+  const progress = guideProgress({ goal, seats, wires });
+  const stateOf = (key: string) => progress.steps.find((s) => s.key === key)?.state ?? "next";
+  const steps: Array<{ key: string; title: string; body: React.ReactNode }> = [
     {
-      key: "goal", done: goalDone, title: "Describe the goal",
+      key: "goal", title: "Describe the goal",
       body: (
         <>
           <span className="ms-step-text">What should this team deliver? Say it in a sentence or two. Every seat reads it on every turn.</span>
@@ -120,19 +121,20 @@ export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHid
       ),
     },
     {
-      key: "seats", done: seatsDone, title: "Add the seats that do the work",
+      key: "seats", title: "Add the seats that do the work",
       body: (
         <>
-          <span className="ms-step-text">
-            {seats === 0 ? "There are no seats yet." : seats === 1 ? "There is one seat." : `There are ${seats} seats.`} Give each a role, the tools it may use and what it may decide alone.
-            One seat is a valid mesh, so stop here if that is the team you want.
+          <span className="ms-step-text">{seatsText(seats)}</span>
+          <span className="ms-step-acts">
+            {/* A team of fewer than two is still to be described: the designer proposes it (and the person reviews it), and that is the move. */}
+            {seats < 2 ? <Button variant={progress.now === "seats" ? "primary" : "soft"} icon="spark" onClick={onAsk}>Ask the designer</Button> : null}
+            <Button variant="small" icon="plus" onClick={onAddSeat}>Add a seat</Button>
           </span>
-          <span className="ms-step-acts"><Button variant="small" icon="plus" onClick={onAddSeat}>Add a seat</Button></span>
         </>
       ),
     },
     {
-      key: "wires", done: wiresDone, title: "Decide who may message whom",
+      key: "wires", title: "Decide who may message whom",
       body: (
         <span className="ms-step-text">
           {seats < 2
@@ -142,7 +144,7 @@ export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHid
       ),
     },
     {
-      key: "save", done: false, title: "Save, then start the mission",
+      key: "save", title: "Save, then start the mission",
       body: <span className="ms-step-text">Save changes writes mesh.yaml. Starting the mission is a separate step, in the top bar.</span>,
     },
   ];
@@ -153,21 +155,19 @@ export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHid
         <Button variant="ghost" onClick={onHide}>Hide the guide</Button>
       </div>
       <ol className="ms-steps">
-        {steps.map((s, i) => (
-          <li key={s.key} className={s.done ? "done" : ""}>
-            <span className="ms-step-mark" aria-hidden="true">{s.done ? <Icon name="check" size={14} /> : i + 1}</span>
-            <div className="ms-step-body">
-              <b>{s.title}{s.done ? <span className="sr-only"> (done)</span> : null}</b>
-              {s.body}
-            </div>
-          </li>
-        ))}
+        {steps.map((s, i) => {
+          const state = stateOf(s.key);
+          return (
+            <li key={s.key} className={state} aria-current={state === "now" ? "step" : undefined}>
+              <span className="ms-step-mark" aria-hidden="true">{state === "done" ? <Icon name="check" size={14} /> : i + 1}</span>
+              <div className="ms-step-body">
+                <b>{s.title}{state === "done" ? <span className="sr-only"> (done)</span> : state === "now" ? <span className="sr-only"> (to do now)</span> : null}</b>
+                {s.body}
+              </div>
+            </li>
+          );
+        })}
       </ol>
-      <p className="ms-guide-ask">
-        <Icon name="spark" size={16} />
-        <span>Or describe the team in a sentence. The designer proposes seats and wires as changes to this draft. You review them before anything is applied, and nothing is saved.</span>
-        <Button variant="soft" onClick={onAsk}>Ask the designer</Button>
-      </p>
     </section>
   );
 }

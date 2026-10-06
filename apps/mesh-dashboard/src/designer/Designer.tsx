@@ -18,7 +18,9 @@ import { Icon } from "../icons";
 import { list as listCommands, register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
 import { useFocusMode, useMedia } from "../shell";
 import { ChecksButton, ChecksPanel, DraftChip, ImportDialog, TemplateDialog, YamlSlide } from "./chrome";
+import { takeArrival } from "./arrival";
 import { SetupGuide, needsGuide } from "./Guide";
+import { guideProgress } from "./guidemodel";
 import Inspector from "./Inspector";
 import SeatList from "./SeatList";
 import Topology, { type ConnectResult } from "./Topology";
@@ -665,6 +667,32 @@ export default function Designer(): React.JSX.Element {
     for (const id of missing) next = { ...next, [id]: freeSpot(next, NOMINAL_STAGE, card) };
     commitDraft({ layout: next });
   }, [ready, ids]);
+
+  // The welcome sent the person here after making their team, or the mission's "Write the goal first" did (arrival.ts): put the cursor where
+  // the next thing is, once, as soon as there is a draft to look at. A goal still to write gets its field with the text selected, so typing
+  // replaces the placeholder; a lone seat under a goal gets the assistant, which asks what the team should look like.
+  useEffect(() => {
+    if (!ready || !m) return;
+    const want = takeArrival(projectKey);
+    if (!want) return;
+    const goal = m.mesh?.goal;
+    const next = want === "goal" ? "goal" : guideProgress({ goal, seats: ids.length, wires: wires.length }).now;
+    if (next === "goal") {
+      if (!guideOff && needsGuide(goal, ids.length, wires.length)) {
+        requestAnimationFrame(() => {
+          const field = document.querySelector<HTMLTextAreaElement>('.ms-guide textarea[data-field="goal"]');
+          field?.focus();
+          field?.select();
+        });
+      } else {
+        setTab("mesh");
+        openInspector();
+        setReveal({ section: "goal", field: "goal", nonce: Date.now(), select: true });
+      }
+    } else if (next === "seats") {
+      askDesigner();
+    }
+  }, [ready, m, projectKey, ids.length, wires.length, guideOff, openInspector]);
 
   /* ---------------- loading and error states ---------------- */
 

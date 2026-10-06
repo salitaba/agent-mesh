@@ -104,16 +104,13 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: curre
   font: 600 12px var(--mono); color: var(--text-dim);
 }
 .ms-steps li.done .ms-step-mark { color: var(--ok); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+/* Where the person is: a filled number (done is a tick, next is an outline), so the step to do now is not told by colour alone. */
+.ms-steps li.now .ms-step-mark { color: var(--text-on-accent); border-color: var(--accent); background: var(--accent); }
+.ms-steps li.next .ms-step-body > b { color: var(--text-dim); }
 .ms-step-body { display: flex; flex-direction: column; gap: var(--s1-5); min-width: 0; }
 .ms-step-body > b { font: 600 14px var(--sans); }
 .ms-step-text { font: var(--tx-meta); color: var(--text-dim); }
 .ms-step-acts { display: flex; gap: var(--s2); }
-.ms-guide-ask {
-  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin: 0; padding-top: var(--s3);
-  border-top: 1px dashed var(--line-strong); font: var(--tx-meta); color: var(--text-dim);
-}
-.ms-guide-ask > span { flex: 1 1 280px; }
-.ms-guide-ask .icon { color: var(--accent-2); }
 
 /* ---------- the save bar and its sheet ---------- */
 .ms-bar {

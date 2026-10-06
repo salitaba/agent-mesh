@@ -123,7 +123,7 @@ export function Section({ id, title, meta, defaultOpen = true, reveal, children 
       const target = named ? (named.matches(FOCUSABLE) ? named : named.querySelector<HTMLElement>(FOCUSABLE) ?? named) : root.querySelector<HTMLElement>(FOCUSABLE);
       target?.scrollIntoView({ block: "center", behavior: "auto" });
       target?.focus({ preventScroll: true });
-      if (select && target instanceof HTMLInputElement && /^(text|search|)$/.test(target.type)) target.select();
+      if (select && (target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && /^(text|search|)$/.test(target.type)))) target.select();
     });
     return () => cancelAnimationFrame(frame);
   }, [mine, nonce, id, field, select]);
