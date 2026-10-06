@@ -18,8 +18,8 @@ test("a new link goes to an address that signed up and has not confirmed it, and
   p.clock.advance(5 * 60_000);
   const again = await s.call("POST", "/api/verify/resend", { json: { email: " Ada@Example.com " }, ...origins });
   assert.deepEqual([again.status, again.json], [202, ASKED]);
-  assert.deepEqual(p.mailer.sent.map((m) => [m.to, m.kind, m.subject]), [["ada@example.com", "verify", "Confirm your email address"], ["ada@example.com", "verify", "Confirm your email address"]]);
-  assert.match(p.mailer.sent[1]!.text, /It works once and expires in 24 hours\./);
+  assert.deepEqual(p.mailer.sent.map((m) => [m.to, m.kind, m.subject]), [["ada@example.com", "verify", "Confirm your Curule account"], ["ada@example.com", "verify", "Confirm your Curule account"]]);
+  assert.match(p.mailer.sent[1]!.text, /The link works once and expires in 24 hours\./);
   const [first, second] = p.mailer.sent.map((m) => tokenIn(m.text)) as [string, string];
   assert.notEqual(first, second, "it is a new link, and not the old one again");
   const ok = await s.call("POST", "/api/verify", { json: { token: second }, ...origins });
