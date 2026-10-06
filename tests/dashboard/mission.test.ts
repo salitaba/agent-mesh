@@ -61,6 +61,13 @@ test("reopening is one action with one name, whether the bar's menu or the hero 
   assert.match(hero.hint, /Nothing is deleted/);
 });
 
+test("a failed mission's reopen is the delivered one's: the same name and the same words about what it asks for", () => {
+  const failed = describeMission(facts({ goalStatus: "FAILED", working: 0 }));
+  const done = describeMission(facts({ goalStatus: "COMPLETED", working: 0 }));
+  assert.deepEqual([failed.primary!.label, failed.primary!.hint], [done.secondary[0]!.label, done.secondary[0]!.hint]);
+  assert.equal(failed.primary!.label, "Reopen with feedback", "the dialog it opens asks for what was wrong, and the button says so");
+});
+
 test("for every state with a primary action the hero offers that one action, as the bar does, and the pause is the quiet one", () => {
   const states = [
     facts({ goalStatus: "PAUSED", working: 0 }), facts({ parked: true, working: 0 }), facts({ blockingDecisions: 1 }), facts({ goalStatus: "FAILED", working: 0 }),

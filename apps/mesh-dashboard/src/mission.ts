@@ -248,7 +248,7 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
   if (f.goalStatus === "FAILED") {
     return {
       ...base, phase: "failed", tone: "bad", label: "Failed", headline: "The mission failed.",
-      primary: { action: "reopen", label: "Reopen", hint: "Withdraw the verdict and put the agents back to work. Nothing is deleted." },
+      primary: REOPEN,
     };
   }
   if (f.goalStatus === "COMPLETED") {
