@@ -1265,6 +1265,11 @@ export class Supervisor {
   private sendsThisTurn = new Map<string, number>();
   private heldSendsThisTurn = new Map<string, HeldSend[]>();
   /**
+   * The verdicts a seat has given in the turn it is still in, that moved an artifact, by ruling seat: the owner of the artifact
+   * is told when that turn ends (`flushVerdictNotices`), and only if the artifact is still where the verdict left it.
+   */
+  private verdictNoticesThisTurn = new Map<string, Array<{ artifactId: string; status: ArtifactStatus; kind: ApprovalKind; eventType: EventType; eventId: string }>>();
+  /**
    * Senders whose turn-end digest is being emitted right now.
    *
    * The flush sends THROUGH `sendMessage`, so without this the digest would be
@@ -2538,6 +2543,7 @@ export class Supervisor {
     // hold the first turn's chatter against a budget it never spent.
     this.sendsThisTurn.clear();
     this.heldSendsThisTurn.clear();
+    this.verdictNoticesThisTurn.clear();
     this.flushingSends.clear();
     this.recentTurns = [];
     this.turns.clear();
@@ -6298,6 +6304,9 @@ export class Supervisor {
    * event (a second wake for the same verdict is exactly the repeat the dedup exists
    * to prevent). The wake goes through `activateAgent`, so every gate a wake faces
    * (paused, escalated, finished mission, budget, breaker) applies unchanged.
+   *
+   * A verdict given inside a turn is told when the turn ends (`flushVerdictNotices`), to an owner whose artifact has stayed where
+   * the verdict left it; a verdict given outside any turn is told at once.
    */
   private async noticeOwnerOfVerdict(
     actorId: string,
@@ -6310,6 +6319,43 @@ export class Supervisor {
     if (!artifactId || before === undefined) return;
     const now = this.state.artifacts.get(artifactId);
     if (!now || now.status === before) return;
+    // Told when the ruling seat's turn ends, not at once. The seat that rules is mid-turn, and the one with the power to
+    // rule is usually the one with the power to take the artifact on: the nineteenth cronlite run's tech lead approved the
+    // developer's patch and, in the same turn, took it to VERIFIED, MERGEABLE and MERGED. The developer was woken at the
+    // verdict with "it is now APPROVED. It needs VERIFIED next, and you can move it" and read that 11 seconds before the
+    // step was taken in one round and half a second before it in the other; each wake was a turn (9.4k and 15.1k tokens) that sent
+    // QA a request for a verification it had already been told to begin, and the first was followed by two turns of
+    // acknowledgements (11.1k and 9.2k). A verdict given outside a turn (the operator's) has nothing to wait for.
+    if (this.liveTurnByAgent.has(actorId)) {
+      const held = this.verdictNoticesThisTurn.get(actorId) ?? [];
+      held.push({ artifactId, status: now.status, kind, eventType, eventId });
+      this.verdictNoticesThisTurn.set(actorId, held);
+      return;
+    }
+    await this.wakeOwnerOfVerdict(actorId, kind, now, eventType, eventId);
+  }
+
+  /**
+   * The turn is over: tell the owners of what it ruled on, for the artifacts that are still where the verdict left them. One
+   * that has moved on (the ruling seat took it to the next rung, or on to the merge, in the same turn) has nothing left for its
+   * owner to do, and a note that says what it "needs next" would be about a step that has been taken.
+   */
+  private async flushVerdictNotices(actorId: string): Promise<void> {
+    const held = this.verdictNoticesThisTurn.get(actorId);
+    if (!held) return;
+    this.verdictNoticesThisTurn.delete(actorId);
+    for (const n of held) {
+      const now = this.state.artifacts.get(n.artifactId);
+      if (!now) continue;
+      if (now.status !== n.status) {
+        this.auditLine(`verdict notice for ${now.owner} on ${now.type} "${now.name}" dropped: ${actorId}'s turn took it from ${n.status} to ${now.status}`);
+        continue;
+      }
+      await this.wakeOwnerOfVerdict(actorId, n.kind, now, n.eventType, n.eventId).catch(() => undefined);
+    }
+  }
+
+  private async wakeOwnerOfVerdict(actorId: string, kind: ApprovalKind, now: Artifact, eventType: EventType, eventId: string): Promise<void> {
     const owner = now.owner;
     if (owner === actorId || owner === HUMAN_AGENT_ID) return;
     const rec = this.state.agents.get(owner);
@@ -9394,6 +9440,7 @@ export class Supervisor {
       // chatter it wrote, because the alternative is a seat's words vanishing
       // with the turn.
       await this.flushHeldSends(agentId);
+      if (this.verdictNoticesThisTurn.has(agentId)) await this.flushVerdictNotices(agentId);
       this.turnInFlight.delete(agentId);
       this.activeTurnByAgent.delete(agentId);
       this.liveTurnByAgent.delete(agentId);

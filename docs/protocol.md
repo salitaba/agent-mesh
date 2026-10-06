@@ -249,6 +249,13 @@ what the mesh then accepts cannot differ:
   eighteenth cronlite run's developer was mid-turn when its test-suite patch was
   approved, the notice was dropped behind the mail wake, and the patch sat APPROVED, and
   the mission with it, for 2 min 28 s, until the stall watchdog said what the note had.
+  The wake is made when the **ruling seat's turn ends**, not at the verdict, and only for an artifact that is still where
+  the verdict left it. The seat with the power to rule is usually the one with the power to take the patch on, and in the
+  nineteenth cronlite run the tech lead approved the developer's patch and moved it to `VERIFIED`, `MERGEABLE` and
+  `MERGED` in the same turn: the developer was woken with "it needs VERIFIED next, and you can move it" 11 seconds before
+  that step in one round and half a second before it in the other, and each wake was a turn that asked QA for a verification it
+  had already been told to begin. A patch the turn took on has nothing left for its owner, and says nothing to it. A verdict
+  given outside a turn (the operator's) has nothing to wait for and wakes the owner at once.
 
 **A submission asks nobody.** Moving an artifact to `READY_FOR_REVIEW` records that its owner is done; it sends no
 request and wakes no one, and neither does announcing it (`mesh_announce` obliges nobody and "wakes no one"). A seat
