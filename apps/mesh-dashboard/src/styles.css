@@ -858,6 +858,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .bar-strip { gap: var(--s2-5); flex: 0 1 auto; }
   .top-actions { flex-wrap: wrap; margin-left: auto; }
   .top-actions .soft, .top-actions .primary, .menu-btn, #btn-menu { min-height: 44px; min-width: 44px; }
+  /* The rows of the "..." menu hold Reopen, Notify me and Reset: on a phone they are as tall as the buttons that open the menu. */
+  .menu-item { min-height: 44px; }
   #view { padding: var(--s3) var(--s3) var(--dock-clear); }
   .ev { grid-template-columns: 56px 1fr; grid-template-areas: "time type" "summary summary"; row-gap: var(--s0); }
   .ev time { grid-area: time; } .ev .type { grid-area: type; } .ev .summary { grid-area: summary; white-space: normal; }
