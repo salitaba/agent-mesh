@@ -68,6 +68,12 @@ export interface TemplatesView {
   managed: boolean;
   /** When {@link managed}: whether the models are the service's gateway, or the owner's own key at their own provider (a hosting-only plan). */
   modelSource?: "gateway" | "own";
+  /**
+   * This host is a Curule Cloud workspace: the service that made it said where the account page is. Absent on any other host. A
+   * customer has no folders, host or environment to set, so the console welcomes them differently, and where a model key is missing
+   * it sends them to this address, because the key is added there and nowhere else.
+   */
+  hosted?: { accountUrl: string };
 }
 
 export type NewProjectResult =
@@ -129,12 +135,31 @@ export function modelAccessFound(env: NodeJS.ProcessEnv = process.env): string[]
   }).map((m) => m.name);
 }
 
+/** The variable the hosted service gives a workspace's host: the address of the account page. */
+export const ACCOUNT_URL_ENV = "CURULE_ACCOUNT_URL";
+
+/**
+ * The account page's address, when this host was made by the hosted service. Only an http or https address without credentials is
+ * passed on: the console draws it as a link, so no other kind of address (`javascript:`, say) may reach a person's browser through it.
+ */
+export function accountUrlOf(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const raw = (env[ACCOUNT_URL_ENV] ?? "").trim();
+  if (raw === "") return undefined;
+  try {
+    const url = new URL(raw);
+    return (url.protocol === "https:" || url.protocol === "http:") && url.username === "" && url.password === "" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** What `GET /api/templates` answers. */
 export function templatesView(deps: NewProjectDeps): TemplatesView {
   const env = deps.env ?? process.env;
   const taken = new Set(deps.registry.list().map((r) => r.id));
   const models = managedModels(env);
   const managed = models !== undefined;
+  const accountUrl = accountUrlOf(env);
   return {
     // On managed models a team that would have run on the Claude runtime runs on the native one, and says so.
     templates: describeTemplates(deps.shippedRoot).map((t) => ({ ...t, ...(managed && t.runtime === "claude" ? { runtime: "native" } : {}), suggestedRoot: suggestRoot(t, taken, env) })),
@@ -143,6 +168,7 @@ export function templatesView(deps: NewProjectDeps): TemplatesView {
     modelAccess: modelAccessFound(env),
     managed,
     ...(models ? { modelSource: models.source } : {}),
+    ...(accountUrl ? { hosted: { accountUrl } } : {}),
   };
 }
 

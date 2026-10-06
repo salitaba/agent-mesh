@@ -13,7 +13,7 @@ import * as http from "http";
 import * as os from "os";
 import * as path from "path";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
-import { createFromTemplate, defaultParent, expandHome, modelAccessFound, projectErrorReason, suggestRoot } from "../../apps/mesh-server/src/new-project";
+import { accountUrlOf, createFromTemplate, defaultParent, expandHome, modelAccessFound, projectErrorReason, suggestRoot } from "../../apps/mesh-server/src/new-project";
 import { findShippedRoot, describeTemplates, parseMeshSource, resolveConfig } from "../../packages/config/src/index";
 
 const SHIPPED = findShippedRoot(__dirname)!;
@@ -40,7 +40,7 @@ function call(base: string, method: string, p: string, body?: unknown, headers: 
   });
 }
 
-const ENV_KEYS = ["HOME", "MESH_PROJECTS_ROOT", "MESH_API_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_OAUTH_TOKEN"] as const;
+const ENV_KEYS = ["HOME", "MESH_PROJECTS_ROOT", "MESH_API_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_OAUTH_TOKEN", "CURULE_ACCOUNT_URL", "CURULE_GATEWAY_URL", "CURULE_GATEWAY_KEY", "CURULE_MODEL_PROVIDER", "CURULE_MODEL_NAME", "CURULE_MODEL_KEY"] as const;
 
 interface Layout {
   base: string;
@@ -131,6 +131,36 @@ test("the host says whether a Claude-runtime team could reach a model, by the na
     assert.doesNotMatch(JSON.stringify(r.json), /sk-ant-SECRET/, "never the value");
   }, { env: { ANTHROPIC_API_KEY: "sk-ant-SECRET", CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "0" } });
   assert.deepEqual(modelAccessFound({ ANTHROPIC_API_KEY: "  ", CLAUDE_CODE_USE_FOUNDRY: "TRUE", ANTHROPIC_BASE_URL: "http://gateway" }), ["CLAUDE_CODE_USE_FOUNDRY"], "blank is unset; a base URL alone is not a way in");
+});
+
+test("a host the hosted service made says where the account page is, so its console can welcome a customer and send them there; any other host says nothing of the kind", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const r = await call(l.host.url, "GET", "/api/templates");
+    assert.equal(r.json.hosted, undefined, "a laptop's host is not a workspace");
+    assert.equal("hosted" in r.json, false);
+  });
+  await withHost(async (l) => {
+    const r = await call(l.host.url, "GET", "/api/templates");
+    assert.deepEqual(r.json.hosted, { accountUrl: "https://app.curule.example/account" });
+    // Being a workspace is a fact of its own: a workspace whose customer has not added a model key yet has none of the model facts.
+    assert.equal(r.json.managed, false);
+    assert.deepEqual(r.json.modelAccess, []);
+  }, { env: { CURULE_ACCOUNT_URL: "https://app.curule.example/account" } });
+  await withHost(async (l) => {
+    const r = await call(l.host.url, "GET", "/api/templates");
+    assert.deepEqual(r.json.hosted, { accountUrl: "https://app.curule.example/account" });
+    assert.equal(r.json.managed, true);
+    assert.equal(r.json.modelSource, "gateway");
+  }, { env: { CURULE_ACCOUNT_URL: "https://app.curule.example/account", CURULE_GATEWAY_URL: "https://gateway.curule.example/v1", CURULE_GATEWAY_KEY: "curule_vk_000000000000_SECRET" } });
+});
+
+test("the account page's address is passed on only when it is one a link may safely carry", () => {
+  const of = (v: string | undefined) => accountUrlOf(v === undefined ? {} : { CURULE_ACCOUNT_URL: v });
+  assert.equal(of("https://app.curule.example/account"), "https://app.curule.example/account");
+  assert.equal(of("  http://localhost:7870/account  "), "http://localhost:7870/account", "a trial's address, with the blanks a shell leaves");
+  for (const bad of [undefined, "", "   ", "app.curule.example/account", "/account", "javascript:alert(1)", "data:text/html,x", "ftp://app.curule.example/", "file:///etc/passwd", "https://user:secret@app.curule.example/account", "https://:secret@app.curule.example/", "http://", "not a url"]) {
+    assert.equal(of(bad), undefined, JSON.stringify(bad));
+  }
 });
 
 test("the demo is made in the folder named, registered, self-contained, and reported as scaffolded", { timeout: 30_000 }, async () => {
