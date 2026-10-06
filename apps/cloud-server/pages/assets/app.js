@@ -413,6 +413,9 @@
       return;
     }
     const { currency, topups } = r.data;
+    // What the page says about model usage is true of a service that sells none. One that sells credit says what its plans include,
+    // and says nothing that its own plans contradict.
+    for (const node of doc.querySelectorAll("[data-hosting-only]")) node.hidden = topups !== null;
     const subscription = me ? me.subscription : null;
     const action = me ? () => el("a", { class: "btn", href: "/account#plan-h" }, "Choose in your account") : () => el("a", { class: "btn btn-primary", href: "/signup" }, "Get started");
     box.replaceChildren(...r.data.plans.map((plan) => planCard(plan, currency, { subscription, action })));

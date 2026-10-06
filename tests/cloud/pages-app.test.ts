@@ -1353,6 +1353,33 @@ test("the front page of a hosting-only service says the customer brings a key an
   assert.doesNotMatch(v.text("topups"), /Add credit/);
 });
 
+test("what the front page says about model usage is shown for a service that sells none, and left out for one that sells credit, whose plans say what they include", async () => {
+  const hostingOnly = world((x) => {
+    x.signedIn = false;
+    x.plans = { json: HOSTING_PLANS };
+  });
+  const hosting = await visit("home", { routes: hostingOnly.routes });
+  for (const claim of [/You bring your own model key, and you pay your model provider directly\./, /Your own model key/, /Hosting, not tokens/, /It is not part of the payment/]) assert.match(hosting.text("main"), claim, String(claim));
+
+  const credit = world((x) => (x.signedIn = false));
+  const sells = await visit("home", { routes: credit.routes });
+  for (const claim of [/bring your own model key/i, /Your own model key/, /Hosting, not tokens/, /does not resell/, /not part of the payment/, /pay your (model )?provider/i]) assert.doesNotMatch(sells.text("main"), claim, `a service that sells usage does not say ${claim}`);
+  assert.match(sells.text("main"), /\$20\.00 of model usage each month/, "it says what its plans include");
+  assert.match(sells.text("topups"), /Add credit at any time/);
+  assert.match(sells.text("main"), /You install nothing and rent nothing\./, "and the rest of the sentence it was part of is still there");
+
+  const unknown = world((x) => {
+    x.signedIn = false;
+    x.plans = failure(503, "unavailable", "The plans are not available just now.");
+  });
+  const down = await visit("home", { routes: unknown.routes });
+  assert.match(down.text("main"), /Hosting, not tokens/, "when the plans cannot be read the page says what it was written to say");
+  for (const html of ["index.html"]) {
+    const page = fs.readFileSync(`${PAGES_DIR}/${html}`, "utf8");
+    assert.equal((page.match(/data-hosting-only/g) ?? []).length, 4, "the four places that speak of model usage are marked");
+  }
+});
+
 test("a workspace with no key says so and asks for a provider, a model and a key; an Anthropic key needs no address", async () => {
   const w = hosting();
   const v = await visit("account", { routes: w.routes });
