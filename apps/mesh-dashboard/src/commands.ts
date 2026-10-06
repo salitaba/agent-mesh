@@ -47,7 +47,7 @@ export function unregister(scope: string): void {
   if (byScope.delete(scope)) bump();
 }
 
-/** Snapshot in registration order: global first, then the mounted view's scopes. */
+/** Snapshot in registration order; a scope keeps the place it first registered in. The palette ranks and de-duplicates it (palette.ts). */
 export function list(): Command[] {
   return [...byScope.values()].flat();
 }

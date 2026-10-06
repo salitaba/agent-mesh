@@ -12,6 +12,7 @@ import { useMission } from "./useMission";
 import { useMissionActions } from "./useMissionActions";
 import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
+import { paletteMatches, pointerMoved } from "./palette";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
 import { holdsForProject, isHostView, serverKind, showsSection } from "./navmodel";
@@ -168,10 +169,11 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
   // Re-render on every registry change; `list()` is a cheap pure read of the
   // module registry, so the snapshot is taken directly at render time.
   useSyncExternalStore(subscribe, getVersion);
-  const needle = q.trim().toLowerCase();
-  const all = list();
-  const matches = needle ? all.filter((c) => `${c.label} ${c.keywords ?? ""} ${c.id}`.toLowerCase().includes(needle)) : all;
+  const matches = paletteMatches(list(), q);
   const active = Math.min(sel, Math.max(0, matches.length - 1));
+  const activeId = matches[active]?.id;
+  // Where the mouse was last seen over the list: a row takes the selection only when the mouse has moved (palette.ts).
+  const pointer = useRef<{ x: number; y: number } | null>(null);
   const choose = (c: Command | undefined): void => {
     if (!c) return;
     onClose();
@@ -180,9 +182,11 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+  // Keyed on the selection and the query, not the list: the registry is rebuilt on every status poll, and scrolling on each one
+  // pulled a list the person had scrolled with the wheel back to the selected row every few seconds.
   useEffect(() => {
-    document.getElementById(`palette-opt-${matches[active]?.id ?? ""}`)?.scrollIntoView({ block: "nearest" });
-  }, [active, matches]);
+    if (activeId) document.getElementById(`palette-opt-${activeId}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeId, q]);
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -202,13 +206,19 @@ function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element
       onMouseDown={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}>
       <input ref={inputRef} className="palette-input" role="combobox" aria-label="Search commands" aria-autocomplete="list"
         aria-expanded="true" aria-controls="palette-list"
-        aria-activedescendant={matches[active] ? `palette-opt-${matches[active].id}` : undefined}
+        aria-activedescendant={activeId ? `palette-opt-${activeId}` : undefined}
         placeholder="Type a command or agent…" value={q}
         onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey} />
       <ul id="palette-list" className="palette-list" role="listbox" aria-label="commands">
         {matches.map((c, i) => (
           <li key={c.id} id={`palette-opt-${c.id}`} role="option" aria-selected={i === active}
-            className={`palette-item${i === active ? " on" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => choose(c)}>
+            className={`palette-item${i === active ? " on" : ""}`}
+            onMouseMove={(e) => {
+              const at = { x: e.clientX, y: e.clientY };
+              if (pointerMoved(pointer.current, at)) setSel(i);
+              pointer.current = at;
+            }}
+            onClick={() => choose(c)}>
             <span className="palette-label">{c.label}</span>
             {c.scope !== "global" ? <span className="palette-scope">{c.scope}</span> : null}
           </li>
