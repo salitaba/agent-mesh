@@ -11,6 +11,12 @@
  * second looks the same as a stuck one. No ids and no codes: an agent is named by its seat, a time is a minute count. And at most
  * three short lines, the last one always the answer to "does it need me".
  *
+ * That answer has two parts, because the console has two places that ask something of a person: the Overview's attention list, and
+ * the Agents page's "Needs you", where a crashed seat (it does not start again by itself) or a blocked one waits. A mission with a
+ * crashed seat used to read "Nothing is waiting for you." here while the Agents page said the opposite, so the seats are said too.
+ * A turn that has gone silent is on the Agents page only: whether a turn is silent is read from timing that page refreshes every
+ * few seconds, and this one is read when events arrive, so a quiet minute here would be a guess.
+ *
  * What it cannot say is who waits for whom. The kernel knows each open request's sender and recipient, but `/status` carries only
  * how many there are (`commitments.open`), and an agent's own panel is the only place its requests are listed, so a line like
  * "pm waits for security's review" would be a guess the console has no way to check. DOM-free, so tests/dashboard can pin each case.
@@ -82,6 +88,26 @@ const some = (ids: readonly string[]): string => (ids.length <= NAMED ? list(ids
 
 const asked = (n: number): string => `${n} ${n === 1 ? "request is" : "requests are"} waiting for an answer.`;
 
+const lifecycleOf = (a: { lifecycle: string }): string => String(a.lifecycle).toUpperCase();
+
+/** "qa has crashed and security is blocked: see Agents." Counted past `NAMED`, as everywhere in these lines. */
+function trouble(crashed: readonly string[], blocked: readonly string[]): string {
+  const n = crashed.length + blocked.length;
+  if (n === 0) return "";
+  if (n > NAMED) return `${n} agents have crashed or are blocked: see Agents.`;
+  const parts = [
+    ...(crashed.length ? [`${list(crashed)} ${crashed.length === 1 ? "has" : "have"} crashed`] : []),
+    ...(blocked.length ? [`${list(blocked)} ${are(blocked.length)} blocked`] : []),
+  ];
+  return `${parts.join(" and ")}: see Agents.`;
+}
+
+/** The last line: what waits for the person, from the attention list and from the seats, or that nothing does. */
+function forYouLine(forYou: number, crashed: readonly string[], blocked: readonly string[]): string {
+  const attention = forYou > 0 ? `${forYou} ${forYou === 1 ? "item" : "items"} under Attention ${forYou === 1 ? "needs" : "need"} a look.` : "";
+  return [attention, trouble(crashed, blocked)].filter(Boolean).join(" ") || "Nothing is waiting for you.";
+}
+
 /**
  * The lines to show, or none. Only a mission that is live and moving or resting between turns has a "right now": a paused, parked,
  * delivered or halted one is already said by its headline, and an idle one by what explains it (`idleCause`).
@@ -106,7 +132,7 @@ export function rightNow(i: RightNowInput): string[] {
   } else {
     // Nobody is in a turn. A seat that is queued is about to be; otherwise nothing will happen until something does, and that is the
     // one thing worth saying plainly, with the two things a person can do about it.
-    const everyone = waiting.length > 0 && waiting.length === i.agents.filter((a) => !["COMPLETED", "FAILED"].includes(String(a.lifecycle).toUpperCase())).length;
+    const everyone = waiting.length > 0 && waiting.length === i.agents.filter((a) => lifecycleOf(a) !== "COMPLETED").length;
     if (queued.length) lines.push(`Nobody is working this moment. Next in line: ${some(queued)}.`);
     else if (waiting.length) {
       lines.push(`${everyone ? "Everyone is waiting for mail" : `${some(waiting)} ${are(waiting.length)} waiting for mail`}: nothing is queued. If it stays that way, send a message or wake an agent.`);
@@ -114,7 +140,7 @@ export function rightNow(i: RightNowInput): string[] {
     if (unanswered) lines.push(unanswered);
   }
 
-  lines.push(i.forYou > 0 ? `${i.forYou} ${i.forYou === 1 ? "item" : "items"} under Attention ${i.forYou === 1 ? "needs" : "need"} a look.` : "Nothing is waiting for you.");
+  lines.push(forYouLine(i.forYou, i.agents.filter((a) => lifecycleOf(a) === "FAILED").map((a) => a.id), i.agents.filter((a) => lifecycleOf(a) === "BLOCKED").map((a) => a.id)));
   return lines;
 }
 

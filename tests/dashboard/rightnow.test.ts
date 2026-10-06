@@ -5,8 +5,8 @@ import { rightNow, rightNowInput, spanWord, type RightNowInput } from "../../app
 
 /**
  * "Running. 1 agent waiting, none working right now." is true and says nothing about this mission. These pin what the lines say in
- * each situation (nothing running, one working, two, many, something queued, requests open, a stalemate), that they are facts and
- * not diagnoses, that nobody is named by an id, and that they never run past three.
+ * each situation (nothing running, one working, two, many, something queued, requests open, a stalemate, a crashed or blocked seat),
+ * that they are facts and not diagnoses, that nobody is named by an id, and that they never run past three.
  */
 
 const NOW = Date.parse("2026-10-06T12:00:00Z");
@@ -100,6 +100,37 @@ test("what waits for the person is the last line, and says so when something doe
   assert.equal(rightNow(input({ ...base, forYou: 0 })).at(-1), "Nothing is waiting for you.");
   assert.equal(rightNow(input({ ...base, forYou: 1 })).at(-1), "1 item under Attention needs a look.");
   assert.equal(rightNow(input({ ...base, forYou: 3 })).at(-1), "3 items under Attention need a look.");
+});
+
+test("a crashed seat is said, with where to look, and 'nothing is waiting for you' is not: the Agents page lists it under Needs you", () => {
+  const base = { agents: [seat("qa", "THINKING"), seat("security", "FAILED"), seat("pm", "IDLE")], turns: [run("qa", ago(1))] };
+  assert.deepEqual(rightNow(input(base)), ["qa has been working for 1 min.", "security has crashed: see Agents."]);
+  assert.deepEqual(rightNow(input({ ...base, agents: [...base.agents, seat("architect", "FAILED")] })).at(-1), "security and architect have crashed: see Agents.");
+});
+
+test("a blocked seat is said the same way, and both kinds in one sentence", () => {
+  const working = [seat("qa", "THINKING")];
+  const turns = [run("qa", ago(1))];
+  assert.equal(rightNow(input({ agents: [...working, seat("security", "BLOCKED")], turns })).at(-1), "security is blocked: see Agents.");
+  assert.equal(rightNow(input({ agents: [...working, seat("security", "BLOCKED"), seat("pm", "BLOCKED")], turns })).at(-1), "security and pm are blocked: see Agents.");
+  assert.equal(rightNow(input({ agents: [...working, seat("security", "BLOCKED"), seat("pm", "FAILED")], turns })).at(-1), "pm has crashed and security is blocked: see Agents.");
+});
+
+test("past three seats in trouble they are counted, and what the attention list holds is still said first", () => {
+  const agents = [seat("qa", "THINKING"), seat("a", "FAILED"), seat("b", "FAILED"), seat("c", "BLOCKED"), seat("d", "BLOCKED")];
+  assert.equal(rightNow(input({ agents, turns: [run("qa", ago(1))] })).at(-1), "4 agents have crashed or are blocked: see Agents.");
+  assert.equal(rightNow(input({ agents: [seat("qa", "THINKING"), seat("a", "FAILED")], turns: [run("qa", ago(1))], forYou: 2 })).at(-1), "2 items under Attention need a look. a has crashed: see Agents.");
+});
+
+test("a seat that is paused, idle, finished or still starting is not in trouble, and a person's own pause is not a thing that waits for them", () => {
+  for (const lifecycle of ["SUSPENDED", "IDLE", "COMPLETED", "STARTING", "WAITING", "THINKING"]) {
+    assert.equal(rightNow(input({ agents: [seat("qa", "WORKING"), seat("pm", lifecycle)], turns: [run("qa", ago(1))] })).at(-1), "Nothing is waiting for you.", lifecycle);
+  }
+});
+
+test("a crashed seat is not resting on its mail, so the others are not 'everyone'", () => {
+  const lines = rightNow(input({ phase: "quiet", agents: [seat("pm", "WAITING"), seat("qa", "FAILED")] }));
+  assert.deepEqual(lines, ["pm is waiting for mail: nothing is queued. If it stays that way, send a message or wake an agent.", "qa has crashed: see Agents."]);
 });
 
 test("a stalemate: everyone is waiting for mail and nothing is queued, so nothing will happen, and what to do about it is said, if it stays that way", () => {
