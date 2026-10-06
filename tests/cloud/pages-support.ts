@@ -74,15 +74,23 @@ export class FakeNode {
     return this.attrs.has("hidden");
   }
   set hidden(v: boolean) {
-    if (v) this.attrs.set("hidden", "");
-    else this.attrs.delete("hidden");
+    if (v) {
+      this.attrs.set("hidden", "");
+      this.loseCursor(this);
+    } else this.attrs.delete("hidden");
   }
   get disabled(): boolean {
     return this.attrs.has("disabled");
   }
+  /** Held while a request is out: the page says so and ignores a press, and keeps the cursor on the control. */
+  get held(): boolean {
+    return this.attrs.get("aria-disabled") === "true";
+  }
   set disabled(v: boolean) {
-    if (v) this.attrs.set("disabled", "");
-    else this.attrs.delete("disabled");
+    if (v) {
+      this.attrs.set("disabled", "");
+      if (this.doc.activeElement === this) this.doc.activeElement = null;
+    } else this.attrs.delete("disabled");
   }
   get href(): string {
     return this.attrs.get("href") ?? "";
@@ -105,6 +113,7 @@ export class FakeNode {
     return this.isText ? this.text : this.children.map((c) => c.textContent).join("");
   }
   set textContent(v: string) {
+    for (const c of this.children) this.loseCursor(c);
     for (const c of this.children) c.parent = null;
     this.children = [];
     if (v !== "") this.append(v);
@@ -123,15 +132,25 @@ export class FakeNode {
     this.attrs.delete(name);
   }
 
+  /**
+   * What a browser does with the cursor when the control that has it is taken out of the page, hidden or disabled: it is lost, and nothing
+   * puts it back, so a page that draws a control again must say where the cursor goes.
+   */
+  private loseCursor(within: FakeNode): void {
+    if (within.contains(this.doc.activeElement)) this.doc.activeElement = null;
+  }
+
   append(...kids: Array<FakeNode | string>): void {
     for (const kid of kids) {
       const node = typeof kid === "string" ? new FakeNode("#text", this.doc, kid) : kid;
+      if (node.parent) this.loseCursor(node);
       node.parent?.children.splice(node.parent.children.indexOf(node), 1);
       node.parent = this;
       this.children.push(node);
     }
   }
   replaceChildren(...kids: Array<FakeNode | string>): void {
+    for (const c of this.children) this.loseCursor(c);
     for (const c of this.children) c.parent = null;
     this.children = [];
     this.append(...kids);
@@ -469,6 +488,8 @@ export class Visit {
   /** A click. A button that is not a plain one then submits its form, unless the click was handled. */
   click(node: FakeNode): void {
     if (node.disabled || !this.shows(node)) throw new Error("a person cannot click what is disabled or not shown");
+    // A click on a control gives it the cursor, as it does in most browsers.
+    if (["button", "a", "input", "select", "textarea"].includes(node.tag)) node.focus();
     const event = this.fire(node, "click");
     const type = node.attrs.get("type") ?? "submit";
     if (!event.defaultPrevented && node.tag === "button" && type === "submit") {
@@ -499,6 +520,12 @@ export class Visit {
     const n = typeof node === "string" ? this.$(node) : node;
     n.checked = on;
     this.fire(n, "change");
+  }
+  /** The tab goes behind another, or comes back to the front: the page is told, as a browser tells it. */
+  setVisibility(state: "visible" | "hidden"): void {
+    this.doc.visibilityState = state;
+    const event = { type: "visibilitychange", target: this.doc, currentTarget: this.doc, defaultPrevented: false, preventDefault() {} } as FakeEvent;
+    for (const fn of this.doc.listeners.get("visibilitychange") ?? []) fn(event);
   }
   /** The browser's own pageshow, as when the back button returns to the page. */
   pageshow(persisted: boolean): void {

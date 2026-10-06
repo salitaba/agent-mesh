@@ -81,8 +81,8 @@ code { font-family: var(--mono); font-size: .875em; background: var(--code); bor
 .field { display: grid; gap: 6px; margin-bottom: 18px; }
 .field label { font-size: .9375rem; font-weight: 600; }
 .field .hint { color: var(--muted); font-size: .875rem; }
-input[type="email"], input[type="password"], input[type="text"], input[type="number"] { width: 100%; min-height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: 1rem/1.2 var(--font); }
-input:hover { border-color: var(--muted); }
+input[type="email"], input[type="password"], input[type="text"], input[type="number"], select { width: 100%; min-height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: 1rem/1.2 var(--font); }
+input:hover, select:hover { border-color: var(--muted); }
 .secret { position: relative; display: flex; align-items: center; }
 .secret input { padding-right: 72px; }
 .reveal { position: absolute; right: 5px; top: 50%; min-width: 56px; min-height: 40px; padding: 0 12px; transform: translateY(-50%); border: 0; border-radius: 8px; background: none; color: var(--accent); font: 600 .875rem/1 var(--font); cursor: pointer; }
@@ -170,6 +170,15 @@ input[aria-invalid="true"] { border-color: var(--bad); }
 .row:first-child { border-top: 0; padding-top: 0; }
 .row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .row-head strong { font-size: 1.0625rem; }
+/* A workspace's card: what it is, why, what can be done, its model key where the plan has one, and its address as a quiet detail. */
+.ws > div:empty, .ws > .ws-says:empty { display: none; }
+.ws .ws-says, .ws .ws-note, .ws .ws-address { margin: 0; }
+.ws .ws-auto .check { align-items: center; min-height: 44px; margin: 0; }
+.ws-key { display: grid; gap: 10px; padding: 14px 0 0; border-top: 1px solid var(--line); }
+.ws-key > p { margin: 0; }
+.ws-key form { display: grid; gap: 14px; }
+.ws-key form .field, .ws-key form > p { margin: 0; }
+.key-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .confirm { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--bad); border-radius: 10px; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .inline-form .field { flex: 1 1 14rem; margin: 0; }

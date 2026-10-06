@@ -238,7 +238,7 @@ test("what the card offers is done from the card: open the workspace, resume it,
   open.answers.set("POST /api/workspaces/ws_1/open", { json: { url: "https://research-1a2b3c.ws.example.com/__enter?code=abc" } });
   const v = await visit("account", { routes: open.routes });
   v.click(v.button("stage-actions", "Open"));
-  assert.equal(v.button("stage-actions", "Open").disabled, true, "while the request is out the button is held");
+  assert.equal(v.button("stage-actions", "Open").held, true, "while the request is out the button is held");
   await v.idle();
   assert.deepEqual(v.navigations, ["assign https://research-1a2b3c.ws.example.com/__enter?code=abc"]);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/open").length, 1);
@@ -372,7 +372,7 @@ test("the workspace's own button is not a second one of the same weight when the
 });
 
 test("the account is as long as the person's stage needs: only what they can use is shown, and the password is a setting at the end", async () => {
-  const shown = (v: Visit) => ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel", "models-panel"].filter((id) => v.shows(v.$(id)));
+  const shown = (v: Visit) => ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel"].filter((id) => v.shows(v.$(id)));
 
   const visitor = await visit("account", { routes: world().routes });
   assert.deepEqual(shown(visitor), ["plan-panel"]);
@@ -386,7 +386,7 @@ test("the account is as long as the person's stage needs: only what they can use
   assert.deepEqual(shown(using), ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel"]);
 
   const hostingOnly = await visit("account", { routes: hosting().routes });
-  assert.deepEqual(shown(hostingOnly), ["workspaces-panel", "plan-panel", "models-panel"]);
+  assert.deepEqual(shown(hostingOnly), ["workspaces-panel", "plan-panel"], "the key is in the workspace's card");
 
   const remembered = world(paid);
   remembered.usage = { currency: "USD", byDay: [], byWorkspace: [{ group: "ws_gone", calls: 2, failed: 0, inputTokens: 5, outputTokens: 5, cachedTokens: 0, chargedMicros: 90 }], total: { calls: 2, failed: 0, inputTokens: 5, outputTokens: 5, cachedTokens: 0, chargedMicros: 90 } };
@@ -407,6 +407,10 @@ test("the account is as long as the person's stage needs: only what they can use
   await back.idle();
   assert.equal(back.to("GET", "/api/usage").length, 0, "and a payment that arrives while the page waits for it does not ask for usage that is not sold");
 
+  for (const section of visitor.doc.querySelectorAll("main section")) {
+    const named = visitor.doc.getElementById(section.getAttribute("aria-labelledby") ?? "");
+    assert.ok(named && named.tag === "h2", `${section.id || section.className} is a region named by its heading`);
+  }
   for (const v of [visitor, first, using, hostingOnly]) {
     const panels = v.doc.querySelector("main .wrap")!.children.filter((n) => n.tag === "section" && n.className.split(/\s+/).includes("panel") && v.shows(n));
     const last = panels[panels.length - 1]!;

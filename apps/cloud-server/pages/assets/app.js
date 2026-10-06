@@ -29,7 +29,7 @@
     verify: ["status", "title", "again"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -285,6 +285,38 @@
     return { workspaces: view.workspaces.length > 0, plan: live ? "summary" : "choose", balance: sellsUsage, usage: sellsUsage && (view.workspaces.length > 0 || (view.usageCalls || 0) > 0) };
   }
 
+  /**
+   * Whether a person can start a workspace that is stopped: the service starts none for an account whose plan is not paid up (it answers
+   * that a payment is needed), and starts them all itself when the payment comes.
+   */
+  function resumable(w, view) {
+    const sub = view.subscription;
+    return w.status === "suspended" && holdsPlan(sub) && sub.status === "active";
+  }
+
+  /**
+   * What a workspace says of itself under its name and state, in a sentence or two: why it is as it is and what can be done. A workspace
+   * that is running and ready says nothing more than its state and its Open button do.
+   */
+  function workspaceSays(w, view) {
+    switch (w.status) {
+      case "running":
+        return lacksKey(w) ? "Its team has no model yet. Give it your model key to put it to work." : "";
+      case "requested":
+      case "provisioning":
+        return "It starts in the background, and this page updates when it is ready.";
+      case "suspended": {
+        const why = w.statusReason === "paused by its owner" ? "Paused by you. Its files are kept." : w.statusReason ? reasonText(w.statusReason) : "It is not running.";
+        if (resumable(w, view)) return `${why} Resume it to open it.`;
+        return `${why} ${holdsPlan(view.subscription) ? "A payment starts it again." : "Choose a plan again and it starts again."}`;
+      }
+      case "failed":
+        return `${w.statusReason ? reasonText(w.statusReason) : "The workspace could not be started."} Delete it and make a new one. If it fails again, tell the operator.`;
+      default:
+        return "";
+    }
+  }
+
   /** What the account looks like in the ways a payment changes it. */
   function fingerprint(me) {
     const sub = me.account.subscription;
@@ -292,7 +324,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, STATES, POLICY_UNITS };
+  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -314,9 +346,20 @@
     return node;
   }
 
+  /**
+   * A control that is held while its request is out says so (aria-disabled) and does nothing when it is pressed. A disabled one would take
+   * the cursor away from a person at a keyboard, in a browser that does not leave it on a control that cannot be used.
+   */
+  const isHeld = (node) => node.getAttribute("aria-disabled") === "true";
+  function hold(node, on) {
+    if (on) node.setAttribute("aria-disabled", "true");
+    else node.removeAttribute("aria-disabled");
+  }
+
   function button(label, o = {}) {
     const classes = ["btn", o.kind ? `btn-${o.kind}` : "", o.small ? "btn-small" : ""].filter(Boolean).join(" ");
-    return el("button", { type: o.type || "button", id: o.id, class: classes, disabled: o.disabled, onclick: o.onclick, ...o.attrs }, label);
+    const onclick = o.onclick ? (event) => (isHeld(event.currentTarget) ? undefined : o.onclick(event)) : undefined;
+    return el("button", { type: o.type || "button", id: o.id, class: classes, disabled: o.disabled, onclick, ...o.attrs }, label);
   }
 
   /** Say something in a status area, or clear it. */
@@ -384,6 +427,7 @@
       event.preventDefault();
       if (busy) return;
       busy = true;
+      const focused = doc.activeElement && node.contains(doc.activeElement) ? doc.activeElement : null;
       const buttons = [...node.querySelectorAll("button")];
       for (const b of buttons) b.disabled = true;
       // A button that has a word for it says so, so that a slow answer does not look like a button that did nothing.
@@ -403,6 +447,8 @@
         for (const b of buttons) b.disabled = false;
         if (main) main.textContent = label;
         node.removeAttribute("aria-busy");
+        // A button that is disabled loses the cursor in some browsers: it comes back, unless the handler put it somewhere else.
+        if (focused && (!doc.activeElement || doc.activeElement === doc.body)) focused.focus();
       }
     });
   }
@@ -740,7 +786,6 @@
       busy: new Set(),
       keyBusy: new Set(),
       drafts: new Map(),
-      modelRows: "",
       notes: new Map(),
       confirming: null,
       typed: "",
@@ -752,6 +797,8 @@
       changing: false,
       /** The workspaces whose less used actions (deleting one) are shown. */
       more: new Set(),
+      /** The workspaces whose person asked for them to be opened as soon as they are ready. */
+      autoOpen: new Set(),
       /** What the card at the top said last, so that it is drawn again only when it says something else. */
       stageShape: "",
       stageId: undefined,
@@ -887,6 +934,7 @@
             act(w, "Deleting it.", () => call("POST", path(w, "delete"), { confirm: w.name }), () => {
               state.confirming = null;
               state.typed = "";
+              state.focusStage = true;
             });
           },
         },
@@ -908,25 +956,62 @@
       );
     }
 
-    function workspaceRow(w) {
-      const [label, kind] = STATES[w.status] || [w.status, ""];
+    /** Whether the card at the top offers this workspace's person the same thing as a button of their own. */
+    const cardOffers = (id, kind) => Boolean(state.stageTarget) && state.stageTarget.id === id && state.stageTarget.kind === kind;
+
+    /**
+     * One card to a workspace, made once and kept. Each part of it is drawn again only when what it says has changed, so that a key being
+     * typed, or the name typed to confirm a deletion, is not lost when the page looks at the account again, and a button that was pressed
+     * is still the one that has the cursor while its request is out.
+     */
+    const cards = new Map();
+    const CARD_PARTS = [
+      ["head", "div", "row-head"],
+      ["says", "p", "ws-says"],
+      ["auto", "div", "ws-auto"],
+      ["actions", "div", "ws-actions"],
+      ["key", "div", "ws-key"],
+      ["confirm", "div", "ws-confirm"],
+    ];
+
+    function cardFor(id) {
+      let card = cards.get(id);
+      if (card) return card;
+      const boxes = {};
+      for (const [name, tag, cls] of CARD_PARTS) boxes[name] = el(tag, { class: cls });
+      // What is under way, or came of the last thing asked: one line that stays, so that a change in it is read out.
+      // While it says nothing it is kept out of sight, not out of the page (`sr`): a line that is not in the page is not read out when it fills.
+      const note = el("p", { class: "ws-note sr", role: "status", "aria-live": "polite" });
+      const address = el("p", { class: "muted small ws-address" });
+      card = { li: el("li", { class: "row ws" }, Object.values(boxes), note, address), boxes, note, address, shapes: {}, noteShape: "", addressShape: "" };
+      cards.set(id, card);
+      return card;
+    }
+
+    function part(card, name, shape, make) {
+      if (card.shapes[name] === shape) return;
+      card.shapes[name] = shape;
+      const box = card.boxes[name];
+      const had = doc.activeElement && box.contains(doc.activeElement) ? doc.activeElement.id : null;
+      box.replaceChildren(...make());
+      if (had === null) return;
+      // The cursor goes back to what it was on, or, when that is gone (Pause is replaced by Resume), to the first control there is now.
+      const target = (had ? $(had) : null) || box.querySelector("button, input, select, a");
+      if (target) target.focus();
+    }
+
+    /** What can be done to a workspace in the state it is in. Deleting is behind More, away from Open; a workspace that could not start has nothing else to be done, so there it is shown. */
+    function actionsOf(w, view) {
       const id = w.workspaceId;
-      const held = state.busy.has(id);
-      const note = state.notes.get(id);
-      const reason = reasonText(w.statusReason);
-      const actions = [];
-      const offered = (kind) => Boolean(state.stageTarget) && state.stageTarget.id === id && state.stageTarget.kind === kind;
+      const buttons = [];
       if (w.status === "running") {
-        actions.push(button("Open", { id: `open-${id}`, kind: offered("open") ? "" : "primary", disabled: held, onclick: () => open(w), attrs: { "aria-label": `Open ${w.name}` } }));
-        actions.push(button("Pause", { id: `pause-${id}`, disabled: held, onclick: () => act(w, "Pausing it.", () => call("POST", path(w, "suspend"))), attrs: { "aria-label": `Pause ${w.name}` } }));
+        buttons.push(button("Open", { id: `open-${id}`, kind: cardOffers(id, "open") || lacksKey(w) ? "" : "primary", onclick: () => open(w), attrs: { "aria-label": `Open ${w.name}` } }));
+        buttons.push(button("Pause", { id: `pause-${id}`, onclick: () => act(w, "Pausing it.", () => call("POST", path(w, "suspend"))), attrs: { "aria-label": `Pause ${w.name}` } }));
       }
-      if (w.status === "suspended") actions.push(button("Resume", { id: `resume-${id}`, kind: offered("resume") ? "" : "primary", disabled: held, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), attrs: { "aria-label": `Resume ${w.name}` } }));
-      // Deleting is away from the button a person comes for: behind More, where it takes a click that is meant. A workspace that
-      // could not start has nothing else to be done to it, so there it is shown.
+      if (resumable(w, view)) buttons.push(button("Resume", { id: `resume-${id}`, kind: cardOffers(id, "resume") ? "" : "primary", onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), attrs: { "aria-label": `Resume ${w.name}` } }));
       const remove = button("Delete this workspace", {
         id: `delete-${id}`,
         kind: "danger",
-        disabled: held,
         attrs: { "aria-label": `Delete this workspace: ${w.name}` },
         onclick: () => {
           state.confirming = id;
@@ -936,15 +1021,14 @@
           if (input) input.focus();
         },
       });
-      const shown = state.more.has(id) || state.confirming === id;
-      let hidden = null;
-      if (w.status === "failed") actions.push(remove);
+      let panel = null;
+      if (w.status === "failed") buttons.push(remove);
       else if (!isStarting(w)) {
-        actions.push(
+        const shown = state.more.has(id) || state.confirming === id;
+        buttons.push(
           button("More", {
             id: `more-${id}`,
             kind: "quiet",
-            disabled: held,
             attrs: { "aria-expanded": shown ? "true" : "false", "aria-controls": `more-panel-${id}`, "aria-label": `More actions for ${w.name}` },
             onclick: () => {
               if (state.more.has(id)) state.more.delete(id);
@@ -954,28 +1038,83 @@
             },
           }),
         );
-        hidden = el("div", { id: `more-panel-${id}`, class: "disclosed", hidden: !shown }, remove);
+        panel = el("div", { id: `more-panel-${id}`, class: "disclosed", hidden: !shown }, remove);
       }
-      return el(
-        "li",
-        { class: "row" },
-        el("div", { class: "row-head" }, el("strong", null, w.name), el("span", { class: kind ? `badge badge-${kind}` : "badge" }, label)),
-        el("p", { class: "muted small" }, el("code", null, w.host), reason ? ` ${reason}` : isStarting(w) ? " It starts in the background, and this page updates when it is ready." : ""),
-        actions.length > 0 ? el("div", { class: "btn-row" }, actions) : null,
-        hidden,
-        state.confirming === id ? confirmBox(w) : null,
-        note ? el("p", { class: note.kind ? `note note-${note.kind}` : "muted small", role: "status" }, note.text) : null,
-      );
+      return [buttons.length > 0 ? el("div", { class: "btn-row" }, buttons) : null, panel].filter(Boolean);
+    }
+
+    /** "Open it when it is ready", off until the person asks: a page that takes someone away on its own does so only because they said it may. */
+    function autoOpenBox(w) {
+      const id = w.workspaceId;
+      // It is drawn unchecked: a ticked offer is dropped as soon as the workspace is not on its way to being ready, so none is drawn again ticked.
+      const input = el("input", { id: `auto-${id}`, type: "checkbox" });
+      input.addEventListener("change", () => {
+        if (input.checked) state.autoOpen.add(id);
+        else state.autoOpen.delete(id);
+      });
+      return el("label", { class: "check" }, input, "Open it when it is ready");
+    }
+
+    function drawCard(w, view) {
+      const id = w.workspaceId;
+      const card = cardFor(id);
+      const [label, kind] = STATES[w.status] || [w.status, ""];
+      const says = workspaceSays(w, view);
+      // Ready is not running only: on a plan that sells hosting only a workspace with no key is up, and has nothing to open for.
+      const waiting = isStarting(w) || (w.status === "running" && lacksKey(w));
+      const showAuto = isStarting(w) || (waiting && state.autoOpen.has(id));
+      part(card, "head", JSON.stringify([w.name, w.status]), () => [el("strong", null, w.name), el("span", { class: kind ? `badge badge-${kind}` : "badge" }, label)]);
+      part(card, "says", says, () => (says ? [says] : []));
+      part(card, "auto", String(showAuto), () => (showAuto ? [autoOpenBox(w)] : []));
+      part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.confirming === id]), () => actionsOf(w, view));
+      part(card, "key", keyShape(w), () => keyBlock(w));
+      part(card, "confirm", String(state.confirming === id), () => (state.confirming === id ? [confirmBox(w)] : []));
+      // A request that is out holds the buttons without drawing them again: the one that was pressed keeps the cursor.
+      const held = state.busy.has(id);
+      for (const b of card.boxes.actions.querySelectorAll("button")) hold(b, held);
+      const note = state.notes.get(id);
+      const noteShape = note ? `${note.kind}|${note.text}` : "";
+      if (card.noteShape !== noteShape) {
+        card.noteShape = noteShape;
+        card.note.className = !note ? "ws-note sr" : note.kind ? `note note-${note.kind} ws-note` : "muted small ws-note";
+        card.note.textContent = note ? note.text : "";
+      }
+      if (card.addressShape !== w.host) {
+        card.addressShape = w.host;
+        card.address.replaceChildren("Address ", el("code", null, w.host));
+      }
+      return card;
     }
 
     function renderWorkspaces() {
-      const list = $("workspaces");
-      const focused = doc.activeElement && list.contains(doc.activeElement) ? doc.activeElement.id : "";
       const items = account().workspaces;
-      list.replaceChildren(...items.map(workspaceRow));
+      const view = viewOf();
+      const list = $("workspaces");
+      const lis = items.map((w) => drawCard(w, view).li);
+      // The list is touched only when a workspace came or went, and one that came is added after the others: moving a card that has the cursor in it takes the cursor away.
+      const shown = [...list.children];
+      if (shown.length <= lis.length && shown.every((li, i) => li === lis[i])) list.append(...lis.slice(shown.length));
+      else list.replaceChildren(...lis);
       $("workspaces-panel").hidden = items.length === 0;
       renderCreate(items);
-      restoreFocus(focused);
+    }
+
+    /** A workspace whose person asked for it to be opened when it is ready is opened as soon as it is, as if they had pressed Open. */
+    function openWhenReady() {
+      if (state.autoOpen.size === 0) return;
+      const mine = new Map(account().workspaces.map((w) => [w.workspaceId, w]));
+      for (const id of [...state.autoOpen]) {
+        // One that is gone, or has stopped, or could not start, is not on its way to being ready: it is not waited for any more.
+        const w = mine.get(id);
+        if (!w || !(isStarting(w) || w.status === "running")) state.autoOpen.delete(id);
+      }
+      if (doc.visibilityState === "hidden") return;
+      for (const w of account().workspaces) {
+        if (!state.autoOpen.has(w.workspaceId) || w.status !== "running" || lacksKey(w)) continue;
+        state.autoOpen.delete(w.workspaceId);
+        open(w);
+        return;
+      }
     }
 
     /** Whether a workspace can be made, and why not when it cannot. The form itself is where the page puts it: in the card at the top for a first workspace. */
@@ -1027,7 +1166,7 @@
       if (target) target.focus();
     }
 
-    function stageAction(a, w, held) {
+    function stageAction(a, w) {
       const named = w ? { "aria-label": `${a.label} ${w.name}` } : undefined;
       switch (a.kind) {
         case "link":
@@ -1037,9 +1176,9 @@
         case "key":
           return button(a.label, { kind: "primary", onclick: () => focusKey(w) });
         case "open":
-          return button(a.label, { id: "stage-open", kind: "primary", disabled: held, onclick: () => open(w), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-open", kind: "primary", onclick: () => open(w), ...(named ? { attrs: named } : {}) });
         default:
-          return button(a.label, { id: "stage-resume", kind: "primary", disabled: held, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-resume", kind: "primary", onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
       }
     }
 
@@ -1049,12 +1188,28 @@
       const stage = stageOf(view);
       const card = nextStepOf(stage, view);
       const w = stage.workspace;
+      const shape = JSON.stringify([stage.id, stage.step, card, stage.steps, w ? w.workspaceId : ""]);
+      if (shape !== state.stageShape) {
+        state.stageShape = shape;
+        drawStage(stage, card, w);
+      }
+      // A request that is out holds the card's button without drawing it again: the one that was pressed keeps the cursor.
       const held = Boolean(w) && state.busy.has(w.workspaceId);
-      const shape = JSON.stringify([stage.id, stage.step, card, stage.steps, held, w ? w.workspaceId : ""]);
-      if (shape === state.stageShape) return;
-      state.stageShape = shape;
-      state.stageTarget = card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
+      for (const id of ["stage-open", "stage-resume"]) {
+        const b = doc.getElementById(id);
+        if (b) hold(b, held);
+      }
+      if (state.focusStage) {
+        state.focusStage = false;
+        $("stage-title").focus();
+      }
+    }
+
+    function drawStage(stage, card, w) {
       const box = $("stage");
+      // The cursor goes back to what it was on, or, when that is gone (Resume is not offered once it is running), to what the card says now.
+      const had = box.contains(doc.activeElement) ? doc.activeElement.id : null;
+      state.stageTarget = card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
       box.hidden = false;
       box.className = card.tone ? `stage stage-${card.tone}` : "stage";
       // The steps are for a person who is getting started; one whose workspace can be opened is not shown them.
@@ -1066,24 +1221,21 @@
       text.replaceChildren(card.text);
       if (card.contact && /^(mailto:|https:)/.test(CONTACT)) text.append(" ", el("a", { href: CONTACT }, "Contact the operator"), ".");
       const actions = $("stage-actions");
-      const box2 = $("create-box");
+      const form = $("create-box");
       if (card.action && card.action.kind === "create") {
-        actions.replaceChildren(box2);
+        actions.replaceChildren(form);
         state.createAt = "stage";
       } else {
         if (state.createAt === "stage") {
-          $("create-slot").append(box2);
+          $("create-slot").append(form);
           state.createAt = "panel";
         }
-        actions.replaceChildren(...(card.action ? [stageAction(card.action, w, held)] : []));
+        actions.replaceChildren(...(card.action ? [stageAction(card.action, w)] : []));
       }
       // What a screen reader is told, once, when the account moves on: the page was not asked, and nothing it was looking at is gone.
       if (state.stageId !== undefined && state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
       state.stageId = stage.id;
-      if (state.focusStage) {
-        state.focusStage = false;
-        $("stage-title").focus();
-      }
+      if (had !== null) ((had ? doc.getElementById(had) : null) || $("stage-title")).focus();
     }
 
     /** While a workspace is starting the page asks again every few seconds, for ten minutes at most, and not while the tab is hidden. */
@@ -1099,26 +1251,21 @@
       }, 3000);
     }
 
-    // -- the customer's own model key --
+    // -- the customer's own model key, in the card of the workspace it is for --
 
     const PROVIDER_NAMES = { anthropic: "Anthropic", "openai-compatible": "OpenAI-compatible" };
 
+    /** What the key part of a card shows, so that it is drawn again when that changes and not otherwise: a key being typed is in it. */
+    const keyShape = (w) => (w.models ? JSON.stringify([w.status === "failed" ? "failed" : canKey(w) ? "can" : "not yet", w.models.key]) : "");
+
     /**
-     * One workspace's key. The page can send a key and can say that one is kept, for which provider and model; it can never show one,
-     * because the service never sends one back. What was typed is cleared from the field as soon as it has been sent.
+     * The form that gives a workspace its key. The page can send a key and can say that one is kept, for which provider and model; it can
+     * never show one, because the service never sends one back. What was typed is cleared from the field as soon as it has been sent.
      */
-    function modelKeyRow(w) {
+    function keyForm(w, kept, note, buttons) {
       const id = w.workspaceId;
-      const kept = w.models.key;
       const draft = state.drafts.get(id) || { provider: kept ? kept.provider : "anthropic", model: kept ? kept.model : "", baseUrl: kept && kept.baseUrl ? kept.baseUrl : "" };
       state.drafts.set(id, draft);
-      const note = el("p", { id: `key-note-${id}`, class: "muted small", role: "status" });
-      const head = el("div", { class: "row-head" }, el("strong", null, w.name), el("span", { class: kept ? "badge badge-ok" : "badge" }, kept ? "Key kept" : "No key yet"));
-      const facts = kept
-        ? el("p", { class: "muted small" }, `${PROVIDER_NAMES[kept.provider] || kept.provider}, model ${kept.model}${kept.baseUrl ? `, at ${kept.baseUrl}` : ""}. Set ${when(kept.setAt)}. The key itself is never shown again.`)
-        : el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on.");
-      if (!canKey(w)) return el("li", { class: "row" }, head, facts, el("p", { class: "muted small" }, "You can set its key once the workspace has started."));
-
       const provider = el("select", { id: `key-provider-${id}`, name: "provider" }, Object.entries(PROVIDER_NAMES).map(([value, label]) => el("option", { value, selected: value === draft.provider }, label)));
       provider.value = draft.provider;
       const model = el("input", { id: `key-model-${id}`, name: "model", type: "text", autocomplete: "off", spellcheck: "false", value: draft.model, maxlength: 128 });
@@ -1135,82 +1282,105 @@
       for (const type of ["input", "change"]) provider.addEventListener(type, sync);
       model.addEventListener("input", () => (draft.model = model.value));
       base.addEventListener("input", () => (draft.baseUrl = base.value));
-      const save = button(kept ? "Replace key" : "Save key", { type: "submit", kind: "primary", id: `key-save-${id}` });
-      const buttons = [save];
-      if (kept) buttons.push(button("Delete key", { id: `key-delete-${id}`, kind: "danger", onclick: () => removeKey(w, note, buttons) }));
-
-      const form = el(
-        "form",
-        {
-          id: `key-form-${id}`,
-          novalidate: true,
-          onsubmit: async (event) => {
-            event.preventDefault();
-            if (state.keyBusy.has(id)) return;
-            const kind = chosen();
-            const typed = key.value.trim();
-            say(note, "", "");
-            if (!draft.model.trim()) return invalid(model, note, "Name the model your teams should run on, as your provider names it.");
-            if (kind === "openai-compatible" && !/^https:\/\//i.test(draft.baseUrl.trim())) return invalid(base, note, "Give your provider's address, starting with https://.");
-            if (typed.length < 8 || /\s/.test(typed)) return invalid(key, note, "Paste the whole key, with no spaces.");
-            state.keyBusy.add(id);
-            for (const b of buttons) b.disabled = true;
-            say(note, "", "Keeping it, and starting the workspace again with it.");
-            const body = { provider: kind, model: draft.model.trim(), key: typed, ...(kind === "openai-compatible" ? { baseUrl: draft.baseUrl.trim() } : {}) };
-            const r = await call("POST", path(w, "model-key"), body);
-            // Whatever came of it, the page does not hold the key any longer.
-            key.value = "";
-            state.keyBusy.delete(id);
-            for (const b of buttons) b.disabled = false;
-            if (signInAgain(r)) return;
-            if (!r.ok) {
-              say(note, "bad", r.error.message);
-              return;
-            }
-            flash("ok", `The key for ${w.name} is kept, and the workspace was started again with it.`);
-            if (!(await refresh())) renderModelKeys(true);
+      const save = button(kept ? "Save new key" : "Save key", { type: "submit", kind: "primary", id: `key-save-${id}` });
+      buttons.push(save);
+      return {
+        key,
+        form: el(
+          "form",
+          {
+            id: `key-form-${id}`,
+            novalidate: true,
+            onsubmit: async (event) => {
+              event.preventDefault();
+              if (state.keyBusy.has(id)) return;
+              const kind = chosen();
+              const typed = key.value.trim();
+              say(note, "", "");
+              if (!draft.model.trim()) return invalid(model, note, "Name the model your teams should run on, as your provider names it.");
+              if (kind === "openai-compatible" && !/^https:\/\//i.test(draft.baseUrl.trim())) return invalid(base, note, "Give your provider's address, starting with https://.");
+              if (typed.length < 8 || /\s/.test(typed)) return invalid(key, note, "Paste the whole key, with no spaces.");
+              state.keyBusy.add(id);
+              for (const b of buttons) hold(b, true);
+              say(note, "", "Keeping it, and starting the workspace again with it.");
+              const body = { provider: kind, model: draft.model.trim(), key: typed, ...(kind === "openai-compatible" ? { baseUrl: draft.baseUrl.trim() } : {}) };
+              const r = await call("POST", path(w, "model-key"), body);
+              // Whatever came of it, the page does not hold the key any longer.
+              key.value = "";
+              state.keyBusy.delete(id);
+              for (const b of buttons) hold(b, false);
+              if (signInAgain(r)) return;
+              if (!r.ok) {
+                say(note, "bad", r.error.message);
+                return;
+              }
+              flash("ok", `The key for ${w.name} is kept, and the workspace was started again with it.`);
+              if (!(await refresh())) renderWorkspaces();
+            },
           },
+          el("div", { class: "field" }, el("label", { for: provider.id }, "Provider"), provider),
+          el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o.")),
+          baseField,
+          el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours.")),
+          el("div", { class: "btn-row" }, save),
+          el("p", { class: "muted small" }, "Saving or removing a key starts the workspace's host again, which ends a turn that is running. Its files are kept."),
+        ),
+      };
+    }
+
+    /**
+     * The key part of a workspace's card, for a workspace of a plan that sells hosting only: which key is kept (or that none is), and the
+     * form to give one. With none the form is open; with one it is behind Replace key, and the key can be removed.
+     */
+    function keyBlock(w) {
+      if (!w.models || w.status === "failed") return [];
+      const id = w.workspaceId;
+      const kept = w.models.key;
+      const note = el("p", { id: `key-note-${id}`, class: "muted small", role: "status", "aria-live": "polite" });
+      const head = el("p", { class: "key-line" }, el("strong", null, "Model key"), el("span", { class: kept ? "badge badge-ok" : "badge badge-warn" }, kept ? "Key kept" : "No key yet"));
+      if (!canKey(w)) return [head, el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on. You can set its key once the workspace has started.")];
+      const promise = el("p", { class: "muted small" }, "Your key stays with your workspace. Curule does not resell model usage, so you pay your provider directly. A key is only ever sent to the workspace it is for, and nobody can read it back, including you.");
+      const buttons = [];
+      const { key, form } = keyForm(w, kept, note, buttons);
+      if (!kept) return [head, el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on."), promise, form, note];
+
+      const panel = el("div", { id: `key-replace-${id}`, class: "disclosed", hidden: true }, promise, form);
+      const toggle = button("Replace key", {
+        id: `key-toggle-${id}`,
+        small: true,
+        kind: "quiet",
+        attrs: { "aria-expanded": "false", "aria-controls": panel.id },
+        onclick: () => {
+          const opening = panel.hidden;
+          panel.hidden = !opening;
+          toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+          // Opening is for typing a key, so the cursor goes to the field; closing puts away what was typed.
+          if (opening) focusKey(w);
+          else key.value = "";
         },
-        el("div", { class: "field" }, el("label", { for: provider.id }, "Provider"), provider),
-        el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o.")),
-        baseField,
-        el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours.")),
-        el("div", { class: "btn-row" }, buttons),
-        el("p", { class: "muted small" }, "Saving or deleting a key starts the workspace's host again, which ends a turn that is running. Its files are kept."),
-      );
-      return el("li", { class: "row" }, head, facts, form, note);
+      });
+      const remove = button("Remove key", { id: `key-delete-${id}`, small: true, kind: "danger", onclick: () => removeKey(w, note, buttons) });
+      buttons.push(toggle, remove);
+      const facts = el("p", { class: "muted small" }, `${PROVIDER_NAMES[kept.provider] || kept.provider}, model ${kept.model}${kept.baseUrl ? `, at ${kept.baseUrl}` : ""}. Set ${when(kept.setAt)}. The key itself is never shown again.`);
+      return [head, facts, el("div", { class: "btn-row" }, toggle, remove), panel, note];
     }
 
     async function removeKey(w, note, buttons) {
       if (state.keyBusy.has(w.workspaceId)) return;
       state.keyBusy.add(w.workspaceId);
-      for (const b of buttons) b.disabled = true;
-      say(note, "", "Deleting it, and starting the workspace again without it.");
+      for (const b of buttons) hold(b, true);
+      say(note, "", "Removing it, and starting the workspace again without it.");
       const r = await call("POST", path(w, "model-key/delete"));
       state.keyBusy.delete(w.workspaceId);
-      for (const b of buttons) b.disabled = false;
+      for (const b of buttons) hold(b, false);
       if (signInAgain(r)) return;
       if (!r.ok) {
         say(note, "bad", r.error.message);
         return;
       }
       state.drafts.delete(w.workspaceId);
-      flash("ok", `The key for ${w.name} is deleted. A team in it has no model to run on until you give it another.`);
-      if (!(await refresh())) renderModelKeys(true);
-    }
-
-    /** Drawn again only when what it shows changed: a page that looks again while a workspace starts must not empty a field somebody is typing in. */
-    function renderModelKeys(force) {
-      const mine = account().workspaces.filter((w) => w.models);
-      const panel = $("models-panel");
-      panel.hidden = mine.length === 0;
-      const shape = JSON.stringify(mine.map((w) => [w.workspaceId, w.name, w.status, w.models.key]));
-      if (!force && shape === state.modelRows) return;
-      state.modelRows = shape;
-      const list = $("model-keys");
-      const focused = doc.activeElement && list.contains(doc.activeElement) ? doc.activeElement.id : "";
-      list.replaceChildren(...mine.map(modelKeyRow));
-      restoreFocus(focused);
+      flash("ok", `The key for ${w.name} is removed. A team in it has no model to run on until you give it another.`);
+      if (!(await refresh())) renderWorkspaces();
     }
 
     // -- plan --
@@ -1379,7 +1549,6 @@
       renderNotice();
       renderStage();
       renderWorkspaces();
-      renderModelKeys(false);
       renderPlan();
       $("balance-panel").hidden = !sections.balance;
       $("usage-panel").hidden = !sections.usage;
@@ -1390,6 +1559,7 @@
         loadUsage();
       }
       watch();
+      openWhenReady();
     }
 
     // -- forms --
@@ -1460,6 +1630,8 @@
 
     renderTopups();
     renderAll();
+    // A workspace that became ready while the tab was behind another is opened when the person comes back to it.
+    doc.addEventListener("visibilitychange", openWhenReady);
     // The browser's back button can bring this page back from where it was, and with a payment page's button still pressed.
     window.addEventListener("pageshow", (event) => {
       if (event.persisted) location.reload();

@@ -530,6 +530,27 @@ test("a password field has Show and Hide that only a script can give, and a pass
   }
 });
 
+test("a button that was pressed has the cursor again when its call is done, unless the page put it somewhere on purpose", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/forgot", { status: 202, json: { ok: true, message: "If that address has an account, a link to choose a new password is on its way." } });
+  const v = await visit("forgot", { routes: w.routes });
+  v.type("email", "ada@example.com");
+  const send = v.button("form", "Send the link");
+  v.click(send);
+  assert.equal(v.doc.activeElement, null, "while the call is out the button is disabled, and a browser takes the cursor from it");
+  await v.idle();
+  assert.equal(v.doc.activeElement, send, "and when it is done the cursor is on it again");
+
+  const refusing = world((x) => (x.signedIn = false));
+  refusing.answers.set("POST /api/login", failure(401, "invalid_credentials", "That email and password do not match an account."));
+  const login = await visit("login", { routes: refusing.routes });
+  login.type("email", "ada@example.com");
+  login.type("password", "wrong password");
+  login.click(login.button("form", "Sign in"));
+  await login.idle();
+  assert.equal(login.doc.activeElement, login.$("password"), "a page that puts it in the field that needs it is not undone");
+});
+
 test("a main button says what it is doing while the call is out, and is itself again afterwards", async () => {
   const w = world((x) => (x.signedIn = false));
   let during = "";
@@ -772,7 +793,7 @@ test("the plans being unavailable leaves the rest of the account usable and says
   assert.equal(v.text("topup-hint"), "");
   assert.deepEqual(v.labels("topup-options"), []);
   assert.deepEqual(v.labels("workspaces"), ["Resume", "More"]);
-  assert.match(v.text("workspaces"), /You paused it\./);
+  assert.match(v.text("workspaces"), /Paused by you\. Its files are kept\. Resume it to open it\./);
 });
 
 // ---- workspaces ----
@@ -790,10 +811,13 @@ test("each workspace shows its state in words, with only what can be done to it 
   const v = await visit("account", { routes: w.routes });
   const rows = v.$("workspaces").querySelectorAll("li");
   assert.equal(rows.length, 4);
-  assert.equal(v.text(rows[0]!), "Alpha Running alpha.ws.example.com Open Pause More");
-  assert.equal(v.text(rows[1]!), "Beta Stopped beta.ws.example.com Stopped because the last payment did not go through. Resume More");
-  assert.equal(v.text(rows[2]!), "Gamma Starting gamma.ws.example.com It starts in the background, and this page updates when it is ready.");
-  assert.equal(v.text(rows[3]!), "Delta Could not start delta.ws.example.com The container did not start. Delete this workspace");
+  assert.equal(v.text(rows[0]!), "Alpha Running Open Pause More Address alpha.ws.example.com", "a workspace that is ready says its state and offers what can be done");
+  assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Address beta.ws.example.com", "the plan is paid up, so it can be started");
+  assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Address gamma.ws.example.com");
+  assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, tell the operator. Delete this workspace Address delta.ws.example.com");
+  const boxes = (row: FakeNode) => row.querySelectorAll("input").filter((i) => i.getAttribute("type") === "checkbox");
+  assert.deepEqual(rows.map((r) => boxes(r).length), [0, 0, 1, 0], "only a workspace that is starting offers to be opened when it is ready");
+  assert.equal(boxes(rows[2]!)[0]!.checked, false, "and it is off until the person asks");
   assert.equal(v.text("create-note"), "", "while a workspace is starting nothing is said about the plan being full: the person has done what was asked of them");
   assert.equal(v.shows(v.$("create")), false, "three places, and three are in use: a workspace that failed to start does not hold one");
 
@@ -867,7 +891,7 @@ test("opening a workspace asks for a one-time address and goes there; an answer 
   o.click(o.button("workspaces", "Open"));
   await o.idle();
   assert.deepEqual(o.navigations, []);
-  assert.equal(o.text("workspaces"), "Research Running research-1a2b3c.ws.example.com Open Pause More The address of this workspace is not one this page will open. Tell the operator.");
+  assert.equal(o.text("workspaces"), "Research Running Open Pause More The address of this workspace is not one this page will open. Tell the operator. Address research-1a2b3c.ws.example.com");
 
   const still = world((x) => {
     paid(x);
@@ -891,21 +915,24 @@ test("pausing and resuming are one request each, with the row saying what is und
     return { json: { workspace: w.workspaces[0] } };
   });
   const v = await visit("account", { routes: w.routes });
-  v.click(v.button("workspaces", "Pause"));
+  const pause = v.button("workspaces", "Pause");
+  pause.focus();
+  v.click(pause);
   assert.match(v.text("workspaces"), /Pausing it\./, "while the request is out the row says so");
-  assert.ok(v.buttons("workspaces").every((b) => b.disabled), "and its buttons are held");
+  assert.ok(v.buttons("workspaces").every((b) => b.held), "and its buttons are held");
+  assert.ok(v.$("pause-ws_1") === pause && v.doc.activeElement === pause, "the button that was pressed is the one with the cursor, and was not drawn again");
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Stopped research-1a2b3c\.ws\.example\.com You paused it\. Resume More$/);
+  assert.equal(v.text("workspaces"), "Research Stopped Paused by you. Its files are kept. Resume it to open it. Resume More Address research-1a2b3c.ws.example.com");
   v.click(v.button("workspaces", "Resume"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Running .* Open Pause More$/);
+  assert.match(v.text("workspaces"), /^Research Running Open Pause More Address /);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/suspend").length, 1);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/resume").length, 1);
 
   w.answers.set("POST /api/workspaces/ws_1/suspend", failure(409, "not_running", "That workspace is not running."));
   v.click(v.button("workspaces", "Pause"));
   await v.idle();
-  assert.match(v.text("workspaces"), /That workspace is not running\.$/, "a refusal is said on the row it is about");
+  assert.match(v.text("workspaces"), /That workspace is not running\. Address /, "a refusal is said on the row it is about");
 
   const pay = world((x) => {
     paid(x);
@@ -915,7 +942,7 @@ test("pausing and resuming are one request each, with the row saying what is und
   const p = await visit("account", { routes: pay.routes });
   p.click(p.button("workspaces", "Resume"));
   await p.idle();
-  assert.match(p.text("workspaces"), /Payment is needed before this workspace can run\.$/);
+  assert.match(p.text("workspaces"), /Payment is needed before this workspace can run\. Address /);
 });
 
 test("deleting a workspace needs its name typed; until it is, the button does nothing, and cancelling leaves the workspace and the field", async () => {
@@ -1245,20 +1272,20 @@ test("names and addresses are shown as text: a workspace named like markup is a 
   const w = world((x) => {
     paid(x);
     x.email = "<b>ada</b>@example.com";
-    x.workspaces = [workspace({ name: evil, statusReason: "<i>why</i>" })];
+    x.workspaces = [workspace({ name: evil }), workspace({ workspaceId: "ws_2", name: "Gone", status: "failed", statusReason: "<i>why</i>" })];
     x.usage = { currency: "USD", byDay: [], byWorkspace: [{ group: "ws_1", calls: 1, failed: 0, inputTokens: 1, outputTokens: 1, cachedTokens: 0, chargedMicros: 1 }], total: { calls: 1, failed: 0, inputTokens: 1, outputTokens: 1, cachedTokens: 0, chargedMicros: 1 } };
   });
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("who"), "Signed in as <b>ada</b>@example.com");
   assert.equal(v.$("who").children.length, 1, "the address is one text node");
   assert.ok(v.text("workspaces").startsWith(`${evil} Running `), v.text("workspaces"));
-  assert.ok(v.text("workspaces").includes("<i>why</i>."), "a reason is text too");
+  assert.ok(v.text("workspaces").includes("<i>why</i>. Delete it and make a new one."), "a reason is text too");
   assert.ok(v.text("usage").includes(evil), "and so is a name in the usage tables");
   assert.equal(v.text("stage-title"), `${evil} is running`, "and in the card at the top");
   const inside = (id: string): string[] => v.$(id).descendants().map((n) => n.tag);
   for (const id of ["workspaces", "usage", "who", "stage"]) for (const tag of ["img", "script", "b", "i"]) assert.ok(!inside(id).includes(tag), `no <${tag}> inside #${id}`);
   v.click(v.button("workspaces", "More"));
-  v.click(v.button("workspaces", "Delete this workspace"));
+  v.click(v.button(v.$("workspaces").querySelectorAll("li")[0]!, "Delete this workspace"));
   assert.ok(v.text("workspaces").includes(`Deleting ${evil} removes it`));
   assert.ok(!inside("workspaces").includes("img"));
 });
@@ -1289,8 +1316,8 @@ test("no page logs an error to the console in the ordinary cases", async () => {
 test("the account page of a hosting-only service says the key stays with the workspace and nothing is resold, and has no balance, credit or usage to show", async () => {
   const w = hosting();
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.shows(v.$("models-panel")), true);
-  assert.match(v.text("models-panel"), /Your key stays with your workspace; Curule does not resell model usage; you pay your provider directly\./);
+  assert.equal(v.doc.getElementById("models-panel"), null, "the key is in the card of the workspace it is for, not in a panel of its own");
+  assert.match(v.text("workspaces"), /Your key stays with your workspace\. Curule does not resell model usage, so you pay your provider directly\./);
   assert.equal(v.shows(v.$("balance-panel")), false, "no balance is kept");
   assert.equal(v.shows(v.$("usage-panel")), false);
   assert.equal(v.to("GET", "/api/usage").length, 0, "and the page does not ask for usage the service does not have");
@@ -1298,13 +1325,13 @@ test("the account page of a hosting-only service says the key stays with the wor
   assert.match(v.text("plan"), /^Hosting Active \$49\.00 per month\. Paid until November 5, 2026\. Your own model key; you pay your provider directly 1 workspace Manage billing$/, "the plan the account is on is shown, and there is no other to change to");
 });
 
-test("a service that sells usage shows no model key panel, and still shows the balance and the usage", async () => {
+test("a service that sells usage shows no model key in a workspace's card, and still shows the balance and the usage", async () => {
   const w = world((x) => {
     paid(x);
     x.workspaces = [workspace()];
   });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.shows(v.$("models-panel")), false);
+  assert.equal(v.doc.root.descendants().filter((n) => n.id.startsWith("key-")).length, 0);
   assert.equal(v.shows(v.$("balance-panel")), true);
   assert.equal(v.shows(v.$("usage-panel")), true);
   assert.equal(v.to("GET", "/api/usage").length, 1);
@@ -1353,13 +1380,14 @@ test("what the front page says about model usage is shown for a service that sel
 test("a workspace with no key says so and asks for a provider, a model and a key; an Anthropic key needs no address", async () => {
   const w = hosting();
   const v = await visit("account", { routes: w.routes });
-  const row = v.$("model-keys").querySelectorAll("li")[0]!;
-  assert.match(v.text(row), /Research No key yet Until you give it a key, a team in this workspace has no model to run on\./);
+  const key = v.$("workspaces").querySelector(".ws-key")!;
+  assert.match(v.text(key), /^Model key No key yet Until you give it a key, a team in this workspace has no model to run on\. Your key stays with your workspace\./);
+  assert.equal(v.shows(v.$("key-form-ws_1")), true, "with no key the form is open");
   assert.equal(v.shows(v.$("key-base-ws_1")), false, "Anthropic is called at its own address");
   assert.equal(v.$("key-secret-ws_1").getAttribute("type"), "password", "the key is typed into a field that shows nothing");
   assert.equal(v.$("key-secret-ws_1").getAttribute("autocomplete"), "off");
-  assert.equal(v.labels("model-keys").join("|"), "Save key");
-  assert.match(v.text(row), /Paste it here once\. It is never shown again/);
+  assert.equal(v.labels(key).join("|"), "Save key");
+  assert.match(v.text(key), /Paste it here once\. It is never shown again/);
 });
 
 test("saving a key sends the provider, model and key once, empties the field whatever the answer, and says what happened without the key in it", async () => {
@@ -1376,9 +1404,9 @@ test("saving a key sends the provider, model and key once, empties the field wha
   assert.equal(sent.length, 1);
   assert.deepEqual(sent[0]!.body, { provider: "anthropic", model: "claude-sonnet-4-5", key: SECRET });
   assert.match(v.text("notice"), /The key for Research is kept, and the workspace was started again with it\./);
-  const row = v.$("model-keys").querySelectorAll("li")[0]!;
-  assert.match(v.text(row), /Research Key kept Anthropic, model claude-sonnet-4-5\. Set .*The key itself is never shown again\./);
-  assert.equal(v.labels("model-keys").join("|"), "Replace key|Delete key");
+  const key = v.$("workspaces").querySelector(".ws-key")!;
+  assert.match(v.text(key), /^Model key Key kept Anthropic, model claude-sonnet-4-5\. Set .*The key itself is never shown again\. Replace key Remove key$/);
+  assert.equal(v.shows(v.$("key-form-ws_1")), false, "with a key kept the form is put away behind Replace key");
   assert.ok(!v.doc.root.descendants().some((n) => n.textContent.includes(SECRET) || n.value === SECRET || [...n.attrs.values()].some((a) => a.includes(SECRET))), "the key is nowhere in the page once it is sent");
   assert.equal(v.$("key-secret-ws_1").value, "");
 });
@@ -1424,27 +1452,27 @@ test("a key the service refuses is said in the service's words, without the key,
   await v.send(v.$("key-form-ws_1"));
   assert.equal(v.text("key-note-ws_1"), "That address is on this machine or a private network. Give your provider's public https address.");
   assert.equal(v.$("key-secret-ws_1").value, "", "a refused key is not kept in the page either");
-  assert.equal(v.labels("model-keys").join("|"), "Save key", "and the buttons are back");
+  assert.equal(v.labels(v.$("workspaces").querySelector(".ws-key")!).join("|"), "Save key", "and the buttons are back");
 });
 
-test("deleting a key is one request, says what it means, and leaves the workspace with no key", async () => {
+test("removing a key is one request, says what it means, and leaves the workspace with no key", async () => {
   const w = hosting({ source: "own", key: KEPT });
   w.answers.set("POST /api/workspaces/ws_1/model-key/delete", () => {
     w.workspaces = [workspace({ plan: "hosting", models: { source: "own", key: null } })];
     return { json: { workspace: w.workspaces[0] } };
   });
   const v = await visit("account", { routes: w.routes });
-  assert.match(v.text(v.$("model-keys").querySelectorAll("li")[0]!), /Key kept Anthropic, model claude-sonnet-4-5/);
-  v.click(v.button("model-keys", "Delete key"));
+  assert.match(v.text(v.$("workspaces").querySelector(".ws-key")!), /Key kept Anthropic, model claude-sonnet-4-5/);
+  v.click(v.button("workspaces", "Remove key"));
   await v.idle();
   assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key/delete").length, 1);
-  assert.match(v.text("notice"), /The key for Research is deleted\. A team in it has no model to run on until you give it another\./);
-  assert.match(v.text(v.$("model-keys").querySelectorAll("li")[0]!), /No key yet/);
+  assert.match(v.text("notice"), /The key for Research is removed\. A team in it has no model to run on until you give it another\./);
+  assert.match(v.text(v.$("workspaces").querySelector(".ws-key")!), /No key yet/);
 });
 
 test("a workspace that has not started takes no key yet, and a page that looks again does not empty a field somebody is typing in", async () => {
   const starting = await visit("account", { routes: hosting({ source: "own", key: null }, { status: "provisioning" }).routes });
-  assert.match(starting.text("model-keys"), /You can set its key once the workspace has started\./);
+  assert.match(starting.text("workspaces"), /You can set its key once the workspace has started\./);
   assert.equal(starting.doc.root.descendants().filter((n) => n.tag === "form" && n.id.startsWith("key-form")).length, 0);
 
   // A second workspace is still starting, so the page asks again every few seconds; the first one's row is as it was.

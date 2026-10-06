@@ -537,9 +537,14 @@ error. The colours and the type are the site's.
   Workspace, Model key where there is one, Open) and which one they are at; the key comes after the workspace because it can only be
   given to a workspace that has started. `stageOf` and `nextStepOf` in `assets/app.js` decide the stage and the words from
   `GET /api/me` and `GET /api/plans`, and are tried on tables. The rest of the page follows the stage: workspaces are listed once
-  there is one (create, open, pause, resume, and delete with its name typed, behind More, away from Open); the plan is shown once,
-  with the others behind Change plan; the balance, what a top-up buys and the usage by day and by workspace (as what was charged)
-  are shown only for a plan that sells model usage; the password is a setting at the end. A workspace that is starting is looked
+  there is one, each as a card (its state and a sentence on why and what can be done, Open, Pause or Resume, Delete behind More
+  and away from Open with its name typed, and its address as a quiet detail); the plan is shown once, with the others behind
+  Change plan; the balance, what a top-up buys and the usage by day and by workspace (as what was charged) are shown only for a
+  plan that sells model usage; the password is a setting at the end. On a plan that sells hosting only each card also holds its
+  model key: which is kept (Replace key and Remove key), or that there is none, with the form open. A workspace that is stopped
+  because a payment is missing has no Resume, which the service would refuse; it is started when the payment comes. A workspace
+  that is starting offers "Open it when it is ready", off until the person ticks it: the page then opens it as soon as it is
+  running (and, on hosting only, has its key) and the tab is in front. A workspace that is starting is looked
   at again every few seconds, for ten minutes, and the page says when it has stopped looking. A payment is made on the provider's
   page, and the account is where it returns to: what the account looked like before leaving is kept in the tab, so a payment that
   was applied while the person was away is said to have arrived, and one that has not been is waited for for a minute and then

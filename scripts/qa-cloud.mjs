@@ -162,7 +162,8 @@ await step(page, "a workspace is made and runs", async () => {
 });
 if (HOSTING) {
   await step(page, "the workspace has no model until its key is given: the form takes the stand-in's address and any key, and the workspace starts again with it", async () => {
-    expect(/no key yet/i.test(await text("#models-panel")), `the page does not say the key is missing: ${await text("#models-panel")}`);
+    expect(/add your model key/i.test(await text("#stage-title")), `the card at the top does not ask for the key: ${await text("#stage-title")}`);
+    expect(/no key yet/i.test(await text("#workspaces")), `the workspace's card does not say the key is missing: ${await text("#workspaces")}`);
     const form = page.locator("form[id^=key-form-]").first();
     await form.locator("select").selectOption("openai-compatible");
     await form.locator("input[name=model]").fill("stand-in");
@@ -171,7 +172,7 @@ if (HOSTING) {
     await form.locator("button[type=submit]").click();
     await page.waitForFunction(() => /is kept/i.test(document.getElementById("notice")?.textContent ?? ""), null, { timeout: 60000 });
     await page.waitForSelector("#workspaces .badge:text('Running')", { timeout: 60000 });
-    expect(/key kept/i.test(await text("#models-panel")), `the page does not say the key is kept: ${await text("#models-panel")}`);
+    expect(/key kept/i.test(await text("#workspaces")), `the workspace's card does not say the key is kept: ${await text("#workspaces")}`);
     expect((await page.locator("body").innerText()).includes("any-key-12345") === false, "the key is shown on the page");
     await page.screenshot({ path: `${OUT}/account-key-kept.png`, fullPage: true });
   });
@@ -223,7 +224,7 @@ if (HOSTING) {
 await step(page, "pausing stops the workspace and says why; resuming starts it", async () => {
   await page.getByRole("button", { name: /^Pause( |$)/ }).click();
   await page.waitForSelector("#workspaces .badge:text('Stopped')");
-  expect(/You paused it/.test(await text("#workspaces")), "the reason is not said");
+  expect(/Paused by you\. Its files are kept\./.test(await text("#workspaces")), `the reason is not said: ${await text("#workspaces")}`);
   expect(/is paused/.test(await text("#stage-title")), "the card at the top does not say it is paused");
   await page.getByRole("button", { name: /^Resume( |$)/ }).first().click();
   await page.waitForSelector("#workspaces .badge:text('Running')", { timeout: 60000 });
