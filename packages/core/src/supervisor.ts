@@ -10837,7 +10837,13 @@ export class Supervisor {
         }
         case "respond": {
           const original = this.state.messages.get(op.messageId);
-          if (!original) return { ok: false, op: op.op, reason: "unknown messageId for respond" };
+          if (!original) {
+            return {
+              ok: false,
+              op: op.op,
+              reason: op.messageId ? `unknown messageId for respond: ${JSON.stringify(op.messageId)} is not a message in this mission (its id is on its line in your mailbox, msg-…)` : "respond needs a messageId: the id of the message you are answering",
+            };
+          }
           const res = await this.sendMessage({
             from: actorId,
             to: [original.from],
