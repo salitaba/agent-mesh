@@ -2,8 +2,9 @@
  * Workspaces: a customer's host, from the moment it is asked for to the moment its data is deleted.
  *
  * What the service owes a customer is in this file. A workspace is made only for an account that is in good standing and
- * under its plan's limit. Everything it needs is made for it alone: a model key that works at the gateway and nowhere else, a
- * licence for the plan, a credential the proxy uses and the browser never sees. If any step fails, what was made is taken
+ * under its plan's limit. Everything it needs is made for it alone: a model key that works at the gateway and nowhere else (or, on
+ * a hosting-only plan, the customer's own key, kept for that workspace alone), a licence for the plan, a credential the proxy uses
+ * and the browser never sees. If any step fails, what was made is taken
  * away again, so a failed start leaves no key, no container and no charge behind. When an account stops paying its workspaces
  * are stopped, not deleted, until the retention period ends; and deleting one deletes its data.
  *
@@ -14,6 +15,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { defaultTierOf, type Catalogue } from "./catalogue";
 import { ServiceError } from "./errors";
 import type { GatewayAdmin } from "./gateway-client";
+import type { ModelKeyInput, ModelKeyStore } from "./model-keys";
 import { mintWorkspaceLicence, type LicenceSigner } from "./licences";
 import type { Mailer } from "./mailer";
 import { ProvisionError, waitUntilReady, type Provisioner } from "./provisioner";
@@ -22,15 +24,18 @@ import type { Account, ControlLog, Workspace } from "./store";
 export interface WorkspacesOptions {
   log: ControlLog;
   catalogue: Catalogue;
-  gateway: GatewayAdmin;
+  /** The model gateway, for plans that sell model usage. Absent when every plan is `byok`: a workspace is then given the customer's own key. */
+  gateway?: GatewayAdmin;
+  /** Where customers' own model keys are kept. Required for a `byok` plan to give a workspace any models. */
+  modelKeys?: ModelKeyStore;
   provisioner: Provisioner;
   mailer: Mailer;
   /** The service's secret: at least 32 characters. Workspace credentials are derived from it. */
   secret: string;
   /** Workspaces are served at `<slug>.<workspaceDomain>`. */
   workspaceDomain: string;
-  /** Where a workspace reaches the gateway, up to and including `/v1`. */
-  gatewayUrl: string;
+  /** Where a workspace reaches the gateway, up to and including `/v1`. Absent with no gateway. */
+  gatewayUrl?: string;
   signer?: LicenceSigner;
   clock?: () => Date;
   limits?: { cpus: number; memoryMb: number; pids: number };
@@ -138,8 +143,11 @@ export class Workspaces {
     return this.state.workspaces.get(workspaceId)!;
   }
 
-  private async specFor(w: Workspace, key: { token: string }): Promise<Parameters<Provisioner["create"]>[0]> {
+  /** What a host is started with. `key` is the gateway's virtual key for a plan that sells usage; a hosting-only plan has none and is given the customer's own. */
+  private async specFor(w: Workspace, key: { token: string } | undefined): Promise<Parameters<Provisioner["create"]>[0]> {
     const plan = this.o.catalogue.plan(w.plan);
+    const own = plan?.byok ? this.o.modelKeys?.read(w.workspaceId) : undefined;
+    const tier = plan && !plan.byok ? defaultTierOf(plan) : undefined;
     return {
       workspaceId: w.workspaceId,
       accountId: w.accountId,
@@ -147,10 +155,18 @@ export class Workspaces {
       plan: w.plan,
       ...(this.o.signer && plan ? { licence: mintWorkspaceLicence({ signer: this.o.signer, plan: plan.licencePlan, accountId: w.accountId, workspaceId: w.workspaceId, now: this.clock() }).token } : {}),
       operatorToken: this.operatorToken(w.workspaceId),
-      gateway: { baseUrl: this.o.gatewayUrl, key: key.token },
+      ...(key && this.o.gatewayUrl ? { gateway: { baseUrl: this.o.gatewayUrl, key: key.token } } : {}),
+      ...(own ? { model: { provider: own.provider, name: own.model, ...(own.baseUrl ? { baseUrl: own.baseUrl } : {}), key: own.key } } : {}),
       limits: this.o.limits ?? { cpus: 1, memoryMb: 2048, pids: 512 },
-      ...(this.o.workspaceEnv || (plan && defaultTierOf(plan)) ? { env: { ...this.o.workspaceEnv, ...(plan && defaultTierOf(plan) ? { CURULE_GATEWAY_MODEL: defaultTierOf(plan)! } : {}) } } : {}),
+      ...(this.o.workspaceEnv || tier ? { env: { ...this.o.workspaceEnv, ...(tier ? { CURULE_GATEWAY_MODEL: tier } : {}) } } : {}),
     };
+  }
+
+  /** A gateway key for a workspace of a plan that sells usage; none for one that does not. A plan that sells usage with no gateway is a configuration mistake and is said as one. */
+  private async gatewayKeyFor(w: Workspace, plan: ReturnType<Catalogue["plan"]>): Promise<{ keyId: string; token: string } | undefined> {
+    if (plan?.byok) return undefined;
+    if (!this.o.gateway) throw new ProvisionError("this plan sells model usage and the service has no gateway configured");
+    return this.o.gateway.createKey({ accountId: w.accountId, workspaceId: w.workspaceId, label: `workspace ${w.slug}`, ...(plan?.tiers ? { models: plan.tiers } : {}) });
   }
 
   private async provision(workspaceId: string): Promise<void> {
@@ -159,16 +175,16 @@ export class Workspaces {
     let keyId: string | undefined;
     let handle: string | undefined;
     try {
-      const key = await this.o.gateway.createKey({ accountId: w.accountId, workspaceId, label: `workspace ${w.slug}`, ...(plan?.tiers ? { models: plan.tiers } : {}) });
-      keyId = key.keyId;
+      const key = await this.gatewayKeyFor(w, plan);
+      keyId = key?.keyId;
       const made = await this.o.provisioner.create(await this.specFor(w, key));
       handle = made.handle;
-      await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: key.keyId });
+      await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream, ...(key ? { gatewayKeyId: key.keyId } : {}) });
       await (this.o.waitReady ?? ((u) => waitUntilReady(u)))(made.upstream);
       await this.o.log.append({ type: "workspace.status", workspaceId, status: "running" });
     } catch (err) {
       // Take away whatever was made, so a failed start leaves nothing behind.
-      if (keyId) await this.o.gateway.revokeKey(keyId, "workspace could not be started").catch(() => undefined);
+      if (keyId) await this.o.gateway?.revokeKey(keyId, "workspace could not be started").catch(() => undefined);
       if (handle) await this.o.provisioner.destroy(handle).catch(() => undefined);
       await this.o.log.append({ type: "workspace.status", workspaceId, status: "failed", reason: err instanceof ProvisionError ? err.message.slice(0, 200) : "the workspace could not be started" }).catch(() => undefined);
     }
@@ -197,7 +213,7 @@ export class Workspaces {
     if (!account || account.disabledAt !== undefined) throw new ServiceError(403, "not_allowed", "This account cannot run workspaces.");
     if (this.standing(account) !== "active") throw new ServiceError(402, "payment_overdue", "Payment is needed before this workspace can run.");
     const made = await this.o.provisioner.resume(w.handle);
-    await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: w.gatewayKeyId ?? "" });
+    await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream });
     await (this.o.waitReady ?? ((u) => waitUntilReady(u)))(made.upstream);
     await this.o.log.append({ type: "workspace.status", workspaceId, status: "running" });
   }
@@ -205,8 +221,10 @@ export class Workspaces {
   /** Delete a workspace and its data. Its model key stops working first, so nothing can spend after the decision. */
   async destroy(workspaceId: string, accountId?: string): Promise<void> {
     const w = this.get(accountId, workspaceId);
-    if (w.gatewayKeyId) await this.o.gateway.revokeKey(w.gatewayKeyId, "workspace deleted");
+    if (w.gatewayKeyId) await this.o.gateway?.revokeKey(w.gatewayKeyId, "workspace deleted");
     if (w.handle) await this.o.provisioner.destroy(w.handle);
+    // The customer's own key goes with the workspace: nothing of it is kept once the host that used it is gone.
+    if (this.o.modelKeys?.has(workspaceId)) await this.o.modelKeys.remove(workspaceId);
     await this.o.log.append({ type: "workspace.status", workspaceId, status: "destroyed", reason: accountId === undefined ? "removed by the service" : "deleted by its owner" });
   }
 
@@ -214,20 +232,53 @@ export class Workspaces {
   async reprovision(workspaceId: string, plan: string): Promise<void> {
     const w = this.get(undefined, workspaceId);
     if (w.status !== "running" && w.status !== "suspended") return;
-    const wasSuspended = w.status === "suspended";
     await this.o.log.append({ type: "workspace.plan_changed", workspaceId, plan });
-    const old = this.state.workspaces.get(workspaceId)!;
-    const planDef = this.o.catalogue.plan(plan);
-    const key = await this.o.gateway.createKey({ accountId: old.accountId, workspaceId, label: `workspace ${old.slug}`, ...(planDef?.tiers ? { models: planDef.tiers } : {}) });
+    // A key brought for a plan that is hosting only is not kept for one that is not: the workspace then runs on the gateway.
+    if (!this.o.catalogue.plan(plan)?.byok && this.o.modelKeys?.has(workspaceId)) {
+      await this.o.modelKeys.remove(workspaceId);
+      await this.o.log.append({ type: "workspace.model_key_removed", workspaceId });
+    }
+    await this.remake(workspaceId);
+  }
+
+  /** Stop the host and start it again with what it should now have (a plan, a model key), keeping its data. A suspended workspace is left suspended. */
+  private async remake(workspaceId: string): Promise<void> {
+    const old = this.get(undefined, workspaceId);
+    const wasSuspended = old.status === "suspended";
+    const planDef = this.o.catalogue.plan(old.plan);
+    const key = await this.gatewayKeyFor(old, planDef);
     if (old.handle) await this.o.provisioner.destroy(old.handle, { keepData: true });
     const made = await this.o.provisioner.create(await this.specFor(old, key));
-    if (old.gatewayKeyId) await this.o.gateway.revokeKey(old.gatewayKeyId, "workspace moved to a new plan").catch(() => undefined);
-    await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: key.keyId });
+    if (old.gatewayKeyId) await this.o.gateway?.revokeKey(old.gatewayKeyId, "workspace moved to a new plan or model key").catch(() => undefined);
+    await this.o.log.append({ type: "workspace.provisioned", workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: key?.keyId ?? "" });
     await (this.o.waitReady ?? ((u) => waitUntilReady(u)))(made.upstream);
     if (wasSuspended) {
       await this.o.provisioner.suspend(made.handle);
       await this.o.log.append({ type: "workspace.status", workspaceId, status: "suspended", reason: old.statusReason ?? "stopped" });
     } else await this.o.log.append({ type: "workspace.status", workspaceId, status: "running" });
+  }
+
+  /**
+   * Store, replace or delete the customer's own model key for a workspace of a hosting-only plan, and start the host again with it (its
+   * data is kept; a turn in progress is interrupted). The key is validated, kept sealed, and never appears in the log, in a response, or
+   * in a seat's shell. `accountId` is the customer who asks: another account's workspace is not found.
+   */
+  async setModelKey(accountId: string, workspaceId: string, input: ModelKeyInput | null): Promise<void> {
+    const w = this.get(accountId, workspaceId);
+    const plan = this.o.catalogue.plan(w.plan);
+    if (!plan?.byok) throw new ServiceError(409, "not_byok", "This workspace's plan supplies its models: there is no key of yours to keep.");
+    const store = this.o.modelKeys;
+    if (!store) throw new ServiceError(503, "keys_unavailable", "Model keys cannot be kept just now. Contact the operator.");
+    if (w.status !== "running" && w.status !== "suspended") throw new ServiceError(409, "not_ready", "Wait until the workspace has started, and then set its key.");
+    if (input === null) {
+      if (!store.has(workspaceId)) return;
+      await store.remove(workspaceId);
+      await this.o.log.append({ type: "workspace.model_key_removed", workspaceId });
+    } else {
+      await store.set(workspaceId, input);
+      await this.o.log.append({ type: "workspace.model_key_set", workspaceId, provider: input.provider, model: input.model, ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}) });
+    }
+    await this.remake(workspaceId);
   }
 
   /** What the service does about accounts that have stopped paying, and about starts that never finished. */
@@ -237,7 +288,7 @@ export class Workspaces {
     const actions: string[] = [];
     for (const w of [...this.state.workspaces.values()]) {
       if (w.status === "provisioning" && !this.inFlight.has(w.workspaceId) && now - Date.parse(w.statusAt) > (this.o.provisionTimeoutMs ?? 300_000)) {
-        if (w.gatewayKeyId) await this.o.gateway.revokeKey(w.gatewayKeyId, "workspace never finished starting").catch(() => undefined);
+        if (w.gatewayKeyId) await this.o.gateway?.revokeKey(w.gatewayKeyId, "workspace never finished starting").catch(() => undefined);
         if (w.handle) await this.o.provisioner.destroy(w.handle).catch(() => undefined);
         await this.o.log.append({ type: "workspace.status", workspaceId: w.workspaceId, status: "failed", reason: "the service restarted while it was starting" });
         actions.push(`${w.workspaceId}: failed, it never finished starting`);
@@ -286,7 +337,7 @@ export class Workspaces {
       } else if (seen === "stopped") {
         try {
           const made = await this.o.provisioner.resume(w.handle);
-          await this.o.log.append({ type: "workspace.provisioned", workspaceId: w.workspaceId, handle: made.handle, upstream: made.upstream, gatewayKeyId: w.gatewayKeyId ?? "" });
+          await this.o.log.append({ type: "workspace.provisioned", workspaceId: w.workspaceId, handle: made.handle, upstream: made.upstream });
           await (this.o.waitReady ?? ((u) => waitUntilReady(u)))(made.upstream);
           actions.push(`${w.workspaceId}: started again, its host had stopped`);
         } catch (err) {

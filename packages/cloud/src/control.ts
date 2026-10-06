@@ -14,6 +14,7 @@ import { WorkspaceEdge } from "./edge";
 import { HttpGatewayAdmin } from "./gateway-client";
 import { HostedCheckoutBilling } from "./hosted-checkout";
 import { ManualBilling, type BillingProvider } from "./billing";
+import { ModelKeyStore } from "./model-keys";
 import { OutboxMailer, type Mailer } from "./mailer";
 import { QueuedMailer, type QueuedMailerOptions } from "./mail-queue";
 import { OwnerWeb } from "./owner";
@@ -126,8 +127,8 @@ async function mailerFor(config: ControlConfig, clock: () => Date, log: (record:
 function provisionerFor(config: ControlConfig, runner: CommandRunner | undefined): Provisioner {
   const p = config.provisioner;
   if (p.kind === "local") return new LocalProcessProvisioner({ baseDir: p.baseDir, hostCommand: p.hostCommand, production: config.production });
-  // The gateway is ours and on the operator's own network: it is not reached through the proxy that customers' traffic goes out by.
-  const gatewayHost = new URL(config.gateway.tenantUrl).hostname;
+  // The gateway, when there is one, is ours and on the operator's own network: it is not reached through the proxy that customers' traffic goes out by.
+  const gatewayHost = config.gateway ? new URL(config.gateway.tenantUrl).hostname : undefined;
   return new ContainerProvisioner({
     runner: runner ?? new ProcessRunner(),
     engine: p.engine,
@@ -135,7 +136,7 @@ function provisionerFor(config: ControlConfig, runner: CommandRunner | undefined
     network: p.network,
     ...(p.subnet ? { addresses: { subnet: p.subnet } } : {}),
     apexDomain: config.workspaces.domain,
-    ...(p.egressProxy ? { egressProxy: p.egressProxy, noProxy: [...new Set([...p.noProxy, gatewayHost])] } : {}),
+    ...(p.egressProxy ? { egressProxy: p.egressProxy, noProxy: [...new Set([...p.noProxy, ...(gatewayHost ? [gatewayHost] : [])])] } : {}),
   });
 }
 
@@ -150,21 +151,23 @@ export async function startControl(config: ControlConfig, options: StartOptions 
   let queue: QueuedMailer | undefined;
   try {
     const provisioner = options.provisioner ?? provisionerFor(config, options.runner);
-    const gateway = new HttpGatewayAdmin({ baseUrl: config.gateway.adminUrl, token: config.gateway.adminToken, ...(options.fetch ? { fetch: options.fetch } : {}) });
+    const gateway = config.gateway ? new HttpGatewayAdmin({ baseUrl: config.gateway.adminUrl, token: config.gateway.adminToken, ...(options.fetch ? { fetch: options.fetch } : {}) }) : undefined;
+    const modelKeys = new ModelKeyStore({ file: config.modelKeysPath, secret: config.secret, clock });
     const { mailer, queue: opened } = options.mailer ? { mailer: options.mailer, queue: undefined } : await mailerFor(config, clock, log, options.mailQueue);
     queue = opened;
     const plane = new ControlPlane({
       log: controlLog,
       catalogue: config.catalogue,
       billing: options.billing ?? billingFor(config, options.fetch),
-      gateway,
+      ...(gateway ? { gateway } : {}),
+      modelKeys,
       mailer,
       appUrl: config.appUrl,
       workspaces: {
         provisioner,
         secret: config.secret,
         workspaceDomain: config.workspaces.domain,
-        gatewayUrl: config.gateway.tenantUrl,
+        ...(config.gateway ? { gatewayUrl: config.gateway.tenantUrl } : {}),
         limits: config.provisioner.limits,
         ...(config.licence ? { signer: { kid: config.licence.kid, privateKey: config.licence.privateKey } } : {}),
         ...(options.waitReady ? { waitReady: options.waitReady } : {}),
@@ -269,10 +272,11 @@ export function describeControl(config: ControlConfig): string[] {
     `control log ${c.logPath}; ${c.smtp ? `mail is delivered over SMTP to ${c.smtp.host}:${c.smtp.port} (${c.smtp.security === "tls" ? "TLS from the first byte" : c.smtp.security === "starttls" ? "upgraded with STARTTLS" : "not encrypted"}${c.smtp.user !== undefined ? ", signed in" : ""}) as ${c.smtp.from}, and waits in ${c.smtp.spoolDir} until it is taken` : `mail is written to ${c.outboxPath} and not sent`}`,
     `plans from ${c.plansPath}, sold in ${c.catalogue.currency}:`,
   ];
-  for (const p of c.catalogue.plans()) lines.push(`  ${p.id}: ${p.title}, ${money(p.priceMinor, c.catalogue.currency)} a ${p.period}, ${p.workspaces} workspace${p.workspaces === 1 ? "" : "s"}, ${p.includedUsageMicros / 1_000_000} ${c.catalogue.currency} of usage included, limits of the ${p.licencePlan} plan${p.tiers ? `, tiers ${p.tiers.join(", ")}` : ""}`);
+  for (const p of c.catalogue.plans()) lines.push(`  ${p.id}: ${p.title}, ${money(p.priceMinor, c.catalogue.currency)} a ${p.period}, ${p.workspaces} workspace${p.workspaces === 1 ? "" : "s"}, ${p.byok ? "hosting only: the customer's own model key, no usage sold" : `${p.includedUsageMicros / 1_000_000} ${c.catalogue.currency} of usage included`}, limits of the ${p.licencePlan} plan${p.tiers ? `, tiers ${p.tiers.join(", ")}` : ""}`);
   const t = c.catalogue.topups;
-  lines.push(`  top-ups ${t.optionsMinor.map((o) => money(o, c.catalogue.currency)).join(", ")} (any amount from ${money(t.minimumMinor, c.catalogue.currency)} to ${money(t.maximumMinor, c.catalogue.currency)})`);
-  lines.push(`gateway: admin API at ${c.gateway.adminUrl}; workspaces are told to call ${c.gateway.tenantUrl}`);
+  if (c.catalogue.sellsUsage) lines.push(`  top-ups ${t.optionsMinor.map((o) => money(o, c.catalogue.currency)).join(", ")} (any amount from ${money(t.minimumMinor, c.catalogue.currency)} to ${money(t.maximumMinor, c.catalogue.currency)})`);
+  lines.push(c.gateway ? `gateway: admin API at ${c.gateway.adminUrl}; workspaces of a plan that sells usage are told to call ${c.gateway.tenantUrl}` : "no gateway: every plan is hosting only, no model usage is sold and no balance is kept");
+  lines.push(`customers' own model keys are kept, encrypted, in ${c.modelKeysPath}`);
   const p = c.provisioner;
   lines.push(
     p.kind === "container"

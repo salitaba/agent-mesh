@@ -17,6 +17,7 @@ interface Stamp {
 }
 
 export type WorkspaceStatus = "requested" | "provisioning" | "running" | "suspended" | "failed" | "destroyed";
+export type ModelProviderKind = "anthropic" | "openai-compatible";
 export type SubscriptionStatus = "active" | "past_due" | "ended";
 
 export type ControlEntry = Stamp &
@@ -36,9 +37,12 @@ export type ControlEntry = Stamp &
     | { type: "billing.applied"; key: string; accountId: string; kind: string; amountMinor?: number; currency?: string; paymentRef?: string; grants: Array<{ id: string; bucket: "included" | "purchased"; mode: "add" | "set"; amountMicros: number }>; note?: string }
     | { type: "subscription.changed"; accountId: string; plan?: string; status: SubscriptionStatus; periodStart?: string; periodEnd?: string; subscriptionRef?: string; reason: string }
     | { type: "workspace.requested"; workspaceId: string; accountId: string; name: string; slug: string; plan: string }
-    | { type: "workspace.provisioned"; workspaceId: string; handle: string; upstream: { host: string; port: number }; gatewayKeyId: string }
+    | { type: "workspace.provisioned"; workspaceId: string; handle: string; upstream: { host: string; port: number }; gatewayKeyId?: string }
     | { type: "workspace.status"; workspaceId: string; status: WorkspaceStatus; reason?: string }
     | { type: "workspace.plan_changed"; workspaceId: string; plan: string }
+    /** A model key was stored for a workspace. The key is not in the log: only which provider it is for, and where. */
+    | { type: "workspace.model_key_set"; workspaceId: string; provider: ModelProviderKind; model: string; baseUrl?: string }
+    | { type: "workspace.model_key_removed"; workspaceId: string }
     | { type: "owner.action"; action: string; detail: string }
   );
 
@@ -81,6 +85,8 @@ export interface Workspace {
   handle?: string;
   upstream?: { host: string; port: number };
   gatewayKeyId?: string;
+  /** What the customer's own model key is for. The key itself is never here: see model-keys.ts. */
+  modelKey?: { provider: ModelProviderKind; model: string; baseUrl?: string; setAt: string };
 }
 
 export class ControlState {
@@ -194,8 +200,20 @@ export class ControlState {
         if (w) {
           w.handle = e.handle;
           w.upstream = e.upstream;
-          w.gatewayKeyId = e.gatewayKeyId;
+          // Absent leaves the key as it was; an empty id says the workspace has none (it moved to a plan that sells no usage).
+          if (e.gatewayKeyId === "") delete w.gatewayKeyId;
+          else if (e.gatewayKeyId !== undefined) w.gatewayKeyId = e.gatewayKeyId;
         }
+        return;
+      }
+      case "workspace.model_key_set": {
+        const w = this.workspaces.get(e.workspaceId);
+        if (w) w.modelKey = { provider: e.provider, model: e.model, ...(e.baseUrl ? { baseUrl: e.baseUrl } : {}), setAt: e.at };
+        return;
+      }
+      case "workspace.model_key_removed": {
+        const w = this.workspaces.get(e.workspaceId);
+        if (w) delete w.modelKey;
         return;
       }
       case "workspace.status": {

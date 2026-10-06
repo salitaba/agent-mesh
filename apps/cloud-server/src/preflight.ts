@@ -118,7 +118,7 @@ export async function preflight(file: string, env: NodeJS.ProcessEnv, options: P
   for (const w of config.warnings) say("warning", w);
 
   // ---- what the service writes
-  const folders: Array<[string, string]> = [["the control log", path.dirname(config.logPath)]];
+  const folders: Array<[string, string]> = [["the control log", path.dirname(config.logPath)], ["the folder customers' model keys are kept in", path.dirname(config.modelKeysPath)]];
   if (config.smtp) folders.push(["the mail spool", config.smtp.spoolDir]);
   else if (config.outboxPath !== "") folders.push(["the mail outbox", path.dirname(config.outboxPath)]);
   if (config.provisioner.kind === "local") folders.push(["the workspaces' folder", config.provisioner.baseDir]);
@@ -129,7 +129,8 @@ export async function preflight(file: string, env: NodeJS.ProcessEnv, options: P
   }
 
   // ---- the model gateway
-  await gateway(config, doFetch, connect, say);
+  if (config.gateway) await gateway(config, config.gateway, doFetch, connect, say);
+  else say("ok", "no model gateway is configured, and none is needed: every plan is hosting only, and a workspace is given its customer's own model key");
 
   // ---- where workspaces run
   if (config.provisioner.kind === "container") await containers(config, deps.runner ?? new ProcessRunner(30_000), connect, say);
@@ -176,11 +177,11 @@ export async function preflight(file: string, env: NodeJS.ProcessEnv, options: P
   return out;
 }
 
-async function gateway(config: ControlConfig, doFetch: typeof fetch, connect: NonNullable<PreflightDeps["connect"]>, say: (level: Level, text: string) => void): Promise<void> {
-  const where = config.gateway.adminUrl;
+async function gateway(config: ControlConfig, gw: NonNullable<ControlConfig["gateway"]>, doFetch: typeof fetch, connect: NonNullable<PreflightDeps["connect"]>, say: (level: Level, text: string) => void): Promise<void> {
+  const where = gw.adminUrl;
   let res: Response;
   try {
-    res = await doFetch(`${where}/admin/health`, { headers: { authorization: `Bearer ${config.gateway.adminToken}` }, signal: AbortSignal.timeout(8_000) });
+    res = await doFetch(`${where}/admin/health`, { headers: { authorization: `Bearer ${gw.adminToken}` }, signal: AbortSignal.timeout(8_000) });
   } catch (err) {
     say("problem", `the model gateway's admin API at ${where} could not be reached (${reasonOf(err)}): no workspace can be given a key until it can`);
     return;
@@ -219,7 +220,7 @@ async function gateway(config: ControlConfig, doFetch: typeof fetch, connect: No
   if (typeof health.currency === "string" && health.currency !== config.catalogue.currency) {
     say("warning", `the gateway keeps its ledger in ${health.currency} and the plans are sold in ${config.catalogue.currency}: the usage a plan includes is granted in the gateway's currency, and the two are not converted`);
   }
-  const tenant = new URL(config.gateway.tenantUrl);
+  const tenant = new URL(gw.tenantUrl);
   const port = tenant.port !== "" ? Number(tenant.port) : tenant.protocol === "https:" ? 443 : 80;
   await connect(tenant.hostname, port, 5_000).then(
     () => say("ok", `the address workspaces call for models, ${tenant.host}, accepts a connection from here`),

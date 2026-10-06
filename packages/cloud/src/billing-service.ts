@@ -26,7 +26,8 @@ import type { Workspaces } from "./workspaces";
 export interface BillingServiceOptions {
   log: ControlLog;
   catalogue: Catalogue;
-  gateway: GatewayAdmin;
+  /** Absent when every plan is hosting only: there is no balance to credit. */
+  gateway?: GatewayAdmin;
   workspaces: Workspaces;
   mailer: Mailer;
   /** The payment provider's name, which scopes its customer references. */
@@ -101,6 +102,11 @@ export class BillingService {
           return { applied: false, note: "currency" };
         }
         if (event.purpose === "topup") {
+          if (!this.o.gateway) {
+            // No gateway means the service sells no model usage. Money that arrived for it is the operator's to refund, and is shown to them.
+            await this.record(key, accountId, event.type, [], { amountMinor: event.amountMinor, currency: event.currency, note: "unmatched: this service sells no model usage, so there is nothing a top-up buys" });
+            return { applied: false, note: "no-usage" };
+          }
           if (!Number.isInteger(event.amountMinor) || event.amountMinor < 1) {
             await this.record(key, accountId, event.type, [], { amountMinor: event.amountMinor, currency: event.currency, note: "unmatched: the amount is not a positive whole number of minor units" });
             return { applied: false, note: "amount" };
@@ -119,11 +125,15 @@ export class BillingService {
         const now = this.clock();
         const periodStart = event.periodStart ?? now.toISOString();
         const periodEnd = event.periodEnd ?? addPeriod(new Date(Date.parse(periodStart)), plan.period).toISOString();
-        const grant: Grant = { id: `period:${event.ref}`, bucket: "included", mode: "set", amountMicros: plan.includedUsageMicros };
-        await this.o.gateway.grant({ ...grant, accountId, reason: `${plan.title} period`, reference: event.ref });
+        // A hosting-only plan includes no usage, so there is no balance to set; a plan that does include some needs the gateway to hold it.
+        const grant: Grant = { id: `period:${event.ref}`, bucket: "included", mode: "set", amountMicros: plan.byok ? 0 : plan.includedUsageMicros };
+        if (!plan.byok) {
+          if (!this.o.gateway) throw new Error(`plan '${plan.id}' includes model usage and the service has no gateway to hold it`);
+          await this.o.gateway.grant({ ...grant, accountId, reason: `${plan.title} period`, reference: event.ref });
+        }
         const before = account.subscription;
         await this.o.log.append({ type: "subscription.changed", accountId, plan: plan.id, status: "active", periodStart, periodEnd, ...(event.subscriptionRef ? { subscriptionRef: event.subscriptionRef } : {}), reason: "a payment for the period was received" });
-        await this.record(key, accountId, event.type, [grant], { amountMinor: event.amountMinor, currency: event.currency });
+        await this.record(key, accountId, event.type, plan.byok ? [] : [grant], { amountMinor: event.amountMinor, currency: event.currency });
         // Put right whatever the account's standing was before this payment.
         for (const w of this.o.workspaces.forAccount(accountId)) {
           if (w.plan !== plan.id && (w.status === "running" || w.status === "suspended")) await this.o.workspaces.reprovision(w.workspaceId, plan.id);
@@ -175,6 +185,7 @@ export class BillingService {
           return { applied: false, note: "already-refunded" };
         }
         const grant: Grant = { id: `refund:${event.ref}`, bucket: "purchased", mode: "add", amountMicros: -more * rate };
+        if (!this.o.gateway) throw new Error("a refund of credit needs the gateway that holds it");
         await this.o.gateway.grant({ ...grant, accountId, reason: "credit refunded", reference: event.ref });
         await this.record(key, accountId, event.type, [grant], detail);
         return { applied: true };

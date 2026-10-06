@@ -13,6 +13,7 @@ import type { Catalogue } from "./catalogue";
 import { ServiceError } from "./errors";
 import type { GatewayAdmin, UsageGroup } from "./gateway-client";
 import type { Mailer } from "./mailer";
+import type { ModelKeyStore } from "./model-keys";
 import type { Account, ControlLog, Workspace } from "./store";
 import { Workspaces, type WorkspacesOptions } from "./workspaces";
 
@@ -20,14 +21,23 @@ export interface ControlPlaneOptions {
   log: ControlLog;
   catalogue: Catalogue;
   billing: BillingProvider;
-  gateway: GatewayAdmin;
+  /** The model gateway. Absent when every plan is hosting only (`byok`): the service then holds no balance and sells no model usage. */
+  gateway?: GatewayAdmin;
   mailer: Mailer;
+  /** Where customers' own model keys are kept. */
+  modelKeys?: ModelKeyStore;
   /** The address of the app, for return links and mail. */
   appUrl: string;
-  workspaces: Omit<WorkspacesOptions, "log" | "catalogue" | "gateway" | "mailer">;
+  workspaces: Omit<WorkspacesOptions, "log" | "catalogue" | "gateway" | "modelKeys" | "mailer">;
   accounts?: Partial<Omit<AccountsOptions, "log" | "mailer" | "appUrl">>;
   clock?: () => Date;
 }
+
+/**
+ * What a customer sees of where a workspace's models come from. Never the key: only that one is kept, for which provider and model, and where.
+ * `supplied` is a plan that sells model usage through the gateway; `own` is a hosting-only plan, on the customer's own key.
+ */
+export type WorkspaceModels = { source: "supplied" } | { source: "own"; key: null | { provider: string; model: string; baseUrl?: string; setAt: string } };
 
 /** What a customer sees of an account. Nothing in it is secret. */
 export interface AccountView {
@@ -35,7 +45,7 @@ export interface AccountView {
   email: string;
   createdAt: string;
   subscription: null | { plan: string; title: string; status: string; periodEnd?: string; pastDueSince?: string };
-  workspaces: Array<{ workspaceId: string; name: string; slug: string; plan: string; status: string; statusReason?: string; host: string }>;
+  workspaces: Array<{ workspaceId: string; name: string; slug: string; plan: string; status: string; statusReason?: string; host: string; models: WorkspaceModels }>;
 }
 
 /** A line of a customer's usage. */
@@ -58,8 +68,8 @@ export class ControlPlane {
   constructor(readonly o: ControlPlaneOptions) {
     this.clock = o.clock ?? (() => new Date());
     this.accounts = new Accounts({ ...o.accounts, log: o.log, mailer: o.mailer, appUrl: o.appUrl, clock: this.clock });
-    this.workspaces = new Workspaces({ ...o.workspaces, log: o.log, catalogue: o.catalogue, gateway: o.gateway, mailer: o.mailer, clock: this.clock });
-    this.billing = new BillingService({ log: o.log, catalogue: o.catalogue, gateway: o.gateway, workspaces: this.workspaces, mailer: o.mailer, provider: o.billing.name, clock: this.clock });
+    this.workspaces = new Workspaces({ ...o.workspaces, log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), ...(o.modelKeys ? { modelKeys: o.modelKeys } : {}), mailer: o.mailer, clock: this.clock });
+    this.billing = new BillingService({ log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), workspaces: this.workspaces, mailer: o.mailer, provider: o.billing.name, clock: this.clock });
   }
 
   private get state() {
@@ -87,12 +97,14 @@ export class ControlPlane {
         status: w.status,
         ...(w.statusReason ? { statusReason: w.statusReason } : {}),
         host: this.workspaces.hostOf(w.slug),
+        models: this.o.catalogue.plan(w.plan)?.byok ? { source: "own" as const, key: w.modelKey ? { provider: w.modelKey.provider, model: w.modelKey.model, ...(w.modelKey.baseUrl ? { baseUrl: w.modelKey.baseUrl } : {}), setAt: w.modelKey.setAt } : null } : { source: "supplied" as const },
       })),
     };
   }
 
   /** The balance and what has been spent, from the gateway, in the gateway's currency. */
-  async balance(accountId: string): Promise<{ currency: string; balance: { included: number; purchased: number; total: number; available: number }; charged: number }> {
+  async balance(accountId: string): Promise<null | { currency: string; balance: { included: number; purchased: number; total: number; available: number }; charged: number }> {
+    if (!this.o.gateway) return null;
     const a = await this.o.gateway.account(accountId);
     return { currency: a.currency, balance: { included: a.balance.included, purchased: a.balance.purchased, total: a.balance.total, available: a.balance.available }, charged: a.charged };
   }
@@ -102,6 +114,7 @@ export class ControlPlane {
    * and what the service made on it are the operator's, and are not in this.
    */
   async usage(accountId: string): Promise<{ currency: string; byDay: UsageRow[]; byWorkspace: UsageRow[]; total: Omit<UsageRow, "group"> }> {
+    if (!this.o.gateway) throw new ServiceError(404, "no_usage", "This service sells no model usage: you pay your model provider directly.");
     const [days, workspaces] = await Promise.all([this.o.gateway.report({ groupBy: "day", accountId }), this.o.gateway.report({ groupBy: "workspace", accountId })]);
     const figures = (g: UsageGroup): Omit<UsageRow, "group"> => ({
       calls: g.calls,
@@ -134,6 +147,7 @@ export class ControlPlane {
       return this.checkout({ accountId, email: account.email, purpose: "subscription", plan: { id: plan.id, title: plan.title, priceMinor: plan.priceMinor, period: plan.period, ...(plan.providerPriceId ? { providerPriceId: plan.providerPriceId } : {}) }, currency: catalogue.currency, successUrl: `${base}/account?paid=1`, cancelUrl: `${base}/account?cancelled=1`, idempotencyKey: key });
     }
     if (input.purpose === "topup") {
+      if (!this.o.gateway) throw new ServiceError(400, "no_topups", "This service sells no model usage, so there is nothing to top up. You pay your model provider directly.");
       const t = catalogue.topups;
       const amount = input.amountMinor;
       if (typeof amount !== "number" || !Number.isInteger(amount) || amount < t.minimumMinor || amount > t.maximumMinor) throw new ServiceError(400, "invalid_amount", "That amount cannot be bought.");
@@ -232,6 +246,7 @@ export class ControlPlane {
       else if (e.grants.some((g) => g.bucket === "purchased")) row.topup += amount;
       else row.subscription += amount;
     }
+    if (!this.o.gateway) return { revenue, usage: { currency: this.o.catalogue.currency, chargedMicros: 0, costMicros: 0, marginMicros: 0, calls: 0, failed: 0 } };
     const report = await this.o.gateway.report({ groupBy: "account", ...(from ? { from } : {}), ...(to ? { to } : {}) });
     return { revenue, usage: { currency: report.currency, chargedMicros: report.total.chargeMicros, costMicros: report.total.costMicros, marginMicros: report.total.marginMicros, calls: report.total.calls, failed: report.total.failed } };
   }

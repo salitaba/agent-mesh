@@ -20,14 +20,26 @@ export interface WorkspaceSpec {
   licence?: string;
   /** The credential the proxy presents to the host. Known to the control plane and the proxy, never to the browser. */
   operatorToken: string;
-  gateway: {
+  /** Where the workspace's models come from: the service's gateway with a virtual key, or none when the customer brings their own key (see `model`). */
+  gateway?: {
     /** Where the workspace reaches the gateway, up to and including `/v1`. */
     baseUrl: string;
     /** The virtual key. */
     key: string;
   };
+  /**
+   * The customer's own model-provider key, for a plan that sells hosting only. It is given to the host in its environment and, like
+   * the gateway's key, is kept out of every seat's shell. The service resells nothing through it.
+   */
+  model?: {
+    provider: "anthropic" | "openai-compatible";
+    /** The model teams run on, as the provider names it. */
+    name: string;
+    baseUrl?: string;
+    key: string;
+  };
   limits: { cpus: number; memoryMb: number; pids: number };
-  /** Extra environment for the host, such as an egress proxy. Never holds a provider's key. */
+  /** Extra environment for the host, such as an egress proxy. Never holds a provider's key: a key goes in `gateway` or `model`. */
   env?: Record<string, string>;
 }
 
@@ -76,4 +88,19 @@ export async function waitUntilReady(upstream: { host: string; port: number }, o
     await new Promise((r) => setTimeout(r, options.intervalMs ?? 500));
   }
   throw new ProvisionError(`the workspace did not become ready: ${last}`);
+}
+
+/**
+ * What a host is told about its models, as environment: names and values, in one place for both provisioners. The variables that hold a
+ * key are in `secret`, so a provisioner can keep their values out of a command's arguments; the rest are in `plain`.
+ */
+export function modelEnvironment(spec: WorkspaceSpec): { plain: Record<string, string>; secret: Record<string, string> } {
+  if (spec.gateway) return { plain: { CURULE_GATEWAY_URL: spec.gateway.baseUrl }, secret: { CURULE_GATEWAY_KEY: spec.gateway.key } };
+  if (spec.model) {
+    return {
+      plain: { CURULE_MODEL_PROVIDER: spec.model.provider, CURULE_MODEL_NAME: spec.model.name, ...(spec.model.baseUrl ? { CURULE_MODEL_BASE_URL: spec.model.baseUrl } : {}) },
+      secret: { CURULE_MODEL_KEY: spec.model.key },
+    };
+  }
+  return { plain: {}, secret: {} };
 }

@@ -15,7 +15,7 @@
  *     network, and docs/cloud-control-plane.md says what it must look like.
  */
 import { spawn } from "node:child_process";
-import { ProvisionError, type ProvisionedWorkspace, type Provisioner, type WorkspaceRuntimeStatus, type WorkspaceSpec } from "./provisioner";
+import { ProvisionError, modelEnvironment, type ProvisionedWorkspace, type Provisioner, type WorkspaceRuntimeStatus, type WorkspaceSpec } from "./provisioner";
 
 export interface CommandResult {
   code: number;
@@ -156,10 +156,11 @@ export class ContainerProvisioner implements Provisioner {
     const l = spec.limits;
     if (!(l.cpus > 0) || !(l.memoryMb >= 128) || !(l.pids >= 32)) throw new ProvisionError("a workspace needs at least 0.1 of a CPU, 128 MB of memory and 32 processes");
     // The operator's own additions come first: they cannot replace the credentials this workspace was made with.
+    const models = modelEnvironment(spec);
     const env: Record<string, string> = {
       ...spec.env,
       MESH_API_TOKEN: spec.operatorToken,
-      CURULE_GATEWAY_KEY: spec.gateway.key,
+      ...models.secret,
       ...(spec.licence ? { MESH_LICENSE: spec.licence } : {}),
     };
     const plain: string[] = [
@@ -168,7 +169,7 @@ export class ContainerProvisioner implements Provisioner {
       "MESH_TRUST_PROXY=1",
       "MESH_COOKIE_SECURE=1",
       "MESH_LICENSE_ENFORCEMENT=enforce",
-      `CURULE_GATEWAY_URL=${spec.gateway.baseUrl}`,
+      ...Object.entries(models.plain).map(([k, v]) => `${k}=${v}`),
       ...(this.o.apexDomain ? [`MESH_ALLOWED_HOSTS=${spec.slug}.${this.o.apexDomain}`, `MESH_ALLOWED_ORIGINS=https://${spec.slug}.${this.o.apexDomain}`] : []),
     ];
     if (this.o.egressProxy) {

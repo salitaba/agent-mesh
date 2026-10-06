@@ -13,7 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
-import { ProvisionError, type ProvisionedWorkspace, type Provisioner, type WorkspaceRuntimeStatus, type WorkspaceSpec } from "./provisioner";
+import { ProvisionError, modelEnvironment, type ProvisionedWorkspace, type Provisioner, type WorkspaceRuntimeStatus, type WorkspaceSpec } from "./provisioner";
 
 export interface LocalProvisionerOptions {
   /** Where workspaces live: one directory each. */
@@ -81,6 +81,7 @@ export class LocalProcessProvisioner implements Provisioner {
     fs.mkdirSync(path.join(dir, ".provision"), { recursive: true, mode: 0o700 });
     const port = await (this.o.freePort ?? pickFreePort)();
     // The operator's own additions come first: they cannot replace what makes this workspace itself.
+    const models = modelEnvironment(spec);
     const env: Record<string, string> = {
       ...spec.env,
       MESH_HOME: path.join(dir, "home"),
@@ -88,8 +89,8 @@ export class LocalProcessProvisioner implements Provisioner {
       MESH_PROJECTS_ROOT: path.join(dir, "projects"),
       MESH_API_TOKEN: spec.operatorToken,
       MESH_LICENSE_ENFORCEMENT: "enforce",
-      CURULE_GATEWAY_KEY: spec.gateway.key,
-      CURULE_GATEWAY_URL: spec.gateway.baseUrl,
+      ...models.plain,
+      ...models.secret,
       ...(spec.licence ? { MESH_LICENSE: spec.licence } : {}),
     };
     fs.writeFileSync(this.secretsFile(spec.workspaceId), JSON.stringify({ env, port } satisfies Saved), { mode: 0o600 });

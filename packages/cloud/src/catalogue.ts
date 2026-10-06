@@ -29,6 +29,11 @@ export interface HostedPlan {
   /** The tier a team in a workspace of this plan uses unless a seat names another. See {@link defaultTierOf}. */
   defaultTier?: string;
   summary?: string;
+  /**
+   * Hosting only: the customer brings their own model-provider key, and the service resells no model usage. A workspace of this plan
+   * gets no gateway key, the plan includes no usage and has no tiers, and the account has no balance and no top-ups.
+   */
+  byok?: true;
 }
 
 export interface TopUps {
@@ -61,6 +66,11 @@ export class Catalogue {
 
   plan(id: string): HostedPlan | undefined {
     return this.byId.get(id);
+  }
+
+  /** Whether any plan resells model usage through the gateway: a balance, included usage, top-ups. False when every plan is `byok`. */
+  get sellsUsage(): boolean {
+    return [...this.byId.values()].some((p) => !p.byok);
   }
 
   plans(): HostedPlan[] {
@@ -115,6 +125,13 @@ export function parseCatalogue(raw: unknown, source = "the plan catalogue"): Cat
         if (typeof p.default_tier !== "string" || p.default_tier === "") problems.push(`${where}.default_tier must be a tier name`);
         else if (Array.isArray(p.tiers) && !p.tiers.includes(p.default_tier)) problems.push(`${where}.default_tier '${p.default_tier}' is not one of the plan's tiers (${p.tiers.join(", ")})`);
       }
+      if (p.byok !== undefined && typeof p.byok !== "boolean") problems.push(`${where}.byok must be true or false`);
+      if (p.byok === true) {
+        // A plan that resells nothing must not look as if it did: each of these would promise a customer what the service does not sell.
+        for (const field of ["included_usage", "tiers", "default_tier"] as const) {
+          if (p[field] !== undefined && !(field === "included_usage" && Number(p[field]) === 0)) problems.push(`${where}.${field} cannot be set on a byok plan: the customer brings their own model key, and the service sells no model usage`);
+        }
+      }
       plans.set(id, {
         id,
         title: typeof p.title === "string" ? p.title.trim() : "",
@@ -127,10 +144,18 @@ export function parseCatalogue(raw: unknown, source = "the plan catalogue"): Cat
         ...(Array.isArray(p.tiers) ? { tiers: p.tiers as string[] } : {}),
         ...(typeof p.default_tier === "string" && p.default_tier !== "" ? { defaultTier: p.default_tier } : {}),
         ...(typeof p.summary === "string" ? { summary: p.summary } : {}),
+        ...(p.byok === true ? { byok: true as const } : {}),
       });
     }
   }
 
+  // When every plan is hosting only, nothing is bought but hosting: there is no usage to top up, and a topups block would say there is.
+  const hostingOnly = plans.size > 0 && [...plans.values()].every((p) => p.byok);
+  if (hostingOnly) {
+    if (raw.topups !== undefined) problems.push("topups cannot be set when every plan is byok: the service sells no model usage to top up");
+    if (problems.length > 0) throw new Error(problems.map((p) => `${source}: ${p}`).join("\n"));
+    return new Catalogue(currency, plans, { optionsMinor: [], minimumMinor: 0, maximumMinor: 0, usageMicrosPerMinor: 0 });
+  }
   const t = isObject(raw.topups) ? raw.topups : {};
   if (!isObject(raw.topups)) problems.push("topups must be a mapping with options, minimum_minor, maximum_minor and usage_per_unit");
   const options = Array.isArray(t.options_minor) ? t.options_minor : [];

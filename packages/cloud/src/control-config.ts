@@ -54,7 +54,10 @@ export interface ControlConfig {
   plansPath: string;
   catalogue: Catalogue;
   secret: string;
-  gateway: { adminUrl: string; adminToken: string; tenantUrl: string };
+  /** The model gateway: present when a plan resells model usage through it. Absent when every plan is `byok` (hosting only, the customer's own key). */
+  gateway?: { adminUrl: string; adminToken: string; tenantUrl: string };
+  /** The file the customers' model keys are kept in, encrypted, readable by the control plane's user only. */
+  modelKeysPath: string;
   licence?: { kid: string; privateKey: string };
   provisioner:
     | { kind: "container"; engine: string; image: string; network: string; subnet?: string; egressProxy?: string; noProxy: string[]; limits: WorkspaceLimits }
@@ -380,18 +383,25 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   }
   const secret = fromEnv(raw.secret_env, "secret_env", "the service secret", 32);
 
-  // ---- the gateway
+  // ---- the gateway: needed by a plan that sells model usage, and by no plan that is hosting only
   const gw = isObject(raw.gateway) ? raw.gateway : undefined;
   let adminUrl: URL | undefined;
   let adminToken = "";
   let tenant: URL | undefined;
-  if (!gw) problems.push("gateway must be a mapping with admin_url, admin_token_env and tenant_url");
-  else {
-    adminUrl = url(gw.admin_url, "gateway.admin_url");
-    adminToken = fromEnv(gw.admin_token_env, "gateway.admin_token_env", "the gateway's admin token", 24);
-    tenant = url(gw.tenant_url, "gateway.tenant_url");
-    if (tenant && !/\/v1\/?$/.test(tenant.pathname)) problems.push(`gateway.tenant_url '${gw.tenant_url as string}' must end in /v1: it is the address a workspace's models are called at`);
-  }
+  const needsGateway = catalogue === undefined ? true : catalogue.sellsUsage;
+  if (needsGateway) {
+    if (!gw) {
+      const selling = (catalogue?.plans() ?? []).filter((p) => !p.byok).map((p) => `'${p.id}'`);
+      problems.push(`gateway must be a mapping with admin_url, admin_token_env and tenant_url${selling.length > 0 ? `: ${selling.length === 1 ? "plan" : "plans"} ${selling.join(", ")} sell model usage through it (a plan with byok: true does not)` : ""}`);
+    } else {
+      adminUrl = url(gw.admin_url, "gateway.admin_url");
+      adminToken = fromEnv(gw.admin_token_env, "gateway.admin_token_env", "the gateway's admin token", 24);
+      tenant = url(gw.tenant_url, "gateway.tenant_url");
+      if (tenant && !/\/v1\/?$/.test(tenant.pathname)) problems.push(`gateway.tenant_url '${gw.tenant_url as string}' must end in /v1: it is the address a workspace's models are called at`);
+    }
+  } else if (gw) warnings.push("gateway is set and no plan uses it: every plan is byok, so workspaces are given the customer's own model key and the gateway is not called. Remove the section, or add a plan that sells usage");
+  const modelKeysPath = raw.model_keys !== undefined ? at(raw.model_keys, "model_keys", false) : logPath !== "" ? path.join(path.dirname(logPath), "model-keys.json") : "";
+  if (modelKeysPath === "" && raw.model_keys !== undefined) problems.push("model_keys must be a file path");
 
   // ---- provisioning
   const prov = isObject(raw.provisioner) ? raw.provisioner : undefined;
@@ -523,7 +533,8 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     plansPath,
     catalogue: catalogue!,
     secret,
-    gateway: { adminUrl: adminUrl!.href.replace(/\/+$/, ""), adminToken, tenantUrl: tenant!.href.replace(/\/+$/, "") },
+    ...(adminUrl && tenant ? { gateway: { adminUrl: adminUrl.href.replace(/\/+$/, ""), adminToken, tenantUrl: tenant.href.replace(/\/+$/, "") } } : {}),
+    modelKeysPath,
     ...(licence ? { licence } : {}),
     provisioner: provisioner!,
     billing: billing!,
