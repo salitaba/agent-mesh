@@ -158,7 +158,7 @@ tbody th, tfoot th { color: var(--ink); font-size: inherit; font-weight: 500; le
 tfoot th, tfoot td { font-weight: 650; }
 .table-wrap + .table-wrap { margin-top: 24px; }
 .table-wrap:focus-visible { outline-offset: 2px; }
-.prose { max-width: 42rem; margin: clamp(32px, 6vh, 64px) auto 0; }
+.prose { width: min(100% - 2 * var(--gutter), 42rem); margin: clamp(32px, 6vh, 64px) auto 0; }
 .prose h1 { margin-bottom: 8px; }
 .prose h1 + .todo { margin-top: 16px; }
 .prose h2 { margin: 32px 0 10px; }
