@@ -146,6 +146,26 @@ export function newCountText(n: number, noun: "event" | "turn"): string {
   return `${n.toLocaleString("en-US")} new ${noun}${n === 1 ? "" : "s"}`;
 }
 
+/**
+ * The control that holds the list still. It read "Pause", a few centimetres from the mission's own Pause, and only its tooltip said
+ * it stops the rows and not the agents. Its words name what it pauses now, and the tooltip says what it does not.
+ */
+export function pauseControl(paused: boolean, noun: "events" | "turns"): { label: string; title: string } {
+  return paused
+    ? { label: "Resume updates", title: `Show ${noun} as they arrive again` }
+    : { label: "Pause updates", title: `Freeze the list so rows stop moving. This does not pause the mission: new ${noun} keep arriving and are counted, not lost.` };
+}
+
+/**
+ * What a held list says above its rows, or null when nothing is held and nothing has arrived. Paused by the control, it says so and
+ * what is waiting, and its button resumes; held only by pointing or scrolling, it owes the count and a way to the newest rows.
+ */
+export function holdText(paused: boolean, fresh: number, noun: "event" | "turn"): { lead: string | null; text: string; button: string } | null {
+  if (!paused && fresh === 0) return null;
+  if (!paused) return { lead: null, text: `${newCountText(fresh, noun)}.`, button: "Show" };
+  return { lead: "Updates paused.", text: fresh > 0 ? `${newCountText(fresh, noun)} waiting.` : "Nothing new yet.", button: "Resume updates" };
+}
+
 /* ------------------------------------------------------------------------------------------------------------------ *
  * Time buckets: both pages group a newest-first list by how long ago, so the gap between "moving now" and "an hour ago" shows.
  * ------------------------------------------------------------------------------------------------------------------ */

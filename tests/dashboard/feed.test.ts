@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  BUCKETS, NOT_HELD, STALE_AFTER_MS, bucketOf, feedState, heldList, holdMark, isHolding, newCountText, newestKey, sinceText,
+  BUCKETS, NOT_HELD, STALE_AFTER_MS, bucketOf, feedState, heldList, holdMark, holdText, isHolding, newCountText, newestKey, pauseControl, sinceText,
 } from "../../apps/mesh-dashboard/src/feed";
 import { PAGE_ROWS, rovingTarget, tabStop } from "../../apps/mesh-dashboard/src/roving";
 import { count, middleClip } from "../../apps/mesh-dashboard/src/text";
@@ -223,4 +223,21 @@ test("count pluralises, with grouping for large numbers", () => {
   assert.equal(count(0, "turn"), "0 turns");
   assert.equal(count(1500, "event"), "1,500 events");
   assert.equal(count(2, "reply", "replies"), "2 replies");
+});
+
+test("the feed's hold control names what it pauses, so it cannot be read as the mission's Pause beside it", () => {
+  const off = pauseControl(false, "events");
+  assert.equal(off.label, "Pause updates");
+  assert.match(off.title, /does not pause the mission/);
+  assert.match(off.title, /new events keep arriving and are counted, not lost/);
+  assert.equal(pauseControl(true, "turns").label, "Resume updates");
+  assert.equal(pauseControl(true, "turns").title, "Show turns as they arrive again");
+  for (const paused of [false, true]) assert.doesNotMatch(pauseControl(paused, "events").label, /^(Pause|Resume)$/, "never the bare word");
+});
+
+test("a paused list says updates are paused and what waits, and resumes by name; a list held by pointing owes only the count", () => {
+  assert.deepEqual(holdText(true, 3, "event"), { lead: "Updates paused.", text: "3 new events waiting.", button: "Resume updates" });
+  assert.deepEqual(holdText(true, 0, "turn"), { lead: "Updates paused.", text: "Nothing new yet.", button: "Resume updates" });
+  assert.deepEqual(holdText(false, 1, "turn"), { lead: null, text: "1 new turn.", button: "Show" });
+  assert.equal(holdText(false, 0, "event"), null, "nothing held, nothing waiting: nothing to say");
 });

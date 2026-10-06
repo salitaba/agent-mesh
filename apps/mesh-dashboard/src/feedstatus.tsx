@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FocusEvent as ReactFocusEvent, PointerEvent as ReactPointerEvent, UIEvent as ReactUIEvent } from "react";
 import { Button, useNow } from "./components";
-import { NOT_HELD, feedState, holdMark, isHolding, newCountText } from "./feed";
+import { NOT_HELD, feedState, holdMark, holdText, isHolding, pauseControl } from "./feed";
 import { Icon } from "./icons";
 import { useMesh } from "./store";
 import "./feed.css";
@@ -35,39 +35,35 @@ export function FeedStatus(): React.JSX.Element {
 }
 
 /**
- * The control that freezes the list. Events keep arriving while it is held; they are counted, never dropped.
+ * The control that freezes the list. Events keep arriving while it is held; they are counted, never dropped. Its words are in
+ * feed.ts (`pauseControl`): "Pause updates", so it cannot be read as the mission's Pause beside it.
  *
- * The label changes with the state (Pause, then Resume), so it carries no aria-pressed: a button named "Resume" that also says it
- * is pressed would be announced as the opposite of what it does.
+ * The label changes with the state (Pause updates, then Resume updates), so it carries no aria-pressed: a button named "Resume
+ * updates" that also says it is pressed would be announced as the opposite of what it does.
  */
 export function PauseButton({ paused, onToggle, noun }: { paused: boolean; onToggle: () => void; noun: "events" | "turns" }): React.JSX.Element {
+  const c = pauseControl(paused, noun);
   return (
-    <Button
-      variant="soft"
-      icon={paused ? "play" : "pause"}
-      title={paused ? `Show ${noun} as they arrive again` : `Freeze the list so rows stop moving. New ${noun} keep arriving and are counted, not lost.`}
-      onClick={onToggle}
-    >
-      {paused ? "Resume" : "Pause"}
+    <Button variant="soft" icon={paused ? "play" : "pause"} title={c.title} onClick={onToggle}>
+      {c.label}
     </Button>
   );
 }
 
 /**
- * What a held list owes the reader: that it is held, and how much is waiting behind it. Silent when nothing is held and nothing
- * has arrived. `onShow` releases the hold and brings the newest rows into view.
+ * What a held list owes the reader: that it is held, and how much is waiting behind it (feed.ts `holdText`). Silent when nothing
+ * is held and nothing has arrived. `onShow` releases the hold and brings the newest rows into view.
  */
 export function HoldBar({ paused, fresh, noun, onShow }: { paused: boolean; fresh: number; noun: "event" | "turn"; onShow: () => void }): React.JSX.Element | null {
-  if (!paused && fresh === 0) return null;
-  // Paused says so and says what is waiting; a hold from pointing or scrolling only owes the count.
-  const text = paused ? (fresh > 0 ? `${newCountText(fresh, noun)} waiting.` : "Nothing new yet.") : `${newCountText(fresh, noun)}.`;
+  const t = holdText(paused, fresh, noun);
+  if (!t) return null;
   return (
     <div className={`feed-hold${paused ? " paused" : ""}`}>
       <Icon name={paused ? "pause" : "arrow-down"} size={14} />
       <span className="feed-hold-text">
-        {paused ? <b>Paused.</b> : null} {text}
+        {t.lead ? <b>{t.lead}</b> : null} {t.text}
       </span>
-      <Button variant="small" onClick={onShow}>{paused ? "Resume" : "Show"}</Button>
+      <Button variant="small" onClick={onShow}>{t.button}</Button>
     </div>
   );
 }
