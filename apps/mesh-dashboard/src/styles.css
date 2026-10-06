@@ -82,6 +82,8 @@
      the rules already used; 40 is one deliberate tier shared by the drawer,
      the project crash banner and the designer popovers, which never stack. */
   --z-raise: 1; --z-sticky: 2; --z-toolbar: 5; --z-savebar: 10;
+  /* A narrow screen's notices, laid over the top of the view: above the page and its bars, under every menu, panel and dialog. */
+  --z-notice: 20;
   --z-ctx: 30; --z-dock: 34; --z-scrim: 35; --z-overlay: 40; --z-slide: 45;
   --z-sidebar: 50; --z-palette-scrim: 55; --z-palette: 56;
   --z-toasts: 60; --z-picker: 61;
@@ -750,6 +752,19 @@ input.search { min-width: 220px; }
   font: 600 13px var(--sans); cursor: pointer; }
 .toast-act:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
 @keyframes toastin { from { transform: translateY(8px); opacity: 0; } }
+@keyframes toastdrop { from { transform: translateY(-8px); opacity: 0; } }
+/* Where notices span the width (a phone, a tablet held upright) they sat at the foot of the screen, on what the person was about to
+   press there: a decision card's "Send answer and resume", a form's Send. They sit under the top bar instead, over the part of the
+   page already scrolled past, as a grid item in the view's own cell, so they follow the bar's height. Two places keep the foot: an
+   open drawer, which covers the bar and starts with its title and first fields, and the Designer, whose undo, redo and checks are
+   in its header and whose own notices answer them (designer.css lifts them over its save bar). The action is a 44px target there. */
+@media (max-width: 800px) {
+  #toasts { position: static; grid-area: main; align-self: start; z-index: var(--z-notice); max-width: none; margin: var(--s2) var(--s3) 0; }
+  #toasts .toast { animation-name: toastdrop; }
+  #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
+  #drawer:not(.hidden) ~ #toasts .toast, body:has(.ms-bar) #toasts .toast { animation-name: toastin; }
+  .toast-act { min-height: 44px; }
+}
 
 /* ---------- forms (controls + designer) ---------- */
 form.stack { display: flex; flex-direction: column; gap: var(--s2-5); }
@@ -847,7 +862,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .respond-form .row { flex-direction: column; align-items: stretch; }
   .respond-form .primary { min-height: 44px; }
   .row-actions button, button.small { min-height: 32px; }
-  #toasts { left: 12px; right: 12px; max-width: none; }
 }
 
 /* Phone: the header stops being a bar. Measured at 390px the old layout was four rows, 138px tall, and the document

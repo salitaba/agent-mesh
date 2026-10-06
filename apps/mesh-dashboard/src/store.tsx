@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { api, clientFor, setApiNotifier, onServerDownChange, type ProjectClient } from "./api";
 import { VIEWS, hashFor, needsProjectRedirect, parseHash, type HashRoute, type View } from "./route";
 import { SINGLE_MESH, useProjectsOptional, type ProjectSink } from "./projects";
-import { eventToast } from "./toasttext";
+import { eventToast, pageShowing, toastLife } from "./toasttext";
 import { retainCap, trimRetained } from "./tabmodel";
 import { foldToolEvent, type ToolLive } from "./streams";
 import { ConfirmDialog, type ConfirmFn, type ConfirmRequest } from "./components";
@@ -97,6 +97,8 @@ export interface Toast {
   action?: { label: string; run: () => void };
   /** How many identical notices this toast stands for (absent means one). */
   count?: number;
+  /** The page that shows what this notice says (toasttext.ts `pageShowing`): arriving there takes it down. */
+  page?: View;
 }
 
 /** Live token buffer for one running turn (out-of-band, never in the log). */
@@ -325,7 +327,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
   holdMeshRef.current = !meshReady;
   const subscribe = projectsCtx?.subscribe;
 
-  const toast = useCallback((title: string, msg: string, kind = "", action?: Toast["action"]) => {
+  const toast = useCallback((title: string, msg: string, kind = "", action?: Toast["action"], page?: View) => {
     // A ref mirrors the list so a repeat can be found and its timer re-armed
     // synchronously; a state updater runs too late to know which toast it hit.
     const put = (next: Toast[]): void => {
@@ -337,9 +339,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
       toastTimers.current.delete(id);
       put(toastsRef.current.filter((x) => x.id !== id));
     };
-    // 4.8s is enough to read a confirmation but not to notice, aim at and press
-    // an Undo button — so an actionable toast gets roughly twice the window.
-    const life = action ? 10000 : kind === "bad" ? 7600 : 4800;
+    const life = toastLife(kind, !!action);
     const arm = (id: number): void => {
       clearTimeout(toastTimers.current.get(id));
       toastTimers.current.set(id, setTimeout(() => dismiss(id), life));
@@ -355,9 +355,21 @@ export function MeshProvider({ children, projectId = null, background = false }:
     }
     const id = toastId++;
     const wrapped = action ? { ...action, run: () => { dismiss(id); action.run(); } } : undefined;
-    put([...toastsRef.current.slice(-3), { id, title, msg, kind, action: wrapped }]);
+    put([...toastsRef.current.slice(-3), { id, title, msg, kind, action: wrapped, page }]);
     arm(id);
   }, []);
+
+  // A notice about what a page shows has done its job once the person is on that page, and there it only covers what it repeats.
+  useEffect(() => {
+    const shown = toastsRef.current.filter((t) => t.page === view);
+    if (!shown.length) return;
+    for (const t of shown) {
+      clearTimeout(toastTimers.current.get(t.id));
+      toastTimers.current.delete(t.id);
+    }
+    toastsRef.current = toastsRef.current.filter((t) => t.page !== view);
+    setToasts(toastsRef.current);
+  }, [view]);
 
   useEffect(() => {
     // Only the foreground store may own the notifier: a background provider
@@ -516,7 +528,11 @@ export function MeshProvider({ children, projectId = null, background = false }:
     const at = Date.parse(e.timestamp);
     if (!Number.isFinite(at) || Date.now() - at > TOAST_FRESH_MS) return;
     const notice = eventToast(e);
-    if (notice) toast(notice.title, notice.msg, notice.kind);
+    if (!notice) return;
+    // The page in front already says it, first and in full: the notice would only cover it.
+    const page = pageShowing(e.type);
+    if (page && page === viewRef.current) return;
+    toast(notice.title, notice.msg, notice.kind, undefined, page ?? undefined);
   }, [toast]);
 
   const ingestToken = useCallback((raw: any) => {

@@ -8,6 +8,7 @@
  */
 import { verdictText } from "../../../packages/protocol/src/catalog";
 import { holdsOf, type EscalationLike } from "./escalation-card";
+import type { View } from "./route";
 
 export type ToastKind = "ok" | "warn" | "bad";
 
@@ -64,4 +65,35 @@ export function eventToast(e: { type: string; payload?: unknown }): ToastText | 
     default:
       return null;
   }
+}
+
+/**
+ * The page that already shows, first and in full, what an event's notice would say, or null. On that page the notice is not
+ * raised, and one already up is taken down when the person arrives there. "A decision is waiting on you" used to stack over the
+ * Needs you page itself, on a phone right over the card's "Send answer and resume"; "Mission delivered" repeated the Overview's
+ * headline word for word.
+ *
+ * Only those two. A failed agent's card on Agents shows its last step's error, which need not be the one the event carries, and
+ * no page shows a conversation thread's budget.
+ */
+export function pageShowing(type: string): View | null {
+  switch (type) {
+    case "escalation.requested":
+      return "escalations";
+    case "goal.completed":
+    case "goal.failed":
+      return "overview";
+    default:
+      return null;
+  }
+}
+
+/**
+ * How long a notice stays up, in ms. Long enough to read and short enough not to sit on the page: a few seconds, a failure a little
+ * longer. One with a button (Undo, Redo) stays about twice as long, because noticing it, aiming at it and pressing it takes longer
+ * than reading it, and a button that leaves first is worse than none.
+ */
+export function toastLife(kind: string, actionable: boolean): number {
+  if (actionable) return 10_000;
+  return kind === "bad" ? 7_600 : 4_800;
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { budgetName, eventToast } from "../../apps/mesh-dashboard/src/toasttext";
+import { budgetName, eventToast, pageShowing, toastLife } from "../../apps/mesh-dashboard/src/toasttext";
 
 /**
  * The corner notices used to be the event's own fields in lower case: "escalation opened: budget_exhausted (by explorer)", "budget
@@ -74,4 +74,25 @@ test("a ledger key is said as a person would, never as the key", () => {
   assert.equal(budgetName("agent:goal-1/tech-lead"), "tech-lead's token budget");
   assert.equal(budgetName("thread:abc"), "A conversation thread's token budget");
   assert.equal(budgetName(undefined), "A token budget");
+});
+
+test("a notice is not raised on the page that already shows it first and in full, and only there", () => {
+  // Needs you's Decisions tab is the card itself, with its answer form; its Tool gates tab does not show decisions.
+  assert.equal(pageShowing("escalation.requested"), "escalations");
+  // The Overview's headline says "Delivered. Every mandatory check is evidenced." and "The mission failed." with the reason.
+  assert.equal(pageShowing("goal.completed"), "overview");
+  assert.equal(pageShowing("goal.failed"), "overview");
+  // Agents shows the last step's error, which need not be the event's; no page shows a thread's budget.
+  assert.equal(pageShowing("agent.failed"), null);
+  assert.equal(pageShowing("budget.exceeded"), null);
+  for (const type of ["message.sent", "goal.escalated", "artifact.created"]) assert.equal(pageShowing(type), null, type);
+});
+
+test("a notice is gone in a few seconds, a failure a little later, and one with a button stays about twice as long", () => {
+  for (const kind of ["ok", "warn", ""]) assert.ok(toastLife(kind, false) >= 4000 && toastLife(kind, false) <= 5000, kind);
+  assert.ok(toastLife("bad", false) > toastLife("ok", false) && toastLife("bad", false) <= 8000, "a failure is read a little longer");
+  for (const kind of ["ok", "warn", "bad"]) {
+    const ratio = toastLife(kind, true) / toastLife("ok", false);
+    assert.ok(ratio >= 1.8 && ratio <= 2.5, `Undo stays about twice as long as a plain notice (${kind}: ${ratio.toFixed(2)})`);
+  }
 });
