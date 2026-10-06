@@ -32,6 +32,8 @@ export interface BillingServiceOptions {
   mailer: Mailer;
   /** The payment provider's name, which scopes its customer references. */
   provider: string;
+  /** The address of the account pages, so that a mail can say where to act. Without it a mail names the page and links nothing. */
+  appUrl?: string;
   clock?: () => Date;
 }
 
@@ -40,6 +42,8 @@ export interface Applied {
   /** Why it was not applied, or what was unusual about it. */
   note?: string;
 }
+
+const days = (n: number): string => `${n} day${n === 1 ? "" : "s"}`;
 
 type Grant = { id: string; bucket: "included" | "purchased"; mode: "add" | "set"; amountMicros: number };
 
@@ -64,6 +68,11 @@ export class BillingService {
 
   private get state() {
     return this.o.log.state;
+  }
+
+  /** Where the account pages are, for a mail to point at; their name when the service was not told the address. */
+  private accountPage(): string {
+    return this.o.appUrl ? `${this.o.appUrl.replace(/\/+$/, "")}/account` : "your account page";
   }
 
   private accountOf(e: BillingEvent): string | undefined {
@@ -146,7 +155,7 @@ export class BillingService {
         const sub = account.subscription;
         if (sub && sub.status === "active") {
           await this.o.log.append({ type: "subscription.changed", accountId, status: "past_due", reason: event.reason ?? "a payment failed" });
-          await this.o.mailer.send({ to: account.email, kind: "payment-failed", subject: "A payment did not go through", text: `The last payment for your plan did not go through. Your workspaces keep running for a few days; update your payment details to keep them running.` });
+          await this.o.mailer.send({ to: account.email, kind: "payment-failed", subject: "A Curule payment did not go through", text: `The last payment for your plan did not go through.\n\nYour workspaces keep running for ${days(this.o.workspaces.policy.graceDays)}; after that they are stopped, not deleted. To keep them running, update your payment details with Manage billing on your account page:\n\n${this.accountPage()}\n\nA payment that arrives before then puts everything back as it was.` });
         }
         await this.record(key, accountId, event.type, []);
         return { applied: true };
@@ -156,7 +165,7 @@ export class BillingService {
         if (account.subscription && account.subscription.status !== "ended") {
           await this.o.log.append({ type: "subscription.changed", accountId, status: "ended", reason: "the subscription was cancelled" });
           for (const w of this.o.workspaces.forAccount(accountId)) if (w.status === "running") await this.o.workspaces.suspend(w.workspaceId, "the subscription ended");
-          await this.o.mailer.send({ to: account.email, kind: "subscription-ended", subject: "Your subscription has ended", text: `Your subscription has ended and your workspaces have been stopped. Your data is kept for a while; subscribe again to start them, or delete them from your account.` });
+          await this.o.mailer.send({ to: account.email, kind: "subscription-ended", subject: "Your Curule subscription has ended", text: `Your subscription has ended and your workspaces have been stopped. Your data is kept for ${days(this.o.workspaces.policy.retentionDays)} after that, and then deleted.\n\nTo start your workspaces again, subscribe again from your account page. To remove them now, delete them there:\n\n${this.accountPage()}` });
         }
         await this.record(key, accountId, event.type, []);
         return { applied: true };

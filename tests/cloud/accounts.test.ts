@@ -30,8 +30,8 @@ test("signing up makes an account that cannot be used yet and sends a link, to t
   assert.equal(p.mailer.sent.length, 1);
   assert.equal(mail!.to, "ada.lovelace@example.com");
   assert.equal(mail!.kind, "verify");
-  assert.equal(mail!.subject, "Confirm your email address");
-  assert.match(mail!.text, /^Open this link to confirm your address and sign in:\n\nhttps:\/\/app\.example\.com\/verify\?token=[A-Za-z0-9_-]{43}\n\nIt works once and expires in 24 hours\. If you did not ask for it, you can ignore this message\.$/);
+  assert.equal(mail!.subject, "Confirm your Curule account");
+  assert.match(mail!.text, /^Confirm your email address to finish creating your account:\n\nhttps:\/\/app\.example\.com\/verify\?token=[A-Za-z0-9_-]{43}\n\nThe link works once and expires in 24 hours\. If you did not sign up, ignore this message: nothing happens unless the link is opened\.$/);
 });
 
 test("the log holds nothing that can be used: a token is kept only as its hash, and so is a session's", async () => {
@@ -71,9 +71,9 @@ test("signing up again with an address that has an account is answered the same 
   assert.equal(await p.plane.accounts.signup("ADA@example.com", "another good password"), undefined);
   assert.equal(p.log.state.accounts.size, before, "no second account");
   const [mail] = mailTo(p, "ada@example.com", "signup-existing");
-  assert.equal(mail!.subject, "You already have an account");
-  assert.match(mail!.text, /Someone, probably you, tried to create an account with this address\. You already have one: sign in, or reset your password from the sign-in page/);
-  assert.ok(!/https?:\/\//.test(mail!.text), "no link that would let a stranger in");
+  assert.equal(mail!.subject, "You already have a Curule account");
+  assert.match(mail!.text, /^Someone, probably you, tried to create an account with this address, and you already have one, so no new one was made\.\n\nSign in: https:\/\/app\.example\.com\/login\nForgotten your password\? https:\/\/app\.example\.com\/forgot\n\nIf it was not you, ignore this message\.$/);
+  assert.ok(!/token=/.test(mail!.text) && [...mail!.text.matchAll(/https?:\/\/\S+/g)].every((m) => /^https:\/\/app\.example\.com\/(login|forgot)$/.test(m[0])), "no link that would let a stranger in: only the pages to sign in or to ask for a reset, carrying no token");
   assert.equal(p.log.state.accounts.get(ada.accountId)!.passwordHash.startsWith("scrypt$"), true);
   assert.equal((await p.plane.accounts.login("ada@example.com", PASSWORD)).account.accountId, ada.accountId, "the old password still works: signing up again changed nothing");
 });
@@ -140,7 +140,7 @@ test("a link that is wrong, old, for another purpose, empty, or for an account t
 test("how long a verification link lasts, and how it says so, follow the options", async () => {
   const p = await plane({ accounts: { verificationHours: 1, resetHours: 5 } });
   await p.plane.accounts.signup("ada@example.com", PASSWORD);
-  assert.match(p.mailer.sent[0]!.text, /It works once and expires in 1 hour\./);
+  assert.match(p.mailer.sent[0]!.text, /The link works once and expires in 1 hour\./);
   const token = tokenOf(p.mailer.sent[0]!);
   p.clock.advance(3_600_000);
   assert.equal((await refusal(p.plane.accounts.verify(token))).code, "invalid_token");
@@ -299,8 +299,8 @@ test("a reset link goes only to an address that has a confirmed account that is 
   assert.equal(p.mailer.sent.length, sentBefore, "no mail for any of those");
   assert.equal(await p.plane.accounts.requestReset(" ADA@example.com"), undefined);
   const [mail] = mailTo(p, "ada@example.com", "reset");
-  assert.equal(mail!.subject, "Reset your password");
-  assert.match(mail!.text, /^Open this link to choose a new password:\n\nhttps:\/\/app\.example\.com\/reset\?token=[A-Za-z0-9_-]{43}\n\nIt works once and expires in 2 hours\. If you did not ask for it, you can ignore this message: nothing has changed\.$/);
+  assert.equal(mail!.subject, "Reset your Curule password");
+  assert.match(mail!.text, /^Open this link to choose a new password:\n\nhttps:\/\/app\.example\.com\/reset\?token=[A-Za-z0-9_-]{43}\n\nThe link works once and expires in 2 hours\. If you did not ask for it, ignore this message: your password has not changed\.$/);
   assert.ok(p.plane.accounts.authenticate(ada.sessionToken), "asking for a link ends nothing");
 });
 

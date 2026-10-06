@@ -232,14 +232,22 @@ test("a failed payment makes an active subscription past due and tells the custo
   assert.equal(p.store.entries.filter((e) => e.type === "subscription.changed" && e.status === "past_due").map((e) => (e as { reason: string }).reason)[0], "card declined");
   const mails = p.mailer.sent.slice(mailBefore);
   assert.equal(mails.length, 1);
-  assert.deepEqual([mails[0]!.to, mails[0]!.kind, mails[0]!.subject], ["ada@example.com", "payment-failed", "A payment did not go through"]);
-  assert.match(mails[0]!.text, /Your workspaces keep running for a few days; update your payment details to keep them running\./);
+  assert.deepEqual([mails[0]!.to, mails[0]!.kind, mails[0]!.subject], ["ada@example.com", "payment-failed", "A Curule payment did not go through"]);
+  assert.equal(mails[0]!.text, "The last payment for your plan did not go through.\n\nYour workspaces keep running for 3 days; after that they are stopped, not deleted. To keep them running, update your payment details with Manage billing on your account page:\n\nhttps://app.example.com/account\n\nA payment that arrives before then puts everything back as it was.", "the mail says how long, and where to act");
   assert.equal(workspace().status, "running");
   p.clock.advance(DAY);
   await p.plane.billing.apply({ type: "payment.failed", ref: "in_f2", accountId: ada.accountId, at: at(p) });
   assert.equal(p.mailer.sent.length, mailBefore + 1, "a second failure is not a second mail");
   assert.equal(sub(p, ada.accountId).pastDueSince, "2026-10-05T12:00:00.000Z", "past due since the first");
   assert.equal(p.log.state.applied.has("payment.failed:in_f2"), true);
+});
+
+test("the mails about a late payment and an ended subscription say the days the service is set to, and say them in the singular at one", async () => {
+  const { p, ada } = await running({ workspaces: { graceDays: 1, retentionDays: 45 } });
+  await p.plane.billing.apply({ type: "payment.failed", ref: "in_days", accountId: ada.accountId, reason: "card declined", at: at(p) });
+  assert.match(p.mailer.sent.at(-1)!.text, /Your workspaces keep running for 1 day; after that/, "one day, not 1 days");
+  await p.plane.billing.apply({ type: "subscription.ended", ref: "end_days", subscriptionRef: "sub_1", accountId: ada.accountId, at: at(p) });
+  assert.match(p.mailer.sent.at(-1)!.text, /Your data is kept for 45 days after that, and then deleted\./, "the retention is the service's setting");
 });
 
 test("a failed payment for an account with no subscription is recorded and does nothing else", async () => {
@@ -268,8 +276,8 @@ test("a cancelled subscription ends, stops the account's running workspaces, and
   assert.equal(workspace().status, "suspended");
   assert.equal(workspace().statusReason, "the subscription ended");
   const mails = p.mailer.sent.slice(mailBefore);
-  assert.deepEqual([mails.length, mails[0]!.kind, mails[0]!.subject, mails[0]!.to], [1, "subscription-ended", "Your subscription has ended", "ada@example.com"]);
-  assert.match(mails[0]!.text, /Your subscription has ended and your workspaces have been stopped\. Your data is kept for a while/);
+  assert.deepEqual([mails.length, mails[0]!.kind, mails[0]!.subject, mails[0]!.to], [1, "subscription-ended", "Your Curule subscription has ended", "ada@example.com"]);
+  assert.equal(mails[0]!.text, "Your subscription has ended and your workspaces have been stopped. Your data is kept for 30 days after that, and then deleted.\n\nTo start your workspaces again, subscribe again from your account page. To remove them now, delete them there:\n\nhttps://app.example.com/account", "the mail says how long the data is kept, and where to act");
   await p.plane.billing.apply({ type: "subscription.ended", ref: "end_2", subscriptionRef: "sub_1", accountId: ada.accountId, at: at(p) });
   assert.equal(p.mailer.sent.length, mailBefore + 1, "ending what has ended says nothing more");
   assert.equal(p.provisioner.ops("suspend").length, 1);

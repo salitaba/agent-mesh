@@ -350,6 +350,17 @@ that a subscription ended and that a workspace was stopped. Which service delive
 ship. Both are behind one interface (`Mailer`, in `packages/cloud/src/mailer.ts`), so another can be added without touching
 what sends.
 
+Each message names the product in its subject (a stranger's inbox shows it between others), says what to do, and where. What
+a person can act on is a link to the account page, and what is said about time is what the service does:
+
+| `kind` | Subject | What it says |
+|---|---|---|
+| `verify` | Confirm your Curule account | The confirmation link, once, and how long it lasts (24 hours). |
+| `reset` | Reset your Curule password | The reset link, once, and how long it lasts (two hours); that the password has not changed if it was not asked for. |
+| `signup-existing` | You already have a Curule account | Sent when someone signs up with an address that has an account: links to the sign-in and the forgotten-password pages, and no token. |
+| `payment-failed` | A Curule payment did not go through | How many days the workspaces keep running (the grace period, three), that they are then stopped and not deleted, and the account page to update the payment details at. |
+| `subscription-ended` | Your Curule subscription has ended | That the workspaces are stopped, how many days the data is kept before it is deleted (the retention period, 30), and the account page to subscribe again or delete them at. |
+
 **An outbox file** (`mail.outbox`) delivers nothing. Each message is appended to the file as a JSON object on a line, readable
 by its owner alone, for something of the operator's to deliver or for a person to read while trying the service (the
 [trial](cloud.md#try-it-on-one-machine) prints each as it is written). In production the check warns of it.

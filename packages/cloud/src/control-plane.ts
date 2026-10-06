@@ -72,7 +72,7 @@ export class ControlPlane {
     this.clock = o.clock ?? (() => new Date());
     this.accounts = new Accounts({ ...o.accounts, log: o.log, mailer: o.mailer, appUrl: o.appUrl, clock: this.clock });
     this.workspaces = new Workspaces({ ...o.workspaces, log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), ...(o.modelKeys ? { modelKeys: o.modelKeys } : {}), mailer: o.mailer, clock: this.clock });
-    this.billing = new BillingService({ log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), workspaces: this.workspaces, mailer: o.mailer, provider: o.billing.name, clock: this.clock });
+    this.billing = new BillingService({ log: o.log, catalogue: o.catalogue, ...(o.gateway ? { gateway: o.gateway } : {}), workspaces: this.workspaces, mailer: o.mailer, provider: o.billing.name, appUrl: o.appUrl, clock: this.clock });
   }
 
   private get state() {

@@ -48,7 +48,7 @@ test("with a mail server configured, a sign-up is answered at once, its confirma
     assert.equal(got.from, "no-reply@curule.example");
     const headers = headersOf(got.data);
     assert.equal(headers.get("from"), "Curule <no-reply@curule.example>");
-    assert.equal(headers.get("subject"), "Confirm your email address");
+    assert.equal(headers.get("subject"), "Confirm your Curule account");
     const text = decodeBody(got.data);
     assert.match(linkIn(text), /^https:\/\/app\.curule\.example\/verify\?token=/);
     const verified = await s.app({ method: "POST", path: "/api/verify", json: { token: tokenIn(text) }, headers: ORIGIN });

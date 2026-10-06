@@ -67,8 +67,12 @@ export class Accounts {
     };
   }
 
+  private page(path: string): string {
+    return `${this.o.appUrl.replace(/\/+$/, "")}${path}`;
+  }
+
   private link(path: string, token: string): string {
-    return `${this.o.appUrl.replace(/\/+$/, "")}${path}?token=${encodeURIComponent(token)}`;
+    return `${this.page(path)}?token=${encodeURIComponent(token)}`;
   }
 
   normaliseEmail(raw: unknown): string {
@@ -87,9 +91,9 @@ export class Accounts {
     const lasts = `${hours} hour${hours === 1 ? "" : "s"}`;
     await this.o.log.append({ type: "verification.issued", accountId, tokenHash: hashToken(token), expiresAt: new Date(this.clock().getTime() + hours * 3_600_000).toISOString(), purpose });
     if (purpose === "verify") {
-      await this.o.mailer.send({ to: email, kind: "verify", subject: "Confirm your email address", text: `Open this link to confirm your address and sign in:\n\n${this.link("/verify", token)}\n\nIt works once and expires in ${lasts}. If you did not ask for it, you can ignore this message.` });
+      await this.o.mailer.send({ to: email, kind: "verify", subject: "Confirm your Curule account", text: `Confirm your email address to finish creating your account:\n\n${this.link("/verify", token)}\n\nThe link works once and expires in ${lasts}. If you did not sign up, ignore this message: nothing happens unless the link is opened.` });
     } else {
-      await this.o.mailer.send({ to: email, kind: "reset", subject: "Reset your password", text: `Open this link to choose a new password:\n\n${this.link("/reset", token)}\n\nIt works once and expires in ${lasts}. If you did not ask for it, you can ignore this message: nothing has changed.` });
+      await this.o.mailer.send({ to: email, kind: "reset", subject: "Reset your Curule password", text: `Open this link to choose a new password:\n\n${this.link("/reset", token)}\n\nThe link works once and expires in ${lasts}. If you did not ask for it, ignore this message: your password has not changed.` });
     }
   }
 
@@ -111,7 +115,7 @@ export class Accounts {
     const account = this.state.accounts.get(existing)!;
     if (account.verifiedAt === undefined) await this.issue(existing, email, "verify");
     else {
-      await this.o.mailer.send({ to: email, kind: "signup-existing", subject: "You already have an account", text: `Someone, probably you, tried to create an account with this address. You already have one: sign in, or reset your password from the sign-in page if you have forgotten it. If it was not you, you can ignore this message.` });
+      await this.o.mailer.send({ to: email, kind: "signup-existing", subject: "You already have a Curule account", text: `Someone, probably you, tried to create an account with this address, and you already have one, so no new one was made.\n\nSign in: ${this.page("/login")}\nForgotten your password? ${this.page("/forgot")}\n\nIf it was not you, ignore this message.` });
     }
   }
 

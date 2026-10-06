@@ -120,7 +120,7 @@ test("a customer signs up, pays on the trial's page, makes a workspace, makes a 
     // ---- signing up, paying ----
     const email = "ada@example.com";
     await c.signUpAndConfirm(email);
-    await until("the mail to be printed where the trial says things", () => said.find((l) => l.startsWith(`mail to ${email}: Confirm your email address\n  ${t.appUrl}/verify?token=`)));
+    await until("the mail to be printed where the trial says things", () => said.find((l) => l.startsWith(`mail to ${email}: Confirm your Curule account\n  ${t.appUrl}/verify?token=`)));
     assert.equal((await c.api("GET", "/api/session")).json.account.email, email);
     assert.equal((await c.api("GET", "/api/me")).json.account.subscription, null);
     const page = await c.pay({ purpose: "subscription", plan: "team" });
