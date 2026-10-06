@@ -8,6 +8,10 @@
 .ib-section > .group-h { margin: var(--s2) 2px var(--s2-5); }
 .ib-hint { margin: 0 0 var(--s2-5) 2px; font-size: 13px; color: var(--muted); }
 
+/* The switch for desktop notifications: one quiet line under the page's title, the button and what it does and does not do. */
+.ib-notify { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5) var(--s3); margin: calc(var(--s1) * -1) 0 0; }
+.ib-notify-note { flex: 1 1 280px; min-width: 0; margin: 0; font-size: 13px; color: var(--text-dim); max-width: 80ch; }
+
 /* ---------- a decision ---------- */
 .dc { display: flex; flex-direction: column; gap: var(--s3); margin: 0 0 var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
 .dc.bad { border-color: color-mix(in srgb, var(--bad) 42%, var(--line)); background: color-mix(in srgb, var(--bad) 5%, var(--panel)); }
@@ -92,6 +96,7 @@
 .ib .card + .card { margin-top: var(--s3); }
 
 @media (max-width: 620px) {
+  .ib-notify > button { min-height: 44px; }
   .dc { padding: var(--s3-5); }
   .dc-acts > button.primary { flex: 1 1 100%; justify-content: center; }
   .dc-skip { margin-left: 0; }

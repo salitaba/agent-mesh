@@ -21,6 +21,7 @@ import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
 import { AttentionEffects } from "./attentioneffects";
+import { useNotify } from "./notifycontrol";
 
 // Single source of truth for nav order, sidebar key hints and the 1-9 key map: the badge and the keydown handler are
 // both derived from this list, so they cannot drift apart. Four groups, in the order a person asks the questions: how is
@@ -627,12 +628,15 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   /* The overflow menu: what is not worth a permanent button. A phone gets the actions that no longer fit the bar; every
    * screen gets the rare and the dangerous ones, with the destructive one set apart at the end. */
   const openMessage = (): void => openDrawer(<MessageDrawer />);
+  const notify = useNotify();
   const moreItems: MenuItem[] = [];
   if (phone) moreItems.push({ id: "mi-message", icon: "message", label: "Message an agent", title: "Send a message as the human: highest priority", onClick: openMessage });
   moreItems.push({ id: "btn-approval", icon: "approve", label: "Approve or reject…", title: "Approve or reject something (release, design, quality…)", onClick: () => openDrawer(<ApprovalDrawer />) });
   for (const c of state.secondary) {
     moreItems.push({ id: `mi-${c.action}`, icon: ACTION_ICON[c.action], label: c.label, title: c.hint, onClick: () => runAction(c.action) });
   }
+  // Not offered where it cannot work (no Notification, an http address): the Needs you page says why, and the tab still carries it.
+  if (notify.view.press) moreItems.push({ id: "mi-notify", icon: "bell", label: notify.view.label, title: notify.view.hint, onClick: notify.press });
   if (phone) moreItems.push({ id: "mi-designer", icon: "spark", label: "Ask the designer", onClick: () => setChatOpen(true) });
   if (goalId) {
     moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void missionActions.reset() });

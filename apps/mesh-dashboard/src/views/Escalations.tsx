@@ -8,6 +8,7 @@ import { useMissionActions } from "../useMissionActions";
 import { useToolApprovals } from "../useToolApprovals";
 import { answerOutcome, escalationText } from "../escalation-card";
 import { inboxCounts, inboxSummary, inboxTabs, orderDecisions, tabOfView, viewOfTab, type InboxTab } from "../inbox-model";
+import { NotifyRow } from "../notifycontrol";
 import { DecisionCard } from "./DecisionCard";
 import { ToolAccess } from "./ToolAccess";
 import { useDecisions, type Answered } from "./useDecisions";
@@ -77,6 +78,7 @@ export default function Inbox(): React.JSX.Element {
   return (
     <div className="ib">
       <PageHeader title="Needs you" status={<span className={`mission-chip ${summary.tone}`}>{summary.label}</span>} lede={summary.line} />
+      <NotifyRow />
       <Tabs
         idPrefix="inbox" label="What is waiting on you" value={tab}
         tabs={inboxTabs(counts).map((t) => ({ id: t.id, label: t.label, hint: t.hint, badge: t.badge, badgeHot: t.hot }))}

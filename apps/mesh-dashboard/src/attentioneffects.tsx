@@ -4,13 +4,15 @@ import { useMission } from "./useMission";
 import { orderDecisions } from "./inbox-model";
 import { bySeq } from "./overview-model";
 import { decisionTitles, stoppedBecause } from "./toasttext";
-import { attentionOf, faviconFor, type Attention } from "./attention";
+import { advance, attentionOf, faviconFor, type Attention } from "./attention";
 import { faviconHref, type FaviconKind } from "./favicon";
+import { notificationsOn, pageHidden, raiseNotice } from "./notifyclient";
 
 /**
  * The part of telling a person about their mission that touches the page. It reads the mission the way the rest of the console
- * does (useMission), asks attention.ts which moment it is, and puts the answer on the tab. The decisions are attention.ts's and
- * favicon.ts's, which node:test covers; this only wires them to `document`. It draws nothing.
+ * does (useMission), asks attention.ts which moment it is, and puts the answer on the tab and, if the person asked, in a desktop
+ * notification. The decisions are attention.ts's, favicon.ts's and notify.ts's, which node:test covers; this only wires them to
+ * `document` and `Notification`. It draws nothing.
  */
 
 /** Puts the icon on the page. The link is replaced and not edited: Safari does not redraw a tab icon whose href was changed. */
@@ -50,6 +52,7 @@ function useAttention(projectId: string | null, projectName: string | null): Att
 }
 
 export function AttentionEffects({ projectId, projectName }: { projectId: string | null; projectName: string | null }): null {
+  const { setView } = useMesh();
   const attention = useAttention(projectId, projectName);
   // A mission that cannot be read for a moment (the server did not answer) keeps the icon it had: a badge that blinked off and on
   // with every dropped poll would say less than one that stayed, and "last known" is what the page itself says in that state.
@@ -61,5 +64,15 @@ export function AttentionEffects({ projectId, projectName }: { projectId: string
   }, [icon]);
   // Leaving the project (its Shell unmounts) leaves the plain icon for whatever opens next.
   useEffect(() => () => applyFavicon("plain"), []);
+
+  // Every moment is read, hidden or not, so that "what was there before" is always the last thing the page knew; the notice is
+  // raised only when the page is hidden and the person asked (attention.ts). Asking, and the permission, are read when it matters:
+  // turning notifications on while a decision waits does not tell them about it after the fact.
+  const last = useRef<Attention | null>(null);
+  useEffect(() => {
+    const step = advance(last.current, attention, pageHidden(), notificationsOn());
+    last.current = step.last;
+    if (step.notice) raiseNotice(step.notice, setView);
+  }, [attention, setView]);
   return null;
 }
