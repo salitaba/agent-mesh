@@ -188,12 +188,15 @@ await step(page, "opening it shows the host's own dashboard, through the service
   await page.screenshot({ path: `${OUT}/workspace-first-run.png` });
 });
 await step(page, HOSTING ? "a team is made on the customer's own key, which the page says it has" : "a team is made on the service's models, with no key asked for", async () => {
-  // The page asks the host what it can start before it says what each start needs.
+  // A customer's part is the goal and one button; what the workspace has for models is said under Details.
+  await page.waitForSelector("text=Welcome to your workspace", { timeout: 15000 });
+  await page.locator("summary", { hasText: /^Details$/ }).click();
   const said = HOSTING ? /your model key|model key you gave/i : /models supplied/i;
   await page.waitForSelector(HOSTING ? "text=/Your model key|model key you gave/i" : "text=Models supplied", { timeout: 15000 }).catch(() => {});
   expect(said.test(await text("body")), HOSTING ? "the first-run page does not say the models are the customer's own key" : "the first-run page does not say the models are supplied");
   expect(!/ANTHROPIC_API_KEY/i.test(await text("body")), "it asks for a key");
-  await page.getByRole("button", { name: /Create the mesh/ }).click();
+  await page.getByRole("textbox", { name: /What should your team do/i }).fill("A small command-line tool that adds up a column of a CSV file, with tests.");
+  await page.getByRole("button", { name: /Create the team/ }).click();
   await page.waitForURL(/#\/p\/[^/]+\/designer/, { timeout: 30000 });
   await page.screenshot({ path: `${OUT}/workspace-designer.png` });
 });
