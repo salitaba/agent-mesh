@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type SetStateAction } from "react";
 import { fmt } from "../format";
 import { useMesh } from "../store";
+import { useHostFacts } from "../hostfacts";
+import { KEY_MISSING, keyIsMissing } from "../firstrun";
 import { Banner, Button, ErrorState, PageHeader, useDismissable, type MenuItem, Menu } from "../components";
 import { Icon } from "../icons";
 import { list as listCommands, register, takePendingAgent, takePendingProposal, unregister, getVersion, subscribe } from "../commands";
@@ -20,7 +22,7 @@ import { useFocusMode, useMedia } from "../shell";
 import { ChecksButton, ChecksPanel, DraftChip, ImportDialog, TemplateDialog, YamlSlide } from "./chrome";
 import { takeArrival } from "./arrival";
 import { SetupGuide, needsGuide } from "./Guide";
-import { guideProgress } from "./guidemodel";
+import { draftNeedsModels, guideProgress } from "./guidemodel";
 import Inspector from "./Inspector";
 import SeatList from "./SeatList";
 import Topology, { type ConnectResult } from "./Topology";
@@ -81,6 +83,9 @@ export default function Designer(): React.JSX.Element {
   // Shell-owned: this component only paints the mode onto its regions.
   const { focusMode } = useFocusMode();
   const draft = useDraft();
+  // What this host says about itself: on a workspace with no model key yet, the Designer says so (a team drafted here cannot run, and the
+  // assistant cannot answer, until it is added).
+  const hostFacts = useHostFacts();
   const { model: m, cur, layout, runningPath, runningRaw, copyPath, loaded, history } = draft;
   const ready = loaded && !!m;
   const compact = useMedia(COMPACT);
@@ -781,6 +786,13 @@ export default function Designer(): React.JSX.Element {
             </>
           )}>
           It is from {new Date(restoredAt).toLocaleString()} and differs from mesh.yaml by {changes.length} {changes.length === 1 ? "change" : "changes"}. Discarding replaces it with the file, and you can undo that.
+        </Banner>
+      ) : null}
+
+      {hostFacts?.hosted && keyIsMissing(hostFacts) && draftNeedsModels(m) ? (
+        <Banner tone="warn" title={KEY_MISSING}
+          actions={<a className="banner-act" href={hostFacts.hosted.accountUrl} target="_blank" rel="noopener noreferrer">Add your model key<span className="sr-only"> (opens your account page in a new tab)</span></a>}>
+          You can design the team now. It cannot run, and the designer cannot answer, until the key is added.
         </Banner>
       ) : null}
 

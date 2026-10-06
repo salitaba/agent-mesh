@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { guideProgress, seatsText } from "../../apps/mesh-dashboard/src/designer/guidemodel";
+import { draftNeedsModels, guideProgress, seatsText } from "../../apps/mesh-dashboard/src/designer/guidemodel";
 import { GOAL_PLACEHOLDER } from "../../apps/mesh-dashboard/src/goal";
 
 /**
@@ -52,4 +52,16 @@ test("the line for the seats leads a lone seat to the designer or to adding one,
   assert.match(seatsText(0), /^There are no seats yet\. Describe the team to the designer/);
   assert.equal(seatsText(3), "There are 3 seats. Give each a role, the tools it may use and what it may decide alone.");
   assert.doesNotMatch(seatsText(1), /\b(will|automatically)\b/i, "the designer proposes, the person reviews: nothing is promised or done for them");
+});
+
+test("a draft needs a model if any seat is not on the scripted runtime, whether it names its runtime or takes the mesh's, and the file's silence means Claude", () => {
+  const seat = (runtime?: string) => (runtime === undefined ? {} : { runtime });
+  assert.equal(draftNeedsModels(null), false);
+  assert.equal(draftNeedsModels({ agents: {} }), false, "no seat, nothing that could");
+  assert.equal(draftNeedsModels({ agents: { architect: seat() } }), true, "no runtime named anywhere: the Claude runtime, which needs a model");
+  assert.equal(draftNeedsModels({ mesh: { runtime: { default: "native" } }, agents: { a: seat() } }), true);
+  assert.equal(draftNeedsModels({ mesh: { runtime: { default: "stub" } }, agents: { a: seat(), b: seat() } }), false, "the shipped demo: every seat plays a script");
+  assert.equal(draftNeedsModels({ mesh: { runtime: { default: "stub" } }, agents: { a: seat(), b: seat("claude") } }), true, "one seat on a real runtime is enough");
+  assert.equal(draftNeedsModels({ mesh: { runtime: { default: "claude" } }, agents: { a: seat("stub") } }), false, "a seat's own runtime wins over the default");
+  assert.equal(draftNeedsModels({ agents: { a: seat(""), b: null } }), true, "an empty name is no name: the default (Claude) applies; a missing seat is not one");
 });

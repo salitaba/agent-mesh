@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { goLiveNotice, startBlock } from "../../apps/mesh-dashboard/src/golive";
+import { KEY_MISSING } from "../../apps/mesh-dashboard/src/firstrun";
 
 /**
  * A 200 from Start means the scheduler started, not that anyone is working. The notice is read off the counts the route reports,
@@ -47,21 +48,34 @@ test("a reply that is not the shape expected does not throw and does not claim s
 });
 
 /**
- * Pressing Start on a mission that has no goal written says so before it asks anything about cost. Starting is the one click that lets
- * agents run and spend, so a start that would work towards a goal that says nothing is held, not tried.
+ * Pressing Start on a mission that has no goal written, or a hosted team whose model key is not added, says so before it asks anything
+ * about cost. Starting is the one click that lets agents run and spend, so a start that cannot do what it says is held, not tried.
  */
 
-test("a goal nobody wrote holds Start, and the dialog's button goes to the goal", () => {
-  const goal = startBlock({ needsGoal: true });
-  assert.equal(goal?.kind, "goal");
+test("a goal nobody wrote holds Start, whatever else is true, and the dialog's button goes to the goal", () => {
+  const goal = startBlock({ needsGoal: true, spendsTokens: true, keyMissing: true });
+  assert.equal(goal?.kind, "goal", "a team with no goal has nothing to spend a key on: the goal is first");
   assert.equal(goal?.title, "Write the goal first");
   assert.equal(goal?.confirmLabel, "Write the goal");
   assert.equal(goal?.cancelLabel, "Not now");
   assert.match(goal!.body[0]!, /still the placeholder.*reads the goal on every turn/s);
   assert.match(goal!.body[1]!, /Write what the team should deliver in the Designer, then start the mission\./);
+  assert.equal(startBlock({ needsGoal: true, spendsTokens: false, keyMissing: false })?.kind, "goal", "a scripted team on a placeholder is held too: it would work towards a goal that says nothing");
   for (const line of goal!.body) assert.doesNotMatch(line, /\b(spend|cost|bill|token)s?\b/i, "it is true of a scripted team too, so it says nothing about money");
 });
 
-test("nothing is held when the goal is written: the question that names the agents and the cost is the only one", () => {
-  assert.equal(startBlock({ needsGoal: false }), null);
+test("a hosted team with no model key holds Start and sends the person to their account page; a scripted team is never held for a key", () => {
+  const key = startBlock({ needsGoal: false, spendsTokens: true, keyMissing: true });
+  assert.equal(key?.kind, "key");
+  assert.equal(key?.title, "Add your model key first");
+  assert.equal(key?.body[0], KEY_MISSING);
+  assert.match(key!.body[1]!, /Nothing has been started and nothing has been spent/);
+  assert.equal(key?.confirmLabel, "Open my account page");
+  assert.equal(key?.cancelLabel, "Not now");
+  assert.equal(startBlock({ needsGoal: false, spendsTokens: false, keyMissing: true }), null, "the demo needs no model: no key, no problem");
+});
+
+test("nothing is held when nothing is wrong: the question that names the agents and the cost is the only one", () => {
+  assert.equal(startBlock({ needsGoal: false, spendsTokens: true, keyMissing: false }), null);
+  assert.equal(startBlock({ needsGoal: false, spendsTokens: false, keyMissing: false }), null);
 });

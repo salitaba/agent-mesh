@@ -7,9 +7,11 @@
  * configured, so the title does not have to.
  */
 
+import { KEY_MISSING } from "./firstrun";
+
 /** Why Start is not offered, as the dialog that says so: what is wrong, what the button does, and nothing about starting. */
 export interface StartBlock {
-  kind: "goal";
+  kind: "goal" | "key";
   title: string;
   body: string[];
   confirmLabel: string;
@@ -19,10 +21,11 @@ export interface StartBlock {
 const NOT_NOW = "Not now";
 
 /**
- * Whether pressing Start should say something else first, and what. Anything else starts as it always has, with the question that names
- * the agents and the cost.
+ * Whether pressing Start should say something else first, and what. The goal comes before the key: a team with no goal has nothing to
+ * spend a key on. A scripted team (it needs no model) is never held for a key. Anything else starts as it always has, with the question
+ * that names the agents and the cost.
  */
-export function startBlock(input: { needsGoal: boolean }): StartBlock | null {
+export function startBlock(input: { needsGoal: boolean; spendsTokens: boolean; keyMissing: boolean }): StartBlock | null {
   if (input.needsGoal) {
     return {
       kind: "goal",
@@ -32,6 +35,15 @@ export function startBlock(input: { needsGoal: boolean }): StartBlock | null {
         "Write what the team should deliver in the Designer, then start the mission.",
       ],
       confirmLabel: "Write the goal",
+      cancelLabel: NOT_NOW,
+    };
+  }
+  if (input.keyMissing && input.spendsTokens) {
+    return {
+      kind: "key",
+      title: "Add your model key first",
+      body: [KEY_MISSING, "Nothing has been started and nothing has been spent. Come back and press Start once it is added."],
+      confirmLabel: "Open my account page",
       cancelLabel: NOT_NOW,
     };
   }

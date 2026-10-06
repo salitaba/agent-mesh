@@ -42,3 +42,12 @@ export function seatsText(seats: number): string {
   const have = seats === 0 ? "There are no seats yet." : "There is one seat.";
   return `${have} Describe the team to the designer and review what it proposes, or add a seat yourself. One seat is a valid mesh, so stop here if that is the team you want.`;
 }
+
+/**
+ * Whether a team as drafted would call a model: any seat that is not on the scripted (stub) runtime. A seat names its own runtime or takes
+ * the mesh's default, which is the Claude runtime when the file says nothing. A draft with no seat has nothing that could.
+ */
+export function draftNeedsModels(model: { mesh?: { runtime?: { default?: unknown } }; agents?: Record<string, { runtime?: unknown } | null | undefined> } | null | undefined): boolean {
+  const fallback = typeof model?.mesh?.runtime?.default === "string" ? model.mesh.runtime.default : "claude";
+  return Object.values(model?.agents ?? {}).some((a) => (typeof a?.runtime === "string" && a.runtime !== "" ? a.runtime : fallback) !== "stub");
+}

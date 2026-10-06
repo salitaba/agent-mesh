@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useMesh } from "./store";
 import type { ConfirmFn } from "./components";
 import { requestArrival } from "./designer/arrival";
+import { keyIsMissing } from "./firstrun";
 import { startNeedsGoal } from "./goal";
 import { goLiveNotice, startBlock } from "./golive";
+import { fetchTemplates } from "./hostfacts";
 import { REOPEN_DIALOG } from "./reopen";
-import { resumeConfirmBody, startConfirmBody } from "./spend";
+import { resumeConfirmBody, spendsTokens, startConfirmBody } from "./spend";
 import { useMission } from "./useMission";
 
 export const isParkedStatus = (status: any): boolean => Boolean(status?.uiOnly) || status?.mode === "parked";
@@ -103,6 +105,13 @@ export function useReopenMission(): { busy: boolean; reopenMission: () => Promis
   return { busy, reopenMission };
 }
 
+/** The account page, in a new tab so the console stays where it is; where the browser will not open one, in this tab. */
+function openAccountPage(url: string): void {
+  const tab = window.open(url, "_blank");
+  if (tab) tab.opener = null;
+  else window.location.assign(url);
+}
+
 export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
   const { status, toast, refreshStatus, client, confirm, setView, projectId } = useMesh();
   const { facts } = useMission();
@@ -110,11 +119,24 @@ export function useGoLive(): { busy: boolean; goLive: () => Promise<void> } {
   const goLive = async () => {
     // The top bar and the Overview already say "Write the goal first" in place of Start; this is for every other way in (an empty
     // page's button, an answer that resumes a parked mission). Same reading of the mission, so it says the same thing.
-    const block = startBlock({ needsGoal: startNeedsGoal(facts) });
+    const needsGoal = startNeedsGoal(facts);
+    // Whether a hosted team could think is the host's to say, and matters only to a team that calls a model. Asked when Start is pressed
+    // and not before, so the answer is as fresh as the click: a person who has just added the key is not told it is missing.
+    const spends = spendsTokens(status);
+    let account: string | null = null;
+    if (!needsGoal && spends) {
+      const asked = await fetchTemplates();
+      if (asked.phase === "ready" && keyIsMissing(asked.answer)) account = asked.answer.hosted?.accountUrl ?? null;
+    }
+    const block = startBlock({ needsGoal, spendsTokens: spends, keyMissing: account !== null });
     if (block) {
       if ((await confirm({ title: block.title, body: block.body, confirmLabel: block.confirmLabel, cancelLabel: block.cancelLabel })) === null) return;
-      requestArrival(String(projectId ?? ""), "goal");
-      setView("designer");
+      if (block.kind === "goal") {
+        requestArrival(String(projectId ?? ""), "goal");
+        setView("designer");
+      } else if (account) {
+        openAccountPage(account);
+      }
       return;
     }
     // Parked is the safe state: going live is the one click that lets agents
