@@ -154,8 +154,8 @@ const ids = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is str
 /** The human seat is the person reading. */
 const who = (id: string): string => (id === HUMAN ? "you" : id === "all" ? "everyone" : id);
 const people = (list: readonly string[]): string => list.map(who).join(", ");
-/** A code word said as words: `in_thread` → "in thread". */
-const words = (s: unknown): string => str(s).replace(/[_:]+/g, " ").trim().toLowerCase();
+/** A code said as words: `in_thread` → "in thread", `IN_PROGRESS` → "in progress". For the codes no table names. */
+export const plainCode = (s: unknown): string => str(s).replace(/[_:]+/g, " ").trim().toLowerCase();
 const lcFirst = (s: string): string => (s ? s[0]!.toLowerCase() + s.slice(1) : s);
 const line = (lead: string | undefined, rest: string): EventLine => (lead ? { lead, rest } : { rest });
 /** Someone's thing, as the line's lead: "pm" + "'s budget", or "your" + " budget". */
@@ -204,14 +204,14 @@ export function verdictSubject(p: { subject?: unknown; artifactId?: unknown; art
   const s = str(p.subject);
   if (s.startsWith("criterion:")) return `check ${s.slice("criterion:".length)}`;
   const file = fileName(s.startsWith("artifact:") ? s.slice("artifact:".length) : p.artifactId, p.artifactRef, nameOf);
-  return file || words(s);
+  return file || plainCode(s);
 }
 
 const VERDICT_DONE: Record<string, string> = {
   approve: "approved", reject: "rejected", pass: "passed", block: "blocked", veto: "vetoed", accept: "accepted", merge: "merged",
 };
 /** A verdict's kind (`ApprovalKind`) as what the seat did: `pass` → "passed". */
-export const verdictDone = (kind: unknown): string => VERDICT_DONE[str(kind)] ?? (words(kind) || "ruled on");
+export const verdictDone = (kind: unknown): string => VERDICT_DONE[str(kind)] ?? (plainCode(kind) || "ruled on");
 
 /** How an outstanding ask stopped being outstanding (`DischargeReason` in core's state.ts). */
 function settled(reason: string, by: string): string {
@@ -226,7 +226,7 @@ function settled(reason: string, by: string): string {
     case "refused": return `was declined${named}`;
     case "refused_cap": return "was never opened: too many asks were open";
     case "evicted_cap": return "was dropped: too many asks were open";
-    default: return reason ? `was closed (${words(reason)})` : "was closed";
+    default: return reason ? `was closed (${plainCode(reason)})` : "was closed";
   }
 }
 
@@ -235,6 +235,12 @@ const NOW_WORD: Record<string, string> = { AWAKENED: "awake", OBSERVING: "readin
 
 /** A free-text reason that is really a code (`stalemate:unanswered_request`) is phrased; anything else is the seat's own words. */
 const isCode = (s: string): boolean => /^[a-z][a-z0-9_]*(?::[a-z0-9_]+)*$/.test(s);
+
+/** What an escalation is about, as its card titles it: a termination code is phrased (`verdictText`), a seat's words are kept. */
+export function escalationWhat(reason: unknown): string {
+  const r = str(reason);
+  return isCode(r) ? verdictText(r).title : clip(r, 60);
+}
 
 /** A message type inside a kernel sentence, said the way the console says it: "a APPROVE message" → "an approve message". */
 function deshout(text: string): string {
@@ -330,7 +336,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
       const ev = p.evidence ?? {};
       const from = str(ev.by);
       if (p.verified === false || ev.verified === false) return line(undefined, `check ${id} claimed${from ? ` by ${who(from)}` : ""}, not verified`);
-      return line(undefined, `check ${id} met${from ? `, on evidence from ${who(from)}` : str(ev.kind) ? ` (${words(ev.kind)})` : ""}`);
+      return line(undefined, `check ${id} met${from ? `, on evidence from ${who(from)}` : str(ev.kind) ? ` (${plainCode(ev.kind)})` : ""}`);
     }
     case "requirement.revised": {
       const id = str(p.criterionId);
@@ -444,7 +450,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
       const id = seat || actorId;
       if (!id) return null;
       const reason = str(p.reason);
-      const why = reason === "all_rejected" ? "every action was refused" : reason === "budget_blocked" ? "no budget left for it" : words(reason);
+      const why = reason === "all_rejected" ? "every action was refused" : reason === "budget_blocked" ? "no budget left for it" : plainCode(reason);
       // An absent figure is not zero: a turn killed mid-generation spent tokens nobody counted.
       const cost = typeof p.tokens === "number" ? `${fmt(p.tokens)} tokens lost` : "cost not measured";
       return owned(id, `turn was thrown away${why ? `: ${why}` : ""} · ${cost}`);
@@ -561,7 +567,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
       const id = seat || actorId;
       if (!id) return null;
       const why = str(p.reason);
-      return line(id, `: the plan gate ${p.mode === "enforce" ? "blocked" : "flagged"} ${words(p.op) || "an action"}${why ? ` — ${clip(why, 50)}` : ""}`);
+      return line(id, `: the plan gate ${p.mode === "enforce" ? "blocked" : "flagged"} ${plainCode(p.op) || "an action"}${why ? ` — ${clip(why, 50)}` : ""}`);
     }
     case "review.requested": {
       const name = file(p.artifactId, p.artifactRef);
@@ -650,7 +656,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
       const esc = p.escalation ?? {};
       const reason = str(esc.reason);
       if (!reason) return null;
-      const what = isCode(reason) ? verdictText(reason).title : clip(reason, 60);
+      const what = escalationWhat(reason);
       const raiser = raisedByLabel(esc.raisedBy ?? actorId) || undefined;
       const rest = holdsOf(esc).scope === "nothing" ? ` sent you a notice: ${what}` : ` needs you: ${what}`;
       return raiser ? line(raiser, rest) : line(undefined, rest.trimStart());
@@ -678,7 +684,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
         : action === "stuck_request_answered" ? "answered a stuck request"
         : action === "stuck_request_dropped" ? "dropped a stuck request"
         : "";
-      return did ? line("you", ` ${did}`) : action ? line(undefined, `your input: ${words(action)}`) : null;
+      return did ? line("you", ` ${did}`) : action ? line(undefined, `your input: ${plainCode(action)}`) : null;
     }
 
     /* ---- locks and memory ---- */

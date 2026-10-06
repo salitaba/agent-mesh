@@ -7,7 +7,7 @@
  * and "wake: pm: ok" did not say that a wake runs one turn and then lets the agent go back to waiting. Each of those is a function
  * here so that the tests can pin it. DOM-free: structural types, no React.
  */
-import { RUNNING, dur, fmt, opsSummary, outcomeOf, plainBlocker, OUTCOME_META, type OutcomeInput } from "./format";
+import { RUNNING, dur, fmt, opsSummary, outcomeOf, plainBlocker, shortTurn, OUTCOME_META, type OutcomeInput } from "./format";
 import { sinceText } from "./feed";
 
 /* ---------------------------------- groups ---------------------------------- */
@@ -192,6 +192,16 @@ export function totalsText(a: AgentLike): string {
   if (typeof a.tokens === "number" && a.tokens > 0) bits.push(`${fmt(a.tokens)} tokens`);
   if (typeof a.activations === "number" && a.activations > 0) bits.push(`${a.activations} turn${a.activations === 1 ? "" : "s"}`);
   return bits.join(" · ");
+}
+
+/**
+ * A memory note's key as the agent drawer's Memory tab shows it. After every turn the mesh files what the turn did under
+ * `turn:<turn id>`: that key is an id, so it is shown short, the way the step drawer names a turn ("turn-3dc685"), with the whole
+ * key in the tooltip. A key the seat chose ("decision:retries") is its name, and is shown as written.
+ */
+export function memoryKey(key: string): string {
+  const m = /^turn:(turn-[A-Za-z0-9]+)$/.exec(key);
+  return m ? `turn-${shortTurn(m[1])}` : key;
 }
 
 /* --------------------------------- controls --------------------------------- */

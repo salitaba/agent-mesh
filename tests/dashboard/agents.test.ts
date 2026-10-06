@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, stateText, totalsText, turnsByAgent,
-  unstartedText, type AgentLike, type TurnLike,
+  memoryKey, unstartedText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
 import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
 
@@ -183,6 +183,13 @@ test("the idle group's heading says what its seats can be in this project's stat
 test("a paused or finished agent says what that means for it", () => {
   assert.match(stateText(agent("x", "SUSPENDED"), ctx()).detail, /does not wake for mail until you unpause/);
   assert.match(stateText(agent("x", "COMPLETED"), ctx()).detail, /nothing for it to run/);
+});
+
+test("a turn's memory note is keyed by its turn, shown short; a key the seat chose is shown as written", () => {
+  // The Memory tab printed "turn:turn-3dc685942b0fbb5a" on every turn's note.
+  assert.equal(memoryKey("turn:turn-3dc685942b0fbb5a"), "turn-3dc685", "the way the step drawer names a turn");
+  assert.equal(memoryKey("decision:retries"), "decision:retries");
+  assert.equal(memoryKey("turn:not-a-turn-id"), "turn:not-a-turn-id");
 });
 
 test("totals name only what the roster carries", () => {

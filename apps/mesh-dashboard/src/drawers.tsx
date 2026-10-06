@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
-import { buildLedger, ledgerTally, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
+import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
-import { actionNote, controlsHint, controlsOf, pauseWarning, unstartedText } from "./agents";
+import { actionNote, controlsHint, controlsOf, memoryKey, pauseWarning, unstartedText } from "./agents";
 import { useMission } from "./useMission";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { ArtifactReader } from "./artifactreader";
@@ -18,7 +18,7 @@ import { placeLabel, placeStep } from "./stepwalk";
 import { ageText, deadlineOf, deadlineText, firstDeadline, hardStopText, liveWorkOf, mergeLiveTools, tokenText, type DeadlineInput } from "./livework";
 import { DeadlineBar, LiveWork, NowLine } from "./liveview";
 import { EventSummary, serverRow, useNameOf } from "./events";
-import { verdictDone, verdictSubject } from "./eventmodel";
+import { escalationWhat, plainCode, verdictDone, verdictSubject } from "./eventmodel";
 
 /** The most steps `/steps` will return (the server clamps `limit` to it). */
 const STEPS_MAX = 200;
@@ -389,6 +389,8 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     : undefined;
   /** "1 verdict: …", "6 verdicts, the latest: …". */
   const latest = (n: number, one: string, many?: string): string => `${plural(n, one, many)}${n === 1 ? ":" : ", the latest:"}`;
+  /** An escalation's state as the inbox says it: an open one is the operator's to answer. */
+  const escState = (s: unknown): string => (s === "OPEN" ? "waiting on you" : s === "RESPONDED" ? "answered" : s === "AUTO_RESOLVED" ? "settled itself" : plainCode(s));
   return (
     <>
       <h2 id="drawer-title"><AgentAvatar id={id} color="var(--accent)" />{(id)}
@@ -459,11 +461,11 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
                     : `Not running (${plainLifecycle(s.lifecycle)}).`}
             </div>
           )}
-          {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{(json.activeTask.status)}</Chip></div> : null}
+          {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{plainCode(json.activeTask.status)}</Chip></div> : null}
           {signalCount || held.length ? (
             <>
               <h3>Signals</h3>
-              {escalations.length ? <div className="sig bad">{escalations.length} escalation{escalations.length > 1 ? "s" : ""} — latest [{(escalations[0].reason)}] {(escalations[0].status)}</div> : null}
+              {escalations.length ? <div className="sig bad">{latest(escalations.length, "escalation")} {escalationWhat(escalations[0].reason)} ({escState(escalations[0].status)})</div> : null}
               {pending.length ? <div className="sig warn">{pending.length} open request{pending.length > 1 ? "s" : ""} waiting on an answer</div> : null}
               {approvals.length ? <div className="sig">{latest(approvals.length, "verdict")} {verdictDone(approvals[0].kind)} {verdictSubject(approvals[0], nameOf)}</div> : null}
               {decisions.length ? <div className="sig">{latest(decisions.length, "decision proposed", "decisions proposed")} “{(String(decisions[0].topic ?? "").slice(0, 60))}”</div> : null}
@@ -510,7 +512,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           {tasks.length || json.activeTask ? (
             <>
               <h3>Tasks {tasks.length ? `(${tasks.length})` : ""}</h3>
-              <div>{tasks.slice(0, 12).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }}><span className="mono muted">{(String(t.id).slice(0, 8))}</span> {(String(t.title ?? "").slice(0, 70))} <Chip>{(t.status)}</Chip></div>)}</div>
+              <div>{tasks.slice(0, 12).map((t: any) => <div key={t.id} style={{ fontSize: 13, margin: "4px 0" }} title={String(t.id)}>{(String(t.title ?? "").slice(0, 70))} <Chip>{plainCode(t.status)}</Chip></div>)}</div>
             </>
           ) : null}
           {arts.length ? (
@@ -529,7 +531,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             <div className="ev-list">{unreadFull.slice(0, 12).map((m: any) => (
               <div className="ev" key={m.id}>
                 <time>{hhmmss(m.timestamp)}</time>
-                <span className="type">{(MESSAGE_PLAIN[m.type] ?? m.type)}</span>
+                <span className="type">{msgKind(String(m.type ?? ""))}</span>
                 <span className="summary">{(m.from)} → {((m.to || []).join(","))}: {(msgSnippet(m.payload, 110))}</span>
               </div>
             ))}</div>
@@ -542,7 +544,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
                 <div className="ev" key={m.id}>
                   <time>{hhmmss(m.timestamp)}</time>
                   <span className="type">{(m.from === id ? `→ ${(m.to || []).join(",")}` : `⇐ ${m.from}`)}</span>
-                  <span className="summary">{(MESSAGE_PLAIN[m.type] ?? m.type)}: {(msgSnippet(m.payload, 100))}</span>
+                  <span className="summary">{msgKind(String(m.type ?? ""))}: {(msgSnippet(m.payload, 100))}</span>
                 </div>
               ))}</div>
             </>
@@ -560,7 +562,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
         <TabPanel idPrefix="agent" id="memory">
           <h3>Memory {mem.length ? `(${mem.length})` : ""}</h3>
           {mem.length
-            ? <div>{mem.map((n: any) => <div key={n.key} className="mem-row"><span className="mono">{(n.key)}</span> <span className="muted">— {(String(n.value ?? "").slice(0, 400))}</span></div>)}</div>
+            ? <div>{mem.map((n: any) => <div key={n.key} className="mem-row"><span className="mono" title={String(n.key)}>{memoryKey(String(n.key ?? ""))}</span> <span className="muted">— {(String(n.value ?? "").slice(0, 400))}</span></div>)}</div>
             : <div className="muted">No notes yet. Agents write here when they use the remember op.</div>}
         </TabPanel>
       ) : null}
@@ -1124,7 +1126,8 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
         </div>
         <p className="sv-why">
           <span className="sv-why-k">{(plainReason(t.reason?.kind))}</span>
-          {t.reason?.eventType ? <span className="sv-why-x mono">{t.reason.eventType}</span> : null}
+          {/* The event that woke it, by its label; the type is the tooltip, for a grep. A message wake is always a sent message. */}
+          {t.reason?.eventType && t.reason?.kind !== "message" ? <span className="sv-why-x" title={t.reason.eventType}>{plainEvent(t.reason.eventType)}</span> : null}
         </p>
         <div className="sv-metrics">
           <span title="wall clock for this turn">{durText}</span>

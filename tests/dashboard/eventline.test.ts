@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { LINE_MAX, eventHaystack, eventLine, eventNames, lineText, verdictDone, verdictSubject, type LineEvent } from "../../apps/mesh-dashboard/src/eventmodel";
+import { LINE_MAX, escalationWhat, eventHaystack, eventLine, eventNames, lineText, plainCode, verdictDone, verdictSubject, type LineEvent } from "../../apps/mesh-dashboard/src/eventmodel";
+import { msgKind } from "../../apps/mesh-dashboard/src/ledger";
 import { plainEvent } from "../../apps/mesh-dashboard/src/format";
 import { EVENT_TYPES } from "../../packages/protocol/src/catalog";
 
@@ -249,6 +250,18 @@ test("a verdict is said as what the seat did, about a file by its name or a chec
   assert.equal(verdictSubject({ subject: "criterion:requirements-documented" }), "check requirements-documented");
   assert.equal(verdictSubject({ subject: "implementation", artifactId: PATCH }, nameOf), "patch-tx-pipeline-2", "a domain verdict on a file names the file");
   assert.equal(verdictSubject({ subject: "release" }), "release");
+});
+
+test("the drawers say a status, a message type and an escalation in words, never as the kernel's code", () => {
+  // The agent drawer printed "[agent_budget_exhausted] OPEN", a task chip "IN_PROGRESS" and inbox rows typed "TEST_RESULT".
+  assert.equal(escalationWhat("wall_clock_exceeded"), "Mission ran out of time");
+  assert.equal(escalationWhat("stalemate:unanswered_request"), "An agent is waiting for an answer");
+  assert.equal(escalationWhat("Need sign-off on the schema: v1 or v2?"), "Need sign-off on the schema: v1 or v2?", "a seat's words are not de-snaked");
+  assert.equal(plainCode("IN_PROGRESS"), "in progress");
+  assert.equal(plainCode("in_thread"), "in thread");
+  assert.equal(plainCode(undefined), "");
+  assert.equal(msgKind("TEST_RESULT"), "test result");
+  assert.equal(msgKind("MISSION"), "new task");
 });
 
 test("a refusal and a wake that was denied say who and why, in words", () => {
