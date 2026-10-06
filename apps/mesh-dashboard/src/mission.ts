@@ -38,6 +38,24 @@ export interface MissionControl {
   hint: string;
 }
 
+/**
+ * Where a person looks at what a finished mission made and spent. Not things done to the mission, so they are not
+ * `MissionAction`s: the bar and `useMissionActions` never see them, and the Overview, which is where they are offered, runs them.
+ */
+export type ResultAction = "files" | "cost" | "replay";
+export type HeroAction = MissionAction | ResultAction;
+
+/**
+ * One thing the hero offers, and how loud. The hero draws at most two that are not `quiet`: a result is read, or it is sent back,
+ * and everything else a person might do next sits quietly beside them.
+ */
+export interface NextStep {
+  action: HeroAction;
+  label: string;
+  hint: string;
+  look: "primary" | "soft" | "quiet";
+}
+
 export interface MissionFacts {
   hasStatus: boolean;
   serverDown: boolean;
@@ -82,6 +100,12 @@ export interface MissionState {
   primary: MissionControl | null;
   /** Everything else the operator may want, for an overflow menu, in order. */
   secondary: MissionControl[];
+  /**
+   * What the Overview's hero offers next, in the order it draws them. It is `primary` for every state with one, so the bar and the
+   * hero cannot disagree; a delivered mission, which has nothing for the bar to press, offers what people do with a result: read it,
+   * send it back with feedback, see what it cost, replay it.
+   */
+  next: NextStep[];
   /** The process is parked. Reported separately because a finished mission can be parked, and that is not a problem. */
   parked: boolean;
   /** The one phase that moves: a mission with agents mid-turn. */
@@ -95,9 +119,17 @@ const listOf = (items: string[]): string => (items.length < 2 ? items.join("") :
 const PAUSE: MissionControl = { action: "pause", label: "Pause", hint: "Pause the mission: agents stop, nothing is lost" };
 const REOPEN: MissionControl = {
   action: "reopen",
-  label: "Not good enough, reopen",
-  hint: "Reject the result and put the agents back to work. Nothing is deleted.",
+  label: "Reopen with feedback",
+  hint: "Say what was wrong: the agents go back to work with your feedback as their brief. Nothing is deleted.",
 };
+
+/** What a person does with a delivered mission. The first is how they find out whether it is right; the second is what they do when it is not. */
+const DELIVERED_NEXT: NextStep[] = [
+  { action: "files", label: "Open the files", hint: "Read what the team made: each file, its versions and what changed", look: "primary" },
+  { ...REOPEN, look: "soft" },
+  { action: "cost", label: "What it cost", hint: "Spend by agent and by budget, in tokens and dollars", look: "quiet" },
+  { action: "replay", label: "Replay", hint: "Rebuild the mission from its event log, with no model calls", look: "quiet" },
+];
 
 /** The reading of one `/status` payload (plus what only the console knows) that `describeMission` works from. */
 export function factsFromStatus(
@@ -150,6 +182,12 @@ export function factsFromStatus(
  * Open decisions that are only notices do not change the phase: they hold nothing, and they are counted by the caller.
  */
 export function describeMission(f: MissionFacts): MissionState {
+  const s = describePhase(f);
+  const step = (c: MissionControl): NextStep => ({ ...c, look: c.action === "pause" ? "soft" : "primary" });
+  return { ...s, next: s.next ?? (s.primary ? [step(s.primary)] : []) };
+}
+
+function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: NextStep[] } {
   const base = { secondary: [] as MissionControl[], parked: f.parked, pulse: false };
   if (f.serverDown) {
     return f.hasStatus
@@ -217,6 +255,7 @@ export function describeMission(f: MissionFacts): MissionState {
       ...base, phase: "done", tone: "ok", label: "Delivered", primary: null,
       headline: "Delivered. Every mandatory check is evidenced.",
       secondary: [REOPEN],
+      next: DELIVERED_NEXT,
     };
   }
   if (f.goalStatus === "PAUSED") {

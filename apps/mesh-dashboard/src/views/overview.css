@@ -30,6 +30,8 @@
 .ov-headline { margin: 0; font: var(--tx-title); }
 .ov-goal { margin: 0; max-width: 90ch; color: var(--text-dim); font-size: 15px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .ov-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+/* What a person may also do, quietly: small buttons that sit beside the two that matter, or in a row of their own on a phone. */
+.ov-quiet { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 /* Said once, next to the chip: the figures below are the last the server reported. */
 .ov-stale { padding: 1px 10px; border-radius: 20px; font: 600 12px var(--sans); color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
 
@@ -144,6 +146,8 @@
   .ov-hero { padding: var(--s3-5) var(--s3-5); }
   .ov-acts { width: 100%; }
   .ov-acts > button.primary, .ov-acts > button.soft:not(.menu-btn) { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+  .ov-quiet { flex: 1 1 100%; flex-wrap: nowrap; }
+  .ov-quiet > button { flex: 1 1 0; justify-content: center; min-height: 44px; }
   .ov-attn li { grid-template-columns: auto minmax(0, 1fr); }
   .ov-fix { grid-column: 2; justify-self: start; margin-top: var(--s1); }
   .ov-files { grid-template-columns: minmax(0, 1fr); }

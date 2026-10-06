@@ -12,12 +12,12 @@ import { useMissionActions } from "../useMissionActions";
 import { useToolApprovals } from "../useToolApprovals";
 import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
-import type { MissionAction } from "../mission";
+import type { HeroAction, MissionAction } from "../mission";
 import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, missionRead, standingBlocks, type FixTarget } from "../overview-model";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
 import { GoalChecks } from "./GoalChecks";
-import { MissionButton, MissionHero } from "./MissionHero";
+import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
 import { Shipped } from "./Shipped";
@@ -172,7 +172,15 @@ export default function Overview(): React.JSX.Element {
   const ledger = (status.budgets || []).find((b: any) => String(b.key).startsWith("mission:") && b.limitKind === "tokens");
   const spend = hostSpend ? { usd: hostSpend.usd, ceilingUsd: hostSpend.ceilingUsd, parked: hostSpend.parked } : null;
   const delivered = goal.status === "COMPLETED";
-  const run = (a: MissionAction): void => actions.run(a, { inboxView: "escalations" });
+  // The mission's own actions go where the bar sends them; the three that read a result are this page's.
+  const run = (a: HeroAction): void => {
+    switch (a) {
+      case "files": return setView("artifacts");
+      case "cost": return setView("cost");
+      case "replay": return openDrawer(<ReplayDrawer goalId={goalId ?? ""} />);
+      default: return actions.run(a satisfies MissionAction, { inboxView: "escalations" });
+    }
+  };
   const fix = (t: FixTarget): void => setView(FIX_VIEW[t]);
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any): void => { if (art) openDrawer(<ArtifactDrawer id={art.id} />); };
@@ -205,12 +213,6 @@ export default function Overview(): React.JSX.Element {
     spend,
   });
   const stale = serverDown;
-  const heroActions = state.phase === "done" ? (
-    <>
-      <Button variant="primary" icon="files" onClick={() => setView("artifacts")}>Open the files</Button>
-      <Button variant="soft" icon="refresh" title="Rebuild the mission from its event log, with no model calls" disabled={!goalId} onClick={() => openDrawer(<ReplayDrawer goalId={goalId ?? ""} />)}>Replay</Button>
-    </>
-  ) : state.primary ? <MissionButton control={state.primary} run={run} /> : null;
 
   return (
     <div className="ov">
@@ -228,7 +230,7 @@ export default function Overview(): React.JSX.Element {
         agents={{ working: facts.working, waiting: facts.waiting, queued: Number(sched.pending ?? 0) || 0 }}
         stale={stale}
         ticking={state.phase === "running" || state.phase === "quiet" || state.phase === "stalled"}
-        actions={heroActions}
+        next={state.next}
         secondary={state.secondary}
         run={run}
       />

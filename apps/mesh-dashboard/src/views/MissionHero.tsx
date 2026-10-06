@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { dur, fmt, spanLabel } from "../format";
 import { Button, Menu, useNow, type MenuItem } from "../components";
 import { Icon, type IconName } from "../icons";
-import type { MissionAction, MissionControl, MissionState } from "../mission";
+import type { HeroAction, MissionAction, MissionControl, MissionState, NextStep } from "../mission";
 import { missionClock, type ChecksSummary, type HeroNote } from "../overview-model";
 import { Bar } from "./Meter";
 import "./overview.css";
@@ -12,11 +12,17 @@ export const MISSION_ICON: Record<MissionAction, IconName> = {
   start: "play", pause: "pause", resume: "play", reopen: "undo", review: "inbox", settings: "sliders", agents: "agents", designer: "designer",
 };
 
-/** The one thing the mission needs, as the button the top bar shows for it: same label, same hint, same handler. */
-export function MissionButton({ control, run }: { control: MissionControl; run: (a: MissionAction) => void }): React.JSX.Element {
+/** The icon of each thing the hero offers: the mission's actions, and where a finished mission's result is read. */
+const HERO_ICON: Record<HeroAction, IconName> = { ...MISSION_ICON, files: "files", cost: "cost", replay: "refresh" };
+
+/**
+ * One thing to do next, as the mission state (mission.ts) offers it: the same label, hint and handler as the top bar's button when it
+ * is the bar's action. How loud it is comes with it: a result is read or sent back, and the rest is quiet.
+ */
+export function NextButton({ step, run }: { step: NextStep; run: (a: HeroAction) => void }): React.JSX.Element {
   return (
-    <Button variant={control.action === "pause" ? "soft" : "primary"} icon={MISSION_ICON[control.action]} title={control.hint} data-action={control.action} onClick={() => run(control.action)}>
-      {control.label}
+    <Button variant={step.look === "quiet" ? "small" : step.look} icon={HERO_ICON[step.action]} title={step.hint} data-action={step.action} onClick={() => run(step.action)}>
+      {step.label}
     </Button>
   );
 }
@@ -88,10 +94,11 @@ export interface HeroProps {
   stale: boolean;
   /** The mission's clock is running: tick it every second. */
   ticking: boolean;
-  /** The actions beside the headline: the mission's one button, or the result's. */
-  actions: ReactNode;
+  /** What to do next, beside the headline (`MissionState.next`). */
+  next: NextStep[];
+  /** What else the mission can do, behind "...": whatever `next` does not already show. */
   secondary: MissionControl[];
-  run: (a: MissionAction) => void;
+  run: (a: HeroAction) => void;
 }
 
 /**
@@ -100,7 +107,8 @@ export interface HeroProps {
  */
 export function MissionHero(p: HeroProps): React.JSX.Element {
   const { state, checks } = p;
-  const items: MenuItem[] = p.secondary.map((c) => ({ icon: MISSION_ICON[c.action], label: c.label, title: c.hint, onClick: () => p.run(c.action) }));
+  // An action the hero already shows is not offered again behind "...".
+  const items: MenuItem[] = p.secondary.filter((c) => !p.next.some((n) => n.action === c.action)).map((c) => ({ icon: MISSION_ICON[c.action], label: c.label, title: c.hint, onClick: () => p.run(c.action) }));
   const spentRatio = p.tokens && p.tokens.limit > 0 ? p.tokens.consumed / p.tokens.limit : 0;
   const barTone = spentRatio >= 0.95 ? "bad" : spentRatio >= 0.8 ? "warn" : undefined;
   return (
@@ -118,7 +126,11 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
           {p.goalText ? <p className="ov-goal" title={p.goalText}>{p.goalText}</p> : null}
         </div>
         <div className="ov-acts">
-          {p.actions}
+          {p.next.filter((n) => n.look !== "quiet").map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
+          {/* Together, so that on a phone they are one row of their own under the two that matter, not stragglers beside them. */}
+          {p.next.some((n) => n.look === "quiet") ? (
+            <div className="ov-quiet">{p.next.filter((n) => n.look === "quiet").map((n) => <NextButton key={n.action} step={n} run={p.run} />)}</div>
+          ) : null}
           {items.length ? <Menu label={<Icon name="more" size={18} />} title="More actions on the mission" items={items} /> : null}
         </div>
       </div>

@@ -45,6 +45,50 @@ test("a finished mission that is parked is delivered, not parked: no Continue, a
   assert.equal(s.parked, true, "the fact is still reported, for a quiet note");
 });
 
+test("a delivered mission offers what people do with a result: read it, send it back with feedback, then see what it cost and replay it", () => {
+  const s = describeMission(facts({ goalStatus: "COMPLETED", parked: true, working: 0 }));
+  assert.deepEqual(s.next.map((n) => [n.action, n.look]), [["files", "primary"], ["reopen", "soft"], ["cost", "quiet"], ["replay", "quiet"]]);
+  assert.deepEqual(s.next.map((n) => n.label), ["Open the files", "Reopen with feedback", "What it cost", "Replay"]);
+  assert.equal(s.next.filter((n) => n.look !== "quiet").length, 2, "the hero keeps its calm: two that look like buttons, the rest quiet");
+  for (const n of s.next) assert.ok(n.hint.length > 20, `${n.action} says what it does`);
+});
+
+test("reopening is one action with one name, whether the bar's menu or the hero offers it, and it says what the dialog asks for", () => {
+  const s = describeMission(facts({ goalStatus: "COMPLETED", working: 0 }));
+  const hero = s.next.find((n) => n.action === "reopen")!;
+  assert.deepEqual([hero.label, hero.hint], [s.secondary[0]!.label, s.secondary[0]!.hint]);
+  assert.match(hero.hint, /Say what was wrong/);
+  assert.match(hero.hint, /Nothing is deleted/);
+});
+
+test("for every state with a primary action the hero offers that one action, as the bar does, and the pause is the quiet one", () => {
+  const states = [
+    facts({ goalStatus: "PAUSED", working: 0 }), facts({ parked: true, working: 0 }), facts({ blockingDecisions: 1 }), facts({ goalStatus: "FAILED", working: 0 }),
+    facts({ parked: true, hostCeilingTripped: true, working: 0 }), facts({ working: 0, waiting: 0 }), facts(), facts({ working: 0, waiting: 3 }),
+  ];
+  for (const f of states) {
+    const s = describeMission(f);
+    assert.ok(s.primary, s.phase);
+    assert.deepEqual(s.next.map((n) => [n.action, n.label, n.hint]), [[s.primary!.action, s.primary!.label, s.primary!.hint]], `${s.phase}: the bar and the hero offer the same thing`);
+    assert.equal(s.next[0]!.look, s.primary!.action === "pause" ? "soft" : "primary", s.phase);
+  }
+});
+
+test("a state with nothing to press offers nothing in the hero either", () => {
+  for (const f of [facts({ serverDown: true }), facts({ hasStatus: false }), facts({ goalStatus: "" }), facts({ projectDown: { label: "closed", hint: "Closed.", severe: false } })]) {
+    const s = describeMission(f);
+    assert.equal(s.primary, null, s.phase);
+    assert.deepEqual(s.next, [], s.phase);
+  }
+});
+
+test("the result's actions are not mission actions: the bar and its handler never see them", () => {
+  const bar = new Set(["start", "pause", "resume", "reopen", "review", "settings", "agents", "designer"]);
+  const s = describeMission(facts({ goalStatus: "COMPLETED", working: 0 }));
+  for (const c of [s.primary, ...s.secondary]) if (c) assert.ok(bar.has(c.action), `${c.action} is something done to the mission`);
+  assert.deepEqual(s.next.filter((n) => !bar.has(n.action)).map((n) => n.action), ["files", "cost", "replay"]);
+});
+
 test("parked with unfinished work offers Continue when there is history and Start when there is none", () => {
   const resumed = describeMission(facts({ parked: true, working: 0 }));
   assert.equal(resumed.phase, "parked");

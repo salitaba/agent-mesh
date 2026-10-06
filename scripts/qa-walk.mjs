@@ -91,8 +91,8 @@ if (parkedAtStart) {
 }
 await step("the run reaches Delivered", async () => { await waitChip(/Delivered/i, 60000); });
 await step("reopen asks for a reason and puts the agents back to work", async () => {
-  await page.locator("#view .ov-acts button[aria-haspopup], #view .ov-acts .menu-btn, #view .ov-acts button:has(svg)").last().click();
-  await page.getByRole("menuitem", { name: /Reopen/i }).click();
+  // The delivered hero offers it as a button of its own ("Reopen with feedback"), not behind "...".
+  await page.locator('#view .ov-acts button[data-action="reopen"]').click();
   await page.waitForTimeout(500);
   const dlg = page.locator('[role="dialog"], [role="alertdialog"]').last();
   const confirm = dlg.getByRole("button", { name: /Reopen and brief/i });
