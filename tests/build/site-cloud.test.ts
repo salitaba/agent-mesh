@@ -187,6 +187,20 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
 });
 
+test("the documentation page's card for Curule Cloud, and its entry in the map, are there while it is open and gone while it is not", () => {
+  for (const [state, url, goals, groups] of [
+    ["open", APP, ["Run the demo", "Deploy it", "Describe a team and its rules", "Use Curule Cloud"], true],
+    ["closed", "", ["Run the demo", "Deploy it", "Describe a team and its rules"], false],
+  ] as const) {
+    const doc = visit("docs/index.html", url);
+    assert.deepEqual(doc.querySelectorAll(".start").filter((c) => shown(c)).map((c) => c.querySelector("h3")!.textContent), goals, state);
+    assert.equal(doc.querySelectorAll(".doc-card").filter((c) => shown(c) && c.id === "cloud-docs").length, groups ? 1 : 0, `${state}: the map lists the document the card names, or nothing of Curule Cloud`);
+    if (!groups) assert.ok(!/Curule Cloud/.test(visibleTextOf(doc.getElementById("start")!)), "closed, the start cards say nothing of what is not there");
+  }
+  const open = visit("docs/index.html", APP).querySelectorAll(".start").filter((c) => shown(c))[3]!;
+  assert.deepEqual(open.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["Curule Cloud: the hosted service", "https://github.com/salitaba/agent-mesh/blob/main/docs/cloud.md"], ["Sign up", `${APP}/signup`]]);
+});
+
 test("when it is open, the pricing page puts the two ways in side by side, says the plans below are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
   const doc = visit("pricing/index.html", APP);
   const ways = doc.getElementById("ways")!;

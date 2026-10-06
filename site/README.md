@@ -14,7 +14,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 |---|---|---|
 | `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), the two ways in (we run it, or you do), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
 | `pricing/index.html` | `/pricing/` | The two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
-| `docs/index.html` | `/docs/` | A map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
+| `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
 | `security/index.html` | `/security/` | What it protects, what leaves your environment, what it does not do, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Who to write to for sales, support and security, and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
@@ -42,7 +42,10 @@ end of `<main>`: it stays at the bottom of the window while the content is in vi
 never covers the footer's links. It jumps under reduced motion, and it moves the focus to the top of the content, so the keyboard
 carries on from there. It is not printed, and without a script it is not there.
 
-The documentation page has a filter over its documents ("Filter the documents"). It is in the markup, hidden, and the script shows
+The documentation page opens with four "Start here" cards, one for each goal, each with the document to open first, its label and its
+path (the shared script gives the title its address, as it does in the map, and without a script the path is there to read). The card
+for Curule Cloud, and the map's entry for the document it names, are there only while Curule Cloud is open. The cards are not part
+of the map, so its filter leaves them alone. The page also has a filter over its documents ("Filter the documents"). It is in the markup, hidden, and the script shows
 it: what is typed keeps the documents that have every word somewhere in their title, description, label (Guide, Reference, Short,
 Log), path or group, hides a group that has none left, and says how many are left in a polite live region after a pause in the
 typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. It reads only the page.

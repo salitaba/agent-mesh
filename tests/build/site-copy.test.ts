@@ -242,6 +242,30 @@ test("a document is as long as its label on the documentation page says", () => 
   }
 });
 
+test("the documentation page starts with the goals a visitor comes with, each naming the one document to open first, which the map below lists under the same title and label", () => {
+  const docs = page(pages, "docs/index.html");
+  const start = /<section class="section" id="start">[\s\S]*?\n<\/section>/.exec(docs.html)![0];
+  assert.ok(docs.html.indexOf('id="start"') < docs.html.indexOf('id="documents"'), "before the map of documents");
+  const cards = [...start.matchAll(/<li class="start"([^>]*)>([\s\S]*?)<\/li>/g)];
+  assert.deepEqual(cards.map((c) => /<h3>([^<]*)<\/h3>/.exec(c[2]!)![1]), ["Run the demo", "Deploy it", "Describe a team and its rules", "Use Curule Cloud"], "four goals, in the order a newcomer meets them");
+  assert.deepEqual(cards.map((c) => c[1]!.trim()), ["", "", "", "data-cloud-only"], "the card about Curule Cloud is there only while it is open");
+  // The map: each document by the file it opens, with its title and label.
+  const map = new Map<string, { title: string; label: string }>();
+  for (const m of docs.html.matchAll(/<li data-kind="\w+"><div class="head"><a href="#documents" data-doc="([^"]+)">([^<]+)<\/a><span class="tag">([^<]+)<\/span>/g)) map.set(m[1]!, { title: m[2]!, label: m[3]! });
+  assert.ok(map.size >= 14);
+  for (const [, , card] of cards) {
+    const links = [...card!.matchAll(/<a\b[^>]*\bdata-doc="([^"]+)"[^>]*>([^<]+)<\/a>/g)];
+    assert.equal(links.length, 1, `one document to open first: ${card!.slice(0, 60)}`);
+    const [, file, title] = links[0]! as unknown as [string, string, string];
+    assert.deepEqual(map.get(file), { title, label: /<span class="tag">([^<]+)<\/span>/.exec(card!)![1]! }, `${file} is in the map under this title and label`);
+    assert.ok(fs.existsSync(path.join(ROOT, "docs", file.split("#")[0]!)), `docs/${file}`);
+    // With no script the title opens nothing, so the file's path is there to read, as it is in the map.
+    assert.match(card!, new RegExp(`<span class="path">docs/${file.split("#")[0]!.replace(/[./]/g, "\\$&")}</span>`), `${file}: its path is shown`);
+    assert.ok(!/<a\b[^>]*data-doc[^>]*href="(https?:)?\/\//.test(card!) && /\shref="#documents"/.test(links[0]![0]), "and no address is written in the markup: the shared script sets it");
+  }
+  assert.ok(!/\bscript\b/i.test(textOf(start)), "how the links are set is not the visitor's business");
+});
+
 test("the documentation page tells a visitor where its links go, and that there is no documentation site yet, not how it is built", () => {
   const docs = page(pages, "docs/index.html");
   // What a visitor with a script reads: everything but what is only for a visitor without one.

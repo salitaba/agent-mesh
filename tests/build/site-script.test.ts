@@ -468,6 +468,23 @@ test("Escape clears what is typed, and is left alone when there is nothing to cl
   assert.equal(r.key("a"), false);
 });
 
+test("the filter is for the map and leaves the cards at the top alone: they are shown with nothing matching, and their links are set", () => {
+  const r = docsPage();
+  const starts = r.doc.querySelectorAll(".start");
+  assert.equal(starts.length, 4);
+  const visible = (n: FakeNode): boolean => {
+    for (let x: FakeNode | null = n; x; x = x.parent) if (x.hidden) return false;
+    return true;
+  };
+  r.type("kubernetes operator");
+  assert.equal(r.groups(), 0, "nothing in the map matches");
+  assert.deepEqual(starts.map(visible), [true, true, true, true], "and the cards that start a visitor are still there");
+  assert.equal(r.doc.getElementById("doc-filter-none")!.hidden, false);
+  for (const a of r.doc.querySelectorAll(".start a")) {
+    if (a.hasAttribute("data-doc")) assert.match(a.href, /^https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/[\w/.#-]+$/, "the script gave the title its address");
+  }
+});
+
 // ---------------------------------------------------------------- the phone menu
 
 test("the phone menu closes on a touch anywhere else and when Tab takes the focus out of it, and stays open while the focus is in it", () => {
