@@ -60,6 +60,11 @@ export const DEFAULT_RETENTION_DAYS = 30;
 
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 160);
 
+/** The address a workspace's host is told its account page is at: under the app, however many slashes the configured address ends in. */
+export function accountPageUrl(appUrl: string): string {
+  return `${appUrl.replace(/\/+$/, "")}/account`;
+}
+
 export class Workspaces {
   private readonly clock: () => Date;
   /** Provisioning in progress, by workspace id: awaited by tests and by shutdown. */
@@ -151,7 +156,7 @@ export class Workspaces {
     const own = plan?.byok ? this.o.modelKeys?.read(w.workspaceId) : undefined;
     const tier = plan && !plan.byok ? defaultTierOf(plan) : undefined;
     // After the operator's own additions, so they cannot point a customer's console somewhere else.
-    const env = { ...this.o.workspaceEnv, ...(this.o.appUrl ? { CURULE_ACCOUNT_URL: `${this.o.appUrl.replace(/\/+$/, "")}/account` } : {}), ...(tier ? { CURULE_GATEWAY_MODEL: tier } : {}) };
+    const env = { ...this.o.workspaceEnv, ...(this.o.appUrl ? { CURULE_ACCOUNT_URL: accountPageUrl(this.o.appUrl) } : {}), ...(tier ? { CURULE_GATEWAY_MODEL: tier } : {}) };
     return {
       workspaceId: w.workspaceId,
       accountId: w.accountId,

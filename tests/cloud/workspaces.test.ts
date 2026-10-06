@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveEntitlements } from "../../packages/licensing/src/index";
-import { GatewayAdminError, ProvisionError, ServiceError } from "../../packages/cloud/src/index";
+import { GatewayAdminError, ProvisionError, ServiceError, accountPageUrl } from "../../packages/cloud/src/index";
 import { plane, running, type Plane } from "./support";
 
 const DAY = 86_400_000;
@@ -99,6 +99,12 @@ test("a workspace's host is told where its account page is, whatever the operato
   // Making the host again (a plan change, a key) keeps it: the console of a host that lost it would stop saying where the key goes.
   await p.plane.workspaces.reprovision(workspaceId, "business");
   assert.equal(specOf(p, 1).env!.CURULE_ACCOUNT_URL, "https://app.example.com/account");
+});
+
+test("the address a host is told its account page is at is under the app, whatever slashes the configured address ends in", () => {
+  assert.equal(accountPageUrl("https://app.example.com"), "https://app.example.com/account");
+  assert.equal(accountPageUrl("https://app.example.com/"), "https://app.example.com/account", "a slash at the end of the address is not doubled");
+  assert.equal(accountPageUrl("http://localhost:7870//"), "http://localhost:7870/account", "a port is kept, and several slashes are one");
 });
 
 test("a workspace is for an account that is confirmed, not stopped, and paid up", async () => {
