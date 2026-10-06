@@ -174,6 +174,39 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   assert.ok(home.copy.includes("Open the demo-stub project and press Start mission"), "and the steps in the dashboard");
 });
 
+test("the home page's hero explains itself: a short subhead, at most three proof points the page argues, and the picture of the product right under the actions", () => {
+  const home = page(pages, "index.html");
+  const hero = /<section class="hero" id="top">[\s\S]*?\n<\/section>/.exec(home.html)![0];
+  const count = (html: string): number => textOf(html).split(" ").filter(Boolean).length;
+  const lede = /<p class="lede">([\s\S]*?)<\/p>/.exec(hero)![1]!;
+  assert.ok(count(lede) <= 40, `the subhead is ${count(lede)} words, and what it says is argued further down the page`);
+  const proof = [...(/<ul class="proof">([\s\S]*?)<\/ul>/.exec(hero)?.[1] ?? "").matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => textOf(m[1]!));
+  assert.ok(proof.length >= 1 && proof.length <= 3, `at most three proof points (${proof.length})`);
+  for (const point of proof) assert.ok(count(point) <= 10, `a proof point is a line, not a paragraph: "${point}"`);
+  // Each point is a claim the page already makes, and makes where it argues it: a point cannot be added that nothing below supports.
+  const argued: Array<[RegExp, string]> = [
+    [/enforced by the runtime/i, "refused by the runtime before it becomes an event"],
+    [/recorded, and replayable/i, "Every action is an event in an append-only log"],
+    [/every criterion has evidence/i, "A mission is done when every criterion has evidence"],
+  ];
+  for (const point of proof) {
+    const support = argued.find(([re]) => re.test(point));
+    assert.ok(support, `"${point}" is not one of the claims the page argues`);
+    assert.ok(home.copy.includes(support![1]), `"${point}" has nothing below it that says: ${support![1]}`);
+  }
+  // In reading order: the statement, the subhead, the proof, the actions, and then the picture, which is the first picture on the page.
+  const at = (re: RegExp): number => hero.search(re);
+  const order = [/<h1>/, /<p class="lede">/, /<ul class="proof">/, /class="actions"/, /<fieldset class="showcase">/].map(at);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the picture comes after the actions");
+  assert.ok(order.every((n) => n >= 0));
+  assert.ok(hero.lastIndexOf('class="actions"') < at(/<fieldset class="showcase">/), "after the actions of both states, so on a phone it is directly under them");
+  assert.equal(home.html.indexOf("<img"), home.html.indexOf("<img", home.html.indexOf('<fieldset class="showcase">')), "and no picture comes before it");
+  assert.match(hero, /<img src="assets\/shots\/shot-overview-light\.jpg"[^>]*\bfetchpriority="high"/, "the one the page is waiting for");
+  assert.ok(!/<img\b[^>]*\bloading="lazy"/.test(/<figure class="pane">[\s\S]*?<\/figure>/.exec(hero)![0]), "which is not loaded lazily");
+  assert.match(hero, /<\/fieldset>\s*<p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls\.<\/p>/, "and the statement that it is the scripted demo stays under it");
+  assert.equal((hero.match(/class="tab-input"/g) ?? []).length, 3, "the views are still the three tabs of the page, and plain CSS");
+});
+
 test("a document is as long as its label on the documentation page says", () => {
   const docs = page(pages, "docs/index.html");
   const items = [...docs.html.matchAll(/<li data-kind="(\w+)">[\s\S]*?data-doc="([^"#]+)(?:#[^"]*)?"/g)].map((m) => ({ kind: m[1]!, file: m[2]! }));

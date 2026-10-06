@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Curule: a team of AI agents, run like an organization</title>
-<meta name="description" content="Curule runs role-based AI agents on your own infrastructure, with the rules enforced by the runtime, every action recorded and replayable, and your own model credentials.">
+<meta name="description" content="Curule runs role-based AI agents as one organization: the runtime enforces the rules, every action is recorded and replayable, and the model is billed to you by your own provider.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
@@ -15,7 +15,7 @@
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
 <meta property="og:title" content="Curule: a team of AI agents, run like an organization">
-<meta property="og:description" content="Role-based AI agents on your own infrastructure, with the rules enforced by the runtime and every action recorded and replayable.">
+<meta property="og:description" content="Role-based AI agents run as one organization, with the rules enforced by the runtime and every action recorded and replayable.">
 <meta property="og:image" content="https://curule.dev/assets/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -63,18 +63,64 @@
   <div class="wrap">
     <p class="eyebrow">A runtime for persistent AI organizations</p>
     <h1>A team of AI agents, run like an organization.</h1>
-    <p class="lede" data-selfhost-only hidden>Curule runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
-    <p class="lede" data-cloud-only>Curule runs role-based agents (a product manager, an architect, developers, QA, security) as one organization. The runtime enforces who may approve what, and every action is recorded and replayable. Run it on your own infrastructure with your own model credentials, or open a workspace on Curule Cloud, where we run it and you bring your own model key.</p>
-    <div class="btn-row" data-selfhost-only hidden>
-      <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
-      <a class="btn btn-lg" href="pricing/">See pricing</a>
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <p class="lede">Curule runs role-based agents (a product manager, an architect, developers, QA, security) as one organization, and gives you one console to steer the team and audit what it did.</p>
+        <ul class="proof">
+          <li>Rules enforced by the runtime, not by a prompt</li>
+          <li>Every action recorded, and replayable</li>
+          <li>Done only when every criterion has evidence</li>
+        </ul>
+        <div class="actions" data-selfhost-only hidden>
+          <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
+          <a class="arrow-link" href="pricing/">See pricing</a>
+        </div>
+        <p class="small muted mt-s" data-selfhost-only hidden>The demo runs a scripted team on the real runtime: no API key, no account.</p>
+        <div class="actions" data-cloud-only>
+          <a class="btn btn-primary btn-lg" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a>
+          <a class="arrow-link" href="#try">Try the demo</a>
+        </div>
+        <p class="small muted mt-s" data-cloud-only>Curule Cloud runs it for you, and you bring your own model key. The demo is a scripted team on your own machine, with no API key and no account.</p>
+      </div>
+      <div class="hero-visual">
+        <fieldset class="showcase">
+          <legend class="sr">Product view</legend>
+          <input class="tab-input" type="radio" name="view" id="view-overview" checked>
+          <input class="tab-input" type="radio" name="view" id="view-events">
+          <input class="tab-input" type="radio" name="view" id="view-designer">
+          <div class="tabs">
+            <label for="view-overview">Overview</label>
+            <label for="view-events">Events</label>
+            <label for="view-designer">Designer</label>
+          </div>
+          <div class="frame">
+            <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:7420</span></div>
+            <figure class="pane">
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-overview-dark.jpg">
+                <img src="assets/shots/shot-overview-light.jpg" width="1440" height="900" fetchpriority="high" alt="The Curule dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the mission is marked Delivered, all seven mandatory checks are evidenced, and the files the team made are listed under What shipped.">
+              </picture>
+              <figcaption><b>Overview.</b> The demo after its mission: seven checks evidenced, and the files the team made, each one opening in a reader.</figcaption>
+            </figure>
+            <figure class="pane">
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-events-dark.jpg">
+                <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission, filtered to messages: the append-only log newest first, who messaged whom and about what, and two red lines for things the runtime did not do, one of them a message it would not deliver, each with the reason it gives.">
+              </picture>
+              <figcaption><b>Events.</b> The append-only log as it streams, newest first, here filtered to messages. The red lines are things the runtime refused or did not do, with the reason it gives.</figcaption>
+            </figure>
+            <figure class="pane">
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-designer-dark.jpg">
+                <img src="assets/shots/shot-designer-light.jpg" width="1440" height="900" loading="lazy" alt="The Designer view: the seven agents of the demo team as seats with arrows for who may contact whom, an inspector for the selected seat, a badge from the live validation reading Valid with two notes, and a bar for saving the configuration.">
+              </picture>
+              <figcaption><b>Designer.</b> The same team as seats and who may contact whom, validated by the engine behind <code>curule validate</code>.</figcaption>
+            </figure>
+          </div>
+        </fieldset>
+        <p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls.</p>
+      </div>
     </div>
-    <p class="small muted mt-s" data-selfhost-only hidden>The demo runs a scripted team on the real runtime: no API key, no account.</p>
-    <div class="btn-row" data-cloud-only>
-      <a class="btn btn-primary btn-lg" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a>
-      <a class="btn btn-lg" href="pricing/">See pricing</a>
-    </div>
-    <p class="small muted mt-s" data-cloud-only>Curule Cloud is a flat monthly plan for hosting; the models are billed to you by your own provider. To run it yourself, <a href="#try">try the demo</a>: a scripted team on your own machine, with no API key and no account.</p>
 
     <ul class="facts" aria-label="What is true of it">
       <li data-selfhost-only hidden><strong>Self-hosted</strong><span>One container per team, on your infrastructure and with your model credentials.</span></li>
@@ -83,43 +129,6 @@
       <li><strong>Free to start</strong><span>The Community plan: one open project, up to eight agents, no licence key.</span></li>
       <li><strong>Source-available</strong><span>Business Source License 1.1. Each version becomes Apache 2.0 four years after it is published.</span></li>
     </ul>
-
-    <fieldset class="showcase">
-      <legend class="sr">Product view</legend>
-      <input class="tab-input" type="radio" name="view" id="view-overview" checked>
-      <input class="tab-input" type="radio" name="view" id="view-events">
-      <input class="tab-input" type="radio" name="view" id="view-designer">
-      <div class="tabs">
-        <label for="view-overview">Overview</label>
-        <label for="view-events">Events</label>
-        <label for="view-designer">Designer</label>
-      </div>
-      <div class="frame">
-        <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:7420</span></div>
-        <figure class="pane">
-          <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-overview-dark.jpg">
-            <img src="assets/shots/shot-overview-light.jpg" width="1440" height="900" fetchpriority="high" alt="The Curule dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the mission is marked Delivered, all seven mandatory checks are evidenced, and the files the team made are listed under What shipped.">
-          </picture>
-          <figcaption><b>Overview.</b> The demo after its mission: seven checks evidenced, and the files the team made, each one opening in a reader.</figcaption>
-        </figure>
-        <figure class="pane">
-          <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-events-dark.jpg">
-            <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission, filtered to messages: the append-only log newest first, who messaged whom and about what, and two red lines for things the runtime did not do, one of them a message it would not deliver, each with the reason it gives.">
-          </picture>
-          <figcaption><b>Events.</b> The append-only log as it streams, newest first, here filtered to messages. The red lines are things the runtime refused or did not do, with the reason it gives.</figcaption>
-        </figure>
-        <figure class="pane">
-          <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-designer-dark.jpg">
-            <img src="assets/shots/shot-designer-light.jpg" width="1440" height="900" loading="lazy" alt="The Designer view: the seven agents of the demo team as seats with arrows for who may contact whom, an inspector for the selected seat, a badge from the live validation reading Valid with two notes, and a bar for saving the configuration.">
-          </picture>
-          <figcaption><b>Designer.</b> The same team as seats and who may contact whom, validated by the engine behind <code>curule validate</code>.</figcaption>
-        </figure>
-      </div>
-    </fieldset>
-    <p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls.</p>
   </div>
 </section>
 

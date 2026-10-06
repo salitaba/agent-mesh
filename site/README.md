@@ -12,7 +12,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 
 | File | Address | What it holds |
 |---|---|---|
-| `index.html` | `/` | The tagline and what Curule is, a product frame (overview, events, designer), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
+| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
 | `pricing/index.html` | `/pricing/` | The plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | A map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
 | `security/index.html` | `/security/` | What it protects, what leaves your environment, what it does not do, a hardening checklist, assurance, and how to report a problem |

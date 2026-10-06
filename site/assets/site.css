@@ -136,10 +136,20 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
 /* ---------------------------------------------------------------- hero */
-.hero { padding-top: clamp(48px, 8vw, 104px); }
+/* The statement, then two columns: what it is, what it promises and where to start on the left, a picture of the product on the
+   right, so that a picture of it is in the first screen. One column on a phone, in that order: the picture comes right after the
+   actions. */
+.hero { padding-top: clamp(32px, 5vw, 64px); }
 .hero h1 { max-width: 22ch; }
-.hero .lede { margin-top: 28px; }
-.hero .btn-row { margin-top: 36px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(28px, 4vw, 40px); margin-top: clamp(20px, 3vw, 32px); }
+.hero-grid > * { min-width: 0; }
+@media (min-width: 1040px) { .hero-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: start; } }
+.hero .lede { margin: 0; }
+.proof { display: grid; gap: 8px; margin: 24px 0 0; padding: 0; list-style: none; }
+.proof li { position: relative; padding-left: 26px; font-weight: 500; }
+.proof li::before { content: ""; position: absolute; left: 3px; top: .5em; width: 9px; height: 5px; border-left: 2px solid var(--ok); border-bottom: 2px solid var(--ok); transform: rotate(-45deg); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; margin-top: 28px; }
+
 .facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: clamp(40px, 6vw, 64px) 0 clamp(32px, 5vw, 48px); padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .facts li { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 4px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .facts strong { font-size: .9375rem; }

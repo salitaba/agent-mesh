@@ -118,13 +118,8 @@ test("when it is open, the home page leads with Get started, says Curule is also
   const home = visit("index.html", APP);
   const text = visibleText(home);
   assert.match(text, /A team of AI agents, run like an organization\./, "the tagline does not move");
-  assert.match(text, /open a workspace on Curule Cloud, where we run it and you bring your own model key/);
-  assert.match(text, /Yours to run, or ours/);
   const hero = home.querySelector(".hero")!;
-  const buttons = hero.querySelectorAll(".btn").filter((b) => shown(b));
-  assert.deepEqual(buttons.map((b) => b.textContent), ["Get started", "See pricing"]);
-  assert.equal(buttons[0]!.href, `${APP}/signup`);
-  assert.match(hero.querySelectorAll("p").filter((p) => shown(p)).map((p) => p.textContent).join(" "), /try the demo/i, "and the demo is still one click away, in words");
+  assert.match(hero.querySelectorAll("p").filter((p) => shown(p)).map((p) => p.textContent).join(" "), /Curule Cloud runs it for you, and you bring your own model key/, "the hero says Curule is also run for you, and what that asks of the visitor");
   const closing = home.querySelectorAll("section.cta").filter((s) => shown(s));
   assert.equal(closing.length, 1, "one closing call to action, not both");
   assert.deepEqual(closing[0]!.querySelectorAll(".btn").map((b) => [b.textContent, b.href]), [["Get started", `${APP}/signup`], ["Try the demo", "#try"]]);
@@ -139,6 +134,23 @@ test("when it is open, the home page leads with Get started, says Curule is also
   }
   const closed = visibleText(visit("index.html", ""));
   assert.match(closed, /Not today\. It is software you run, one instance per team/, "and while it is closed the same question is answered as it was");
+});
+
+test("the hero has one clear action in each state, Get started while Curule Cloud is open and the demo while it is not, and a quiet second", () => {
+  const states = [
+    ["open", APP, [["Get started", `${APP}/signup`]], [["Try the demo", "#try"]]],
+    ["closed", "", [["Try the demo", "#try"]], [["See pricing", "pricing/"]]],
+  ] as const;
+  for (const [state, url, primary, quiet] of states) {
+    const hero = visit("index.html", url).querySelector(".hero")!;
+    const links = (selector: string): string[][] => hero.querySelectorAll(selector).filter((a) => shown(a)).map((a) => [a.textContent, a.href]);
+    assert.deepEqual(links(".btn-primary"), primary, `${state}: the one action that leads`);
+    assert.deepEqual(links(".arrow-link"), quiet, `${state}: and the one that follows it, quietly`);
+    assert.equal(hero.querySelectorAll(".btn").filter((a) => shown(a)).length, 1, `${state}: no second button to choose between`);
+  }
+  // Only the actions and what is said under them are of one state: what the hero is, and the picture, are the same words either way.
+  const switched = parsePage(page(pages, "index.html").html).querySelector(".hero-grid")!.querySelectorAll("[data-cloud-only], [data-selfhost-only]");
+  assert.deepEqual(switched.map((n) => n.className || n.tag), ["actions", "small muted mt-s", "actions", "small muted mt-s"], "the statement, the subhead, the proof and the picture do not depend on whether Curule Cloud is open");
 });
 
 test("when it is open, the pricing page says the plans below are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
