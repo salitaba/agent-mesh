@@ -27,18 +27,21 @@
 <main id="main" tabindex="-1">
 
 <div class="narrow">
-  <h1>Choose a new password</h1>
-  <p class="lede">The link works once. Choosing a password signs you out everywhere, so every device asks for the new one.</p>
+  <h1 id="title">Choose a new password</h1>
+  <p class="lede" id="lede">The link works once. Choosing a password signs you out everywhere, so every device asks for the new one.</p>
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
   <div class="card" id="card">
     <div id="status" class="note" role="status" aria-live="polite"></div>
     <form id="form" novalidate hidden>
       <div class="field">
         <label for="password">New password</label>
-        <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
+        <div class="secret">
+          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
+          <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+        </div>
         <span id="password-hint" class="hint">At least 10 characters. A few words in a row is a good password.</span>
       </div>
-      <button class="btn btn-primary" type="submit">Save password</button>
+      <button class="btn btn-primary" type="submit" data-busy="Saving">Save password</button>
     </form>
   </div>
 </div>

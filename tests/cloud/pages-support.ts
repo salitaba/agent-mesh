@@ -203,6 +203,8 @@ function matchesOne(node: FakeNode, selector: string): boolean {
 export class FakeDocument {
   readonly root: FakeNode;
   activeElement: FakeNode | null = null;
+  /** The tab's title, which a page's script may set. */
+  title = "";
   readyState = "complete";
   visibilityState = "visible";
   readonly listeners = new Map<string, Listener[]>();
@@ -287,6 +289,8 @@ export interface VisitOptions {
   storage?: Record<string, string>;
   /** Changes the script's source before it runs, to see what it does with a setting that is another value. */
   script?: (source: string) => string;
+  /** What the person points with: a mouse (`fine`) or a finger (`coarse`). Left out, the browser has no `matchMedia` at all. */
+  pointer?: "fine" | "coarse";
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -310,6 +314,7 @@ export class Visit {
     private readonly options: VisitOptions = {},
   ) {
     this.doc = parsePage(fs.readFileSync(pageFile(page), "utf8"));
+    this.doc.title = (/<title>([^<]*)<\/title>/.exec(fs.readFileSync(pageFile(page), "utf8")) ?? [])[1] ?? "";
     for (const [k, v] of Object.entries(options.storage ?? {})) this.storage.set(k, v);
     const search = options.search ? (options.search.startsWith("?") ? options.search : `?${options.search}`) : "";
     this.location = {
@@ -324,7 +329,9 @@ export class Visit {
   /** Run the script on the page, as the browser does after the document is parsed. */
   async start(): Promise<this> {
     const self = this;
+    const pointer = this.options.pointer;
     const win = {
+      ...(pointer ? { matchMedia: (query: string) => ({ matches: pointer === "fine" && /hover: hover/.test(query) && /pointer: fine/.test(query) }) } : {}),
       sessionStorage: {
         getItem: (k: string) => self.storage.get(k) ?? null,
         setItem: (k: string, v: string) => void self.storage.set(k, String(v)),

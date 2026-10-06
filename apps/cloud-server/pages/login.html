@@ -39,10 +39,13 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <div class="secret">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+        </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-primary" type="submit">Sign in</button>
+        <button class="btn btn-primary" type="submit" data-busy="Signing in">Sign in</button>
         <a class="btn" href="/forgot">Forgot your password?</a>
       </div>
     </form>

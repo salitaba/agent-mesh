@@ -27,8 +27,8 @@
 <main id="main" tabindex="-1">
 
 <div class="narrow">
-  <h1>Create your account</h1>
-  <p class="lede">We send a link to confirm your address. Nothing else is needed to start.</p>
+  <h1 id="title">Create your account</h1>
+  <p class="lede" id="lede">We send a link to confirm your address. Nothing else is needed to start.</p>
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
   <div class="card" id="card">
     <form id="form" novalidate>
@@ -39,14 +39,17 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
+        <div class="secret">
+          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
+          <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+        </div>
         <span id="password-hint" class="hint">At least 10 characters. A few words in a row is a good password.</span>
       </div>
       <div class="check">
         <input id="agree" name="agree" type="checkbox" required>
         <label for="agree">I agree to the <a href="/terms">Terms</a> and have read the <a href="/privacy">Privacy notice</a>.</label>
       </div>
-      <button class="btn btn-primary" type="submit">Create account</button>
+      <button class="btn btn-primary" type="submit" data-busy="Creating account">Create account</button>
     </form>
   </div>
   <p class="aside">Already have an account? <a href="/login">Sign in</a></p>

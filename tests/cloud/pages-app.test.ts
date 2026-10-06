@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import { SCRIPT, Visit, helpers, visit, type Answer, type Call, type Routes } from "./pages-support";
+import { PAGES_DIR, SCRIPT, Visit, helpers, visit, type Answer, type Call, type Routes } from "./pages-support";
 
 // ---- the service, as the pages see it ----
 
@@ -346,7 +346,7 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   v.submit(v.$("form"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
-  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. It works once, and the email says when it expires. It can take a minute. Look in your spam folder if it has not come. To use another address, start again.");
+  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. It works once, and the email says when it expires. It can take a minute. Look in your spam folder if it has not come. Still nothing? Sign in with your email and password, and we send the link again. To use another address, start again.");
   assert.equal(v.link("card", "start again").getAttribute("href"), "/signup");
   assert.equal(v.doc.activeElement, v.$("card"), "focus moves to what happened");
   assert.deepEqual(v.navigations, []);
@@ -504,6 +504,129 @@ test("a reset link that has been used offers a new one; a password that is too w
   await u.send(u.$("form"));
   assert.equal(u.text("status"), "That password is too easy to guess.");
   assert.equal(u.doc.querySelectorAll("a").filter((a) => a.textContent === "Ask for a new link").length, 0);
+});
+
+// ---- what a page does for the person at it ----
+
+test("a page's heading and the tab's title say what the page is now: a link that was sent is no longer \"Create your account\"", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
+  const v = await visit("signup", { routes: w.routes });
+  assert.equal(v.text("title"), "Create your account");
+  assert.equal(v.shows(v.$("lede")), true);
+  v.type("email", "ada@example.com");
+  v.type("password", "correct horse battery staple");
+  v.check("agree");
+  await v.send(v.$("form"));
+  assert.equal(v.text("title"), "Check your email");
+  assert.equal(v.shows(v.$("lede")), false, "the line that asked for the address goes with the form");
+  assert.equal(v.doc.title, "Check your email – Curule Cloud");
+
+  w.answers.set("POST /api/verify", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
+  const bad = await visit("verify", { routes: w.routes, search: "?token=old" });
+  assert.equal(bad.text("title"), "That link did not work", "a failed check is not still \"Confirming\"");
+  assert.equal(bad.doc.title, "That link did not work – Curule Cloud");
+  assert.equal((await visit("verify", { routes: w.routes })).text("title"), "That link did not work", "nor is a link with no token in it");
+
+  w.answers.set("POST /api/verify", { json: { account: w.view() } });
+  const good = await visit("verify", { routes: w.routes, search: "?token=ok" });
+  assert.equal(good.text("title"), "Address confirmed");
+
+  w.answers.set("POST /api/reset", { json: { ok: true } });
+  const reset = await visit("reset", { routes: w.routes, search: "?token=t0k3n" });
+  assert.equal(reset.text("title"), "Choose a new password");
+  reset.type("password", "a brand new password");
+  await reset.send(reset.$("form"));
+  assert.equal(reset.text("title"), "Password changed");
+  assert.equal(reset.shows(reset.$("lede")), false);
+  assert.equal(reset.doc.title, "Password changed – Curule Cloud");
+});
+
+test("the sent-link page says what to do when it does not come, which is true of the sign-in page: the right password sends it again", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
+  const v = await visit("signup", { routes: w.routes });
+  v.type("email", "ada@example.com");
+  v.type("password", "correct horse battery staple");
+  v.check("agree");
+  await v.send(v.$("form"));
+  assert.match(v.text("card"), /Still nothing\? Sign in with your email and password, and we send the link again\./);
+  const login = fs.readFileSync(`${PAGES_DIR}/login.html`, "utf8");
+  assert.match(login, /signing in with your password sends the link again/, "the sign-in page says the same, so the one does not promise what the other denies");
+});
+
+test("a password field has Show and Hide that only a script can give, and a password that was shown is hidden again once it is sent", async () => {
+  for (const [page, field, form] of [["signup", "password", "form"], ["login", "password", "form"], ["reset", "password", "form"], ["account", "next", "password-form"], ["account", "current", "password-form"]] as const) {
+    const w = world((x) => {
+      x.signedIn = page === "account";
+      if (page === "account") paid(x);
+    });
+    w.answers.set("POST /api/login", failure(401, "invalid_credentials", "That email and password do not match an account."));
+    const v = await visit(page, { routes: w.routes, ...(page === "reset" ? { search: "?token=t0k3n" } : {}) });
+    const input = v.$(field);
+    const toggle = v.doc.querySelectorAll("button").find((b) => b.getAttribute("data-reveal") === field)!;
+    assert.ok(toggle, `${page}: ${field} has a toggle`);
+    assert.equal(toggle.hidden, false, `${page}: the script shows it`);
+    assert.equal(toggle.getAttribute("aria-controls"), field);
+    assert.equal(toggle.getAttribute("type"), "button", "it never submits the form");
+    assert.equal(input.getAttribute("type"), "password");
+    assert.equal(toggle.textContent, "Show");
+    assert.equal(toggle.getAttribute("aria-label"), "Show password");
+    v.click(toggle);
+    assert.equal(input.getAttribute("type"), "text", `${page}: shown`);
+    assert.equal(toggle.textContent, "Hide");
+    assert.equal(toggle.getAttribute("aria-label"), "Hide password");
+    v.click(toggle);
+    assert.equal(input.getAttribute("type"), "password", `${page}: hidden again`);
+    v.click(toggle);
+    v.type(field, "a long enough secret");
+    if (page === "login") v.type("email", "ada@example.com");
+    await v.send(v.$(form));
+    assert.equal(input.getAttribute("type"), "password", `${page}: sending it hides it again`);
+    assert.equal(toggle.textContent, "Show");
+  }
+  for (const page of ["signup", "login", "reset", "account"]) {
+    const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
+    for (const m of html.matchAll(/<button[^>]*data-reveal="([^"]+)"[^>]*>/g)) assert.match(m[0], /\bhidden\b/, `${page}: with no script the control is not shown, so nothing on the page does nothing`);
+  }
+});
+
+test("a main button says what it is doing while the call is out, and is itself again afterwards", async () => {
+  const w = world((x) => (x.signedIn = false));
+  let during = "";
+  let v: Visit | undefined;
+  w.answers.set("POST /api/login", () => {
+    during = v!.text(v!.doc.querySelector('button[type="submit"]')!);
+    return failure(401, "invalid_credentials", "That email and password do not match an account.");
+  });
+  v = await visit("login", { routes: w.routes });
+  const main = v.doc.querySelector('button[type="submit"]')!;
+  assert.equal(main.textContent, "Sign in");
+  v.type("email", "ada@example.com");
+  v.type("password", "a long enough secret");
+  await v.send(v.$("form"));
+  assert.equal(during, "Signing in", "the button said what was going on while the service had the call");
+  assert.equal(main.textContent, "Sign in", "and says what it is again");
+  assert.equal(main.disabled, false);
+
+  for (const [page, label, busy] of [["signup", "Create account", "Creating account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
+    const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
+    assert.match(html, new RegExp(`data-busy="${busy}"[^>]*>${label}<`), `${page}: ${label} says "${busy}" while it works`);
+  }
+});
+
+test("a person at a keyboard starts at the first field; a phone is left alone, because a keyboard that opens by itself covers the page", async () => {
+  const w = world((x) => (x.signedIn = false));
+  for (const [page, field, extra] of [["signup", "email", {}], ["login", "email", {}], ["forgot", "email", {}], ["reset", "password", { search: "?token=t0k3n" }]] as const) {
+    const fine = await visit(page, { routes: w.routes, pointer: "fine", ...extra });
+    assert.equal(fine.doc.activeElement, fine.$(field), `${page}: the cursor is in ${field}`);
+    const coarse = await visit(page, { routes: w.routes, pointer: "coarse", ...extra });
+    assert.equal(coarse.doc.activeElement, null, `${page}: a finger's page does not pull the keyboard up`);
+    const unknown = await visit(page, { routes: w.routes, ...extra });
+    assert.equal(unknown.doc.activeElement, null, `${page}: a browser that cannot say is left alone`);
+  }
+  const link = await visit("reset", { routes: w.routes, pointer: "fine" });
+  assert.equal(link.doc.activeElement, null, "a reset page with no link has no field to start in");
 });
 
 // ---- the account ----
@@ -873,6 +996,24 @@ test("a confirmation that is open stays open, with what was typed, when the page
 });
 
 // ---- credit ----
+
+test("the field for another amount says its currency and shows an amount in that currency's places before anything is typed", async () => {
+  const w = world(paid);
+  const v = await visit("account", { routes: w.routes });
+  assert.equal(v.text("topup-unit"), "(USD)");
+  assert.equal(v.$("topup-amount").getAttribute("placeholder"), "25.00", "one of the amounts that can be bought, as it is typed");
+  assert.match(v.text(v.doc.querySelector("label[for=\"topup-amount\"]") ?? v.$("topup-unit")), /Another amount/);
+  const yen = world(paid);
+  yen.plans = { json: { ...PLANS, currency: "JPY", topups: { optionsMinor: [1_000, 5_000], minimumMinor: 500, maximumMinor: 100_000, usageMicrosPerMinor: 1_000_000 } } };
+  const y = await visit("account", { routes: yen.routes });
+  assert.equal(y.text("topup-unit"), "(JPY)");
+  assert.equal(y.$("topup-amount").getAttribute("placeholder"), "5000", "a currency with no places is shown with none");
+  const none = world(paid);
+  none.plans = { json: { ...PLANS, topups: null } };
+  assert.equal((await visit("account", { routes: none.routes })).$("topup-amount").getAttribute("placeholder"), null, "a service that sells no credit has nothing to show");
+  assert.equal(helpers().bareAmount(2_500, "USD"), "25.00");
+  assert.equal(helpers().bareAmount(500, "JPY"), "500");
+});
 
 test("a quick amount goes straight to its payment page, and what the account looked like is remembered for the return", async () => {
   const w = world(paid);

@@ -24,12 +24,12 @@
 
   const NEEDS = {
     home: ["plans", "topups"],
-    signup: ["card", "form", "status", "email", "password", "agree"],
+    signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
     login: ["form", "status", "email", "password"],
-    verify: ["status", "again"],
+    verify: ["status", "title", "again"],
     forgot: ["form", "status", "email"],
-    reset: ["card", "form", "status", "password"],
-    account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    reset: ["card", "form", "status", "title", "lede", "password"],
+    account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
   };
@@ -59,6 +59,12 @@
   function money(minor, currency) {
     const d = digitsOf(currency);
     return format(minor / 10 ** d, currency, d, d);
+  }
+
+  /** A minor-unit amount as a bare number in the currency's own places ("25.00"), the example a field can show before anything is typed. */
+  function bareAmount(minor, currency) {
+    const d = digitsOf(currency);
+    return (minor / 10 ** d).toFixed(d);
   }
 
   /** An amount of usage, in millionths of a unit of the currency. One call can cost a fraction of a cent, so small amounts keep four places. */
@@ -155,7 +161,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, plural, digitsOf, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, STATES, POLICY_UNITS };
+  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -240,7 +246,7 @@
     return plansReply;
   }
 
-  /** A form whose submit is handled here: no double sends, buttons held while a call is out, and a failure that says so. */
+  /** A form whose submit is handled here: no double sends, buttons held while a call is out (the main one says what it is doing), and a failure that says so. */
   function onSubmit(node, status, handler) {
     let busy = false;
     node.addEventListener("submit", async (event) => {
@@ -249,7 +255,13 @@
       busy = true;
       const buttons = [...node.querySelectorAll("button")];
       for (const b of buttons) b.disabled = true;
+      // A button that has a word for it says so, so that a slow answer does not look like a button that did nothing.
+      const main = node.querySelector("[data-busy]");
+      const label = main ? main.textContent : "";
+      if (main) main.textContent = main.dataset.busy;
       node.setAttribute("aria-busy", "true");
+      // Whatever is sent is not left showing for the next person at the screen.
+      for (const b of node.querySelectorAll("[data-reveal]")) hideSecret(b);
       try {
         await handler();
       } catch (err) {
@@ -258,9 +270,51 @@
       } finally {
         busy = false;
         for (const b of buttons) b.disabled = false;
+        if (main) main.textContent = label;
         node.removeAttribute("aria-busy");
       }
     });
+  }
+
+  // ---- what a page does for the person at it ----
+
+  const secrets = new Map();
+
+  /** A password field's Show/Hide. The markup carries the button hidden, so a browser that runs no script shows no control that does nothing. */
+  function wireSecret(button) {
+    const input = $(button.dataset.reveal);
+    if (!input) return;
+    const set = (shown) => {
+      input.setAttribute("type", shown ? "text" : "password");
+      button.textContent = shown ? "Hide" : "Show";
+      button.setAttribute("aria-label", shown ? "Hide password" : "Show password");
+    };
+    secrets.set(button, set);
+    button.addEventListener("click", () => set(input.getAttribute("type") !== "text"));
+    button.hidden = false;
+  }
+
+  function hideSecret(button) {
+    const set = secrets.get(button);
+    if (set) set(false);
+  }
+
+  /** The page's heading and the tab's title say what the page is now: a link that was sent is no longer "Create your account". */
+  function retitle(heading, lede) {
+    const title = $("title");
+    if (title) title.textContent = heading;
+    const line = $("lede");
+    if (line) {
+      line.textContent = lede || "";
+      line.hidden = !lede;
+    }
+    doc.title = `${heading} – Curule Cloud`;
+  }
+
+  /** Someone at a keyboard starts typing at once. A phone is left alone: a keyboard that opens by itself covers the page it was opened for. */
+  function focusFirst(input) {
+    const fine = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    if (fine) input.focus();
   }
 
   /** Leave for an address the API returns (a payment page, a workspace), or put the button back and say why not. `before` runs just ahead of the request. */
@@ -381,6 +435,7 @@
     const status = $("status");
     const email = $("email");
     const password = $("password");
+    focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!checkEmailAndPassword(email, password, status, { chosen: true })) return;
@@ -396,10 +451,11 @@
         return;
       }
       const card = $("card");
+      retitle("Check your email", "");
       card.replaceChildren(
         el("div", { class: "note note-ok", role: "status" }, r.data.message),
         el("p", null, "We sent the link to ", el("strong", null, address), ". It works once, and the email says when it expires."),
-        el("p", { class: "muted small" }, "It can take a minute. Look in your spam folder if it has not come. To use another address, ", el("a", { href: "/signup" }, "start again"), "."),
+        el("p", { class: "muted small" }, "It can take a minute. Look in your spam folder if it has not come. Still nothing? Sign in with your email and password, and we send the link again. To use another address, ", el("a", { href: "/signup" }, "start again"), "."),
       );
       card.setAttribute("tabindex", "-1");
       card.focus();
@@ -414,6 +470,7 @@
     const status = $("status");
     const email = $("email");
     const password = $("password");
+    focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!checkEmailAndPassword(email, password, status)) return;
@@ -432,6 +489,7 @@
     const status = $("status");
     const token = new URLSearchParams(location.search).get("token");
     const failed = (text) => {
+      retitle("That link did not work", "");
       say(status, "bad", text);
       $("again").hidden = false;
     };
@@ -446,6 +504,7 @@
       failed(r.error.message);
       return;
     }
+    retitle("Address confirmed", "");
     say(status, "ok", "Your address is confirmed. Taking you to your account.");
     location.replace("/account");
   }
@@ -453,6 +512,7 @@
   function forgotPage() {
     const status = $("status");
     const email = $("email");
+    focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!email.value.trim()) return invalid(email, status, "Enter your email address.");
@@ -473,6 +533,7 @@
     }
     // The form is hidden in the markup, so that nobody sees one that has no link to go with it.
     $("form").hidden = false;
+    focusFirst(password);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (password.value.length < 10) return invalid(password, status, "Choose a password of at least 10 characters.");
@@ -483,6 +544,7 @@
         return;
       }
       history.replaceState(null, "", "/reset");
+      retitle("Password changed", "");
       $("card").replaceChildren(el("div", { class: "note note-ok", role: "status" }, "Your password is changed. Every device is signed out."), el("p", null, el("a", { class: "btn btn-primary", href: "/login" }, "Sign in")));
     });
   }
@@ -750,7 +812,8 @@
       const note = $("create-note");
       if (standingNow === "none") {
         form.hidden = true;
-        hint(note, "", sub ? "Choose a plan below to create a workspace." : "Choose a plan below to create your first workspace.");
+        hint(note, "", "");
+        note.replaceChildren(el("a", { href: "#plan-h" }, "Choose a plan"), sub ? " below to create a workspace." : " below to create your first workspace.");
       } else if (standingNow === "past_due") {
         form.hidden = true;
         hint(note, "", "The last payment did not go through. Update your payment details to create a workspace.");
@@ -973,6 +1036,9 @@
         return;
       }
       const d = digitsOf(state.currency);
+      // The field is in the currency's own places, and says so before anything is typed.
+      $("topup-unit").textContent = `(${state.currency})`;
+      $("topup-amount").setAttribute("placeholder", bareAmount(Math.max(t.minimumMinor, t.optionsMinor[1] || t.optionsMinor[0] || t.minimumMinor), state.currency));
       const rate = (t.usageMicrosPerMinor * 10 ** d) / 1e6;
       $("topup-hint").textContent = `From ${money(t.minimumMinor, state.currency)} to ${money(t.maximumMinor, state.currency)}. Each ${money(10 ** d, state.currency)} adds ${format(rate, state.currency, d, Math.max(d, 4))} of usage, and credit does not expire.`;
       $("topup-options").replaceChildren(...t.optionsMinor.map((minor) => button(`Add ${money(minor, state.currency)}`, { small: true, onclick: (event) => payTopup(minor, event.currentTarget) })));
@@ -1176,6 +1242,7 @@
     doc.addEventListener("input", (event) => {
       if (event.target && event.target.removeAttribute) event.target.removeAttribute("aria-invalid");
     });
+    for (const button of doc.querySelectorAll("[data-reveal]")) wireSecret(button);
     const asked = call("GET", "/api/session");
     const polite = paintPolicy();
     const reply = await asked;
