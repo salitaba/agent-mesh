@@ -195,6 +195,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
    stays at the foot of its card, so the two line up whatever each says above it. */
 .hero + .section { padding-top: clamp(8px, 2vw, 32px); }
 .page-head + .section, .toc-bar + .section { padding-top: clamp(32px, 4vw, 48px); }
+/* The choice at the top of the pricing page leads into the plans, which have their own space above them. */
+.toc-bar + #ways { padding-bottom: 0; }
 .ways { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 @media (min-width: 760px) { .ways { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .way { display: flex; flex-direction: column; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
