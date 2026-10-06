@@ -100,7 +100,7 @@ export default function Inbox(): React.JSX.Element {
 
             {d.load === "ready" && counts.decisions === 0 && !d.answered.length && !serverDown ? (
               <EmptyState icon="inbox" title="No decisions are waiting">
-                A decision appears here when the mesh needs an answer: a budget runs out, agents deadlock, a seat crashes, or an agent calls <code>mesh_escalate</code>.
+                A decision appears here when the team needs an answer from you: a budget runs out, the agents cannot agree, a seat stops, or an agent asks you something.
               </EmptyState>
             ) : null}
 
